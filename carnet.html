@@ -1,302 +1,638 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ARTAL - Carnet de Mesures</title>
+    <title>ARTAL - Cuaderno de Relevo Numérico</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        /* COLORES CORPORATIVOS ARTAL */
         :root {
-            --artal-blue: #003366;
-            --artal-yellow: #FFCC00;
-            --bg-color: #f4f7f6;
+            --artal-blue: #0A3D62;
+            --artal-yellow: #F6B93B;
+            --artal-light: #f3f4f6;
+            --text-dark: #1a1a1a;
         }
-        body {
-            font-family: 'Helvetica Neue', Arial, sans-serif;
-            background-color: var(--bg-color);
-            margin: 0;
-            display: flex;
-            height: 100vh;
-        }
-        /* Sidebar (Catalogue) */
-        #sidebar {
-            width: 250px;
-            background-color: var(--artal-blue);
-            color: white;
-            padding: 20px;
-            overflow-y: auto;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-        }
-        #sidebar h2 { color: var(--artal-yellow); font-size: 1.2em; text-transform: uppercase; }
-        .menu-btn {
-            background-color: transparent;
-            color: white;
-            border: 1px solid var(--artal-yellow);
-            padding: 10px;
-            margin-bottom: 10px;
-            width: 100%;
-            cursor: pointer;
-            border-radius: 5px;
-            text-align: left;
-            transition: 0.3s;
-        }
-        .menu-btn:hover { background-color: var(--artal-yellow); color: var(--artal-blue); }
-        .draggable-item {
-            cursor: grab;
-            border-left: 4px solid var(--artal-yellow);
-        }
-        
-        /* Main Workspace (Feuille Blanche) */
-        #workspace {
-            flex-grow: 1;
-            padding: 30px;
-            overflow-y: auto;
-            background-color: white;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            border-bottom: 3px solid var(--artal-blue);
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .header-logo img { max-height: 60px; }
-        .header-info input {
-            border: none; border-bottom: 1px solid #ccc;
-            font-size: 1.1em; color: var(--artal-blue);
-            font-weight: bold; margin: 5px 0; width: 200px;
-        }
-        
-        /* Grid Layout pour les croquis */
-        #canvas-area {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        .card {
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 15px;
-            background: #fafafa;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .card-header input { font-weight: bold; width: 80px; border: 1px solid #ccc; }
-        .svg-container { width: 100%; height: 150px; background: white; border: 1px solid #eee; margin: 10px 0; display: flex; align-items: center; justify-content: center; position: relative;}
-        .card select, .card input[type="number"] { width: 100%; margin-top: 5px; padding: 5px; }
-        
-        /* Dibujo Libre - Mini CAD */
-        .free-draw-card { grid-column: 1 / -1; height: 400px; display: flex; flex-direction: column;}
-        .free-draw-canvas { flex-grow: 1; background: #fff; border: 2px dashed #ccc; cursor: crosshair; position: relative; }
-        .dropzone { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: auto; }
 
-        /* Signatures */
-        .signatures { display: flex; justify-content: space-between; margin-top: 50px; padding-top: 20px; border-top: 2px solid var(--artal-blue); }
-        .sig-box { width: 45%; height: 100px; border: 1px dashed #999; text-align: center; color: var(--artal-blue); }
+        * { box-sizing: border-box; }
+        body, html { margin: 0; padding: 0; height: 100%; background-color: var(--artal-light); font-family: 'Arimo', sans-serif; color: var(--text-dark); font-size: 13px; }
+        
+        #app-root { display: flex; height: 100%; width: 100%; background: #fdfdfd; overflow: hidden; }
+        
+        /* Barra Lateral */
+        #sidebar { width: 300px; background: var(--artal-blue); color: white; padding: 20px 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; box-shadow: 2px 0 10px rgba(0,0,0,0.15); z-index: 10; }
+        #sidebar h2 { color: var(--artal-yellow); text-align: center; font-size: 24px; margin: 5px 0 20px 0; letter-spacing: 2px; }
+        #sidebar h3 { font-size: 12px; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 8px; margin-top: 15px; color: var(--artal-yellow); }
+        #sidebar h3:first-child { margin-top: 0; }
+        
+        .btn-cat { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 8px 10px; text-align: left; cursor: pointer; border-radius: 4px; font-size: 12px; transition: 0.2s; }
+        .btn-cat:hover { background: var(--artal-yellow); color: var(--artal-blue); font-weight: bold; border-color: var(--artal-yellow); }
+        
+        /* Hoja de Trabajo */
+        #main-canvas { flex-grow: 1; padding: 30px; overflow-y: auto; background: white; position: relative; display: flex; flex-direction: column; }
+        
+        /* Encabezado */
+        .project-header { display: grid; grid-template-columns: 2.5fr 1fr 1.5fr 1.5fr auto; gap: 15px; border-bottom: 3px solid var(--artal-blue); padding-bottom: 20px; margin-bottom: 30px; width: 100%; align-items: end; }
+        .header-field { display: flex; flex-direction: column; width: 100%; }
+        .header-field label { font-weight: bold; font-size: 11px; color: var(--artal-blue); margin-bottom: 5px; text-transform: uppercase; }
+        .header-field input { border: none; border-bottom: 1px solid #ccc; padding: 5px 0; font-size: 15px; outline: none; transition: 0.2s; color: var(--text-dark); font-weight: bold; width: 100%; }
+        .header-field input:focus { border-bottom-color: var(--artal-yellow); }
+        .brand-logo { max-height: 50px; max-width: 150px; object-fit: contain; justify-self: end; }
 
-        /* Print Specifics (Export PDF) */
+        .item-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 25px; flex-grow: 1; align-content: flex-start; }
+        
+        /* Tarjeta de Medida */
+        .item-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; position: relative; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; break-inside: avoid; border-top: 4px solid var(--artal-blue); }
+        .card-ref-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }
+        .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
+        .card-ref-row span { font-size: 11px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
+        
+        .drawing-area { height: 180px; border: 1px solid #eee; position: relative; background: #fcfcfc; display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden; }
+        .drawing-canvas { cursor: crosshair; touch-action: none; background: white;}
+        
+        .measure-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 5px; }
+        .measure-field { display: flex; align-items: center; gap: 5px; }
+        .measure-field label { font-weight: bold; color: var(--artal-blue); font-size: 14px; }
+        .measure-field input { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; outline: none; font-weight: bold; }
+        .measure-field input:focus { border-color: var(--artal-yellow); box-shadow: 0 0 0 2px rgba(246, 185, 59, 0.2); }
+        
+        .orientation-toggle { display: flex; gap: 5px; font-size: 11px; margin-top: 5px; }
+        .toggle-btn { flex: 1; text-align: center; padding: 6px 8px; border: 1px solid #ddd; cursor: pointer; border-radius: 3px; background: #f9f9f9; font-weight: bold; color: #777; transition: 0.2s;}
+        .toggle-btn.active { background: var(--artal-yellow); color: var(--artal-blue); border-color: var(--artal-yellow); }
+
+        .config-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f4f6f7; padding: 10px; border-radius: 4px; border: 1px solid #e1e8ed; }
+        .config-options select { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; outline: none; background: white; color: var(--text-dark); font-family: 'Arimo'; }
+
+        .notes-area { width: 100%; border: 1px solid #ddd; padding: 8px; font-size: 12px; height: 50px; border-radius: 4px; resize: none; outline: none; font-family: inherit; color: var(--text-dark); }
+        .notes-area:focus { border-color: var(--artal-yellow); }
+        
+        .delete-card { position: absolute; top: -10px; right: -10px; background: #e74c3c; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; }
+        .delete-card:hover { background: #c0392b; }
+
+        /* SECCIÓN DE FIRMAS */
+        .signature-section { margin-top: 50px; padding-top: 30px; border-top: 2px dashed #bdc3c7; display: flex; justify-content: space-around; break-inside: avoid; width: 100%; }
+        .signature-box { width: 40%; text-align: center; }
+        .signature-line { height: 60px; border-bottom: 1px solid var(--text-dark); margin-bottom: 10px; }
+        .signature-box p { font-weight: bold; color: var(--artal-blue); font-size: 12px; margin: 0; text-transform: uppercase; }
+        
         @media print {
-            body { background: white; }
-            #sidebar, .no-print { display: none; }
-            #workspace { padding: 0; }
-            #canvas-area { 
-                display: grid; 
-                grid-template-columns: repeat(2, 1fr); /* Grille de 2 colonnes pour l'impression compacte */
-                gap: 10px; 
-            }
-            .card { 
-                page-break-inside: avoid; 
-                border: 1px solid black; 
-                transform: scale(0.9); /* Réduction d'échelle */
-                transform-origin: top left;
-            }
-            .signatures { page-break-inside: avoid; }
+            @page { size: portrait; margin: 1cm; }
+            #app-root { height: auto; overflow: visible; display: block; background: white; }
+            #sidebar { display: none; }
+            #main-canvas { padding: 0; overflow: visible; display: block; width: 100%; }
+            .delete-card, .orientation-toggle, .clear-canvas-btn { display: none; }
+            .project-header { gap: 10px; width: 100%; border-bottom: 2px solid #000; }
+            .item-card { border-color: #000; box-shadow: none; break-inside: avoid; page-break-inside: avoid; border-top: 1px solid #000; }
+            .header-field input, .card-ref-row input, .measure-field input, .notes-area, .config-options select { border: none; background: transparent; -webkit-appearance: none; appearance: none; color: #000; }
+            .config-options { background: transparent; border: 1px dashed #ccc; padding: 5px; }
+            .signature-section { border-top: 2px solid #000; }
         }
     </style>
 </head>
 <body>
 
-    <div id="sidebar" class="no-print">
-        <h2>Catalogue ARTAL</h2>
-        <button class="menu-btn draggable-item" draggable="true" onclick="addCard('Corredera 2 Hojas', 'corredera2')">⊞ Corredera 2 Hojas</button>
-        <button class="menu-btn draggable-item" draggable="true" onclick="addCard('Corredera 6 Hojas', 'corredera6')">⊞ Corredera 6 Hojas (Central)</button>
-        <button class="menu-btn draggable-item" draggable="true" onclick="addCard('Fachada Fija', 'fachada')">⊞ Fachada Fija (Multi)</button>
-        <button class="menu-btn draggable-item" draggable="true" onclick="addCard('Mampara Baño', 'mampara')">⊞ Mampara Fija</button>
-        <button class="menu-btn draggable-item" draggable="true" onclick="addCard('Puerta Vidrio', 'puerta')">⊞ Puerta de Vidrio</button>
-        <hr>
-        <h2>Outils</h2>
-        <button class="menu-btn" onclick="addFreeDraw()">✎ Dibujo Libre (Mini-CAD)</button>
-        <button class="menu-btn" onclick="window.print()" style="background-color: var(--artal-yellow); color: var(--artal-blue); font-weight: bold;">📄 Exporter PDF</button>
-    </div>
-
-    <div id="workspace">
-        <div class="header">
-            <div class="header-logo">
-                <img src="logo.png" alt="ARTAL" onerror="this.style.display='none'; this.insertAdjacentHTML('afterend', '<h1 style=\'color:var(--artal-blue);\'>ARTAL</h1>');">
-            </div>
-            <div class="header-info">
-                <input type="text" placeholder="Proyecto (Ej: Altea Villa 11)"><br>
-                <input type="date" placeholder="Fecha"><br>
-                <input type="text" placeholder="Serie / Sistema (Ej: E70)"><br>
-            </div>
-        </div>
-
-        <div id="canvas-area">
-            </div>
-
-        <div class="signatures">
-            <div class="sig-box"><p>Firma Cliente / Validación</p></div>
-            <div class="sig-box"><p>Firma Técnico ARTAL</p></div>
-        </div>
-    </div>
-
-    <script>
-        const canvasArea = document.getElementById('canvas-area');
-
-        // Options Universelles
-        const glassColors = `<option value="natural">Natural (Transparente)</option><option value="gris">Gris</option><option value="negro">Negro</option><option value="azul">Azul</option><option value="verde">Verde</option>`;
-        const vistaOptions = `<option value="afuera">Vista de afuera</option><option value="adentro">Vista de adentro</option>`;
-
-        function addCard(title, type) {
-            const card = document.createElement('div');
-            card.className = 'card';
-            card.innerHTML = `
-                <div class="card-header">
-                    <input type="text" placeholder="Ref (Ej: PV1)"> <strong>${title}</strong>
-                </div>
-                <div class="svg-container" id="svg-${Date.now()}">
-                    </div>
-                <input type="text" placeholder="Ubicación (Ej: Sala)">
-                <div style="display:flex; gap:5px;">
-                    <input type="number" placeholder="Ancho (mm)" class="input-ancho" oninput="updateSVG(this, '${type}')">
-                    <input type="number" placeholder="Alto (mm)" class="input-alto" oninput="updateSVG(this, '${type}')">
-                </div>
-                <select>${glassColors}</select>
-                ${type !== 'fachada' && type !== 'mampara' ? `<select>${vistaOptions}</select>` : ''}
-                ${getSpecificOptions(type)}
-                <input type="text" placeholder="Notas adicionales">
-            `;
-            canvasArea.appendChild(card);
-            updateSVG(card.querySelector('.input-ancho'), type); // Init draw
-        }
-
-        function getSpecificOptions(type) {
-            if (type === 'fachada') return `<input type="number" placeholder="Cant. Vidrios" value="1" oninput="updateSVG(this, 'fachada')">`;
-            if (type === 'puerta') return `
-                <select onchange="updateSVG(this, 'puerta')"><option value="bisagras">Bisagras</option><option value="botella">Kit Botella</option></select>
-                <select><option value="media">Cerradura Media Luna</option><option value="digital">Cerradura Digital</option></select>
-                <label><input type="checkbox"> Cerradura de Piso</label>
-                <select onchange="updateSVG(this, 'puerta')"><option value="5">Tirador 5"</option><option value="8">Tirador 8"</option><option value="12">Tirador 12"</option><option value="16">Tirador 16"</option></select>
-            `;
-            return '';
-        }
-
-        function updateSVG(element, type) {
-            const card = element.closest('.card');
-            const svgContainer = card.querySelector('.svg-container');
-            const widthVal = parseInt(card.querySelector('.input-ancho').value) || 1000;
-            const heightVal = parseInt(card.querySelector('.input-alto').value) || 2000;
-            
-            let svgContent = `<svg viewBox="0 0 100 100" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">
-                <rect x="5" y="5" width="90" height="90" fill="none" stroke="#003366" stroke-width="2"/>`;
-
-            if (type === 'corredera2') {
-                // Flèches vers le centre
-                svgContent += `<line x1="50" y1="5" x2="50" y2="95" stroke="#003366" stroke-width="1"/>
-                               <path d="M 20 50 L 40 50 M 35 45 L 40 50 L 35 55" fill="none" stroke="#003366" stroke-width="2"/> <path d="M 80 50 L 60 50 M 65 45 L 60 50 L 65 55" fill="none" stroke="#003366" stroke-width="2"/> `;
-            } else if (type === 'corredera6') {
-                // → ← ← → → ←
-                const step = 90 / 6;
-                for(let i=1; i<6; i++) { svgContent += `<line x1="${5+i*step}" y1="5" x2="${5+i*step}" y2="95" stroke="#003366" stroke-width="1"/>`; }
-                // Simplified arrows for demonstration
-                svgContent += `<text x="10" y="55" font-size="10" fill="#003366">→</text>
-                               <text x="25" y="55" font-size="10" fill="#003366">←</text>
-                               <text x="40" y="55" font-size="10" fill="#003366">←</text>
-                               <text x="55" y="55" font-size="10" fill="#003366">→</text>
-                               <text x="70" y="55" font-size="10" fill="#003366">→</text>
-                               <text x="85" y="55" font-size="10" fill="#003366">←</text>`;
-            } else if (type === 'mampara') {
-                // 3 connecteurs par defaut, 4 si >= 1000mm
-                svgContent += `<rect x="5" y="20" width="4" height="10" fill="#003366"/>`; // Latéral haut
-                svgContent += `<rect x="5" y="70" width="4" height="10" fill="#003366"/>`; // Latéral bas
-                svgContent += `<rect x="70" y="91" width="10" height="4" fill="#003366"/>`; // Bas centre
-                if (widthVal >= 1000) {
-                    svgContent += `<rect x="20" y="91" width="10" height="4" fill="#FFCC00"/>`; // 4eme connecteur jaune pour visibilité
-                }
-            } else if (type === 'fachada') {
-                const parts = card.querySelector('input[placeholder="Cant. Vidrios"]')?.value || 1;
-                const w = 90 / parts;
-                for(let i=1; i<parts; i++) {
-                    svgContent += `<line x1="${5+i*w}" y1="5" x2="${5+i*w}" y2="95" stroke="#003366" stroke-width="1"/>`;
-                }
-            } else if (type === 'puerta') {
-                const tiradorSelect = card.querySelectorAll('select')[3]; // Index basé sur getSpecificOptions
-                const tiradorLen = tiradorSelect ? parseInt(tiradorSelect.value) * 2 : 20; 
-                svgContent += `<line x1="85" y1="${50 - tiradorLen/2}" x2="85" y2="${50 + tiradorLen/2}" stroke="#003366" stroke-width="3"/>`; // Tirador
-            }
-
-            svgContent += `</svg>`;
-            svgContainer.innerHTML = svgContent;
-        }
-
-        // Mini CAD - Dibujo Libre avec Drag & Drop
-        function addFreeDraw() {
-            const card = document.createElement('div');
-            card.className = 'card free-draw-card';
-            card.innerHTML = `
-                <div class="card-header"><input type="text" placeholder="Ref"> <strong>Dibujo CAD Libre (Ensamblador)</strong></div>
-                <div class="free-draw-canvas dropzone" id="canvas-${Date.now()}" ondragover="allowDrop(event)" ondrop="drop(event)">
-                    <canvas style="width:100%; height:100%;"></canvas>
-                </div>
-                <select>${glassColors}</select>
-                <input type="text" placeholder="Notas del chasis complejo">
-            `;
-            canvasArea.appendChild(card);
-            initCanvas(card.querySelector('canvas'));
-        }
-
-        function allowDrop(ev) { ev.preventDefault(); }
+<div id="app-root">
+    <div id="sidebar">
+        <h2>ARTAL</h2>
         
-        function drop(ev) {
-            ev.preventDefault();
-            // Logique de placement du module (Simulation visuelle de l'assemblage)
-            const canvas = ev.target.closest('.free-draw-canvas').querySelector('canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = "rgba(0, 51, 102, 0.1)";
-            ctx.fillRect(Math.random() * 100, 10, 100, 150); // Module "déposé"
-            ctx.strokeRect(Math.random() * 100, 10, 100, 150);
+        <h3>Correderas</h3>
+        <button class="btn-cat" onclick="addItem('Corredera 2 Hojas', 'cor2', 'corredera')">Corredera 2 Hojas (2 vías)</button>
+        <button class="btn-cat" onclick="addItem('Corredera 3 Hojas', 'cor3', 'corredera')">Corredera 3 Hojas (3 vías)</button>
+        <button class="btn-cat" onclick="addItem('Corredera 4 Hojas (Central)', 'cor4_cent', 'corredera')">Corredera 4 Hojas (Central)</button>
+        <button class="btn-cat" onclick="addItem('Corredera 4 Hojas (Lateral)', 'cor4_lat', 'corredera')">Corredera 4 Hojas (Lateral)</button>
+        <button class="btn-cat" onclick="addItem('Corredera 6 Hojas (Central)', 'cor6_cent', 'corredera')">Corredera 6 Hojas (Central)</button>
+        <button class="btn-cat" onclick="addItem('Corredera 6 Hojas (Lateral)', 'cor6_lat', 'corredera')">Corredera 6 Hojas (Lateral)</button>
+        
+        <h3>Galandaje</h3>
+        <button class="btn-cat" onclick="addItem('Galandaje 1 Hoja', 'gal1', 'galandaje')">Galandaje 1 Hoja</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 2 Hojas (Lat)', 'gal2_lat', 'galandaje')">Galandaje 2 Hojas (1 lado)</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 2 Hojas (Cent)', 'gal2_cent', 'galandaje')">Galandaje 2 Hojas (Central)</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 3 Hojas', 'gal3_3v', 'galandaje')">Galandaje 3 Hojas (3 vías)</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 4 Hojas (Cent)', 'gal4_2v', 'galandaje')">Galandaje 4 Hojas (Central)</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 4 Hojas (Lat)', 'gal4_4v', 'galandaje')">Galandaje 4 Hojas (Lateral)</button>
+        <button class="btn-cat" onclick="addItem('Galandaje 6 Hojas', 'gal6_3v', 'galandaje')">Galandaje 6 Hojas (Central)</button>
+        
+        <h3>Ventanas y Puertas</h3>
+        <button class="btn-cat" onclick="addItem('Ventana Abatible', 'win_abat', 'ventana')">Ventana Abatible</button>
+        <button class="btn-cat" onclick="addItem('Oscilobatiente (OB)', 'win_ob', 'ventana')">Oscilobatiente (OB)</button>
+        <button class="btn-cat" onclick="addItem('Ventana Proyectada', 'win_proy', 'ventana')">Ventana Proyectada</button>
+        <button class="btn-cat" onclick="addItem('Ventana Soufflet', 'win_souf', 'ventana')">Ventana Soufflet</button>
+        <button class="btn-cat" onclick="addItem('Puerta P40 / Titan', 'door_abat', 'ventana')">Puerta Abatible (P40)</button>
+        
+        <h3>Vidrios y Mamparas</h3>
+        <button class="btn-cat" onclick="addItem('Mampara Baño Fija', 'mamp_fija', 'mampara')">Mampara Fija (Dinámica)</button>
+        <button class="btn-cat" onclick="addItem('Puerta Vidrio Templado', 'door_glass', 'puerta_vidrio')">Puerta Vidrio (Dinámica)</button>
+        <button class="btn-cat" onclick="addItem('Fachada Fija Multipañó', 'fachada_din', 'fachada')">Fachada Fija (Paños variables)</button>
+
+        <h3>Especial</h3>
+        <button class="btn-cat" style="background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('DIBUJO LIBRE', 'draw', 'dibujo')">+ DIBUJO CAD LIBRE</button>
+        
+        <div style="margin-top: auto; padding-top: 20px;">
+            <button class="btn-cat" style="background:white; color:var(--artal-blue); width:100%; text-align: center; font-weight: bold;" onclick="window.print()">🖨️ EXPORTAR PDF</button>
+        </div>
+    </div>
+    
+    <div id="main-canvas">
+        <div class="project-header">
+            <div class="header-field">
+                <label>NOMBRE DE LA OBRA</label>
+                <input type="text" placeholder="ej: Altea Villa 11">
+            </div>
+            <div class="header-field">
+                <label>FECHA</label>
+                <input type="text" placeholder="dd/mm/aaaa">
+            </div>
+            <div class="header-field">
+                <label>TIPO DE MATERIAL</label>
+                <input type="text" placeholder="ej: Serie E100">
+            </div>
+            <div class="header-field">
+                <label>COLOR / ACABADO</label>
+                <input type="text" placeholder="ej: Gris Antracita">
+            </div>
+            <img src="logo.png" alt="ARTAL" class="brand-logo" onerror="this.style.display='none'">
+        </div>
+        
+        <div class="item-row" id="item-list"></div>
+
+        <div class="signature-section">
+            <div class="signature-box">
+                <div class="signature-line"></div>
+                <p>Firma de Conformidad del Cliente</p>
+            </div>
+            <div class="signature-box">
+                <div class="signature-line"></div>
+                <p>Firma del Técnico (ARTAL)</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ESTADO GLOBAL DE LAS TARJETAS (Para renderizado dinámico de SVG)
+    const cardsState = {};
+    let itemId = 0;
+
+    // GENERADOR DE MENÚS DINÁMICOS
+    function getMenuOpciones(id, categoria) {
+        // Universal Color Vidrio
+        const vidrioColor = `
+            <select onchange="updateState(${id}, 'color_vidrio', this.value)">
+                <option value="">-- Color del Vidrio --</option>
+                <option>Natural (Transparente)</option>
+                <option>Gris</option>
+                <option>Negro</option>
+                <option>Azul</option>
+                <option>Verde</option>
+            </select>
+        `;
+
+        const vidriosBasicos = `
+            <select onchange="updateState(${id}, 'vidrio', this.value)">
+                <option value="">-- Tipo de Vidrio --</option>
+                <option>Vidrio Templado</option>
+                <option>Vidrio Laminado</option>
+                <option>Sin Vidrio</option>
+            </select>
+            <select onchange="updateState(${id}, 'espesor', this.value)">
+                <option value="">-- Grosor Vidrio --</option>
+                <option>3/8" (10mm)</option>
+                <option>1/2" (12mm)</option>
+                <option>3+3</option>
+                <option>4+4</option>
+                <option>5+5</option>
+            </select>
+            ${vidrioColor}
+        `;
+
+        const cierresVentana = `
+            <select onchange="updateState(${id}, 'cierre', this.value)">
+                <option value="">-- Tipo de Cierre --</option>
+                <option>Cierre de 1 punto</option>
+                <option>Cierre Multipunto</option>
+                <option>Con llave</option>
+            </select>
+            <select onchange="updateState(${id}, 'mosquitera', this.value)">
+                <option value="">-- Mosquitera --</option>
+                <option>Sin Mosquitera</option>
+                <option>Con Mosquitera Integrada</option>
+            </select>
+        `;
+
+        if (categoria === 'ventana' || categoria === 'corredera' || categoria === 'galandaje') {
+            return cierresVentana + vidriosBasicos;
+        } else if (categoria === 'puerta_vidrio') {
+            return `
+                <select onchange="updateState(${id}, 'bisagras', this.value)">
+                    <option value="botella">Kit Botella (Arriba/Abajo)</option>
+                    <option value="bisagra">Bisagras Laterales</option>
+                </select>
+                <select onchange="updateState(${id}, 'herraje_color', this.value)">
+                    <option value="">-- Color Herrajes --</option>
+                    <option>Negro Mate</option>
+                    <option>Cromado / Inox</option>
+                </select>
+                <select onchange="updateState(${id}, 'cerradura_tipo', this.value)">
+                    <option value="ninguna">-- Cerradura (Media altura) --</option>
+                    <option value="central">Media Luna</option>
+                    <option value="digital">Digital (Teclado)</option>
+                </select>
+                <select onchange="updateState(${id}, 'cerradura_piso', this.value)">
+                    <option value="no">-- Cerradura Piso --</option>
+                    <option value="si">Con Cerradura Piso</option>
+                </select>
+                <select style="grid-column: span 2;" onchange="updateState(${id}, 'tirador', this.value)">
+                    <option value="">-- Sin Tirador --</option>
+                    <option value="5">Tirador 5"</option>
+                    <option value="8">Tirador 8"</option>
+                    <option value="12">Tirador 12"</option>
+                    <option value="16">Tirador 16"</option>
+                </select>
+                ${vidriosBasicos}
+            `;
+        } else if (categoria === 'fachada') {
+            return `
+                <select onchange="updateState(${id}, 'panos', this.value)">
+                    <option value="1">1 Paño Fijo</option>
+                    <option value="2">2 Paños Fijos</option>
+                    <option value="3">3 Paños Fijos</option>
+                    <option value="4">4 Paños Fijos</option>
+                    <option value="5">5 Paños Fijos</option>
+                    <option value="6">6 Paños Fijos</option>
+                    <option value="8">8 Paños Fijos</option>
+                    <option value="10">10 Paños Fijos</option>
+                </select>
+                <select onchange="updateState(${id}, 'fijacion', this.value)">
+                    <option value="">-- Sistema / Fijación --</option>
+                    <option>Con Moldura Perimetral</option>
+                    <option>Con Conectores</option>
+                    <option>Perfiles Aluminio (P40)</option>
+                </select>
+                ${vidriosBasicos}
+            `;
+        } else if (categoria === 'mampara') {
+            return `
+                <select onchange="updateState(${id}, 'herraje_color', this.value)">
+                    <option value="">-- Color Conectores --</option>
+                    <option>Negro Mate</option>
+                    <option>Cromado / Inox</option>
+                </select>
+                ${vidriosBasicos}
+            `;
+        } else if (categoria === 'dibujo') {
+            return `
+                <select><option value="">-- Cualquier Cerradura --</option><option>Multipunto</option><option>Media Luna</option><option>Digital</option><option>Piso</option></select>
+                <select><option value="">-- Opciones Apertura --</option><option>Bisagras</option><option>Kit Botella</option><option>Corredera</option></select>
+                ${vidriosBasicos}
+            `;
+        }
+        return '';
+    }
+
+    function addItem(label, type, categoria) {
+        itemId++;
+        const id = itemId;
+        
+        cardsState[id] = {
+            type: type,
+            categoria: categoria,
+            orientacion: 'I',
+            panos: 1,
+            bisagras: 'botella',
+            cerradura_tipo: 'ninguna',
+            cerradura_piso: 'no',
+            tirador: '',
+            ancho: 0
+        };
+
+        const list = document.getElementById('item-list');
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.id = 'card-' + id;
+
+        let schematic = '';
+        if (type === 'draw') {
+            schematic = `
+                <div class="drawing-area" style="background:#fff;">
+                    <canvas id="canvas-${id}" class="drawing-canvas" width="340" height="180"></canvas>
+                </div>
+                <button class="clear-canvas-btn" onclick="clearCanvas(${id})" style="font-size:10px; margin-top:5px; padding:3px; cursor:pointer; background:#eee; border:1px solid #ccc;">Borrar Dibujo</button>`;
+        } else {
+            schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
         }
 
-        function initCanvas(canvas) {
-            const ctx = canvas.getContext('2d');
-            let isDrawing = false, startX, startY;
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
+        const opcionesHtml = getMenuOpciones(id, categoria);
+        const showOrientation = ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(categoria);
+        const orientationHtml = showOrientation ? `
+            <div class="orientation-toggle">
+                <div class="toggle-btn active" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">← A LA IZQUIERDA</div>
+                <div class="toggle-btn" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA →</div>
+            </div>` : '';
 
-            // Système sans blocage orthogonal (permet les diagonales) et snapping des coins
-            canvas.addEventListener('mousedown', e => {
-                isDrawing = true;
-                const rect = canvas.getBoundingClientRect();
-                startX = e.clientX - rect.left;
-                startY = e.clientY - rect.top;
-            });
-            canvas.addEventListener('mouseup', e => {
-                if(!isDrawing) return;
-                const rect = canvas.getBoundingClientRect();
-                let endX = e.clientX - rect.left;
-                let endY = e.clientY - rect.top;
+        card.innerHTML = `
+            <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
+            <div class="card-ref-row">
+                <input type="text" placeholder="Ref. (ej: PV1)">
+                <span>${label}</span>
+            </div>
+            <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
+            
+            ${schematic}
+            ${orientationHtml}
+
+            <div class="config-options">
+                ${opcionesHtml}
+            </div>
+
+            <div class="measure-inputs">
+                <div class="measure-field"><label>A:</label><input type="number" oninput="updateState(${id}, 'ancho', this.value)" placeholder="Ancho (mm)"></div>
+                <div class="measure-field"><label>H:</label><input type="number" placeholder="Alto (mm)"></div>
+            </div>
+            <textarea class="notes-area" placeholder="Notas adicionales (detalles de obra, colores especiales...)"></textarea>
+        `;
+
+        list.appendChild(card);
+
+        if (type === 'draw') {
+            initMiniCAD(id);
+        }
+    }
+
+    function deleteCard(id) {
+        document.getElementById('card-' + id).remove();
+        delete cardsState[id];
+    }
+
+    function updateState(id, key, value) {
+        if (!cardsState[id]) return;
+        if (key === 'ancho') cardsState[id][key] = parseInt(value) || 0;
+        else cardsState[id][key] = value;
+        
+        // Re-renderizar si el cambio afecta al dibujo SVG
+        if (['panos', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho'].includes(key)) {
+            const container = document.getElementById('schematic-' + id);
+            if (container) container.innerHTML = renderSVG(id);
+        }
+    }
+
+    function setOrientation(id, side) {
+        document.getElementById('btn-i-' + id).className = 'toggle-btn' + (side === 'I' ? ' active' : '');
+        document.getElementById('btn-d-' + id).className = 'toggle-btn' + (side === 'D' ? ' active' : '');
+        updateState(id, 'orientacion', side);
+    }
+
+    // MOTOR SVG DINÁMICO
+    function renderSVG(id) {
+        const state = cardsState[id];
+        const base = '<svg viewBox="0 0 100 60" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;">';
+        
+        // Muros de ladrillo corregidos con líneas precisas (evita rotura de trazados)
+        const ladrilloIzq = '<g><rect x="5" y="10" width="15" height="40"/><line x1="5" y1="20" x2="20" y2="20"/><line x1="5" y1="30" x2="20" y2="30"/><line x1="5" y1="40" x2="20" y2="40"/><line x1="12.5" y1="10" x2="12.5" y2="20"/><line x1="12.5" y1="30" x2="12.5" y2="40"/></g>';
+        const ladrilloDer = '<g><rect x="80" y="10" width="15" height="40"/><line x1="80" y1="20" x2="95" y2="20"/><line x1="80" y1="30" x2="95" y2="30"/><line x1="80" y1="40" x2="95" y2="40"/><line x1="87.5" y1="10" x2="87.5" y2="20"/><line x1="87.5" y1="30" x2="87.5" y2="40"/></g>';
+        
+        // Flechas vectoriales continuas y perfectas
+        const arrowL = '<g><line x1="0" y1="0" x2="8" y2="0"/><polyline points="4,-3 0,0 4,3"/></g>';
+        const arrowR = '<g><line x1="-8" y1="0" x2="0" y2="0"/><polyline points="-4,-3 0,0 -4,3"/></g>';
+
+        const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
+        const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
+
+        let svg = base;
+        const isD = state.orientacion === 'D';
+
+        switch(state.type) {
+            case 'cor2': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
+                svg += putArrow(26, 30) + putArrowInv(74, 30);
+                break;
+            case 'cor3': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/>';
+                svg += putArrow(19, 30) + putArrow(46, 30) + putArrow(73, 30);
+                break;
+            case 'cor4_cent': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                svg += '<line x1="18" y1="30" x2="22" y2="30"/><line x1="78" y1="30" x2="82" y2="30"/>'; // Fijos
+                svg += `<g transform="translate(44,30)">${arrowR}</g><g transform="translate(56,30)">${arrowL}</g>`;
+                break;
+            case 'cor4_lat': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                svg += putArrow(16, 30) + putArrow(36, 30) + putArrow(56, 30) + putArrow(76, 30);
+                break;
+            case 'cor6_cent': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
+                svg += '<line x1="15" y1="30" x2="18" y2="30"/><line x1="28" y1="30" x2="31" y2="30"/><line x1="68" y1="30" x2="71" y2="30"/><line x1="82" y1="30" x2="85" y2="30"/>';
+                svg += `<g transform="translate(47,30)">${arrowR}</g><g transform="translate(53,30)">${arrowL}</g>`;
+                break;
+            case 'cor6_lat': 
+                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
+                svg += putArrow(12, 30) + putArrow(26, 30) + putArrow(39, 30) + putArrow(52, 30) + putArrow(66, 30) + putArrow(79, 30);
+                break;
+            
+            case 'gal1': 
+                svg += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/>' + `<g transform="translate(49,30)">${arrowR}</g>`) 
+                           : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/>' + `<g transform="translate(51,30)">${arrowL}</g>`);
+                break;
+            case 'gal2_lat': 
+                svg += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/><line x1="45" y1="10" x2="45" y2="50"/>' + `<g transform="translate(31,30)">${arrowR}</g><g transform="translate(66,30)">${arrowR}</g>`) 
+                           : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(33,30)">${arrowL}</g><g transform="translate(68,30)">${arrowL}</g>`);
+                break;
+            case 'gal2_cent': 
+                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
+                svg += `<g transform="translate(39,30)">${arrowL}</g><g transform="translate(61,30)">${arrowR}</g>`;
+                break;
+            case 'gal3_3v': 
+                svg += isD ? (ladrilloDer + '<rect x="5" y="10" width="75" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(21,30)">${arrowR}</g><g transform="translate(46,30)">${arrowR}</g><g transform="translate(71,30)">${arrowR}</g>`)
+                           : (ladrilloIzq + '<rect x="20" y="10" width="75" height="40"/><line x1="45" y1="10" x2="45" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>' + `<g transform="translate(29,30)">${arrowL}</g><g transform="translate(54,30)">${arrowL}</g><g transform="translate(79,30)">${arrowL}</g>`);
+                break;
+            case 'gal4_2v': 
+                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="35" y1="10" x2="35" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="65" y1="10" x2="65" y2="50"/>';
+                svg += `<g transform="translate(31,30)">${arrowL}</g><g transform="translate(46,30)">${arrowL}</g><g transform="translate(54,30)">${arrowR}</g><g transform="translate(69,30)">${arrowR}</g>`;
+                break;
+            case 'gal4_4v': 
+                svg += isD ? (ladrilloDer + '<rect x="0" y="10" width="80" height="40"/><line x1="20" y1="10" x2="20" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/>' + `<g transform="translate(14,30)">${arrowR}</g><g transform="translate(34,30)">${arrowR}</g><g transform="translate(54,30)">${arrowR}</g><g transform="translate(74,30)">${arrowR}</g>`)
+                           : (ladrilloIzq + '<rect x="20" y="10" width="80" height="40"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="80" y1="10" x2="80" y2="50"/>' + `<g transform="translate(26,30)">${arrowL}</g><g transform="translate(46,30)">${arrowL}</g><g transform="translate(66,30)">${arrowL}</g><g transform="translate(86,30)">${arrowL}</g>`);
+                break;
+            case 'gal6_3v': 
+                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                svg += `<g transform="translate(29,30)">${arrowL}</g><g transform="translate(39,30)">${arrowL}</g><g transform="translate(49,30)">${arrowL}</g><g transform="translate(51,30)">${arrowR}</g><g transform="translate(61,30)">${arrowR}</g><g transform="translate(71,30)">${arrowR}</g>`;
+                break;
+
+            case 'win_abat': svg += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20"/>'; break;
+            case 'win_ob': svg += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>'; break;
+            case 'win_proy': svg += '<rect x="25" y="15" width="50" height="30"/><path d="M25 15l25 30l25-30"/><path d="M63 35a8 8 0 0 0 5 -5M66 31l2 -1l1 2"/>'; break;
+            case 'win_souf': svg += '<rect x="25" y="15" width="50" height="30"/><path d="M25 45l25-30l25 30"/>'; break;
+            case 'door_abat': svg += '<rect x="35" y="5" width="30" height="50"/><path d="M35 5l30 25l-30 25"/>'; break;
+
+            /* MAMPARA DE BAÑO */
+            case 'mamp_fija': 
+                svg += '<rect x="30" y="5" width="40" height="50" stroke-width="1.5"/>';
+                // 2 laterales pequeños (izquierda)
+                svg += '<rect x="29" y="12" width="2" height="4" fill="#0A3D62"/><rect x="29" y="44" width="2" height="4" fill="#0A3D62"/>';
+                // 1 abajo lejos (derecha)
+                svg += '<rect x="64" y="54" width="4" height="2" fill="#0A3D62"/>';
                 
-                // Logique de Snapping basique (aimant vers les lignes proches)
-                if(Math.abs(endX - startX) < 10) endX = startX;
-                if(Math.abs(endY - startY) < 10) endY = startY;
+                // Lógica de >= 1000mm (agrega cuarto conector abajo cerca del lateral)
+                if (state.ancho >= 1000) {
+                    svg += '<rect x="32" y="54" width="4" height="2" fill="#0A3D62"/>';
+                }
+                break;
 
-                ctx.beginPath();
-                ctx.moveTo(startX, startY);
-                ctx.lineTo(endX, endY);
-                ctx.strokeStyle = "#003366";
-                ctx.lineWidth = 2;
-                ctx.stroke();
-                isDrawing = false;
+            /* PUERTA DE VIDRIO DINÁMICA */
+            case 'door_glass':
+                svg += '<rect x="30" y="5" width="40" height="50" stroke-width="1.5"/>';
+                
+                // Bisagras o Botella (tamaño discreto)
+                if (state.bisagras === 'bisagra') {
+                    svg += `<rect x="${isD ? 69 : 29}" y="15" width="2" height="4" fill="#0A3D62"/><rect x="${isD ? 69 : 29}" y="41" width="2" height="4" fill="#0A3D62"/>`;
+                } else {
+                    svg += `<rect x="${isD ? 65 : 30}" y="5" width="5" height="2" fill="#0A3D62"/><rect x="${isD ? 65 : 30}" y="53" width="5" height="2" fill="#0A3D62"/>`;
+                }
+
+                // Cerradura Principal (Centro Media Luna o Digital)
+                if (state.cerradura_tipo === 'central') {
+                    svg += `<path d="M ${isD ? 30 : 70} 26 A 4 4 0 0 ${isD ? 1 : 0} ${isD ? 30 : 70} 34 Z" fill="#0A3D62"/>`;
+                } else if (state.cerradura_tipo === 'digital') {
+                    svg += `<rect x="${isD ? 30 : 66}" y="25" width="4" height="10" fill="#0A3D62"/>`;
+                    svg += `<circle cx="${isD ? 32 : 68}" cy="27" r="0.5" fill="#fff"/><circle cx="${isD ? 32 : 68}" cy="30" r="0.5" fill="#fff"/><circle cx="${isD ? 32 : 68}" cy="33" r="0.5" fill="#fff"/>`;
+                }
+
+                // Cerradura de Piso
+                if (state.cerradura_piso === 'si') {
+                    svg += `<rect x="${isD ? 32 : 62}" y="52" width="6" height="3" fill="#0A3D62"/>`;
+                }
+
+                // Tirador Dinámico y Proporcional
+                if (state.tirador && state.tirador !== '') {
+                    let h = 10; // altura default
+                    if (state.tirador === '5') h = 6;
+                    if (state.tirador === '8') h = 10;
+                    if (state.tirador === '12') h = 16;
+                    if (state.tirador === '16') h = 22;
+                    let y1 = 30 - h/2;
+                    let y2 = 30 + h/2;
+                    let x = isD ? 36 : 64;
+                    svg += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke-width="1.5"/>`;
+                }
+                break;
+
+            /* FACHADA FIJA MULTIPAÑO DINÁMICA */
+            case 'fachada_din':
+                let n = parseInt(state.panos) || 1;
+                svg += '<rect x="10" y="5" width="80" height="50" stroke-width="2"/>';
+                for (let i = 1; i < n; i++) {
+                    let posX = 10 + (80 / n) * i;
+                    svg += `<line x1="${posX}" y1="5" x2="${posX}" y2="55" stroke-width="2"/>`;
+                }
+                break;
+        }
+
+        // Inversión visual automática para ventanas simples
+        if (['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD) {
+            svg = svg.replace('<svg ', '<svg style="transform: scaleX(-1); stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;" ');
+        }
+
+        svg += '</svg>';
+        return svg;
+    }
+
+    // MOTOR MINI-CAD INTELIGENTE (Snapping y Líneas Rectas)
+    function initMiniCAD(id) {
+        const canvas = document.getElementById('canvas-' + id);
+        const ctx = canvas.getContext('2d');
+        
+        let drawing = false;
+        let startX = 0, startY = 0;
+        let lines = []; 
+        
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        // Imán para las esquinas (Snap)
+        function snap(p) {
+            const snapDist = 15;
+            for (let line of lines) {
+                if (Math.hypot(p.x - line.x1, p.y - line.y1) < snapDist) return {x: line.x1, y: line.y1};
+                if (Math.hypot(p.x - line.x2, p.y - line.y2) < snapDist) return {x: line.x2, y: line.y2};
+            }
+            return p;
+        }
+
+        function drawAll() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#0A3D62';
+            lines.forEach(l => {
+                ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
             });
         }
-    </script>
+
+        function startDraw(e) {
+            if(e.type === 'touchstart') e.preventDefault();
+            drawing = true;
+            let p = snap(getPos(e));
+            startX = p.x; startY = p.y;
+        }
+
+        function moveDraw(e) {
+            if (!drawing) return;
+            if(e.type === 'touchmove') e.preventDefault();
+            let p = getPos(e);
+            
+            // Forzar línea recta (Ortogonal 90°)
+            let dx = Math.abs(p.x - startX);
+            let dy = Math.abs(p.y - startY);
+            if (dx > dy) p.y = startY; else p.x = startX;
+            
+            p = snap(p);
+            
+            drawAll();
+            ctx.beginPath(); ctx.strokeStyle = '#F6B93B'; // Muestra línea amarilla previa
+            ctx.moveTo(startX, startY); ctx.lineTo(p.x, p.y); ctx.stroke();
+        }
+
+        function endDraw(e) {
+            if (!drawing) return;
+            if(e.type === 'touchend') e.preventDefault();
+            drawing = false;
+            let p = getPos(e.changedTouches ? e.changedTouches[0] : e);
+            
+            let dx = Math.abs(p.x - startX);
+            let dy = Math.abs(p.y - startY);
+            if (dx > dy) p.y = startY; else p.x = startX;
+            
+            p = snap(p);
+            
+            // Ignorar toques accidentales muy cortos
+            if (Math.hypot(p.x - startX, p.y - startY) > 5) {
+                lines.push({x1: startX, y1: startY, x2: p.x, y2: p.y});
+            }
+            drawAll();
+        }
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', moveDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mouseleave', () => { if(drawing) endDraw(new MouseEvent('mouseup')); });
+        
+        canvas.addEventListener('touchstart', startDraw, {passive: false});
+        canvas.addEventListener('touchmove', moveDraw, {passive: false});
+        canvas.addEventListener('touchend', endDraw, {passive: false});
+
+        window['clearCanvas' + id] = function() {
+            lines = [];
+            drawAll();
+        };
+    }
+
+    function clearCanvas(id) {
+        if(window['clearCanvas' + id]) window['clearCanvas' + id]();
+    }
+</script>
+
 </body>
 </html>
