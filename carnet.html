@@ -392,7 +392,7 @@
             categoria: getCategoriaByType(type),
             x: 100 + offset, 
             y: 100 + offset, 
-            w: 100, h: 100, 
+            w: 100, h: 60, 
             state: { orientacion: 'I', panos: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', vista: '', color_vidrio: '', vidrio: '', espesor: '', cierre: '', mosquitera: '', apertura: '', perfil: '', fijacion: '', herraje_color: '' }
         };
         
@@ -408,14 +408,10 @@
     };
 
     window.updateCADItemImage = function(id, item, callback) {
-        cardsState['temp'] = Object.assign({}, item.state, {type: item.type});
-        let svgStr = renderSVG('temp'); // renderSVG utilise 'meet' par défaut
+        cardsState['temp'] = Object.assign({}, item.state, {type: item.type, categoria: item.categoria}); 
+        let svgStr = renderSVG('temp'); 
         delete cardsState['temp'];
         
-        // Pour le CAD, on doit forcer 'none' pour l'étirement mathématique
-        svgStr = svgStr.replace('preserveAspectRatio="xMidYMid meet"', 'preserveAspectRatio="none"');
-        
-        // Multiplicamos resolución para que los trazos se vean perfectamente nítidos y uniformes
         svgStr = svgStr.replace('width="100%" height="100%"', `width="${Math.max(100, item.w * 3)}px" height="${Math.max(100, item.h * 3)}px"`);
         
         const img = new Image();
@@ -571,7 +567,7 @@
                 <div class="measure-inputs">
                     <div class="measure-field" style="flex:0.8;"><label style="color:#e74c3c;">Cant:</label><input type="number" value="1" min="1" oninput="updateState(${id}, 'cantidad', this.value)" style="border-color:#e74c3c;"></div>
                     <div class="measure-field"><label>A:</label><input type="text" inputmode="numeric" id="ancho-${id}" oninput="updateState(${id}, 'ancho', this.value)" placeholder="Ancho (mm)"></div>
-                    <div class="measure-field"><label>H:</label><input type="text" inputmode="numeric" placeholder="Alto (mm)"></div>
+                    <div class="measure-field"><label>H:</label><input type="text" inputmode="numeric" id="alto-${id}" oninput="updateState(${id}, 'alto', this.value)" placeholder="Alto (mm)"></div>
                 </div>
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
@@ -587,14 +583,14 @@
     function updateState(id, key, value) {
         if (!cardsState[id]) return;
         
-        if (key === 'ancho') {
+        if (key === 'ancho' || key === 'alto') {
             cardsState[id][key] = parseInt(String(value).replace(/\D/g, '')) || 0;
         } else {
             cardsState[id][key] = value;
         }
         
         if (cardsState[id].type !== 'draw') {
-            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho'].includes(key)) {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho', 'alto'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id); 
             }
@@ -607,139 +603,138 @@
         updateState(id, 'orientacion', side);
     }
 
-    // MOTOR SVG DINÁMICO (CORREGIDO PARA PROPORCIONES PERFECTAS Y TRAIT FIN)
+    // MOTOR SVG CLÁSICO: PROPORCIONES PERFECTAS, TRAIT ÉPAIS ET TEXTES DE MESURES INTÉGRÉS
     function renderSVG(id) {
         const state = cardsState[id];
-        // Para las tarjetas normales, forzamos que mantenga su proporción cuadrada (xMidYMid meet) sin deformarse.
-        const aspect = 'xMidYMid meet';
+        const isCAD = (id === 'temp');
         
-        // stroke-width:1.0 (trait fin)
-        const base = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="${aspect}" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.0; stroke-linecap:round; stroke-linejoin:round;">`;
+        // CALCULO DINÁMICO DE LA CAJA SOLO PARA EL CAD (ESTO PERMITE EL EFECTO IMÁN PERFECTO SIN MÁRGENES INVISIBLES)
+        let bx = 10, by = 5, bw = 80, bh = 50; 
+        if (state.categoria === 'corredera') { bx = 10; by = 10; bw = 80; bh = 40; }
+        else if (state.categoria === 'galandaje') { bx = 5; by = 10; bw = 90; bh = 40; }
+        else if (state.type === 'win_proy' || state.type === 'win_souf') { bx = 25; by = 15; bw = 50; bh = 30; }
+        else if (state.type === 'win_abat' || state.type === 'win_ob') { bx = 30; by = 10; bw = 40; bh = 40; }
+        else if (state.type === 'door_abat') { bx = 35; by = 5; bw = 30; bh = 50; }
+        else if (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio') { bx = 30; by = 5; bw = 40; bh = 50; }
         
-        const ladrilloIzq = '<g><rect x="0" y="0" width="15" height="100"/><line x1="0" y1="20" x2="15" y2="20"/><line x1="0" y1="40" x2="15" y2="40"/><line x1="0" y1="60" x2="15" y2="60"/><line x1="0" y1="80" x2="15" y2="80"/></g>';
-        const ladrilloDer = '<g><rect x="85" y="0" width="15" height="100"/><line x1="85" y1="20" x2="100" y2="20"/><line x1="85" y1="40" x2="100" y2="40"/><line x1="85" y1="60" x2="100" y2="60"/><line x1="85" y1="80" x2="100" y2="80"/></g>';
+        const viewBox = isCAD ? `${bx} ${by} ${bw} ${bh}` : '-5 -5 125 75'; 
+        const aspect = isCAD ? 'none' : 'xMidYMid meet';
         
-        // Flechas más cortas (ancho de 10 unidades) y bien centradas
-        const arrowL = '<g><line x1="-5" y1="0" x2="5" y2="0"/><polyline points="0,-3 -5,0 0,3"/></g>';
-        const arrowR = '<g><line x1="-5" y1="0" x2="5" y2="0"/><polyline points="0,-3 5,0 0,3"/></g>';
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" preserveAspectRatio="${aspect}" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;">`;
+        
+        const ladrilloIzq = '<g><rect x="5" y="10" width="15" height="40"/><line x1="5" y1="20" x2="20" y2="20"/><line x1="5" y1="30" x2="20" y2="30"/><line x1="5" y1="40" x2="20" y2="40"/><line x1="12.5" y1="10" x2="12.5" y2="20"/><line x1="12.5" y1="30" x2="12.5" y2="40"/></g>';
+        const ladrilloDer = '<g><rect x="80" y="10" width="15" height="40"/><line x1="80" y1="20" x2="95" y2="20"/><line x1="80" y1="30" x2="95" y2="30"/><line x1="80" y1="40" x2="95" y2="40"/><line x1="87.5" y1="10" x2="87.5" y2="20"/><line x1="87.5" y1="30" x2="87.5" y2="40"/></g>';
+        
+        // Flechas ajustadas y proporcionales
+        const arrowL = '<g><line x1="-4" y1="0" x2="4" y2="0"/><polyline points="0,-3 -4,0 0,3"/></g>';
+        const arrowR = '<g><line x1="-4" y1="0" x2="4" y2="0"/><polyline points="0,-3 4,0 0,3"/></g>';
 
         const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
         const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
 
-        let svg = base;
+        let drawing = '';
         const isD = state.orientacion === 'D';
 
         switch(state.type) {
             case 'cor2': 
-                svg += '<rect x="0" y="0" width="100" height="100"/><line x1="50" y1="0" x2="50" y2="100"/>';
-                svg += `<g transform="translate(25, 50)">${arrowR}</g><g transform="translate(75, 50)">${arrowL}</g>`;
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
+                drawing += `<g transform="translate(30, 30)">${arrowR}</g><g transform="translate(70, 30)">${arrowL}</g>`;
                 break;
             case 'cor3': 
-                svg += '<rect x="0" y="0" width="100" height="100"/><line x1="33.3" y1="0" x2="33.3" y2="100"/><line x1="66.6" y1="0" x2="66.6" y2="100"/>';
-                svg += putArrow(16.6, 50) + putArrow(50, 50) + putArrow(83.3, 50);
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/>';
+                drawing += putArrow(23.3, 30) + putArrow(50, 30) + putArrow(76.6, 30);
                 break;
             case 'cor4_cent': 
-                svg += '<rect x="0" y="0" width="100" height="100"/><line x1="25" y1="0" x2="25" y2="100"/><line x1="50" y1="0" x2="50" y2="100"/><line x1="75" y1="0" x2="75" y2="100"/>';
-                // Corrección: Flechas en todos los paneles, los dos de la izq apuntan a la derecha, los dos de la der apuntan a la izquierda
-                svg += putArrowInv(12.5, 50) + putArrowInv(37.5, 50) + putArrow(62.5, 50) + putArrow(87.5, 50);
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                drawing += putArrowInv(20, 30) + putArrowInv(40, 30) + putArrow(60, 30) + putArrow(80, 30);
                 break;
             case 'cor4_lat': 
-                svg += '<rect x="0" y="0" width="100" height="100"/><line x1="25" y1="0" x2="25" y2="100"/><line x1="50" y1="0" x2="50" y2="100"/><line x1="75" y1="0" x2="75" y2="100"/>';
-                svg += putArrow(12.5, 50) + putArrow(37.5, 50) + putArrow(62.5, 50) + putArrow(87.5, 50);
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                drawing += putArrow(20, 30) + putArrow(40, 30) + putArrow(60, 30) + putArrow(80, 30);
                 break;
             case 'cor6_cent': 
-                svg += '<rect x="0" y="0" width="100" height="100"/>';
-                for(let i=1;i<=5;i++) svg += `<line x1="${i*16.6}" y1="0" x2="${i*16.6}" y2="100"/>`;
-                svg += putArrowInv(8.3, 50); // R
-                svg += putArrow(25, 50);     // L
-                svg += putArrow(41.6, 50);   // L
-                svg += putArrowInv(58.3, 50);// R
-                svg += putArrowInv(75, 50);  // R
-                svg += putArrow(91.6, 50);   // L
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
+                drawing += `<g transform="translate(16.6,30)">${arrowR}</g><g transform="translate(30,30)">${arrowL}</g><g transform="translate(43.3,30)">${arrowL}</g><g transform="translate(56.6,30)">${arrowR}</g><g transform="translate(70,30)">${arrowR}</g><g transform="translate(83.3,30)">${arrowL}</g>`;
                 break;
             case 'cor6_lat': 
-                svg += '<rect x="0" y="0" width="100" height="100"/>';
-                for(let i=1;i<=5;i++) svg += `<line x1="${i*16.6}" y1="0" x2="${i*16.6}" y2="100"/>`;
-                svg += putArrow(8.3, 50) + putArrow(25, 50) + putArrow(41.6, 50) + putArrow(58.3, 50) + putArrow(75, 50) + putArrow(91.6, 50);
+                drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
+                drawing += putArrow(16.6, 30) + putArrow(30, 30) + putArrow(43.3, 30) + putArrow(56.6, 30) + putArrow(70, 30) + putArrow(83.3, 30);
                 break;
             
             case 'gal1': 
-                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100"/>' + `<g transform="translate(42.5,50)">${arrowR}</g>`) 
-                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100"/>' + `<g transform="translate(57.5,50)">${arrowL}</g>`);
+                drawing += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/>' + `<g transform="translate(45,30)">${arrowR}</g>`) 
+                               : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/>' + `<g transform="translate(55,30)">${arrowL}</g>`);
                 break;
             case 'gal2_lat': 
-                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100"/><line x1="42.5" y1="0" x2="42.5" y2="100"/>' + `<g transform="translate(21.25,50)">${arrowR}</g><g transform="translate(63.75,50)">${arrowR}</g>`) 
-                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100"/><line x1="57.5" y1="0" x2="57.5" y2="100"/>' + `<g transform="translate(36.25,50)">${arrowL}</g><g transform="translate(78.75,50)">${arrowL}</g>`);
+                drawing += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/><line x1="45" y1="10" x2="45" y2="50"/>' + `<g transform="translate(27.5,30)">${arrowR}</g><g transform="translate(62.5,30)">${arrowR}</g>`) 
+                               : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(37.5,30)">${arrowL}</g><g transform="translate(72.5,30)">${arrowL}</g>`);
                 break;
             case 'gal2_cent': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100"/><line x1="50" y1="0" x2="50" y2="100"/>';
-                svg += `<g transform="translate(32.5,50)">${arrowL}</g><g transform="translate(67.5,50)">${arrowR}</g>`;
+                drawing += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
+                drawing += `<g transform="translate(35,30)">${arrowL}</g><g transform="translate(65,30)">${arrowR}</g>`;
                 break;
             case 'gal3_3v': 
-                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100"/><line x1="28.3" y1="0" x2="28.3" y2="100"/><line x1="56.6" y1="0" x2="56.6" y2="100"/>' + `<g transform="translate(14.1,50)">${arrowR}</g><g transform="translate(42.4,50)">${arrowR}</g><g transform="translate(70.7,50)">${arrowR}</g>`)
-                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100"/><line x1="43.3" y1="0" x2="43.3" y2="100"/><line x1="71.6" y1="0" x2="71.6" y2="100"/>' + `<g transform="translate(29.1,50)">${arrowL}</g><g transform="translate(57.4,50)">${arrowL}</g><g transform="translate(85.7,50)">${arrowL}</g>`);
+                drawing += isD ? (ladrilloDer + '<rect x="5" y="10" width="75" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(17.5,30)">${arrowR}</g><g transform="translate(42.5,30)">${arrowR}</g><g transform="translate(67.5,30)">${arrowR}</g>`)
+                               : (ladrilloIzq + '<rect x="20" y="10" width="75" height="40"/><line x1="45" y1="10" x2="45" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>' + `<g transform="translate(32.5,30)">${arrowL}</g><g transform="translate(57.5,30)">${arrowL}</g><g transform="translate(82.5,30)">${arrowL}</g>`);
                 break;
             case 'gal4_2v': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100"/><line x1="32.5" y1="0" x2="32.5" y2="100"/><line x1="50" y1="0" x2="50" y2="100"/><line x1="67.5" y1="0" x2="67.5" y2="100"/>';
-                svg += `<g transform="translate(23.7,50)">${arrowL}</g><g transform="translate(41.2,50)">${arrowL}</g><g transform="translate(58.7,50)">${arrowR}</g><g transform="translate(76.2,50)">${arrowR}</g>`;
+                drawing += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="35" y1="10" x2="35" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="65" y1="10" x2="65" y2="50"/>';
+                drawing += `<g transform="translate(27.5,30)">${arrowL}</g><g transform="translate(42.5,30)">${arrowL}</g><g transform="translate(57.5,30)">${arrowR}</g><g transform="translate(72.5,30)">${arrowR}</g>`;
                 break;
             case 'gal4_4v': 
-                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100"/><line x1="21.2" y1="0" x2="21.2" y2="100"/><line x1="42.5" y1="0" x2="42.5" y2="100"/><line x1="63.7" y1="0" x2="63.7" y2="100"/>' + `<g transform="translate(10.6,50)">${arrowR}</g><g transform="translate(31.8,50)">${arrowR}</g><g transform="translate(53.1,50)">${arrowR}</g><g transform="translate(74.3,50)">${arrowR}</g>`)
-                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100"/><line x1="36.2" y1="0" x2="36.2" y2="100"/><line x1="57.5" y1="0" x2="57.5" y2="100"/><line x1="78.7" y1="0" x2="78.7" y2="100"/>' + `<g transform="translate(25.6,50)">${arrowL}</g><g transform="translate(46.8,50)">${arrowL}</g><g transform="translate(68.1,50)">${arrowL}</g><g transform="translate(89.3,50)">${arrowL}</g>`);
+                drawing += isD ? (ladrilloDer + '<rect x="0" y="10" width="80" height="40"/><line x1="20" y1="10" x2="20" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/>' + `<g transform="translate(10,30)">${arrowR}</g><g transform="translate(30,30)">${arrowR}</g><g transform="translate(50,30)">${arrowR}</g><g transform="translate(70,30)">${arrowR}</g>`)
+                               : (ladrilloIzq + '<rect x="20" y="10" width="80" height="40"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="80" y1="10" x2="80" y2="50"/>' + `<g transform="translate(30,30)">${arrowL}</g><g transform="translate(50,30)">${arrowL}</g><g transform="translate(70,30)">${arrowL}</g><g transform="translate(90,30)">${arrowL}</g>`);
                 break;
             case 'gal6_3v': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100"/>';
-                let st = 70/6;
-                for(let i=1;i<=5;i++) svg += `<line x1="${15+i*st}" y1="0" x2="${15+i*st}" y2="100"/>`;
-                svg += `<g transform="translate(${15+st*0.5},50)">${arrowL}</g><g transform="translate(${15+st*1.5},50)">${arrowL}</g><g transform="translate(${15+st*2.5},50)">${arrowL}</g><g transform="translate(${15+st*3.5},50)">${arrowR}</g><g transform="translate(${15+st*4.5},50)">${arrowR}</g><g transform="translate(${15+st*5.5},50)">${arrowR}</g>`;
+                drawing += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
+                drawing += `<g transform="translate(25,30)">${arrowL}</g><g transform="translate(35,30)">${arrowL}</g><g transform="translate(45,30)">${arrowL}</g><g transform="translate(55,30)">${arrowR}</g><g transform="translate(65,30)">${arrowR}</g><g transform="translate(75,30)">${arrowR}</g>`;
                 break;
 
-            case 'win_proy': svg += '<rect x="0" y="0" width="100" height="100"/><path d="M0 0 L50 100 L100 0"/>'; break;
-            case 'win_souf': svg += '<rect x="0" y="0" width="100" height="100"/><path d="M0 100 L50 0 L100 100"/>'; break;
-            case 'win_abat': svg += '<rect x="0" y="0" width="100" height="100"/><path d="M0 0 L100 50 L0 100"/>'; break;
-            case 'win_ob': svg += '<rect x="0" y="0" width="100" height="100"/><path d="M0 0 L100 50 L0 100 M0 100 L50 0 L100 100"/>'; break;
-            case 'door_abat': svg += '<rect x="0" y="0" width="100" height="100"/><path d="M0 0 L100 50 L0 100"/>'; break;
+            case 'win_proy': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 15l25 30l25-30"/>'; break;
+            case 'win_souf': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 45l25-30l25 30"/>'; break;
+            case 'win_abat': drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20"/>'; break;
+            case 'win_ob': drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>'; break;
+            case 'door_abat': drawing += '<rect x="35" y="5" width="30" height="50"/><path d="M35 5l30 25l-30 25"/>'; break;
 
             case 'mamp_fija': 
-                svg += '<rect x="0" y="0" width="100" height="100"/>';
-                svg += '<rect x="0" y="15" width="4" height="10" fill="#0A3D62"/>';
-                svg += '<rect x="0" y="75" width="4" height="10" fill="#0A3D62"/>';
-                svg += '<rect x="85" y="96" width="10" height="4" fill="#0A3D62"/>';
+                drawing += '<rect x="30" y="5" width="40" height="50"/>';
+                drawing += '<rect x="30" y="12" width="2" height="4" fill="#0A3D62"/>';
+                drawing += '<rect x="30" y="44" width="2" height="4" fill="#0A3D62"/>';
+                drawing += '<rect x="66" y="53" width="4" height="2" fill="#0A3D62"/>';
                 if (state.ancho >= 1000) {
-                    svg += '<rect x="15" y="96" width="10" height="4" fill="#0A3D62"/>';
+                    drawing += '<rect x="30" y="53" width="4" height="2" fill="#0A3D62"/>';
                 }
                 break;
 
             case 'door_glass':
-                svg += '<rect x="0" y="0" width="100" height="100"/>';
+                drawing += '<rect x="30" y="5" width="40" height="50"/>';
                 if (state.bisagras === 'bisagra') {
-                    svg += `<rect x="${isD ? 96 : 0}" y="15" width="4" height="10" fill="#0A3D62"/><rect x="${isD ? 96 : 0}" y="75" width="4" height="10" fill="#0A3D62"/>`;
+                    drawing += `<rect x="${isD ? 68 : 30}" y="15" width="2" height="4" fill="#0A3D62"/><rect x="${isD ? 68 : 30}" y="41" width="2" height="4" fill="#0A3D62"/>`;
                 } else {
-                    svg += `<rect x="${isD ? 90 : 0}" y="0" width="10" height="4" fill="#0A3D62"/><rect x="${isD ? 90 : 0}" y="96" width="10" height="4" fill="#0A3D62"/>`;
+                    drawing += `<rect x="${isD ? 65 : 30}" y="5" width="5" height="2" fill="#0A3D62"/><rect x="${isD ? 65 : 30}" y="53" width="5" height="2" fill="#0A3D62"/>`;
                 }
 
-                // Corrección: Cerradura central como un semicírculo perfecto proporcionado
                 if (state.cerradura_tipo === 'central') {
-                    svg += `<path d="M ${isD ? 0 : 100} 40 A 10 10 0 0 ${isD ? 1 : 0} ${isD ? 0 : 100} 60 Z" fill="#0A3D62"/>`;
+                    drawing += `<path d="M ${isD ? 30 : 70} 26 A 4 4 0 0 ${isD ? 1 : 0} ${isD ? 30 : 70} 34 Z" fill="#0A3D62" stroke="none"/>`;
                 } else if (state.cerradura_tipo === 'digital') {
-                    svg += `<rect x="${isD ? 0 : 95}" y="35" width="5" height="30" fill="#0A3D62"/>`;
+                    drawing += `<rect x="${isD ? 30 : 66}" y="25" width="4" height="10" fill="#0A3D62"/>`;
+                    drawing += `<circle cx="${isD ? 32 : 68}" cy="27" r="0.5" fill="#fff" stroke="none"/><circle cx="${isD ? 32 : 68}" cy="30" r="0.5" fill="#fff" stroke="none"/><circle cx="${isD ? 32 : 68}" cy="33" r="0.5" fill="#fff" stroke="none"/>`;
                 }
 
-                // Corrección: Cerradura de piso anclada en la esquina exacta
                 if (state.cerradura_piso === 'si') {
-                    svg += `<rect x="${isD ? 0 : 90}" y="96" width="10" height="4" fill="#0A3D62"/>`;
+                    drawing += `<rect x="${isD ? 30 : 64}" y="52" width="6" height="3" fill="#0A3D62"/>`;
                 }
 
                 if (state.tirador && state.tirador !== '') {
                     let h = 10;
-                    if (state.tirador === '5') h = 10;
-                    if (state.tirador === '8') h = 15;
-                    if (state.tirador === '12') h = 25;
-                    if (state.tirador === '16') h = 35;
-                    let y1 = 50 - h;
-                    let y2 = 50 + h;
-                    let x = isD ? 15 : 85;
-                    svg += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>`;
+                    if (state.tirador === '5') h = 6;
+                    if (state.tirador === '8') h = 10;
+                    if (state.tirador === '12') h = 16;
+                    if (state.tirador === '16') h = 22;
+                    let y1 = 30 - h/2;
+                    let y2 = 30 + h/2;
+                    let x = isD ? 36 : 64;
+                    drawing += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}"/>`;
                 }
                 break;
 
@@ -748,21 +743,32 @@
                 let isTope = state.union === 'tope';
                 let innerStroke = isTope ? 0.5 : 2; 
                 
-                svg += '<rect x="0" y="0" width="100" height="100"/>';
+                drawing += '<rect x="10" y="5" width="80" height="50"/>';
                 for (let i = 1; i < n; i++) {
-                    let posX = (100 / n) * i;
-                    svg += `<line x1="${posX}" y1="0" x2="${posX}" y2="100" stroke-width="${innerStroke}"/>`;
+                    let posX = 10 + (80 / n) * i;
+                    drawing += `<line x1="${posX}" y1="5" x2="${posX}" y2="55" stroke-width="${innerStroke}"/>`;
                 }
-                
                 for (let i = 0; i < n; i++) {
-                    let centerX = (100 / n) * i + (100 / n) / 2;
-                    svg += `<text x="${centerX}" y="55" font-family="Arimo" font-size="20" font-weight="bold" fill="#0A3D62" text-anchor="middle">F</text>`;
+                    let centerX = 10 + (80 / n) * i + (80 / n) / 2;
+                    drawing += `<text x="${centerX}" y="33" font-family="Arimo" font-size="12" font-weight="bold" fill="#0A3D62" text-anchor="middle" stroke="none">F</text>`;
                 }
                 break;
         }
 
-        if (['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD) {
-            svg = svg.replace('<svg ', '<svg style="transform: scaleX(-1); stroke:#0A3D62; fill:none; stroke-width:1.0; stroke-linecap:round; stroke-linejoin:round;" ');
+        // Sistema para girar el dibujo si es necesario, sin afectar a los textos (las letras F, etc, no se giran gracias a esto)
+        const isFlipped = ['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD;
+        const transform = isFlipped ? `transform="scale(-1, 1) translate(-100, 0)"` : '';
+        
+        svg += `<g ${transform}>${drawing}</g>`;
+
+        // AÑADIR LAS MEDIDAS AL DIBUJO NORMAL (Como pediste, para que estén 2 veces y evitar errores)
+        if (!isCAD) {
+            if (state.ancho > 0) {
+                svg += `<text x="50" y="2" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
+            }
+            if (state.alto > 0) {
+                svg += `<text x="97" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
+            }
         }
 
         svg += '</svg>';
@@ -1039,7 +1045,7 @@
                         targetX = other.x - other.w/2 - draggingImg.w/2; 
                         if (Math.abs(targetY - other.y) < 15) targetY = other.y;
                         else if (Math.abs((targetY - draggingImg.h/2) - (other.y - other.h/2)) < 15) targetY = other.y - other.h/2 + draggingImg.h/2;
-                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = other.y + other.h/2 - draggingImg.h/2;
+                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = outer.y + other.h/2 - draggingImg.h/2;
                     }
                 });
 
