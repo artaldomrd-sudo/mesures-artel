@@ -49,8 +49,8 @@
         .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
         .card-ref-row span { font-size: 11px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
         
-        .drawing-area { height: 180px; border: 1px solid #eee; position: relative; background: #fcfcfc; display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden; }
-        .drawing-canvas { cursor: crosshair; touch-action: none; background: white;}
+        .drawing-area { height: 260px; border: 1px solid #eee; position: relative; background: #fcfcfc; display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden; }
+        .drawing-canvas { cursor: crosshair; touch-action: none; background: white; width: 100%; height: 100%; }
         
         .measure-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 5px; }
         .measure-field { display: flex; align-items: center; gap: 5px; }
@@ -82,12 +82,17 @@
             #app-root { height: auto; overflow: visible; display: block; background: white; }
             #sidebar { display: none; }
             #main-canvas { padding: 0; overflow: visible; display: block; width: 100%; }
-            .delete-card, .orientation-toggle, .clear-canvas-btn { display: none; }
+            .delete-card, .orientation-toggle, .clear-canvas-btn, .cad-insert-select { display: none; }
             .project-header { gap: 10px; width: 100%; border-bottom: 2px solid #000; }
-            .item-card { border-color: #000; box-shadow: none; break-inside: avoid; page-break-inside: avoid; border-top: 1px solid #000; }
+            
+            /* COMPACT GRID POUR ECONOMISER DU PAPIER */
+            .item-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+            .item-card { border-color: #000; box-shadow: none; break-inside: avoid; page-break-inside: avoid; border-top: 1px solid #000; padding: 10px; }
+            .drawing-area { height: 200px; }
+            
             .header-field input, .card-ref-row input, .measure-field input, .notes-area, .config-options select { border: none; background: transparent; -webkit-appearance: none; appearance: none; color: #000; }
-            .config-options { background: transparent; border: 1px dashed #ccc; padding: 5px; }
-            .signature-section { border-top: 2px solid #000; }
+            .config-options { background: transparent; border: 1px dashed #ccc; padding: 5px; gap: 4px; }
+            .signature-section { border-top: 2px solid #000; margin-top: 20px; }
         }
     </style>
 </head>
@@ -115,11 +120,11 @@
         <button class="btn-cat" onclick="addItem('Galandaje 6 Hojas', 'gal6_3v', 'galandaje')">Galandaje 6 Hojas (Central)</button>
         
         <h3>Ventanas y Puertas</h3>
-        <button class="btn-cat" onclick="addItem('Ventana Abatible', 'win_abat', 'ventana')">Ventana Abatible</button>
+        <button class="btn-cat" onclick="addItem('Ventana Abisagrada', 'win_abat', 'ventana')">Ventana Abisagrada</button>
         <button class="btn-cat" onclick="addItem('Oscilobatiente (OB)', 'win_ob', 'ventana')">Oscilobatiente (OB)</button>
         <button class="btn-cat" onclick="addItem('Ventana Proyectada', 'win_proy', 'ventana')">Ventana Proyectada</button>
         <button class="btn-cat" onclick="addItem('Ventana Soufflet', 'win_souf', 'ventana')">Ventana Soufflet</button>
-        <button class="btn-cat" onclick="addItem('Puerta P40 / Titan', 'door_abat', 'ventana')">Puerta Abatible (P40)</button>
+        <button class="btn-cat" onclick="addItem('Puerta Abisagrada', 'door_abat', 'ventana')">Puerta Abisagrada</button>
         
         <h3>Vidrios y Mamparas</h3>
         <button class="btn-cat" onclick="addItem('Mampara Baño Fija', 'mamp_fija', 'mampara')">Mampara Fija (Dinámica)</button>
@@ -171,79 +176,113 @@
 </div>
 
 <script>
-    // ESTADO GLOBAL DE LAS TARJETAS (Para renderizado dinámico de SVG)
+    // ESTADO GLOBAL DE LAS TARJETAS
     const cardsState = {};
     let itemId = 0;
 
-    // GENERADOR DE MENÚS DINÁMICOS
-    function getMenuOpciones(id, categoria) {
-        // Universal Color Vidrio
+    function getCategoriaByType(type) {
+        if(type.startsWith('cor')) return 'corredera';
+        if(type.startsWith('gal')) return 'galandaje';
+        if(type.startsWith('win') || type === 'door_abat') return 'ventana';
+        if(type === 'mamp_fija') return 'mampara';
+        if(type === 'door_glass') return 'puerta_vidrio';
+        if(type === 'fachada_din') return 'fachada';
+        return '';
+    }
+
+    // GENERADOR DE MENÚS DINÁMICOS INTELIGENTE
+    function getMenuOpciones(id, categoria, type, isCAD = false) {
+        const fn = isCAD ? `updateCADItemState(${id}` : `updateState(${id}`;
+
+        const vistaOption = `
+            <select onchange="${fn}, 'vista', this.value)">
+                <option value="">-- Vista --</option>
+                <option value="afuera">Vista de afuera</option>
+                <option value="adentro">Vista de adentro</option>
+            </select>
+        `;
+
         const vidrioColor = `
-            <select onchange="updateState(${id}, 'color_vidrio', this.value)">
+            <select onchange="${fn}, 'color_vidrio', this.value)">
                 <option value="">-- Color del Vidrio --</option>
-                <option>Natural (Transparente)</option>
-                <option>Gris</option>
-                <option>Negro</option>
-                <option>Azul</option>
-                <option>Verde</option>
+                <option value="natural">Natural (Transparente)</option>
+                <option value="gris">Gris</option>
+                <option value="negro">Negro</option>
+                <option value="azul">Azul</option>
+                <option value="verde">Verde</option>
             </select>
         `;
 
         const vidriosBasicos = `
-            <select onchange="updateState(${id}, 'vidrio', this.value)">
+            <select onchange="${fn}, 'vidrio', this.value)">
                 <option value="">-- Tipo de Vidrio --</option>
-                <option>Vidrio Templado</option>
-                <option>Vidrio Laminado</option>
-                <option>Sin Vidrio</option>
+                <option value="templado">Vidrio Templado</option>
+                <option value="laminado">Vidrio Laminado</option>
+                <option value="sin">Sin Vidrio</option>
             </select>
-            <select onchange="updateState(${id}, 'espesor', this.value)">
+            <select onchange="${fn}, 'espesor', this.value)">
                 <option value="">-- Grosor Vidrio --</option>
-                <option>3/8" (10mm)</option>
-                <option>1/2" (12mm)</option>
-                <option>3+3</option>
-                <option>4+4</option>
-                <option>5+5</option>
+                <option value="10mm">3/8" (10mm)</option>
+                <option value="12mm">1/2" (12mm)</option>
+                <option value="3+3">3+3</option>
+                <option value="4+4">4+4</option>
+                <option value="5+5">5+5</option>
             </select>
             ${vidrioColor}
         `;
 
         const cierresVentana = `
-            <select onchange="updateState(${id}, 'cierre', this.value)">
+            <select onchange="${fn}, 'cierre', this.value)">
                 <option value="">-- Tipo de Cierre --</option>
-                <option>Cierre de 1 punto</option>
-                <option>Cierre Multipunto</option>
-                <option>Con llave</option>
+                <option value="1punto">Cierre de 1 punto</option>
+                <option value="multipunto">Cierre Multipunto</option>
+                <option value="llave">Con llave</option>
             </select>
-            <select onchange="updateState(${id}, 'mosquitera', this.value)">
+            <select onchange="${fn}, 'mosquitera', this.value)">
                 <option value="">-- Mosquitera --</option>
-                <option>Sin Mosquitera</option>
-                <option>Con Mosquitera Integrada</option>
+                <option value="sin">Sin Mosquitera</option>
+                <option value="con">Con Mosquitera Integrada</option>
             </select>
         `;
 
         if (categoria === 'ventana' || categoria === 'corredera' || categoria === 'galandaje') {
-            return cierresVentana + vidriosBasicos;
+            let extra = '';
+            if (type === 'door_abat') {
+                extra = `
+                <select onchange="${fn}, 'apertura', this.value)">
+                    <option value="">-- Apertura hacia --</option>
+                    <option value="adentro">Hacia adentro</option>
+                    <option value="afuera">Hacia afuera</option>
+                </select>
+                <select onchange="${fn}, 'perfil', this.value)">
+                    <option value="">-- Tipo de Perfil --</option>
+                    <option value="P40">Perfil P40</option>
+                    <option value="Titan">Perfil Titan</option>
+                </select>`;
+            }
+            return extra + vistaOption + cierresVentana + vidriosBasicos;
         } else if (categoria === 'puerta_vidrio') {
             return `
-                <select onchange="updateState(${id}, 'bisagras', this.value)">
+                ${vistaOption}
+                <select onchange="${fn}, 'bisagras', this.value)">
                     <option value="botella">Kit Botella (Arriba/Abajo)</option>
                     <option value="bisagra">Bisagras Laterales</option>
                 </select>
-                <select onchange="updateState(${id}, 'herraje_color', this.value)">
+                <select onchange="${fn}, 'herraje_color', this.value)">
                     <option value="">-- Color Herrajes --</option>
-                    <option>Negro Mate</option>
-                    <option>Cromado / Inox</option>
+                    <option value="negro">Negro Mate</option>
+                    <option value="cromado">Cromado / Inox</option>
                 </select>
-                <select onchange="updateState(${id}, 'cerradura_tipo', this.value)">
+                <select onchange="${fn}, 'cerradura_tipo', this.value)">
                     <option value="ninguna">-- Cerradura (Media altura) --</option>
                     <option value="central">Media Luna</option>
                     <option value="digital">Digital (Teclado)</option>
                 </select>
-                <select onchange="updateState(${id}, 'cerradura_piso', this.value)">
+                <select onchange="${fn}, 'cerradura_piso', this.value)">
                     <option value="no">-- Cerradura Piso --</option>
                     <option value="si">Con Cerradura Piso</option>
                 </select>
-                <select style="grid-column: span 2;" onchange="updateState(${id}, 'tirador', this.value)">
+                <select style="grid-column: span 2;" onchange="${fn}, 'tirador', this.value)">
                     <option value="">-- Sin Tirador --</option>
                     <option value="5">Tirador 5"</option>
                     <option value="8">Tirador 8"</option>
@@ -254,7 +293,7 @@
             `;
         } else if (categoria === 'fachada') {
             return `
-                <select onchange="updateState(${id}, 'panos', this.value)">
+                <select onchange="${fn}, 'panos', this.value)">
                     <option value="1">1 Paño Fijo</option>
                     <option value="2">2 Paños Fijos</option>
                     <option value="3">3 Paños Fijos</option>
@@ -264,31 +303,98 @@
                     <option value="8">8 Paños Fijos</option>
                     <option value="10">10 Paños Fijos</option>
                 </select>
-                <select onchange="updateState(${id}, 'fijacion', this.value)">
+                <select onchange="${fn}, 'union', this.value)">
+                    <option value="T">Con division "T"</option>
+                    <option value="tope">Vidrios a tope</option>
+                </select>
+                <select onchange="${fn}, 'fijacion', this.value)">
                     <option value="">-- Sistema / Fijación --</option>
-                    <option>Con Moldura Perimetral</option>
-                    <option>Con Conectores</option>
-                    <option>Perfiles Aluminio (P40)</option>
+                    <option value="moldura">Con Moldura Perimetral</option>
+                    <option value="conectores">Con Conectores</option>
+                    <option value="p40">Perfiles Aluminio (P40)</option>
                 </select>
                 ${vidriosBasicos}
             `;
         } else if (categoria === 'mampara') {
             return `
-                <select onchange="updateState(${id}, 'herraje_color', this.value)">
+                <select onchange="${fn}, 'herraje_color', this.value)">
                     <option value="">-- Color Conectores --</option>
-                    <option>Negro Mate</option>
-                    <option>Cromado / Inox</option>
+                    <option value="negro">Negro Mate</option>
+                    <option value="cromado">Cromado / Inox</option>
                 </select>
-                ${vidriosBasicos}
-            `;
-        } else if (categoria === 'dibujo') {
-            return `
-                <select><option value="">-- Cualquier Cerradura --</option><option>Multipunto</option><option>Media Luna</option><option>Digital</option><option>Piso</option></select>
-                <select><option value="">-- Opciones Apertura --</option><option>Bisagras</option><option>Kit Botella</option><option>Corredera</option></select>
                 ${vidriosBasicos}
             `;
         }
         return '';
+    }
+
+    // GESTIÓN DE MODELOS EN MINI-CAD (OPCIÓN B DINÁMICA CON ESCALAS PERFECTAS)
+    window.insertCADModel = function(id, type) {
+        if(!type) return;
+        let offset = (window['cadItems' + id] ? window['cadItems' + id].length * 20 : 0);
+        let newItem = {
+            uid: Date.now(),
+            type: type,
+            categoria: getCategoriaByType(type),
+            x: 100 + offset, // Evitar que aparezcan unos exactamente encima de otros
+            y: 100 + offset, 
+            w: 100, h: 100, // Tamaño inicial visual por defecto
+            state: { orientacion: 'I', panos: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', vista: '', color_vidrio: '', vidrio: '', espesor: '', cierre: '', mosquitera: '', apertura: '', perfil: '', fijacion: '', herraje_color: '' }
+        };
+        
+        if (!window['cadItems' + id]) window['cadItems' + id] = [];
+        window['cadItems' + id].push(newItem);
+        window['selectedCADItem' + id] = newItem; 
+        
+        updateCADItemImage(id, newItem, () => {
+            if (window['drawAll' + id]) window['drawAll' + id]();
+            if (window['updateCADOptionsUI' + id]) window['updateCADOptionsUI' + id]();
+        });
+    };
+
+    window.updateCADItemImage = function(id, item, callback) {
+        cardsState['temp'] = Object.assign({}, item.state, {type: item.type});
+        let svgStr = renderSVG('temp');
+        delete cardsState['temp'];
+        
+        const img = new Image();
+        const svgBlob = new Blob([svgStr], {type: 'image/svg+xml;charset=utf-8'});
+        const url = URL.createObjectURL(svgBlob);
+        img.onload = () => {
+            item.img = img;
+            if(callback) callback();
+            URL.revokeObjectURL(url);
+        };
+        img.src = url;
+    };
+
+    window.updateCADItemState = function(id, key, value) {
+        let item = window['selectedCADItem' + id];
+        if(!item) return;
+        
+        // ESCALA DINÁMICA MATEMÁTICA ESTRICTA: 1000mm = 60px 
+        // ¡Al haber corregido el SVG a ocupar todo el viewBox, las proporciones ahora serán 100% realistas!
+        const scaleFactor = 0.06; 
+
+        if (key === 'ancho') { 
+            let cleanVal = parseInt(String(value).replace(/\D/g, '')) || 0;
+            item.state.ancho = cleanVal; 
+            if(cleanVal > 0) item.w = Math.max(20, cleanVal * scaleFactor);
+        } else if (key === 'alto') { 
+            let cleanVal = parseInt(String(value).replace(/\D/g, '')) || 0;
+            item.state.alto = cleanVal; 
+            if(cleanVal > 0) item.h = Math.max(20, cleanVal * scaleFactor);
+        } else {
+            item.state[key] = value;
+        }
+        
+        updateCADItemImage(id, item, () => {
+            if(window['drawAll' + id]) window['drawAll' + id]();
+        });
+        
+        if(key === 'orientacion') {
+            if (window['updateCADOptionsUI' + id]) window['updateCADOptionsUI' + id]();
+        }
     }
 
     function addItem(label, type, categoria) {
@@ -304,7 +410,9 @@
             cerradura_tipo: 'ninguna',
             cerradura_piso: 'no',
             tirador: '',
-            ancho: 0
+            ancho: 0,
+            alto: 0,
+            union: 'T'
         };
 
         const list = document.getElementById('item-list');
@@ -312,51 +420,100 @@
         card.className = 'item-card';
         card.id = 'card-' + id;
 
-        let schematic = '';
         if (type === 'draw') {
-            schematic = `
-                <div class="drawing-area" style="background:#fff;">
-                    <canvas id="canvas-${id}" class="drawing-canvas" width="340" height="180"></canvas>
+            card.innerHTML = `
+                <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
+                <div class="card-ref-row">
+                    <input type="text" placeholder="Ref. (ej: CAD1)">
+                    <span>${label}</span>
                 </div>
-                <button class="clear-canvas-btn" onclick="clearCanvas(${id})" style="font-size:10px; margin-top:5px; padding:3px; cursor:pointer; background:#eee; border:1px solid #ccc;">Borrar Dibujo</button>`;
-        } else {
-            schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
-        }
+                <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
+                
+                <div class="drawing-area" style="background:#fff;">
+                    <canvas id="canvas-${id}" class="drawing-canvas"></canvas>
+                </div>
+                
+                <div style="display: flex; gap: 5px; margin-top: 5px;">
+                    <button class="clear-canvas-btn" onclick="clearCanvas(${id})" style="flex:1; font-size:10px; padding:5px; cursor:pointer; background:#eee; border:1px solid #ccc; font-weight:bold;">Borrar Líneas</button>
+                    <select class="cad-insert-select" onchange="if(this.value){ window.insertCADModel(${id}, this.value); this.value=''; }" style="flex:2; background:var(--artal-yellow); color:var(--artal-blue); font-weight:bold; border:1px solid var(--artal-yellow); border-radius:3px; outline:none; font-size:11px;">
+                        <option value="">➕ Insertar modelo...</option>
+                        <option value="cor2">Corredera 2 Hojas</option>
+                        <option value="cor3">Corredera 3 Hojas</option>
+                        <option value="cor4_cent">Corredera 4 Hojas (Cent)</option>
+                        <option value="cor4_lat">Corredera 4 Hojas (Lat)</option>
+                        <option value="cor6_cent">Corredera 6 Hojas (Cent)</option>
+                        <option value="cor6_lat">Corredera 6 Hojas (Lat)</option>
+                        <option value="gal1">Galandaje 1 Hoja</option>
+                        <option value="gal2_cent">Galandaje 2 Hojas (Cent)</option>
+                        <option value="gal2_lat">Galandaje 2 Hojas (Lat)</option>
+                        <option value="gal3_3v">Galandaje 3 Hojas</option>
+                        <option value="gal4_2v">Galandaje 4 Hojas (Cent)</option>
+                        <option value="gal4_4v">Galandaje 4 Hojas (Lat)</option>
+                        <option value="gal6_3v">Galandaje 6 Hojas (Cent)</option>
+                        <option value="win_abat">Ventana Abisagrada</option>
+                        <option value="win_ob">Oscilobatiente (OB)</option>
+                        <option value="win_proy">Ventana Proyectada</option>
+                        <option value="win_souf">Ventana Soufflet</option>
+                        <option value="door_abat">Puerta Abisagrada</option>
+                        <option value="mamp_fija">Mampara Fija</option>
+                        <option value="door_glass">Puerta Vidrio</option>
+                        <option value="fachada_din">Fachada Fija</option>
+                    </select>
+                </div>
 
-        const opcionesHtml = getMenuOpciones(id, categoria);
-        const showOrientation = ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(categoria);
-        const orientationHtml = showOrientation ? `
-            <div class="orientation-toggle">
-                <div class="toggle-btn active" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">← A LA IZQUIERDA</div>
-                <div class="toggle-btn" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA →</div>
-            </div>` : '';
+                <div class="config-options" id="cad-options-${id}" style="margin-top: 10px; background:#e8f4f8; border:1px dashed #0A3D62;">
+                    <div style="grid-column: span 2; text-align:center; color:#0A3D62; font-size:11px; padding: 10px; font-weight:bold;">Toca un modelo insertado para configurarlo aquí</div>
+                </div>
 
-        card.innerHTML = `
-            <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
-            <div class="card-ref-row">
-                <input type="text" placeholder="Ref. (ej: PV1)">
-                <span>${label}</span>
-            </div>
-            <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
+                <div class="measure-inputs">
+                    <div class="measure-field"><label>A TOTAL:</label><input type="text" inputmode="numeric" oninput="updateState(${id}, 'ancho', this.value)" placeholder="Ancho total"></div>
+                    <div class="measure-field"><label>H TOTAL:</label><input type="text" inputmode="numeric" placeholder="Alto total"></div>
+                </div>
+                <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
+            `;
+            list.appendChild(card);
             
-            ${schematic}
-            ${orientationHtml}
-
-            <div class="config-options">
-                ${opcionesHtml}
-            </div>
-
-            <div class="measure-inputs">
-                <div class="measure-field"><label>A:</label><input type="number" oninput="updateState(${id}, 'ancho', this.value)" placeholder="Ancho (mm)"></div>
-                <div class="measure-field"><label>H:</label><input type="number" placeholder="Alto (mm)"></div>
-            </div>
-            <textarea class="notes-area" placeholder="Notas adicionales (detalles de obra, colores especiales...)"></textarea>
-        `;
-
-        list.appendChild(card);
-
-        if (type === 'draw') {
+            // Ajustar el canvas al tamaño real del contenedor
+            const canvas = document.getElementById('canvas-' + id);
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            
             initMiniCAD(id);
+        } else {
+            let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
+            const opcionesHtml = getMenuOpciones(id, categoria, type, false);
+            
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type);
+            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(categoria);
+            
+            const orientationHtml = showOrientation ? `
+                <div class="orientation-toggle">
+                    <div class="toggle-btn active" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">← A LA IZQUIERDA</div>
+                    <div class="toggle-btn" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA →</div>
+                </div>` : '';
+
+            card.innerHTML = `
+                <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
+                <div class="card-ref-row">
+                    <input type="text" placeholder="Ref. (ej: PV1)">
+                    <span>${label}</span>
+                </div>
+                <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
+                
+                ${schematic}
+                ${orientationHtml}
+
+                <div class="config-options">
+                    ${opcionesHtml}
+                </div>
+
+                <div class="measure-inputs">
+                    <div class="measure-field"><label>A:</label><input type="text" inputmode="numeric" id="ancho-${id}" oninput="updateState(${id}, 'ancho', this.value)" placeholder="Ancho (mm)"></div>
+                    <div class="measure-field"><label>H:</label><input type="text" inputmode="numeric" placeholder="Alto (mm)"></div>
+                </div>
+                <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
+            `;
+            list.appendChild(card);
         }
     }
 
@@ -367,13 +524,18 @@
 
     function updateState(id, key, value) {
         if (!cardsState[id]) return;
-        if (key === 'ancho') cardsState[id][key] = parseInt(value) || 0;
-        else cardsState[id][key] = value;
         
-        // Re-renderizar si el cambio afecta al dibujo SVG
-        if (['panos', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho'].includes(key)) {
-            const container = document.getElementById('schematic-' + id);
-            if (container) container.innerHTML = renderSVG(id);
+        if (key === 'ancho') {
+            cardsState[id][key] = parseInt(String(value).replace(/\D/g, '')) || 0;
+        } else {
+            cardsState[id][key] = value;
+        }
+        
+        if (cardsState[id].type !== 'draw') {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho'].includes(key)) {
+                const container = document.getElementById('schematic-' + id);
+                if (container) container.innerHTML = renderSVG(id);
+            }
         }
     }
 
@@ -383,18 +545,16 @@
         updateState(id, 'orientacion', side);
     }
 
-    // MOTOR SVG DINÁMICO
+    // MOTOR SVG DINÁMICO REESCRITO AL 100% PARA PROPORCIONES PERFECTAS (Llenan el viewBox de 0 a 100)
     function renderSVG(id) {
         const state = cardsState[id];
-        const base = '<svg viewBox="0 0 100 60" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;">';
+        const base = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.5; vector-effect:non-scaling-stroke; stroke-linecap:round; stroke-linejoin:round;">';
         
-        // Muros de ladrillo corregidos con líneas precisas (evita rotura de trazados)
-        const ladrilloIzq = '<g><rect x="5" y="10" width="15" height="40"/><line x1="5" y1="20" x2="20" y2="20"/><line x1="5" y1="30" x2="20" y2="30"/><line x1="5" y1="40" x2="20" y2="40"/><line x1="12.5" y1="10" x2="12.5" y2="20"/><line x1="12.5" y1="30" x2="12.5" y2="40"/></g>';
-        const ladrilloDer = '<g><rect x="80" y="10" width="15" height="40"/><line x1="80" y1="20" x2="95" y2="20"/><line x1="80" y1="30" x2="95" y2="30"/><line x1="80" y1="40" x2="95" y2="40"/><line x1="87.5" y1="10" x2="87.5" y2="20"/><line x1="87.5" y1="30" x2="87.5" y2="40"/></g>';
+        const ladrilloIzq = '<g><rect x="0" y="0" width="15" height="100" vector-effect="non-scaling-stroke"/><line x1="0" y1="20" x2="15" y2="20" vector-effect="non-scaling-stroke"/><line x1="0" y1="40" x2="15" y2="40" vector-effect="non-scaling-stroke"/><line x1="0" y1="60" x2="15" y2="60" vector-effect="non-scaling-stroke"/><line x1="0" y1="80" x2="15" y2="80" vector-effect="non-scaling-stroke"/></g>';
+        const ladrilloDer = '<g><rect x="85" y="0" width="15" height="100" vector-effect="non-scaling-stroke"/><line x1="85" y1="20" x2="100" y2="20" vector-effect="non-scaling-stroke"/><line x1="85" y1="40" x2="100" y2="40" vector-effect="non-scaling-stroke"/><line x1="85" y1="60" x2="100" y2="60" vector-effect="non-scaling-stroke"/><line x1="85" y1="80" x2="100" y2="80" vector-effect="non-scaling-stroke"/></g>';
         
-        // Flechas vectoriales continuas y perfectas
-        const arrowL = '<g><line x1="0" y1="0" x2="8" y2="0"/><polyline points="4,-3 0,0 4,3"/></g>';
-        const arrowR = '<g><line x1="-8" y1="0" x2="0" y2="0"/><polyline points="-4,-3 0,0 -4,3"/></g>';
+        const arrowL = '<g><line x1="-8" y1="0" x2="8" y2="0" vector-effect="non-scaling-stroke"/><polyline points="-2,-4 -8,0 -2,4" vector-effect="non-scaling-stroke"/></g>';
+        const arrowR = '<g><line x1="-8" y1="0" x2="8" y2="0" vector-effect="non-scaling-stroke"/><polyline points="2,-4 8,0 2,4" vector-effect="non-scaling-stroke"/></g>';
 
         const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
         const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
@@ -404,131 +564,128 @@
 
         switch(state.type) {
             case 'cor2': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
-                svg += putArrow(26, 30) + putArrowInv(74, 30);
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><line x1="50" y1="0" x2="50" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += `<g transform="translate(25, 50)">${arrowR}</g><g transform="translate(75, 50)">${arrowL}</g>`;
                 break;
             case 'cor3': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/>';
-                svg += putArrow(19, 30) + putArrow(46, 30) + putArrow(73, 30);
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><line x1="33.3" y1="0" x2="33.3" y2="100" vector-effect="non-scaling-stroke"/><line x1="66.6" y1="0" x2="66.6" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += putArrow(16.6, 50) + putArrow(50, 50) + putArrow(83.3, 50);
                 break;
             case 'cor4_cent': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
-                svg += '<line x1="18" y1="30" x2="22" y2="30"/><line x1="78" y1="30" x2="82" y2="30"/>'; // Fijos
-                svg += `<g transform="translate(44,30)">${arrowR}</g><g transform="translate(56,30)">${arrowL}</g>`;
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><line x1="25" y1="0" x2="25" y2="100" vector-effect="non-scaling-stroke"/><line x1="50" y1="0" x2="50" y2="100" vector-effect="non-scaling-stroke"/><line x1="75" y1="0" x2="75" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += `<g transform="translate(37.5,50)">${arrowR}</g><g transform="translate(62.5,50)">${arrowL}</g>`;
                 break;
             case 'cor4_lat': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
-                svg += putArrow(16, 30) + putArrow(36, 30) + putArrow(56, 30) + putArrow(76, 30);
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><line x1="25" y1="0" x2="25" y2="100" vector-effect="non-scaling-stroke"/><line x1="50" y1="0" x2="50" y2="100" vector-effect="non-scaling-stroke"/><line x1="75" y1="0" x2="75" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += putArrow(12.5, 50) + putArrow(37.5, 50) + putArrow(62.5, 50) + putArrow(87.5, 50);
                 break;
             case 'cor6_cent': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
-                svg += '<line x1="15" y1="30" x2="18" y2="30"/><line x1="28" y1="30" x2="31" y2="30"/><line x1="68" y1="30" x2="71" y2="30"/><line x1="82" y1="30" x2="85" y2="30"/>';
-                svg += `<g transform="translate(47,30)">${arrowR}</g><g transform="translate(53,30)">${arrowL}</g>`;
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/>';
+                for(let i=1;i<=5;i++) svg += `<line x1="${i*16.6}" y1="0" x2="${i*16.6}" y2="100" vector-effect="non-scaling-stroke"/>`;
+                svg += putArrowInv(8.3, 50); // R
+                svg += putArrow(25, 50);     // L
+                svg += putArrow(41.6, 50);   // L
+                svg += putArrowInv(58.3, 50);// R
+                svg += putArrowInv(75, 50);  // R
+                svg += putArrow(91.6, 50);   // L
                 break;
             case 'cor6_lat': 
-                svg += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
-                svg += putArrow(12, 30) + putArrow(26, 30) + putArrow(39, 30) + putArrow(52, 30) + putArrow(66, 30) + putArrow(79, 30);
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/>';
+                for(let i=1;i<=5;i++) svg += `<line x1="${i*16.6}" y1="0" x2="${i*16.6}" y2="100" vector-effect="non-scaling-stroke"/>`;
+                svg += putArrow(8.3, 50) + putArrow(25, 50) + putArrow(41.6, 50) + putArrow(58.3, 50) + putArrow(75, 50) + putArrow(91.6, 50);
                 break;
             
             case 'gal1': 
-                svg += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/>' + `<g transform="translate(49,30)">${arrowR}</g>`) 
-                           : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/>' + `<g transform="translate(51,30)">${arrowL}</g>`);
+                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(42.5,50)">${arrowR}</g>`) 
+                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(57.5,50)">${arrowL}</g>`);
                 break;
             case 'gal2_lat': 
-                svg += isD ? (ladrilloDer + '<rect x="10" y="10" width="70" height="40"/><line x1="45" y1="10" x2="45" y2="50"/>' + `<g transform="translate(31,30)">${arrowR}</g><g transform="translate(66,30)">${arrowR}</g>`) 
-                           : (ladrilloIzq + '<rect x="20" y="10" width="70" height="40"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(33,30)">${arrowL}</g><g transform="translate(68,30)">${arrowL}</g>`);
+                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="42.5" y1="0" x2="42.5" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(21.25,50)">${arrowR}</g><g transform="translate(63.75,50)">${arrowR}</g>`) 
+                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="57.5" y1="0" x2="57.5" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(36.25,50)">${arrowL}</g><g transform="translate(78.75,50)">${arrowL}</g>`);
                 break;
             case 'gal2_cent': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
-                svg += `<g transform="translate(39,30)">${arrowL}</g><g transform="translate(61,30)">${arrowR}</g>`;
+                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100" vector-effect="non-scaling-stroke"/><line x1="50" y1="0" x2="50" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += `<g transform="translate(32.5,50)">${arrowL}</g><g transform="translate(67.5,50)">${arrowR}</g>`;
                 break;
             case 'gal3_3v': 
-                svg += isD ? (ladrilloDer + '<rect x="5" y="10" width="75" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="55" y1="10" x2="55" y2="50"/>' + `<g transform="translate(21,30)">${arrowR}</g><g transform="translate(46,30)">${arrowR}</g><g transform="translate(71,30)">${arrowR}</g>`)
-                           : (ladrilloIzq + '<rect x="20" y="10" width="75" height="40"/><line x1="45" y1="10" x2="45" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>' + `<g transform="translate(29,30)">${arrowL}</g><g transform="translate(54,30)">${arrowL}</g><g transform="translate(79,30)">${arrowL}</g>`);
+                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="28.3" y1="0" x2="28.3" y2="100" vector-effect="non-scaling-stroke"/><line x1="56.6" y1="0" x2="56.6" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(14.1,50)">${arrowR}</g><g transform="translate(42.4,50)">${arrowR}</g><g transform="translate(70.7,50)">${arrowR}</g>`)
+                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="43.3" y1="0" x2="43.3" y2="100" vector-effect="non-scaling-stroke"/><line x1="71.6" y1="0" x2="71.6" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(29.1,50)">${arrowL}</g><g transform="translate(57.4,50)">${arrowL}</g><g transform="translate(85.7,50)">${arrowL}</g>`);
                 break;
             case 'gal4_2v': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="35" y1="10" x2="35" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="65" y1="10" x2="65" y2="50"/>';
-                svg += `<g transform="translate(31,30)">${arrowL}</g><g transform="translate(46,30)">${arrowL}</g><g transform="translate(54,30)">${arrowR}</g><g transform="translate(69,30)">${arrowR}</g>`;
+                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100" vector-effect="non-scaling-stroke"/><line x1="32.5" y1="0" x2="32.5" y2="100" vector-effect="non-scaling-stroke"/><line x1="50" y1="0" x2="50" y2="100" vector-effect="non-scaling-stroke"/><line x1="67.5" y1="0" x2="67.5" y2="100" vector-effect="non-scaling-stroke"/>';
+                svg += `<g transform="translate(23.7,50)">${arrowL}</g><g transform="translate(41.2,50)">${arrowL}</g><g transform="translate(58.7,50)">${arrowR}</g><g transform="translate(76.2,50)">${arrowR}</g>`;
                 break;
             case 'gal4_4v': 
-                svg += isD ? (ladrilloDer + '<rect x="0" y="10" width="80" height="40"/><line x1="20" y1="10" x2="20" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/>' + `<g transform="translate(14,30)">${arrowR}</g><g transform="translate(34,30)">${arrowR}</g><g transform="translate(54,30)">${arrowR}</g><g transform="translate(74,30)">${arrowR}</g>`)
-                           : (ladrilloIzq + '<rect x="20" y="10" width="80" height="40"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="80" y1="10" x2="80" y2="50"/>' + `<g transform="translate(26,30)">${arrowL}</g><g transform="translate(46,30)">${arrowL}</g><g transform="translate(66,30)">${arrowL}</g><g transform="translate(86,30)">${arrowL}</g>`);
+                svg += isD ? (ladrilloDer + '<rect x="0" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="21.2" y1="0" x2="21.2" y2="100" vector-effect="non-scaling-stroke"/><line x1="42.5" y1="0" x2="42.5" y2="100" vector-effect="non-scaling-stroke"/><line x1="63.7" y1="0" x2="63.7" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(10.6,50)">${arrowR}</g><g transform="translate(31.8,50)">${arrowR}</g><g transform="translate(53.1,50)">${arrowR}</g><g transform="translate(74.3,50)">${arrowR}</g>`)
+                           : (ladrilloIzq + '<rect x="15" y="0" width="85" height="100" vector-effect="non-scaling-stroke"/><line x1="36.2" y1="0" x2="36.2" y2="100" vector-effect="non-scaling-stroke"/><line x1="57.5" y1="0" x2="57.5" y2="100" vector-effect="non-scaling-stroke"/><line x1="78.7" y1="0" x2="78.7" y2="100" vector-effect="non-scaling-stroke"/>' + `<g transform="translate(25.6,50)">${arrowL}</g><g transform="translate(46.8,50)">${arrowL}</g><g transform="translate(68.1,50)">${arrowL}</g><g transform="translate(89.3,50)">${arrowL}</g>`);
                 break;
             case 'gal6_3v': 
-                svg += ladrilloIzq + ladrilloDer + '<rect x="20" y="10" width="60" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="40" y1="10" x2="40" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="60" y1="10" x2="60" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
-                svg += `<g transform="translate(29,30)">${arrowL}</g><g transform="translate(39,30)">${arrowL}</g><g transform="translate(49,30)">${arrowL}</g><g transform="translate(51,30)">${arrowR}</g><g transform="translate(61,30)">${arrowR}</g><g transform="translate(71,30)">${arrowR}</g>`;
+                svg += ladrilloIzq + ladrilloDer + '<rect x="15" y="0" width="70" height="100" vector-effect="non-scaling-stroke"/>';
+                let st = 70/6;
+                for(let i=1;i<=5;i++) svg += `<line x1="${15+i*st}" y1="0" x2="${15+i*st}" y2="100" vector-effect="non-scaling-stroke"/>`;
+                svg += `<g transform="translate(${15+st*0.5},50)">${arrowL}</g><g transform="translate(${15+st*1.5},50)">${arrowL}</g><g transform="translate(${15+st*2.5},50)">${arrowL}</g><g transform="translate(${15+st*3.5},50)">${arrowR}</g><g transform="translate(${15+st*4.5},50)">${arrowR}</g><g transform="translate(${15+st*5.5},50)">${arrowR}</g>`;
                 break;
 
-            case 'win_abat': svg += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20"/>'; break;
-            case 'win_ob': svg += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>'; break;
-            case 'win_proy': svg += '<rect x="25" y="15" width="50" height="30"/><path d="M25 15l25 30l25-30"/><path d="M63 35a8 8 0 0 0 5 -5M66 31l2 -1l1 2"/>'; break;
-            case 'win_souf': svg += '<rect x="25" y="15" width="50" height="30"/><path d="M25 45l25-30l25 30"/>'; break;
-            case 'door_abat': svg += '<rect x="35" y="5" width="30" height="50"/><path d="M35 5l30 25l-30 25"/>'; break;
+            case 'win_abat': svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><path d="M0 0 L100 50 L0 100" vector-effect="non-scaling-stroke"/>'; break;
+            case 'win_ob': svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><path d="M0 0 L100 50 L0 100 M0 100 L50 0 L100 100" vector-effect="non-scaling-stroke"/>'; break;
+            case 'win_proy': svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><path d="M0 100 L50 0 L100 100" vector-effect="non-scaling-stroke"/>'; break;
+            case 'win_souf': svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><path d="M0 0 L50 100 L100 0" vector-effect="non-scaling-stroke"/>'; break;
+            case 'door_abat': svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/><path d="M0 0 L100 50 L0 100" vector-effect="non-scaling-stroke"/>'; break;
 
-            /* MAMPARA DE BAÑO */
             case 'mamp_fija': 
-                svg += '<rect x="30" y="5" width="40" height="50" stroke-width="1.5"/>';
-                // 2 laterales pequeños (izquierda)
-                svg += '<rect x="29" y="12" width="2" height="4" fill="#0A3D62"/><rect x="29" y="44" width="2" height="4" fill="#0A3D62"/>';
-                // 1 abajo lejos (derecha)
-                svg += '<rect x="64" y="54" width="4" height="2" fill="#0A3D62"/>';
-                
-                // Lógica de >= 1000mm (agrega cuarto conector abajo cerca del lateral)
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/>';
+                svg += '<rect x="0" y="15" width="4" height="10" fill="#0A3D62" vector-effect="non-scaling-stroke"/>';
+                svg += '<rect x="0" y="75" width="4" height="10" fill="#0A3D62" vector-effect="non-scaling-stroke"/>';
+                svg += '<rect x="85" y="96" width="10" height="4" fill="#0A3D62" vector-effect="non-scaling-stroke"/>';
                 if (state.ancho >= 1000) {
-                    svg += '<rect x="32" y="54" width="4" height="2" fill="#0A3D62"/>';
+                    svg += '<rect x="15" y="96" width="10" height="4" fill="#0A3D62" vector-effect="non-scaling-stroke"/>';
                 }
                 break;
 
-            /* PUERTA DE VIDRIO DINÁMICA */
             case 'door_glass':
-                svg += '<rect x="30" y="5" width="40" height="50" stroke-width="1.5"/>';
-                
-                // Bisagras o Botella (tamaño discreto)
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/>';
                 if (state.bisagras === 'bisagra') {
-                    svg += `<rect x="${isD ? 69 : 29}" y="15" width="2" height="4" fill="#0A3D62"/><rect x="${isD ? 69 : 29}" y="41" width="2" height="4" fill="#0A3D62"/>`;
+                    svg += `<rect x="${isD ? 96 : 0}" y="15" width="4" height="10" fill="#0A3D62" vector-effect="non-scaling-stroke"/><rect x="${isD ? 96 : 0}" y="75" width="4" height="10" fill="#0A3D62" vector-effect="non-scaling-stroke"/>`;
                 } else {
-                    svg += `<rect x="${isD ? 65 : 30}" y="5" width="5" height="2" fill="#0A3D62"/><rect x="${isD ? 65 : 30}" y="53" width="5" height="2" fill="#0A3D62"/>`;
+                    svg += `<rect x="${isD ? 90 : 0}" y="0" width="10" height="4" fill="#0A3D62" vector-effect="non-scaling-stroke"/><rect x="${isD ? 90 : 0}" y="96" width="10" height="4" fill="#0A3D62" vector-effect="non-scaling-stroke"/>`;
                 }
 
-                // Cerradura Principal (Centro Media Luna o Digital)
                 if (state.cerradura_tipo === 'central') {
-                    svg += `<path d="M ${isD ? 30 : 70} 26 A 4 4 0 0 ${isD ? 1 : 0} ${isD ? 30 : 70} 34 Z" fill="#0A3D62"/>`;
+                    svg += `<path d="M ${isD ? 0 : 100} 45 A 10 10 0 0 ${isD ? 1 : 0} ${isD ? 0 : 100} 55 Z" fill="#0A3D62" vector-effect="non-scaling-stroke"/>`;
                 } else if (state.cerradura_tipo === 'digital') {
-                    svg += `<rect x="${isD ? 30 : 66}" y="25" width="4" height="10" fill="#0A3D62"/>`;
-                    svg += `<circle cx="${isD ? 32 : 68}" cy="27" r="0.5" fill="#fff"/><circle cx="${isD ? 32 : 68}" cy="30" r="0.5" fill="#fff"/><circle cx="${isD ? 32 : 68}" cy="33" r="0.5" fill="#fff"/>`;
+                    svg += `<rect x="${isD ? 0 : 95}" y="35" width="5" height="30" fill="#0A3D62" vector-effect="non-scaling-stroke"/>`;
                 }
 
-                // Cerradura de Piso
                 if (state.cerradura_piso === 'si') {
-                    svg += `<rect x="${isD ? 32 : 62}" y="52" width="6" height="3" fill="#0A3D62"/>`;
+                    svg += `<rect x="${isD ? 10 : 80}" y="96" width="10" height="4" fill="#0A3D62" vector-effect="non-scaling-stroke"/>`;
                 }
 
-                // Tirador Dinámico y Proporcional
                 if (state.tirador && state.tirador !== '') {
-                    let h = 10; // altura default
-                    if (state.tirador === '5') h = 6;
-                    if (state.tirador === '8') h = 10;
-                    if (state.tirador === '12') h = 16;
-                    if (state.tirador === '16') h = 22;
-                    let y1 = 30 - h/2;
-                    let y2 = 30 + h/2;
-                    let x = isD ? 36 : 64;
-                    svg += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke-width="1.5"/>`;
+                    let h = 10;
+                    if (state.tirador === '5') h = 10;
+                    if (state.tirador === '8') h = 15;
+                    if (state.tirador === '12') h = 25;
+                    if (state.tirador === '16') h = 35;
+                    let y1 = 50 - h;
+                    let y2 = 50 + h;
+                    let x = isD ? 15 : 85;
+                    svg += `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" vector-effect="non-scaling-stroke"/>`;
                 }
                 break;
 
-            /* FACHADA FIJA MULTIPAÑO DINÁMICA */
             case 'fachada_din':
                 let n = parseInt(state.panos) || 1;
-                svg += '<rect x="10" y="5" width="80" height="50" stroke-width="2"/>';
+                let isTope = state.union === 'tope';
+                let innerStroke = isTope ? 0.5 : 2; 
+                
+                svg += '<rect x="0" y="0" width="100" height="100" vector-effect="non-scaling-stroke"/>';
                 for (let i = 1; i < n; i++) {
-                    let posX = 10 + (80 / n) * i;
-                    svg += `<line x1="${posX}" y1="5" x2="${posX}" y2="55" stroke-width="2"/>`;
+                    let posX = (100 / n) * i;
+                    svg += `<line x1="${posX}" y1="0" x2="${posX}" y2="100" stroke-width="${innerStroke}" vector-effect="non-scaling-stroke"/>`;
                 }
                 break;
         }
 
-        // Inversión visual automática para ventanas simples
         if (['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD) {
             svg = svg.replace('<svg ', '<svg style="transform: scaleX(-1); stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;" ');
         }
@@ -537,7 +694,7 @@
         return svg;
     }
 
-    // MOTOR MINI-CAD INTELIGENTE (Snapping y Líneas Rectas)
+    // MOTOR MINI-CAD INTELIGENTE (ASAMBLEA Y ESCALA MATEMÁTICA)
     function initMiniCAD(id) {
         const canvas = document.getElementById('canvas-' + id);
         const ctx = canvas.getContext('2d');
@@ -545,6 +702,64 @@
         let drawing = false;
         let startX = 0, startY = 0;
         let lines = []; 
+        let draggingImg = null;
+        let dragOffsetX = 0, dragOffsetY = 0;
+
+        window['updateCADOptionsUI' + id] = function() {
+            let container = document.getElementById('cad-options-' + id);
+            let selectedItem = window['selectedCADItem' + id];
+            
+            if(!selectedItem) {
+                container.innerHTML = '<div style="grid-column: span 2; text-align:center; color:#0A3D62; font-size:11px; padding: 10px; font-weight:bold;">Toca un modelo insertado para configurarlo aquí</div>';
+                return;
+            }
+            
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
+            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(selectedItem.categoria);
+            
+            // Sub-medidas individuales para el CAD 
+            let dimensionInputs = `
+                <div style="grid-column: span 2; display: flex; gap: 10px; margin-bottom: 5px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                    <div style="flex:1;"><label style="font-size:10px; color:#0A3D62; font-weight:bold;">Ancho (mm):</label><input type="text" inputmode="numeric" style="width:100%; padding:5px; border:1px solid #ddd; border-radius:3px;" value="${selectedItem.state.ancho || ''}" oninput="updateCADItemState(${id}, 'ancho', this.value)"></div>
+                    <div style="flex:1;"><label style="font-size:10px; color:#0A3D62; font-weight:bold;">Alto (mm):</label><input type="text" inputmode="numeric" style="width:100%; padding:5px; border:1px solid #ddd; border-radius:3px;" value="${selectedItem.state.alto || ''}" oninput="updateCADItemState(${id}, 'alto', this.value)"></div>
+                </div>
+            `;
+
+            let orientationHtml = showOrientation ? `
+                <div class="orientation-toggle" style="grid-column: span 2; margin-bottom: 5px;">
+                    <div class="toggle-btn ${selectedItem.state.orientacion==='I'?'active':''}" onclick="updateCADItemState(${id}, 'orientacion', 'I')">← A LA IZQUIERDA</div>
+                    <div class="toggle-btn ${selectedItem.state.orientacion==='D'?'active':''}" onclick="updateCADItemState(${id}, 'orientacion', 'D')">A LA DERECHA →</div>
+                </div>` : '';
+
+            let deleteBtn = `<button onclick="window.deleteSelectedCADItem(${id})" style="grid-column: span 2; background: #e74c3c; color: white; border: none; padding: 6px; border-radius: 3px; cursor: pointer; margin-bottom: 5px; font-weight:bold;">🗑️ Borrar módulo seleccionado</button>`;
+            
+            container.innerHTML = dimensionInputs + deleteBtn + orientationHtml + getMenuOpciones(id, selectedItem.categoria, selectedItem.type, true);
+            
+            // Re-poblar los selectores con el estado actual
+            let selects = container.querySelectorAll('select');
+            selects.forEach(select => {
+                let onchangeStr = select.getAttribute('onchange');
+                if(onchangeStr) {
+                    let match = onchangeStr.match(/,\s*'([^']+)'\s*,/);
+                    if(match && match[1]) {
+                        let key = match[1];
+                        if(selectedItem.state[key] !== undefined) {
+                            select.value = selectedItem.state[key];
+                        }
+                    }
+                }
+            });
+        };
+
+        window.deleteSelectedCADItem = function(cardId) {
+            let item = window['selectedCADItem' + cardId];
+            if(item && window['cadItems' + cardId]) {
+                window['cadItems' + cardId] = window['cadItems' + cardId].filter(i => i !== item);
+                window['selectedCADItem' + cardId] = null;
+                if(window['updateCADOptionsUI' + cardId]) window['updateCADOptionsUI' + cardId]();
+                if(window['drawAll' + cardId]) window['drawAll' + cardId]();
+            }
+        };
         
         function getPos(e) {
             const rect = canvas.getBoundingClientRect();
@@ -553,7 +768,6 @@
             return { x: clientX - rect.left, y: clientY - rect.top };
         }
 
-        // Imán para las esquinas (Snap)
         function snap(p) {
             const snapDist = 15;
             for (let line of lines) {
@@ -565,37 +779,180 @@
 
         function drawAll() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (window['cadItems' + id]) {
+                window['cadItems' + id].forEach(item => {
+                    if (item.img) {
+                        ctx.drawImage(item.img, item.x - item.w/2, item.y - item.h/2, item.w, item.h);
+                        
+                        // EL NUEVO RADAR ANTI-COLISIÓN DE TEXTOS (Inteligencia Espacial)
+                        let writeWidthTop = true;
+                        let writeHeightRight = true;
+
+                        window['cadItems' + id].forEach(other => {
+                            if (other === item) return;
+                            // Hay un módulo directamente ARRIBA?
+                            if (Math.abs((item.y - item.h/2) - (other.y + other.h/2)) < 5 && Math.abs(item.x - other.x) < (item.w/2 + other.w/2)) {
+                                writeWidthTop = false; 
+                            }
+                            // Hay un módulo directamente a la DERECHA?
+                            if (Math.abs((item.x + item.w/2) - (other.x - other.w/2)) < 5 && Math.abs(item.y - other.y) < (item.h/2 + other.h/2)) {
+                                writeHeightRight = false; 
+                            }
+                        });
+
+                        ctx.fillStyle = '#0A3D62'; 
+                        ctx.font = 'bold 11px Arimo'; 
+                        
+                        // Textos Dinámicos de Ancho
+                        if (item.state.ancho > 0) {
+                            ctx.textAlign = 'center';
+                            if (writeWidthTop) {
+                                ctx.fillText(item.state.ancho + ' mm', item.x, item.y - item.h/2 - 8);
+                            } else {
+                                // Si hay módulo arriba, lo escribimos abajo!
+                                ctx.fillText(item.state.ancho + ' mm', item.x, item.y + item.h/2 + 15);
+                            }
+                        }
+                        
+                        // Textos Dinámicos de Alto
+                        if (item.state.alto > 0) {
+                            if (writeHeightRight) {
+                                ctx.textAlign = 'left';
+                                ctx.fillText(item.state.alto + ' mm', item.x + item.w/2 + 8, item.y + 4);
+                            } else {
+                                // Si hay módulo a la derecha, lo escribimos a la izquierda!
+                                ctx.textAlign = 'right';
+                                ctx.fillText(item.state.alto + ' mm', item.x - item.w/2 - 8, item.y + 4);
+                            }
+                        }
+
+                        // Resaltar el item seleccionado
+                        if (window['selectedCADItem' + id] === item) {
+                            ctx.strokeStyle = '#F6B93B';
+                            ctx.lineWidth = 2;
+                            ctx.strokeRect(item.x - item.w/2 - 2, item.y - item.h/2 - 2, item.w + 4, item.h + 4);
+                        }
+                    }
+                });
+            }
+
             ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#0A3D62';
             lines.forEach(l => {
                 ctx.beginPath(); ctx.moveTo(l.x1, l.y1); ctx.lineTo(l.x2, l.y2); ctx.stroke();
             });
         }
+        
+        window['drawAll' + id] = drawAll;
 
         function startDraw(e) {
+            let p = getPos(e);
+            
+            // Detectar si tocamos un modelo insertado para moverlo/seleccionarlo
+            let clickedItem = null;
+            if (window['cadItems' + id]) {
+                for (let i = window['cadItems' + id].length - 1; i >= 0; i--) {
+                    let item = window['cadItems' + id][i];
+                    if (p.x >= item.x - item.w/2 && p.x <= item.x + item.w/2 &&
+                        p.y >= item.y - item.h/2 && p.y <= item.y + item.h/2) {
+                        clickedItem = item;
+                        break;
+                    }
+                }
+            }
+
+            if (clickedItem) {
+                window['selectedCADItem' + id] = clickedItem;
+                draggingImg = clickedItem;
+                dragOffsetX = p.x - clickedItem.x;
+                dragOffsetY = p.y - clickedItem.y;
+                if(e.type === 'touchstart') e.preventDefault();
+                window['updateCADOptionsUI' + id]();
+                drawAll();
+                return; 
+            } else {
+                window['selectedCADItem' + id] = null;
+                window['updateCADOptionsUI' + id]();
+                drawAll();
+            }
+
             if(e.type === 'touchstart') e.preventDefault();
             drawing = true;
-            let p = snap(getPos(e));
+            p = snap(p);
             startX = p.x; startY = p.y;
         }
 
         function moveDraw(e) {
+            if (draggingImg) {
+                if(e.type === 'touchmove') e.preventDefault();
+                let p = getPos(e);
+                let targetX = p.x - dragOffsetX;
+                let targetY = p.y - dragOffsetY;
+                
+                // SISTEMA DE IMÁN INTELIGENTE MEJORADO (CHASIS COMPUESTOS)
+                window['cadItems' + id].forEach(other => {
+                    if(other === draggingImg) return;
+                    
+                    // Pegar Abajo de otro
+                    if(Math.abs((targetY - draggingImg.h/2) - (other.y + other.h/2)) < 15 && Math.abs(targetX - other.x) < (draggingImg.w/2 + other.w/2)) {
+                        targetY = other.y + other.h/2 + draggingImg.h/2; 
+                        if (Math.abs(targetX - other.x) < 15) targetX = other.x;
+                        else if (Math.abs((targetX - draggingImg.w/2) - (other.x - other.w/2)) < 15) targetX = other.x - other.w/2 + draggingImg.w/2;
+                        else if (Math.abs((targetX + draggingImg.w/2) - (other.x + other.w/2)) < 15) targetX = other.x + other.w/2 - draggingImg.w/2;
+                    }
+                    // Pegar Arriba de otro
+                    else if(Math.abs((targetY + draggingImg.h/2) - (other.y - other.h/2)) < 15 && Math.abs(targetX - other.x) < (draggingImg.w/2 + other.w/2)) {
+                        targetY = other.y - other.h/2 - draggingImg.h/2; 
+                        if (Math.abs(targetX - other.x) < 15) targetX = other.x;
+                        else if (Math.abs((targetX - draggingImg.w/2) - (other.x - other.w/2)) < 15) targetX = other.x - other.w/2 + draggingImg.w/2;
+                        else if (Math.abs((targetX + draggingImg.w/2) - (other.x + other.w/2)) < 15) targetX = other.x + other.w/2 - draggingImg.w/2;
+                    }
+                    // Pegar a la Derecha de otro
+                    else if(Math.abs((targetX - draggingImg.w/2) - (other.x + other.w/2)) < 15 && Math.abs(targetY - other.y) < (draggingImg.h/2 + other.h/2)) {
+                        targetX = other.x + other.w/2 + draggingImg.w/2; 
+                        if (Math.abs(targetY - other.y) < 15) targetY = other.y;
+                        else if (Math.abs((targetY - draggingImg.h/2) - (other.y - other.h/2)) < 15) targetY = other.y - other.h/2 + draggingImg.h/2;
+                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = other.y + other.h/2 - draggingImg.h/2;
+                    }
+                    // Pegar a la Izquierda de otro
+                    else if(Math.abs((targetX + draggingImg.w/2) - (other.x - other.w/2)) < 15 && Math.abs(targetY - other.y) < (draggingImg.h/2 + other.h/2)) {
+                        targetX = other.x - other.w/2 - draggingImg.w/2; 
+                        if (Math.abs(targetY - other.y) < 15) targetY = other.y;
+                        else if (Math.abs((targetY - draggingImg.h/2) - (other.y - other.h/2)) < 15) targetY = other.y - other.h/2 + draggingImg.h/2;
+                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = other.y + other.h/2 - draggingImg.h/2;
+                    }
+                });
+
+                draggingImg.x = targetX;
+                draggingImg.y = targetY;
+                drawAll();
+                return;
+            }
+
             if (!drawing) return;
             if(e.type === 'touchmove') e.preventDefault();
             let p = getPos(e);
             
-            // Forzar línea recta (Ortogonal 90°)
             let dx = Math.abs(p.x - startX);
             let dy = Math.abs(p.y - startY);
-            if (dx > dy) p.y = startY; else p.x = startX;
+            
+            if (dx < 10 && dy > 15) p.x = startX;
+            else if (dy < 10 && dx > 15) p.y = startY;
             
             p = snap(p);
             
             drawAll();
-            ctx.beginPath(); ctx.strokeStyle = '#F6B93B'; // Muestra línea amarilla previa
+            ctx.beginPath(); ctx.strokeStyle = '#F6B93B'; 
             ctx.moveTo(startX, startY); ctx.lineTo(p.x, p.y); ctx.stroke();
         }
 
         function endDraw(e) {
+            if (draggingImg) {
+                draggingImg = null;
+                if(e.type === 'touchend') e.preventDefault();
+                return;
+            }
+
             if (!drawing) return;
             if(e.type === 'touchend') e.preventDefault();
             drawing = false;
@@ -603,11 +960,12 @@
             
             let dx = Math.abs(p.x - startX);
             let dy = Math.abs(p.y - startY);
-            if (dx > dy) p.y = startY; else p.x = startX;
+            
+            if (dx < 10 && dy > 15) p.x = startX;
+            else if (dy < 10 && dx > 15) p.y = startY;
             
             p = snap(p);
             
-            // Ignorar toques accidentales muy cortos
             if (Math.hypot(p.x - startX, p.y - startY) > 5) {
                 lines.push({x1: startX, y1: startY, x2: p.x, y2: p.y});
             }
@@ -617,7 +975,7 @@
         canvas.addEventListener('mousedown', startDraw);
         canvas.addEventListener('mousemove', moveDraw);
         canvas.addEventListener('mouseup', endDraw);
-        canvas.addEventListener('mouseleave', () => { if(drawing) endDraw(new MouseEvent('mouseup')); });
+        canvas.addEventListener('mouseleave', () => { if(drawing) endDraw(new MouseEvent('mouseup')); if(draggingImg) draggingImg=null; });
         
         canvas.addEventListener('touchstart', startDraw, {passive: false});
         canvas.addEventListener('touchmove', moveDraw, {passive: false});
