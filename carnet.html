@@ -209,7 +209,14 @@
         <div style="margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px;">
             <button class="btn-cat" style="background:#27ae60; color:white; width:100%; text-align:center; font-weight:bold; margin-bottom: 10px; font-size: 13px; padding: 10px; border:none;" onclick="saveProject()">💾 GUARDAR PROYECTO</button>
             <button class="btn-cat" style="background:white; color:var(--artal-blue); width:100%; text-align: center; font-weight: bold;" onclick="exportPDF()">🖨️ EXPORTAR PDF</button>
-            <button class="btn-cat" style="background:rgba(255,255,255,0.1); color:white; width:100%; text-align: center; font-size:10px; margin-top: 5px; border:1px solid rgba(255,255,255,0.2);" onclick="resetNotebook()">🗑️ HOJA EN BLANCO</button>
+
+            <div style="display: flex; gap: 5px; margin-top: 10px;">
+                <button class="btn-cat" style="flex:1; background:#34495e; color:white; text-align:center; font-size:9px; padding:6px; border:none;" onclick="exportJSON()" title="Descarga este proyecto como archivo para otro dispositivo">📤 EXPORT ARCHIVO</button>
+                <button class="btn-cat" style="flex:1; background:#34495e; color:white; text-align:center; font-size:9px; padding:6px; border:none;" onclick="triggerImport()" title="Sube un archivo de proyecto desde otro dispositivo">📥 IMPORT ARCHIVO</button>
+                <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importJSON(event)">
+            </div>
+
+            <button class="btn-cat" style="background:rgba(255,255,255,0.1); color:white; width:100%; text-align: center; font-size:10px; margin-top: 10px; border:1px solid rgba(255,255,255,0.2);" onclick="resetNotebook()">🗑️ HOJA EN BLANCO</button>
         </div>
     </div>
     
@@ -269,7 +276,6 @@
         return names[type] || 'Elemento';
     }
 
-    // Actualiza la clase panoramic dependiendo del número de ítems (>= 3 -> Panoramic)
     function updatePanoramicState(id) {
         const card = document.getElementById('card-' + id);
         if (!card || cardsState[id].type !== 'draw') return;
@@ -347,6 +353,53 @@
         }
     }
 
+    // --- FUNCIONES EXPORTAR / IMPORTAR ARCHIVOS JSON (NUEVO) ---
+    function exportJSON() {
+        if (!validateAllCards()) return; // Requerir validación también para exportar
+
+        const data = getAppJSON();
+        let fileName = "proyecto_artal.json";
+        
+        if (data.header.cliente && data.header.obra) {
+            // Limpiar nombres para archivo
+            let clientName = data.header.cliente.replace(/\s+/g, '_');
+            let obraName = data.header.obra.replace(/\s+/g, '_');
+            fileName = `${clientName}_${obraName}.json`;
+        }
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", fileName);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+    }
+
+    function triggerImport() {
+        document.getElementById('import-file').click();
+    }
+
+    function importJSON(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                restoreData(data);
+                saveProgress();
+                alert('📥 Proyecto importado correctamente.\n\nRevisa la pantalla y no olvides darle a "GUARDAR PROYECTO" si quieres que quede en la memoria de este dispositivo.');
+            } catch(err) {
+                alert('❌ Error al leer el archivo. Asegúrate de que es un archivo .json válido generado por esta app.');
+            }
+        };
+        reader.readAsText(file);
+        event.target.value = ''; // Reset input
+    }
+    // -----------------------------------------------------------
+
     function saveProject() {
         if (!validateAllCards()) return;
 
@@ -370,7 +423,7 @@
         
         document.getElementById('header-fecha').innerText = `Creado: ${jsonData.header.fechaCreacion} | Mod: ${jsonData.header.fechaModificacion}`;
         
-        alert(`✅ Proyecto "${obra}" del cliente "${cliente}" guardado correctamente.`);
+        alert(`✅ Proyecto "${obra}" del cliente "${cliente}" guardado en la memoria.`);
     }
 
     function generateSummary(id) {
