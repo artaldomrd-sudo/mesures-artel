@@ -52,12 +52,12 @@
         /* Tarjeta de Medida */
         .item-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; position: relative; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; break-inside: avoid; border-top: 4px solid var(--artal-blue); transition: border-color 0.3s; }
         
-        /* CAD CARD FULL WIDTH (Panorámico) */
-        .item-card.cad-card { grid-column: 1 / -1; width: 100%; }
+        /* CAD CARD DYNAMIC WIDTH */
+        .item-card.cad-card.panoramic { grid-column: 1 / -1; width: 100%; }
         .cad-body { display: flex; flex-direction: column; gap: 15px; width: 100%; }
-        .item-card.locked.cad-card .cad-body { flex-direction: row; align-items: flex-start; }
-        .item-card.locked.cad-card .drawing-area { flex: 2; height: auto; min-height: 250px; }
-        .item-card.locked.cad-card .summary-box { flex: 1; max-height: none; overflow: visible; font-size: 13px; margin-top: 0; }
+        .item-card.locked.cad-card.panoramic .cad-body { flex-direction: row; align-items: flex-start; }
+        .item-card.locked.cad-card.panoramic .drawing-area { flex: 2; height: auto; min-height: 250px; }
+        .item-card.locked.cad-card.panoramic .summary-box { flex: 1; max-height: none; overflow: visible; font-size: 13px; margin-top: 0; }
 
         .card-ref-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }
         .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
@@ -124,14 +124,14 @@
                 box-sizing: border-box !important; overflow: hidden !important;
             }
 
-            /* CAD CARDS (100% WIDTH, HORIZONTAL LAYOUT) */
-            .item-card.cad-card { 
+            /* CAD CARDS PANORAMIC (100% WIDTH, HORIZONTAL LAYOUT) */
+            .item-card.cad-card.panoramic { 
                 display: block !important; width: 98% !important; margin-right: 0 !important; 
                 height: auto !important; min-height: 75mm !important; max-height: none !important;
             }
-            .item-card.locked.cad-card .cad-body { flex-direction: row !important; align-items: center !important; }
-            .item-card.locked.cad-card .drawing-area { flex: 2 !important; height: 50mm !important; max-height: 50mm !important; min-height: 50mm !important; border-right: none !important; }
-            .item-card.locked.cad-card .summary-box { flex: 1 !important; font-size: 10px !important; padding: 4mm !important; background: transparent !important; border:1px solid #ddd !important; height: 50mm !important;}
+            .item-card.locked.cad-card.panoramic .cad-body { flex-direction: row !important; align-items: center !important; }
+            .item-card.locked.cad-card.panoramic .drawing-area { flex: 2 !important; height: 50mm !important; max-height: 50mm !important; min-height: 50mm !important; border-right: none !important; }
+            .item-card.locked.cad-card.panoramic .summary-box { flex: 1 !important; font-size: 10px !important; padding: 4mm !important; background: transparent !important; border:1px solid #ddd !important; height: 50mm !important;}
 
             .drawing-area { height: 28mm !important; min-height: 28mm !important; max-height: 28mm !important; border: 1px solid #ddd !important; margin: 1mm 0 !important; width: 100% !important; }
             
@@ -269,7 +269,18 @@
         return names[type] || 'Elemento';
     }
 
-    // ACTUALIZACIÓN GLOBAL (Ej: cuando cambia el color del encabezado, se actualiza el resumen si hay Louvers)
+    // Actualiza la clase panoramic dependiendo del número de ítems (>= 3 -> Panoramic)
+    function updatePanoramicState(id) {
+        const card = document.getElementById('card-' + id);
+        if (!card || cardsState[id].type !== 'draw') return;
+        const items = window['cadItems' + id] || [];
+        if (items.length >= 3) {
+            card.classList.add('panoramic');
+        } else {
+            card.classList.remove('panoramic');
+        }
+    }
+
     function triggerGlobalUpdate() {
         Object.keys(cardsState).forEach(id => {
             if (!cardsState[id].locked) {
@@ -294,7 +305,6 @@
         saveProgress();
     }
 
-    // VERIFICADOR DE SEGURIDAD GENERAL (CANDADOS Y MEDIDAS)
     function validateAllCards() {
         let allLocked = true;
         let missingDim = false;
@@ -321,7 +331,7 @@
         });
 
         if (!allLocked) {
-            alert('⚠️ ¡ATENCIÓN! Tienes modelos sin validar.\n\nDebes hacer clic en el candado (🔓 -> 🔒) de cada modelo para fijarlo y calcular los totales antes de guardar.');
+            alert('⚠️ ¡ATENCIÓN! Tienes modelos sin validar.\n\nDebes hacer clic en el candado (🔓 -> 🔒) de cada modelo para fijarlo y calcular los totales antes de continuar.');
             return false;
         }
         if (missingDim) {
@@ -331,14 +341,12 @@
         return true;
     }
 
-    // EXPORTAR PDF
     function exportPDF() {
         if (validateAllCards()) {
             window.print();
         }
     }
 
-    // GUARDAR PROYECTO
     function saveProject() {
         if (!validateAllCards()) return;
 
@@ -360,7 +368,6 @@
         updateObraList();
         document.getElementById('select-proyecto').value = obra;
         
-        // Actualizar UI de fechas
         document.getElementById('header-fecha').innerText = `Creado: ${jsonData.header.fechaCreacion} | Mod: ${jsonData.header.fechaModificacion}`;
         
         alert(`✅ Proyecto "${obra}" del cliente "${cliente}" guardado correctamente.`);
@@ -372,6 +379,14 @@
         const state = cardsState[id];
         let headerColor = document.getElementById('header-color').value || 'Sin definir';
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
+
+        const getAperturaSpec = (itemState, type, cat) => {
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
+            if (!hideOrientation && itemState.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cat)) {
+                return `Apertura: ${itemState.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`;
+            }
+            return null;
+        };
 
         if (state.type === 'draw') {
             const items = window['cadItems' + id] || [];
@@ -409,9 +424,12 @@
                     else specs.push(`Vidrio: ${item.state.vidrio} ${item.state.espesor || ''} ${item.state.color_vidrio || ''}`);
                 }
                 if (item.state.cierre) specs.push(`Cierre: ${item.state.cierre}`);
+                if (item.state.mosquitera) specs.push(`Mosquitera: ${item.state.mosquitera === 'con' ? 'Integrada' : 'No'}`);
                 if (item.state.union && (parseInt(item.state.panos) || 1) > 1) specs.push(`Unión: ${item.state.union}`);
                 if (item.state.fijacion) specs.push(`Fijación: ${item.state.fijacion === 'p40_puerta' ? 'P40 de puerta' : item.state.fijacion}`);
-                if (item.state.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(item.categoria)) specs.push(`Apertura: ${item.state.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`);
+                
+                let apertura = getAperturaSpec(item.state, item.type, item.categoria);
+                if (apertura) specs.push(apertura);
 
                 if(specs.length > 0) html += `<span style="color:#666; font-size:11px; margin-left: 25px;">⮑ ${specs.join(' | ')}</span></div>`;
             });
@@ -424,7 +442,11 @@
                 else specs.push(`Vidrio: ${state.vidrio} ${state.espesor || ''} ${state.color_vidrio || ''}`);
             }
             if(state.cierre) specs.push(`Cierre: ${state.cierre}`);
-            if(state.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(state.categoria)) specs.push(`Ap: ${state.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`);
+            if(state.mosquitera) specs.push(`Mosquitera: ${state.mosquitera === 'con' ? 'Integrada' : 'No'}`);
+            
+            let apertura = getAperturaSpec(state, state.type, state.categoria);
+            if (apertura) specs.push(apertura);
+            
             if(state.fijacion) specs.push(`Fijación: ${state.fijacion === 'p40_puerta' ? 'P40 de puerta' : state.fijacion}`);
             if (state.union && (parseInt(state.panos) || 1) > 1) specs.push(`Unión: ${state.union}`);
             
@@ -437,10 +459,8 @@
         summaryBox.innerHTML = html;
     }
 
-    // TOGGLE CADENAS + AUTOCALCUL CAD
     function toggleLock(id) {
         if (!cardsState[id].locked && cardsState[id].type === 'draw') {
-            // AUTOCALCUL DES MESURES TOTALES AVANT DE FERMER LE CADENAS
             const items = window['cadItems' + id] || [];
             if (items.length > 0) {
                 let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -460,6 +480,7 @@
                 if (inputA) inputA.value = cardsState[id].ancho;
                 if (inputH) inputH.value = cardsState[id].alto;
             }
+            updatePanoramicState(id);
         }
 
         cardsState[id].locked = !cardsState[id].locked;
@@ -551,7 +572,11 @@
 
     function getAppJSON() {
         let displayDate = document.getElementById('header-fecha');
-        let createdStr = displayDate.dataset.created || new Date().toLocaleDateString('es-ES');
+        let createdStr = displayDate.dataset.created;
+        if (!createdStr) {
+            createdStr = new Date().toLocaleDateString('es-ES');
+            displayDate.dataset.created = createdStr; 
+        }
         let modStr = new Date().toLocaleDateString('es-ES');
 
         const data = {
@@ -737,6 +762,9 @@
         if (!window['cadItems' + id]) window['cadItems' + id] = [];
         window['cadItems' + id].push(newItem);
         window['selectedCADItem' + id] = newItem; 
+        
+        updatePanoramicState(id);
+        
         updateCADItemImage(id, newItem, () => {
             if (window['autoFit' + id]) window['autoFit' + id]();
             if (window['drawAll' + id]) window['drawAll' + id]();
@@ -764,7 +792,6 @@
         
         if (key === 'panos' && item.categoria === 'fachada') {
             item.state.panos = value;
-            // Refrescar el menu UI de la tarjeta CAD
             if (window['updateCADOptionsUI' + id]) window['updateCADOptionsUI' + id]();
         } else if (key === 'ancho') { 
             let cleanVal = parseInt(String(value).replace(/\D/g, '')) || 0;
@@ -873,12 +900,15 @@
             `;
             list.appendChild(card);
             
+            window['cadItems' + id] = savedData ? savedData.cadItems : [];
+            window['cadLines' + id] = savedData ? savedData.cadLines : [];
+            
+            updatePanoramicState(id);
+            
             const canvas = document.getElementById('canvas-' + id);
             canvas.width = canvas.parentElement.clientWidth;
             canvas.height = canvas.parentElement.clientHeight;
             
-            window['cadItems' + id] = savedData ? savedData.cadItems : [];
-            window['cadLines' + id] = savedData ? savedData.cadLines : [];
             initMiniCAD(id);
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
@@ -1289,6 +1319,7 @@
             if(item && window['cadItems' + cardId]) {
                 window['cadItems' + cardId] = window['cadItems' + cardId].filter(i => i !== item);
                 window['selectedCADItem' + cardId] = null;
+                updatePanoramicState(cardId);
                 window['autoFit' + cardId]();
                 if(window['updateCADOptionsUI' + cardId]) window['updateCADOptionsUI' + cardId]();
                 if(window['drawAll' + cardId]) window['drawAll' + cardId]();
