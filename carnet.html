@@ -47,11 +47,20 @@
         .header-date-display { font-size: 12px; color: var(--artal-blue); }
         .brand-logo { max-height: 50px; max-width: 150px; object-fit: contain; justify-self: end; }
 
+        /* Contenedor de las tarjetas para Drag and Drop */
         .item-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 25px; flex-grow: 1; align-content: flex-start; }
         
         /* Tarjeta de Medida */
-        .item-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; position: relative; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; break-inside: avoid; border-top: 4px solid var(--artal-blue); transition: border-color 0.3s; }
+        .item-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; position: relative; background: #fff; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px; break-inside: avoid; border-top: 4px solid var(--artal-blue); transition: border-color 0.3s, transform 0.2s, box-shadow 0.2s; }
         
+        /* Clases para el Drag and Drop */
+        .item-card.dragging { opacity: 0.5; transform: scale(0.98); box-shadow: 0 8px 15px rgba(0,0,0,0.1); z-index: 100; }
+        .item-card.drag-over { border: 2px dashed var(--artal-yellow); }
+        
+        /* Botón de arrastre - BLOQUEADO HASTA CLIC */
+        .drag-handle { position: absolute; top: -10px; left: -10px; background: var(--artal-blue); color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: grab; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; }
+        .drag-handle:active { cursor: grabbing; }
+
         /* CAD CARD DYNAMIC WIDTH */
         .item-card.cad-card.panoramic { grid-column: 1 / -1; width: 100%; }
         .cad-body { display: flex; flex-direction: column; gap: 15px; width: 100%; }
@@ -59,7 +68,7 @@
         .item-card.locked.cad-card.panoramic .drawing-area { flex: 2; height: auto; min-height: 250px; }
         .item-card.locked.cad-card.panoramic .summary-box { flex: 1; max-height: none; overflow: visible; font-size: 13px; margin-top: 0; }
 
-        .card-ref-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }
+        .card-ref-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #ccc; padding-bottom: 5px; margin-left: 15px; }
         .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
         .card-ref-row span { font-size: 12px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
         
@@ -106,7 +115,7 @@
             #app-root, html, body { height: auto !important; overflow: visible !important; display: block !important; background: white !important; padding-bottom: 35mm !important; }
             #sidebar { display: none !important; }
             #main-canvas { padding: 0 !important; overflow: visible !important; display: block !important; width: 100% !important; }
-            .delete-card, .lock-btn, .orientation-toggle, .clear-canvas-btn, .cad-insert-select { display: none !important; }
+            .delete-card, .lock-btn, .drag-handle, .orientation-toggle, .clear-canvas-btn, .cad-insert-select { display: none !important; }
             
             input[type=number]::-webkit-inner-spin-button, 
             input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
@@ -138,7 +147,7 @@
             .header-field label { font-size: 8px !important; }
             .header-field input, .header-date-display { font-size: 11px !important; border: none; background: transparent; padding: 1px 0 !important; min-height: auto !important;}
             
-            .card-ref-row { padding-bottom: 1px !important; margin-bottom: 1mm !important; }
+            .card-ref-row { padding-bottom: 1px !important; margin-bottom: 1mm !important; margin-left: 0 !important; }
             .card-ref-row input { font-size: 12px !important; border: none !important; background: transparent !important; }
             .card-ref-row span { font-size: 8px !important; }
             input[placeholder*="Ubicación"] { font-size: 9px !important; padding-bottom: 1px !important; border: none !important; margin-bottom: 1px !important;}
@@ -353,15 +362,13 @@
         }
     }
 
-    // --- FUNCIONES EXPORTAR / IMPORTAR ARCHIVOS JSON (NUEVO) ---
     function exportJSON() {
-        if (!validateAllCards()) return; // Requerir validación también para exportar
+        if (!validateAllCards()) return;
 
         const data = getAppJSON();
         let fileName = "proyecto_artal.json";
         
         if (data.header.cliente && data.header.obra) {
-            // Limpiar nombres para archivo
             let clientName = data.header.cliente.replace(/\s+/g, '_');
             let obraName = data.header.obra.replace(/\s+/g, '_');
             fileName = `${clientName}_${obraName}.json`;
@@ -396,9 +403,8 @@
             }
         };
         reader.readAsText(file);
-        event.target.value = ''; // Reset input
+        event.target.value = ''; 
     }
-    // -----------------------------------------------------------
 
     function saveProject() {
         if (!validateAllCards()) return;
@@ -443,7 +449,7 @@
 
         if (state.type === 'draw') {
             const items = window['cadItems' + id] || [];
-            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>COTAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
+            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
             
             if(items.length === 0) {
                 html += '<span style="color:#e74c3c;">No hay elementos en el dibujo.</span></div>';
@@ -477,17 +483,23 @@
                     else specs.push(`Vidrio: ${item.state.vidrio} ${item.state.espesor || ''} ${item.state.color_vidrio || ''}`);
                 }
                 if (item.state.cierre) specs.push(`Cierre: ${item.state.cierre}`);
-                if (item.state.mosquitera) specs.push(`Mosquitera: ${item.state.mosquitera === 'con' ? 'Integrada' : 'No'}`);
+                if (item.state.mosquitera && item.state.mosquitera !== '') specs.push(`Mosquitera: ${item.state.mosquitera === 'con' ? 'Integrada' : 'Sin'}`);
+                if (item.state.vista) specs.push(`Vista: ${item.state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
                 if (item.state.union && (parseInt(item.state.panos) || 1) > 1) specs.push(`Unión: ${item.state.union}`);
                 if (item.state.fijacion) specs.push(`Fijación: ${item.state.fijacion === 'p40_puerta' ? 'P40 de puerta' : item.state.fijacion}`);
+                if (item.state.perfil) specs.push(`Perfil: ${item.state.perfil}`);
                 
-                let apertura = getAperturaSpec(item.state, item.type, item.categoria);
-                if (apertura) specs.push(apertura);
+                if (['win_abat', 'door_abat'].includes(item.type) && item.state.apertura) {
+                     specs.push(`Apertura: ${item.state.apertura.replace('_', ' ').replace('1', '1 hoja').replace('2', '2 hojas')}`);
+                } else {
+                     let apertura = getAperturaSpec(item.state, item.type, item.categoria);
+                     if (apertura) specs.push(apertura);
+                }
 
                 if(specs.length > 0) html += `<span style="color:#666; font-size:11px; margin-left: 25px;">⮑ ${specs.join(' | ')}</span></div>`;
             });
         } else {
-            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>Medidas:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
+            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
             let specs = [];
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
             if(state.vidrio) {
@@ -495,10 +507,16 @@
                 else specs.push(`Vidrio: ${state.vidrio} ${state.espesor || ''} ${state.color_vidrio || ''}`);
             }
             if(state.cierre) specs.push(`Cierre: ${state.cierre}`);
-            if(state.mosquitera) specs.push(`Mosquitera: ${state.mosquitera === 'con' ? 'Integrada' : 'No'}`);
+            if(state.mosquitera && state.mosquitera !== '') specs.push(`Mosquitera: ${state.mosquitera === 'con' ? 'Integrada' : 'Sin'}`);
+            if(state.vista) specs.push(`Vista: ${state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
+            if (state.perfil) specs.push(`Perfil: ${state.perfil}`);
             
-            let apertura = getAperturaSpec(state, state.type, state.categoria);
-            if (apertura) specs.push(apertura);
+            if (['win_abat', 'door_abat'].includes(state.type) && state.apertura) {
+                 specs.push(`Apertura: ${state.apertura.replace('_', ' ').replace('1', '1 hoja').replace('2', '2 hojas')}`);
+            } else {
+                 let apertura = getAperturaSpec(state, state.type, state.categoria);
+                 if (apertura) specs.push(apertura);
+            }
             
             if(state.fijacion) specs.push(`Fijación: ${state.fijacion === 'p40_puerta' ? 'P40 de puerta' : state.fijacion}`);
             if (state.union && (parseInt(state.panos) || 1) > 1) specs.push(`Unión: ${state.union}`);
@@ -623,6 +641,81 @@
         }
     }
 
+    // --- FUNCIONES DRAG AND DROP ---
+    let draggedCard = null;
+
+    function initDragAndDrop() {
+        const list = document.getElementById('item-list');
+        
+        list.addEventListener('dragstart', (e) => {
+            if (e.target.classList.contains('item-card')) {
+                draggedCard = e.target;
+                setTimeout(() => e.target.classList.add('dragging'), 0);
+            }
+        });
+
+        list.addEventListener('dragend', (e) => {
+            if (e.target.classList.contains('item-card')) {
+                e.target.classList.remove('dragging');
+                e.target.setAttribute('draggable', 'false'); 
+                draggedCard = null;
+                document.querySelectorAll('.item-card').forEach(card => card.classList.remove('drag-over'));
+                saveProgress(); 
+            }
+        });
+
+        list.addEventListener('dragover', (e) => {
+            e.preventDefault(); 
+            const afterElement = getDragAfterElement(list, e.clientY, e.clientX);
+            const currentHover = e.target.closest('.item-card');
+            
+            if (currentHover && currentHover !== draggedCard) {
+                currentHover.classList.add('drag-over');
+            }
+
+            if (draggedCard) {
+                if (afterElement == null) {
+                    list.appendChild(draggedCard);
+                } else {
+                    list.insertBefore(draggedCard, afterElement);
+                }
+            }
+        });
+
+        list.addEventListener('dragleave', (e) => {
+            const currentHover = e.target.closest('.item-card');
+            if (currentHover) currentHover.classList.remove('drag-over');
+        });
+        
+        list.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const currentHover = e.target.closest('.item-card');
+            if (currentHover) currentHover.classList.remove('drag-over');
+        });
+    }
+
+    function getDragAfterElement(container, y, x) {
+        const draggableElements = [...container.querySelectorAll('.item-card:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offsetX = x - box.left - box.width / 2;
+            const offsetY = y - box.top - box.height / 2;
+            const distance = Math.hypot(offsetX, offsetY);
+
+            if (offsetY < 0 && distance < closest.distance) {
+                return { offset: distance, element: child };
+            } else {
+                return closest;
+            }
+        }, { distance: Number.POSITIVE_INFINITY }).element;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initDragAndDrop();
+        loadProgress();
+    });
+
     function getAppJSON() {
         let displayDate = document.getElementById('header-fecha');
         let createdStr = displayDate.dataset.created;
@@ -641,14 +734,18 @@
                 material: document.getElementById('header-material').value,
                 color: document.getElementById('header-color').value
             },
-            cardsState: cardsState,
+            cardsState: {}, 
             itemId: itemId,
             inputsData: {}
         };
         
-        Object.keys(cardsState).forEach(id => {
-            const cardEl = document.getElementById('card-' + id);
-            if (cardEl) {
+        const cardElements = document.querySelectorAll('.item-card');
+        cardElements.forEach(cardEl => {
+            const id = cardEl.id.replace('card-', '');
+            
+            if (cardsState[id]) {
+                data.cardsState[id] = cardsState[id]; 
+                
                 const refInput = cardEl.querySelector('.card-ref-row input');
                 const ubiInput = cardEl.querySelector('input[placeholder*="Ubicación"]');
                 const anchoInput = document.getElementById('ancho-' + id);
@@ -670,6 +767,8 @@
                 };
             }
         });
+        
+        data.order = Array.from(cardElements).map(el => el.id.replace('card-', ''));
         return data;
     }
 
@@ -691,10 +790,14 @@
             list.innerHTML = ''; 
             cardsState = {};
             
-            Object.keys(data.cardsState).sort((a,b) => Number(a) - Number(b)).forEach(id => {
-                const state = data.cardsState[id];
-                const savedInputs = data.inputsData ? data.inputsData[id] : null;
-                addItem(state.label || 'Item', state.type, state.categoria, savedInputs, parseInt(id), state);
+            let orderArray = data.order || Object.keys(data.cardsState).sort((a,b) => Number(a) - Number(b));
+            
+            orderArray.forEach(id => {
+                if(data.cardsState[id]) {
+                    const state = data.cardsState[id];
+                    const savedInputs = data.inputsData ? data.inputsData[id] : null;
+                    addItem(state.label || 'Item', state.type, state.categoria, savedInputs, parseInt(id), state);
+                }
             });
             itemId = data.itemId || 0;
         }
@@ -776,19 +879,38 @@
         }
 
         let cierresVentana = '';
-        if (!['win_proy', 'win_souf'].includes(type)) {
+        if (!['win_proy', 'win_souf', 'win_ob'].includes(type)) { 
             let cierreCentralOption = (tipoAluminio === 'P92' && (categoria === 'corredera' || categoria === 'galandaje')) ? `<option value="central">Cierre Central</option>` : '';
             cierresVentana += `<select onchange="${fn}, 'cierre', this.value)"><option value="">-- Tipo de Cierre --</option><option value="1punto">Cierre de 1 punto</option><option value="multipunto">Cierre Multipunto</option><option value="llave">Con llave</option>${cierreCentralOption}</select>`;
         }
 
         if (type === 'win_proy') {
             cierresVentana += `<select onchange="${fn}, 'apertura_proy', this.value)"><option value="">-- Apertura hacia --</option><option value="adentro">Hacia adentro</option><option value="afuera">Hacia afuera</option></select>`;
+        } else if (type === 'win_abat' || type === 'door_abat') {
+            if (type === 'win_abat') {
+                cierresVentana += `<select onchange="${fn}, 'mosquitera', this.value)"><option value="">-- Mosquitera --</option><option value="sin">Sin Mosquitera</option><option value="con">Con Mosquitera Integrada</option></select>`;
+            }
         } else {
             cierresVentana += `<select onchange="${fn}, 'mosquitera', this.value)"><option value="">-- Mosquitera --</option><option value="sin">Sin Mosquitera</option><option value="con">Con Mosquitera Integrada</option></select>`;
         }
 
         if (categoria === 'ventana' || categoria === 'corredera' || categoria === 'galandaje') {
-            let extra = type === 'door_abat' ? `<select onchange="${fn}, 'apertura', this.value)"><option value="">-- Apertura hacia --</option><option value="adentro">Hacia adentro</option><option value="afuera">Hacia afuera</option></select><select onchange="${fn}, 'perfil', this.value)"><option value="">-- Tipo de Perfil --</option><option value="P40">Perfil P40</option><option value="Titan">Perfil Titan</option></select>` : '';
+            let extra = '';
+            if (type === 'door_abat' || type === 'win_abat') {
+                extra = `
+                <select onchange="${fn}, 'apertura', this.value)">
+                    <option value="">-- Tipo de Apertura --</option>
+                    <option value="adentro_1">Hacia adentro 1 hoja</option>
+                    <option value="adentro_2">Hacia adentro 2 hojas</option>
+                    <option value="afuera_1">Hacia afuera 1 hoja</option>
+                    <option value="afuera_2">Hacia afuera 2 hojas</option>
+                </select>
+                <select onchange="${fn}, 'perfil', this.value)">
+                    <option value="">-- Tipo de Perfil --</option>
+                    <option value="P40">Perfil P40</option>
+                    <option value="Titan">Perfil Titan</option>
+                </select>`;
+            }
             return tipoAluminioHtml + extra + vistaOption + cierresVentana + vidriosBasicos;
         } else if (categoria === 'puerta_vidrio') {
             return `${vistaOption}<select onchange="${fn}, 'bisagras', this.value)"><option value="botella">Kit Botella (Arriba/Abajo)</option><option value="bisagra">Bisagras Laterales</option></select><select onchange="${fn}, 'herraje_color', this.value)"><option value="">-- Color Herrajes --</option><option value="negro">Negro Mate</option><option value="cromado">Cromado / Inox</option></select><select onchange="${fn}, 'cerradura_tipo', this.value)"><option value="ninguna">-- Cerradura (Media altura) --</option><option value="central">Media Luna</option><option value="digital">Digital (Teclado)</option></select><select onchange="${fn}, 'cerradura_piso', this.value)"><option value="no">-- Cerradura Piso --</option><option value="si">Con Cerradura Piso</option></select><select style="grid-column: span 2;" onchange="${fn}, 'tirador', this.value)"><option value="">-- Sin Tirador --</option><option value="5">Tirador 5"</option><option value="8">Tirador 8"</option><option value="12">Tirador 12"</option><option value="16">Tirador 16"</option></select>${vidriosBasicos}`;
@@ -863,7 +985,7 @@
             if(window['drawAll' + id]) window['drawAll' + id]();
             saveProgress();
         });
-        if(key === 'orientacion' || key === 'tipo_aluminio' || key === 'vidrio') {
+        if(key === 'orientacion' || key === 'tipo_aluminio' || key === 'vidrio' || key === 'apertura' || key === 'vista') {
             if (window['updateCADOptionsUI' + id]) window['updateCADOptionsUI' + id]();
         }
     }
@@ -875,7 +997,7 @@
         if (forcedState) {
             cardsState[id] = forcedState;
         } else if (!forcedId) {
-            cardsState[id] = { type, categoria, label, orientacion: 'I', panos: 1, cantidad: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', tipo_aluminio: '', locked: false };
+            cardsState[id] = { type, categoria, label, orientacion: 'I', panos: 1, cantidad: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', tipo_aluminio: '', vista: 'adentro', locked: false };
         }
 
         const list = document.getElementById('item-list');
@@ -885,15 +1007,19 @@
         if (cardsState[id].type === 'draw') extraClasses += ' cad-card';
         card.className = 'item-card' + extraClasses;
         card.id = 'card-' + id;
+        card.setAttribute('draggable', 'false');
 
         let lockedBtnColor = cardsState[id].locked ? '#27ae60' : '#f39c12';
         let lockedBtnIcon = cardsState[id].locked ? '🔒' : '🔓';
         let lockBtnHtml = `<button id="lock-btn-${id}" class="lock-btn" onclick="toggleLock(${id})" title="Bloquear/Desbloquear" style="position:absolute; top:-10px; right: 25px; background: ${lockedBtnColor}; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5;">${lockedBtnIcon}</button>`;
+        
+        let dragHandleHtml = `<div class="drag-handle" title="Arrastrar para mover" onmousedown="this.closest('.item-card').setAttribute('draggable', 'true')" onmouseup="this.closest('.item-card').setAttribute('draggable', 'false')" onmouseleave="this.closest('.item-card').setAttribute('draggable', 'false')" ontouchstart="this.closest('.item-card').setAttribute('draggable', 'true')" ontouchend="this.closest('.item-card').setAttribute('draggable', 'false')">↕</div>`;
 
         let displayLabel = cardsState[id].label;
 
         if (cardsState[id].type === 'draw') {
             card.innerHTML = `
+                ${dragHandleHtml}
                 <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
                 ${lockBtnHtml}
                 <div class="card-ref-row">
@@ -971,6 +1097,7 @@
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">← A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA →</div></div>` : '';
 
             card.innerHTML = `
+                ${dragHandleHtml}
                 <button class="delete-card" onclick="deleteCard(${id})" title="Eliminar">×</button>
                 ${lockBtnHtml}
                 <div class="card-ref-row">
@@ -1062,7 +1189,7 @@
         }
         
         if (cardsState[id].type !== 'draw') {
-            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho', 'alto'].includes(key)) {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id); 
             }
@@ -1108,11 +1235,12 @@
         else if (state.type === 'door_abat') { bx = 35; by = 5; bw = 30; bh = 50; }
         else if (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio') { bx = 30; by = 5; bw = 40; bh = 50; }
         
-        const viewBox = isCAD ? `${bx} ${by} ${bw} ${bh}` : '-5 -5 135 75'; 
+        const viewBox = isCAD ? `${bx} ${by} ${bw} ${bh}` : '-5 -5 135 115'; 
         const aspect = isCAD ? 'none' : 'xMidYMid meet';
         
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" preserveAspectRatio="${aspect}" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;">`;
-        
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" preserveAspectRatio="${aspect}" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
+        svg += `<style>path, rect, line, circle, polyline { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
+
         const ladrilloIzq = '<g><rect x="5" y="10" width="15" height="40"/><line x1="5" y1="20" x2="20" y2="20"/><line x1="5" y1="30" x2="20" y2="30"/><line x1="5" y1="40" x2="20" y2="40"/><line x1="12.5" y1="10" x2="12.5" y2="20"/><line x1="12.5" y1="30" x2="12.5" y2="40"/></g>';
         const ladrilloDer = '<g><rect x="80" y="10" width="15" height="40"/><line x1="80" y1="20" x2="95" y2="20"/><line x1="80" y1="30" x2="95" y2="30"/><line x1="80" y1="40" x2="95" y2="40"/><line x1="87.5" y1="10" x2="87.5" y2="20"/><line x1="87.5" y1="30" x2="87.5" y2="40"/></g>';
         
@@ -1121,6 +1249,50 @@
 
         const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
         const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
+
+        // HELPER PARA DIBUJAR VISTA EN PLANTA (Siempre dibuja apertura Izquierda y la transformación global invierte la imagen si es necesario)
+        const drawPlanView = (type, stateInfo) => {
+            let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
+            let opensAfuera = stateInfo.apertura && stateInfo.apertura.includes('afuera');
+            if (type === 'win_ob') opensAfuera = false; 
+
+            let vistaAfuera = stateInfo.vista === 'afuera';
+            let opensTowardsViewer = (vistaAfuera && opensAfuera) || (!vistaAfuera && !opensAfuera);
+            let dirY = opensTowardsViewer ? 1 : -1;
+            
+            let y0 = 75; // Posicionado más abajo para evitar overlap
+            let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
+
+            let w = type === 'door_abat' ? 30 : 40;
+            let startX = type === 'door_abat' ? 35 : 30;
+            let centerX = 50;
+
+            if (is2Hojas) {
+                let r = w / 2; 
+                let dx = r * 0.866; // cos(30)
+                let dy = r * 0.5 * dirY; // sin(30)
+                
+                html += `<line x1="${startX}" y1="${y0}" x2="${startX + dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
+                html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 1 : 0} ${startX + dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+                
+                html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
+                html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            } else {
+                let r = w * 0.875; 
+                let hingeX = startX;
+                let freeX = startX + w; 
+                let dx = r * 0.866;
+                let dy = r * 0.5 * dirY;
+                let endX = hingeX + dx;
+                let endY = y0 + dy;
+                
+                let sweep = dirY > 0 ? 1 : 0;
+
+                html += `<line x1="${hingeX}" y1="${y0}" x2="${endX}" y2="${endY}" style="stroke:#0A3D62;"/>`;
+                html += `<path d="M ${freeX} ${y0} A ${r} ${r} 0 0 ${sweep} ${endX} ${endY}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            }
+            return html;
+        };
 
         let drawing = '';
         const isD = state.orientacion === 'D';
@@ -1182,9 +1354,32 @@
 
             case 'win_proy': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 15l25 30l25-30"/>'; break;
             case 'win_souf': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 45l25-30l25 30"/>'; break;
-            case 'win_abat': drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20"/>'; break;
-            case 'win_ob': drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>'; break;
-            case 'door_abat': drawing += '<rect x="35" y="5" width="30" height="50"/><path d="M35 5l30 25l-30 25"/>'; break;
+            
+            case 'win_abat': 
+                drawing += '<rect x="30" y="10" width="40" height="40"/>';
+                if (state.apertura && state.apertura.includes('2')) {
+                    drawing += '<line x1="50" y1="10" x2="50" y2="50"/>';
+                    drawing += '<path d="M30 10l20 20l-20 20 M70 10l-20 20l20 20"/>';
+                } else {
+                    drawing += '<path d="M30 10l40 20l-40 20"/>';
+                }
+                drawing += drawPlanView(state.type, state);
+                break;
+            case 'door_abat': 
+                drawing += '<rect x="35" y="5" width="30" height="50"/>';
+                if (state.apertura && state.apertura.includes('2')) {
+                    drawing += '<line x1="50" y1="5" x2="50" y2="55"/>';
+                    drawing += '<path d="M35 5l15 25l-15 25 M65 5l-15 25l15 25"/>';
+                } else {
+                    drawing += '<path d="M35 5l30 25l-30 25"/>';
+                }
+                drawing += drawPlanView(state.type, state);
+                break;
+
+            case 'win_ob': 
+                drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>'; 
+                drawing += drawPlanView(state.type, state);
+                break;
 
             case 'mamp_fija': 
                 drawing += '<rect x="30" y="5" width="40" height="50"/>';
@@ -1252,10 +1447,12 @@
 
         if (!isCAD) {
             if (state.ancho > 0) {
-                svg += `<text x="50" y="2" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
+                // ACERCAMIENTO TEXTO ANCHO
+                svg += `<text x="50" y="4" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
             }
             if (state.alto > 0) {
-                svg += `<text x="98" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
+                // ACERCAMIENTO TEXTO ALTO
+                svg += `<text x="94" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#0A3D62" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
             }
         }
 
@@ -1528,33 +1725,39 @@
                 let targetX = p.x - dragOffsetX;
                 let targetY = p.y - dragOffsetY;
                 
+                let snapDist = 15;
                 window['cadItems' + id].forEach(other => {
                     if(other === draggingImg) return;
                     
-                    if(Math.abs((targetY - draggingImg.h/2) - (other.y + other.h/2)) < 15 && Math.abs(targetX - other.x) < (draggingImg.w/2 + other.w/2)) {
-                        targetY = other.y + other.h/2 + draggingImg.h/2; 
-                        if (Math.abs(targetX - other.x) < 15) targetX = other.x;
-                        else if (Math.abs((targetX - draggingImg.w/2) - (other.x - other.w/2)) < 15) targetX = other.x - other.w/2 + draggingImg.w/2;
-                        else if (Math.abs((targetX + draggingImg.w/2) - (other.x + other.w/2)) < 15) targetX = other.x + other.w/2 - draggingImg.w/2;
+                    let myT = targetY - draggingImg.h/2;
+                    let myB = targetY + draggingImg.h/2;
+                    let myL = targetX - draggingImg.w/2;
+                    let myR = targetX + draggingImg.w/2;
+
+                    let otT = other.y - other.h/2;
+                    let otB = other.y + other.h/2;
+                    let otL = other.x - other.w/2;
+                    let otR = other.x + other.w/2;
+
+                    let overlapX = (myL < otR && myR > otL);
+                    let overlapY = (myT < otB && myB > otT);
+
+                    if (overlapX) {
+                        if (Math.abs(myT - otB) < snapDist) targetY = otB + draggingImg.h/2;
+                        else if (Math.abs(myB - otT) < snapDist) targetY = otT - draggingImg.h/2;
                     }
-                    else if(Math.abs((targetY + draggingImg.h/2) - (other.y - other.h/2)) < 15 && Math.abs(targetX - other.x) < (draggingImg.w/2 + other.w/2)) {
-                        targetY = other.y - other.h/2 - draggingImg.h/2; 
-                        if (Math.abs(targetX - other.x) < 15) targetX = other.x;
-                        else if (Math.abs((targetX - draggingImg.w/2) - (other.x - other.w/2)) < 15) targetX = other.x - other.w/2 + draggingImg.w/2;
-                        else if (Math.abs((targetX + draggingImg.w/2) - (other.x + other.w/2)) < 15) targetX = other.x + other.w/2 - draggingImg.w/2;
+                    if (overlapY) {
+                        if (Math.abs(myL - otR) < snapDist) targetX = otR + draggingImg.w/2;
+                        else if (Math.abs(myR - otL) < snapDist) targetX = otL - draggingImg.w/2;
                     }
-                    else if(Math.abs((targetX - draggingImg.w/2) - (other.x + other.w/2)) < 15 && Math.abs(targetY - other.y) < (draggingImg.h/2 + other.h/2)) {
-                        targetX = other.x + other.w/2 + draggingImg.w/2; 
-                        if (Math.abs(targetY - other.y) < 15) targetY = other.y;
-                        else if (Math.abs((targetY - draggingImg.h/2) - (other.y - other.h/2)) < 15) targetY = other.y - other.h/2 + draggingImg.h/2;
-                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = other.y + other.h/2 - draggingImg.h/2;
-                    }
-                    else if(Math.abs((targetX + draggingImg.w/2) - (other.x - other.w/2)) < 15 && Math.abs(targetY - other.y) < (draggingImg.h/2 + other.h/2)) {
-                        targetX = other.x - other.w/2 - draggingImg.w/2; 
-                        if (Math.abs(targetY - other.y) < 15) targetY = other.y;
-                        else if (Math.abs((targetY - draggingImg.h/2) - (other.y - other.h/2)) < 15) targetY = other.y - other.h/2 + draggingImg.h/2;
-                        else if (Math.abs((targetY + draggingImg.h/2) - (other.y + other.h/2)) < 15) targetY = other.y + other.h/2 - draggingImg.h/2;
-                    }
+
+                    if (Math.abs(targetX - other.x) < snapDist) targetX = other.x;
+                    else if (Math.abs(myL - otL) < snapDist) targetX = otL + draggingImg.w/2;
+                    else if (Math.abs(myR - otR) < snapDist) targetX = otR - draggingImg.w/2;
+
+                    if (Math.abs(targetY - other.y) < snapDist) targetY = other.y;
+                    else if (Math.abs(myT - otT) < snapDist) targetY = otT + draggingImg.h/2;
+                    else if (Math.abs(myB - otB) < snapDist) targetY = otB - draggingImg.h/2;
                 });
 
                 draggingImg.x = targetX;
