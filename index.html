@@ -179,13 +179,13 @@
             
             .item-row { display: block !important; width: 100% !important; text-align: left !important; }
             
-            /* NORMAL CARDS REHAUSSÉES (95mm de hauteur pour contenir le plan complet sans déborder) */
-            .item-card { 
+            /* TARJETAS: altura ADAPTATIVA para que NUNCA se corten los datos */
+            .item-card {
                 display: inline-block !important; vertical-align: top !important; width: 48% !important; margin-right: 1% !important; margin-bottom: 4mm !important;
-                border: 1px solid #000 !important; box-shadow: none !important; border-top: 1px solid #000 !important; padding: 4mm !important; 
-                height: 95mm !important; min-height: 95mm !important; max-height: 95mm !important;
+                border: 1px solid #000 !important; box-shadow: none !important; border-top: 1px solid #000 !important; padding: 4mm !important;
+                height: auto !important; min-height: 95mm !important; max-height: none !important;
                 page-break-inside: avoid !important; break-inside: avoid !important; -webkit-column-break-inside: avoid !important;
-                box-sizing: border-box !important; overflow: hidden !important;
+                box-sizing: border-box !important; overflow: visible !important;
             }
 
             /* CAD CARDS PANORAMIC (100% WIDTH, HORIZONTAL LAYOUT) */
@@ -219,7 +219,7 @@
             .summary-box { max-height: none !important; overflow: visible !important; border:none !important; padding:0 !important; background: transparent !important; margin-top:2px !important;}
             
             /* COMPACTAGE DE LA ZONE DE TEXTE EN MODE IMPRESSION POUR ASSURER LA COHÉRENCE DU BLOC */
-            .notes-area { border: 1px dotted #ccc !important; background: transparent !important; height: 8mm !important; max-height: 8mm !important; font-size: 9px !important; padding: 2px !important; margin-top: 1px !important; overflow: hidden !important;}
+            .notes-area { border: 1px dotted #ccc !important; background: transparent !important; height: auto !important; min-height: 8mm !important; max-height: none !important; font-size: 9px !important; padding: 2px !important; margin-top: 1px !important; overflow: visible !important;}
             
             .signature-section { position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; width: 100% !important; background: white !important; border-top: 2px solid #000 !important; margin-top: 0 !important; padding-top: 5mm !important; padding-bottom: 5mm !important; z-index: 1000 !important; }
             .signature-line { height: 25px !important; }
@@ -233,9 +233,9 @@
         <h2>ARTAL</h2>
 
         <div class="proj-section">
-            <div class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Mis Proyectos</div>
+            <div class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg> Clientes</div>
             <select id="select-cliente" onchange="updateObraList()"><option value="">-- Cliente --</option></select>
-            <select id="select-proyecto"><option value="">-- Obra --</option></select>
+            <select id="select-proyecto"><option value="">-- Proyecto --</option></select>
             <button class="side-btn primary" style="margin-top:4px;" onclick="loadProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z"/><path d="M3 9h18l-1.5 8a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/></svg> Abrir proyecto</button>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
         </div>
@@ -308,7 +308,7 @@
                 <input type="text" id="header-cliente" placeholder="ej: Dupont">
             </div>
             <div class="header-field">
-                <label>NOMBRE DE LA OBRA</label>
+                <label>NOMBRE DEL PROYECTO</label>
                 <input type="text" id="header-obra" placeholder="ej: Altea Villa 11">
             </div>
             <div class="header-field">
@@ -495,7 +495,7 @@
                     });
                     localStorage.setItem('artal_projects', JSON.stringify(current));
                     updateClientList();
-                    alert(`Copia de seguridad restaurada (${n} proyecto(s)).\n\nÁbrelos desde "Mis Proyectos".`);
+                    alert(`Copia de seguridad restaurada (${n} proyecto(s)).\n\nÁbrelos desde "Clientes".`);
                 } else {
                     restoreData(data);
                     saveProgress();
@@ -515,24 +515,28 @@
         const cliente = document.getElementById('header-cliente').value.trim();
         const obra = document.getElementById('header-obra').value.trim();
         if(!cliente || !obra) {
-            alert(" Por favor, ingresa el 'CLIENTE' y el 'NOMBRE DE LA OBRA' arriba para guardar el proyecto.");
+            alert(" Por favor, ingresa el 'CLIENTE' y el 'NOMBRE DEL PROYECTO' arriba para guardar.");
             return;
         }
         const projects = getProjects();
-        if(!projects[cliente]) projects[cliente] = {};
-        
+        // Reutiliza el cliente existente sin importar mayúsculas/minúsculas (Gabor = GABOR)
+        let cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase()) || cliente;
+        if(!projects[cliKey]) projects[cliKey] = {};
+        // Igual con el nombre del proyecto dentro del cliente
+        let obraKey = Object.keys(projects[cliKey]).find(o => o.toLowerCase() === obra.toLowerCase()) || obra;
+
         const jsonData = getAppJSON();
-        projects[cliente][obra] = jsonData;
+        projects[cliKey][obraKey] = jsonData;
         localStorage.setItem('artal_projects', JSON.stringify(projects));
-        
+
         updateClientList();
-        document.getElementById('select-cliente').value = cliente;
+        document.getElementById('select-cliente').value = cliKey;
         updateObraList();
-        document.getElementById('select-proyecto').value = obra;
-        
+        document.getElementById('select-proyecto').value = obraKey;
+
         document.getElementById('header-fecha').innerText = `Creado: ${jsonData.header.fechaCreacion} | Mod: ${jsonData.header.fechaModificacion}`;
 
-        alert(` Proyecto "${obra}" del cliente "${cliente}" guardado en la memoria.`);
+        alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
     }
 
     // ===================== GESTIÓN DE PROYECTOS (Mis Proyectos) =====================
@@ -566,6 +570,18 @@
                 changed = true;
             }
         });
+        // Fusiona clientes repetidos por mayúsculas/minúsculas (Gabor = GABOR) en una sola entrada
+        const seen = {};
+        Object.keys(p).forEach(cli => {
+            const lc = cli.trim().toLowerCase();
+            if (seen[lc] && seen[lc] !== cli) {
+                p[seen[lc]] = Object.assign({}, p[cli], p[seen[lc]]); // une los proyectos de ambos
+                delete p[cli];
+                changed = true;
+            } else {
+                seen[lc] = cli;
+            }
+        });
         if (changed) localStorage.setItem('artal_projects', JSON.stringify(p));
         return p;
     }
@@ -588,13 +604,13 @@
         const projects = getProjects();
         const cliente = selC ? selC.value : '';
         const obras = (cliente && projects[cliente]) ? Object.keys(projects[cliente]).sort((a, b) => a.localeCompare(b)) : [];
-        selO.innerHTML = '<option value="">-- Obra --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        selO.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
     }
 
     function loadProject() {
         const cliente = document.getElementById('select-cliente').value;
         const obra = document.getElementById('select-proyecto').value;
-        if (!cliente || !obra) { alert('Selecciona un Cliente y una Obra para abrir.'); return; }
+        if (!cliente || !obra) { alert('Selecciona un Cliente y un Proyecto para abrir.'); return; }
         const projects = getProjects();
         if (projects[cliente] && projects[cliente][obra]) {
             restoreData(projects[cliente][obra]);
@@ -608,7 +624,7 @@
     function deleteProject() {
         const cliente = document.getElementById('select-cliente').value;
         const obra = document.getElementById('select-proyecto').value;
-        if (!cliente || !obra) { alert('Selecciona el Cliente y la Obra que quieres eliminar.'); return; }
+        if (!cliente || !obra) { alert('Selecciona el Cliente y el Proyecto que quieres eliminar.'); return; }
         // Doble verificación
         if (!confirm(`¿Eliminar el proyecto "${obra}" del cliente "${cliente}"?`)) return;
         if (!confirm(`⚠️ Esta acción NO se puede deshacer.\n\n¿Confirmas que quieres BORRAR definitivamente "${obra}"?`)) return;
