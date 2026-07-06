@@ -234,14 +234,17 @@
             body.printing-sheets #main-canvas { display: none !important; }
             body.printing-sheets #print-area { display: block !important; }
             .print-sheet {
-                width: 210mm; min-height: 297mm; box-sizing: border-box; padding: 12mm 12mm 12mm 12mm;
-                display: flex; flex-direction: column; page-break-after: always; break-after: page; overflow: visible;
+                /* display:block (NO flex) y SIN min-height forzado a la altura de la página:
+                   en Safari/WebKit (iPad), un contenedor flex estirado a 297mm de alto confunde
+                   el paginador y genera una página en blanco extra antes de cada salto forzado.
+                   Dejar que la hoja mida solo lo que su contenido necesita es lo que evita esto;
+                   el espacio sobrante antes del salto de página no genera páginas de más. */
+                width: 210mm; box-sizing: border-box; padding: 12mm 12mm 12mm 12mm;
+                display: block; page-break-after: always; break-after: page; overflow: visible;
             }
             .print-sheet.last { page-break-after: auto; break-after: auto; }
             .print-head { margin-bottom: 6mm; }
-            .sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-content: space-evenly; flex: 1 1 auto; }
-            .print-sheet.last .sheet-grid { flex: 0 0 auto; align-content: start; }
-            .print-sheet.last .signature-section { margin-top: auto !important; }
+            .sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-content: start; }
             .sheet-grid .item-card { width: auto !important; display: block !important; margin: 0 !important; align-self: start !important; }
             .sheet-grid .item-card.cad-card.panoramic { grid-column: 1 / -1 !important; }
             /* En PDF, siempre mostrar el resumen y ocultar los menús de configuración */
@@ -524,15 +527,29 @@
         document.body.classList.remove('printing-sheets');
         printMoved = null;
     }
+    // Nombre sugerido al "Guardar en PDF": "Cliente - Proyecto presupuesto" (o "fabricacion")
+    function buildPdfTitle() {
+        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const obra = (document.getElementById('header-obra').value || '').trim();
+        const titleEl = document.getElementById('doc-type-title');
+        const isFab = !!titleEl && titleEl.innerText.indexOf('FAB') === 0;
+        const suffix = isFab ? 'fabricacion' : 'presupuesto';
+        let name = [cliente, obra].filter(Boolean).join(' - ') || 'ARTAL';
+        return `${name} ${suffix}`.replace(/[\\/:*?"<>|]/g, '-');
+    }
+
     function exportPDF() {
         if (!validateAllCards()) return;
         // Regenerar TODOS los resúmenes para que el PDF muestre siempre el resumen (no los menús)
         Object.keys(cardsState).forEach(id => { try { generateSummary(id); } catch (e) { } });
         buildPrintSheets();
+        const originalTitle = document.title;
+        document.title = buildPdfTitle();
         let torn = false;
         const teardown = () => {
             if (torn) return; torn = true;
             teardownPrintSheets();
+            document.title = originalTitle;
             window.removeEventListener('afterprint', teardown);
             window.removeEventListener('focus', onFocus);
         };
@@ -918,12 +935,28 @@
     }
 
     function toggleLock(id) {
-        if (!cardsState[id].locked && cardsState[id].type === 'draw') {
+        const willLock = !cardsState[id].locked;
+        if (willLock && cardsState[id].type === 'draw') {
             recomputeCADTotals(id);
             updatePanoramicState(id);
         }
 
-        cardsState[id].locked = !cardsState[id].locked;
+        // No se puede fijar (cerrar el candado) si faltan medidas de Ancho o Alto
+        if (willLock) {
+            const state = cardsState[id];
+            const anchoInput = document.getElementById(`ancho-${id}`);
+            const altoInput = document.getElementById(`alto-${id}`);
+            const missingAncho = !state.ancho || state.ancho <= 0;
+            const missingAlto = !state.alto || state.alto <= 0;
+            if (missingAncho || missingAlto) {
+                if (missingAncho && anchoInput) anchoInput.classList.add('error-pulse');
+                if (missingAlto && altoInput) altoInput.classList.add('error-pulse');
+                alert(' ¡ATENCIÓN! Faltan medidas (Ancho o Alto).\n\nCompleta las medidas antes de fijar este modelo.');
+                return;
+            }
+        }
+
+        cardsState[id].locked = willLock;
         const card = document.getElementById('card-' + id);
         const btn = document.getElementById('lock-btn-' + id);
         
