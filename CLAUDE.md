@@ -81,6 +81,18 @@ un **PDF de Cotización o Fabricación** para el cliente.
   mosquitera ocupa el riel exterior). Instalación "por fuera" = espejo vertical. "Sin sheetrock"
   = solo concreto. Menús del galandaje: Instalación (dentro/fuera), Sheetrock (Sí/No),
   Mosquitera. Centrales cascadean desde el centro hacia los lados; laterales cascadean al pocket.
+- **Vista superior (planta) de correderas**: `correderaPlan(state, uid)`. A diferencia del
+  galandaje (bolsillo en la pared), la corredera va en un **marco perimetral** con 2-3 rieles
+  paralelos ("vías"): interior, exterior y, si lleva mosquitera, un tercer riel siempre por
+  fuera (la mosquitera nunca va en el riel interior). **Reglas confirmadas por el usuario**:
+  `cor2` — una hoja por riel; qué lado (I/D) va al riel interior se elige con el campo nuevo
+  `cor_interior` (select "Riel interior: Izquierda/Derecha", solo visible para `cor2`).
+  `cor4_cent`/`cor6_cent` — las hojas centrales (las más próximas a la apertura central) van
+  al riel interior, las laterales al exterior. **Sin validar todavía (primera extrapolación,
+  pendiente de ajuste)**: `cor3` (dibuja 3 rieles independientes, uno por hoja, todas
+  cascadeando hacia `orientacion`) y `cor4_lat`/`cor6_lat` (2 rieles alternados interior/
+  exterior, cascadeando hacia `orientacion`, igual patrón que `gal4_4v`). No usa Instalación/
+  Sheetrock (no hay pared, es marco propio) — solo Mosquitera (`state.mosquitera === 'con'`).
 
 ## CAD (dibujo libre) — importante
 

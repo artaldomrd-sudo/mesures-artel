@@ -1350,6 +1350,10 @@
                 extra += `<select onchange="${fn}, 'gal_install', this.value)" title="Lado de instalación del galandaje"><option value="dentro" ${gi==='dentro'?'selected':''}>Instalación: Por dentro</option><option value="fuera" ${gi==='fuera'?'selected':''}>Instalación: Por fuera</option></select>`;
                 extra += `<select onchange="${fn}, 'gal_sheetrock', this.value)" title="¿Lleva pared de sheetrock?"><option value="si" ${gs==='si'?'selected':''}>Sheetrock: Sí</option><option value="no" ${gs==='no'?'selected':''}>Sheetrock: No</option></select>`;
             }
+            if (type === 'cor2') {
+                const ci = state.cor_interior || 'I';
+                extra += `<select onchange="${fn}, 'cor_interior', this.value)" title="¿Qué hoja va en el riel interior?"><option value="I" ${ci==='I'?'selected':''}>Riel interior: Izquierda</option><option value="D" ${ci==='D'?'selected':''}>Riel interior: Derecha</option></select>`;
+            }
             if (type === 'door_abat' || type === 'win_abat') {
                 extra = `
                 <select onchange="${fn}, 'apertura', this.value)">
@@ -1840,7 +1844,7 @@
         }
 
         if (cardsState[id].type !== 'draw') {
-            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'mosquitera', 'herraje_color'].includes(key)) {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
             }
@@ -2573,6 +2577,102 @@
         return head + plan + labels;
     }
 
+    // Vista de planta de correderas. A diferencia del galandaje (que pliega hojas contra un
+    // bolsillo en la pared), la corredera va en un marco perimetral con 2-3 rieles paralelos
+    // (rieles = "vías"): riel exterior, riel interior y, si lleva mosquitera, un tercer riel
+    // siempre por fuera. PRIMERA VERSIÓN — reglas confirmadas por el usuario: cor2 (una hoja
+    // por riel, el lado interior se elige con `cor_interior`), cor4_cent/cor6_cent (las hojas
+    // centrales van al riel interior, las laterales al exterior). cor3 y las variantes
+    // "Lateral" (cor4_lat/cor6_lat) son una extrapolación razonable pendiente de validar con
+    // el usuario (ver CLAUDE.md).
+    function correderaPlan(state, uid) {
+        const cfg = {
+            cor2: { mode: 'pair' },
+            cor3: { mode: 'triple' },
+            cor4_cent: { mode: 'cent', n: 4 },
+            cor4_lat: { mode: 'lat', n: 4 },
+            cor6_cent: { mode: 'cent', n: 6 },
+            cor6_lat: { mode: 'lat', n: 6 },
+        }[state.type];
+        if (!cfg) return '';
+
+        const mosq = state.mosquitera === 'con';
+        const X0 = 4, X1 = 96, gt = 3, railGap = 7, PT = 66;
+        const glassFill = `url(#glass-${uid})`;
+
+        const leafG = (x, y, w) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${gt}" fill="${glassFill}" stroke="#0A3D62" stroke-width="1"/>`;
+        const mosqG = (x, y, w) => {
+            const mt = 2.4;
+            let s = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${mt}" fill="none" stroke="#6f7984" stroke-width="0.7"/>`;
+            for (let d = x + 1; d < x + w; d += 1.3) s += `<line x1="${d.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(d + 0.9).toFixed(1)}" y2="${(y + mt).toFixed(1)}" stroke="#6f7984" stroke-width="0.35"/>`;
+            return s;
+        };
+        const arrow = (cx, cy, w, dir) => {
+            const half = Math.min(w, 20) / 2 - 1.5;
+            const ex = dir === 'L' ? cx - half : cx + half;
+            const sx = dir === 'L' ? cx + half : cx - half;
+            const hx = dir === 'L' ? ex + 1.6 : ex - 1.6;
+            return `<g style="stroke:#111;stroke-width:1.1px;fill:none"><line x1="${sx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${cy.toFixed(1)}"/><polyline points="${hx.toFixed(1)},${(cy - 1.5).toFixed(1)} ${ex.toFixed(1)},${cy.toFixed(1)} ${hx.toFixed(1)},${(cy + 1.5).toFixed(1)}"/></g>`;
+        };
+        const head = `<line x1="2" y1="61" x2="98" y2="61" stroke="#d3d8dd" stroke-width="0.7"/>` +
+            `<text x="50" y="59.5" font-family="Arimo" font-size="3.4" font-weight="bold" fill="#9aa1a8" text-anchor="middle" stroke="none">VISTA SUPERIOR (planta)</text>`;
+        const lbl = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="${anchor || 'middle'}" stroke="none">${t}</text>`;
+
+        // Rieles de arriba (exterior) a abajo (interior); mosquitera siempre el más exterior.
+        let rails = cfg.mode === 'triple' ? ['ext', 'mid', 'int'] : ['ext', 'int'];
+        if (mosq) rails = ['mosq', ...rails];
+        const railY = r => PT + rails.indexOf(r) * railGap;
+
+        let panels = [];
+        if (cfg.mode === 'pair') {
+            // cor2: una hoja por riel; cor_interior elige qué lado (I/D) va al riel interior.
+            const overlap = 4, mid = 50;
+            const leftIsInt = (state.cor_interior || 'I') === 'I';
+            panels = [
+                { x: X0, w: mid + overlap - X0, rail: leftIsInt ? 'int' : 'ext', dir: 'R' },
+                { x: mid - overlap, w: X1 - (mid - overlap), rail: leftIsInt ? 'ext' : 'int', dir: 'L' },
+            ];
+        } else if (cfg.mode === 'cent') {
+            // cor4_cent / cor6_cent: hojas centrales -> riel interior, laterales -> riel exterior.
+            const n = cfg.n, segW = (X1 - X0) / n;
+            for (let i = 0; i < n; i++) {
+                const half = i < n / 2 ? 'L' : 'R';
+                const distFromCenter = half === 'L' ? (n / 2 - 1 - i) : (i - n / 2);
+                panels.push({
+                    x: X0 + i * segW, w: segW,
+                    rail: distFromCenter === 0 ? 'int' : 'ext',
+                    dir: half === 'L' ? 'R' : 'L',
+                });
+            }
+        } else if (cfg.mode === 'triple') {
+            // cor3 (3 vías): cada hoja en su propio riel, las 3 cascadean hacia la orientación.
+            const dirTo = state.orientacion === 'D' ? 'R' : 'L';
+            panels = [
+                { x: X0, w: X1 - X0, rail: 'ext', dir: dirTo },
+                { x: X0, w: X1 - X0, rail: 'mid', dir: dirTo },
+                { x: X0, w: X1 - X0, rail: 'int', dir: dirTo },
+            ];
+        } else if (cfg.mode === 'lat') {
+            // cor4_lat / cor6_lat: cascada hacia un solo lado, alternando riel ext/int.
+            const n = cfg.n, dirTo = state.orientacion === 'D' ? 'R' : 'L', segW = (X1 - X0) / n;
+            for (let i = 0; i < n; i++) panels.push({ x: X0 + i * segW, w: segW, rail: i % 2 === 0 ? 'ext' : 'int', dir: dirTo });
+        }
+
+        let body = '';
+        rails.forEach(r => { const y = railY(r) + gt / 2; body += `<line x1="${X0}" y1="${y.toFixed(1)}" x2="${X1}" y2="${y.toFixed(1)}" stroke="#d8dde2" stroke-width="0.5" stroke-dasharray="1.5,1.5"/>`; });
+        if (mosq) body += mosqG(X0, railY('mosq'), X1 - X0);
+        panels.forEach(p => { const y = railY(p.rail); body += leafG(p.x, y, p.w) + arrow(p.x + p.w / 2, y + gt / 2, p.w, p.dir); });
+
+        const planTop = PT - 2.5, planBottom = railY(rails[rails.length - 1]) + gt + 2.5;
+        const frame = `<rect x="${(X0 - 2).toFixed(1)}" y="${planTop.toFixed(1)}" width="${(X1 - X0 + 4).toFixed(1)}" height="${(planBottom - planTop).toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="1"/>`;
+
+        let labels = lbl(X0 - 3, railY('ext') + gt / 2 + 1, 'ext', 'end') + lbl(X0 - 3, railY('int') + gt / 2 + 1, 'int', 'end');
+        if (cfg.mode === 'triple') labels += lbl(X0 - 3, railY('mid') + gt / 2 + 1, 'med', 'end');
+        if (mosq) labels += lbl(X0 - 3, railY('mosq') + gt / 2 + 1, 'mosq', 'end');
+
+        return frame + head + body + labels;
+    }
+
     // Marcas de cerradura (media luna, digital, piso) reutilizables en cualquier sistema de
     // coordenadas. edgeX = borde de cierre; dir = +1 si el vidrio está a la derecha del borde, -1 si a la izq.
     function cerraduraMarks(edgeX, dir, midY, botY, r, col, luna, dig, piso) {
@@ -2913,7 +3013,7 @@
             viewBox = `${pr[0]} ${pr[1]} ${pr[2]} ${pr[3]}`;
             aspect = 'none';
         } else {
-            viewBox = state.categoria === 'galandaje' ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 118' : '-14 -6 144 70');
+            viewBox = (state.categoria === 'galandaje' || state.categoria === 'corredera') ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 118' : '-14 -6 144 70');
             aspect = 'xMidYMid meet';
         }
 
@@ -3179,6 +3279,8 @@
             }
             if (state.categoria === 'galandaje') {
                 svg += galandajePlan(state, uid);
+            } else if (state.categoria === 'corredera') {
+                svg += correderaPlan(state, uid);
             }
         }
 
