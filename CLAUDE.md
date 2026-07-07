@@ -132,6 +132,22 @@ un **PDF de Cotización o Fabricación** para el cliente.
   navegador bloquea `canvas.toDataURL()` con `SecurityError: Tainted canvases may not be
   exported`. `logo.png` se mantiene en la carpeta solo como archivo fuente por si hay que
   regenerar el base64 (con `base64 -i logo.png`), pero el HTML ya no lo referencia.
+- **html2canvas + `<input>` con `placeholder`: bug conocido.** Si un input tiene atributo
+  `placeholder` Y valor a la vez, html2canvas dibuja ambos textos superpuestos (se ve como
+  texto cortado/recortado arriba del campo) — sin importar el margen/line-height que se le
+  ponga, porque el problema es de renderizado de html2canvas, no de CSS. `exportPDF()` quita
+  el atributo `placeholder` de **todos** los inputs dentro de `#print-area` antes de capturar
+  (tengan o no valor) y lo restaura en el `finally`. Si se agrega un input nuevo con
+  `placeholder` a una tarjeta, no hace falta tocar nada — ya lo cubre el `querySelectorAll`.
+- **Encabezado del proyecto** (`.project-header`): grid de 2 filas por `grid-template-areas`
+  (fila 1 = datos cortos: cliente/material/color/fecha; fila 2 = datos largos: nombre del
+  proyecto/ubicación, que necesitan más ancho). El logo abarca ambas filas
+  (`grid-area: logo`). Mismo esquema en pantalla y en `body.printing-sheets` (solo cambian
+  gaps/alineación). El campo `header-ubicacion` se guarda/restaura igual que los demás en
+  `getAppJSON`/`restoreData`/`resetNotebook`.
+- **Hoja con un solo ítem**: `buildPrintSheets()` le agrega la clase `single-item` al
+  `.sheet-grid` cuando el grupo tiene 1 sola tarjeta (no panorámica), para que se agrande y
+  centre en la página en vez de quedar chica y pegada a la esquina.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados

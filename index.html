@@ -70,13 +70,14 @@
         .doc-type-btn:not(.active):hover { background: var(--artal-light); }
         .doc-type-title { font-size: 38px; font-weight: 700; letter-spacing: 4px; color: var(--artal-blue); text-transform: uppercase; line-height: 1; }
 
-        /* Encabezado: 2 filas por área con nombre — fila 1 identifica el proyecto (cliente,
-           nombre, ubicación, fecha), fila 2 son las especificaciones del material. El logo
-           ocupa la columna derecha y abarca ambas filas. */
+        /* Encabezado: 2 filas por área con nombre — fila 1 son los datos cortos (cliente,
+           material, color, fecha), fila 2 son los datos largos (nombre del proyecto,
+           ubicación) que necesitan más ancho. El logo ocupa la columna derecha y abarca
+           ambas filas. */
         .project-header {
             display: grid;
             grid-template-columns: 1.1fr 1.4fr 1.5fr 1fr auto;
-            grid-template-areas: "cliente obra ubicacion fecha logo" "material material color color logo";
+            grid-template-areas: "cliente material color fecha logo" "obra obra ubicacion ubicacion logo";
             column-gap: 18px; row-gap: 16px;
             border-bottom: 3px solid var(--artal-blue); padding-bottom: 20px; margin-bottom: 30px; width: 100%; align-items: end;
         }
@@ -203,7 +204,7 @@
         body.printing-sheets input[type=number]::-webkit-inner-spin-button,
         body.printing-sheets input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
 
-        body.printing-sheets .project-header { grid-template-columns: 1fr 1.3fr 1.4fr 1fr auto !important; grid-template-areas: "cliente obra ubicacion fecha logo" "material material color color logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
+        body.printing-sheets .project-header { grid-template-columns: 1fr 1.3fr 1.4fr 1fr auto !important; grid-template-areas: "cliente material color fecha logo" "obra obra ubicacion ubicacion logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
 
         body.printing-sheets .item-row { display: block !important; width: 100% !important; text-align: left !important; }
 
@@ -235,7 +236,7 @@
         body.printing-sheets .card-ref-row { padding-bottom: 1px !important; margin-bottom: 1mm !important; margin-left: 0 !important; }
         body.printing-sheets .card-ref-row input { font-size: 12px !important; border: none !important; background: transparent !important; }
         body.printing-sheets .card-ref-row span { font-size: 8px !important; }
-        body.printing-sheets input[placeholder*="Ubicación"] { font-size: 9px !important; padding-bottom: 1px !important; border: none !important; margin-bottom: 1px !important;}
+        body.printing-sheets input[placeholder*="Ubicación"] { font-size: 9px !important; padding-bottom: 1px !important; border: none !important; margin-top: 2.5mm !important; margin-bottom: 2mm !important;}
 
         body.printing-sheets .config-options { background: transparent !important; border: 1px dashed #ccc !important; padding: 1mm !important; gap: 1mm !important; }
         body.printing-sheets .config-options select { font-size: 8px !important; padding: 0 !important; border: none !important; background: transparent !important; -webkit-appearance: none; appearance: none; color: #000; height: auto !important; }
@@ -281,6 +282,15 @@
         body.printing-sheets .sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-content: space-evenly; min-height: 200mm; }
         body.printing-sheets .sheet-grid .item-card { width: auto !important; display: block !important; margin: 0 !important; align-self: start !important; }
         body.printing-sheets .sheet-grid .item-card.cad-card.panoramic { grid-column: 1 / -1 !important; }
+        /* Hoja con un solo ítem: en vez de quedar chico en la esquina (como si faltaran otros
+           3), se agranda y centra para aprovechar la página. */
+        body.printing-sheets .sheet-grid.single-item { grid-template-columns: 1fr; justify-content: center; align-content: center; }
+        body.printing-sheets .sheet-grid.single-item .item-card { width: 68% !important; }
+        body.printing-sheets .sheet-grid.single-item .item-card .drawing-area { height: 140mm !important; min-height: 140mm !important; max-height: 140mm !important; }
+        body.printing-sheets .sheet-grid.single-item .item-card .summary-box,
+        body.printing-sheets .sheet-grid.single-item .item-card .summary-box div,
+        body.printing-sheets .sheet-grid.single-item .item-card .summary-box span,
+        body.printing-sheets .sheet-grid.single-item .item-card .summary-box strong { font-size: 11px !important; }
         /* En PDF, siempre mostrar el resumen y ocultar los menús de configuración */
         body.printing-sheets .item-card .hide-on-lock { display: none !important; }
         body.printing-sheets .item-card .show-on-lock { display: block !important; }
@@ -548,6 +558,9 @@
                 sheet.appendChild(hd);
             }
             const grid = document.createElement('div'); grid.className = 'sheet-grid';
+            // Si la hoja tiene un solo ítem (no panorámico), se agranda y centra en vez de
+            // quedar chico y pegado a la esquina como si le faltaran 3 más.
+            if (group.length === 1 && !group[0].classList.contains('panoramic')) grid.classList.add('single-item');
             group.forEach(c => grid.appendChild(c));
             sheet.appendChild(grid);
             if (isLast && sig) sheet.appendChild(sig);
@@ -589,6 +602,16 @@
         const originalBtnHtml = btn ? btn.innerHTML : '';
         if (btn) { btn.disabled = true; btn.innerHTML = 'Generando PDF…'; }
 
+        // html2canvas dibuja el placeholder ENCIMA del valor real (no solo cuando el campo
+        // está vacío) — con un campo lleno esto se ve como texto recortado/superpuesto en la
+        // parte de arriba. Se quita el placeholder de TODOS los inputs antes de capturar
+        // (tengan o no valor) y se restaura después.
+        const blankedPlaceholders = [];
+        document.querySelectorAll('#print-area input[placeholder]').forEach(inp => {
+            blankedPlaceholders.push({ el: inp, placeholder: inp.placeholder });
+            inp.placeholder = '';
+        });
+
         try {
             // Deja que el navegador termine de aplicar el layout de body.printing-sheets
             // antes de capturar (si no, html2canvas puede leer medidas viejas).
@@ -612,6 +635,7 @@
         } catch (e) {
             alert('No se pudo generar el PDF: ' + e.message);
         } finally {
+            blankedPlaceholders.forEach(({ el, placeholder }) => { el.placeholder = placeholder; });
             teardownPrintSheets();
             if (btn) { btn.disabled = false; btn.innerHTML = originalBtnHtml; }
         }
