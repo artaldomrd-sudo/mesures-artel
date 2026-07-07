@@ -911,7 +911,7 @@
         }
 
         const getAperturaSpec = (itemState, type, cat) => {
-            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
             if (!hideOrientation && itemState.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cat)) {
                 return `Apertura: ${itemState.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`;
             }
@@ -1712,7 +1712,7 @@
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
-            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cardsState[id].categoria);
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
 
@@ -1724,7 +1724,7 @@
                     <input type="text" placeholder="Ref. (ej: PV1)">
                     <span id="title-${id}">${displayLabel || ''}</span>
                 </div>
-                ${cardsState[id].categoria === 'corredera' && correderaVias(cardsState[id].type) ? `<div style="text-align:right; font-size:9px; color:#7f8c8d; font-weight:bold; margin-top:-4px;">${correderaVias(cardsState[id].type)} vías</div>` : ''}
+                ${cardsState[id].categoria === 'corredera' && correderaVias(cardsState[id].type) ? `<div style="text-align:right; font-size:14px; color:var(--artal-blue); font-weight:bold;">${correderaVias(cardsState[id].type)} vías</div>` : ''}
                 <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
 
                 ${schematic}
@@ -2670,13 +2670,15 @@
             }
             extKey = 'ext'; intKey = 'int';
         } else if (cfg.mode === 'stair') {
-            // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera, todas
-            // cascadeando hacia el lado de `orientacion`. En cor3, `cor_interior` elige si la
-            // hoja izquierda o la derecha queda del lado más interior de la escalera.
-            const n = cfg.n, s = segs(n), dirTo = state.orientacion === 'D' ? 'R' : 'L';
-            // Solo cor3 tiene el selector "Hoja interior" (cor4_lat/cor6_lat no lo muestran en
-            // el menú todavía, así que mantienen siempre izquierda = exterior).
-            const leftIsInt = state.type === 'cor3' && (state.cor_interior || 'I') === 'I';
+            // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera. cor3 no
+            // tiene toggle de orientación (se ocultó): tanto el lado interior como la
+            // dirección de la cascada se deciden con el mismo selector "Hoja interior"
+            // (izquierda = interior y cascada hacia la izquierda). cor4_lat/cor6_lat siguen
+            // usando `orientacion` como antes.
+            const isCor3 = state.type === 'cor3';
+            const leftIsInt = isCor3 && (state.cor_interior || 'I') === 'I';
+            const n = cfg.n, s = segs(n);
+            const dirTo = isCor3 ? (leftIsInt ? 'L' : 'R') : (state.orientacion === 'D' ? 'R' : 'L');
             for (let d = 0; d < n; d++) mainRails.push(d === 0 ? 'ext' : (d === n - 1 ? 'int' : 'r' + d));
             for (let i = 0; i < n; i++) {
                 const depth = leftIsInt ? (n - 1 - i) : i; // 0 = riel exterior, n-1 = riel interior
@@ -3119,10 +3121,14 @@
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
                 drawing += `<g transform="translate(30, 30)">${arrowR}</g><g transform="translate(70, 30)">${arrowL}</g>`;
                 break;
-            case 'cor3':
+            case 'cor3': {
+                // cor3 no tiene toggle de orientación (se decide con "Hoja interior"): las 3
+                // flechas cascadean hacia la izquierda si la hoja interior es la izquierda.
+                const cor3Arrow = (state.cor_interior || 'I') === 'I' ? arrowL : arrowR;
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/>';
-                drawing += putArrow(23.3, 30) + putArrow(50, 30) + putArrow(76.6, 30);
+                drawing += `<g transform="translate(23.3, 30)">${cor3Arrow}</g><g transform="translate(50, 30)">${cor3Arrow}</g><g transform="translate(76.6, 30)">${cor3Arrow}</g>`;
                 break;
+            }
             case 'cor4_cent':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
                 drawing += putArrowInv(20, 30) + putArrow(40, 30) + putArrowInv(60, 30) + putArrow(80, 30);
@@ -3392,7 +3398,7 @@
                 return;
             }
             
-            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(selectedItem.categoria);
             
             let dimensionInputs = `
