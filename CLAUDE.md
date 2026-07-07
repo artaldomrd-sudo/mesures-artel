@@ -81,18 +81,27 @@ un **PDF de Cotización o Fabricación** para el cliente.
   mosquitera ocupa el riel exterior). Instalación "por fuera" = espejo vertical. "Sin sheetrock"
   = solo concreto. Menús del galandaje: Instalación (dentro/fuera), Sheetrock (Sí/No),
   Mosquitera. Centrales cascadean desde el centro hacia los lados; laterales cascadean al pocket.
-- **Vista superior (planta) de correderas**: `correderaPlan(state, uid)`. A diferencia del
-  galandaje (bolsillo en la pared), la corredera va en un **marco perimetral** con 2-3 rieles
-  paralelos ("vías"): interior, exterior y, si lleva mosquitera, un tercer riel siempre por
-  fuera (la mosquitera nunca va en el riel interior). **Reglas confirmadas por el usuario**:
-  `cor2` — una hoja por riel; qué lado (I/D) va al riel interior se elige con el campo nuevo
-  `cor_interior` (select "Riel interior: Izquierda/Derecha", solo visible para `cor2`).
-  `cor4_cent`/`cor6_cent` — las hojas centrales (las más próximas a la apertura central) van
-  al riel interior, las laterales al exterior. **Sin validar todavía (primera extrapolación,
-  pendiente de ajuste)**: `cor3` (dibuja 3 rieles independientes, uno por hoja, todas
-  cascadeando hacia `orientacion`) y `cor4_lat`/`cor6_lat` (2 rieles alternados interior/
-  exterior, cascadeando hacia `orientacion`, igual patrón que `gal4_4v`). No usa Instalación/
-  Sheetrock (no hay pared, es marco propio) — solo Mosquitera (`state.mosquitera === 'con'`).
+- **Vista superior (planta) de correderas**: `correderaPlan(state, uid)`, config en
+  `CORREDERA_CFG` (y `correderaVias(type)` para la cantidad de "vías"). A diferencia del
+  galandaje (bolsillo en la pared), la corredera va en un **marco perimetral** con varios
+  rieles paralelos ("vías"), cada hoja superpuesta `OVERLAP` unidades con su vecina (no a
+  tope). La mosquitera (si aplica) **nunca es una pieza continua**: son hojas propias que
+  replican la posición de las hojas que están en el riel exterior, agregadas en un riel nuevo
+  siempre el más exterior de todos. **Reglas confirmadas por el usuario (las 6 validadas)**:
+  - `cor2` (modo `pair`, 2 vías) — una hoja por riel; qué lado (I/D) va al riel interior se
+    elige con el campo `cor_interior` (select "Riel interior: Izquierda/Derecha", solo
+    visible para `cor2`).
+  - `cor4_cent` (modo `cent`, 2 vías) / `cor6_cent` (modo `cent`, 3 vías) — las hojas se
+    agrupan en pares por distancia al centro; el par más próximo al centro va al riel más
+    interior, y así sucesivamente hacia afuera (n/2 rieles en total).
+  - `cor3`, `cor4_lat`, `cor6_lat` (modo `stair`, 3/4/6 vías) — una hoja por riel ("N vías"),
+    en escalera, todas cascadeando hacia el lado de `orientacion`.
+  - El `railGap` entre rieles es dinámico (`Math.min(7, 34/(rieles-1))`): con hasta 7 filas
+    (6 vías + mosquitera) el espaciado por defecto no entra en el viewBox y se achica solo.
+  - La cantidad de vías se muestra en la tarjeta, debajo del nombre del tipo (solo
+    `categoria === 'corredera'`).
+  - No usa Instalación/Sheetrock (no hay pared, es marco propio) — solo Mosquitera
+    (`state.mosquitera === 'con'`).
 
 ## CAD (dibujo libre) — importante
 

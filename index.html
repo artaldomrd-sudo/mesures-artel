@@ -1724,8 +1724,9 @@
                     <input type="text" placeholder="Ref. (ej: PV1)">
                     <span id="title-${id}">${displayLabel || ''}</span>
                 </div>
+                ${cardsState[id].categoria === 'corredera' && correderaVias(cardsState[id].type) ? `<div style="text-align:right; font-size:9px; color:#7f8c8d; font-weight:bold; margin-top:-4px;">${correderaVias(cardsState[id].type)} vías</div>` : ''}
                 <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
-                
+
                 ${schematic}
                 
                 <div class="summary-box show-on-lock" id="summary-${id}"></div>
@@ -2577,27 +2578,38 @@
         return head + plan + labels;
     }
 
+    // Configuración de correderas: modo de planta y cantidad total de hojas por tipo.
+    // "pair" = cor2 (1 riel c/hoja, lado interior elegible). "cent" = hojas centrales al riel
+    // interior y laterales al exterior, agrupadas en pares por distancia al centro (n/2 rieles).
+    // "stair" = una hoja por riel ("N vías"), en escalera, cascadeando hacia `orientacion`
+    // (cor3 y las variantes "Lateral"). Reglas confirmadas por el usuario para las 6.
+    const CORREDERA_CFG = {
+        cor2: { mode: 'pair', n: 2 },
+        cor3: { mode: 'stair', n: 3 },
+        cor4_cent: { mode: 'cent', n: 4 },
+        cor4_lat: { mode: 'stair', n: 4 },
+        cor6_cent: { mode: 'cent', n: 6 },
+        cor6_lat: { mode: 'stair', n: 6 },
+    };
+    // Cantidad de rieles ("vías") de cada tipo, para mostrar en la tarjeta: "cent" usa n/2
+    // rieles (hojas en pares), "pair"/"stair" usan un riel por hoja.
+    function correderaVias(type) {
+        const cfg = CORREDERA_CFG[type];
+        if (!cfg) return null;
+        return cfg.mode === 'cent' ? cfg.n / 2 : cfg.n;
+    }
+
     // Vista de planta de correderas. A diferencia del galandaje (que pliega hojas contra un
-    // bolsillo en la pared), la corredera va en un marco perimetral con 2-3 rieles paralelos
-    // (rieles = "vías"): riel exterior, riel interior y, si lleva mosquitera, un tercer riel
-    // siempre por fuera. PRIMERA VERSIÓN — reglas confirmadas por el usuario: cor2 (una hoja
-    // por riel, el lado interior se elige con `cor_interior`), cor4_cent/cor6_cent (las hojas
-    // centrales van al riel interior, las laterales al exterior). cor3 y las variantes
-    // "Lateral" (cor4_lat/cor6_lat) son una extrapolación razonable pendiente de validar con
-    // el usuario (ver CLAUDE.md).
+    // bolsillo en la pared), la corredera va en un marco perimetral con varios rieles
+    // paralelos ("vías"). La mosquitera (si aplica) siempre va en un riel adicional, el más
+    // exterior de todos, y sus hojas replican la posición de las hojas que están en el riel
+    // exterior (no es una sola pieza continua).
     function correderaPlan(state, uid) {
-        const cfg = {
-            cor2: { mode: 'pair' },
-            cor3: { mode: 'triple' },
-            cor4_cent: { mode: 'cent', n: 4 },
-            cor4_lat: { mode: 'lat', n: 4 },
-            cor6_cent: { mode: 'cent', n: 6 },
-            cor6_lat: { mode: 'lat', n: 6 },
-        }[state.type];
+        const cfg = CORREDERA_CFG[state.type];
         if (!cfg) return '';
 
         const mosq = state.mosquitera === 'con';
-        const X0 = 4, X1 = 96, gt = 3, railGap = 7, PT = 66;
+        const X0 = 4, X1 = 96, gt = 3, PT = 66, OVERLAP = 3;
         const glassFill = `url(#glass-${uid})`;
 
         const leafG = (x, y, w) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${gt}" fill="${glassFill}" stroke="#0A3D62" stroke-width="1"/>`;
@@ -2618,56 +2630,74 @@
             `<text x="50" y="59.5" font-family="Arimo" font-size="3.4" font-weight="bold" fill="#9aa1a8" text-anchor="middle" stroke="none">VISTA SUPERIOR (planta)</text>`;
         const lbl = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="${anchor || 'middle'}" stroke="none">${t}</text>`;
 
-        // Rieles de arriba (exterior) a abajo (interior); mosquitera siempre el más exterior.
-        let rails = cfg.mode === 'triple' ? ['ext', 'mid', 'int'] : ['ext', 'int'];
-        if (mosq) rails = ['mosq', ...rails];
-        const railY = r => PT + rails.indexOf(r) * railGap;
+        // n segmentos que cubren X0..X1 en partes iguales, superpuestos OVERLAP unidades con
+        // su vecino (como se ven las hojas encimadas al cerrar en el boceto del usuario).
+        const segs = n => {
+            const segW = (X1 - X0) / n, out = [];
+            for (let i = 0; i < n; i++) {
+                let sx = X0 + i * segW, ex = X0 + (i + 1) * segW;
+                if (i > 0) sx -= OVERLAP;
+                if (i < n - 1) ex += OVERLAP;
+                out.push({ x: sx, w: ex - sx });
+            }
+            return out;
+        };
 
-        let panels = [];
+        let panels = [], mainRails = [], extKey, intKey;
         if (cfg.mode === 'pair') {
             // cor2: una hoja por riel; cor_interior elige qué lado (I/D) va al riel interior.
-            const overlap = 4, mid = 50;
+            const s = segs(2);
             const leftIsInt = (state.cor_interior || 'I') === 'I';
+            mainRails = ['ext', 'int'];
             panels = [
-                { x: X0, w: mid + overlap - X0, rail: leftIsInt ? 'int' : 'ext', dir: 'R' },
-                { x: mid - overlap, w: X1 - (mid - overlap), rail: leftIsInt ? 'ext' : 'int', dir: 'L' },
+                { x: s[0].x, w: s[0].w, rail: leftIsInt ? 'int' : 'ext', dir: 'R' },
+                { x: s[1].x, w: s[1].w, rail: leftIsInt ? 'ext' : 'int', dir: 'L' },
             ];
+            extKey = 'ext'; intKey = 'int';
         } else if (cfg.mode === 'cent') {
-            // cor4_cent / cor6_cent: hojas centrales -> riel interior, laterales -> riel exterior.
-            const n = cfg.n, segW = (X1 - X0) / n;
+            // cor4_cent / cor6_cent: hojas agrupadas en pares por distancia al centro; el par
+            // más próximo al centro va al riel interior, el más alejado al exterior (n/2 rieles).
+            const n = cfg.n, s = segs(n), railsCount = n / 2;
+            // pairRail[0] = riel interior (par más próximo al centro) ... pairRail[último] = exterior
+            const pairRail = [];
+            for (let j = 0; j < railsCount; j++) pairRail.push(j === 0 ? 'int' : (j === railsCount - 1 ? 'ext' : 'med' + j));
+            mainRails = [...pairRail].reverse(); // de exterior (arriba) a interior (abajo)
             for (let i = 0; i < n; i++) {
                 const half = i < n / 2 ? 'L' : 'R';
                 const distFromCenter = half === 'L' ? (n / 2 - 1 - i) : (i - n / 2);
-                panels.push({
-                    x: X0 + i * segW, w: segW,
-                    rail: distFromCenter === 0 ? 'int' : 'ext',
-                    dir: half === 'L' ? 'R' : 'L',
-                });
+                panels.push({ x: s[i].x, w: s[i].w, rail: pairRail[distFromCenter], dir: half === 'L' ? 'R' : 'L' });
             }
-        } else if (cfg.mode === 'triple') {
-            // cor3 (3 vías): cada hoja en su propio riel, las 3 cascadean hacia la orientación.
-            const dirTo = state.orientacion === 'D' ? 'R' : 'L';
-            panels = [
-                { x: X0, w: X1 - X0, rail: 'ext', dir: dirTo },
-                { x: X0, w: X1 - X0, rail: 'mid', dir: dirTo },
-                { x: X0, w: X1 - X0, rail: 'int', dir: dirTo },
-            ];
-        } else if (cfg.mode === 'lat') {
-            // cor4_lat / cor6_lat: cascada hacia un solo lado, alternando riel ext/int.
-            const n = cfg.n, dirTo = state.orientacion === 'D' ? 'R' : 'L', segW = (X1 - X0) / n;
-            for (let i = 0; i < n; i++) panels.push({ x: X0 + i * segW, w: segW, rail: i % 2 === 0 ? 'ext' : 'int', dir: dirTo });
+            extKey = 'ext'; intKey = 'int';
+        } else if (cfg.mode === 'stair') {
+            // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera, todas
+            // cascadeando hacia el lado de `orientacion`.
+            const n = cfg.n, s = segs(n), dirTo = state.orientacion === 'D' ? 'R' : 'L';
+            for (let i = 0; i < n; i++) {
+                const railKey = i === 0 ? 'ext' : (i === n - 1 ? 'int' : 'r' + i);
+                mainRails.push(railKey);
+                panels.push({ x: s[i].x, w: s[i].w, rail: railKey, dir: dirTo });
+            }
+            extKey = 'ext'; intKey = 'int';
         }
+
+        // Mosquitera: hojas propias (no una pieza continua) que replican la posición de las
+        // hojas del riel exterior, agregadas en un riel nuevo, el más exterior de todos.
+        const mosqPanels = mosq ? panels.filter(p => p.rail === extKey).map(p => ({ x: p.x, w: p.w })) : [];
+        const rails = mosq ? ['mosq', ...mainRails] : mainRails;
+        // Alto disponible para los rieles fijo (viewBox de la corredera); con hasta 7 filas
+        // (6 vías + mosquitera) el espaciado por defecto (7) no entra, así que se achica.
+        const railGap = Math.min(7, 34 / Math.max(1, rails.length - 1));
+        const railY = r => PT + rails.indexOf(r) * railGap;
 
         let body = '';
         rails.forEach(r => { const y = railY(r) + gt / 2; body += `<line x1="${X0}" y1="${y.toFixed(1)}" x2="${X1}" y2="${y.toFixed(1)}" stroke="#d8dde2" stroke-width="0.5" stroke-dasharray="1.5,1.5"/>`; });
-        if (mosq) body += mosqG(X0, railY('mosq'), X1 - X0);
+        if (mosq) mosqPanels.forEach(p => { body += mosqG(p.x, railY('mosq'), p.w); });
         panels.forEach(p => { const y = railY(p.rail); body += leafG(p.x, y, p.w) + arrow(p.x + p.w / 2, y + gt / 2, p.w, p.dir); });
 
         const planTop = PT - 2.5, planBottom = railY(rails[rails.length - 1]) + gt + 2.5;
         const frame = `<rect x="${(X0 - 2).toFixed(1)}" y="${planTop.toFixed(1)}" width="${(X1 - X0 + 4).toFixed(1)}" height="${(planBottom - planTop).toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="1"/>`;
 
-        let labels = lbl(X0 - 3, railY('ext') + gt / 2 + 1, 'ext', 'end') + lbl(X0 - 3, railY('int') + gt / 2 + 1, 'int', 'end');
-        if (cfg.mode === 'triple') labels += lbl(X0 - 3, railY('mid') + gt / 2 + 1, 'med', 'end');
+        let labels = lbl(X0 - 3, railY(extKey) + gt / 2 + 1, 'ext', 'end') + lbl(X0 - 3, railY(intKey) + gt / 2 + 1, 'int', 'end');
         if (mosq) labels += lbl(X0 - 3, railY('mosq') + gt / 2 + 1, 'mosq', 'end');
 
         return frame + head + body + labels;
