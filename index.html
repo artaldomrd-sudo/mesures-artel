@@ -1350,7 +1350,7 @@
                 extra += `<select onchange="${fn}, 'gal_install', this.value)" title="Lado de instalación del galandaje"><option value="dentro" ${gi==='dentro'?'selected':''}>Instalación: Por dentro</option><option value="fuera" ${gi==='fuera'?'selected':''}>Instalación: Por fuera</option></select>`;
                 extra += `<select onchange="${fn}, 'gal_sheetrock', this.value)" title="¿Lleva pared de sheetrock?"><option value="si" ${gs==='si'?'selected':''}>Sheetrock: Sí</option><option value="no" ${gs==='no'?'selected':''}>Sheetrock: No</option></select>`;
             }
-            if (type === 'cor2') {
+            if (type === 'cor2' || type === 'cor3') {
                 const ci = state.cor_interior || 'I';
                 extra += `<select onchange="${fn}, 'cor_interior', this.value)" title="¿Qué hoja va en el riel interior?"><option value="I" ${ci==='I'?'selected':''}>Hoja interior: Izquierda</option><option value="D" ${ci==='D'?'selected':''}>Hoja interior: Derecha</option></select>`;
             }
@@ -2671,12 +2671,16 @@
             extKey = 'ext'; intKey = 'int';
         } else if (cfg.mode === 'stair') {
             // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera, todas
-            // cascadeando hacia el lado de `orientacion`.
+            // cascadeando hacia el lado de `orientacion`. En cor3, `cor_interior` elige si la
+            // hoja izquierda o la derecha queda del lado más interior de la escalera.
             const n = cfg.n, s = segs(n), dirTo = state.orientacion === 'D' ? 'R' : 'L';
+            // Solo cor3 tiene el selector "Hoja interior" (cor4_lat/cor6_lat no lo muestran en
+            // el menú todavía, así que mantienen siempre izquierda = exterior).
+            const leftIsInt = state.type === 'cor3' && (state.cor_interior || 'I') === 'I';
+            for (let d = 0; d < n; d++) mainRails.push(d === 0 ? 'ext' : (d === n - 1 ? 'int' : 'r' + d));
             for (let i = 0; i < n; i++) {
-                const railKey = i === 0 ? 'ext' : (i === n - 1 ? 'int' : 'r' + i);
-                mainRails.push(railKey);
-                panels.push({ x: s[i].x, w: s[i].w, rail: railKey, dir: dirTo });
+                const depth = leftIsInt ? (n - 1 - i) : i; // 0 = riel exterior, n-1 = riel interior
+                panels.push({ x: s[i].x, w: s[i].w, rail: mainRails[depth], dir: dirTo });
             }
             extKey = 'ext'; intKey = 'int';
         }
