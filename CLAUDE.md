@@ -108,12 +108,30 @@ un **PDF de Cotización o Fabricación** para el cliente.
 
 - `exportPDF()` → `buildPrintSheets()` reorganiza el DOM en **hojas de 4 ítems (2×2)** dentro de
   `#print-area`: encabezado solo en la hoja 1, firmas al fondo de la última. La fachada
-  panorámica del CAD ocupa fila completa (cuenta como 2 slots). Luego `window.print()`.
-- **Teardown** restaura el DOM original (mismo orden) al cerrar el diálogo, vía `afterprint`
-  **y** `focus` (probado). Antes de imprimir se regeneran todos los resúmenes y se fuerza la
-  vista de resumen (`.show-on-lock`) para que el PDF nunca muestre los menús.
-- `@page { margin: 0 }` elimina el encabezado/pie del navegador (fecha, título, link `file://`);
-  el margen visible lo da el `padding: 12mm` de cada `.print-sheet`.
+  panorámica del CAD ocupa fila completa (cuenta como 2 slots).
+- **El PDF se genera por código (jsPDF + html2canvas, CDN), NO con `window.print()`.** Motivo:
+  Safari (Mac e iPad) agrega siempre su propio pie de página (URL, fecha, número de página) al
+  imprimir una web, y **no hay forma de desactivarlo** desde CSS ni JS — es una limitación de
+  Safari, no un bug del código. `exportPDF()` arma las hojas con `buildPrintSheets()`, captura
+  cada `.print-sheet` con `html2canvas` (`scale:2`), arma un PDF con `jsPDF` (una imagen JPEG
+  por página, `calidad 0.9` — **JPEG, no PNG**: con PNG una sola página con degradados de
+  vidrio pesaba ~15-50MB) y dispara la descarga con `pdf.save()`. Trade-off aceptado: el texto
+  del PDF ya no es seleccionable/buscable (es una imagen), a cambio de que se ve idéntico en
+  cualquier navegador y sin pie de página.
+- Las reglas CSS que dan forma al PDF (tamaño de tarjetas, grid 2×2, etc.) están bajo el
+  selector **`body.printing-sheets`** (sin `@media print`): tienen que aplicar en pantalla
+  normal para que `html2canvas` las capture bien, no solo durante una impresión real. Solo
+  `@page { margin: 0 }` sigue dentro de `@media print` (por si alguna vez se usa
+  `window.print()` de respaldo).
+- **Teardown** restaura el DOM original (mismo orden) después de generar el PDF (bloque
+  `try/finally` en `exportPDF()`). Antes de generar se regeneran todos los resúmenes y se
+  fuerza la vista de resumen (`.show-on-lock`) para que el PDF nunca muestre los menús.
+- El logo va **incrustado en `index.html` como `data:image/png;base64,...`**, no como
+  `<img src="logo.png">`: si se carga como archivo aparte (sobre todo abriendo la app por
+  doble clic, protocolo `file://`), el canvas de `html2canvas` queda "contaminado" y el
+  navegador bloquea `canvas.toDataURL()` con `SecurityError: Tainted canvases may not be
+  exported`. `logo.png` se mantiene en la carpeta solo como archivo fuente por si hay que
+  regenerar el base64 (con `base64 -i logo.png`), pero el HTML ya no lo referencia.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados
