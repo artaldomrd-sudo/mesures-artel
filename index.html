@@ -911,7 +911,7 @@
         }
 
         const getAperturaSpec = (itemState, type, cat) => {
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
             if (!hideOrientation && itemState.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cat)) {
                 return `Apertura: ${itemState.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`;
             }
@@ -1350,7 +1350,7 @@
                 extra += `<select onchange="${fn}, 'gal_install', this.value)" title="Lado de instalación del galandaje"><option value="dentro" ${gi==='dentro'?'selected':''}>Instalación: Por dentro</option><option value="fuera" ${gi==='fuera'?'selected':''}>Instalación: Por fuera</option></select>`;
                 extra += `<select onchange="${fn}, 'gal_sheetrock', this.value)" title="¿Lleva pared de sheetrock?"><option value="si" ${gs==='si'?'selected':''}>Sheetrock: Sí</option><option value="no" ${gs==='no'?'selected':''}>Sheetrock: No</option></select>`;
             }
-            if (type === 'cor2' || type === 'cor3') {
+            if (['cor2', 'cor3', 'cor4_lat', 'cor6_lat'].includes(type)) {
                 const ci = state.cor_interior || 'I';
                 extra += `<select onchange="${fn}, 'cor_interior', this.value)" title="¿Qué hoja va en el riel interior?"><option value="I" ${ci==='I'?'selected':''}>Hoja interior: Izquierda</option><option value="D" ${ci==='D'?'selected':''}>Hoja interior: Derecha</option></select>`;
             }
@@ -1712,9 +1712,11 @@
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cardsState[id].categoria);
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
+            const viasCount = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type)
+                : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) : null;
 
             card.innerHTML = `
                 ${dragHandleHtml}
@@ -1724,7 +1726,7 @@
                     <input type="text" placeholder="Ref. (ej: PV1)">
                     <span id="title-${id}">${displayLabel || ''}</span>
                 </div>
-                ${cardsState[id].categoria === 'corredera' && correderaVias(cardsState[id].type) ? `<div style="text-align:right; font-size:14px; color:var(--artal-blue); font-weight:bold;">${correderaVias(cardsState[id].type)} vías</div>` : ''}
+                ${viasCount ? `<div style="text-align:right; font-size:14px; color:var(--artal-blue); font-weight:bold;">${viasCount} vías</div>` : ''}
                 <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
 
                 ${schematic}
@@ -2599,6 +2601,13 @@
         return cfg.mode === 'cent' ? cfg.n / 2 : cfg.n;
     }
 
+    // Cantidad de rieles ("vías") de cada galandaje: para los tipos "central" es la cantidad
+    // de hojas cascadeando por lado (`per` en galandajePlan, ya está en el propio nombre del
+    // tipo: gal4_2v, gal6_3v); para "lateral" es la cantidad total de hojas (cascadean todas
+    // al mismo pocket, cada una con su propio riel/profundidad).
+    const GALANDAJE_VIAS = { gal1: 1, gal2_lat: 2, gal3_3v: 3, gal4_4v: 4, gal2_cent: 1, gal4_2v: 2, gal6_3v: 3 };
+    function galandajeVias(type) { return GALANDAJE_VIAS[type] || null; }
+
     // Vista de planta de correderas. A diferencia del galandaje (que pliega hojas contra un
     // bolsillo en la pared), la corredera va en un marco perimetral con varios rieles
     // paralelos ("vías"). La mosquitera (si aplica) siempre va en un riel adicional, el más
@@ -2670,15 +2679,13 @@
             }
             extKey = 'ext'; intKey = 'int';
         } else if (cfg.mode === 'stair') {
-            // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera. cor3 no
-            // tiene toggle de orientación (se ocultó): tanto el lado interior como la
+            // cor3 / cor4_lat / cor6_lat: una hoja por riel ("N vías"), en escalera. Ninguna
+            // tiene toggle de orientación (se ocultó en las 3): tanto el lado interior como la
             // dirección de la cascada se deciden con el mismo selector "Hoja interior"
-            // (izquierda = interior y cascada hacia la izquierda). cor4_lat/cor6_lat siguen
-            // usando `orientacion` como antes.
-            const isCor3 = state.type === 'cor3';
-            const leftIsInt = isCor3 && (state.cor_interior || 'I') === 'I';
+            // (izquierda = interior y cascada hacia la izquierda).
+            const leftIsInt = (state.cor_interior || 'I') === 'I';
             const n = cfg.n, s = segs(n);
-            const dirTo = isCor3 ? (leftIsInt ? 'L' : 'R') : (state.orientacion === 'D' ? 'R' : 'L');
+            const dirTo = leftIsInt ? 'L' : 'R';
             for (let d = 0; d < n; d++) mainRails.push(d === 0 ? 'ext' : (d === n - 1 ? 'int' : 'r' + d));
             for (let i = 0; i < n; i++) {
                 const depth = leftIsInt ? (n - 1 - i) : i; // 0 = riel exterior, n-1 = riel interior
@@ -3067,6 +3074,9 @@
 
         const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
         const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
+        // cor3 / cor4_lat / cor6_lat: sin toggle de orientación, cascadean según "Hoja interior"
+        // (izquierda = interior = cascada hacia la izquierda) — mismo criterio que correderaPlan().
+        const putArrowCorStair = (x, y) => `<g transform="translate(${x}, ${y})">${(state.cor_interior || 'I') === 'I' ? arrowL : arrowR}</g>`;
 
         const drawPlanView = (type, stateInfo) => {
             let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
@@ -3121,21 +3131,17 @@
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="50" y1="10" x2="50" y2="50"/>';
                 drawing += `<g transform="translate(30, 30)">${arrowR}</g><g transform="translate(70, 30)">${arrowL}</g>`;
                 break;
-            case 'cor3': {
-                // cor3 no tiene toggle de orientación (se decide con "Hoja interior"): las 3
-                // flechas cascadean hacia la izquierda si la hoja interior es la izquierda.
-                const cor3Arrow = (state.cor_interior || 'I') === 'I' ? arrowL : arrowR;
+            case 'cor3':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/>';
-                drawing += `<g transform="translate(23.3, 30)">${cor3Arrow}</g><g transform="translate(50, 30)">${cor3Arrow}</g><g transform="translate(76.6, 30)">${cor3Arrow}</g>`;
+                drawing += putArrowCorStair(23.3, 30) + putArrowCorStair(50, 30) + putArrowCorStair(76.6, 30);
                 break;
-            }
             case 'cor4_cent':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
                 drawing += putArrowInv(20, 30) + putArrow(40, 30) + putArrowInv(60, 30) + putArrow(80, 30);
                 break;
             case 'cor4_lat':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="30" y1="10" x2="30" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="70" y1="10" x2="70" y2="50"/>';
-                drawing += putArrow(20, 30) + putArrow(40, 30) + putArrow(60, 30) + putArrow(80, 30);
+                drawing += putArrowCorStair(20, 30) + putArrowCorStair(40, 30) + putArrowCorStair(60, 30) + putArrowCorStair(80, 30);
                 break;
             case 'cor6_cent':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
@@ -3143,7 +3149,7 @@
                 break;
             case 'cor6_lat':
                 drawing += '<rect x="10" y="10" width="80" height="40"/><line x1="23.3" y1="10" x2="23.3" y2="50"/><line x1="36.6" y1="10" x2="36.6" y2="50"/><line x1="50" y1="10" x2="50" y2="50"/><line x1="63.3" y1="10" x2="63.3" y2="50"/><line x1="76.6" y1="10" x2="76.6" y2="50"/>';
-                drawing += putArrow(16.6, 30) + putArrow(30, 30) + putArrow(43.3, 30) + putArrow(56.6, 30) + putArrow(70, 30) + putArrow(83.3, 30);
+                drawing += putArrowCorStair(16.6, 30) + putArrowCorStair(30, 30) + putArrowCorStair(43.3, 30) + putArrowCorStair(56.6, 30) + putArrowCorStair(70, 30) + putArrowCorStair(83.3, 30);
                 break;
 
             case 'gal1':
@@ -3398,7 +3404,7 @@
                 return;
             }
             
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
+            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(selectedItem.categoria);
             
             let dimensionInputs = `

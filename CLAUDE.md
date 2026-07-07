@@ -89,19 +89,27 @@ un **PDF de Cotización o Fabricación** para el cliente.
   replican la posición de las hojas que están en el riel exterior, agregadas en un riel nuevo
   siempre el más exterior de todos. **Reglas confirmadas por el usuario (las 6 validadas)**:
   - `cor2` (modo `pair`, 2 vías) — una hoja por riel; qué lado (I/D) va al riel interior se
-    elige con el campo `cor_interior` (select "Riel interior: Izquierda/Derecha", solo
-    visible para `cor2`).
+    elige con el campo `cor_interior` (select "Hoja interior: Izquierda/Derecha").
   - `cor4_cent` (modo `cent`, 2 vías) / `cor6_cent` (modo `cent`, 3 vías) — las hojas se
     agrupan en pares por distancia al centro; el par más próximo al centro va al riel más
-    interior, y así sucesivamente hacia afuera (n/2 rieles en total).
+    interior, y así sucesivamente hacia afuera (n/2 rieles en total). Sin toggle de
+    orientación ni `cor_interior` (la asignación no depende del lado, es simétrica).
   - `cor3`, `cor4_lat`, `cor6_lat` (modo `stair`, 3/4/6 vías) — una hoja por riel ("N vías"),
-    en escalera, todas cascadeando hacia el lado de `orientacion`.
+    en escalera. **Sin toggle de orientación** (oculto para los 3): el mismo campo
+    `cor_interior` decide a la vez qué lado queda más interior Y hacia qué lado cascadea todo
+    el conjunto (izquierda = interior = cascada hacia la izquierda). La vista de elevación usa
+    `putArrowCorStair` (en vez de `putArrow`/`orientacion`) para que las flechas de arriba
+    coincidan siempre con la planta.
   - El `railGap` entre rieles es dinámico (`Math.min(7, 34/(rieles-1))`): con hasta 7 filas
     (6 vías + mosquitera) el espaciado por defecto no entra en el viewBox y se achica solo.
-  - La cantidad de vías se muestra en la tarjeta, debajo del nombre del tipo (solo
-    `categoria === 'corredera'`).
+  - `cor6_lat` (6 vías) **no admite mosquitera** (ya usa las 6 vías disponibles): sin selector
+    en el menú y con salvaguarda en `correderaPlan()` por si un proyecto guardado la tenía.
   - No usa Instalación/Sheetrock (no hay pared, es marco propio) — solo Mosquitera
     (`state.mosquitera === 'con'`).
+  - La cantidad de vías se muestra en la tarjeta, debajo del nombre del tipo, en azul y
+    tamaño grande (14px) para que se note — igual para galandajes: `galandajeVias(type)` /
+    `GALANDAJE_VIAS` (el número ya viene en el propio id del tipo: `gal3_3v`→3, `gal4_2v`→2,
+    `gal4_4v`→4, `gal6_3v`→3; `gal1`/`gal2_lat`/`gal2_cent` no tienen sufijo, se hardcodean).
 
 ## CAD (dibujo libre) — importante
 
