@@ -1715,8 +1715,10 @@
             const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cardsState[id].categoria);
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
-            const viasCount = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type)
-                : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) : null;
+            const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
+                : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
+            const viasCount = !hasVias ? null : cardsState[id].categoria === 'corredera'
+                ? correderaVias(cardsState[id].type, cardsState[id].mosquitera === 'con') : galandajeVias(cardsState[id].type);
 
             card.innerHTML = `
                 ${dragHandleHtml}
@@ -1724,9 +1726,9 @@
                 ${lockBtnHtml}
                 <div class="card-ref-row">
                     <input type="text" placeholder="Ref. (ej: PV1)">
-                    <span id="title-${id}">${displayLabel || ''}</span>
+                    <span id="title-${id}" ${hasVias ? 'style="color:var(--artal-blue);"' : ''}>${displayLabel || ''}</span>
                 </div>
-                ${viasCount ? `<div style="text-align:right; font-size:14px; color:var(--artal-blue); font-weight:bold;">${viasCount} vías</div>` : ''}
+                ${hasVias ? `<div id="vias-${id}" style="text-align:right; font-size:14px; color:var(--artal-blue); font-weight:bold;">${viasCount} vías</div>` : ''}
                 <input type="text" placeholder="Ubicación (ej: Sala principal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
 
                 ${schematic}
@@ -1844,6 +1846,13 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
+        }
+
+        // La mosquitera suma 1 vía en correderas (ocupa un riel extra): refrescar la etiqueta.
+        if (key === 'mosquitera' && cardsState[id].categoria === 'corredera') {
+            const viasDiv = document.getElementById('vias-' + id);
+            const vc = correderaVias(cardsState[id].type, cardsState[id].mosquitera === 'con');
+            if (viasDiv && vc !== null) viasDiv.textContent = vc + ' vías';
         }
 
         if (cardsState[id].type !== 'draw') {
@@ -2594,11 +2603,13 @@
         cor6_lat: { mode: 'stair', n: 6 },
     };
     // Cantidad de rieles ("vías") de cada tipo, para mostrar en la tarjeta: "cent" usa n/2
-    // rieles (hojas en pares), "pair"/"stair" usan un riel por hoja.
-    function correderaVias(type) {
+    // rieles (hojas en pares), "pair"/"stair" usan un riel por hoja. Con mosquitera se suma 1
+    // vía (el riel extra donde va la mosquitera), salvo cor6_lat que no admite mosquitera.
+    function correderaVias(type, mosq) {
         const cfg = CORREDERA_CFG[type];
         if (!cfg) return null;
-        return cfg.mode === 'cent' ? cfg.n / 2 : cfg.n;
+        const base = cfg.mode === 'cent' ? cfg.n / 2 : cfg.n;
+        return base + (mosq && type !== 'cor6_lat' ? 1 : 0);
     }
 
     // Cantidad de rieles ("vías") de cada galandaje: para los tipos "central" es la cantidad

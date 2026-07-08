@@ -107,9 +107,15 @@ un **PDF de Cotización o Fabricación** para el cliente.
   - No usa Instalación/Sheetrock (no hay pared, es marco propio) — solo Mosquitera
     (`state.mosquitera === 'con'`).
   - La cantidad de vías se muestra en la tarjeta, debajo del nombre del tipo, en azul y
-    tamaño grande (14px) para que se note — igual para galandajes: `galandajeVias(type)` /
-    `GALANDAJE_VIAS` (el número ya viene en el propio id del tipo: `gal3_3v`→3, `gal4_2v`→2,
-    `gal4_4v`→4, `gal6_3v`→3; `gal1`/`gal2_lat`/`gal2_cent` no tienen sufijo, se hardcodean).
+    tamaño grande (14px, mismo color que el nombre del tipo) para que se note — igual para
+    galandajes: `galandajeVias(type)` / `GALANDAJE_VIAS` (el número ya viene en el propio id
+    del tipo: `gal3_3v`→3, `gal4_2v`→2, `gal4_4v`→4, `gal6_3v`→3; `gal1`/`gal2_lat`/`gal2_cent`
+    no tienen sufijo, se hardcodean).
+  - `correderaVias(type, mosq)` suma 1 vía si hay mosquitera (ocupa un riel extra), salvo en
+    `cor6_lat` que no la admite. La galandaje NO suma (la mosquitera ocupa el riel exterior
+    existente, no agrega uno nuevo). El div de vías tiene `id="vias-${id}"` y `updateState()`
+    lo refresca a mano cuando cambia `mosquitera` (ese texto se genera una sola vez al crear
+    la tarjeta en `addItem`, no se regenera solo con el resto del dibujo).
 
 ## CAD (dibujo libre) — importante
 
