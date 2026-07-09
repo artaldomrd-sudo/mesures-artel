@@ -45,3 +45,32 @@ self.addEventListener('fetch', (event) => {
             .catch(() => caches.match(event.request))
     );
 });
+
+// Notificaciones push (citas del calendario, ops/calendario.html). La Cloud Function
+// (functions/index.js) manda solo "data" (sin "notification"), así este handler siempre
+// controla cómo se muestra — evita notificaciones duplicadas en distintos navegadores.
+self.addEventListener('push', (event) => {
+    let payload = {};
+    try { payload = event.data ? event.data.json() : {}; } catch (e) { /* payload no es JSON */ }
+    const title = payload.title || 'ARTAL Operaciones';
+    const options = {
+        body: payload.body || '',
+        icon: 'logo.png',
+        badge: 'logo.png',
+        data: { url: payload.url || 'ops/calendario.html' }
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    const url = (event.notification.data && event.notification.data.url) || 'ops/calendario.html';
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+            for (const client of windowClients) {
+                if (client.url.includes(url.split('/').pop()) && 'focus' in client) return client.focus();
+            }
+            if (clients.openWindow) return clients.openWindow(url);
+        })
+    );
+});

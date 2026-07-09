@@ -56,10 +56,13 @@ function showUnauthorizedScreen(email) {
 }
 
 /**
- * Exige login con Google y rol autorizado. Resuelve con { email, nombre, rol } cuando
- * el usuario está autenticado y su rol en `usuarios/{email}` está en `rolesPermitidos`
- * (o es 'admin', que siempre pasa). No resuelve nunca si el usuario no está autorizado
- * (se queda mostrando la pantalla de login/error).
+ * Exige login con Google y rol autorizado. Resuelve con { email, nombre, rol, roles } cuando
+ * el usuario está autenticado y alguno de sus roles en `usuarios/{email}` está en
+ * `rolesPermitidos` (o tiene 'admin', que siempre pasa). No resuelve nunca si el usuario no
+ * está autorizado (se queda mostrando la pantalla de login/error).
+ *
+ * `rol` en Firestore puede ser un string ('chofer') o un array (['chofer','instalador']) para
+ * personas con más de un rol — aquí se normaliza siempre a array.
  */
 export function requireAuth(rolesPermitidos) {
   return new Promise((resolve) => {
@@ -70,12 +73,14 @@ export function requireAuth(rolesPermitidos) {
       }
       const snap = await getDoc(doc(db, 'usuarios', user.email));
       const data = snap.exists() ? snap.data() : null;
-      if (!data || data.activo === false || !(data.rol === 'admin' || rolesPermitidos.includes(data.rol))) {
+      const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
+      const autorizado = roles.includes('admin') || roles.some((r) => rolesPermitidos.includes(r));
+      if (!data || data.activo === false || !autorizado) {
         showUnauthorizedScreen(user.email);
         return;
       }
       hideOverlay();
-      resolve({ email: user.email, nombre: data.nombre || user.email, rol: data.rol });
+      resolve({ email: user.email, nombre: data.nombre || user.email, rol: roles[0], roles });
     });
   });
 }

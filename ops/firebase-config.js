@@ -14,6 +14,9 @@ const firebaseConfig = {
   appId: "1:289748131568:web:bcf0b5122d529ac399ac35"
 };
 
+// Web Push certificate (VAPID) de Cloud Messaging — pública, normal tenerla en el cliente.
+export const VAPID_KEY = "BImYp9huvMwbjvp-o_1IgwEm0B4q-xFhnPtNS4CZDf8xzMAS0tKxsd3ZU0MvHNCbtai1TuulSMn9n2iL56krmbM";
+
 const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app);

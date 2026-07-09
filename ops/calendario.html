@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Calendario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 720px; }
+    .month-nav { display: flex; align-items: center; justify-content: space-between; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 14px; }
+    .month-nav button { background: var(--artal-blue); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    .month-nav b { color: var(--artal-blue); font-size: 15px; text-transform: capitalize; }
+
+    .new-cita-btn { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 10px; padding: 14px; font-weight: bold; font-size: 15px; cursor: pointer; font-family: 'Arimo'; min-height: 48px; }
+
+    .day-group { display: flex; flex-direction: column; gap: 8px; }
+    .day-label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px; }
+    .cita-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid var(--artal-yellow); }
+    .cita-card.para-instalador { border-left-color: #9b59b6; }
+    .cita-card .cita-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .cita-card b { color: var(--artal-blue); font-size: 15px; }
+    .cita-card .hora { font-size: 13px; color: #666; font-weight: bold; }
+    .cita-card .meta { font-size: 12.5px; color: #666; margin-top: 4px; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .modal-box textarea { min-height: 60px; }
+    .toggle-row { display: flex; gap: 8px; margin-top: 8px; }
+    .toggle-row button { flex: 1; padding: 10px; border: 2px solid var(--artal-blue); background: #fff; color: var(--artal-blue); border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .toggle-row button.active { background: var(--artal-blue); color: #fff; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; }
+    .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Calendario</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="notif-btn" title="Recibir avisos de citas en este dispositivo">🔔 Notificaciones</button>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <button class="new-cita-btn" onclick="abrirNuevaCita()">+ Nueva cita</button>
+    <div class="month-nav">
+        <button onclick="cambiarMes(-1)">‹ Anterior</button>
+        <b id="month-label"></b>
+        <button onclick="cambiarMes(1)">Siguiente ›</button>
+    </div>
+    <div id="citas-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box">
+        <h2>Nueva cita</h2>
+        <div class="toggle-row">
+            <button type="button" id="tipo-libre-btn" class="active" onclick="setTipoCita('libre')">Libre</button>
+            <button type="button" id="tipo-pedido-btn" onclick="setTipoCita('pedido')">Ligada a un pedido</button>
+        </div>
+
+        <div id="pedido-select-wrap" style="display:none;">
+            <label>Pedido</label>
+            <select id="cita-pedido"></select>
+        </div>
+
+        <label>Título</label>
+        <input type="text" id="cita-titulo" placeholder="Ej: Visita de instalación">
+
+        <label>Descripción (opcional)</label>
+        <textarea id="cita-descripcion" placeholder="Detalles adicionales…"></textarea>
+
+        <label>Fecha y hora</label>
+        <input type="datetime-local" id="cita-fecha">
+
+        <label>¿Para quién es?</label>
+        <div class="toggle-row">
+            <button type="button" id="para-gerente-btn" class="active" onclick="setAsignadoA('gerente')">Para mí (gerente)</button>
+            <button type="button" id="para-instalador-btn" onclick="setAsignadoA('instalador')">Equipo de instalación</button>
+        </div>
+
+        <div id="instalador-select-wrap" style="display:none;">
+            <label>Instalador asignado</label>
+            <select id="cita-instalador"></select>
+        </div>
+
+        <label>¿Quién está agendando esto?</label>
+        <select id="cita-creador"></select>
+
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarNuevaCita()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarCita()">Guardar cita</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { enableNotifications } from './notifications.js';
+    import {
+        collection, query, where, onSnapshot, addDoc, doc, getDoc, Timestamp, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Solo admin: el calendario lo agenda únicamente el gerente/oficina.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // ---------- Agenda ----------
+    let currentMonth = new Date(); currentMonth.setDate(1);
+    let allCitas = [];
+    const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+    function citaCardHTML(c) {
+        const fecha = c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date();
+        const hora = fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+        const lugar = [c.cliente, c.obra].filter(Boolean).join(' — ');
+        return `
+        <div class="cita-card ${c.asignadoA === 'instalador' ? 'para-instalador' : ''}">
+            <div class="cita-head">
+                <b>${esc(c.titulo)}</b>
+                <span class="hora">${hora}</span>
+            </div>
+            <div class="meta">
+                ${c.asignadoA === 'instalador' ? '🔧 ' + esc(c.asignadoNombre) : '👤 Gerente'}
+                ${lugar ? ' · ' + esc(lugar) : ''}
+                ${c.descripcion ? '<br>' + esc(c.descripcion) : ''}
+                <br>Agendado por ${esc(c.creadoPorNombre)}
+            </div>
+        </div>`;
+    }
+
+    function render() {
+        const start = new Date(currentMonth);
+        const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+        document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
+
+        const delMes = allCitas.filter(c => {
+            const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
+            return f && f >= start && f < end;
+        }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
+
+        const list = document.getElementById('citas-list');
+        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay citas este mes.</p>'; return; }
+
+        const groups = {};
+        delMes.forEach(c => {
+            const f = c.fecha.toDate();
+            const key = f.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+            (groups[key] = groups[key] || []).push(c);
+        });
+        list.innerHTML = Object.entries(groups).map(([label, citas]) => `
+            <div class="day-group">
+                <div class="day-label">${esc(label)}</div>
+                ${citas.map(citaCardHTML).join('')}
+            </div>
+        `).join('');
+    }
+
+    window.cambiarMes = function (delta) {
+        currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
+        render();
+    };
+
+    onSnapshot(collection(db, 'citas'), (snap) => {
+        allCitas = snap.docs.map(d => d.data());
+        render();
+    }, (err) => {
+        document.getElementById('citas-list').innerHTML = '<p class="empty">Error cargando citas: ' + err.message + '</p>';
+    });
+
+    // ---------- Formulario nueva cita ----------
+    let tipoCita = 'libre';
+    let asignadoA = 'gerente';
+    let ordersCache = [];
+    let instaladoresCache = [];
+
+    // Andrea y Rolanny comparten el mismo login (artaldom.rd@gmail.com) que el gerente — no
+    // tienen usuarios/{email} propios, así que la lista de "quién agenda" es fija en vez de
+    // salir de Firestore. Agregar/quitar nombres aquí si cambia el equipo de oficina.
+    const CREADORES = ['Dylan', 'Andrea', 'Rolanny'];
+    document.getElementById('cita-creador').innerHTML =
+        CREADORES.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+
+    onSnapshot(collection(db, 'orders'), (snap) => {
+        ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        const sel = document.getElementById('cita-pedido');
+        sel.innerHTML = ordersCache.map(o =>
+            `<option value="${o.id}">${esc(o.data.cliente) || 'Sin cliente'} — ${esc(o.data.obra)}</option>`
+        ).join('') || '<option value="">(no hay pedidos)</option>';
+    });
+
+    onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'instalador')), (snap) => {
+        instaladoresCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
+        const sel = document.getElementById('cita-instalador');
+        sel.innerHTML = instaladoresCache.map(u => `<option value="${esc(u.email)}">${esc(u.nombre)}</option>`).join('')
+            || '<option value="">(no hay instaladores registrados)</option>';
+    });
+
+    window.abrirNuevaCita = function () {
+        document.getElementById('modal-overlay').classList.add('show');
+    };
+    window.cerrarNuevaCita = function () {
+        document.getElementById('modal-overlay').classList.remove('show');
+    };
+    window.setTipoCita = function (tipo) {
+        tipoCita = tipo;
+        document.getElementById('tipo-libre-btn').classList.toggle('active', tipo === 'libre');
+        document.getElementById('tipo-pedido-btn').classList.toggle('active', tipo === 'pedido');
+        document.getElementById('pedido-select-wrap').style.display = tipo === 'pedido' ? 'block' : 'none';
+    };
+    window.setAsignadoA = function (val) {
+        asignadoA = val;
+        document.getElementById('para-gerente-btn').classList.toggle('active', val === 'gerente');
+        document.getElementById('para-instalador-btn').classList.toggle('active', val === 'instalador');
+        document.getElementById('instalador-select-wrap').style.display = val === 'instalador' ? 'block' : 'none';
+    };
+
+    window.guardarCita = async function () {
+        const titulo = document.getElementById('cita-titulo').value.trim();
+        const descripcion = document.getElementById('cita-descripcion').value.trim();
+        const fechaStr = document.getElementById('cita-fecha').value;
+        const creadoPorNombre = document.getElementById('cita-creador').value;
+
+        if (!titulo) { alert('Escribe un título para la cita.'); return; }
+        if (!fechaStr) { alert('Elige fecha y hora.'); return; }
+        if (!creadoPorNombre) { alert('Elige quién está agendando esta cita.'); return; }
+
+        let cliente = '', obra = '', orderId = null;
+        if (tipoCita === 'pedido') {
+            orderId = document.getElementById('cita-pedido').value;
+            const o = ordersCache.find(x => x.id === orderId);
+            if (!o) { alert('Selecciona un pedido válido.'); return; }
+            cliente = o.data.cliente || ''; obra = o.data.obra || '';
+        }
+
+        let asignadoEmail = '', asignadoNombre = '';
+        if (asignadoA === 'gerente') {
+            asignadoEmail = auth.currentUser.email;
+            asignadoNombre = 'Gerente';
+        } else {
+            asignadoEmail = document.getElementById('cita-instalador').value;
+            const inst = instaladoresCache.find(x => x.email === asignadoEmail);
+            if (!inst) { alert('Selecciona un instalador.'); return; }
+            asignadoNombre = inst.nombre;
+        }
+
+        try {
+            await addDoc(collection(db, 'citas'), {
+                titulo, descripcion,
+                fecha: Timestamp.fromDate(new Date(fechaStr)),
+                orderId, cliente, obra,
+                asignadoA, asignadoEmail, asignadoNombre,
+                creadoPorNombre,
+                fechaCreacion: serverTimestamp()
+            });
+            cerrarNuevaCita();
+            document.getElementById('cita-titulo').value = '';
+            document.getElementById('cita-descripcion').value = '';
+            document.getElementById('cita-fecha').value = '';
+        } catch (e) {
+            alert('No se pudo guardar la cita: ' + e.message);
+        }
+    };
+</script>
+
+</body>
+</html>
