@@ -31,6 +31,13 @@
     .alert-card p { font-size: 13px; color: #444; margin: 8px 0; }
     .alert-card button { padding: 8px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; }
     h2.section-title { font-size: 15px; color: #e74c3c; margin: 0; }
+    .status-change-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .status-change-row select { flex: 1; min-width: 200px; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
+    .status-change-row button { padding: 9px 14px; border: none; border-radius: 7px; background: #e67e22; color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; font-size: 13px; }
+    .assign-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    .assign-row label { font-size: 12px; color: #666; font-weight: bold; }
+    .assign-row select { flex: 1; min-width: 160px; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
+    .assign-row button { padding: 9px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -58,7 +65,7 @@
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, doc, deleteDoc, updateDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, doc, deleteDoc, updateDoc, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     window.openOrderPreview = openOrderPreview;
 
@@ -76,6 +83,11 @@
         en_fabrica: 'Fabricación: en proceso',
         listo_para_cargar: 'Fabricación: listo para cargar/instalar',
         completado: 'Fabricación: completado (entregado e instalado)'
+    };
+
+    const STATUS_OPTIONS_BY_TYPE = {
+        COTIZACION: ['solicitada', 'costeada', 'enviada_cliente'],
+        FABRICACION: ['pendiente_fabrica', 'en_fabrica', 'listo_para_cargar', 'completado']
     };
 
     const CATEGORIES = [
@@ -175,6 +187,17 @@
     };
 
     let allOrders = [];
+    let choferesCache = [];
+    let instaladoresCache = [];
+
+    onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'chofer')), (snap) => {
+        choferesCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
+        render();
+    });
+    onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'instalador')), (snap) => {
+        instaladoresCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
+        render();
+    });
 
     function orderDate(o) {
         const f = o.fechaCotizado || o.fechaSolicitada;
@@ -194,6 +217,10 @@
         if (o.cotizacionFinalPdfUrl) extraLinks.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
         if (o.recepcionInstalador && o.recepcionInstalador.firma) extraLinks.push(`<a href="${o.recepcionInstalador.firma}" target="_blank">Firma recepción (${esc(o.recepcionInstalador.nombre)})</a>`);
         if (o.clienteAprobacion && o.clienteAprobacion.firma) extraLinks.push(`<a href="${o.clienteAprobacion.firma}" target="_blank">Firma cliente (${esc(o.clienteAprobacion.nombre)})</a>`);
+
+        const isFab = (o.docType || '').indexOf('FAB') === 0;
+        const statusOptions = isFab ? STATUS_OPTIONS_BY_TYPE.FABRICACION : STATUS_OPTIONS_BY_TYPE.COTIZACION;
+
         return `
         <div class="order-card">
             <div class="order-head">
@@ -206,6 +233,26 @@
                 ${extraLinks.join(' ')}
                 <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
             </div>
+            <div class="status-change-row">
+                <select id="status-select-${id}">
+                    ${statusOptions.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('')}
+                </select>
+                <button onclick="cambiarEstado('${id}')">Cambiar estado</button>
+            </div>
+            ${isFab ? `
+            <div class="assign-row">
+                <label>Chofer:</label>
+                <select id="asignar-chofer-${id}">
+                    <option value="">(sin asignar — cualquiera)</option>
+                    ${choferesCache.map(u => `<option value="${esc(u.email)}" ${o.asignadoChoferEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+                </select>
+                <label>Instalador:</label>
+                <select id="asignar-instalador-${id}">
+                    <option value="">(sin asignar — cualquiera)</option>
+                    ${instaladoresCache.map(u => `<option value="${esc(u.email)}" ${o.asignadoInstaladorEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+                </select>
+                <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
+            </div>` : ''}
         </div>`;
     }
 
@@ -232,6 +279,47 @@
             await deleteDoc(doc(db, 'orders', id));
         } catch (e) {
             alert('No se pudo eliminar: ' + e.message);
+        }
+    };
+
+    // Corrección manual de estado (ej. se marcó "listo para cargar" por error). Al mover un
+    // pedido de fabricación a cualquier estado que no sea "completado", se destraban
+    // entregado/instalado para que vuelva a aparecer en chofer/instalador si corresponde.
+    window.cambiarEstado = async function (id) {
+        const nuevoEstado = document.getElementById('status-select-' + id).value;
+        const o = (allOrders.find(o => o.id === id) || {}).data || {};
+        if (nuevoEstado === o.status) return;
+        if (!confirm(`¿Cambiar el estado de "${o.cliente || ''} — ${o.obra || ''}" a "${STATUS_LABEL[nuevoEstado] || nuevoEstado}"?`)) return;
+        try {
+            const cambios = { status: nuevoEstado };
+            if (nuevoEstado !== 'completado' && ('entregado' in o || 'instalado' in o)) {
+                cambios.entregado = false;
+                cambios.instalado = false;
+            }
+            await updateDoc(doc(db, 'orders', id), cambios);
+        } catch (e) {
+            alert('No se pudo cambiar el estado: ' + e.message);
+        }
+    };
+
+    // Asignar chofer/instalador a un pedido de fabricación. Si se deja "(sin asignar)", el
+    // pedido queda visible para cualquier chofer/instalador (bolsa compartida) — asignar solo
+    // lo restringe a esa persona (más tú, que siempre ves todo).
+    window.guardarAsignacion = async function (id) {
+        const choferEmail = document.getElementById('asignar-chofer-' + id).value;
+        const instaladorEmail = document.getElementById('asignar-instalador-' + id).value;
+        const chofer = choferesCache.find(u => u.email === choferEmail);
+        const instalador = instaladoresCache.find(u => u.email === instaladorEmail);
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                asignadoChoferEmail: choferEmail || null,
+                asignadoChoferNombre: chofer ? chofer.nombre : null,
+                asignadoInstaladorEmail: instaladorEmail || null,
+                asignadoInstaladorNombre: instalador ? instalador.nombre : null
+            });
+            alert('Asignación guardada.');
+        } catch (e) {
+            alert('No se pudo guardar la asignación: ' + e.message);
         }
     };
 
