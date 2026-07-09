@@ -15,8 +15,9 @@
     .aprobacion-form { margin-top: 12px; padding: 12px; background: var(--artal-light); border-radius: 8px; display: none; }
     .aprobacion-form label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
     .aprobacion-form input[type="text"] { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; }
-    .aprobacion-form .check-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; }
-    .aprobacion-form .check-row input { width: 20px; height: 20px; }
+    .signature-canvas { width: 100%; max-width: 320px; height: 130px; border: 1.5px solid #ddd; border-radius: 7px; background: #fff; touch-action: none; display: block; }
+    .signature-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+    .signature-row button { background: transparent; border: 1.5px solid #ccc; color: #666; border-radius: 7px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: 'Arimo'; }
 </style>
 </head>
 <body>
@@ -44,6 +45,7 @@
     import { db } from './firebase-config.js';
     import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
+    import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['instalador']);
@@ -83,20 +85,28 @@
             <div class="aprobacion-form" id="aprobacion-${id}">
                 <label>Nombre del cliente</label>
                 <input type="text" id="aprobacion-nombre-${id}" placeholder="Nombre completo">
-                <div class="check-row">
-                    <input type="checkbox" id="aprobacion-check-${id}">
-                    <label for="aprobacion-check-${id}" style="margin:0;">El cliente verifica y aprueba la instalación</label>
+                <label>Firma del cliente</label>
+                <canvas class="signature-canvas" id="firma-${id}" width="320" height="130"></canvas>
+                <div class="signature-row">
+                    <button type="button" onclick="limpiarFirma('${id}')">Borrar firma</button>
                 </div>
-                <button class="btn-instalado" onclick="confirmarInstalacion('${id}')">Confirmar instalación</button>
+                <button class="btn-instalado" style="margin-top:10px;" onclick="confirmarInstalacion('${id}')">Confirmar instalación</button>
             </div>
         </div>`;
     }
 
+    let signaturePads = {};
+
     function render(docs) {
         const list = document.getElementById('orders-list');
         const pendientes = docs.filter(d => !d.data().instalado);
+        signaturePads = {};
         if (!pendientes.length) { list.innerHTML = '<p class="empty">No hay obras listas para instalar.</p>'; return; }
         list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
+        pendientes.forEach(d => {
+            const canvas = document.getElementById('firma-' + d.id);
+            if (canvas) signaturePads[d.id] = setupSignaturePad(canvas);
+        });
     }
 
     const q = query(collection(db, 'orders'), where('status', '==', 'listo_para_cargar'));
@@ -109,18 +119,22 @@
         if (form) form.style.display = form.style.display === 'block' ? 'none' : 'block';
     };
 
+    window.limpiarFirma = function (id) {
+        if (signaturePads[id]) signaturePads[id].clear();
+    };
+
     window.confirmarInstalacion = async function (id) {
         const nombre = document.getElementById('aprobacion-nombre-' + id).value.trim();
-        const check = document.getElementById('aprobacion-check-' + id).checked;
+        const pad = signaturePads[id];
         if (!nombre) { alert('Escribe el nombre del cliente.'); return; }
-        if (!check) { alert('Marca la casilla de confirmación antes de continuar.'); return; }
+        if (!pad || pad.isEmpty()) { alert('Falta la firma del cliente.'); return; }
 
         const snap = await getDoc(doc(db, 'orders', id));
         const yaEntregado = snap.exists() && snap.data().entregado === true;
         await updateDoc(doc(db, 'orders', id), {
             instalado: true,
             fechaInstalado: serverTimestamp(),
-            clienteAprobacion: { nombre, fecha: serverTimestamp() },
+            clienteAprobacion: { nombre, firma: pad.toDataUrl(), fecha: serverTimestamp() },
             ...(yaEntregado ? { status: 'completado' } : {})
         });
     };
