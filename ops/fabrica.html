@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Fábrica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    .order-card.status-pendiente_fabrica { border-left-color: var(--artal-yellow); }
+    .order-card.status-en_fabrica { border-left-color: #3498db; }
+    .order-card.status-listo_para_cargar { border-left-color: #2ecc71; }
+    .order-card.status-completado { border-left-color: #999; }
+    .status-pendiente_fabrica .badge { background: var(--artal-yellow); color: var(--artal-blue); }
+    .status-en_fabrica .badge { background: #3498db; color: #fff; }
+    .status-listo_para_cargar .badge { background: #2ecc71; color: #fff; }
+    .status-completado .badge { background: #999; color: #fff; }
+    .comment-box { margin-top: 10px; }
+    .comment-box textarea { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; min-height: 50px; }
+    .comment-box button { margin-top: 6px; padding: 8px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Fábrica</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-pendientes" onclick="setTab('pendientes')">Pendientes</button>
+        <button class="tab-btn" id="tab-enviados" onclick="setTab('enviados')">Enviados</button>
+    </div>
+    <div id="orders-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { openOrderPreview } from './order-preview.js';
+    window.openOrderPreview = openOrderPreview;
+
+    const usuario = await requireAuth(['fabrica']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const STATUS_LABEL = {
+        pendiente_fabrica: 'Pendiente',
+        en_fabrica: 'En fábrica',
+        listo_para_cargar: 'Listo para cargar',
+        completado: 'Completado'
+    };
+    const PENDIENTES = ['pendiente_fabrica', 'en_fabrica'];
+    const ENVIADOS = ['listo_para_cargar', 'completado'];
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    function orderCardHTML(id, o) {
+        let actionsHtml;
+        if (o.status === 'pendiente_fabrica') {
+            actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarPedido('${id}')">Tomar pedido</button></div>`;
+        } else if (o.status === 'en_fabrica') {
+            actionsHtml = `<div class="actions">
+                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar</button>
+                <button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>
+            </div>`;
+        } else {
+            actionsHtml = '';
+        }
+        return `
+        <div class="order-card status-${o.status}">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <span class="badge">${STATUS_LABEL[o.status] || esc(o.status)}</span>
+            </div>
+            <div class="order-meta">
+                ${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
+                <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja de fabricación</a>
+            </div>
+            ${actionsHtml}
+            <div class="comment-box">
+                <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
+                <button onclick="guardarComentario('${id}')">Guardar comentario</button>
+            </div>
+        </div>`;
+    }
+
+    let currentTab = 'pendientes';
+    let allOrders = [];
+
+    window.setTab = function (tab) {
+        currentTab = tab;
+        document.getElementById('tab-pendientes').classList.toggle('active', tab === 'pendientes');
+        document.getElementById('tab-enviados').classList.toggle('active', tab === 'enviados');
+        render();
+    };
+
+    function render() {
+        const statuses = currentTab === 'pendientes' ? PENDIENTES : ENVIADOS;
+        const docs = allOrders.filter(d => statuses.includes(d.data().status));
+        const list = document.getElementById('orders-list');
+        if (!docs.length) {
+            list.innerHTML = currentTab === 'pendientes'
+                ? '<p class="empty">No hay pedidos pendientes.</p>'
+                : '<p class="empty">No hay pedidos enviados todavía.</p>';
+            return;
+        }
+        const sorted = docs.slice().sort((a, b) => (a.data().status > b.data().status ? 1 : -1));
+        list.innerHTML = sorted.map(d => orderCardHTML(d.id, d.data())).join('');
+    }
+
+    const q = query(collection(db, 'orders'), where('status', 'in', [...PENDIENTES, ...ENVIADOS]));
+    onSnapshot(q, (snap) => { allOrders = snap.docs; render(); }, (err) => {
+        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
+    });
+
+    window.tomarPedido = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp() });
+    };
+    window.listoParaCargar = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() });
+    };
+    window.deshacerTomarPedido = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' });
+    };
+    window.guardarComentario = async function (id) {
+        const texto = document.getElementById('comentario-' + id).value.trim();
+        await updateDoc(doc(db, 'orders', id), {
+            comentarioFabrica: texto,
+            comentarioFabricaFecha: serverTimestamp(),
+            comentarioFabricaAtendido: texto ? false : true
+        });
+        alert('Comentario guardado.');
+    };
+</script>
+
+</body>
+</html>

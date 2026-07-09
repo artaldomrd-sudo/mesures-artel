@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Panel de Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 860px; padding-top: 28px; }
+    .welcome { color: var(--artal-blue); font-size: 15px; margin: 0 0 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Panel de Control</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="welcome" id="welcome-msg"></p>
+    <div class="grid">
+        <a class="card-link" href="historial.html"><div class="emoji">🗂️</div><div class="title">Historial</div><div class="desc">Buscar cualquier pedido, sin importar el estado</div></a>
+        <a class="card-link" href="contratista.html"><div class="emoji">📐</div><div class="title">Contratista</div><div class="desc">Cotizaciones pendientes de costear</div></a>
+        <a class="card-link" href="cotizaciones.html"><div class="emoji">💵</div><div class="title">Cotizaciones</div><div class="desc">Armar y enviar precio final al cliente</div></a>
+        <a class="card-link" href="fabrica.html"><span class="tile-badge" id="badge-fabrica"></span><div class="emoji">🏭</div><div class="title">Fábrica</div><div class="desc">Pedidos en producción</div></a>
+        <a class="card-link" href="chofer.html"><span class="tile-badge" id="badge-chofer"></span><div class="emoji">🚚</div><div class="title">Chofer</div><div class="desc">Pedidos listos para cargar</div></a>
+        <a class="card-link" href="instalador.html"><span class="tile-badge" id="badge-instalador"></span><div class="emoji">🔧</div><div class="title">Instalador</div><div class="desc">Obras listas para instalar</div></a>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Solo admin: es el panel central con acceso a todas las pantallas.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('welcome-msg').textContent = 'Hola, ' + usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function setBadge(id, count) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = count > 99 ? '99+' : String(count);
+        el.classList.toggle('show', count > 0);
+    }
+
+    function tieneProblemaSinAtender(map) {
+        return Object.values(map || {}).some(s => s && s.estado === 'problema' && s.atendido !== true);
+    }
+
+    onSnapshot(collection(db, 'orders'), (snap) => {
+        let fabrica = 0, chofer = 0, instalador = 0;
+        snap.docs.forEach(d => {
+            const o = d.data();
+            if (o.comentarioFabrica && o.comentarioFabricaAtendido !== true) fabrica++;
+            if (tieneProblemaSinAtender(o.itemStatus)) chofer++;
+            if (tieneProblemaSinAtender(o.itemStatusInstalador)) instalador++;
+        });
+        setBadge('badge-fabrica', fabrica);
+        setBadge('badge-chofer', chofer);
+        setBadge('badge-instalador', instalador);
+    });
+</script>
+
+</body>
+</html>

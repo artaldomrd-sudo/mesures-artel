@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Contratista</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    .order-card { border-left-color: var(--artal-yellow); }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Contratista</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div id="orders-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db, storage } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
+    import { openOrderPreview } from './order-preview.js';
+    window.openOrderPreview = openOrderPreview;
+
+    const usuario = await requireAuth(['contratista']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    function orderCardHTML(id, o) {
+        return `
+        <div class="order-card" id="card-${id}">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+            </div>
+            <div class="order-meta">
+                ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
+                <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha técnica</a>
+            </div>
+            <div class="upload-row">
+                <input type="file" accept="application/pdf" id="file-${id}">
+                <button id="btn-${id}" onclick="subirCotizacion('${id}')">Enviar cotización de costo</button>
+            </div>
+        </div>`;
+    }
+
+    function render(docs) {
+        const list = document.getElementById('orders-list');
+        if (!docs.length) { list.innerHTML = '<p class="empty">No hay solicitudes de cotización pendientes.</p>'; return; }
+        list.innerHTML = docs.map(d => orderCardHTML(d.id, d.data())).join('');
+    }
+
+    const q = query(collection(db, 'orders'), where('status', '==', 'solicitada'));
+    onSnapshot(q, (snap) => render(snap.docs), (err) => {
+        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
+    });
+
+    window.subirCotizacion = async function (id) {
+        const fileInput = document.getElementById('file-' + id);
+        const file = fileInput.files[0];
+        if (!file) { alert('Selecciona el PDF de tu cotización antes de enviar.'); return; }
+        if (file.type !== 'application/pdf') { alert('El archivo debe ser un PDF.'); return; }
+
+        const btn = document.getElementById('btn-' + id);
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Subiendo…';
+
+        try {
+            const fileRef = ref(storage, `contratista-pdfs/${id}.pdf`);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+            await updateDoc(doc(db, 'orders', id), {
+                contratistaPdfUrl: url,
+                contratistaPdfNombre: file.name,
+                fechaCosteada: serverTimestamp(),
+                status: 'costeada'
+            });
+        } catch (e) {
+            alert('No se pudo subir la cotización: ' + e.message);
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    };
+</script>
+
+</body>
+</html>

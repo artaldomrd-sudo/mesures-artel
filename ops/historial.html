@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Historial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; }
+    #search-input { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; }
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .cat-tile {
+        background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 14px;
+        border: 3px solid transparent; cursor: pointer; text-align: center; font-family: 'Arimo';
+        transition: 0.15s; color: var(--artal-blue);
+    }
+    .cat-tile:hover { transform: translateY(-2px); }
+    .cat-tile.active { border-color: var(--artal-yellow); background: var(--artal-blue); color: #fff; }
+    .cat-tile .emoji { font-size: 26px; }
+    .cat-tile .count { font-size: 26px; font-weight: bold; margin-top: 4px; }
+    .cat-tile .label { font-size: 12.5px; font-weight: bold; margin-top: 2px; }
+    #alerts-section { display: none; }
+    #alerts-section.show { display: flex; flex-direction: column; gap: 10px; }
+    .alert-card { background: #fff; border-left: 6px solid #e74c3c; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+    .alert-card .alert-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .alert-card .alert-head b { color: var(--artal-blue); font-size: 15px; }
+    .alert-card .alert-tag { font-size: 10.5px; font-weight: bold; text-transform: uppercase; background: #e74c3c; color: #fff; padding: 3px 8px; border-radius: 12px; }
+    .alert-card p { font-size: 13px; color: #444; margin: 8px 0; }
+    .alert-card button { padding: 8px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; }
+    h2.section-title { font-size: 15px; color: #e74c3c; margin: 0; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Historial</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <h2 class="section-title" id="alerts-title" style="display:none;">⚠ Alertas pendientes</h2>
+    <div id="alerts-section"></div>
+    <input type="text" id="search-input" placeholder="🔎 Buscar por cliente u obra…">
+    <div class="cat-grid" id="cat-grid"></div>
+    <div id="orders-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, doc, deleteDoc, updateDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { openOrderPreview } from './order-preview.js';
+    window.openOrderPreview = openOrderPreview;
+
+    // Solo admin: es un archivo histórico completo de todos los pedidos, no una pantalla
+    // operativa de un rol específico. requireAuth([]) solo deja pasar a quien tenga rol admin.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const STATUS_LABEL = {
+        solicitada: 'Cotización: solicitada al contratista',
+        costeada: 'Cotización: costeada, falta enviar',
+        enviada_cliente: 'Cotización: enviada al cliente',
+        pendiente_fabrica: 'Fabricación: pendiente',
+        en_fabrica: 'Fabricación: en proceso',
+        listo_para_cargar: 'Fabricación: listo para cargar/instalar',
+        completado: 'Fabricación: completado (entregado e instalado)'
+    };
+
+    const CATEGORIES = [
+        { key: 'todos', emoji: '🗂️', label: 'Todos', statuses: null },
+        { key: 'cot_pendiente', emoji: '📐', label: 'Cotización pendiente', statuses: ['solicitada', 'costeada'] },
+        { key: 'cot_enviada', emoji: '💵', label: 'Cotización enviada', statuses: ['enviada_cliente'] },
+        { key: 'fab_pendiente', emoji: '🏭', label: 'Fabricación pendiente', statuses: ['pendiente_fabrica', 'en_fabrica'] },
+        { key: 'fab_lista', emoji: '🚚', label: 'Lista para cargar/instalar', statuses: ['listo_para_cargar'] },
+        { key: 'fab_completa', emoji: '✅', label: 'Completadas', statuses: ['completado'] }
+    ];
+    let currentCategory = 'todos';
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    function itemLabel(o, itemId) {
+        const it = (o.items || []).find(x => String(x.id) === String(itemId));
+        return it ? `${it.tipo || 'Elemento'} — ${it.ubicacion || 'sin ubicación'}` : 'Ítem ' + itemId;
+    }
+
+    function collectAlerts() {
+        const alerts = [];
+        allOrders.forEach(({ id, data: o }) => {
+            const nombre = (esc(o.cliente) || 'Sin cliente') + ' — ' + esc(o.obra);
+            if (o.comentarioFabrica && o.comentarioFabricaAtendido !== true) {
+                alerts.push({ orderId: id, nombre, tag: 'Fábrica', texto: o.comentarioFabrica, atender: () => atenderFabrica(id) });
+            }
+            Object.entries(o.itemStatus || {}).forEach(([itemId, s]) => {
+                if (s && s.estado === 'problema' && s.atendido !== true) {
+                    alerts.push({ orderId: id, nombre, tag: 'Chofer · ' + itemLabel(o, itemId), texto: s.comentario, atender: () => atenderItem(id, 'itemStatus', itemId) });
+                }
+            });
+            Object.entries(o.itemStatusInstalador || {}).forEach(([itemId, s]) => {
+                if (s && s.estado === 'problema' && s.atendido !== true) {
+                    alerts.push({ orderId: id, nombre, tag: 'Instalador · ' + itemLabel(o, itemId), texto: s.comentario, atender: () => atenderItem(id, 'itemStatusInstalador', itemId) });
+                }
+            });
+        });
+        return alerts;
+    }
+
+    function renderAlerts() {
+        const alerts = collectAlerts();
+        const section = document.getElementById('alerts-section');
+        const title = document.getElementById('alerts-title');
+        if (!alerts.length) {
+            section.classList.remove('show');
+            title.style.display = 'none';
+            section.innerHTML = '';
+            return;
+        }
+        title.style.display = 'block';
+        section.classList.add('show');
+        section.innerHTML = alerts.map((a, idx) => `
+            <div class="alert-card">
+                <div class="alert-head">
+                    <b>${a.nombre}</b>
+                    <span class="alert-tag">${esc(a.tag)}</span>
+                </div>
+                <p>${esc(a.texto)}</p>
+                <button data-idx="${idx}">Marcar atendido</button>
+            </div>`).join('');
+        section.querySelectorAll('button[data-idx]').forEach(btn => {
+            btn.onclick = () => alerts[Number(btn.dataset.idx)].atender();
+        });
+    }
+
+    window.atenderFabrica = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true });
+    };
+    window.atenderItem = async function (id, field, itemId) {
+        await updateDoc(doc(db, 'orders', id), { [`${field}.${itemId}.atendido`]: true });
+    };
+
+    function renderTiles() {
+        const grid = document.getElementById('cat-grid');
+        grid.innerHTML = CATEGORIES.map(cat => {
+            const count = cat.statuses
+                ? allOrders.filter(({ data: o }) => cat.statuses.includes(o.status)).length
+                : allOrders.length;
+            return `
+            <div class="cat-tile ${cat.key === currentCategory ? 'active' : ''}" onclick="setCategory('${cat.key}')">
+                <div class="emoji">${cat.emoji}</div>
+                <div class="count">${count}</div>
+                <div class="label">${esc(cat.label)}</div>
+            </div>`;
+        }).join('');
+    }
+
+    window.setCategory = function (key) {
+        currentCategory = key;
+        renderTiles();
+        render();
+    };
+
+    let allOrders = [];
+
+    function orderDate(o) {
+        const f = o.fechaCotizado || o.fechaSolicitada;
+        return f && f.toMillis ? f.toMillis() : 0;
+    }
+
+    function progresoExtra(o) {
+        const bits = [];
+        if (o.entregado) bits.push('Entregado ✓');
+        if (o.instalado) bits.push('Instalado ✓');
+        return bits.length ? ' · ' + bits.join(' · ') : '';
+    }
+
+    function orderCardHTML(id, o) {
+        const extraLinks = [];
+        if (o.contratistaPdfUrl) extraLinks.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
+        if (o.cotizacionFinalPdfUrl) extraLinks.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
+        return `
+        <div class="order-card">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
+            </div>
+            <div class="order-meta">
+                <span>${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems${progresoExtra(o)}</span>
+                <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja</a>
+                ${extraLinks.join(' ')}
+                <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
+            </div>
+        </div>`;
+    }
+
+    function render() {
+        const term = document.getElementById('search-input').value.trim().toLowerCase();
+        const cat = CATEGORIES.find(c => c.key === currentCategory);
+        const filtered = allOrders.filter(({ data: o }) => {
+            if (cat.statuses && !cat.statuses.includes(o.status)) return false;
+            if (!term) return true;
+            const haystack = ((o.cliente || '') + ' ' + (o.obra || '')).toLowerCase();
+            return haystack.includes(term);
+        });
+        const list = document.getElementById('orders-list');
+        if (!filtered.length) { list.innerHTML = '<p class="empty">No se encontraron pedidos.</p>'; return; }
+        list.innerHTML = filtered.map(({ id, data }) => orderCardHTML(id, data)).join('');
+    }
+
+    document.getElementById('search-input').addEventListener('input', render);
+
+    window.eliminarPedido = async function (id) {
+        const o = (allOrders.find(o => o.id === id) || {}).data || {};
+        if (!confirm(`¿Eliminar definitivamente "${o.cliente || ''} — ${o.obra || ''}"? Esta acción no se puede deshacer.`)) return;
+        try {
+            await deleteDoc(doc(db, 'orders', id));
+        } catch (e) {
+            alert('No se pudo eliminar: ' + e.message);
+        }
+    };
+
+    renderTiles();
+
+    onSnapshot(collection(db, 'orders'), (snap) => {
+        allOrders = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        allOrders.sort((a, b) => orderDate(b.data) - orderDate(a.data));
+        renderTiles();
+        renderAlerts();
+        render();
+    }, (err) => {
+        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando historial: ' + err.message + '</p>';
+    });
+</script>
+
+</body>
+</html>

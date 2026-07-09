@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Chofer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    .order-card { border-left-color: #2ecc71; }
+    .checklist-note { font-size: 12.5px; color: #e67e22; margin-top: 8px; font-weight: bold; }
+    .recepcion-form { margin-top: 12px; padding: 12px; background: var(--artal-light); border-radius: 8px; display: none; }
+    .recepcion-form label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
+    .recepcion-form input[type="text"] { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; }
+    .recepcion-form .check-row { display: flex; align-items: center; gap: 8px; margin: 10px 0; font-size: 13px; }
+    .recepcion-form .check-row input { width: 20px; height: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Chofer</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div id="orders-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { openOrderPreview } from './order-preview.js';
+    window.openOrderPreview = openOrderPreview;
+
+    const usuario = await requireAuth(['chofer']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    function checklistResuelto(o) {
+        const items = o.items || [];
+        if (!items.length) return true;
+        const status = o.itemStatus || {};
+        return items.every(it => status[it.id] && status[it.id].estado);
+    }
+
+    function orderCardHTML(id, o) {
+        const resuelto = checklistResuelto(o);
+        return `
+        <div class="order-card">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+            </div>
+            <div class="order-meta">
+                ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
+                <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>
+            </div>
+            ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
+            <div class="actions">
+                <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
+                <button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>
+            </div>
+            <div class="recepcion-form" id="recepcion-${id}">
+                <label>Nombre de quien recibe (instalador)</label>
+                <input type="text" id="recepcion-nombre-${id}" placeholder="Nombre completo">
+                <div class="check-row">
+                    <input type="checkbox" id="recepcion-check-${id}">
+                    <label for="recepcion-check-${id}" style="margin:0;">Confirmo que recibí la totalidad del material</label>
+                </div>
+                <button class="btn-listo" onclick="confirmarEntrega('${id}')">Confirmar entrega</button>
+            </div>
+        </div>`;
+    }
+
+    function render(docs) {
+        const list = document.getElementById('orders-list');
+        const pendientes = docs.filter(d => !d.data().entregado);
+        if (!pendientes.length) { list.innerHTML = '<p class="empty">No hay pedidos listos para cargar.</p>'; return; }
+        list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
+    }
+
+    const q = query(collection(db, 'orders'), where('status', '==', 'listo_para_cargar'));
+    onSnapshot(q, (snap) => render(snap.docs), (err) => {
+        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
+    });
+
+    window.abrirRecepcion = function (id) {
+        const form = document.getElementById('recepcion-' + id);
+        if (form) form.style.display = form.style.display === 'block' ? 'none' : 'block';
+    };
+
+    window.confirmarEntrega = async function (id) {
+        const nombre = document.getElementById('recepcion-nombre-' + id).value.trim();
+        const check = document.getElementById('recepcion-check-' + id).checked;
+        if (!nombre) { alert('Escribe el nombre de quien recibe el material.'); return; }
+        if (!check) { alert('Marca la casilla de confirmación antes de continuar.'); return; }
+
+        const snap = await getDoc(doc(db, 'orders', id));
+        const yaInstalado = snap.exists() && snap.data().instalado === true;
+        await updateDoc(doc(db, 'orders', id), {
+            entregado: true,
+            fechaEntregado: serverTimestamp(),
+            recepcionInstalador: { nombre, fecha: serverTimestamp() },
+            ...(yaInstalado ? { status: 'completado' } : {})
+        });
+    };
+    window.regresarAFabrica = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica' });
+    };
+</script>
+
+</body>
+</html>
