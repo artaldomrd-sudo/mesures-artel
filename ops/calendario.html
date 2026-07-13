@@ -16,6 +16,18 @@
 
     .new-cita-btn { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 10px; padding: 14px; font-weight: bold; font-size: 15px; cursor: pointer; font-family: 'Arimo'; min-height: 48px; }
 
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
+    .grid-weekday { text-align: center; font-size: 11px; font-weight: bold; color: #999; text-transform: uppercase; padding-bottom: 4px; }
+    .grid-day { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; color: var(--artal-blue); position: relative; transition: 0.1s; }
+    .grid-day:hover { background: var(--artal-light); }
+    .grid-day.empty { cursor: default; }
+    .grid-day.today { border: 2px solid var(--artal-yellow); }
+    .grid-day.selected { background: var(--artal-blue); color: #fff; }
+    .grid-day .dot { width: 5px; height: 5px; border-radius: 50%; background: #e67e22; position: absolute; bottom: 6px; }
+    .grid-day.selected .dot { background: var(--artal-yellow); }
+    .selected-day-bar { display: flex; align-items: center; justify-content: space-between; }
+    .selected-day-bar a { color: var(--artal-blue); font-size: 12.5px; font-weight: bold; text-decoration: none; }
+
     .day-group { display: flex; flex-direction: column; gap: 8px; }
     .day-label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px; }
     .cita-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid var(--artal-yellow); }
@@ -62,6 +74,11 @@
         <button onclick="cambiarMes(-1)">‹ Anterior</button>
         <b id="month-label"></b>
         <button onclick="cambiarMes(1)">Siguiente ›</button>
+    </div>
+    <div class="calendar-grid" id="calendar-grid"></div>
+    <div class="selected-day-bar" id="selected-day-bar" style="display:none;">
+        <span id="selected-day-label"></span>
+        <a href="#" onclick="limpiarSeleccion(); return false;">Ver todo el mes</a>
     </div>
     <div id="citas-list"><p class="empty">Cargando…</p></div>
 </main>
@@ -131,8 +148,47 @@
 
     // ---------- Agenda ----------
     let currentMonth = new Date(); currentMonth.setDate(1);
+    let selectedDay = null; // Date (medianoche) del día tocado en la grilla, o null = ver todo el mes
     let allCitas = [];
     const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+    const DIAS_SEMANA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    function sameDay(a, b) {
+        return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    }
+
+    function renderGrid() {
+        const grid = document.getElementById('calendar-grid');
+        const year = currentMonth.getFullYear();
+        const month = currentMonth.getMonth();
+        const firstWeekday = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const today = new Date();
+
+        let html = DIAS_SEMANA.map(d => `<div class="grid-weekday">${d}</div>`).join('');
+        for (let i = 0; i < firstWeekday; i++) html += `<div class="grid-day empty"></div>`;
+        for (let day = 1; day <= daysInMonth; day++) {
+            const cellDate = new Date(year, month, day);
+            const hasCitas = allCitas.some(c => {
+                const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
+                return f && sameDay(f, cellDate);
+            });
+            const classes = ['grid-day'];
+            if (sameDay(cellDate, today)) classes.push('today');
+            if (selectedDay && sameDay(cellDate, selectedDay)) classes.push('selected');
+            html += `<div class="${classes.join(' ')}" onclick="seleccionarDia(${year}, ${month}, ${day})">${day}${hasCitas ? '<span class="dot"></span>' : ''}</div>`;
+        }
+        grid.innerHTML = html;
+    }
+
+    window.seleccionarDia = function (year, month, day) {
+        selectedDay = new Date(year, month, day);
+        render();
+    };
+    window.limpiarSeleccion = function () {
+        selectedDay = null;
+        render();
+    };
 
     function citaCardHTML(c) {
         const fecha = c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date();
@@ -154,16 +210,34 @@
     }
 
     function render() {
+        document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
+        renderGrid();
+
+        const bar = document.getElementById('selected-day-bar');
+        const list = document.getElementById('citas-list');
+        let citasAMostrar;
+
+        if (selectedDay) {
+            bar.style.display = 'flex';
+            document.getElementById('selected-day-label').textContent =
+                selectedDay.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
+            citasAMostrar = allCitas.filter(c => {
+                const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
+                return f && sameDay(f, selectedDay);
+            }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
+            if (!citasAMostrar.length) { list.innerHTML = '<p class="empty">No hay citas ese día.</p>'; return; }
+            list.innerHTML = `<div class="day-group">${citasAMostrar.map(citaCardHTML).join('')}</div>`;
+            return;
+        }
+
+        bar.style.display = 'none';
         const start = new Date(currentMonth);
         const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-        document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
-
         const delMes = allCitas.filter(c => {
             const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
             return f && f >= start && f < end;
         }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
 
-        const list = document.getElementById('citas-list');
         if (!delMes.length) { list.innerHTML = '<p class="empty">No hay citas este mes.</p>'; return; }
 
         const groups = {};
@@ -182,6 +256,7 @@
 
     window.cambiarMes = function (delta) {
         currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + delta, 1);
+        selectedDay = null;
         render();
     };
 
@@ -221,6 +296,12 @@
     });
 
     window.abrirNuevaCita = function () {
+        if (selectedDay) {
+            const pad = (n) => String(n).padStart(2, '0');
+            const d = selectedDay;
+            document.getElementById('cita-fecha').value =
+                `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`;
+        }
         document.getElementById('modal-overlay').classList.add('show');
     };
     window.cerrarNuevaCita = function () {
