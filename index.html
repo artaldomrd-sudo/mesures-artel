@@ -152,6 +152,11 @@
         .item-card.locked .hide-on-lock { display: none !important; }
         .item-card.locked .show-on-lock { display: block !important; }
         .item-card:not(.locked) .show-on-lock { display: none !important; }
+        /* Al fijar (candado cerrado), tampoco se debe poder tocar referencia/ubicación/notas
+           — antes quedaban editables aunque el resto de la tarjeta se bloqueara. */
+        .item-card.locked .card-ref-row input,
+        .item-card.locked .notes-area,
+        .item-card.locked input[placeholder*="Ubicación"] { pointer-events: none !important; background: #f3f4f6 !important; color: #888 !important; }
         .summary-box { background: #f4f6f7; padding: 15px; border-radius: 4px; border: 1px solid #e1e8ed; margin-top: 5px; height: auto; overflow: visible; }
 
         /* CONSTRUCTOR DE BALCÓN 3D */
@@ -936,7 +941,10 @@
         }
 
         const getAperturaSpec = (itemState, type, cat) => {
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
+            if (type === 'win_proy' && itemState.apertura_proy) {
+                return `Apertura hacia: ${itemState.apertura_proy === 'adentro' ? 'Adentro' : 'Afuera'}`;
+            }
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(type) || cat === 'fachada' || cat === 'mampara';
             if (!hideOrientation && itemState.orientacion && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cat)) {
                 return `Apertura: ${itemState.orientacion === 'D' ? 'Derecha' : 'Izquierda'}`;
             }
@@ -1737,7 +1745,7 @@
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cardsState[id].categoria);
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
@@ -3110,9 +3118,10 @@
 
         const putArrow = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowR : arrowL}</g>`;
         const putArrowInv = (x, y) => `<g transform="translate(${x}, ${y})">${state.orientacion === 'D' ? arrowL : arrowR}</g>`;
-        // cor3 / cor4_lat / cor6_lat: sin toggle de orientación, cascadean según "Hoja interior"
-        // (izquierda = interior = cascada hacia la izquierda) — mismo criterio que correderaPlan().
-        const putArrowCorStair = (x, y) => `<g transform="translate(${x}, ${y})">${(state.cor_interior || 'I') === 'I' ? arrowL : arrowR}</g>`;
+        // cor3 / cor4_lat / cor6_lat: tienen su propio toggle de orientación (independiente de
+        // "Hoja interior", que solo decide el riel en la vista de planta) — mismas flechas que
+        // putArrow.
+        const putArrowCorStair = putArrow;
 
         const drawPlanView = (type, stateInfo) => {
             let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
@@ -3440,7 +3449,7 @@
                 return;
             }
             
-            const hideOrientation = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(selectedItem.type);
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(selectedItem.categoria);
             
             let dimensionInputs = `
@@ -3848,14 +3857,35 @@
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
         }[c]));
     }
-    function injectChecklist(role, orderId, orderData) {
-        const isChofer = role === 'chofer';
-        const fieldName = isChofer ? 'itemStatus' : 'itemStatusInstalador';
-        const statusMap = orderData[fieldName] || {};
-        const okEstado = isChofer ? 'cargado' : 'instalado';
-        const okLabel = isChofer ? '✓ Cargado en óptima condición' : '✓ Instalado correctamente';
-        const badLabel = isChofer ? '⚠ Problema (dejar comentario)' : '⚠ Pendiente / con problema';
+    // Etapas de instalación por tipo de elemento (validadas por el usuario). "baranda_bal" se
+    // decide en runtime según state.fijacion: 'base_u' = lingotes, cualquier otra (prensa de
+    // suelo o conectores) = la lista de "base". Todo lo que no está mapeado explícitamente usa
+    // "generico" como respaldo razonable (avisar si hace falta afinarlo para ese tipo).
+    const STAGE_SETS = {
+        abisagrada: ['Preparación hueco', 'Instalación marco', 'Hojas colocadas', 'Sellado marco', 'Sellado Hoja', 'Terminado'],
+        corredera: ['Preparación hueco', 'Instalación marco', 'Hojas colocadas', 'Hojas graduadas', 'Puños y cierres', 'Sellado marco', 'Sellado Hojas', 'Terminado'],
+        galandaje: ['Preparación hueco', 'Instalación marco', 'Hojas colocadas', 'Hojas graduadas', 'Puños y cierres', 'Sellado marco', 'Sellado Hojas', 'Chicanes puestos', 'Terminado'],
+        panoFijo: ['Preparación hueco', 'Instalación marco', 'Sellado marco', 'Vidrio colocado', 'Terminado'],
+        barandaLingote: ['Cortes lingotes', 'Oyos lingotes', 'Instalación lingotes', 'Sellado lingotes', 'Instalación vidrios', 'Gomas puestas', 'Terminado'],
+        barandaBase: ['Instalación base (prensa de suelo o conectores laterales)', 'Medidas vidrios tomada', 'Instalación vidrio', 'Instalación refuerzo (si lleva)', 'Terminado'],
+        generico: ['Preparación', 'Instalación', 'Sellado/ajustes', 'Terminado']
+    };
+    function getStageSetKey(type, state) {
+        if (['win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat'].includes(type)) return 'abisagrada';
+        if (['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'door_slide'].includes(type)) return 'corredera';
+        if (['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v'].includes(type)) return 'galandaje';
+        if (['fachada_din', 'mamp_fija', 'door_glass', 'ducha_facade', 'ducha_cab'].includes(type)) return 'panoFijo';
+        if (type === 'baranda_bal') return (state && state.fijacion === 'base_u') ? 'barandaLingote' : 'barandaBase';
+        return 'generico';
+    }
 
+    function injectChecklist(role, orderId, orderData) {
+        if (role === 'chofer') { injectChoferChecklist(orderId, orderData); return; }
+        injectInstaladorChecklist(orderId, orderData);
+    }
+
+    function injectChoferChecklist(orderId, orderData) {
+        const statusMap = orderData.itemStatus || {};
         document.querySelectorAll('.item-card').forEach(card => {
             const itemId = card.id.replace('card-', '');
             const current = statusMap[itemId] || {};
@@ -3865,8 +3895,8 @@
             box.innerHTML = `
                 <div style="font-size:12px;font-weight:bold;color:#0A3D62;margin-bottom:8px;">Estado de este ítem (obligatorio)</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                    <button type="button" class="cl-ok" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === okEstado ? '#2ecc71' : '#e5e7eb'};color:${current.estado === okEstado ? '#fff' : '#333'};">${okLabel}</button>
-                    <button type="button" class="cl-bad" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === 'problema' ? '#e74c3c' : '#e5e7eb'};color:${current.estado === 'problema' ? '#fff' : '#333'};">${badLabel}</button>
+                    <button type="button" class="cl-ok" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === 'cargado' ? '#2ecc71' : '#e5e7eb'};color:${current.estado === 'cargado' ? '#fff' : '#333'};">✓ Cargado en óptima condición</button>
+                    <button type="button" class="cl-bad" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === 'problema' ? '#e74c3c' : '#e5e7eb'};color:${current.estado === 'problema' ? '#fff' : '#333'};">⚠ Problema (dejar comentario)</button>
                 </div>
                 <textarea class="cl-comment" placeholder="Describe el problema (obligatorio)…" style="width:100%;margin-top:8px;padding:8px;border-radius:6px;border:1px solid #ccc;font-family:Arimo;font-size:13px;min-height:60px;${current.estado === 'problema' ? '' : 'display:none;'}">${escChecklist(current.comentario)}</textarea>
                 <button type="button" class="cl-save" style="margin-top:6px;padding:8px 14px;border:none;border-radius:6px;background:#0A3D62;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;${current.estado === 'problema' ? '' : 'display:none;'}">Guardar comentario</button>
@@ -3884,7 +3914,7 @@
                 msg.textContent = 'Guardando…';
                 try {
                     await updateDoc(doc(db, 'orders', orderId), {
-                        [`${fieldName}.${itemId}`]: {
+                        [`itemStatus.${itemId}`]: {
                             estado,
                             comentario: comentario || '',
                             por: (auth.currentUser && auth.currentUser.displayName) || (auth.currentUser && auth.currentUser.email) || '',
@@ -3893,8 +3923,8 @@
                         }
                     });
                     msg.textContent = 'Guardado ✓' + (auth.currentUser && auth.currentUser.displayName ? ' por ' + auth.currentUser.displayName : '');
-                    btnOk.style.background = estado === okEstado ? '#2ecc71' : '#e5e7eb';
-                    btnOk.style.color = estado === okEstado ? '#fff' : '#333';
+                    btnOk.style.background = estado === 'cargado' ? '#2ecc71' : '#e5e7eb';
+                    btnOk.style.color = estado === 'cargado' ? '#fff' : '#333';
                     btnBad.style.background = estado === 'problema' ? '#e74c3c' : '#e5e7eb';
                     btnBad.style.color = estado === 'problema' ? '#fff' : '#333';
                 } catch (e) {
@@ -3905,7 +3935,7 @@
             btnOk.onclick = () => {
                 textarea.style.display = 'none';
                 btnSave.style.display = 'none';
-                guardar(okEstado, '');
+                guardar('cargado', '');
             };
             btnBad.onclick = () => {
                 textarea.style.display = 'block';
@@ -3915,6 +3945,83 @@
             btnSave.onclick = () => {
                 if (!textarea.value.trim()) { alert('Describe el problema antes de guardar.'); return; }
                 guardar('problema', textarea.value.trim());
+            };
+        });
+    }
+
+    function injectInstaladorChecklist(orderId, orderData) {
+        const statusMap = orderData.itemStatusInstalador || {};
+        document.querySelectorAll('.item-card').forEach(card => {
+            const itemId = card.id.replace('card-', '');
+            const itemState = (orderData.appJSON && orderData.appJSON.cardsState && orderData.appJSON.cardsState[itemId]) || {};
+            const stageKey = getStageSetKey(itemState.type, itemState);
+            const stages = STAGE_SETS[stageKey];
+            const current = statusMap[itemId] || {};
+            const etapasGuardadas = current.etapas || {};
+            let comentarioActual = current.comentario || '';
+            let estadoActual = current.estado || null;
+
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f3f4f6;border:2px solid #ddd;font-family:Arimo,sans-serif;';
+            box.innerHTML = `
+                <div style="font-size:12px;font-weight:bold;color:#0A3D62;margin-bottom:8px;">Etapas de instalación (marca cada una)</div>
+                <div class="cl-stages" style="display:flex;flex-direction:column;gap:6px;">
+                    ${stages.map((label, idx) => `
+                        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" class="cl-stage" data-idx="${idx}" ${etapasGuardadas[idx] ? 'checked' : ''} style="width:20px;height:20px;">
+                            <span>${escChecklist(label)}</span>
+                        </label>
+                    `).join('')}
+                </div>
+                <button type="button" class="cl-bad" style="margin-top:10px;width:100%;min-height:40px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${estadoActual === 'problema' ? '#e74c3c' : '#e5e7eb'};color:${estadoActual === 'problema' ? '#fff' : '#333'};">⚠ Reportar problema</button>
+                <textarea class="cl-comment" placeholder="Describe el problema (obligatorio)…" style="width:100%;margin-top:8px;padding:8px;border-radius:6px;border:1px solid #ccc;font-family:Arimo;font-size:13px;min-height:60px;${estadoActual === 'problema' ? '' : 'display:none;'}">${escChecklist(comentarioActual)}</textarea>
+                <button type="button" class="cl-save" style="margin-top:6px;padding:8px 14px;border:none;border-radius:6px;background:#0A3D62;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;${estadoActual === 'problema' ? '' : 'display:none;'}">Guardar comentario</button>
+                <div class="cl-msg" style="font-size:11px;color:#666;margin-top:6px;">${estadoActual ? 'Guardado' + (current.por ? ' por ' + escChecklist(current.por) : '') : ''}</div>
+            `;
+            card.appendChild(box);
+
+            const checkboxes = Array.from(box.querySelectorAll('.cl-stage'));
+            const btnBad = box.querySelector('.cl-bad');
+            const textarea = box.querySelector('.cl-comment');
+            const btnSave = box.querySelector('.cl-save');
+            const msg = box.querySelector('.cl-msg');
+
+            async function guardar(nuevoComentario) {
+                const etapas = {};
+                checkboxes.forEach(cb => { etapas[cb.dataset.idx] = cb.checked; });
+                const todasMarcadas = checkboxes.every(cb => cb.checked);
+                estadoActual = nuevoComentario != null ? 'problema' : (todasMarcadas ? 'instalado' : null);
+                if (nuevoComentario != null) comentarioActual = nuevoComentario;
+
+                msg.textContent = 'Guardando…';
+                try {
+                    await updateDoc(doc(db, 'orders', orderId), {
+                        [`itemStatusInstalador.${itemId}`]: {
+                            etapas,
+                            estado: estadoActual,
+                            comentario: comentarioActual,
+                            por: (auth.currentUser && auth.currentUser.displayName) || (auth.currentUser && auth.currentUser.email) || '',
+                            fecha: serverTimestamp(),
+                            atendido: estadoActual === 'problema' ? false : true
+                        }
+                    });
+                    msg.textContent = 'Guardado ✓' + (auth.currentUser && auth.currentUser.displayName ? ' por ' + auth.currentUser.displayName : '');
+                    btnBad.style.background = estadoActual === 'problema' ? '#e74c3c' : '#e5e7eb';
+                    btnBad.style.color = estadoActual === 'problema' ? '#fff' : '#333';
+                } catch (e) {
+                    msg.textContent = 'Error al guardar: ' + e.message;
+                }
+            }
+
+            checkboxes.forEach(cb => { cb.onchange = () => guardar(null); });
+            btnBad.onclick = () => {
+                textarea.style.display = 'block';
+                btnSave.style.display = 'inline-block';
+                textarea.focus();
+            };
+            btnSave.onclick = () => {
+                if (!textarea.value.trim()) { alert('Describe el problema antes de guardar.'); return; }
+                guardar(textarea.value.trim());
             };
         });
     }
@@ -3974,7 +4081,7 @@
     // Garantiza que la app abra sin internet (medición en campo sin señal): registra el
     // service worker que cachea el cascarón de la app. No aplica dentro del visor
     // ?orderId= embebido (no tiene sentido cachear ahí y evita registros repetidos en el iframe).
-    if ('serviceWorker' in navigator && window.self === window.top) {
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && window.self === window.top) {
         window.addEventListener('load', () => {
             navigator.serviceWorker.register('sw.js').catch(() => {});
         });
