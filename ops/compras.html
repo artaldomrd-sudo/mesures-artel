@@ -45,9 +45,11 @@
             Se sube la orden de compra y el pedido queda listo directo para chofer e instalador.
         </p>
         <label>Cliente</label>
-        <input type="text" id="c-cliente" placeholder="Nombre del cliente">
+        <input type="text" id="c-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
+        <datalist id="clientes-datalist"></datalist>
         <label>Obra / Ubicación</label>
-        <input type="text" id="c-obra" placeholder="Obra o dirección">
+        <input type="text" id="c-obra" list="obras-datalist" placeholder="Obra o dirección" autocomplete="off">
+        <datalist id="obras-datalist"></datalist>
         <div class="row2">
             <div>
                 <label>Proveedor</label>
@@ -82,11 +84,30 @@
     import { db, storage } from './firebase-config.js';
     import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
+    import { buildClientMap, clientList, normalizarCliente, normalizarObra } from './clients.js';
 
     // Solo admin/oficina: es una herramienta de registro, no una pantalla de rol operativo.
     const usuario = await requireAuth([]);
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    // Clientes/obras ya conocidos (de cualquier pedido ya registrado, venga del cuaderno o de
+    // compras anteriores) — se ofrecen como sugerencia y, al guardar, se normaliza la grafía
+    // para que "Pablo" y "PABLO" no terminen siendo dos clientes distintos.
+    let clientMap = new Map();
+    onSnapshot(collection(db, 'orders'), (snap) => {
+        clientMap = buildClientMap(snap.docs.map(d => d.data()));
+        document.getElementById('clientes-datalist').innerHTML =
+            clientList(clientMap).map(c => `<option value="${esc(c.nombre)}">`).join('');
+        actualizarObrasDatalist();
+    });
+
+    function actualizarObrasDatalist() {
+        const entry = clientMap.get(document.getElementById('c-cliente').value.trim().toLowerCase());
+        const obras = entry ? Array.from(entry.obras.values()) : [];
+        document.getElementById('obras-datalist').innerHTML = obras.map(o => `<option value="${esc(o)}">`).join('');
+    }
+    document.getElementById('c-cliente').addEventListener('input', actualizarObrasDatalist);
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -97,8 +118,8 @@
     const STATUS_LABEL = { listo_para_cargar: 'Listo para cargar/instalar', completado: 'Completado' };
 
     window.registrarCompra = async function () {
-        const cliente = document.getElementById('c-cliente').value.trim();
-        const obra = document.getElementById('c-obra').value.trim();
+        const cliente = normalizarCliente(document.getElementById('c-cliente').value, clientMap);
+        const obra = normalizarObra(cliente, document.getElementById('c-obra').value, clientMap);
         const proveedor = document.getElementById('c-proveedor').value.trim();
         const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
         const descripcion = document.getElementById('c-descripcion').value.trim();
