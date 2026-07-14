@@ -191,6 +191,104 @@ un **PDF de Cotización o Fabricación** para el cliente.
   mayúsculas** (Gabor = GABOR). `saveProject/loadProject/deleteProject/updateClientList/
   updateObraList/backupAllProjects`. Menú lateral: "Clientes" → "Proyecto".
 
+## Plataforma de Operaciones (`ops/`)
+
+App aparte, sobre **Firebase** (proyecto `artal-operaciones`: Firestore + Auth con Google
+Sign-In + Storage + Cloud Messaging + Cloud Functions), para el flujo cotización → fábrica →
+chofer/instalador. Vive en la carpeta `ops/` y se enlaza con el cuaderno de medidas (`index.html`)
+a través de la colección `orders` de Firestore — **no toca el cuaderno en sí** salvo por
+adiciones puntuales y explícitas (ver más abajo).
+
+### Flujo real del negocio
+
+- **Cotización**: el cuaderno manda la ficha a `orders` (`docType` que empieza con `COT`,
+  `status:'solicitada'`) → **ALUCUFEL** (contratista externo) sube su PDF de costo
+  (`status:'costeada'`) → la encargada de cotizaciones arma el precio final en Citrus (externo,
+  no integrado) y sube el PDF final al cliente (`status:'enviada_cliente'`, pantalla
+  `ops/cotizaciones.html`).
+- **Fabricación**: el cuaderno manda la ficha directo (`docType` que empieza con `FAB`,
+  `status:'pendiente_fabrica'`) cuando el cliente ya aprobó — no pasa por cotización.
+  `ops/alucufel/fabrica.html` → `en_fabrica` → `listo_para_cargar` (o `parcialmente_listo`, ver
+  abajo) → chofer e instalador trabajan **en paralelo**, no en secuencia.
+- **Compra Directa** (`ops/compras.html`): para artículos ya hechos que se compran a un
+  proveedor externo (tubos, puertas, vidrios) y no pasan por fábrica. Se sube la orden de compra
+  en PDF y el pedido entra directo a `status:'listo_para_cargar'` con `docType:'COMPRA_DIRECTA'`
+  (sin `appJSON`/`items` del cuaderno — chofer/instalador/historial lo detectan por `docType` y
+  muestran el link al PDF en vez de la ficha técnica).
+- **Estado `parcialmente_listo`**: fábrica puede marcar solo una parte de los ítems como listos
+  (checklist `checklist=fabrica` en el visor de la ficha, escribe
+  `itemsListosFabrica.{itemId}`) y mandar el pedido a chofer/instalador antes de terminar el
+  resto — quedan visibles en verde/naranja en la ficha técnica que ve el chofer.
+
+### `ops/alucufel/` — ALUCUFEL unificado
+
+ALUCUFEL (contratista + fábrica) tiene **una sola carpeta con un solo link** en vez de dos
+pantallas sueltas: `ops/alucufel/index.html` (hub con dos tarjetas) → `cotizaciones.html`
+(antes `ops/contratista.html`) y `fabrica.html` (antes `ops/fabrica.html`, movido aquí). Antes
+de mandar cualquier link nuevo a Alucufel, es este: `.../ops/alucufel/index.html`.
+
+### Rutas relativas: `ops/paths.js` → `rootPath(archivo)`
+
+**Lección aprendida (bug real, ya corregido):** al mover `fabrica.html`/`cotizaciones.html` a
+`ops/alucufel/` (un nivel más profundo que el resto de `ops/*.html`), las rutas fijas
+`'../index.html'`, `'../sw.js'`, `'../logo.png'` en los módulos **compartidos**
+(`order-preview.js`, `notifications.js`, `auth-common.js`) dejaron de apuntar a la raíz del
+sitio — "Ver hoja" abría el Panel de Control en vez de la ficha técnica, y "Activar
+notificaciones" fallaba en silencio. Los tres módulos ahora usan `rootPath('index.html')` /
+`rootPath('sw.js')` / `rootPath('logo.png')` de `ops/paths.js`, que calcula la ruta según la
+profundidad real de `location.pathname` bajo `ops/` (1 nivel → `../`, 2 niveles → `../../`,
+etc.). **Cualquier módulo compartido de `ops/` que necesite referenciar algo de la raíz del
+sitio debe usar `rootPath()`, nunca una ruta `'../...'` fija** — si se agrega otra subcarpeta
+dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
+
+### Roles y usuarios
+
+- `usuarios/{email}` (Firestore): `nombre`, `rol` (string o array — `requireAuth` normaliza
+  ambos a array), `fcmToken` (se llena solo al aceptar notificaciones). `admin` siempre pasa
+  cualquier chequeo de rol. Roles: `admin, contratista, fabrica, cotizaciones, chofer,
+  instalador`.
+- Login con Google (`ops/auth-common.js`, `requireAuth(rolesPermitidos)`) — cada persona entra
+  con su propia cuenta (ya no hay logins compartidos: Andrea/Rolanny tienen las suyas). El
+  nombre autenticado (`usuario.nombre`) se usa para dejar registro de quién hizo cada acción
+  (ej. `creadoPorNombre` en citas y compras), sin selectores manuales.
+- La asignación de chofer/instalador a un pedido (`ops/historial.html`) es **informativa**, no
+  restringe acceso — cualquier chofer/instalador ve todos los pedidos por si hay que cubrirse.
+
+### Ficha técnica compartida (visor de solo lectura + checklists)
+
+- `index.html?orderId=X` carga un pedido de Firestore en modo solo lectura
+  (`body.readonly-view`) — usado por `ops/order-preview.js` (`openOrderPreview(orderId, role)`,
+  modal con iframe). **No reenvía nada al cuaderno local**, solo pinta `orderData.appJSON`.
+- `&checklist=fabrica|chofer|instalador` inyecta, por DOM, un recuadro en cada tarjeta ya
+  renderizada (`injectChecklist` → `injectFabricaChecklist` / `injectChoferChecklist` /
+  `injectInstaladorChecklist` en `index.html`) — **sin tocar ninguna plantilla de tarjeta**:
+  - `fabrica`: checkbox "Listo para cargar" por ítem → `itemsListosFabrica.{id}`.
+  - `chofer`: botones Cargado/Problema → `itemStatus.{id}` (además, si el pedido está
+    `parcialmente_listo`, muestra la marca de fábrica en verde/naranja).
+  - `instalador`: checklist de etapas por tipo de elemento (`STAGE_SETS`/`getStageSetKey`) →
+    `itemStatusInstalador.{id}`.
+- Este visor se registra **después** de `loadProgress()` (dentro de su propio
+  `DOMContentLoaded`) para que el autosave local nunca pise los datos del pedido de Firestore.
+
+### Clientes/obras: autocompletar y normalización (`ops/clients.js`)
+
+Para evitar que "Pablo" y "PABLO" terminen como clientes distintos (con cientos de trabajos al
+año, esto importa): `buildClientMap()` agrupa los `cliente`/`obra` de todos los `orders` ya
+existentes sin importar mayúsculas/espacios. Se usa en `ops/compras.html` (datalist +
+normaliza al guardar) y `ops/historial.html` (datalist en el buscador, que ya era
+case-insensitive).
+
+### Notificaciones y badges
+
+- Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada
+  documento nuevo en `citas/`) — requiere "Agregar a inicio" en iPhone (limitación de Apple, no
+  hay forma de evitarlo). Un solo `sw.js` en la raíz maneja tanto el cascarón offline del
+  cuaderno como el listener `push`.
+- `ops/index.html` (Panel de Control) muestra círculos rojos (`tile-badge`/`setBadge`) con la
+  cantidad de pedidos que necesitan atención *ahora* en cada sección (no un historial de todo lo
+  pasado) — ALUCUFEL y Cotizaciones cuentan `status==='costeada'`, comentarios de fábrica sin
+  atender, etc.
+
 ## Convenciones aprendidas (para no repetir errores)
 
 - Verificar SIEMPRE con `verify.mjs` antes de dar por bueno un dibujo.

@@ -24,6 +24,11 @@
     .item-actions button { padding: 9px 14px; border: none; border-radius: 7px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13px; }
     .btn-tomar { background: #e67e22; color: #fff; }
     .btn-agregar { background: #2ecc71; color: #fff; }
+    .btn-precio { background: #16a085; color: #fff; }
+    .item-precios { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; font-size: 12.5px; }
+    .item-precios .costo { color: #888; }
+    .item-precios .venta { color: #16a085; font-weight: bold; }
+    .item-precios .margen { color: #999; }
     .inline-form { display: none; margin-top: 10px; padding: 10px; background: var(--artal-light); border-radius: 8px; }
     .inline-form.show { display: block; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
@@ -87,6 +92,10 @@
         <input type="text" id="nuevo-unidad" placeholder="Ej: barras, unidades, galones">
         <label>Cantidad inicial</label>
         <input type="number" id="nuevo-cantidad" value="0" min="0">
+        <label>Costo (por unidad)</label>
+        <input type="number" id="nuevo-costo" value="0" min="0" step="0.01">
+        <label>Precio de venta (por unidad)</label>
+        <input type="number" id="nuevo-venta" value="0" min="0" step="0.01">
         <div class="modal-actions">
             <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarNuevoItem()">Cancelar</button>
             <button class="btn-agregar" onclick="guardarNuevoItem()">Guardar</button>
@@ -137,18 +146,33 @@
 
     let allItems = [];
 
+    function money(n) {
+        return 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     function itemCardHTML(item) {
         const low = item.cantidad <= 0;
         const label = item.color ? `${esc(item.tipo)} — ${esc(item.color)}` : esc(item.tipo);
+        const costo = Number(item.costo || 0);
+        const venta = Number(item.venta || 0);
+        const margen = venta - costo;
+        const margenPct = costo > 0 ? Math.round((margen / costo) * 100) : null;
         return `
         <div class="item-card ${low ? 'low' : ''}">
             <div class="item-head">
                 <b>${label}</b>
                 <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
             </div>
+            ${esAdmin ? `
+            <div class="item-precios">
+                <span class="costo">Costo: ${money(costo)}</span>
+                <span class="venta">Venta: ${money(venta)}</span>
+                ${margenPct !== null ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
+            </div>` : ''}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
+                ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
             </div>
             <div class="inline-form" id="tomar-${item.id}">
                 <label>Cantidad a tomar</label>
@@ -167,6 +191,16 @@
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('agregar-${item.id}')">Cancelar</button>
                     <button class="btn-agregar" onclick="confirmarAgregar('${item.id}')">Confirmar</button>
+                </div>
+            </div>
+            <div class="inline-form" id="precio-${item.id}">
+                <label>Costo (por ${esc(item.unidad)})</label>
+                <input type="number" id="precio-costo-${item.id}" min="0" step="0.01" value="${costo}">
+                <label>Precio de venta (por ${esc(item.unidad)})</label>
+                <input type="number" id="precio-venta-${item.id}" min="0" step="0.01" value="${venta}">
+                <div class="row-actions">
+                    <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('precio-${item.id}')">Cancelar</button>
+                    <button class="btn-precio" onclick="confirmarPrecio('${item.id}')">Guardar</button>
                 </div>
             </div>` : ''}
         </div>`;
@@ -213,14 +247,14 @@
                 for (const color of COLORES_SEED) {
                     await addDoc(collection(db, 'inventario'), {
                         tipo: p.tipo, color, categoria: 'perfil', unidad: p.unidad, cantidad: 0,
-                        creadoFecha: serverTimestamp()
+                        costo: 0, venta: 0, creadoFecha: serverTimestamp()
                     });
                 }
             }
             for (const c of CONSUMIBLES_SEED) {
                 await addDoc(collection(db, 'inventario'), {
                     tipo: c.tipo, color: null, categoria: 'consumible', unidad: c.unidad, cantidad: 0,
-                    creadoFecha: serverTimestamp()
+                    costo: 0, venta: 0, creadoFecha: serverTimestamp()
                 });
             }
             alert('Catálogo creado. Ahora usa "Agregar stock" en cada ítem para poner las cantidades reales.');
@@ -241,16 +275,20 @@
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
         const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
+        const costo = Number(document.getElementById('nuevo-costo').value) || 0;
+        const venta = Number(document.getElementById('nuevo-venta').value) || 0;
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, color: categoria === 'perfil' ? (color || null) : null,
-                categoria, unidad, cantidad, creadoFecha: serverTimestamp()
+                categoria, unidad, cantidad, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
             document.getElementById('nuevo-color').value = '';
             document.getElementById('nuevo-cantidad').value = '0';
+            document.getElementById('nuevo-costo').value = '0';
+            document.getElementById('nuevo-venta').value = '0';
         } catch (e) {
             alert('No se pudo guardar: ' + e.message);
         }
@@ -264,6 +302,11 @@
     window.abrirAgregar = function (id) {
         cerrarTodosLosForms();
         const el = document.getElementById('agregar-' + id);
+        if (el) el.classList.add('show');
+    };
+    window.abrirPrecio = function (id) {
+        cerrarTodosLosForms();
+        const el = document.getElementById('precio-' + id);
         if (el) el.classList.add('show');
     };
     window.cerrarForm = function (elId) {
@@ -312,6 +355,17 @@
             cerrarForm('agregar-' + id);
         } catch (e) {
             alert('No se pudo registrar: ' + e.message);
+        }
+    };
+
+    window.confirmarPrecio = async function (id) {
+        const costo = Number(document.getElementById('precio-costo-' + id).value) || 0;
+        const venta = Number(document.getElementById('precio-venta-' + id).value) || 0;
+        try {
+            await updateDoc(doc(db, 'inventario', id), { costo, venta });
+            cerrarForm('precio-' + id);
+        } catch (e) {
+            alert('No se pudo guardar el precio: ' + e.message);
         }
     };
 </script>
