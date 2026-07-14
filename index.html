@@ -3881,18 +3881,60 @@
 
     function injectChecklist(role, orderId, orderData) {
         if (role === 'chofer') { injectChoferChecklist(orderId, orderData); return; }
+        if (role === 'fabrica') { injectFabricaChecklist(orderId, orderData); return; }
         injectInstaladorChecklist(orderId, orderData);
     }
 
-    function injectChoferChecklist(orderId, orderData) {
-        const statusMap = orderData.itemStatus || {};
+    // Fábrica marca, ítem por ítem, cuáles ya están listos para cargar (para pedidos que se
+    // fabrican en dos etapas o donde solo una parte está lista). Escribe en
+    // itemsListosFabrica.{itemId}; ops/alucufel/fabrica.html lee esto para el botón
+    // "Parcialmente listo para cargar", y el chofer lo ve marcado (ver injectChoferChecklist).
+    function injectFabricaChecklist(orderId, orderData) {
+        const listosMap = orderData.itemsListosFabrica || {};
         document.querySelectorAll('.item-card').forEach(card => {
             const itemId = card.id.replace('card-', '');
-            const current = statusMap[itemId] || {};
+            const listo = listosMap[itemId] === true;
 
             const box = document.createElement('div');
             box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f3f4f6;border:2px solid #ddd;font-family:Arimo,sans-serif;';
             box.innerHTML = `
+                <label style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#0A3D62;cursor:pointer;">
+                    <input type="checkbox" class="cl-listo" ${listo ? 'checked' : ''} style="width:22px;height:22px;">
+                    <span>Listo para cargar</span>
+                </label>
+                <div class="cl-msg" style="font-size:11px;color:#666;margin-top:6px;">${listo ? 'Marcado como listo' : ''}</div>
+            `;
+            card.appendChild(box);
+
+            const checkbox = box.querySelector('.cl-listo');
+            const msg = box.querySelector('.cl-msg');
+            checkbox.onchange = async () => {
+                msg.textContent = 'Guardando…';
+                try {
+                    await updateDoc(doc(db, 'orders', orderId), {
+                        [`itemsListosFabrica.${itemId}`]: checkbox.checked
+                    });
+                    msg.textContent = checkbox.checked ? 'Marcado como listo ✓' : 'Desmarcado';
+                } catch (e) {
+                    msg.textContent = 'Error al guardar: ' + e.message;
+                }
+            };
+        });
+    }
+
+    function injectChoferChecklist(orderId, orderData) {
+        const statusMap = orderData.itemStatus || {};
+        const listosMap = orderData.itemsListosFabrica || {};
+        const esParcial = orderData.status === 'parcialmente_listo';
+        document.querySelectorAll('.item-card').forEach(card => {
+            const itemId = card.id.replace('card-', '');
+            const current = statusMap[itemId] || {};
+            const listo = listosMap[itemId] === true;
+
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f3f4f6;border:2px solid #ddd;font-family:Arimo,sans-serif;';
+            box.innerHTML = `
+                ${esParcial ? `<div style="font-size:12.5px;font-weight:bold;margin-bottom:8px;color:${listo ? '#2ecc71' : '#e67e22'};">${listo ? '✅ Listo para cargar (marcado por fábrica)' : '⏳ Aún NO está listo — falta en fábrica'}</div>` : ''}
                 <div style="font-size:12px;font-weight:bold;color:#0A3D62;margin-bottom:8px;">Estado de este ítem (obligatorio)</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button type="button" class="cl-ok" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === 'cargado' ? '#2ecc71' : '#e5e7eb'};color:${current.estado === 'cargado' ? '#fff' : '#333'};">✓ Cargado en óptima condición</button>
@@ -4043,7 +4085,7 @@
                     if (!snap.exists()) { alert('No se encontró ese pedido.'); return; }
                     const orderData = snap.data();
                     restoreData(orderData.appJSON);
-                    if (checklistRole === 'chofer' || checklistRole === 'instalador') {
+                    if (checklistRole === 'chofer' || checklistRole === 'instalador' || checklistRole === 'fabrica') {
                         injectChecklist(checklistRole, orderIdParam, orderData);
                     }
                     // Avisa a la ventana que nos embebió (el modal de vista previa de ops/)

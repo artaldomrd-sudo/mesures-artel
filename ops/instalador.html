@@ -69,11 +69,12 @@
     function orderCardHTML(id, o) {
         const resuelto = checklistResuelto(o);
         const esCompra = o.docType === 'COMPRA_DIRECTA';
+        const esParcial = o.status === 'parcialmente_listo';
         const metaLine = esCompra
             ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>`
             : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'instalador'); return false;">Ver hoja de fabricación</a>`;
         return `
-        <div class="order-card">
+        <div class="order-card" ${esParcial ? 'style="border-left-color:#e67e22;"' : ''}>
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
             </div>
@@ -81,6 +82,7 @@
                 ${metaLine}
                 ${o.asignadoInstaladorNombre ? ' · 👤 Asignado a ' + esc(o.asignadoInstaladorNombre) : ''}
             </div>
+            ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar instalado.</div>`}
             <div class="actions">
                 <button class="btn-instalado" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirAprobacion('${id}')` : ''}">Instalado</button>
@@ -115,7 +117,7 @@
         });
     }
 
-    const q = query(collection(db, 'orders'), where('status', '==', 'listo_para_cargar'));
+    const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo']));
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });

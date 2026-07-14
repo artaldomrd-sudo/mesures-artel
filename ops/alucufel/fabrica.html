@@ -11,12 +11,16 @@
 <style>
     .order-card.status-pendiente_fabrica { border-left-color: var(--artal-yellow); }
     .order-card.status-en_fabrica { border-left-color: #3498db; }
+    .order-card.status-parcialmente_listo { border-left-color: #e67e22; }
     .order-card.status-listo_para_cargar { border-left-color: #2ecc71; }
     .order-card.status-completado { border-left-color: #999; }
     .status-pendiente_fabrica .badge { background: var(--artal-yellow); color: var(--artal-blue); }
     .status-en_fabrica .badge { background: #3498db; color: #fff; }
+    .status-parcialmente_listo .badge { background: #e67e22; color: #fff; }
     .status-listo_para_cargar .badge { background: #2ecc71; color: #fff; }
     .status-completado .badge { background: #999; color: #fff; }
+    .btn-marcar { background: #8e44ad; color: #fff; }
+    .btn-parcial { background: #e67e22; color: #fff; }
     .comment-box { margin-top: 10px; }
     .comment-box textarea { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; min-height: 50px; }
     .comment-box button { margin-top: 6px; padding: 8px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; }
@@ -61,10 +65,11 @@
     const STATUS_LABEL = {
         pendiente_fabrica: 'Pendiente',
         en_fabrica: 'En fábrica',
+        parcialmente_listo: 'Parcialmente listo',
         listo_para_cargar: 'Listo para cargar',
         completado: 'Completado'
     };
-    const PENDIENTES = ['pendiente_fabrica', 'en_fabrica'];
+    const PENDIENTES = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'];
     const ENVIADOS = ['listo_para_cargar', 'completado'];
 
     function esc(s) {
@@ -77,10 +82,12 @@
         let actionsHtml;
         if (o.status === 'pendiente_fabrica') {
             actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarPedido('${id}')">Tomar pedido</button></div>`;
-        } else if (o.status === 'en_fabrica') {
+        } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
             actionsHtml = `<div class="actions">
-                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar</button>
-                <button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>
+                <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar ítems listos</button>
+                <button class="btn-parcial" onclick="parcialmenteListo('${id}')">Parcialmente listo para cargar</button>
+                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
+                ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
             </div>`;
         } else {
             actionsHtml = '';
@@ -95,6 +102,7 @@
                 ${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
                 <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja de fabricación</a>
             </div>
+            ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
             ${actionsHtml}
             <div class="comment-box">
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
@@ -136,7 +144,16 @@
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp() });
     };
     window.listoParaCargar = async function (id) {
-        await updateDoc(doc(db, 'orders', id), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() });
+        // Al marcar todo el pedido como listo, se marcan también todos los ítems como listos
+        // individualmente (por si venía de "parcialmente listo" y quedaban ítems sin marcar).
+        const docSnap = allOrders.find(d => d.id === id);
+        const items = docSnap ? (docSnap.data().items || []) : [];
+        const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() };
+        items.forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
+        await updateDoc(doc(db, 'orders', id), cambios);
+    };
+    window.parcialmenteListo = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() });
     };
     window.deshacerTomarPedido = async function (id) {
         await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' });
