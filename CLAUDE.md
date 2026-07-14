@@ -52,7 +52,9 @@ un **PDF de Cotización o Fabricación** para el cliente.
   ("Paños Fijos"). *(Los items sueltos `mamp_fija`, `door_glass`, `door_slide` ya NO están en el
   menú: viven dentro de "Vidrio de Ducha", pero sus `type` siguen existiendo para proyectos
   guardados y para el dibujo libre CAD.)*
-- **Duchas y Barandas**: `ducha_cab` (cabina), `baranda_bal` (baranda con constructor de tramos).
+- **Barandas**: `baranda_bal` (baranda con constructor de tramos). *(`ducha_cab` "Cabina de
+  Ducha" ya NO está en el menú; el `type` sigue existiendo para proyectos guardados que ya
+  la tengan.)*
 - **Especial**: dibujo libre / **CAD** ("Fachada Compuesta", `type:'draw'`): lienzo donde se
   insertan módulos que se pegan con imán (vidrio con vidrio).
 
