@@ -4,6 +4,7 @@
 // Cloud Messaging y lo guarda en usuarios/{email}.fcmToken para que la Cloud Function
 // (enviarNotificacionCita) sepa a quién mandarle el push.
 import { auth, db, VAPID_KEY } from './firebase-config.js';
+import { rootPath } from './paths.js';
 import { doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 export async function enableNotifications(button) {
@@ -26,7 +27,7 @@ export async function enableNotifications(button) {
             return;
         }
 
-        const registration = await navigator.serviceWorker.register('../sw.js');
+        const registration = await navigator.serviceWorker.register(rootPath('sw.js'));
         await navigator.serviceWorker.ready;
 
         const { getMessaging, isSupported, getToken, onMessage } =
@@ -49,7 +50,7 @@ export async function enableNotifications(button) {
         // Mensajes en primer plano (pestaña abierta): FCM no los muestra solo, hay que hacerlo a mano.
         onMessage(messaging, (payload) => {
             const data = payload.data || {};
-            new Notification(data.title || 'ARTAL Operaciones', { body: data.body || '', icon: 'logo.png' });
+            new Notification(data.title || 'ARTAL Operaciones', { body: data.body || '', icon: rootPath('logo.png') });
         });
 
         if (button) button.textContent = '✓ Notificaciones activadas';

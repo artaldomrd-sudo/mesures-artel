@@ -4,6 +4,7 @@
 //   const usuario = await requireAuth(['fabrica']); // admin siempre pasa
 //   // usuario = { email, nombre, rol }
 import { auth, googleProvider, db } from './firebase-config.js';
+import { rootPath } from './paths.js';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
@@ -29,7 +30,7 @@ function hideOverlay() {
 
 function showLoginScreen() {
   const el = showOverlay(
-    '<img src="../logo.png" alt="ARTAL" style="height:64px;width:auto;object-fit:contain;">' +
+    '<img src="' + rootPath('logo.png') + '" alt="ARTAL" style="height:64px;width:auto;object-fit:contain;">' +
     '<h2 style="margin:0;font-size:20px;">ARTAL Operaciones</h2>' +
     '<button id="auth-google-btn" style="font-size:16px;padding:14px 28px;border-radius:10px;' +
     'border:none;background:#fff;color:#0A3D62;cursor:pointer;font-weight:700;min-height:48px;">' +

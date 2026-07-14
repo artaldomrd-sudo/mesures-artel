@@ -2,6 +2,7 @@
 // Imprimir (reusa exportPDF() de index.html a través del iframe) y Reenviar (duplica el pedido
 // tal cual, como un envío nuevo). Compartido por todas las pantallas de ops/.
 import { db } from './firebase-config.js';
+import { rootPath } from './paths.js';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 function closePreview() {
@@ -37,7 +38,7 @@ export function openOrderPreview(orderId, role) {
     const overlay = document.createElement('div');
     overlay.id = 'order-preview-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
-    const src = '../index.html?orderId=' + orderId + (role ? '&checklist=' + role : '');
+    const src = rootPath('index.html') + '?orderId=' + orderId + (role ? '&checklist=' + role : '');
     overlay.innerHTML = `
         <div style="background:#f3f4f6;border-radius:10px;width:100%;max-width:1000px;height:92vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.4);">
             <div class="preview-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#0A3D62;color:#fff;font-family:Arimo,sans-serif;flex-wrap:wrap;gap:10px;">
