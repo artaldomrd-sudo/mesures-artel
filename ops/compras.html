@@ -91,16 +91,19 @@
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
-    // Clientes/obras ya conocidos (de cualquier pedido ya registrado, venga del cuaderno o de
-    // compras anteriores) — se ofrecen como sugerencia y, al guardar, se normaliza la grafía
-    // para que "Pablo" y "PABLO" no terminen siendo dos clientes distintos.
+    // Clientes/obras ya conocidos (sincronizados desde el cuaderno + cualquier pedido ya
+    // registrado) — se ofrecen como sugerencia y, al guardar, se normaliza la grafía para que
+    // "Pablo" y "PABLO" no terminen siendo dos clientes distintos.
     let clientMap = new Map();
-    onSnapshot(collection(db, 'orders'), (snap) => {
-        clientMap = buildClientMap(snap.docs.map(d => d.data()));
+    let ordersCache = [], clientesCache = [];
+    function refreshClientMap() {
+        clientMap = buildClientMap(ordersCache, clientesCache);
         document.getElementById('clientes-datalist').innerHTML =
             clientList(clientMap).map(c => `<option value="${esc(c.nombre)}">`).join('');
         actualizarObrasDatalist();
-    });
+    }
+    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => d.data()); refreshClientMap(); });
+    onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
 
     function actualizarObrasDatalist() {
         const entry = clientMap.get(document.getElementById('c-cliente').value.trim().toLowerCase());
@@ -154,6 +157,11 @@
                 fechaCompra: serverTimestamp(),
                 fechaListoParaCargar: serverTimestamp()
             });
+            // Registra el cliente/obra en la colección central `clientes` (por si es nuevo y no
+            // vino del cuaderno), para que aparezca como sugerencia en el futuro.
+            await setDoc(doc(db, 'clientes', cliente.toLowerCase()), {
+                nombre: cliente, [`obras.${obra.toLowerCase()}`]: obra
+            }, { merge: true });
 
             document.getElementById('c-cliente').value = '';
             document.getElementById('c-obra').value = '';

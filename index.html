@@ -758,6 +758,7 @@
         const jsonData = getAppJSON();
         projects[cliKey][obraKey] = jsonData;
         localStorage.setItem('artal_projects', JSON.stringify(projects));
+        if (window.syncClienteObra) window.syncClienteObra(cliKey, obraKey);
 
         updateClientList();
         document.getElementById('select-cliente').value = cliKey;
@@ -3787,8 +3788,41 @@
 
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
-    import { collection, addDoc, doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+
+    // Sincroniza clientes/obras del cuaderno a Firestore (colección `clientes`) para que
+    // ops/compras.html y ops/historial.html puedan sugerir TODOS los clientes del cuaderno, no
+    // solo los que ya tuvieron un pedido enviado a fábrica/cotización. Silencioso: si no hay
+    // sesión o falla (sin internet, típico en campo), no interrumpe el guardado local.
+    const normClienteKey = (s) => String(s || '').trim().toLowerCase();
+    async function syncClienteObra(cliente, obra) {
+        if (!auth.currentUser || !cliente) return;
+        try {
+            const cambios = { nombre: String(cliente).trim() };
+            if (obra) cambios[`obras.${normClienteKey(obra)}`] = String(obra).trim();
+            await setDoc(doc(db, 'clientes', normClienteKey(cliente)), cambios, { merge: true });
+        } catch (e) { /* sin internet u otro fallo: no bloquea el guardado local */ }
+    }
+    window.syncClienteObra = syncClienteObra;
+
+    // La primera vez que haya sesión activa en este dispositivo, sube de una vez TODOS los
+    // clientes/obras que ya existían localmente antes de este cambio (getProjects() es global,
+    // definida en el script clásico). Se marca con una bandera en localStorage para no repetirlo.
+    async function bulkSyncClientesUnaVez() {
+        if (localStorage.getItem('artal_clients_synced_v1') || !auth.currentUser) return;
+        try {
+            const projects = getProjects();
+            for (const cliente of Object.keys(projects)) {
+                await syncClienteObra(cliente, null);
+                for (const obra of Object.keys(projects[cliente] || {})) {
+                    await syncClienteObra(cliente, obra);
+                }
+            }
+            localStorage.setItem('artal_clients_synced_v1', '1');
+        } catch (e) { /* se reintenta la próxima vez que haya sesión */ }
+    }
+    onAuthStateChanged(auth, (user) => { if (user) bulkSyncClientesUnaVez(); });
 
     window.enviarOrden = async function () {
         const btn = document.getElementById('btn-enviar-orden');
@@ -3839,6 +3873,7 @@
                 appJSON,
                 ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
             });
+            syncClienteObra(appJSON.header.cliente, appJSON.header.obra);
             alert(isFab ? 'Enviado a fábrica correctamente.' : 'Cotización enviada al contratista correctamente.');
         } catch (e) {
             alert('No se pudo enviar: ' + (e && e.message ? e.message : e));
