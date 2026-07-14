@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Compra Directa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 700px; }
+    .form-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 20px; }
+    .form-box label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
+    .form-box label:first-child { margin-top: 0; }
+    .form-box input[type="text"], .form-box input[type="number"], .form-box input[type="file"], .form-box textarea {
+        width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box;
+    }
+    .form-box textarea { min-height: 60px; }
+    .form-box .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-box button.submit { margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; font-size: 15px; cursor: pointer; min-height: 46px; }
+    h2.section-title { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; }
+    .order-card { border-left-color: #16a085; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Compra Directa</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="form-box">
+        <h2 class="section-title">Registrar compra a proveedor</h2>
+        <p style="font-size:12.5px;color:#666;margin:0 0 6px;">
+            Para artículos que no pasan por fábrica (comprados ya hechos a un proveedor: tubos, puertas, vidrios, etc.).
+            Se sube la orden de compra y el pedido queda listo directo para chofer e instalador.
+        </p>
+        <label>Cliente</label>
+        <input type="text" id="c-cliente" placeholder="Nombre del cliente">
+        <label>Obra / Ubicación</label>
+        <input type="text" id="c-obra" placeholder="Obra o dirección">
+        <div class="row2">
+            <div>
+                <label>Proveedor</label>
+                <input type="text" id="c-proveedor" placeholder="Ej: Ferretería XYZ">
+            </div>
+            <div>
+                <label>Cantidad de artículos</label>
+                <input type="number" id="c-cantidad" min="1" value="1">
+            </div>
+        </div>
+        <label>Descripción</label>
+        <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
+        <div class="row2">
+            <div>
+                <label>Monto de la compra (opcional)</label>
+                <input type="text" id="c-monto" placeholder="Ej: RD$ 25,000">
+            </div>
+            <div>
+                <label>Orden de compra (PDF)</label>
+                <input type="file" id="c-pdf" accept="application/pdf">
+            </div>
+        </div>
+        <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra y enviar a chofer/instalador</button>
+    </div>
+
+    <h2 class="section-title">Compras registradas recientemente</h2>
+    <div id="compras-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db, storage } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
+
+    // Solo admin/oficina: es una herramienta de registro, no una pantalla de rol operativo.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    const STATUS_LABEL = { listo_para_cargar: 'Listo para cargar/instalar', completado: 'Completado' };
+
+    window.registrarCompra = async function () {
+        const cliente = document.getElementById('c-cliente').value.trim();
+        const obra = document.getElementById('c-obra').value.trim();
+        const proveedor = document.getElementById('c-proveedor').value.trim();
+        const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
+        const descripcion = document.getElementById('c-descripcion').value.trim();
+        const monto = document.getElementById('c-monto').value.trim();
+        const fileInput = document.getElementById('c-pdf');
+        const file = fileInput.files[0];
+
+        if (!cliente) { alert('Escribe el cliente.'); return; }
+        if (!obra) { alert('Escribe la obra o ubicación.'); return; }
+        if (!proveedor) { alert('Escribe el proveedor.'); return; }
+        if (!file) { alert('Sube el PDF de la orden de compra.'); return; }
+        if (file.type !== 'application/pdf') { alert('El archivo debe ser un PDF.'); return; }
+
+        const btn = document.getElementById('c-btn');
+        btn.disabled = true;
+        btn.textContent = 'Guardando…';
+
+        try {
+            const ref_ = doc(collection(db, 'orders'));
+            const fileRef = ref(storage, `compras-pdfs/${ref_.id}.pdf`);
+            await uploadBytes(fileRef, file);
+            const url = await getDownloadURL(fileRef);
+
+            await setDoc(ref_, {
+                cliente, obra, proveedor, descripcion, monto,
+                docType: 'COMPRA_DIRECTA',
+                totalItems: cantidad,
+                status: 'listo_para_cargar',
+                compraPdfUrl: url,
+                compraPdfNombre: file.name,
+                creadoPorNombre: usuario.nombre,
+                fechaCompra: serverTimestamp(),
+                fechaListoParaCargar: serverTimestamp()
+            });
+
+            document.getElementById('c-cliente').value = '';
+            document.getElementById('c-obra').value = '';
+            document.getElementById('c-proveedor').value = '';
+            document.getElementById('c-cantidad').value = '1';
+            document.getElementById('c-descripcion').value = '';
+            document.getElementById('c-monto').value = '';
+            fileInput.value = '';
+            alert('Compra registrada. Ya está disponible para chofer e instalador.');
+        } catch (e) {
+            alert('No se pudo registrar la compra: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Registrar compra y enviar a chofer/instalador';
+        }
+    };
+
+    function orderCardHTML(o) {
+        return `
+        <div class="order-card">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
+            </div>
+            <div class="order-meta">
+                Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)${o.monto ? ' · ' + esc(o.monto) : ''}
+                ${o.compraPdfUrl ? `<a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>` : ''}
+            </div>
+            ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
+            <p style="font-size:11.5px;color:#999;margin:8px 0 0;">Registrado por ${esc(o.creadoPorNombre)}</p>
+        </div>`;
+    }
+
+    const q = query(collection(db, 'orders'), where('docType', '==', 'COMPRA_DIRECTA'));
+    onSnapshot(q, (snap) => {
+        const list = document.getElementById('compras-list');
+        if (!snap.size) { list.innerHTML = '<p class="empty">No hay compras registradas todavía.</p>'; return; }
+        const docs = snap.docs.slice().sort((a, b) => {
+            const fa = a.data().fechaCompra, fb = b.data().fechaCompra;
+            return (fb && fb.toMillis ? fb.toMillis() : 0) - (fa && fa.toMillis ? fa.toMillis() : 0);
+        });
+        list.innerHTML = docs.map(d => orderCardHTML(d.data())).join('');
+    }, (err) => {
+        document.getElementById('compras-list').innerHTML = '<p class="empty">Error cargando compras: ' + err.message + '</p>';
+    });
+</script>
+
+</body>
+</html>

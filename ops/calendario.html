@@ -42,7 +42,8 @@
     .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 460px; max-height: 90vh; overflow-y: auto; padding: 20px; }
     .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
     .modal-box label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
-    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; }
+    .modal-box input[disabled] { background: #f3f4f6; color: #555; }
     .modal-box textarea { min-height: 60px; }
     .toggle-row { display: flex; gap: 8px; margin-top: 8px; }
     .toggle-row button { flex: 1; padding: 10px; border: 2px solid var(--artal-blue); background: #fff; color: var(--artal-blue); border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
@@ -117,7 +118,7 @@
         </div>
 
         <label>¿Quién está agendando esto?</label>
-        <select id="cita-creador"></select>
+        <input type="text" id="cita-creador" readonly disabled>
 
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarNuevaCita()">Cancelar</button>
@@ -273,12 +274,9 @@
     let ordersCache = [];
     let instaladoresCache = [];
 
-    // Andrea y Rolanny comparten el mismo login (artaldom.rd@gmail.com) que el gerente — no
-    // tienen usuarios/{email} propios, así que la lista de "quién agenda" es fija en vez de
-    // salir de Firestore. Agregar/quitar nombres aquí si cambia el equipo de oficina.
-    const CREADORES = ['Dylan', 'Andrea', 'Rolanny'];
-    document.getElementById('cita-creador').innerHTML =
-        CREADORES.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    // Cada persona de oficina tiene ahora su propio login — "quién agenda" sale directo de la
+    // cuenta con la que entró (usuarios/{email}.nombre), no de una lista manual.
+    document.getElementById('cita-creador').value = usuario.nombre;
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
@@ -324,11 +322,10 @@
         const titulo = document.getElementById('cita-titulo').value.trim();
         const descripcion = document.getElementById('cita-descripcion').value.trim();
         const fechaStr = document.getElementById('cita-fecha').value;
-        const creadoPorNombre = document.getElementById('cita-creador').value;
+        const creadoPorNombre = usuario.nombre;
 
         if (!titulo) { alert('Escribe un título para la cita.'); return; }
         if (!fechaStr) { alert('Elige fecha y hora.'); return; }
-        if (!creadoPorNombre) { alert('Elige quién está agendando esta cita.'); return; }
 
         let cliente = '', obra = '', orderId = null;
         if (tipoCita === 'pedido') {

@@ -81,13 +81,14 @@
         enviada_cliente: 'Cotización: enviada al cliente',
         pendiente_fabrica: 'Fabricación: pendiente',
         en_fabrica: 'Fabricación: en proceso',
-        listo_para_cargar: 'Fabricación: listo para cargar/instalar',
-        completado: 'Fabricación: completado (entregado e instalado)'
+        listo_para_cargar: 'Listo para cargar/instalar',
+        completado: 'Completado (entregado e instalado)'
     };
 
     const STATUS_OPTIONS_BY_TYPE = {
         COTIZACION: ['solicitada', 'costeada', 'enviada_cliente'],
-        FABRICACION: ['pendiente_fabrica', 'en_fabrica', 'listo_para_cargar', 'completado']
+        FABRICACION: ['pendiente_fabrica', 'en_fabrica', 'listo_para_cargar', 'completado'],
+        COMPRA_DIRECTA: ['listo_para_cargar', 'completado']
     };
 
     const CATEGORIES = [
@@ -200,7 +201,7 @@
     });
 
     function orderDate(o) {
-        const f = o.fechaCotizado || o.fechaSolicitada;
+        const f = o.fechaCotizado || o.fechaSolicitada || o.fechaCompra;
         return f && f.toMillis ? f.toMillis() : 0;
     }
 
@@ -215,11 +216,18 @@
         const extraLinks = [];
         if (o.contratistaPdfUrl) extraLinks.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
         if (o.cotizacionFinalPdfUrl) extraLinks.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
+        if (o.compraPdfUrl) extraLinks.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
         if (o.recepcionInstalador && o.recepcionInstalador.firma) extraLinks.push(`<a href="${o.recepcionInstalador.firma}" target="_blank">Firma recepción (${esc(o.recepcionInstalador.nombre)})</a>`);
         if (o.clienteAprobacion && o.clienteAprobacion.firma) extraLinks.push(`<a href="${o.clienteAprobacion.firma}" target="_blank">Firma cliente (${esc(o.clienteAprobacion.nombre)})</a>`);
 
         const isFab = (o.docType || '').indexOf('FAB') === 0;
-        const statusOptions = isFab ? STATUS_OPTIONS_BY_TYPE.FABRICACION : STATUS_OPTIONS_BY_TYPE.COTIZACION;
+        const isCompra = o.docType === 'COMPRA_DIRECTA';
+        const statusOptions = isCompra ? STATUS_OPTIONS_BY_TYPE.COMPRA_DIRECTA
+            : isFab ? STATUS_OPTIONS_BY_TYPE.FABRICACION : STATUS_OPTIONS_BY_TYPE.COTIZACION;
+        const metaLine = isCompra
+            ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)${progresoExtra(o)}`
+            : `${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems${progresoExtra(o)}`;
+        const verLink = isCompra ? '' : `<a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja</a>`;
 
         return `
         <div class="order-card">
@@ -228,8 +236,8 @@
                 <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
             </div>
             <div class="order-meta">
-                <span>${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems${progresoExtra(o)}</span>
-                <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja</a>
+                <span>${metaLine}</span>
+                ${verLink}
                 ${extraLinks.join(' ')}
                 <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
             </div>
@@ -239,7 +247,7 @@
                 </select>
                 <button onclick="cambiarEstado('${id}')">Cambiar estado</button>
             </div>
-            ${isFab ? `
+            ${(isFab || isCompra) ? `
             <div class="assign-row">
                 <label>Chofer:</label>
                 <select id="asignar-chofer-${id}">
