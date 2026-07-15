@@ -19,11 +19,13 @@ export const VAPID_KEY = "BImYp9huvMwbjvp-o_1IgwEm0B4q-xFhnPtNS4CZDf8xzMAS0tKxsd
 
 const app = initializeApp(firebaseConfig);
 
-// experimentalAutoDetectLongPolling: si el navegador/red bloquea el canal de streaming de
-// Firestore (típico en Safari con "Impedir rastreo entre sitios" o bloqueadores, que dan el
-// error "Fetch API cannot load … due to access control checks"), Firestore detecta el bloqueo y
-// usa long-polling (peticiones normales) en vez del WebChannel. Así la app sigue conectando.
-export const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+// experimentalForceLongPolling: Firestore usa long-polling (peticiones normales) en vez del
+// canal de streaming (WebChannel). Safari con "Impedir rastreo entre sitios" bloquea ese
+// streaming ("Fetch API cannot load … due to access control checks"), lo que impedía leer la
+// base y daba un falso "Sin autorización". Forzando long-polling nunca se intenta el canal
+// bloqueado, así que la app conecta igual en Safari/iPhone. (Un pelín menos eficiente, pero
+// funciona en todos lados.)
+export const db = initializeFirestore(app, { experimentalForceLongPolling: true });
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 export const storage = getStorage(app);
