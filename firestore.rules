@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para el proyecto artal-operaciones.
+// Se pegan en Firebase Console → Firestore Database → pestaña "Reglas" → Publicar.
+//
+// Todo usuario autenticado puede LEER. Puede ESCRIBIR cualquiera EXCEPTO quien tenga el rol
+// `lector` (solo lectura) — a menos que también sea `admin`. El rol vive en usuarios/{email}.rol
+// y puede ser un string ('chofer') o un array (['chofer','instalador']); ambos se contemplan.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function rolesDelUsuario() {
+      let u = get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data;
+      return u.rol is list ? u.rol : [u.rol];
+    }
+
+    // Puede escribir si está autenticado y (es admin O no es lector).
+    function puedeEscribir() {
+      return request.auth != null
+        && ('admin' in rolesDelUsuario() || !('lector' in rolesDelUsuario()));
+    }
+
+    match /{document=**} {
+      allow read: if request.auth != null;
+      allow write: if puedeEscribir();
+    }
+  }
+}

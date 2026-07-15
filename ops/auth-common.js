@@ -64,6 +64,10 @@ function showUnauthorizedScreen(email) {
  *
  * `rol` en Firestore puede ser un string ('chofer') o un array (['chofer','instalador']) para
  * personas con más de un rol — aquí se normaliza siempre a array.
+ *
+ * El rol `lector` (solo lectura) pasa cualquier pantalla, igual que `admin`, para que pueda ver
+ * toda la plataforma — pero las reglas de Firestore le niegan cualquier escritura a nivel
+ * servidor (ver firestore.rules), así que puede mirar todo sin poder modificar nada.
  */
 export function requireAuth(rolesPermitidos) {
   return new Promise((resolve) => {
@@ -75,7 +79,7 @@ export function requireAuth(rolesPermitidos) {
       const snap = await getDoc(doc(db, 'usuarios', user.email));
       const data = snap.exists() ? snap.data() : null;
       const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
-      const autorizado = roles.includes('admin') || roles.some((r) => rolesPermitidos.includes(r));
+      const autorizado = roles.includes('admin') || roles.includes('lector') || roles.some((r) => rolesPermitidos.includes(r));
       if (!data || data.activo === false || !autorizado) {
         showUnauthorizedScreen(user.email);
         return;

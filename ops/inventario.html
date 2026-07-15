@@ -25,6 +25,8 @@
     .btn-tomar { background: #e67e22; color: #fff; }
     .btn-agregar { background: #2ecc71; color: #fff; }
     .btn-precio { background: #16a085; color: #fff; }
+    .btn-eliminar { background: #e74c3c; color: #fff; }
+    .eliminar-form { border: 1.5px solid #e74c3c; background: #fdecea !important; }
     .item-precios { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; font-size: 12.5px; }
     .item-precios .costo { color: #888; }
     .item-precios .venta { color: #16a085; font-weight: bold; }
@@ -108,7 +110,7 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import {
-        collection, addDoc, doc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp
+        collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // Categorías base fijas + las que se vayan creando desde "+ Nueva categoría"
@@ -206,6 +208,7 @@
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
                 ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
+                ${esAdmin ? `<button class="btn-eliminar" onclick="abrirEliminar('${item.id}')">🗑 Eliminar</button>` : ''}
             </div>
             <div class="inline-form" id="tomar-${item.id}">
                 <label>Cantidad a tomar</label>
@@ -234,6 +237,14 @@
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('precio-${item.id}')">Cancelar</button>
                     <button class="btn-precio" onclick="confirmarPrecio('${item.id}')">Guardar</button>
+                </div>
+            </div>
+            <div class="inline-form eliminar-form" id="eliminar-${item.id}">
+                <p style="margin:0 0 6px;font-size:13px;color:#c0392b;font-weight:bold;">⚠ ¿Eliminar "${label}" del catálogo?</p>
+                <p style="margin:0 0 8px;font-size:12px;color:#666;">Esta acción no se puede deshacer. El historial de movimientos de este ítem no se borra.</p>
+                <div class="row-actions">
+                    <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('eliminar-${item.id}')">Cancelar</button>
+                    <button class="btn-eliminar" onclick="confirmarEliminar('${item.id}')">Sí, eliminar definitivamente</button>
                 </div>
             </div>` : ''}
         </div>`;
@@ -387,6 +398,11 @@
         const el = document.getElementById('precio-' + id);
         if (el) el.classList.add('show');
     };
+    window.abrirEliminar = function (id) {
+        cerrarTodosLosForms();
+        const el = document.getElementById('eliminar-' + id);
+        if (el) el.classList.add('show');
+    };
     window.cerrarForm = function (elId) {
         const el = document.getElementById(elId);
         if (el) el.classList.remove('show');
@@ -444,6 +460,26 @@
             cerrarForm('precio-' + id);
         } catch (e) {
             alert('No se pudo guardar el precio: ' + e.message);
+        }
+    };
+
+    // Doble seguridad: hay que desplegar el aviso rojo (1er clic) y luego, además, confirmar en
+    // el diálogo del navegador (2do clic) — así no se borra un ítem por un toque accidental.
+    window.confirmarEliminar = async function (id) {
+        const item = allItems.find(it => it.id === id);
+        if (!item) return;
+        const label = item.color ? `${item.tipo} — ${item.color}` : item.tipo;
+        if (!confirm(`Confirma de nuevo: ¿eliminar "${label}" del catálogo? Esta acción no se puede deshacer.`)) return;
+        try {
+            await deleteDoc(doc(db, 'inventario', id));
+            await addDoc(collection(db, 'movimientosInventario'), {
+                itemId: id, itemTipo: item.tipo, itemColor: item.color || null,
+                tipo: 'eliminado', cantidad: 0, nota: 'Ítem eliminado del catálogo',
+                usuarioNombre: usuario.nombre, usuarioEmail: usuario.email,
+                fecha: serverTimestamp()
+            });
+        } catch (e) {
+            alert('No se pudo eliminar: ' + e.message);
         }
     };
 </script>
