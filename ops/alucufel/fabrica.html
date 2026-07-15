@@ -53,11 +53,12 @@
     import { requireAuth, auth, signOut } from '../auth-common.js';
     import { enableNotifications } from '../notifications.js';
     import { db } from '../firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from '../order-preview.js';
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['fabrica']);
+    const esGerencia = usuario.roles.includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
@@ -108,6 +109,7 @@
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
             </div>
+            ${esGerencia ? `<div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar obra (gerencia)</a></div>` : ''}
         </div>`;
     }
 
@@ -123,7 +125,8 @@
 
     function render() {
         const statuses = currentTab === 'pendientes' ? PENDIENTES : ENVIADOS;
-        const docs = allOrders.filter(d => statuses.includes(d.data().status));
+        // Los envíos directos a Instalaciones (directoInstalacion) no pasan por fábrica: se ocultan.
+        const docs = allOrders.filter(d => statuses.includes(d.data().status) && !d.data().directoInstalacion);
         const list = document.getElementById('orders-list');
         if (!docs.length) {
             list.innerHTML = currentTab === 'pendientes'
@@ -166,6 +169,20 @@
             comentarioFabricaAtendido: texto ? false : true
         });
         alert('Comentario guardado.');
+    };
+
+    // Solo gerencia (admin): borrar una obra enviada por duplicado o por error. Doble
+    // confirmación para no borrar por accidente.
+    window.eliminarPedido = async function (id) {
+        const o = allOrders.find(d => d.id === id);
+        const nombre = o ? [o.data().cliente, o.data().obra].filter(Boolean).join(' — ') : '';
+        if (!confirm(`¿Eliminar la obra "${nombre}"? Esta acción no se puede deshacer.`)) return;
+        if (!confirm('Confirma de nuevo: se borrará definitivamente de la plataforma.')) return;
+        try {
+            await deleteDoc(doc(db, 'orders', id));
+        } catch (e) {
+            alert('No se pudo eliminar: ' + e.message);
+        }
     };
 </script>
 

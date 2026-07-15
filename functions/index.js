@@ -82,7 +82,57 @@ async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix)
     }
 }
 
+// Múltiples recordatorios por evento: `recordatorios` es un array de minutos-antes (ej. [30,1440]).
+// `recordatoriosEnviados` guarda los que ya se mandaron; `recordatoriosPendientes` es true mientras
+// falte alguno por enviar y el evento no haya pasado (se usa para la consulta).
+async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPrefix) {
+    const ahora = Date.now();
+    const snap = await db.collection(coll).where('recordatoriosPendientes', '==', true).get();
+    for (const docu of snap.docs) {
+        const d = docu.data();
+        const fecha = d.fecha && d.fecha.toDate ? d.fecha.toDate().getTime() : null;
+        const offsets = Array.isArray(d.recordatorios) ? d.recordatorios : [];
+        const enviados = Array.isArray(d.recordatoriosEnviados) ? d.recordatoriosEnviados.slice() : [];
+        if (!fecha || !offsets.length) { await docu.ref.update({ recordatoriosPendientes: false }); continue; }
+
+        let cambio = false;
+        for (const off of offsets) {
+            if (enviados.includes(off)) continue;
+            if (ahora < fecha - off * 60000) continue; // aún no toca este aviso
+            if (ahora <= fecha) {
+                const token = await tokenDe(d[campoEmail]);
+                if (token) {
+                    const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
+                    const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
+                    try {
+                        await getMessaging().send({
+                            token,
+                            data: {
+                                title: tituloPrefix + (d.titulo || lugar || 'Recordatorio'),
+                                body: [fechaTexto, lugar].filter(Boolean).join(' · '),
+                                url: urlDestino
+                            }
+                        });
+                    } catch (e) {
+                        console.error('No se pudo enviar el recordatorio', coll, docu.id, off, e);
+                    }
+                }
+            }
+            enviados.push(off);
+            cambio = true;
+        }
+        const pendientes = (ahora <= fecha) && offsets.some(o => !enviados.includes(o));
+        if (cambio || pendientes !== (d.recordatoriosPendientes === true)) {
+            await docu.ref.update({ recordatoriosEnviados: enviados, recordatoriosPendientes: pendientes });
+        }
+    }
+}
+
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
+    // Nuevo esquema (varios avisos por evento)
+    await procesarRecordatoriosMulti('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
+    await procesarRecordatoriosMulti('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
+    // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso)
     await procesarRecordatorios('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
     await procesarRecordatorios('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
 });

@@ -388,6 +388,8 @@
 
             <button id="btn-enviar-orden" class="side-btn fabrica" style="margin-top:8px; border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden()" title="Envía este documento a la app de operaciones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg> <span id="btn-enviar-orden-text">Enviar Cotización</span></button>
 
+            <button id="btn-enviar-instalacion" class="side-btn fabrica" style="margin-top:8px; border-color:#9b59b6; color:#9b59b6;" onclick="enviarAInstalacion()" title="Envía directo a Instalaciones (no pasa por fábrica), con la hoja de fabricación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Enviar a Instalación</button>
+
             <button class="side-btn ghost" style="margin-top:8px;" onclick="exportJSON()" title="Descarga este proyecto como archivo para otro dispositivo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar archivo</button>
             <button class="side-btn ghost" style="margin-top:8px;" onclick="triggerImport()" title="Abre un archivo de proyecto o una copia de seguridad"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> Importar archivo</button>
             <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importJSON(event)">
@@ -3953,6 +3955,69 @@
             });
             syncClienteObra(appJSON.header.cliente, appJSON.header.obra);
             alert(isFab ? 'Enviado a fábrica correctamente.' : 'Cotización enviada al contratista correctamente.');
+        } catch (e) {
+            alert('No se pudo enviar: ' + (e && e.message ? e.message : e));
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; }
+        }
+    };
+
+    // Envío directo a Instalaciones (sin pasar por fábrica): para trabajos que no se fabrican
+    // (ej. perfiles U). Crea la orden ya en estado "listo para cargar/instalar" con la hoja de
+    // fabricación (appJSON) — aparece en Instalaciones para agendar con GPS, y en chofer/
+    // instalador. Se marca `directoInstalacion` para no mezclarla en el tablero de Fábrica.
+    window.enviarAInstalacion = async function () {
+        const btn = document.getElementById('btn-enviar-instalacion');
+        const originalHtml = btn ? btn.innerHTML : '';
+        try {
+            if (!validateAllCards()) return;
+            const appJSON = getAppJSON();
+            if (!appJSON.header.cliente || !appJSON.header.obra) {
+                alert('Completa Cliente y Obra antes de enviar.');
+                return;
+            }
+            if (!confirm('¿Enviar este trabajo DIRECTO a Instalaciones (sin pasar por fábrica), con su hoja de fabricación?')) return;
+
+            if (!auth.currentUser) {
+                try {
+                    await signInWithPopup(auth, googleProvider);
+                } catch (e) {
+                    alert('No se pudo iniciar sesión con Google: ' + e.message);
+                    return;
+                }
+            }
+
+            const items = appJSON.order.map(id => {
+                const state = appJSON.cardsState[id] || {};
+                const inputs = appJSON.inputsData[id] || {};
+                return {
+                    id,
+                    tipo: getCatName(state.type),
+                    ubicacion: inputs.ubi || '',
+                    ancho: state.ancho || '',
+                    alto: state.alto || '',
+                    cantidad: state.cantidad || 1
+                };
+            });
+
+            if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
+
+            await addDoc(collection(db, 'orders'), {
+                cliente: appJSON.header.cliente,
+                obra: appJSON.header.obra,
+                docType: 'FABRICACIÓN',
+                directoInstalacion: true,
+                material: appJSON.header.material,
+                color: appJSON.header.color,
+                status: 'listo_para_cargar',
+                items,
+                totalItems: items.length,
+                appJSON,
+                fechaCotizado: serverTimestamp(),
+                fechaListoParaCargar: serverTimestamp()
+            });
+            syncClienteObra(appJSON.header.cliente, appJSON.header.obra);
+            alert('Enviado directo a Instalaciones. Ya puedes agendarlo (con GPS) desde el módulo Instalaciones.');
         } catch (e) {
             alert('No se pudo enviar: ' + (e && e.message ? e.message : e));
         } finally {

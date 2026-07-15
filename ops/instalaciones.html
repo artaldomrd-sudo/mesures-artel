@@ -73,6 +73,9 @@
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; }
     .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .recordar-group { display: flex; flex-direction: column; gap: 6px; }
+    .recordar-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
+    .recordar-group input { width: auto; min-height: 0; }
 </style>
 </head>
 <body>
@@ -134,15 +137,14 @@
         <label>Instalador asignado</label>
         <select id="job-instalador"></select>
 
-        <label>Recordatorio (notificación antes)</label>
-        <select id="job-recordar">
-            <option value="0">Sin recordatorio</option>
-            <option value="30">30 minutos antes</option>
-            <option value="60">1 hora antes</option>
-            <option value="180">3 horas antes</option>
-            <option value="720">12 horas antes</option>
-            <option value="1440">1 día antes</option>
-        </select>
+        <label>Recordatorios (puedes marcar varios)</label>
+        <div id="job-recordar" class="recordar-group">
+            <label><input type="checkbox" value="30"> 30 min antes</label>
+            <label><input type="checkbox" value="60"> 1 hora antes</label>
+            <label><input type="checkbox" value="180"> 3 horas antes</label>
+            <label><input type="checkbox" value="720"> 12 horas antes</label>
+            <label><input type="checkbox" value="1440"> 1 día antes</label>
+        </div>
 
         <label>Estado</label>
         <select id="job-estado">
@@ -399,7 +401,7 @@
         ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-notas'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('job-instalador').value = '';
         document.getElementById('job-estado').value = 'pendiente';
-        document.getElementById('job-recordar').value = '0';
+        document.querySelectorAll('#job-recordar input').forEach(c => c.checked = false);
     }
 
     window.abrirNuevo = function () {
@@ -441,7 +443,8 @@
         document.getElementById('job-gps').value = j.gps || '';
         document.getElementById('job-instalador').value = j.instaladorEmail || '';
         document.getElementById('job-estado').value = j.estado || 'pendiente';
-        document.getElementById('job-recordar').value = String(j.recordarAntesMin || 0);
+        const recs = Array.isArray(j.recordatorios) ? j.recordatorios.map(String) : [];
+        document.querySelectorAll('#job-recordar input').forEach(c => c.checked = recs.includes(c.value));
         document.getElementById('job-notas').value = j.notas || '';
         const f = jobDate(j);
         if (f) {
@@ -464,7 +467,7 @@
         const fechaStr = document.getElementById('job-fecha').value;
         const instaladorEmail = document.getElementById('job-instalador').value;
         const estado = document.getElementById('job-estado').value;
-        const recordarAntesMin = Number(document.getElementById('job-recordar').value) || 0;
+        const recordatorios = Array.from(document.querySelectorAll('#job-recordar input:checked')).map(c => Number(c.value));
         const notas = document.getElementById('job-notas').value.trim();
 
         if (!cliente) { alert('Escribe el cliente.'); return; }
@@ -479,10 +482,11 @@
             fecha: Timestamp.fromDate(new Date(fechaStr)),
             instaladorEmail: instaladorEmail || '',
             instaladorNombre: inst ? inst.nombre : '',
-            estado, notas, recordarAntesMin,
-            // Al crear o editar con recordatorio, se reinicia el flag para que el recordatorio
-            // vuelva a evaluarse (útil si se cambió la fecha o el tiempo de aviso).
-            recordatorioEnviado: recordarAntesMin > 0 ? false : true,
+            estado, notas, recordatorios,
+            // Al crear o editar se reinicia el estado de recordatorios para que vuelvan a
+            // evaluarse (útil si se cambió la fecha o los avisos).
+            recordatoriosEnviados: [],
+            recordatoriosPendientes: recordatorios.length > 0,
             orderId: window._orderIdParaGuardar || null
         };
 
