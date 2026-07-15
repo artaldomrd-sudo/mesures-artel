@@ -917,7 +917,7 @@
             let poseTxt = state.pose === 'escalera' ? 'En Escalera' : 'Horizontal (Balcón)';
             let body = `<div>Pose: <strong>${poseTxt}</strong> · Forma: ${formaMap[state.forma || 'recto']}</div><div>Tramos: ${tramos.length} | Long. total: <strong>${total}</strong> mm</div><div style="margin-top:4px; color:#555; font-size:12px;">${list}</div>`;
             const pu = perfilUDeBaranda(state);
-            if (pu) body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${pu.perfiles} perfil(es) de 6.30 m` + (pu.esquinas ? ` (incluye ${pu.esquinas} corte(s) de esquina)` : '') + `</div>`;
+            if (pu) body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${(pu.materialMm / 1000).toFixed(2)} m lineales` + (pu.esquinas ? ` (incluye ${pu.esquinas} corte(s) de esquina)` : '') + ` — ver total optimizado arriba</div>`;
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>BARANDA DE VIDRIO</strong> — H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
                 ${body}
@@ -1269,11 +1269,15 @@
         }
     }
 
-    // ===== Calculador de perfil U (base de baranda) =====
+    // ===== Calculador de perfil U (base de baranda) — con OPTIMIZACIÓN de recortes =====
     // Cada perfil entero mide 6.30 m (6300 mm). Cada corte de esquina (giro) consume 5 cm (50 mm).
-    // Por balcón: longitud = suma de tramos; material = longitud + 50 mm por esquina; perfiles = redondeo hacia arriba / 6300.
+    // No se redondea por balcón: se juntan TODAS las piezas del proyecto y se acomodan en barras
+    // de 6.30 m reutilizando los sobrantes (cutting-stock, First-Fit-Decreasing). Un tramo mayor
+    // a 6.30 m se parte (empalme) en piezas que caben en una barra.
     const PERFIL_U_LARGO_MM = 6300;
     const PERFIL_U_CORTE_ESQUINA_MM = 50;
+
+    // Piezas (longitudes en mm) que aporta una baranda base U, o null si no aplica.
     function perfilUDeBaranda(state) {
         if (!state || state.categoria !== 'baranda' || (state.fijacion || 'base_u') !== 'base_u') return null;
         const tramos = state.tramos || [];
@@ -1281,20 +1285,48 @@
         const lenMm = tramos.reduce((a, t) => a + (parseInt(t.L) || 0), 0);
         const esquinas = tramos.reduce((a, t, i) => a + ((i >= 1 && (t.giro || 'recto') !== 'recto') ? 1 : 0), 0);
         const materialMm = lenMm + esquinas * PERFIL_U_CORTE_ESQUINA_MM;
-        const perfiles = materialMm > 0 ? Math.ceil(materialMm / PERFIL_U_LARGO_MM) : 0;
-        return { lenMm, esquinas, materialMm, perfiles };
+        const piezas = [];
+        tramos.forEach((t, i) => {
+            let L = parseInt(t.L) || 0;
+            if (L <= 0) return;
+            if (i >= 1 && (t.giro || 'recto') !== 'recto') L += PERFIL_U_CORTE_ESQUINA_MM; // corte de esquina
+            while (L > PERFIL_U_LARGO_MM) { piezas.push(PERFIL_U_LARGO_MM); L -= PERFIL_U_LARGO_MM; } // tramo que necesita empalme
+            if (L > 0) piezas.push(L);
+        });
+        return { lenMm, esquinas, materialMm, piezas };
     }
+
+    // Acomoda las piezas en barras de 6.30 m reutilizando recortes (First-Fit-Decreasing) y
+    // devuelve cuántas barras hacen falta.
+    function optimizarPerfilesU(piezas) {
+        const orden = piezas.slice().sort((a, b) => b - a);
+        const restante = []; // mm libres que quedan en cada barra ya abierta
+        orden.forEach(p => {
+            let colocado = false;
+            for (let i = 0; i < restante.length; i++) {
+                if (restante[i] >= p) { restante[i] -= p; colocado = true; break; }
+            }
+            if (!colocado) restante.push(PERFIL_U_LARGO_MM - p);
+        });
+        return restante.length;
+    }
+
     function actualizarPerfilUTotal() {
         const el = document.getElementById('perfil-u-banner');
         if (!el) return;
-        let totalPerfiles = 0, hayBaranda = false;
+        let piezas = [], hayBaranda = false, totalMm = 0;
         Object.values(cardsState).forEach(st => {
             const r = perfilUDeBaranda(st);
-            if (r) { hayBaranda = true; totalPerfiles += r.perfiles * (parseInt(st.cantidad) || 1); }
+            if (!r) return;
+            hayBaranda = true;
+            const cant = parseInt(st.cantidad) || 1;
+            for (let k = 0; k < cant; k++) { piezas = piezas.concat(r.piezas); totalMm += r.materialMm; }
         });
         if (!hayBaranda) { el.style.display = 'none'; return; }
+        const perfiles = optimizarPerfilesU(piezas);
         el.style.display = '';
-        el.innerHTML = `📏 Perfil U (base de baranda): <b>${totalPerfiles}</b> perfil(es) de 6.30 m en total`;
+        el.innerHTML = `📏 Perfil U (base de baranda): <b>${perfiles}</b> perfil(es) de 6.30 m ` +
+            `<span style="color:#555;">— total optimizado (reusa recortes) · ${(totalMm / 1000).toFixed(2)} m lineales</span>`;
     }
 
     function saveProgress() { localStorage.setItem('artal_live_progression', JSON.stringify(getAppJSON())); actualizarPerfilUTotal(); }
