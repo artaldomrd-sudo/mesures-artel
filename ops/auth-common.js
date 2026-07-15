@@ -69,6 +69,27 @@ function showUnauthorizedScreen(email) {
  * toda la plataforma — pero las reglas de Firestore le niegan cualquier escritura a nivel
  * servidor (ver firestore.rules), así que puede mirar todo sin poder modificar nada.
  */
+function showConnectionScreen() {
+  const el = showOverlay(
+    '<h2 style="margin:0;font-size:20px;">Problema de conexión</h2>' +
+    '<p style="max-width:320px;">No se pudo verificar tu acceso. Revisa tu internet e intenta de nuevo.</p>' +
+    '<button id="auth-retry-btn" style="font-size:15px;padding:12px 24px;border-radius:10px;' +
+    'border:none;background:#fff;color:#0A3D62;cursor:pointer;font-weight:700;">Reintentar</button>'
+  );
+  document.getElementById('auth-retry-btn').onclick = () => location.reload();
+}
+
+// Lee usuarios/{email} con reintentos: un parpadeo de red no debe tumbar el acceso.
+async function leerUsuario(email) {
+  for (let intento = 0; intento < 3; intento++) {
+    try { return await getDoc(doc(db, 'usuarios', email)); }
+    catch (e) {
+      if (intento === 2) throw e;
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  }
+}
+
 export function requireAuth(rolesPermitidos) {
   return new Promise((resolve) => {
     onAuthStateChanged(auth, async (user) => {
@@ -76,8 +97,10 @@ export function requireAuth(rolesPermitidos) {
         showLoginScreen();
         return;
       }
-      const snap = await getDoc(doc(db, 'usuarios', user.email));
-      const data = snap.exists() ? snap.data() : null;
+      let snap;
+      try { snap = await leerUsuario(user.email); }
+      catch (e) { showConnectionScreen(); return; }
+      const data = snap && snap.exists() ? snap.data() : null;
       const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
       const autorizado = roles.includes('admin') || roles.includes('lector') || roles.some((r) => rolesPermitidos.includes(r));
       if (!data || data.activo === false || !autorizado) {
