@@ -31,7 +31,9 @@
     .day-group { display: flex; flex-direction: column; gap: 8px; }
     .day-label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px; }
     .cita-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid var(--artal-yellow); }
-    .cita-card.para-instalador { border-left-color: #9b59b6; }
+    .leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: #555; align-items: center; }
+    .leyenda span { display: inline-flex; align-items: center; gap: 5px; }
+    .leyenda .punto { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
     .cita-card .cita-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
     .cita-card b { color: var(--artal-blue); font-size: 15px; }
     .cita-card .hora { font-size: 13px; color: #666; font-weight: bold; }
@@ -71,6 +73,12 @@
 
 <main>
     <button class="new-cita-btn" onclick="abrirNuevaCita()">+ Nueva cita</button>
+    <div class="leyenda">
+        <span><i class="punto" style="background:#F6B93B;"></i>Dylan</span>
+        <span><i class="punto" style="background:#3498db;"></i>Rolanny</span>
+        <span><i class="punto" style="background:#2ecc71;"></i>Andrea</span>
+        <span><i class="punto" style="background:#9b59b6;"></i>Otros</span>
+    </div>
     <div class="month-nav">
         <button onclick="cambiarMes(-1)">‹ Anterior</button>
         <b id="month-label"></b>
@@ -105,6 +113,16 @@
 
         <label>Fecha y hora</label>
         <input type="datetime-local" id="cita-fecha">
+
+        <label>Recordatorio (notificación antes)</label>
+        <select id="cita-recordar">
+            <option value="0">Sin recordatorio</option>
+            <option value="15">15 minutos antes</option>
+            <option value="30">30 minutos antes</option>
+            <option value="60">1 hora antes</option>
+            <option value="180">3 horas antes</option>
+            <option value="1440">1 día antes</option>
+        </select>
 
         <label>¿Para quién es?</label>
         <div class="toggle-row">
@@ -191,12 +209,21 @@
         render();
     };
 
+    // Color del borde según quién agendó la cita, para reconocerlo de un vistazo.
+    function colorCreador(nombre) {
+        const n = (nombre || '').trim().toLowerCase();
+        if (n === 'dylan') return '#F6B93B';
+        if (n === 'andrea') return '#2ecc71';
+        if (n === 'rolanny' || n === 'rolany' || n === 'anny') return '#3498db';
+        return '#9b59b6';
+    }
+
     function citaCardHTML(c) {
         const fecha = c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date();
         const hora = fecha.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
         const lugar = [c.cliente, c.obra].filter(Boolean).join(' — ');
         return `
-        <div class="cita-card ${c.asignadoA === 'instalador' ? 'para-instalador' : ''}">
+        <div class="cita-card" style="border-left-color:${colorCreador(c.creadoPorNombre)};">
             <div class="cita-head">
                 <b>${esc(c.titulo)}</b>
                 <span class="hora">${hora}</span>
@@ -356,6 +383,8 @@
             asignadoNombre = inst.nombre;
         }
 
+        const recordarAntesMin = Number(document.getElementById('cita-recordar').value) || 0;
+
         try {
             await addDoc(collection(db, 'citas'), {
                 titulo, descripcion,
@@ -363,12 +392,15 @@
                 orderId, cliente, obra,
                 asignadoA, asignadoEmail, asignadoNombre,
                 creadoPorNombre,
+                recordarAntesMin,
+                recordatorioEnviado: recordarAntesMin > 0 ? false : true,
                 fechaCreacion: serverTimestamp()
             });
             cerrarNuevaCita();
             document.getElementById('cita-titulo').value = '';
             document.getElementById('cita-descripcion').value = '';
             document.getElementById('cita-fecha').value = '';
+            document.getElementById('cita-recordar').value = '0';
         } catch (e) {
             alert('No se pudo guardar la cita: ' + e.message);
         }
