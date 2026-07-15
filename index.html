@@ -917,7 +917,15 @@
             let poseTxt = state.pose === 'escalera' ? 'En Escalera' : 'Horizontal (Balcón)';
             let body = `<div>Pose: <strong>${poseTxt}</strong> · Forma: ${formaMap[state.forma || 'recto']}</div><div>Tramos: ${tramos.length} | Long. total: <strong>${total}</strong> mm</div><div style="margin-top:4px; color:#555; font-size:12px;">${list}</div>`;
             const pu = perfilUDeBaranda(state);
-            if (pu) body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${(pu.materialMm / 1000).toFixed(2)} m lineales` + (pu.esquinas ? ` (incluye ${pu.esquinas} corte(s) de esquina)` : '') + ` — ver total optimizado arriba</div>`;
+            if (pu) {
+                const d = desglosePerfilU(pu.materialMm);
+                let puTxt;
+                if (d.enteros > 0 && d.restoMm > 0) puTxt = `${d.enteros} perfil(es) U entero(s) + 1 pedazo de ${(d.restoMm / 1000).toFixed(2)} m`;
+                else if (d.enteros > 0) puTxt = `${d.enteros} perfil(es) U entero(s) (exacto)`;
+                else puTxt = `1 pedazo de ${(d.restoMm / 1000).toFixed(2)} m`;
+                body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${puTxt}` + (pu.esquinas ? ` · ${pu.esquinas} corte(s) de esquina` : '') + `</div>`;
+            }
+            actualizarPerfilUTotal();
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>BARANDA DE VIDRIO</strong> — H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
                 ${body}
@@ -1296,6 +1304,13 @@
         return { lenMm, esquinas, materialMm, piezas };
     }
 
+    // Desglose por balcón: cuántas barras enteras de 6.30 m + el pedazo sobrante (mm).
+    function desglosePerfilU(materialMm) {
+        const enteros = Math.floor(materialMm / PERFIL_U_LARGO_MM);
+        const restoMm = materialMm - enteros * PERFIL_U_LARGO_MM;
+        return { enteros, restoMm };
+    }
+
     // Acomoda las piezas en barras de 6.30 m reutilizando recortes (First-Fit-Decreasing) y
     // devuelve cuántas barras hacen falta.
     function optimizarPerfilesU(piezas) {
@@ -1325,8 +1340,8 @@
         if (!hayBaranda) { el.style.display = 'none'; return; }
         const perfiles = optimizarPerfilesU(piezas);
         el.style.display = '';
-        el.innerHTML = `📏 Perfil U (base de baranda): <b>${perfiles}</b> perfil(es) de 6.30 m ` +
-            `<span style="color:#555;">— total optimizado (reusa recortes) · ${(totalMm / 1000).toFixed(2)} m lineales</span>`;
+        el.innerHTML = `📏 <b>Total perfil U para este trabajo: ${perfiles} perfil(es) de 6.30 m</b> ` +
+            `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
     }
 
     function saveProgress() { localStorage.setItem('artal_live_progression', JSON.stringify(getAppJSON())); actualizarPerfilUTotal(); }
