@@ -43,6 +43,9 @@
     .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
     .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .categoria-row { display: flex; gap: 8px; align-items: flex-end; }
+    .categoria-row select { flex: 1; }
+    .categoria-row button { white-space: nowrap; padding: 10px 12px; border: none; border-radius: 8px; background: var(--artal-light); color: var(--artal-blue); font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13px; min-height: 44px; }
     .movs-list { font-size: 12.5px; color: #555; }
     .movs-list li { margin-bottom: 4px; }
 </style>
@@ -65,25 +68,22 @@
 <main>
     <div id="admin-tools" style="display:none; gap:10px;">
         <button class="seed-btn" id="seed-btn" onclick="sembrarCatalogo()" style="display:none;">📦 Crear catálogo inicial de perfiles</button>
+        <button class="seed-btn" id="seed-btn-sellantes" onclick="sembrarSellantes()" style="display:none;">🧪 Crear categorías Silicón/Urethano/Masilla</button>
         <button class="new-item-btn" onclick="abrirNuevoItem()">+ Agregar ítem nuevo al catálogo</button>
     </div>
     <input type="text" id="search-input" placeholder="🔎 Buscar en el inventario…">
 
-    <h2 class="section-title">Perfiles de aluminio</h2>
-    <div id="perfiles-list"><p class="empty">Cargando…</p></div>
-
-    <h2 class="section-title">Herrajes y consumibles</h2>
-    <div id="consumibles-list"><p class="empty">Cargando…</p></div>
+    <div id="categorias-container"><p class="empty">Cargando…</p></div>
 </main>
 
 <div class="modal-overlay" id="nuevo-item-overlay">
     <div class="modal-box">
         <h2>Agregar ítem nuevo</h2>
         <label>Categoría</label>
-        <select id="nuevo-categoria">
-            <option value="perfil">Perfil de aluminio</option>
-            <option value="consumible">Herraje / consumible</option>
-        </select>
+        <div class="categoria-row">
+            <select id="nuevo-categoria"></select>
+            <button type="button" onclick="crearCategoria()">+ Nueva categoría</button>
+        </div>
         <label>Nombre del ítem</label>
         <input type="text" id="nuevo-tipo" placeholder="Ej: Riel superior 2 vías">
         <label id="nuevo-color-label">Color</label>
@@ -108,8 +108,26 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import {
-        collection, addDoc, doc, updateDoc, onSnapshot, increment, serverTimestamp
+        collection, addDoc, doc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Categorías base fijas + las que se vayan creando desde "+ Nueva categoría"
+    // (colección `categoriasInventario`, un doc por categoría con { nombre }).
+    const CATEGORIAS_BASE = [
+        { key: 'perfil', label: 'Perfiles de aluminio' },
+        { key: 'consumible', label: 'Herrajes y consumibles' }
+    ];
+    let categoriasCustom = [];
+    function todasLasCategorias() {
+        return [...CATEGORIAS_BASE, ...categoriasCustom.map(c => ({ key: c.id, label: c.nombre }))];
+    }
+    function poblarSelectCategoria() {
+        const sel = document.getElementById('nuevo-categoria');
+        if (!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = todasLasCategorias().map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+    }
 
     // Gerencia (admin) + chofer + instalador consumen del inventario. Fábrica/contratista
     // (Alucufel) queda fuera a propósito — no tiene ninguno de estos roles.
@@ -142,6 +160,21 @@
         { tipo: 'Mechas de metal', unidad: 'unidades' },
         { tipo: 'Mechas de concreto', unidad: 'unidades' },
         { tipo: 'Tornillos', unidad: 'cajas' }
+    ];
+    const SELLANTES_SEED = [
+        { categoria: 'silicon', nombreCategoria: 'Silicón', items: [
+            { tipo: 'Silicón Negro', unidad: 'tubos' },
+            { tipo: 'Silicón Blanco', unidad: 'tubos' },
+            { tipo: 'Silicón Transparente', unidad: 'tubos' }
+        ] },
+        { categoria: 'urethano', nombreCategoria: 'Urethano', items: [
+            { tipo: 'Urethano Blanco', unidad: 'galones' },
+            { tipo: 'Urethano Negro', unidad: 'galones' }
+        ] },
+        { categoria: 'masilla', nombreCategoria: 'Masilla', items: [
+            { tipo: 'Masilla Siliconizada Blanca', unidad: 'galones' },
+            { tipo: 'Masilla Negra', unidad: 'galones' }
+        ] }
     ];
 
     let allItems = [];
@@ -212,33 +245,60 @@
             if (!term) return true;
             return ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term);
         });
-        const perfiles = filtered.filter(it => it.categoria === 'perfil');
-        const consumibles = filtered.filter(it => it.categoria === 'consumible');
 
-        const perfilesList = document.getElementById('perfiles-list');
-        perfilesList.innerHTML = perfiles.length
-            ? perfiles.map(itemCardHTML).join('')
-            : '<p class="empty">No hay perfiles en el catálogo todavía.</p>';
-
-        const consumiblesList = document.getElementById('consumibles-list');
-        consumiblesList.innerHTML = consumibles.length
-            ? consumibles.map(itemCardHTML).join('')
-            : '<p class="empty">No hay consumibles en el catálogo todavía.</p>';
+        const container = document.getElementById('categorias-container');
+        container.innerHTML = todasLasCategorias().map(cat => {
+            const items = filtered.filter(it => it.categoria === cat.key);
+            return `
+            <h2 class="section-title">${esc(cat.label)}</h2>
+            <div id="cat-list-${esc(cat.key)}">
+                ${items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>'}
+            </div>`;
+        }).join('');
 
         if (esAdmin) {
-            document.getElementById('seed-btn').style.display = perfiles.length ? 'none' : 'block';
+            const perfiles = filtered.filter(it => it.categoria === 'perfil');
+            const seedBtn = document.getElementById('seed-btn');
+            if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
+
+            const yaTieneSellantes = ['silicon', 'urethano', 'masilla'].some(k => categoriasCustom.some(c => c.id === k));
+            const seedBtnSellantes = document.getElementById('seed-btn-sellantes');
+            if (seedBtnSellantes) seedBtnSellantes.style.display = yaTieneSellantes ? 'none' : 'block';
         }
     }
 
     document.getElementById('search-input').addEventListener('input', render);
+
+    onSnapshot(collection(db, 'categoriasInventario'), (snap) => {
+        categoriasCustom = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        poblarSelectCategoria();
+        render();
+    });
 
     onSnapshot(collection(db, 'inventario'), (snap) => {
         allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         allItems.sort((a, b) => (a.tipo + (a.color || '')).localeCompare(b.tipo + (b.color || '')));
         render();
     }, (err) => {
-        document.getElementById('perfiles-list').innerHTML = '<p class="empty">Error cargando inventario: ' + err.message + '</p>';
+        document.getElementById('categorias-container').innerHTML = '<p class="empty">Error cargando inventario: ' + err.message + '</p>';
     });
+
+    poblarSelectCategoria();
+
+    window.crearCategoria = async function () {
+        const nombre = (prompt('Nombre de la nueva categoría (ej: Vidrios, Sellantes…):') || '').trim();
+        if (!nombre) return;
+        const yaExiste = todasLasCategorias().some(c => c.label.toLowerCase() === nombre.toLowerCase());
+        if (yaExiste) { alert('Ya existe una categoría con ese nombre.'); return; }
+        try {
+            const ref_ = await addDoc(collection(db, 'categoriasInventario'), { nombre, creadoFecha: serverTimestamp() });
+            categoriasCustom.push({ id: ref_.id, nombre });
+            poblarSelectCategoria();
+            document.getElementById('nuevo-categoria').value = ref_.id;
+        } catch (e) {
+            alert('No se pudo crear la categoría: ' + e.message);
+        }
+    };
 
     window.sembrarCatalogo = async function () {
         if (!confirm('¿Crear el catálogo inicial de perfiles (5 tipos x 4 colores)? Solo hace falta una vez.')) return;
@@ -260,6 +320,24 @@
             alert('Catálogo creado. Ahora usa "Agregar stock" en cada ítem para poner las cantidades reales.');
         } catch (e) {
             alert('No se pudo crear el catálogo: ' + e.message);
+        }
+    };
+
+    window.sembrarSellantes = async function () {
+        if (!confirm('¿Crear las categorías Silicón, Urethano y Masilla con sus variantes? Solo hace falta una vez.')) return;
+        try {
+            for (const grupo of SELLANTES_SEED) {
+                await setDoc(doc(db, 'categoriasInventario', grupo.categoria), { nombre: grupo.nombreCategoria, creadoFecha: serverTimestamp() }, { merge: true });
+                for (const it of grupo.items) {
+                    await addDoc(collection(db, 'inventario'), {
+                        tipo: it.tipo, color: null, categoria: grupo.categoria, unidad: it.unidad, cantidad: 0,
+                        costo: 0, venta: 0, creadoFecha: serverTimestamp()
+                    });
+                }
+            }
+            alert('Categorías creadas. Ahora usa "Agregar stock" en cada ítem para poner las cantidades reales.');
+        } catch (e) {
+            alert('No se pudo crear: ' + e.message);
         }
     };
 
