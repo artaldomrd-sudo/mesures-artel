@@ -118,7 +118,7 @@
         </div>
 
         <label>¿Quién está agendando esto?</label>
-        <input type="text" id="cita-creador" readonly disabled>
+        <select id="cita-creador"></select>
 
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarNuevaCita()">Cancelar</button>
@@ -274,9 +274,19 @@
     let ordersCache = [];
     let instaladoresCache = [];
 
-    // Cada persona de oficina tiene ahora su propio login — "quién agenda" sale directo de la
-    // cuenta con la que entró (usuarios/{email}.nombre), no de una lista manual.
-    document.getElementById('cita-creador').value = usuario.nombre;
+    // "Quién agenda" viene por defecto con la cuenta conectada, pero se puede elegir a mano otro
+    // nombre de oficina (la lista sale de los usuarios con rol admin/gerencia).
+    onSnapshot(collection(db, 'usuarios'), (snap) => {
+        const admins = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => {
+            const roles = Array.isArray(u.rol) ? u.rol : [u.rol];
+            return roles.includes('admin');
+        });
+        let nombres = admins.map(u => u.nombre).filter(Boolean);
+        if (!nombres.includes(usuario.nombre)) nombres.unshift(usuario.nombre);
+        nombres = [...new Set(nombres)].sort((a, b) => a.localeCompare(b, 'es'));
+        const sel = document.getElementById('cita-creador');
+        sel.innerHTML = nombres.map(n => `<option value="${esc(n)}" ${n === usuario.nombre ? 'selected' : ''}>${esc(n)}</option>`).join('');
+    });
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
@@ -322,7 +332,7 @@
         const titulo = document.getElementById('cita-titulo').value.trim();
         const descripcion = document.getElementById('cita-descripcion').value.trim();
         const fechaStr = document.getElementById('cita-fecha').value;
-        const creadoPorNombre = usuario.nombre;
+        const creadoPorNombre = document.getElementById('cita-creador').value || usuario.nombre;
 
         if (!titulo) { alert('Escribe un título para la cita.'); return; }
         if (!fechaStr) { alert('Elige fecha y hora.'); return; }
