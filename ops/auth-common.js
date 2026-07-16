@@ -90,4 +90,30 @@ export function requireAuth(rolesPermitidos) {
   });
 }
 
+// Inicio (home) de cada rol: a dónde debe llevar el botón "Volver". El Panel de Control
+// (index.html) es solo de admin, así que un rol que no sea admin no debe caer ahí.
+export function homePorRol(roles) {
+  if (roles.includes('admin')) return 'index.html';
+  if (roles.includes('ayudante')) return 'ayudante.html';
+  if (roles.includes('instalador')) return 'instalacion.html';
+  if (roles.includes('chofer')) return 'chofer.html';
+  if (roles.includes('contratista') || roles.includes('fabrica')) return 'alucufel/index.html';
+  if (roles.includes('cotizaciones')) return 'cotizaciones.html';
+  return 'index.html';
+}
+
+// Ajusta el botón .btn-back de la página según el rol: lo apunta a su inicio, y si la página
+// actual YA es su inicio, lo oculta. (No usar en las páginas dentro de ops/alucufel/, que tienen
+// su propio "Volver" a su hub.)
+export function wireBackButton(roles) {
+  const back = document.querySelector('.btn-back');
+  if (!back) return;
+  const home = homePorRol(roles);
+  const current = location.pathname.split('/').pop() || 'index.html';
+  if (current === home) { back.style.display = 'none'; return; }
+  back.setAttribute('href', home);
+  back.setAttribute('title', 'Volver');
+  back.textContent = '← Volver';
+}
+
 export { auth, signOut };
