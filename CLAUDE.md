@@ -66,8 +66,11 @@ un **PDF de Cotización o Fabricación** para el cliente.
     y el `switch` grande para el resto.
 - **Proyecciones**: `isoPt` (isométrica), `oblPt` (oblicua), proyecciones de planta a medida.
 - **Vidrio**: `glassDefs(uid,color)` define gradiente `glass-${uid}` + sombra; `glassFillStops`
-  da el tinte según `color_vidrio` (natural/negro/azul/esmerilado). Paneles: `extrudedPanel`
-  (con borde de espesor) y `glassOnlyPanel` (vidrio sin marco: mampara/puerta de vidrio).
+  da el tinte según `color_vidrio` (natural/negro/azul/esmerilado/reflectivo). Paneles:
+  `extrudedPanel` (con borde de espesor, perfil de aluminio opaco) y `glassOnlyPanel` (vidrio
+  sin marco: mampara/puerta de vidrio, canto de vidrio traslúcido en vez de borde opaco).
+  **Paño Fijo** (`fachada_din`) usa `glassOnlyPanel` cuando `state.fijacion === 'sin_marco'`
+  (opción "Sin Marco" del menú), igual que mampara/puerta de vidrio.
 - **Acabado del perfil**: `applyFinish(svg, color_perfil, color_ral)` reemplaza los azules base
   `#0A3D62 / #1c5a85 / #0d3f5f` por el color del acabado (`FINISHES`, `finishColors`).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
