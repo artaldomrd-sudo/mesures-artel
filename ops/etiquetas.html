@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Etiquetas de fábrica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    :root { --lw: 100mm; --lh: 50mm; }
+    main { max-width: 900px; }
+    .config-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+    .config-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
+    .config-box input { width: 90px; padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; }
+    .config-box .info { font-size: 12px; color: #888; }
+    .btn-print { background: var(--artal-blue); color: #fff; border: none; border-radius: 9px; padding: 12px 18px; font-weight: bold; font-family: 'Arimo'; font-size: 15px; cursor: pointer; min-height: 46px; }
+
+    h2.section-title { font-size: 14px; color: var(--artal-blue); margin: 6px 0 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .item-config { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; border-left: 6px solid var(--artal-blue); }
+    .item-config .ic-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .item-config .ic-head b { color: var(--artal-blue); font-size: 14px; }
+    .item-config .ic-specs { font-size: 12px; color: #666; margin: 4px 0 8px; }
+    .comp-row { display: flex; gap: 6px; align-items: center; margin-bottom: 5px; }
+    .comp-row input.comp-name { flex: 1; padding: 7px 9px; border: 1.5px solid #ddd; border-radius: 6px; font-family: 'Arimo'; font-size: 13px; }
+    .comp-row button { border: none; background: #e74c3c; color: #fff; border-radius: 6px; width: 30px; height: 34px; cursor: pointer; font-weight: bold; }
+    .comp-add { margin-top: 4px; background: var(--artal-light); color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 6px; padding: 6px 10px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12.5px; }
+    .cant-field { font-size: 12px; color: var(--artal-blue); font-weight: bold; }
+    .cant-field input { width: 55px; padding: 6px; border: 1.5px solid #e74c3c; border-radius: 6px; font-family: 'Arimo'; font-size: 13px; }
+
+    /* ---- Etiquetas (preview + impresión) ---- */
+    .etiquetas-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+    .etiqueta {
+        width: var(--lw); height: var(--lh); box-sizing: border-box; border: 1px solid #000;
+        padding: 2mm 2.5mm; overflow: hidden; background: #fff; color: #000;
+        display: flex; flex-direction: column; justify-content: space-between; font-family: 'Arimo', sans-serif;
+    }
+    .etiqueta .e-cliente { font-size: 3.6mm; font-weight: bold; line-height: 1.1; }
+    .etiqueta .e-obra { font-size: 3mm; line-height: 1.1; }
+    .etiqueta .e-ref { font-size: 3.4mm; font-weight: bold; margin-top: 0.5mm; }
+    .etiqueta .e-linea { font-size: 2.9mm; line-height: 1.2; }
+    .etiqueta .e-medidas { font-size: 3.4mm; font-weight: bold; }
+    .print-note { font-size: 12px; color: #888; }
+
+    @media print {
+        header, .config-box, .items-config, h2.section-title, .print-note, .btn-print { display: none !important; }
+        body, main { margin: 0 !important; padding: 0 !important; max-width: none !important; background: #fff !important; }
+        .etiquetas-wrap { display: block; gap: 0; }
+        .etiqueta { border: none; page-break-after: always; break-after: page; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="#" onclick="history.back(); return false;" title="Volver">← Volver</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Etiquetas</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="config-box">
+        <div>
+            <label>Ancho etiqueta (mm)</label>
+            <input type="number" id="lw" value="100" min="10" step="1" oninput="aplicarTamano()">
+        </div>
+        <div>
+            <label>Alto etiqueta (mm)</label>
+            <input type="number" id="lh" value="50" min="10" step="1" oninput="aplicarTamano()">
+        </div>
+        <button class="btn-print" onclick="imprimir()">🖨 Imprimir etiquetas</button>
+        <span class="info" id="total-info"></span>
+    </div>
+    <p class="print-note">Ajusta el tamaño al de tu etiqueta. Al imprimir, elige tu impresora de etiquetas y tamaño de papel = el de la etiqueta (sin márgenes). El tamaño se recuerda para la próxima.</p>
+
+    <div class="items-config" id="items-config"><p class="empty">Cargando…</p></div>
+
+    <h2 class="section-title">Vista previa</h2>
+    <div class="etiquetas-wrap" id="etiquetas-wrap"></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['fabrica']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // ---- Formato de especificaciones ----
+    const VIDRIO = { laminado: 'Laminado', templado: 'Templado', crudo: 'Crudo', louvers: 'Louvers' };
+    const COLOR_VIDRIO = { natural: 'Natural', negro: 'Negro', azul: 'Azul', esmerilado: 'Esmerilado', reflectivo: 'Reflectivo', bronce: 'Bronce' };
+    const ESPESOR = { '3+3': '3+3', '4+4': '4+4', '5+5': '5+5', '6+6': '6+6', '10mm': '3/8" (10mm)', '12mm': '1/2" (12mm)' };
+    const COLOR_PERFIL = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera' };
+
+    function fmtVidrio(st) {
+        return [VIDRIO[st.vidrio] || st.vidrio, ESPESOR[st.espesor] || st.espesor, COLOR_VIDRIO[st.color_vidrio] || st.color_vidrio]
+            .filter(Boolean).join(' · ');
+    }
+    function fmtColor(st) {
+        if (st.color_perfil === 'ral') return 'RAL ' + (st.color_ral || '');
+        return COLOR_PERFIL[st.color_perfil] || st.color_perfil || '';
+    }
+
+    // ---- Componentes por elemento (defaults; editables) ----
+    function componentesDeItem(st) {
+        const type = st.type || '';
+        const cat = st.categoria || '';
+        const m = type.match(/^(cor|gal)(\d)/);
+        const nHojas = m ? parseInt(m[2]) : 0;
+        if (cat === 'corredera' || cat === 'galandaje') {
+            const comps = [];
+            for (let i = 1; i <= nHojas; i++) comps.push('Hoja ' + i);
+            comps.push('Marco');
+            return comps;
+        }
+        if (cat === 'ventana' || cat === 'puerta_vidrio') return ['Hoja', 'Marco'];
+        if (cat === 'fachada' || cat === 'mampara' || cat === 'cerramiento') return ['Vidrio'];
+        if (cat === 'baranda') return ['Baranda'];
+        return ['Pieza'];
+    }
+
+    let header = {}, items = [];
+    // itemsComp: { id: { st, ref, comps:[], cant } }
+    const itemsComp = {};
+
+    const orderId = new URLSearchParams(location.search).get('orderId');
+
+    async function cargar() {
+        if (!orderId) { document.getElementById('items-config').innerHTML = '<p class="empty">Falta el pedido (orderId).</p>'; return; }
+        const snap = await getDoc(doc(db, 'orders', orderId));
+        if (!snap.exists()) { document.getElementById('items-config').innerHTML = '<p class="empty">No se encontró el pedido.</p>'; return; }
+        const o = snap.data();
+        const appJSON = o.appJSON || {};
+        header = appJSON.header || { cliente: o.cliente, obra: o.obra };
+        const cardsState = appJSON.cardsState || {};
+        const inputsData = appJSON.inputsData || {};
+        const order = (appJSON.order && appJSON.order.length) ? appJSON.order : Object.keys(cardsState);
+
+        items = [];
+        order.forEach(id => {
+            const st = cardsState[id];
+            if (!st) return;
+            const inp = inputsData[id] || {};
+            const ref = (inp.ref || inp.ubi || '').trim();
+            items.push({ id, st, ref });
+            itemsComp[id] = { st, ref, comps: componentesDeItem(st), cant: parseInt(st.cantidad) || 1 };
+        });
+
+        if (!items.length) { document.getElementById('items-config').innerHTML = '<p class="empty">Este pedido no tiene ítems con ficha (¿es una compra directa?).</p>'; return; }
+        renderItemsConfig();
+        renderEtiquetas();
+    }
+
+    function renderItemsConfig() {
+        const cont = document.getElementById('items-config');
+        cont.innerHTML = items.map(({ id, st, ref }) => {
+            const c = itemsComp[id];
+            const nombre = st.label || st.type || 'Elemento';
+            const specs = [`${st.ancho || '—'} x ${st.alto || '—'} mm`, fmtVidrio(st), fmtColor(st)].filter(Boolean).join(' · ');
+            return `
+            <div class="item-config">
+                <div class="ic-head">
+                    <b>${esc(ref ? ref + ' — ' : '')}${esc(nombre)}</b>
+                    <span class="cant-field">Cantidad: <input type="number" min="1" value="${c.cant}" onchange="setCant('${id}', this.value)"></span>
+                </div>
+                <div class="ic-specs">${esc(specs)}</div>
+                <div id="comps-${id}">${c.comps.map((n, i) => compRowHTML(id, i, n)).join('')}</div>
+                <button class="comp-add" onclick="addComp('${id}')">+ Componente (etiqueta)</button>
+            </div>`;
+        }).join('');
+    }
+
+    function compRowHTML(id, i, name) {
+        return `<div class="comp-row">
+            <input class="comp-name" value="${esc(name)}" onchange="setComp('${id}', ${i}, this.value)">
+            <button onclick="delComp('${id}', ${i})" title="Quitar">×</button>
+        </div>`;
+    }
+
+    window.setCant = function (id, v) { itemsComp[id].cant = Math.max(1, parseInt(v) || 1); renderEtiquetas(); };
+    window.setComp = function (id, i, v) { itemsComp[id].comps[i] = v; renderEtiquetas(); };
+    window.delComp = function (id, i) {
+        itemsComp[id].comps.splice(i, 1);
+        document.getElementById('comps-' + id).innerHTML = itemsComp[id].comps.map((n, k) => compRowHTML(id, k, n)).join('');
+        renderEtiquetas();
+    };
+    window.addComp = function (id) {
+        itemsComp[id].comps.push('Pieza ' + (itemsComp[id].comps.length + 1));
+        document.getElementById('comps-' + id).innerHTML = itemsComp[id].comps.map((n, k) => compRowHTML(id, k, n)).join('');
+        renderEtiquetas();
+    };
+
+    function etiquetaHTML(st, ref, comp) {
+        const nombre = st.label || st.type || '';
+        const medidas = `${st.ancho || '—'} x ${st.alto || '—'} mm`;
+        const vidrio = fmtVidrio(st);
+        const color = fmtColor(st);
+        return `
+        <div class="etiqueta">
+            <div>
+                <div class="e-cliente">${esc(header.cliente || '')}</div>
+                <div class="e-obra">${esc(header.obra || '')}</div>
+            </div>
+            <div>
+                <div class="e-ref">${esc([ref, comp].filter(Boolean).join(' · '))}</div>
+                <div class="e-linea">${esc(nombre)}</div>
+                <div class="e-medidas">${esc(medidas)}</div>
+                ${vidrio ? `<div class="e-linea">Vidrio: ${esc(vidrio)}</div>` : ''}
+                ${color ? `<div class="e-linea">Color: ${esc(color)}</div>` : ''}
+            </div>
+        </div>`;
+    }
+
+    function renderEtiquetas() {
+        const wrap = document.getElementById('etiquetas-wrap');
+        let html = '', total = 0;
+        items.forEach(({ id, st, ref }) => {
+            const c = itemsComp[id];
+            for (let u = 0; u < c.cant; u++) {
+                c.comps.forEach(comp => { html += etiquetaHTML(st, ref, comp); total++; });
+            }
+        });
+        wrap.innerHTML = html;
+        document.getElementById('total-info').textContent = total + ' etiqueta(s) en total';
+    }
+
+    // ---- Tamaño de etiqueta ----
+    function aplicarTamano() {
+        const w = Math.max(10, parseInt(document.getElementById('lw').value) || 100);
+        const h = Math.max(10, parseInt(document.getElementById('lh').value) || 50);
+        document.documentElement.style.setProperty('--lw', w + 'mm');
+        document.documentElement.style.setProperty('--lh', h + 'mm');
+        localStorage.setItem('artal_etiqueta_size', JSON.stringify({ w, h }));
+    }
+    (function restoreTamano() {
+        try {
+            const s = JSON.parse(localStorage.getItem('artal_etiqueta_size') || 'null');
+            if (s && s.w && s.h) { document.getElementById('lw').value = s.w; document.getElementById('lh').value = s.h; }
+        } catch (e) {}
+        aplicarTamano();
+    })();
+    window.aplicarTamano = aplicarTamano;
+
+    window.imprimir = function () {
+        const w = Math.max(10, parseInt(document.getElementById('lw').value) || 100);
+        const h = Math.max(10, parseInt(document.getElementById('lh').value) || 50);
+        let ps = document.getElementById('print-page-style');
+        if (!ps) { ps = document.createElement('style'); ps.id = 'print-page-style'; document.head.appendChild(ps); }
+        ps.textContent = `@media print { @page { size: ${w}mm ${h}mm; margin: 0; } }`;
+        window.print();
+    };
+
+    cargar();
+</script>
+
+</body>
+</html>
