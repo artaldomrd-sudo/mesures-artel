@@ -689,23 +689,29 @@
             inp.placeholder = '';
         });
 
-        // html2canvas no hace salto de línea (word-wrap) dentro de un <textarea> — lo dibuja
-        // como una sola línea que se corta a la mitad de la oración, sin importar el alto/ancho
-        // que se le fuerce por CSS (limitación conocida de la librería con controles de
-        // formulario, no arreglable con estilos). Se reemplaza cada nota, solo durante la
-        // captura, por un <div> con el mismo texto — que sí ajusta línea correctamente — y se
-        // restaura después (el textarea real se oculta, no se destruye, para no perder el nodo
-        // cuando `teardownPrintSheets()` devuelva la tarjeta a su lugar original).
-        const notesReplacements = [];
-        document.querySelectorAll('#print-area textarea.notes-area').forEach(ta => {
-            if (!ta.value) return;
-            const cs = getComputedStyle(ta);
-            const div = document.createElement('div');
-            div.textContent = ta.value;
-            div.style.cssText = `font: ${cs.font}; color: ${cs.color}; border: ${cs.border}; border-radius: ${cs.borderRadius}; background: ${cs.background}; padding: ${cs.padding}; margin-top: ${cs.marginTop}; width: ${ta.clientWidth}px; box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word;`;
-            ta.insertAdjacentElement('afterend', div);
-            ta.style.display = 'none';
-            notesReplacements.push({ ta, div });
+        // html2canvas no usa el renderizado nativo del navegador para <input>/<textarea> — los
+        // vuelve a dibujar él mismo con su propio cálculo de métricas de texto, y ese cálculo
+        // falla de dos formas distintas: en <textarea> no hace salto de línea (una nota larga
+        // sale como una sola línea cortada a la mitad de la oración); en <input> el texto sale
+        // desplazado/recortado verticalmente (se ve el encabezado del proyecto con la parte de
+        // arriba de las letras cortada). Ninguna de las dos se arregla con CSS porque el
+        // problema es del renderizado de html2canvas, no del layout real. Se reemplaza CADA
+        // campo con texto, solo durante la captura, por un <div>/<span> con el mismo valor (que
+        // sí se dibuja con el texto normal del navegador) — se oculta el campo real
+        // (`display:none`, nunca se destruye) y se restaura después, ANTES de
+        // `teardownPrintSheets()` (si no, el reemplazo viajaría de vuelta a la tarjeta real y
+        // quedaría un texto duplicado visible en la edición normal).
+        const fieldReplacements = [];
+        document.querySelectorAll('#print-area input[type="text"], #print-area textarea').forEach(field => {
+            if (!field.value) return;
+            const isTextarea = field.tagName === 'TEXTAREA';
+            const cs = getComputedStyle(field);
+            const el = document.createElement(isTextarea ? 'div' : 'span');
+            el.textContent = field.value;
+            el.style.cssText = `display:${isTextarea ? 'block' : 'inline-block'}; font: ${cs.font}; color: ${cs.color}; border: ${cs.border}; border-radius: ${cs.borderRadius}; background: ${cs.background}; padding: ${cs.padding}; margin: ${cs.margin}; width: ${field.clientWidth}px; box-sizing: border-box; white-space: ${isTextarea ? 'pre-wrap' : 'nowrap'}; overflow-wrap: break-word; text-align: ${cs.textAlign};`;
+            field.insertAdjacentElement('afterend', el);
+            field.style.display = 'none';
+            fieldReplacements.push({ field, el });
         });
 
         try {
@@ -743,10 +749,10 @@
             alert('No se pudo generar el PDF: ' + detail);
         } finally {
             blankedPlaceholders.forEach(({ el, placeholder }) => { el.placeholder = placeholder; });
-            // Quitar los <div> de reemplazo y volver a mostrar el textarea real ANTES de
-            // teardownPrintSheets() — si no, el <div> viajaría junto con la tarjeta de vuelta a
-            // su lugar y quedaría un texto duplicado visible en la edición normal.
-            notesReplacements.forEach(({ ta, div }) => { div.remove(); ta.style.display = ''; });
+            // Quitar los elementos de reemplazo y volver a mostrar el campo real ANTES de
+            // teardownPrintSheets() — si no, viajarían junto con la tarjeta de vuelta a su lugar
+            // y quedaría un texto duplicado visible en la edición normal.
+            fieldReplacements.forEach(({ field, el }) => { el.remove(); field.style.display = ''; });
             teardownPrintSheets();
             if (btn) { btn.disabled = false; btn.innerHTML = originalBtnHtml; }
         }
