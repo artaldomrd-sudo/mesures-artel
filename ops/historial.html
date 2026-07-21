@@ -10,7 +10,17 @@
 <link rel="stylesheet" href="shared.css">
 <style>
     main { max-width: 900px; }
-    #search-input { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; }
+    #search-input, #audit-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
+    .audit-proyecto { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid var(--artal-blue); }
+    .audit-proyecto h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
+    .audit-proyecto .cliente { font-size: 12px; color: #888; font-weight: normal; }
+    .audit-timeline { list-style: none; margin: 8px 0 0; padding: 0; }
+    .audit-timeline li { font-size: 13px; color: #444; padding: 7px 0; border-top: 1px solid #f0f0f0; display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+    .audit-estado { font-weight: bold; }
+    .audit-estado.completado { color: #2ecc71; }
+    .audit-estado.en_proceso { color: #3498db; }
+    .audit-estado.pendiente { color: #e67e22; }
+    .audit-meta { color: #888; }
     .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
     .cat-tile {
         background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 14px;
@@ -55,12 +65,24 @@
 </header>
 
 <main>
-    <h2 class="section-title" id="alerts-title" style="display:none;">⚠ Alertas pendientes</h2>
-    <div id="alerts-section"></div>
-    <input type="text" id="search-input" list="clientes-datalist" placeholder="🔎 Buscar por cliente u obra…" autocomplete="off">
-    <datalist id="clientes-datalist"></datalist>
-    <div class="cat-grid" id="cat-grid"></div>
-    <div id="orders-list"><p class="empty">Cargando…</p></div>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-pedidos" onclick="setVista('pedidos')">Pedidos</button>
+        <button class="tab-btn" id="tab-auditoria" onclick="setVista('auditoria')">Auditoría por proyecto</button>
+    </div>
+
+    <div id="pedidos-view">
+        <h2 class="section-title" id="alerts-title" style="display:none;">⚠ Alertas pendientes</h2>
+        <div id="alerts-section"></div>
+        <input type="text" id="search-input" list="clientes-datalist" placeholder="🔎 Buscar por cliente u obra…" autocomplete="off">
+        <datalist id="clientes-datalist"></datalist>
+        <div class="cat-grid" id="cat-grid"></div>
+        <div id="orders-list"><p class="empty">Cargando…</p></div>
+    </div>
+
+    <div id="auditoria-view" style="display:none;">
+        <input type="text" id="audit-search" placeholder="🔎 Buscar proyecto…" autocomplete="off">
+        <div id="audit-list"><p class="empty">Cargando…</p></div>
+    </div>
 </main>
 
 <script type="module">
@@ -353,6 +375,71 @@
         render();
     }, (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando historial: ' + err.message + '</p>';
+    });
+
+    // ============ Auditoría por proyecto ============
+    // Muestra el registro de cambios de estado de las instalaciones (colección append-only
+    // movimientosInstalaciones), agrupado por obra/proyecto, con quién y cuándo hizo cada cambio.
+    const AUDIT_ESTADO = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
+    let auditMovs = [];
+
+    window.setVista = function (v) {
+        document.getElementById('tab-pedidos').classList.toggle('active', v === 'pedidos');
+        document.getElementById('tab-auditoria').classList.toggle('active', v === 'auditoria');
+        document.getElementById('pedidos-view').style.display = v === 'pedidos' ? 'block' : 'none';
+        document.getElementById('auditoria-view').style.display = v === 'auditoria' ? 'block' : 'none';
+    };
+
+    function fmtFechaHora(ts) {
+        return (ts && ts.toDate) ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    }
+
+    function renderAudit() {
+        const term = document.getElementById('audit-search').value.trim().toLowerCase();
+        const list = document.getElementById('audit-list');
+        // Agrupa por proyecto (cliente + obra). La clave conserva el texto original para el título.
+        const grupos = new Map();
+        auditMovs.forEach(m => {
+            const obra = (m.obra || '').trim();
+            const cliente = (m.cliente || '').trim();
+            const titulo = obra || cliente || 'Sin proyecto';
+            const key = (cliente + '|||' + obra).toLowerCase();
+            if (!grupos.has(key)) grupos.set(key, { titulo, cliente, movs: [] });
+            grupos.get(key).movs.push(m);
+        });
+
+        let grupos2 = Array.from(grupos.values());
+        if (term) grupos2 = grupos2.filter(g => (g.titulo + ' ' + g.cliente).toLowerCase().includes(term));
+        // Cada grupo: entradas en orden cronológico; grupos ordenados por actividad más reciente.
+        grupos2.forEach(g => g.movs.sort((a, b) => (a.fecha && a.fecha.toMillis ? a.fecha.toMillis() : 0) - (b.fecha && b.fecha.toMillis ? b.fecha.toMillis() : 0)));
+        grupos2.sort((a, b) => {
+            const la = a.movs[a.movs.length - 1], lb = b.movs[b.movs.length - 1];
+            return (lb.fecha && lb.fecha.toMillis ? lb.fecha.toMillis() : 0) - (la.fecha && la.fecha.toMillis ? la.fecha.toMillis() : 0);
+        });
+
+        if (!grupos2.length) { list.innerHTML = '<p class="empty">No hay registros de auditoría todavía.</p>'; return; }
+
+        list.innerHTML = grupos2.map(g => `
+            <div class="audit-proyecto">
+                <h3>${esc(g.titulo)}</h3>
+                ${g.cliente && g.cliente.toLowerCase() !== g.titulo.toLowerCase() ? `<div class="cliente">${esc(g.cliente)}</div>` : ''}
+                <ul class="audit-timeline">
+                    ${g.movs.map(m => `
+                        <li>
+                            <span class="audit-estado ${esc(m.estado)}">${esc(AUDIT_ESTADO[m.estado] || m.estado)}</span>
+                            <span class="audit-meta">· ${esc(m.por) || esc(m.porEmail) || 'alguien'} · ${esc(fmtFechaHora(m.fecha))}</span>
+                        </li>`).join('')}
+                </ul>
+            </div>`).join('');
+    }
+
+    document.getElementById('audit-search').addEventListener('input', renderAudit);
+
+    onSnapshot(collection(db, 'movimientosInstalaciones'), (snap) => {
+        auditMovs = snap.docs.map(d => d.data());
+        renderAudit();
+    }, (err) => {
+        document.getElementById('audit-list').innerHTML = '<p class="empty">Error cargando auditoría: ' + err.message + '</p>';
     });
 </script>
 
