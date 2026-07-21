@@ -276,6 +276,20 @@ estilo simplificado del CAD.
   distintas — dentro de cajas ya calculadas para Arimo, y el texto sale cortado o corrido
   (reproducido en el encabezado del proyecto). `exportPDF()` hace `await document.fonts.ready`
   antes de capturar cada hoja (no agrega demora si las fuentes ya cargaron).
+- **html2canvas + `<textarea>` (notas de cada tarjeta): no hace salto de línea, corta el texto
+  a la mitad de la oración.** Es una limitación conocida de la librería con controles de
+  formulario (no de CSS — ni `height:auto`, ni `overflow:visible`, ni forzar el alto por JS via
+  `scrollHeight` lo arreglan, porque el problema es que html2canvas dibuja el contenido del
+  textarea como una sola línea sin wrap, no que falte alto). `exportPDF()` reemplaza cada nota,
+  **solo durante la captura**, por un `<div>` con el mismo texto y `white-space: pre-wrap` (que
+  sí hace wrap correctamente) — oculta el textarea real (`display:none`, nunca lo destruye) e
+  inserta el div como hermano, y en el `finally` (antes de `teardownPrintSheets()`, para no
+  llevarse el div de vuelta a la tarjeta real) quita el div y muestra el textarea de nuevo.
+- **`exportPDF()` catch: mostrar `e.message` a secas puede imprimir literalmente "undefined".**
+  Errores de `html2canvas` (ej. una imagen que falla por CORS) no siempre son un `Error` de JS
+  normal y pueden no tener `.message` — el catch ahora hace `console.error(e)` (para poder
+  diagnosticar el error real) y arma el mensaje del `alert` con fallbacks (`e.message || e.name
+  || e` como string || "error desconocido").
 - **Encabezado del proyecto** (`.project-header`): grid de 2 filas por `grid-template-areas`
   (fila 1 = datos cortos: cliente/material/color/fecha; fila 2 = datos largos: nombre del
   proyecto/ubicación, que necesitan más ancho). El logo abarca ambas filas

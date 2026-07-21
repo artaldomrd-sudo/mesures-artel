@@ -689,6 +689,25 @@
             inp.placeholder = '';
         });
 
+        // html2canvas no hace salto de línea (word-wrap) dentro de un <textarea> — lo dibuja
+        // como una sola línea que se corta a la mitad de la oración, sin importar el alto/ancho
+        // que se le fuerce por CSS (limitación conocida de la librería con controles de
+        // formulario, no arreglable con estilos). Se reemplaza cada nota, solo durante la
+        // captura, por un <div> con el mismo texto — que sí ajusta línea correctamente — y se
+        // restaura después (el textarea real se oculta, no se destruye, para no perder el nodo
+        // cuando `teardownPrintSheets()` devuelva la tarjeta a su lugar original).
+        const notesReplacements = [];
+        document.querySelectorAll('#print-area textarea.notes-area').forEach(ta => {
+            if (!ta.value) return;
+            const cs = getComputedStyle(ta);
+            const div = document.createElement('div');
+            div.textContent = ta.value;
+            div.style.cssText = `font: ${cs.font}; color: ${cs.color}; border: ${cs.border}; border-radius: ${cs.borderRadius}; background: ${cs.background}; padding: ${cs.padding}; margin-top: ${cs.marginTop}; width: ${ta.clientWidth}px; box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word;`;
+            ta.insertAdjacentElement('afterend', div);
+            ta.style.display = 'none';
+            notesReplacements.push({ ta, div });
+        });
+
         try {
             // Si la fuente Arimo (Google Fonts) todavía no terminó de cargar cuando
             // html2canvas captura, dibuja con la fuente de reemplazo del navegador — que tiene
@@ -716,9 +735,18 @@
 
             pdf.save(buildPdfTitle() + '.pdf');
         } catch (e) {
-            alert('No se pudo generar el PDF: ' + e.message);
+            // Algunos errores (de html2canvas, de una imagen que falla por CORS, etc.) no son
+            // un Error de JS normal y no tienen .message — sin esto el alert decía literalmente
+            // "undefined", que no sirve para diagnosticar nada.
+            console.error('exportPDF falló:', e);
+            const detail = (e && (e.message || e.name)) || (typeof e === 'string' ? e : '') || 'error desconocido (revisar consola)';
+            alert('No se pudo generar el PDF: ' + detail);
         } finally {
             blankedPlaceholders.forEach(({ el, placeholder }) => { el.placeholder = placeholder; });
+            // Quitar los <div> de reemplazo y volver a mostrar el textarea real ANTES de
+            // teardownPrintSheets() — si no, el <div> viajaría junto con la tarjeta de vuelta a
+            // su lugar y quedaría un texto duplicado visible en la edición normal.
+            notesReplacements.forEach(({ ta, div }) => { div.remove(); ta.style.display = ''; });
             teardownPrintSheets();
             if (btn) { btn.disabled = false; btn.innerHTML = originalBtnHtml; }
         }
