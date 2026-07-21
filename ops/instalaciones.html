@@ -229,6 +229,7 @@
     const DIAS_SEMANA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     const jobDate = (j) => (j.fecha && j.fecha.toDate ? j.fecha.toDate() : null);
+    const fmtFechaHora = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
     function renderGrid() {
         const grid = document.getElementById('calendar-grid');
@@ -283,6 +284,7 @@
                 ${j.instaladorNombre ? ' · 🔧 ' + esc(j.instaladorNombre) : ' · 🔧 sin asignar'}
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
+                ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}'); return false;">Ver ficha técnica</a>` : ''}
             </div>
             ${navHtml}
@@ -511,9 +513,33 @@
         }
     };
 
+    // Cambio de estado con registro de auditoría: queda quién lo hizo y cuándo. Se guarda en el
+    // propio trabajo (último cambio + quién validó al completar) Y en un log aparte
+    // (movimientosInstalaciones), append-only, para tener un control fiable de quién validó qué.
     window.cambiarEstado = async function (id, estado) {
-        try { await updateDoc(doc(db, 'instalaciones', id), { estado }); }
-        catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
+        const j = allJobs.find(x => x.id === id) || {};
+        const ahora = serverTimestamp();
+        const cambios = {
+            estado,
+            estadoPor: usuario.nombre,
+            estadoPorEmail: usuario.email,
+            estadoFecha: ahora
+        };
+        if (estado === 'completado') {
+            cambios.validadoPor = usuario.nombre;
+            cambios.validadoPorEmail = usuario.email;
+            cambios.validadoFecha = ahora;
+        }
+        try {
+            await updateDoc(doc(db, 'instalaciones', id), cambios);
+            await addDoc(collection(db, 'movimientosInstalaciones'), {
+                instalacionId: id,
+                cliente: j.cliente || '', obra: j.obra || '',
+                estado,
+                por: usuario.nombre, porEmail: usuario.email,
+                fecha: ahora
+            });
+        } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };
 
     window.eliminarJob = async function (id) {
