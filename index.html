@@ -123,6 +123,18 @@
         .card-ref-row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #ccc; padding-bottom: 5px; margin-left: 15px; }
         .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
         .card-ref-row span { font-size: 12px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
+        .medida-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 2px 15px; }
+        .medida-toggle .ml { font-size: 11px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
+        .medida-toggle button { border: 1.5px solid var(--artal-blue); background: #fff; color: var(--artal-blue); font-size: 11px; font-weight: bold; padding: 4px 9px; cursor: pointer; font-family: inherit; }
+        .medida-toggle button:first-of-type { border-radius: 6px 0 0 6px; border-right: none; }
+        .medida-toggle button:last-of-type { border-radius: 0 6px 6px 0; }
+        .medida-toggle button.active { background: var(--artal-blue); color: #fff; }
+        .medida-toggle button.active.fab { background: #8e44ad; border-color: #8e44ad; }
+        body.readonly-view .medida-toggle button { pointer-events: none; }
+        body.printing-sheets .medida-toggle { margin: 2px 0 1px 0 !important; }
+        body.printing-sheets .medida-toggle .ml { font-size: 8px !important; }
+        body.printing-sheets .medida-toggle button:not(.active) { display: none; }
+        body.printing-sheets .medida-toggle button.active { border-radius: 5px !important; font-size: 9px !important; padding: 2px 7px !important; }
         
         .drawing-area { height: 260px; border: 1px solid #eee; position: relative; background: #fcfcfc; display: flex; align-items: center; justify-content: center; width: 100%; overflow: hidden; }
         .drawing-canvas { cursor: crosshair; touch-action: none; background: white; width: 100%; height: 100%; }
@@ -1632,6 +1644,43 @@
         return '';
     }
 
+    // Marca por ítem: "Medida de fabricación" o "Medida de cotización" — guía para quien produce.
+    // Se inserta en TODAS las tarjetas (después de la Ubicación), se ve también en el resumen/PDF
+    // y se guarda en el estado del ítem (medidaTipo). Por defecto toma el tipo del documento.
+    function insertarMarcaMedida(id, card) {
+        if (!card || !cardsState[id]) return;
+        if (cardsState[id].medidaTipo == null) {
+            const dt = ((document.getElementById('doc-type-title') || {}).innerText || '').toUpperCase();
+            cardsState[id].medidaTipo = dt.indexOf('FAB') === 0 ? 'fabricacion' : 'cotizacion';
+        }
+        const ubi = card.querySelector('input[placeholder*="Ubicación"]');
+        const anchor = ubi || card.querySelector('.card-ref-row');
+        if (!anchor) return;
+        const el = document.createElement('div');
+        el.className = 'medida-toggle';
+        el.id = 'medida-' + id;
+        el.innerHTML = `<span class="ml">Medida:</span>` +
+            `<button type="button" data-v="fabricacion" onclick="setMedidaTipo(${id}, 'fabricacion')">Fabricación</button>` +
+            `<button type="button" data-v="cotizacion" onclick="setMedidaTipo(${id}, 'cotizacion')">Cotización</button>`;
+        anchor.insertAdjacentElement('afterend', el);
+        marcarMedidaBotones(id);
+    }
+    function marcarMedidaBotones(id) {
+        const el = document.getElementById('medida-' + id);
+        if (!el) return;
+        const tipo = cardsState[id].medidaTipo || 'cotizacion';
+        el.querySelectorAll('button').forEach(b => {
+            b.classList.toggle('active', b.dataset.v === tipo);
+            b.classList.toggle('fab', b.dataset.v === 'fabricacion');
+        });
+    }
+    window.setMedidaTipo = function (id, tipo) {
+        if (!cardsState[id]) return;
+        cardsState[id].medidaTipo = tipo;
+        marcarMedidaBotones(id);
+        saveProgress();
+    };
+
     function addItem(label, type, categoria, savedData = null, forcedId = null, forcedState = null) {
         let id = forcedId || ++itemId;
         if (forcedId && id > itemId) itemId = id;
@@ -1865,6 +1914,8 @@
             `;
             list.appendChild(card);
         }
+
+        insertarMarcaMedida(id, card);
 
         if (savedData) {
             const refEl = card.querySelector('.card-ref-row input');

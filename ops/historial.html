@@ -260,8 +260,8 @@
         if (o.contratistaPdfUrl) extraLinks.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
         if (o.cotizacionFinalPdfUrl) extraLinks.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
         if (o.compraPdfUrl) extraLinks.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
-        if (o.recepcionInstalador && o.recepcionInstalador.firma) extraLinks.push(`<a href="${o.recepcionInstalador.firma}" target="_blank">Firma recepción (${esc(o.recepcionInstalador.nombre)})</a>`);
-        if (o.clienteAprobacion && o.clienteAprobacion.firma) extraLinks.push(`<a href="${o.clienteAprobacion.firma}" target="_blank">Firma cliente (${esc(o.clienteAprobacion.nombre)})</a>`);
+        if (o.recepcionInstalador && o.recepcionInstalador.firma) extraLinks.push(`<a href="#" onclick="verFirma('${id}','rec'); return false;">Firma recepción (${esc(o.recepcionInstalador.nombre)})</a>`);
+        if (o.clienteAprobacion && o.clienteAprobacion.firma) extraLinks.push(`<a href="#" onclick="verFirma('${id}','cli'); return false;">Firma cliente (${esc(o.clienteAprobacion.nombre)})</a>`);
 
         const isFab = (o.docType || '').indexOf('FAB') === 0;
         const isCompra = o.docType === 'COMPRA_DIRECTA';
@@ -401,6 +401,26 @@
     const AUDIT_ESTADO = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
     let auditMovs = [];
 
+    // Ver firma: la firma se guarda como imagen incrustada (data:image...). Los navegadores
+    // bloquean abrir un data: en pestaña nueva (por eso salía about:blank), así que la mostramos
+    // en un recuadro dentro de la página.
+    window.verFirma = function (orderId, tipo) {
+        const o = (allOrders.find(x => x.id === orderId) || {}).data || {};
+        const info = tipo === 'rec' ? o.recepcionInstalador : o.clienteAprobacion;
+        if (!info || !info.firma) { alert('No hay firma guardada.'); return; }
+        const titulo = (tipo === 'rec' ? 'Firma de recepción' : 'Firma del cliente') + (info.nombre ? ' — ' + info.nombre : '');
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:440px;width:100%;padding:16px;text-align:center;font-family:Arimo,sans-serif;">
+            <div style="font-weight:bold;color:#0A3D62;margin-bottom:10px;">${esc(titulo)}</div>
+            <img src="${info.firma}" alt="firma" style="max-width:100%;border:1px solid #eee;border-radius:8px;background:#fff;">
+            <button style="margin-top:12px;padding:10px 18px;border:none;border-radius:8px;background:#0A3D62;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;">Cerrar</button>
+        </div>`;
+        ov.querySelector('button').onclick = () => ov.remove();
+        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        document.body.appendChild(ov);
+    };
+
     window.setVista = function (v) {
         ['pedidos', 'carpetas', 'auditoria'].forEach(k => {
             document.getElementById('tab-' + k).classList.toggle('active', v === k);
@@ -491,8 +511,8 @@
                     if (o.contratistaPdfUrl) links.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
                     if (o.cotizacionFinalPdfUrl) links.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
                     if (o.compraPdfUrl) links.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
-                    if (o.recepcionInstalador && o.recepcionInstalador.firma) links.push(`<a href="${o.recepcionInstalador.firma}" target="_blank">Firma recepción</a>`);
-                    if (o.clienteAprobacion && o.clienteAprobacion.firma) links.push(`<a href="${o.clienteAprobacion.firma}" target="_blank">Firma cliente</a>`);
+                    if (o.recepcionInstalador && o.recepcionInstalador.firma) links.push(`<a href="#" onclick="verFirma('${id}','rec'); return false;">Firma recepción</a>`);
+                    if (o.clienteAprobacion && o.clienteAprobacion.firma) links.push(`<a href="#" onclick="verFirma('${id}','cli'); return false;">Firma cliente</a>`);
                     return `
                     <div class="carpeta-doc">
                         <div class="doc-head">
