@@ -48,13 +48,20 @@ try {
   ] }); ok++;
 } catch (e) { fail++; console.error('  ducha_facade:', e.message); }
 
-// Paño Fijo adosado (arriba/abajo): un tipo con vista de planta y uno sin ella.
+// Paño Fijo adosado (arriba/abajo): tipos con vista de planta (win_abat/win_ob/door_abat,
+// donde la vista de planta se reubica al final) y uno sin ella (win_proy), en las 3
+// combinaciones (solo arriba, solo abajo, ambos) para no repetir la regresión donde el paño
+// de abajo quedaba pegado después de la vista de planta en vez de después de la ventana.
 const panoFixture = { alto: 400, vidrio: 'templado', espesor: '10mm', color_vidrio: 'esmerilado', fijacion: 'sin_marco', color_perfil: 'negro' };
-for (const t of ['win_abat', 'win_proy']) {
-  try {
-    const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 900, alto: 1200, orientacion: 'I', color_vidrio: 'natural', vidrio: 'templado', espesor: '10mm', color_perfil: 'natural', panoArriba: panoFixture, panoAbajo: panoFixture };
-    ctx.__render('card1', st); ok++;
-  } catch (e) { fail++; console.error(`  ${t} (con panos):`, e.message); }
+for (const t of ['win_abat', 'win_ob', 'door_abat', 'win_proy']) {
+  for (const combo of [{ panoArriba: panoFixture }, { panoAbajo: panoFixture }, { panoArriba: panoFixture, panoAbajo: panoFixture }]) {
+    for (const orientacion of ['I', 'D']) {
+      try {
+        const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 900, alto: 1200, orientacion, color_vidrio: 'natural', vidrio: 'templado', espesor: '10mm', color_perfil: 'natural', ...combo };
+        ctx.__render('card1', st); ok++;
+      } catch (e) { fail++; console.error(`  ${t} (${Object.keys(combo).join('+')}, ${orientacion}):`, e.message); }
+    }
+  }
 }
 
 console.log(`RENDER OK: ${ok} FAIL: ${fail}`);

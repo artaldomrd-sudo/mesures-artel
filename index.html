@@ -519,8 +519,20 @@
         }
     }
 
+    // "Memoria" de color: el acabado del encabezado se aplica en vivo a TODOS los ítems (ya
+    // creados y futuros), no solo a los nuevos — si el usuario cambia el color de un ítem a
+    // mano después, ese cambio manual se mantiene hasta el próximo cambio del encabezado (que
+    // vuelve a pisar todo, a propósito: "si arriba pongo blanco que todo me salga blanco").
     function triggerGlobalUpdate() {
+        const ha = headerAcabado();
         Object.keys(cardsState).forEach(id => {
+            const st = cardsState[id];
+            if (ha && st.type !== 'draw') {
+                st.color_perfil = ha.key;
+                if (ha.ral) st.color_ral = ha.ral;
+                const sc = document.getElementById('schematic-' + id);
+                if (sc) sc.innerHTML = renderSVG(id);
+            }
             if (!cardsState[id].locked) {
                 const optionsContainer = document.querySelector(`#card-${id} .config-options`);
                 if(optionsContainer && window['updateCADOptionsUI' + id] && cardsState[id].type === 'draw') {
@@ -1647,8 +1659,10 @@
         if (/blanco|white/.test(t)) return { key: 'blanco' };
         if (/grafito|antracita|antra/.test(t)) return { key: 'grafito' };
         if (/madera|wood|roble|nogal/.test(t)) return { key: 'madera' };
-        if (/natural|plata|aluminio|silver|mate/.test(t)) return { key: 'natural' };
-        if (/^#?[0-9a-fA-F]{6}$/.test(raw) || /ral/.test(t)) return { key: 'ral', ral: raw };
+        // Código RAL: la palabra "RAL", un hex, o un número de 4 dígitos (ej. "Gris 7039") —
+        // antes de "natural" para que "Gris 7039" tome el RAL, no el gris genérico.
+        if (/^#?[0-9a-fA-F]{6}$/.test(raw) || /\bral\b/.test(t) || /\b\d{4}\b/.test(t)) return { key: 'ral', ral: raw };
+        if (/natural|plata|aluminio|silver|mate|gris|gray/.test(t)) return { key: 'natural' };
         return null; // texto desconocido -> deja el default
     }
 
@@ -1705,7 +1719,10 @@
         if (forcedState) {
             cardsState[id] = forcedState;
         } else if (!forcedId) {
-            cardsState[id] = { type, categoria, label, orientacion: 'I', panos: 1, cantidad: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', tipo_aluminio: '', vista: 'adentro', locked: false };
+            // Vidrio Laminado 4+4 por defecto (se puede cambiar por ítem) — evita tener que
+            // elegirlo a mano en cada ítem nuevo. Ducha/cerramiento/baranda pisan este default
+            // más abajo con su propio vidrio típico (templado 10mm).
+            cardsState[id] = { type, categoria, label, orientacion: 'I', panos: 1, cantidad: 1, bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: '', ancho: 0, alto: 0, union: 'T', tipo_aluminio: '', vista: 'adentro', vidrio: 'laminado', espesor: '4+4', locked: false };
             if (categoria === 'ducha') {
                 cardsState[id].forma = 'recto';
                 cardsState[id].fijacion = 'conector';
@@ -2171,7 +2188,22 @@
         const f = x => Math.max(0, Math.min(255, Math.round(x + (p / 100) * 255)));
         return '#' + ((1 << 24) + (f(r) << 16) + (f(g) << 8) + f(b)).toString(16).slice(1);
     }
-    function ralHex(ral) { let h = (ral || '').trim(); if (/^#?[0-9a-fA-F]{6}$/.test(h)) return h[0] === '#' ? h : '#' + h; return '#8a8f94'; }
+    // Aproximación de códigos RAL comunes en perfiles de aluminio (no es la carta RAL completa,
+    // solo los más usados acá) — si el usuario escribe un hex se usa ese directo; si escribe un
+    // código RAL de 4 dígitos conocido (ej. "Gris 7039") se usa esta tabla; si no, gris genérico.
+    const RAL_HEX = {
+        '9010': '#f0ede5', '9016': '#f1f0ea', '1013': '#e3d9c6', '9006': '#a5a5a5',
+        '9007': '#8f8f8f', '7016': '#383e42', '7024': '#474a4d', '7039': '#6b6f66',
+        '7035': '#d7d7d7', '7001': '#8a9597', '7011': '#4e5459', '7042': '#8f9695',
+        '9005': '#0a0a0a', '8019': '#3b3332',
+    };
+    function ralHex(ral) {
+        let h = (ral || '').trim();
+        if (/^#?[0-9a-fA-F]{6}$/.test(h)) return h[0] === '#' ? h : '#' + h;
+        const m = h.match(/\b(\d{4})\b/);
+        if (m && RAL_HEX[m[1]]) return RAL_HEX[m[1]];
+        return '#8a8f94';
+    }
     function finishColors(key, ral) {
         if (key === 'ral') { const h = ralHex(ral); return { main: h, light: shade(h, 12), dark: shade(h, -22) }; }
         return FINISHES[key];
@@ -2278,6 +2310,46 @@
         return s;
     }
 
+    // Líneas de medida técnica (estilo plano de fabricación): línea principal entre los dos
+    // extremos reales de la medida + líneas testigo (perpendiculares, desde el borde real del
+    // elemento hasta la línea) + marcas en 45° en los extremos + el valor de la medida. Se usa
+    // en vez de solo un texto flotante para que quede claro a qué tramo corresponde cada medida
+    // (línea de un extremo al otro), sobre todo cuando hay más de una medida junta (paños).
+    const DIM_COLOR = '#5a6772';
+    function dimLineH(x1, x2, y, edgeY, label, fontSize) {
+        fontSize = fontSize || 6;
+        const dir = Math.sign(y - edgeY) || -1;
+        const over = 1.3, tick = 1.4, textGap = 2.6;
+        const yFar = y + dir * over;
+        let s = `<g stroke="${DIM_COLOR}" stroke-width="0.4" fill="none">`;
+        s += `<line x1="${x1.toFixed(1)}" y1="${edgeY.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${yFar.toFixed(1)}"/>`;
+        s += `<line x1="${x2.toFixed(1)}" y1="${edgeY.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${yFar.toFixed(1)}"/>`;
+        s += `<line x1="${x1.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
+        s += `<line x1="${(x1 - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x1 + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`;
+        s += `<line x1="${(x2 - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x2 + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`;
+        s += `</g>`;
+        const textY = y + dir * textGap;
+        s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${label}</text>`;
+        return s;
+    }
+    function dimLineV(y1, y2, x, edgeX, label, fontSize) {
+        fontSize = fontSize || 6;
+        const dir = Math.sign(x - edgeX) || 1;
+        const over = 1.3, tick = 1.4, textGap = 2.2;
+        const xFar = x + dir * over;
+        let s = `<g stroke="${DIM_COLOR}" stroke-width="0.4" fill="none">`;
+        s += `<line x1="${edgeX.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${xFar.toFixed(1)}" y2="${y1.toFixed(1)}"/>`;
+        s += `<line x1="${edgeX.toFixed(1)}" y1="${y2.toFixed(1)}" x2="${xFar.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+        s += `<line x1="${x.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+        s += `<line x1="${(x - tick / 2).toFixed(1)}" y1="${(y1 + tick / 2).toFixed(1)}" x2="${(x + tick / 2).toFixed(1)}" y2="${(y1 - tick / 2).toFixed(1)}"/>`;
+        s += `<line x1="${(x - tick / 2).toFixed(1)}" y1="${(y2 + tick / 2).toFixed(1)}" x2="${(x + tick / 2).toFixed(1)}" y2="${(y2 - tick / 2).toFixed(1)}"/>`;
+        s += `</g>`;
+        const textX = x + dir * textGap;
+        const midY = (y1 + y2) / 2;
+        s += `<text x="${textX.toFixed(1)}" y="${midY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="${dir > 0 ? 'start' : 'end'}" dominant-baseline="middle" stroke="none">${label}</text>`;
+        return s;
+    }
+
     function getPanelRects(state) {
         const t = state.type, isD = state.orientacion === 'D';
         switch (t) {
@@ -2307,17 +2379,25 @@
     // combinan elevación + vista de planta en un mismo viewBox (win_abat/win_ob/door_abat).
     const PANO_BAND_H = 34;
 
-    function buildPanoFragment(uid, side, pano, panelRect) {
+    function buildPanoFragment(uid, side, pano, panelRect, isFlipped) {
         const [bx, , bw] = panelRect;
         const puid = `${uid}${side}`;
         const glassOnly = pano.fijacion === 'sin_marco';
         const panelFn = glassOnly ? glassOnlyPanel : extrudedPanel;
         let frag = glassDefs(puid, pano.color_vidrio);
         frag += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
-        frag += panelFn(puid, bx, 0, bw, PANO_BAND_H);
+        // El panel de vidrio (borde de espesor + reflejos) se voltea igual que el ítem base
+        // cuando la apertura está "A la derecha" — si no, el paño se ve desde una perspectiva
+        // distinta a la ventana (el borde de espesor queda del lado contrario). El texto ("F" y
+        // la medida) NUNCA se voltea, para que siga siendo legible.
+        const panelSvg = panelFn(puid, bx, 0, bw, PANO_BAND_H);
+        frag += isFlipped ? `<g transform="scale(-1, 1) translate(-100, 0)">${panelSvg}</g>` : panelSvg;
         frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(PANO_BAND_H / 2 + 3).toFixed(1)}" font-family="Arimo" font-size="9" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
         if (pano.alto > 0) {
-            frag += `<text x="${(bx + bw + 4).toFixed(1)}" y="${(PANO_BAND_H / 2).toFixed(1)}" font-family="Arimo" font-size="6" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${pano.alto} mm</text>`;
+            // Misma fórmula (borde real del panel + margen) que usa la medida "alto" del ítem
+            // base — al compartir el mismo panelRect, ambas líneas quedan alineadas en la misma
+            // columna sin importar el tipo.
+            frag += dimLineV(0, PANO_BAND_H, bx + bw + 4, bx + bw, `${pano.alto} mm`, 7);
         }
         return applyFinish(frag, pano.color_perfil, pano.color_ral);
     }
@@ -2327,19 +2407,64 @@
     function composePanos(id, state, finishedSvg, viewBox) {
         const m = finishedSvg.match(/^<svg([^>]*)>([\s\S]*)<\/svg>\s*$/);
         if (!m) return finishedSvg;
-        const attrs = m[1], inner = m[2];
+        const attrs = m[1];
+        let inner = m[2];
         const [vbX, vbY, vbW, vbH] = viewBox.split(' ').map(Number);
         const panelRect = getPanelRects(state)[0] || [vbX + 14, 0, vbW - 28, vbH];
         const gap = 4;
-        const topH = state.panoArriba ? PANO_BAND_H + gap : 0;
+        // Mismo criterio de "volteado" que usa renderSVG para el ítem base (línea ~3644):
+        // apertura "A la derecha" en estos 4 tipos espeja el dibujo horizontalmente.
+        const isFlipped = ['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && state.orientacion === 'D';
+
+        // La vista de planta (si existe) queda "flotando" al final del contenido base, entre
+        // la elevación y el borde del viewBox — eso hace que el paño de abajo se pegue después
+        // de la vista de planta en vez de después de la ventana. Se extrae y se reubica SIEMPRE
+        // al final del compuesto (debajo de los paños), pegada directo a la elevación cuando no
+        // hay paño abajo. "elevH" se ancla al borde real del panel de vidrio (getPanelRects),
+        // no a un valor fijo — así el paño de abajo queda pegado al vidrio mismo, sin el hueco
+        // que antes dejaba antes la vista de planta.
+        let planViewFrag = '';
+        let elevH = vbH;
+        const planMatch = inner.match(/<g class="plan-view-layer">[\s\S]*?<\/g>/);
+        if (planMatch) {
+            planViewFrag = planMatch[0];
+            inner = inner.replace(planViewFrag, '');
+            elevH = (panelRect[1] + panelRect[3]) - vbY;
+        }
+
+        // El viewBox original deja un margen superior amplio (pensado para el espacio en blanco
+        // antes de la ventana, sin paño). Si se ancla el paño de arriba a ese margen (vbY) queda
+        // "flotando" separado de la ventana. En vez de eso se ancla al mismo punto de referencia
+        // que ya usa la medida "ancho" (texto fijo en y=4 para todos los tipos): el paño queda
+        // justo `gap` unidades por encima de esa medida, sin el hueco sobrante.
+        const ANCHO_LABEL_Y = 4;
+        const topBoundary = state.panoArriba ? (ANCHO_LABEL_Y - gap - PANO_BAND_H) : vbY;
         const botH = state.panoAbajo ? PANO_BAND_H + gap : 0;
-        const newVbY = vbY - topH;
-        const newVbH = vbH + topH + botH;
+        const elevBottom = vbY + elevH;
+        const planReservedH = planViewFrag ? (vbH - elevH) + gap : 0;
+        const newVbY = topBoundary;
+        const newVbH = (elevBottom + botH + planReservedH) - newVbY;
         const newAttrs = attrs.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${newVbY.toFixed(1)} ${vbW} ${newVbH.toFixed(1)}"`);
+
         let out = `<svg${newAttrs}>`;
-        if (state.panoArriba) out += `<g transform="translate(0, ${newVbY.toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect)}</g>`;
+        if (state.panoArriba) out += `<g transform="translate(0, ${(ANCHO_LABEL_Y - gap - PANO_BAND_H).toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect, isFlipped)}</g>`;
         out += inner;
-        if (state.panoAbajo) out += `<g transform="translate(0, ${(vbY + vbH + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect)}</g>`;
+        if (state.panoAbajo) out += `<g transform="translate(0, ${(elevBottom + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect, isFlipped)}</g>`;
+        // Medida total (ventana + paños) del lado izquierdo, con su propia línea de un extremo
+        // (tope del paño de arriba, o de la ventana si no hay) al otro (tope del paño de abajo,
+        // o de la ventana si no hay) — para no confundirla con la medida individual de cada
+        // pieza (que sigue a la derecha). No incluye el espacio reservado para la vista de
+        // planta reubicada: el total es solo ventana + paños, no la vista de planta.
+        const totalAlto = (parseInt(state.alto) || 0) + (state.panoArriba ? (parseInt(state.panoArriba.alto) || 0) : 0) + (state.panoAbajo ? (parseInt(state.panoAbajo.alto) || 0) : 0);
+        if (totalAlto > 0) {
+            const totalTop = state.panoArriba ? newVbY : panelRect[1];
+            const totalBottom = state.panoAbajo ? (elevBottom + gap + PANO_BAND_H) : elevBottom;
+            out += dimLineV(totalTop, totalBottom, panelRect[0] - 10, panelRect[0], `${totalAlto} mm`, 7);
+        }
+        if (planViewFrag) {
+            const planDelta = state.panoAbajo ? botH : 0;
+            out += planDelta ? `<g transform="translate(0, ${planDelta.toFixed(1)})">${planViewFrag}</g>` : planViewFrag;
+        }
         out += '</svg>';
         return out;
     }
@@ -3334,8 +3459,8 @@
         });
         // Etiquetas de ancho por panel y alto total
         let labels = '';
-        layout.forEach(L => { if (L.p.ancho > 0) labels += `<text x="${(L.x + L.w / 2).toFixed(1)}" y="${(headTop - 2).toFixed(1)}" font-family="Arimo" font-size="6" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${L.p.ancho} mm</text>`; });
-        if (alto > 0) labels += `<text x="${(DW + 2).toFixed(1)}" y="${(headTop + Hd / 2).toFixed(1)}" font-family="Arimo" font-size="6" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${alto} mm</text>`;
+        layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, headTop, `${L.p.ancho} mm`, 6); });
+        if (alto > 0) labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, 6);
         const vbH = headTop + Hd + 4;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -3 ${(DW + 24).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
         svg += defs;
@@ -3508,7 +3633,7 @@
                 } else {
                     drawing += '<path d="M30 10l40 20l-40 20"/>';
                 }
-                drawing += drawPlanView(state.type, state);
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
                 break;
             case 'door_abat':
                 drawing += '<rect x="35" y="5" width="30" height="50"/>';
@@ -3518,12 +3643,12 @@
                 } else {
                     drawing += '<path d="M35 5l30 25l-30 25"/>';
                 }
-                drawing += drawPlanView(state.type, state);
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
                 break;
 
             case 'win_ob':
                 drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>';
-                drawing += drawPlanView(state.type, state);
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
                 break;
 
             case 'mamp_fija': {
@@ -3636,11 +3761,14 @@
         svg += `<g ${transform}>${glassLayer}${drawing}</g>`;
 
         if (!isCAD) {
+            const dimPr = getPanelRects(state)[0];
             if (state.ancho > 0) {
-                svg += `<text x="50" y="4" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
+                if (dimPr) svg += dimLineH(dimPr[0], dimPr[0] + dimPr[2], 4, dimPr[1], `${state.ancho} mm`, 7);
+                else svg += `<text x="50" y="4" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
             }
             if (state.alto > 0) {
-                svg += `<text x="94" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
+                if (dimPr) svg += dimLineV(dimPr[1], dimPr[1] + dimPr[3], dimPr[0] + dimPr[2] + 4, dimPr[0] + dimPr[2], `${state.alto} mm`, 7);
+                else svg += `<text x="94" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
             }
             if (state.categoria === 'galandaje') {
                 svg += galandajePlan(state, uid);

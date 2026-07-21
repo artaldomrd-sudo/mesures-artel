@@ -73,6 +73,18 @@ un **PDF de Cotización o Fabricación** para el cliente.
   (opción "Sin Marco" del menú), igual que mampara/puerta de vidrio.
 - **Acabado del perfil**: `applyFinish(svg, color_perfil, color_ral)` reemplaza los azules base
   `#0A3D62 / #1c5a85 / #0d3f5f` por el color del acabado (`FINISHES`, `finishColors`).
+- **Medidas: línea de un extremo al otro (estilo plano técnico)**, no solo texto flotante.
+  `dimLineH(x1, x2, y, edgeY, label, fontSize)` (ancho) y `dimLineV(y1, y2, x, edgeX, label,
+  fontSize)` (alto) dibujan línea testigo (perpendicular, desde el borde real del elemento hasta
+  la línea de medida) + línea principal entre los dos extremos + marcas en 45° + el valor
+  centrado — en vez de reusar los chevrones negros de apertura (`arrowL`/`arrowR`), para no
+  confundir "cómo abre" con "cuánto mide". `edgeY`/`edgeX` (el borde real de donde parten los
+  testigos) se derivan siempre de `getPanelRects(state)[0]`, nunca de una posición fija — un tipo
+  ancho (ej. `gal4_4v` sin voltear, borde derecho en x=100) puede acercarse al límite del
+  viewBox, así que la línea se ancla `edge + margen` (no una coordenada fija) para no
+  superponerse ni salirse. Usadas en: la medida universal ancho/alto de `renderSVG` (después del
+  switch grande), los paneles de `renderFacade` (Vidrio de Ducha), y las medidas del Paño Fijo
+  adosado (individual de cada paño + el total a la izquierda, ver más abajo).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,
@@ -162,8 +174,40 @@ estilo simplificado del CAD.
     base, ni siquiera en los tipos que ya combinan elevación + vista de planta en el mismo
     viewBox (`win_abat`/`win_ob`/`door_abat`).
   - Usa `extrudedPanel` o `glassOnlyPanel` según `pano.fijacion === 'sin_marco'`, con una "F"
-    centrada y la medida en mm al costado — sin réplica de moldura/conectores en detalle (eso
-    vive en `moldFrame`, un closure local de `cadTechnical`, no reutilizable aquí).
+    centrada y la medida con `dimLineV` (línea de un extremo al otro del paño, no solo texto) —
+    misma fórmula `bx+bw+margen` que la medida "alto" del ítem base (comparten el mismo
+    `panelRect`), así ambas líneas quedan alineadas en la misma columna sin importar el tipo —
+    sin réplica de moldura/conectores en detalle (eso vive en `moldFrame`, un closure local de
+    `cadTechnical`, no reutilizable aquí).
+  - **Anclaje al panel real, no al viewBox original**: el viewBox de `win_abat`/`win_ob`/
+    `door_abat` reserva de fábrica un margen (arriba, para la medida "ancho"; abajo, para la
+    vista de planta) pensado para el dibujo SIN paños. Si el paño se ancla a ese margen (`vbY`
+    o el borde del viewBox) queda separado de la ventana con un hueco visible. En vez de eso:
+    el paño de **arriba** se ancla al mismo `y=4` fijo que usa la medida "ancho" (para todos los
+    tipos), y el de **abajo** al borde real del panel de vidrio (`getPanelRects(state)[1]+[3]`)
+    — en ambos casos con el mismo margen `gap=4` que separa el resto de los elementos del
+    dibujo, para que el paño quede pegado a la ventana/puerta.
+  - **Vista de planta reubicada al final**: en `win_abat`/`win_ob`/`door_abat` la vista de
+    planta (`drawPlanView`, marcada con `<g class="plan-view-layer">` en sus 3 sitios de
+    llamado) se dibuja de fábrica pegada al borde inferior del viewBox — si el paño de abajo se
+    ancla al panel real (punto anterior), la vista de planta queda "flotando" entre la ventana y
+    el paño. `composePanos` la extrae con una regex y la reinserta siempre al final del
+    compuesto (después de los paños), desplazada hacia abajo solo lo que ocupa el paño de abajo
+    (si existe) para no superponerse.
+  - **Volteo (`orientacion === 'D'`)**: el ítem base ya se espeja con `scale(-1, 1)
+    translate(-100, 0)` cuando `orientacion === 'D'` en estos 4 tipos (`win_abat/win_ob/
+    win_souf/door_abat` — mismo criterio que usa `renderSVG`, línea ~3644). Si el paño no
+    recibe el mismo espejo se ve "desde otra perspectiva" que la ventana (el borde de espesor
+    del vidrio queda del lado contrario). `buildPanoFragment` envuelve **solo el panel de
+    vidrio** (`extrudedPanel`/`glassOnlyPanel`) en ese mismo transform cuando corresponde — el
+    texto ("F" y la medida) nunca se voltea, para seguir siendo legible.
+  - **Medida total a la izquierda**: además de la medida individual de cada pieza (a la
+    derecha), se agrega `state.alto + panoArriba.alto + panoAbajo.alto` con su propia
+    `dimLineV` del lado izquierdo (`panelRect[0] - 10`, `text-anchor="end"` automático por
+    `dir<0`) — la línea va del tope real del conjunto (el paño de arriba, o la ventana si no
+    hay) al fondo real (el paño de abajo, o la ventana si no hay), **sin incluir** el espacio
+    reservado para la vista de planta reubicada (esa vista no es parte de la medida instalada).
+    Todo sin tocar `state.alto`, que sigue siendo solo la altura de la hoja operable.
 - **UI**: botones "+ Paño Fijo arriba/abajo" (`togglePano(id, side)`, reutiliza `.toggle-btn`)
   como hermanos de `.config-options` — nunca dentro, porque `updateState` regenera
   `#options-${id}` completo al cambiar vidrio/acabado/fijación del ítem base y borraría la UI
@@ -349,5 +393,21 @@ case-insensitive).
 - Al añadir un campo nuevo al `state`, incluirlo en la lista blanca de re-render de `updateState`
   (si no, el dibujo no se actualiza al cambiar el menú).
 - El grosor auto-selecciona el tipo de vidrio: `3+3/4+4/5+5/6+6` → laminado; `10mm/12mm` → templado.
-- El color/acabado y el tipo de aluminio del encabezado se aplican por defecto a ítems nuevos
-  (`headerAcabado`, `headerAluminio`).
+- El tipo de aluminio del encabezado se aplica por defecto a ítems nuevos (correderas/
+  galandajes) vía `headerAluminio` — no es "memoria" en vivo, no se actualiza si el ítem ya
+  existe.
+- **El color/acabado del encabezado SÍ es "memoria" en vivo** (a diferencia del tipo de
+  aluminio): `triggerGlobalUpdate()` (disparado por el `oninput` de `#header-color`) aplica
+  `headerAcabado()` a **todos** los ítems existentes (no solo a los nuevos), pisando incluso un
+  color elegido a mano en un ítem individual — un cambio manual por ítem se mantiene hasta el
+  próximo cambio del encabezado, que vuelve a pisar todo (comportamiento pedido explícitamente:
+  "si arriba pongo blanco que todo me salga blanco"). Se salta los ítems `type==='draw'` (CAD),
+  que guardan su color por módulo en `window['cadItems'+id]`, no en `cardsState[id]`.
+  `headerAcabado()` reconoce, en este orden: negro/blanco/grafito(antracita)/madera por palabra;
+  código RAL por hex, por la palabra "RAL", o por un número de 4 dígitos suelto (para que
+  "Gris 7039" tome el RAL, no un gris genérico) — `ralHex()`/`RAL_HEX` tiene una tabla chica de
+  códigos RAL comunes en aluminio (7039, 7016, 9010, 9016, etc.); un código no listado cae a un
+  gris genérico `#8a8f94`, no es la carta RAL completa.
+- **Vidrio Laminado 4+4 por defecto en ítems nuevos** (`addItem`, para no tener que elegirlo a
+  mano cada vez) — ducha/cerramiento/baranda pisan este default más abajo en la misma función
+  con su propio vidrio típico (templado 10mm), y no se toca retroactivamente ítems ya creados.
