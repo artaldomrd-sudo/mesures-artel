@@ -46,6 +46,10 @@
     .btn-asistio { background: #2ecc71; color: #fff; }
     .btn-modificar { background: var(--artal-blue); color: #fff; }
     .btn-borrar { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .btn-reabrir { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; }
+    .cita-card.completada { opacity: 0.62; }
+    .evento-badge.done { background: #2ecc71; color: #fff; }
+    .grid-day .dot.done { background: #bbb; }
 
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
     .modal-overlay.show { display: flex; }
@@ -219,14 +223,18 @@
         for (let i = 0; i < firstWeekday; i++) html += `<div class="grid-day empty"></div>`;
         for (let day = 1; day <= daysInMonth; day++) {
             const cellDate = new Date(year, month, day);
-            const hasCitas = allCitas.some(c => {
+            const delDia = allCitas.filter(c => {
                 const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
                 return f && sameDay(f, cellDate);
             });
+            const hayPend = delDia.some(c => !c.completada);
+            // Punto naranja si hay algo pendiente ese día; gris si solo quedan eventos ya
+            // atendidos (historial) — así se distingue lo activo de lo pasado.
+            const dot = hayPend ? '<span class="dot"></span>' : (delDia.length ? '<span class="dot done"></span>' : '');
             const classes = ['grid-day'];
             if (sameDay(cellDate, today)) classes.push('today');
             if (selectedDay && sameDay(cellDate, selectedDay)) classes.push('selected');
-            html += `<div class="${classes.join(' ')}" onclick="seleccionarDia(${year}, ${month}, ${day})">${day}${hasCitas ? '<span class="dot"></span>' : ''}</div>`;
+            html += `<div class="${classes.join(' ')}" onclick="seleccionarDia(${year}, ${month}, ${day})">${day}${dot}</div>`;
         }
         grid.innerHTML = html;
     }
@@ -259,11 +267,18 @@
         const dur = Number(c.duracionMin || 0);
         let horaTxt = fmtHora(fecha);
         if (!esRec && dur > 0) horaTxt = fmtHora(fecha) + '–' + fmtHora(new Date(fecha.getTime() + dur * 60000));
+        const hecha = !!c.completada;
         const borde = esRec ? '' : `style="border-left-color:${colorCreador(c.creadoPorNombre)};"`;
+        const acciones = hecha
+            ? `<button class="btn-reabrir" onclick="reabrirCita('${c.id}')">↩ Reabrir</button>
+               <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`
+            : `<button class="btn-asistio" onclick="asistioCita('${c.id}')">✓ ${esRec ? 'Hecho' : 'Asistió'}</button>
+               <button class="btn-modificar" onclick="modificarCita('${c.id}')">✏ Modificar</button>
+               <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`;
         return `
-        <div class="cita-card ${esRec ? 'recordatorio' : ''}" ${borde}>
+        <div class="cita-card ${esRec ? 'recordatorio' : ''} ${hecha ? 'completada' : ''}" ${borde}>
             <div class="cita-head">
-                <b>${esc(c.titulo)}${esRec ? '<span class="evento-badge rec">🔔 Recordatorio</span>' : ''}</b>
+                <b>${esc(c.titulo)}${esRec ? '<span class="evento-badge rec">🔔 Recordatorio</span>' : ''}${hecha ? '<span class="evento-badge done">✓ ' + (esRec ? 'Hecho' : 'Asistió') + '</span>' : ''}</b>
                 <span class="hora">${horaTxt}</span>
             </div>
             <div class="meta">
@@ -273,9 +288,7 @@
                 <br>Agendado por ${esc(c.creadoPorNombre)}
             </div>
             <div class="cita-actions">
-                <button class="btn-asistio" onclick="asistioCita('${c.id}')">✓ ${esRec ? 'Hecho' : 'Asistió'}</button>
-                <button class="btn-modificar" onclick="modificarCita('${c.id}')">✏ Modificar</button>
-                <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>
+                ${acciones}
             </div>
         </div>`;
     }
@@ -289,6 +302,8 @@
         let citasAMostrar;
 
         if (selectedDay) {
+            // Vista de un día: se muestran TODAS (incluidas las ya atendidas), para consultar el
+            // historial por fecha.
             bar.style.display = 'flex';
             document.getElementById('selected-day-label').textContent =
                 selectedDay.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -296,20 +311,22 @@
                 const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
                 return f && sameDay(f, selectedDay);
             }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
-            if (!citasAMostrar.length) { list.innerHTML = '<p class="empty">No hay citas ese día.</p>'; return; }
+            if (!citasAMostrar.length) { list.innerHTML = '<p class="empty">No hay eventos ese día.</p>'; return; }
             list.innerHTML = `<div class="day-group">${citasAMostrar.map(citaCardHTML).join('')}</div>`;
             return;
         }
 
+        // Vista del mes: solo lo PENDIENTE (lo ya atendido sale de la lista pero queda en el
+        // calendario; se ve al abrir su día).
         bar.style.display = 'none';
         const start = new Date(currentMonth);
         const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
         const delMes = allCitas.filter(c => {
             const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
-            return f && f >= start && f < end;
+            return f && f >= start && f < end && !c.completada;
         }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
 
-        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay citas este mes.</p>'; return; }
+        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay eventos pendientes este mes.</p>'; return; }
 
         const groups = {};
         delMes.forEach(c => {
@@ -478,15 +495,29 @@
         }
     };
 
-    // Validar asistencia / hecho: se quita del calendario automáticamente (con una confirmación
-    // para no borrarla por un toque accidental).
+    // Validar asistencia / hecho: NO se borra — se marca como atendida, así sale de la lista de
+    // pendientes pero se queda en el calendario (se ve al abrir su día, para consultarla luego).
     window.asistioCita = async function (id) {
+        try {
+            await updateDoc(doc(db, 'citas', id), {
+                completada: true,
+                fechaCompletada: serverTimestamp(),
+                recordatoriosPendientes: false   // ya no hace falta recordar algo ya atendido
+            });
+        } catch (e) { alert('No se pudo completar: ' + e.message); }
+    };
+
+    // Reabrir: vuelve a pendiente (por si se marcó por error o hay que reprogramar).
+    window.reabrirCita = async function (id) {
         const c = allCitas.find(x => x.id === id);
-        const esRec = c && c.tipo === 'recordatorio';
-        if (!confirm(esRec ? '¿Marcar el recordatorio como hecho y quitarlo del calendario?'
-                           : '¿Marcar la cita como asistida y quitarla del calendario?')) return;
-        try { await deleteDoc(doc(db, 'citas', id)); }
-        catch (e) { alert('No se pudo completar: ' + e.message); }
+        const recs = c && Array.isArray(c.recordatorios) ? c.recordatorios : [];
+        try {
+            await updateDoc(doc(db, 'citas', id), {
+                completada: false,
+                recordatoriosEnviados: [],
+                recordatoriosPendientes: recs.length > 0
+            });
+        } catch (e) { alert('No se pudo reabrir: ' + e.message); }
     };
 
     window.borrarCita = async function (id) {
