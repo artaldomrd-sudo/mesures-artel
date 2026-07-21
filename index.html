@@ -154,6 +154,10 @@
         .config-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f4f6f7; padding: 10px; border-radius: 4px; border: 1px solid #e1e8ed; }
         .config-options select { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; outline: none; background: white; color: var(--text-dark); font-family: 'Arimo'; }
 
+        .pano-section { margin-top: 8px; }
+        .pano-config-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #eef7fb; padding: 10px; border-radius: 4px; border: 1px dashed var(--artal-blue); margin-top: 6px; }
+        .pano-config-options select, .pano-config-options input { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; outline: none; background: white; color: var(--text-dark); font-family: 'Arimo'; box-sizing: border-box; }
+
         .notes-area { width: 100%; border: 1px solid #ddd; padding: 8px; font-size: 12px; height: 50px; border-radius: 4px; resize: none; outline: none; font-family: inherit; color: var(--text-dark); }
         .notes-area:focus { border-color: var(--artal-yellow); }
         
@@ -1057,8 +1061,21 @@
             if(specs.length > 0) {
                 html += `<div style="color:#555; font-size:12px; line-height:1.8;"> ${specs.join('<br> ')}</div>`;
             }
+
+            if (state.panoArriba || state.panoAbajo) {
+                const panoLine = (pano, label) => {
+                    const vid = `${pano.vidrio || 'templado'} ${espesorLabel(pano.espesor)} ${pano.color_vidrio || ''}`.trim();
+                    const fijTxt = pano.fijacion === 'sin_marco' ? 'Sin Marco' : pano.fijacion === 'p40_puerta' ? 'P40 de puerta' : (pano.fijacion || 'Conectores');
+                    return `Paño Fijo ${label}: <strong>${pano.alto || 0}</strong> mm · ${vid} · Fijación: ${fijTxt}`;
+                };
+                let panoHtml = '';
+                if (state.panoArriba) panoHtml += `<div>${panoLine(state.panoArriba, 'arriba')}</div>`;
+                if (state.panoAbajo) panoHtml += `<div>${panoLine(state.panoAbajo, 'abajo')}</div>`;
+                const altoTotal = (parseInt(state.alto) || 0) + (state.panoArriba ? (parseInt(state.panoArriba.alto) || 0) : 0) + (state.panoAbajo ? (parseInt(state.panoAbajo.alto) || 0) : 0);
+                html += `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #ccc; font-size:12px; color:#555;">${panoHtml}<div style="margin-top:2px; font-weight:bold; color:var(--artal-blue);">Alto total (con paños): ${altoTotal} mm</div></div>`;
+            }
         }
-        
+
         html += '</div>';
         summaryBox.innerHTML = html;
     }
@@ -1904,6 +1921,8 @@
                         ${opcionesHtml}
                     </div>
 
+                    <div class="pano-section" id="pano-section-${id}">${renderPanoSection(id)}</div>
+
                     <div class="measure-inputs">
                         <div class="measure-field" style="flex:0.8;"><label style="color:#e74c3c;">Cant:</label><input type="number" value="${cardsState[id].cantidad || 1}" min="1" oninput="updateState(${id}, 'cantidad', this.value)" style="border-color:#e74c3c;"></div>
                         <div class="measure-field"><label>A:</label><input type="text" inputmode="numeric" id="ancho-${id}" value="${cardsState[id].ancho || ''}" oninput="updateState(${id}, 'ancho', this.value); this.classList.remove('error-pulse');" placeholder="Ancho (mm)"></div>
@@ -2053,6 +2072,81 @@
         if(btnI) btnI.className = 'toggle-btn' + (side === 'I' ? ' active' : '');
         if(btnD) btnD.className = 'toggle-btn' + (side === 'D' ? ' active' : '');
         updateState(id, 'orientacion', side);
+    }
+
+    // --- Paño Fijo adosado (arriba/abajo) en ventanas/puertas: modelo de datos + UI ---------
+    function getPanoDefault() {
+        const state = { alto: 0, vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', fijacion: 'conectores', color_perfil: 'natural', color_ral: '' };
+        const ha = headerAcabado();
+        if (ha) { state.color_perfil = ha.key; if (ha.ral) state.color_ral = ha.ral; }
+        return state;
+    }
+
+    window.togglePano = function(id, side) {
+        if (!cardsState[id]) return;
+        const key = side === 'arriba' ? 'panoArriba' : 'panoAbajo';
+        cardsState[id][key] = cardsState[id][key] ? null : getPanoDefault();
+        refreshPanoUI(id);
+        const sc = document.getElementById('schematic-' + id);
+        if (sc) sc.innerHTML = renderSVG(id);
+        saveProgress();
+    };
+
+    window.updatePanoState = function(id, side, key, value) {
+        if (!cardsState[id]) return;
+        const panoKey = side === 'arriba' ? 'panoArriba' : 'panoAbajo';
+        const pano = cardsState[id][panoKey];
+        if (!pano) return;
+        if (key === 'alto') pano.alto = parseInt(String(value).replace(/\D/g, '')) || 0;
+        else pano[key] = value;
+
+        if (key === 'espesor' && value) {
+            if (['3+3', '4+4', '5+5', '6+6'].includes(value)) pano.vidrio = 'laminado';
+            else if (['10mm', '12mm'].includes(value)) pano.vidrio = 'templado';
+        }
+
+        const container = document.getElementById('schematic-' + id);
+        if (container) container.innerHTML = renderSVG(id);
+        if (key === 'color_perfil' || key === 'espesor') refreshPanoUI(id);
+        if (cardsState[id].locked) generateSummary(id);
+        saveProgress();
+    };
+
+    function buildPanoConfigHtml(id, side, pano) {
+        const fn = `updatePanoState(${id}, '${side}'`;
+        const vt = pano.vidrio || 'templado';
+        const ce = pano.espesor || '';
+        const cv = pano.color_vidrio || '';
+        const fij = pano.fijacion || 'conectores';
+        const cp = pano.color_perfil || 'natural';
+        let colorPerfilSel = `<select onchange="${fn}, 'color_perfil', this.value)" title="Acabado del perfil de aluminio"><option value="blanco" ${cp==='blanco'?'selected':''}>Acabado: Blanco</option><option value="negro" ${cp==='negro'?'selected':''}>Acabado: Negro</option><option value="natural" ${cp==='natural'?'selected':''}>Acabado: Natural/Plata</option><option value="grafito" ${cp==='grafito'?'selected':''}>Acabado: Grafito</option><option value="madera" ${cp==='madera'?'selected':''}>Acabado: Madera</option><option value="ral" ${cp==='ral'?'selected':''}>Acabado: RAL Especial</option></select>`;
+        if (cp === 'ral') colorPerfilSel += `<input type="text" value="${pano.color_ral || ''}" placeholder="RAL / Hex (ej: RAL 7016)" oninput="${fn}, 'color_ral', this.value)" style="grid-column: span 2;">`;
+        return `
+            <input type="text" inputmode="numeric" value="${pano.alto || ''}" placeholder="Alto del paño (mm)" oninput="${fn}, 'alto', this.value)" style="grid-column: span 2;">
+            <select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option></select>
+            <select onchange="${fn}, 'espesor', this.value)"><option value="" ${ce===''?'selected':''}>-- Grosor --</option><option value="10mm" ${ce==='10mm'?'selected':''}>3/8" (10mm)</option><option value="12mm" ${ce==='12mm'?'selected':''}>1/2" (12mm)</option><option value="3+3" ${ce==='3+3'?'selected':''}>3+3</option><option value="4+4" ${ce==='4+4'?'selected':''}>4+4</option><option value="5+5" ${ce==='5+5'?'selected':''}>5+5</option><option value="6+6" ${ce==='6+6'?'selected':''}>6+6</option></select>
+            <select onchange="${fn}, 'color_vidrio', this.value)"><option value="" ${cv===''?'selected':''}>-- Color del Vidrio --</option><option value="natural" ${cv==='natural'?'selected':''}>Natural / Transparente</option><option value="negro" ${cv==='negro'?'selected':''}>Negro / Transparente</option><option value="azul" ${cv==='azul'?'selected':''}>Azul / Transparente</option><option value="esmerilado" ${cv==='esmerilado'?'selected':''}>Esmerilado / Opaco</option><option value="reflectivo" ${cv==='reflectivo'?'selected':''}>Reflectivo</option></select>
+            <select onchange="${fn}, 'fijacion', this.value)" title="Sistema / Fijación"><option value="conectores" ${fij==='conectores'?'selected':''}>Con Conectores</option><option value="moldura" ${fij==='moldura'?'selected':''}>Con Moldura Perimetral</option><option value="p40" ${fij==='p40'?'selected':''}>Perfiles Aluminio (P40)</option><option value="sin_marco" ${fij==='sin_marco'?'selected':''}>Sin Marco</option></select>
+            ${colorPerfilSel}
+        `;
+    }
+
+    function renderPanoSection(id) {
+        const state = cardsState[id];
+        if (!state || state.categoria !== 'ventana') return '';
+        const sideBtn = (side, label) => {
+            const active = !!state[side === 'arriba' ? 'panoArriba' : 'panoAbajo'];
+            return `<div class="toggle-btn ${active ? 'active' : ''}" onclick="togglePano(${id}, '${side}')">${label}</div>`;
+        };
+        let html = `<div class="orientation-toggle">${sideBtn('arriba', '+ Paño Fijo arriba')}${sideBtn('abajo', '+ Paño Fijo abajo')}</div>`;
+        if (state.panoArriba) html += `<div class="pano-config-options"><div style="grid-column:span 2; font-size:11px; font-weight:bold; color:var(--artal-blue);">PAÑO FIJO ARRIBA</div>${buildPanoConfigHtml(id, 'arriba', state.panoArriba)}</div>`;
+        if (state.panoAbajo) html += `<div class="pano-config-options"><div style="grid-column:span 2; font-size:11px; font-weight:bold; color:var(--artal-blue);">PAÑO FIJO ABAJO</div>${buildPanoConfigHtml(id, 'abajo', state.panoAbajo)}</div>`;
+        return html;
+    }
+
+    function refreshPanoUI(id) {
+        const section = document.getElementById('pano-section-' + id);
+        if (section) section.innerHTML = renderPanoSection(id);
     }
 
     // =====================================================================
@@ -2205,6 +2299,49 @@
             case 'fachada_din': return [[10, 5, 80, 50]];
         }
         return [];
+    }
+
+    // --- Paño Fijo adosado (arriba/abajo) en ventanas/puertas -----------------------------
+    // Se compone DESPUÉS de que renderSVG ya terminó el dibujo del ítem base (mismo ancho,
+    // trasladado verticalmente, sin reescalar nada) para no distorsionar tipos que ya
+    // combinan elevación + vista de planta en un mismo viewBox (win_abat/win_ob/door_abat).
+    const PANO_BAND_H = 34;
+
+    function buildPanoFragment(uid, side, pano, panelRect) {
+        const [bx, , bw] = panelRect;
+        const puid = `${uid}${side}`;
+        const glassOnly = pano.fijacion === 'sin_marco';
+        const panelFn = glassOnly ? glassOnlyPanel : extrudedPanel;
+        let frag = glassDefs(puid, pano.color_vidrio);
+        frag += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
+        frag += panelFn(puid, bx, 0, bw, PANO_BAND_H);
+        frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(PANO_BAND_H / 2 + 3).toFixed(1)}" font-family="Arimo" font-size="9" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
+        if (pano.alto > 0) {
+            frag += `<text x="${(bx + bw + 4).toFixed(1)}" y="${(PANO_BAND_H / 2).toFixed(1)}" font-family="Arimo" font-size="6" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${pano.alto} mm</text>`;
+        }
+        return applyFinish(frag, pano.color_perfil, pano.color_ral);
+    }
+
+    // finishedSvg ya pasó por applyFinish() con el acabado del ítem BASE — cada paño se
+    // finaliza por separado con su propio acabado antes de pegarse, para que no se mezclen.
+    function composePanos(id, state, finishedSvg, viewBox) {
+        const m = finishedSvg.match(/^<svg([^>]*)>([\s\S]*)<\/svg>\s*$/);
+        if (!m) return finishedSvg;
+        const attrs = m[1], inner = m[2];
+        const [vbX, vbY, vbW, vbH] = viewBox.split(' ').map(Number);
+        const panelRect = getPanelRects(state)[0] || [vbX + 14, 0, vbW - 28, vbH];
+        const gap = 4;
+        const topH = state.panoArriba ? PANO_BAND_H + gap : 0;
+        const botH = state.panoAbajo ? PANO_BAND_H + gap : 0;
+        const newVbY = vbY - topH;
+        const newVbH = vbH + topH + botH;
+        const newAttrs = attrs.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${newVbY.toFixed(1)} ${vbW} ${newVbH.toFixed(1)}"`);
+        let out = `<svg${newAttrs}>`;
+        if (state.panoArriba) out += `<g transform="translate(0, ${newVbY.toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect)}</g>`;
+        out += inner;
+        if (state.panoAbajo) out += `<g transform="translate(0, ${(vbY + vbH + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect)}</g>`;
+        out += '</svg>';
+        return out;
     }
 
     function wrapIso(uid, inner, box, pad, color) {
@@ -3513,7 +3650,9 @@
         }
 
         svg += '</svg>';
-        return applyFinish(svg, state.color_perfil, state.color_ral);
+        const finished = applyFinish(svg, state.color_perfil, state.color_ral);
+        if (!isCAD && (state.panoArriba || state.panoAbajo)) return composePanos(id, state, finished, viewBox);
+        return finished;
     }
 
     function initMiniCAD(id) {

@@ -48,5 +48,14 @@ try {
   ] }); ok++;
 } catch (e) { fail++; console.error('  ducha_facade:', e.message); }
 
+// Paño Fijo adosado (arriba/abajo): un tipo con vista de planta y uno sin ella.
+const panoFixture = { alto: 400, vidrio: 'templado', espesor: '10mm', color_vidrio: 'esmerilado', fijacion: 'sin_marco', color_perfil: 'negro' };
+for (const t of ['win_abat', 'win_proy']) {
+  try {
+    const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 900, alto: 1200, orientacion: 'I', color_vidrio: 'natural', vidrio: 'templado', espesor: '10mm', color_perfil: 'natural', panoArriba: panoFixture, panoAbajo: panoFixture };
+    ctx.__render('card1', st); ok++;
+  } catch (e) { fail++; console.error(`  ${t} (con panos):`, e.message); }
+}
+
 console.log(`RENDER OK: ${ok} FAIL: ${fail}`);
 process.exit(fail ? 1 : 0);

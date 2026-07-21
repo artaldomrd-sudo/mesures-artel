@@ -130,6 +130,53 @@ un **PDF de Cotización o Fabricación** para el cliente.
   el imán intacto (el vidrio llega a los bordes del módulo). `cadTechnical` dibuja las líneas
   técnicas/herrajes por tipo, proporcional a `W`/`H`.
 
+## Paño Fijo adosado (arriba/abajo) en ventanas/puertas
+
+Alternativa ligera al CAD para el caso más común: pegarle un paño fijo de vidrio arriba y/o
+abajo de una ventana/puerta (ej. oscilobatiente + paño de ventilación fijo encima), con la
+**misma fidelidad visual que una tarjeta normal** (degradado de vidrio, marco extruido) — no el
+estilo simplificado del CAD.
+
+- Solo disponible para `categoria === 'ventana'` (`win_abat, win_ob, win_proy, win_souf,
+  door_abat`). Campos nuevos y planos en `cardsState[id]` (nada de posición libre que guardar,
+  a diferencia del CAD): `panoArriba` / `panoAbajo`: `null` o `{ alto, vidrio, espesor,
+  color_vidrio, fijacion, color_perfil, color_ral }`. Sin campo de ancho propio: el paño
+  **siempre hereda el ancho del ítem base** vía `getPanelRects(state)[0]`.
+- **Persistencia gratis**: como `getAppJSON`/`restoreData`/`addItem` ya guardan/restauran
+  `cardsState[id]` como objeto completo, estos campos viajan solos. Igual con la whitelist de
+  re-render de `updateState` (no hace falta tocarla): los paños tienen su propia función
+  separada, `updatePanoState(id, side, key, value)`, que llama a `renderSVG(id)` directo.
+- **Composición al final de `renderSVG`, sin tocar el switch grande**: `renderSVG` sigue
+  devolviendo exactamente lo mismo que antes cuando no hay paños. Si `state.panoArriba` o
+  `state.panoAbajo` existen, el string ya terminado (después de su propio `applyFinish`) se
+  envuelve con `composePanos(id, state, finished, viewBox)`, que:
+  - Extrae `viewBox`/contenido del `<svg>` base con una regex simple (todos los tipos target
+    comparten el mismo rango horizontal de coordenadas, así que no hace falta reescalar nada).
+  - Agrega una banda de alto fijo (`PANO_BAND_H = 34`) por cada paño activo, generada por
+    `buildPanoFragment(uid, side, pano, panelRect)` — su propio `glassDefs`/gradiente con un uid
+    distinto (`${uid}arriba`/`${uid}abajo`) y su propio `applyFinish(frag, pano.color_perfil,
+    pano.color_ral)` **antes** de pegarse (nunca aplicar `applyFinish` una sola vez sobre el
+    conjunto ya unido — mezclaría el acabado del paño con el del ítem base).
+  - Traslada el contenido con `<g transform="translate(0, Y)">` (nunca
+    `preserveAspectRatio="none"` con un viewBox reescalado): así no se distorsiona el dibujo
+    base, ni siquiera en los tipos que ya combinan elevación + vista de planta en el mismo
+    viewBox (`win_abat`/`win_ob`/`door_abat`).
+  - Usa `extrudedPanel` o `glassOnlyPanel` según `pano.fijacion === 'sin_marco'`, con una "F"
+    centrada y la medida en mm al costado — sin réplica de moldura/conectores en detalle (eso
+    vive en `moldFrame`, un closure local de `cadTechnical`, no reutilizable aquí).
+- **UI**: botones "+ Paño Fijo arriba/abajo" (`togglePano(id, side)`, reutiliza `.toggle-btn`)
+  como hermanos de `.config-options` — nunca dentro, porque `updateState` regenera
+  `#options-${id}` completo al cambiar vidrio/acabado/fijación del ítem base y borraría la UI
+  del paño. Mini-configuración propia con clase `.pano-config-options` (grid 2 columnas propio,
+  no interfiere con la reconciliación de selects de `.config-options`), generada por
+  `renderPanoSection(id)` / `buildPanoConfigHtml(id, side, pano)` y refrescada con
+  `refreshPanoUI(id)`.
+- **Resumen/PDF**: `generateSummary` agrega una línea por paño adosado (medidas + vidrio +
+  fijación) y una línea de "Alto total (con paños)" — sin tocar `state.alto`, que sigue
+  significando solo la altura de la hoja operable (no rompe ningún cálculo de área de
+  vidrio/herrajes que dependa de él). Como la sección de paños vive dentro de `.hide-on-lock`,
+  se oculta sola al fijar el ítem/exportar PDF, igual que el resto de los controles de edición.
+
 ## Vidrio de Ducha (constructor de paneles)
 
 - `renderFacadeBuilder(id)`: UI del constructor. Botón desplegable **"+ Agregar"** (Mampara/
