@@ -10,7 +10,18 @@
 <link rel="stylesheet" href="shared.css">
 <style>
     main { max-width: 900px; }
-    #search-input, #audit-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
+    #search-input, #audit-search, #carpeta-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
+    .carpeta { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid #8e44ad; }
+    .carpeta > h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
+    .carpeta .cliente { font-size: 12px; color: #888; }
+    .carpeta-doc { border-top: 1px solid #f0f0f0; padding: 9px 0; margin-top: 6px; }
+    .carpeta-doc .doc-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .carpeta-doc .doc-tag { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 12px; color: #fff; }
+    .carpeta-doc .doc-tag.cot { background: #3498db; }
+    .carpeta-doc .doc-tag.fab { background: #8e44ad; }
+    .carpeta-doc .doc-tag.compra { background: #16a085; }
+    .carpeta-doc .doc-links { font-size: 12.5px; color: #666; margin-top: 5px; display: flex; gap: 12px; flex-wrap: wrap; }
+    .carpeta-doc .doc-links a { color: var(--artal-blue); font-weight: bold; text-decoration: none; }
     .audit-proyecto { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid var(--artal-blue); }
     .audit-proyecto h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
     .audit-proyecto .cliente { font-size: 12px; color: #888; font-weight: normal; }
@@ -67,7 +78,8 @@
 <main>
     <div class="tabs">
         <button class="tab-btn active" id="tab-pedidos" onclick="setVista('pedidos')">Pedidos</button>
-        <button class="tab-btn" id="tab-auditoria" onclick="setVista('auditoria')">Auditoría por proyecto</button>
+        <button class="tab-btn" id="tab-carpetas" onclick="setVista('carpetas')">Carpetas por obra</button>
+        <button class="tab-btn" id="tab-auditoria" onclick="setVista('auditoria')">Auditoría</button>
     </div>
 
     <div id="pedidos-view">
@@ -77,6 +89,11 @@
         <datalist id="clientes-datalist"></datalist>
         <div class="cat-grid" id="cat-grid"></div>
         <div id="orders-list"><p class="empty">Cargando…</p></div>
+    </div>
+
+    <div id="carpetas-view" style="display:none;">
+        <input type="text" id="carpeta-search" placeholder="🔎 Buscar obra o cliente…" autocomplete="off">
+        <div id="carpetas-list"><p class="empty">Cargando…</p></div>
     </div>
 
     <div id="auditoria-view" style="display:none;">
@@ -373,6 +390,7 @@
         renderTiles();
         renderAlerts();
         render();
+        renderCarpetas();
     }, (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando historial: ' + err.message + '</p>';
     });
@@ -384,10 +402,10 @@
     let auditMovs = [];
 
     window.setVista = function (v) {
-        document.getElementById('tab-pedidos').classList.toggle('active', v === 'pedidos');
-        document.getElementById('tab-auditoria').classList.toggle('active', v === 'auditoria');
-        document.getElementById('pedidos-view').style.display = v === 'pedidos' ? 'block' : 'none';
-        document.getElementById('auditoria-view').style.display = v === 'auditoria' ? 'block' : 'none';
+        ['pedidos', 'carpetas', 'auditoria'].forEach(k => {
+            document.getElementById('tab-' + k).classList.toggle('active', v === k);
+            document.getElementById(k + '-view').style.display = v === k ? 'block' : 'none';
+        });
     };
 
     function fmtFechaHora(ts) {
@@ -434,6 +452,60 @@
     }
 
     document.getElementById('audit-search').addEventListener('input', renderAudit);
+
+    // ============ Carpetas por obra ============
+    // Agrupa TODOS los documentos (cotización, fabricación, compra) por cliente+obra, para tener
+    // el expediente completo de cada obra en un solo lugar. Así, cuando llega la fabricación de
+    // una obra que ya tenía cotización, ambas quedan reunidas en la misma "carpeta".
+    function docTag(o) {
+        if (o.docType === 'COMPRA_DIRECTA') return { cls: 'compra', label: 'Compra directa' };
+        if ((o.docType || '').indexOf('FAB') === 0) return { cls: 'fab', label: 'Fabricación' };
+        return { cls: 'cot', label: 'Cotización' };
+    }
+
+    function renderCarpetas() {
+        const term = document.getElementById('carpeta-search').value.trim().toLowerCase();
+        const grupos = new Map();
+        allOrders.forEach(({ id, data: o }) => {
+            const cliente = (o.cliente || '').trim();
+            const obra = (o.obra || '').trim();
+            const titulo = obra || cliente || 'Sin obra';
+            const key = (cliente + '|||' + obra).toLowerCase();
+            if (!grupos.has(key)) grupos.set(key, { titulo, cliente, docs: [] });
+            grupos.get(key).docs.push({ id, o });
+        });
+        let arr = Array.from(grupos.values());
+        if (term) arr = arr.filter(g => (g.titulo + ' ' + g.cliente).toLowerCase().includes(term));
+        arr.sort((a, b) => Math.max(...b.docs.map(d => orderDate(d.o))) - Math.max(...a.docs.map(d => orderDate(d.o))));
+
+        const list = document.getElementById('carpetas-list');
+        if (!arr.length) { list.innerHTML = '<p class="empty">No hay obras registradas.</p>'; return; }
+        list.innerHTML = arr.map(g => `
+            <div class="carpeta">
+                <h3>${esc(g.titulo)}</h3>
+                ${g.cliente && g.cliente.toLowerCase() !== g.titulo.toLowerCase() ? `<div class="cliente">${esc(g.cliente)}</div>` : ''}
+                ${g.docs.slice().sort((a, b) => orderDate(b.o) - orderDate(a.o)).map(({ id, o }) => {
+                    const t = docTag(o);
+                    const links = [];
+                    if (o.docType !== 'COMPRA_DIRECTA') links.push(`<a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha</a>`);
+                    if (o.contratistaPdfUrl) links.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
+                    if (o.cotizacionFinalPdfUrl) links.push(`<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">PDF final cliente</a>`);
+                    if (o.compraPdfUrl) links.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
+                    if (o.recepcionInstalador && o.recepcionInstalador.firma) links.push(`<a href="${o.recepcionInstalador.firma}" target="_blank">Firma recepción</a>`);
+                    if (o.clienteAprobacion && o.clienteAprobacion.firma) links.push(`<a href="${o.clienteAprobacion.firma}" target="_blank">Firma cliente</a>`);
+                    return `
+                    <div class="carpeta-doc">
+                        <div class="doc-head">
+                            <span class="doc-tag ${t.cls}">${t.label}</span>
+                            <span style="font-size:12.5px;color:#555;">${esc(STATUS_LABEL[o.status] || o.status)}${progresoExtra(o)}</span>
+                        </div>
+                        <div class="doc-links">${links.join('')}</div>
+                    </div>`;
+                }).join('')}
+            </div>`).join('');
+    }
+
+    document.getElementById('carpeta-search').addEventListener('input', renderCarpetas);
 
     onSnapshot(collection(db, 'movimientosInstalaciones'), (snap) => {
         auditMovs = snap.docs.map(d => d.data());

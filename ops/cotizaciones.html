@@ -10,7 +10,11 @@
 <link rel="stylesheet" href="shared.css">
 <style>
     .order-card { border-left-color: #3498db; }
+    .order-card.enviada { border-left-color: #9b59b6; }
     .upload-row button { background: #2ecc71; }
+    h2.section-title { font-size: 14px; color: var(--artal-blue); margin: 6px 0 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn-aprobar { margin-top: 10px; width: 100%; padding: 12px; border: none; border-radius: 9px; background: #9b59b6; color: #fff; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; min-height: 46px; }
+    .aviso-fab { font-size: 12px; color: #b9770e; background: #fff8e8; border: 1.5px solid var(--artal-yellow); border-radius: 8px; padding: 8px 10px; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -29,14 +33,18 @@
 </header>
 
 <main>
-    <div id="orders-list"><p class="empty">Cargando…</p></div>
+    <h2 class="section-title">Por costear / enviar al cliente</h2>
+    <div id="porenviar-list"><p class="empty">Cargando…</p></div>
+
+    <h2 class="section-title">Enviadas al cliente — al aprobar, enviar a fábrica</h2>
+    <div id="enviadas-list"><p class="empty">Cargando…</p></div>
 </main>
 
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
     import { db, storage } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { openOrderPreview } from './order-preview.js';
     window.openOrderPreview = openOrderPreview;
@@ -53,7 +61,8 @@
         }[c]));
     }
 
-    function orderCardHTML(id, o) {
+    // Tarjeta para las cotizaciones POR enviar (status 'costeada'): subir el PDF final.
+    function porEnviarCardHTML(id, o) {
         const contratistaLink = o.contratistaPdfUrl
             ? `<a href="${esc(o.contratistaPdfUrl)}" target="_blank">Ver cotización del contratista</a>`
             : '(sin PDF del contratista)';
@@ -74,16 +83,69 @@
         </div>`;
     }
 
-    function render(docs) {
-        const list = document.getElementById('orders-list');
-        if (!docs.length) { list.innerHTML = '<p class="empty">No hay cotizaciones costeadas pendientes.</p>'; return; }
-        list.innerHTML = docs.map(d => orderCardHTML(d.id, d.data())).join('');
+    // Tarjeta para las YA enviadas al cliente: al aprobar, se envía directo a fábrica (sin volver
+    // al cuaderno). Solo se muestran las que aún NO se han enviado a fábrica.
+    function enviadaCardHTML(id, o) {
+        const finalLink = o.cotizacionFinalPdfUrl
+            ? `<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">Ver cotización final</a>` : '';
+        return `
+        <div class="order-card enviada" id="card-${id}">
+            <div class="order-head">
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+            </div>
+            <div class="order-meta">
+                <span>${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems</span>
+                <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha técnica</a>
+                ${finalLink}
+            </div>
+            <div class="aviso-fab">⚠ Antes de enviar a fábrica, confirma que las medidas de esta ficha son de <b>FABRICACIÓN</b> (no de cotización). Revisa la marca de cada ítem en "Ver ficha técnica".</div>
+            <button class="btn-aprobar" onclick="aprobarYEnviarFabrica('${id}')">✅ Cliente aprobó — Enviar a fábrica</button>
+        </div>`;
     }
 
-    const q = query(collection(db, 'orders'), where('status', '==', 'costeada'));
-    onSnapshot(q, (snap) => render(snap.docs), (err) => {
-        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
+    let ordersCache = [];
+    function render() {
+        const porEnviar = ordersCache.filter(d => d.data.status === 'costeada');
+        const enviadas = ordersCache.filter(d => d.data.status === 'enviada_cliente' && !d.data.enviadaAFabrica);
+
+        const l1 = document.getElementById('porenviar-list');
+        l1.innerHTML = porEnviar.length ? porEnviar.map(d => porEnviarCardHTML(d.id, d.data)).join('')
+            : '<p class="empty">No hay cotizaciones costeadas pendientes.</p>';
+
+        const l2 = document.getElementById('enviadas-list');
+        l2.innerHTML = enviadas.length ? enviadas.map(d => enviadaCardHTML(d.id, d.data)).join('')
+            : '<p class="empty">No hay cotizaciones enviadas esperando aprobación.</p>';
+    }
+
+    const q = query(collection(db, 'orders'), where('status', 'in', ['costeada', 'enviada_cliente']));
+    onSnapshot(q, (snap) => { ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() })); render(); }, (err) => {
+        document.getElementById('porenviar-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+
+    // Cliente aprobó → crea un pedido de FÁBRICA aparte (conserva la cotización), con la misma
+    // ficha (appJSON) y ligado por cliente+obra. Advertencia previa para asegurar que las medidas
+    // son de fabricación.
+    window.aprobarYEnviarFabrica = async function (id) {
+        const o = (ordersCache.find(x => x.id === id) || {}).data;
+        if (!o) return;
+        if (!confirm(`⚠ IMPORTANTE: ¿confirmas que las medidas de "${o.cliente} — ${o.obra}" son de FABRICACIÓN (no de cotización)?\n\nAl aceptar se crea el pedido de fábrica con esta ficha.`)) return;
+        try {
+            await addDoc(collection(db, 'orders'), {
+                cliente: o.cliente || '', obra: o.obra || '',
+                docType: 'FABRICACIÓN',
+                material: o.material || '', color: o.color || '',
+                status: 'pendiente_fabrica',
+                items: o.items || [], totalItems: o.totalItems || 0,
+                appJSON: o.appJSON || null,
+                cotizacionOrigenId: id,
+                fechaCotizado: serverTimestamp()
+            });
+            await updateDoc(doc(db, 'orders', id), { enviadaAFabrica: true, fechaEnviadaFabrica: serverTimestamp(), enviadaFabricaPor: usuario.nombre });
+            alert('Enviado a fábrica correctamente. La cotización queda archivada.');
+        } catch (e) {
+            alert('No se pudo enviar a fábrica: ' + e.message);
+        }
+    };
 
     window.subirCotizacionFinal = async function (id) {
         const fileInput = document.getElementById('file-' + id);
