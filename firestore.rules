@@ -3,9 +3,13 @@ rules_version = '2';
 // Reglas de seguridad de Firestore para el proyecto artal-operaciones.
 // Se pegan en Firebase Console → Firestore Database → pestaña "Reglas" → Publicar.
 //
-// Todo usuario autenticado puede LEER. Puede ESCRIBIR cualquiera EXCEPTO quien tenga el rol
-// `lector` (solo lectura) — a menos que también sea `admin`. El rol vive en usuarios/{email}.rol
-// y puede ser un string ('chofer') o un array (['chofer','instalador']); ambos se contemplan.
+// - Todo usuario autenticado puede LEER.
+// - Escriben todos EXCEPTO quien tenga el rol `lector` (a menos que también sea `admin`). El rol
+//   vive en usuarios/{email}.rol y puede ser un string ('chofer') o un array (['chofer',...]).
+// - Los registros de auditoría (movimientosInstalaciones, movimientosInventario) solo permiten
+//   CREAR: una anotación ya hecha no se puede editar ni borrar (ni siquiera un admin) — historial
+//   a prueba de manipulación. Por eso las colecciones se enumeran una por una en vez de usar un
+//   `allow write` recursivo (que dejaría editar/borrar el log).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -13,16 +17,28 @@ service cloud.firestore {
       let u = get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data;
       return u.rol is list ? u.rol : [u.rol];
     }
-
-    // Puede escribir si está autenticado y (es admin O no es lector).
     function puedeEscribir() {
       return request.auth != null
         && ('admin' in rolesDelUsuario() || !('lector' in rolesDelUsuario()));
     }
 
+    // Todo se puede LEER estando autenticado.
     match /{document=**} {
       allow read: if request.auth != null;
-      allow write: if puedeEscribir();
     }
+
+    // Registros de auditoría: SOLO se pueden CREAR. Nadie (ni admin) edita ni borra una anotación
+    // ya hecha — historial a prueba de manipulación.
+    match /movimientosInstalaciones/{id} { allow create: if puedeEscribir(); }
+    match /movimientosInventario/{id}    { allow create: if puedeEscribir(); }
+
+    // Colecciones normales: crear / editar / borrar para quien no sea "lector".
+    match /orders/{id}               { allow write: if puedeEscribir(); }
+    match /citas/{id}                { allow write: if puedeEscribir(); }
+    match /instalaciones/{id}        { allow write: if puedeEscribir(); }
+    match /inventario/{id}           { allow write: if puedeEscribir(); }
+    match /categoriasInventario/{id} { allow write: if puedeEscribir(); }
+    match /clientes/{id}             { allow write: if puedeEscribir(); }
+    match /usuarios/{id}             { allow write: if puedeEscribir(); }
   }
 }
