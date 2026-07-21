@@ -32,6 +32,8 @@
     .grid-day.selected { background: var(--artal-blue); color: #fff; }
     .grid-day .dot { width: 5px; height: 5px; border-radius: 50%; background: #9b59b6; position: absolute; bottom: 6px; }
     .grid-day.selected .dot { background: var(--artal-yellow); }
+    .grid-day .dot.done { background: #bbb; }
+    .job-card.estado-completado { opacity: 0.72; }
     .selected-day-bar { display: flex; align-items: center; justify-content: space-between; }
     .selected-day-bar a { color: var(--artal-blue); font-size: 12.5px; font-weight: bold; text-decoration: none; }
 
@@ -241,11 +243,15 @@
         for (let i = 0; i < firstWeekday; i++) html += `<div class="grid-day empty"></div>`;
         for (let day = 1; day <= daysInMonth; day++) {
             const cellDate = new Date(year, month, day);
-            const has = allJobs.some(j => { const f = jobDate(j); return f && sameDay(f, cellDate); });
+            const delDia = allJobs.filter(j => { const f = jobDate(j); return f && sameDay(f, cellDate); });
+            const hayActivo = delDia.some(j => j.estado !== 'completado');
+            // Punto naranja si hay algo activo ese día; gris si solo quedan trabajos completados
+            // (historial). Así se distingue lo pendiente de lo ya hecho.
+            const dot = hayActivo ? '<span class="dot"></span>' : (delDia.length ? '<span class="dot done"></span>' : '');
             const classes = ['grid-day'];
             if (sameDay(cellDate, today)) classes.push('today');
             if (selectedDay && sameDay(cellDate, selectedDay)) classes.push('selected');
-            html += `<div class="${classes.join(' ')}" onclick="seleccionarDia(${year},${month},${day})">${day}${has ? '<span class="dot"></span>' : ''}</div>`;
+            html += `<div class="${classes.join(' ')}" onclick="seleccionarDia(${year},${month},${day})">${day}${dot}</div>`;
         }
         grid.innerHTML = html;
     }
@@ -327,6 +333,8 @@
         const list = document.getElementById('jobs-list');
 
         if (selectedDay) {
+            // Vista de un día: se muestran TODAS (incluidas las completadas), para consultar el
+            // historial por fecha.
             bar.style.display = 'flex';
             document.getElementById('selected-day-label').textContent =
                 selectedDay.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -338,12 +346,14 @@
             return;
         }
 
+        // Vista del mes: solo lo PENDIENTE/en proceso. Lo completado se archiva (sale de la lista
+        // pero queda en el calendario; se ve al abrir su día).
         bar.style.display = 'none';
         const start = new Date(currentMonth);
         const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-        const delMes = allJobs.filter(j => { const f = jobDate(j); return f && f >= start && f < end; })
+        const delMes = allJobs.filter(j => { const f = jobDate(j); return f && f >= start && f < end && j.estado !== 'completado'; })
             .sort((a, b) => jobDate(a) - jobDate(b));
-        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay instalaciones este mes.</p>'; return; }
+        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay instalaciones pendientes este mes.</p>'; return; }
         const groups = {};
         delMes.forEach(j => {
             const key = jobDate(j).toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
