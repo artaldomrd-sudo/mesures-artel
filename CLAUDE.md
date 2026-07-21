@@ -270,6 +270,12 @@ estilo simplificado del CAD.
   el atributo `placeholder` de **todos** los inputs dentro de `#print-area` antes de capturar
   (tengan o no valor) y lo restaura en el `finally`. Si se agrega un input nuevo con
   `placeholder` a una tarjeta, no hace falta tocar nada — ya lo cubre el `querySelectorAll`.
+- **html2canvas + fuente web (Arimo) todavía cargando: otro bug de texto recortado/desplazado.**
+  Si `html2canvas` captura antes de que Arimo (Google Fonts) termine de cargar, dibuja con la
+  fuente de reemplazo del navegador — que tiene métricas (alto de línea, ascendente/descendente)
+  distintas — dentro de cajas ya calculadas para Arimo, y el texto sale cortado o corrido
+  (reproducido en el encabezado del proyecto). `exportPDF()` hace `await document.fonts.ready`
+  antes de capturar cada hoja (no agrega demora si las fuentes ya cargaron).
 - **Encabezado del proyecto** (`.project-header`): grid de 2 filas por `grid-template-areas`
   (fila 1 = datos cortos: cliente/material/color/fecha; fila 2 = datos largos: nombre del
   proyecto/ubicación, que necesitan más ancho). El logo abarca ambas filas
@@ -407,7 +413,17 @@ case-insensitive).
   código RAL por hex, por la palabra "RAL", o por un número de 4 dígitos suelto (para que
   "Gris 7039" tome el RAL, no un gris genérico) — `ralHex()`/`RAL_HEX` tiene una tabla chica de
   códigos RAL comunes en aluminio (7039, 7016, 9010, 9016, etc.); un código no listado cae a un
-  gris genérico `#8a8f94`, no es la carta RAL completa.
+  gris genérico `#8a8f94`, no es la carta RAL completa. En el resumen/PDF, `ralLabel(r)` (helper
+  local de `generateSummary`) antepone "RAL " solo si el texto guardado no empieza ya con esa
+  palabra — evita "RAL RAL 7039" cuando el usuario escribe el "RAL" a mano en el encabezado.
 - **Vidrio Laminado 4+4 por defecto en ítems nuevos** (`addItem`, para no tener que elegirlo a
   mano cada vez) — ducha/cerramiento/baranda pisan este default más abajo en la misma función
   con su propio vidrio típico (templado 10mm), y no se toca retroactivamente ítems ya creados.
+- **El toggle "Medida: Fabricación/Cotización" (`.medida-toggle`) solo tiene sentido en el
+  cuaderno de Cotización** (para marcar qué ítems ya tienen medida de fabricación) — en el
+  cuaderno de Fabricación es redundante, todo lo que hay ahí ya es medida de fabricación por
+  definición. Se oculta con CSS puro (`body.doc-fab .medida-toggle { display:none }`), no
+  quitando el elemento del DOM ni tocando `insertarMarcaMedida` — `setDocType(type)` agrega/quita
+  la clase `doc-fab` en `<body>` según `type` empiece con "FAB", así que cubre los 3 casos por
+  igual: click en el botón COTIZACIÓN/FABRICACIÓN de arriba, `restoreData` al abrir un proyecto
+  guardado, y tarjetas agregadas después (la regla CSS no depende de cuándo se creó la tarjeta).

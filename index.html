@@ -124,6 +124,10 @@
         .card-ref-row input { border: none; font-weight: bold; font-size: 16px; width: 140px; outline: none; color: var(--artal-blue); }
         .card-ref-row span { font-size: 12px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
         .medida-toggle { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 2px 15px; }
+        /* Solo tiene sentido en el cuaderno de Cotización (para marcar qué ítems ya tienen
+           medida de fabricación); en el cuaderno de Fabricación es redundante — todo lo que
+           hay ahí ya es medida de fabricación por definición. */
+        body.doc-fab .medida-toggle { display: none !important; }
         .medida-toggle .ml { font-size: 11px; color: #7f8c8d; font-weight: bold; text-transform: uppercase; }
         .medida-toggle button { border: 1.5px solid var(--artal-blue); background: #fff; color: var(--artal-blue); font-size: 11px; font-weight: bold; padding: 4px 9px; cursor: pointer; font-family: inherit; }
         .medida-toggle button:first-of-type { border-radius: 6px 0 0 6px; border-right: none; }
@@ -490,6 +494,7 @@
         const isFab = type.indexOf('FAB') === 0;
         if (cot) cot.classList.toggle('active', !isFab);
         if (fab) fab.classList.toggle('active', isFab);
+        document.body.classList.toggle('doc-fab', isFab);
         const sendText = document.getElementById('btn-enviar-orden-text');
         if (sendText) sendText.innerText = isFab ? 'Enviar a Fábrica' : 'Enviar Cotización';
         if (doSave) saveProgress();
@@ -685,6 +690,12 @@
         });
 
         try {
+            // Si la fuente Arimo (Google Fonts) todavía no terminó de cargar cuando
+            // html2canvas captura, dibuja con la fuente de reemplazo del navegador — que tiene
+            // métricas (alto de línea, ascendente/descendente) distintas — y el texto sale
+            // desplazado o recortado dentro de las cajas ya calculadas para Arimo. Esperar a
+            // que las fuentes estén listas evita esto (no agrega demora si ya cargaron).
+            if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
             // Deja que el navegador termine de aplicar el layout de body.printing-sheets
             // antes de capturar (si no, html2canvas puede leer medidas viejas).
             await new Promise(r => setTimeout(r, 80));
@@ -920,6 +931,8 @@
         const state = cardsState[id];
         let headerColor = document.getElementById('header-color').value || 'Sin definir';
         const espesorLabel = e => ({ '10mm': '3/8" (10mm)', '12mm': '1/2" (12mm)', '3+3': '3+3', '4+4': '4+4', '5+5': '5+5', '6+6': '6+6' }[e] || e || '');
+        // Si el usuario ya escribió "RAL 7039" en el campo, no anteponer otro "RAL " (evita "RAL RAL 7039").
+        const ralLabel = r => { r = (r || '').trim(); return /^ral\b/i.test(r) ? r : ('RAL ' + r); };
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'ducha') {
@@ -937,7 +950,7 @@
         if (state.categoria === 'baranda') {
             let fijMap = { base_u: 'Base Aluminio U', prensa_suelo: 'Prensa de Suelo', conector_redondo: 'Conector Lateral Redondo', conector_cuadrado: 'Conector Lateral Cuadrado', conector_doble: 'Conector Lateral Doble' };
             let colMap = { cromado: 'Cromado (Inox)', negro: 'Negro (Inox)' };
-            let acabMap = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', ral: 'RAL ' + (state.color_ral || '') };
+            let acabMap = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', ral: ralLabel(state.color_ral) };
             let finishTxt = state.fijacion === 'base_u' ? `Acabado: ${acabMap[state.color_perfil || 'natural']}` : `Color herraje: ${colMap[state.herraje_color] || 'Cromado (Inox)'}`;
             let formaMap = { recto: 'Recto', L: 'Forma L', U: 'Forma U' };
             let vid = state.vidrio === 'louvers' ? `Láminas de Louver (${headerColor})` : `${state.vidrio || ''} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`;
@@ -1049,7 +1062,7 @@
             html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
             let specs = [];
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
-            { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', ral: 'RAL ' + (state.color_ral || '') }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }
+            { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }
             if(state.vidrio) {
                 if (state.vidrio === 'louvers') specs.push(`Vidrio: Láminas de Louver (${headerColor})`);
                 else specs.push(`Vidrio: ${state.vidrio} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`);
