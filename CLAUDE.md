@@ -312,38 +312,36 @@ estilo simplificado del CAD.
 - **Hoja con un solo ítem**: `buildPrintSheets()` le agrega la clase `single-item` al
   `.sheet-grid` cuando el grupo tiene 1 sola tarjeta (no panorámica), para que se agrande y
   centre en la página en vez de quedar chica y pegada a la esquina.
-- **Correderas/galandajes en PDF: el dibujo salía deformado** (una de las polygon del marco
-  extruido se estiraba mal, invadiendo la vista de planta de abajo) **al capturar con
-  `html2canvas`.** Reportado por el usuario, confirmado extrayendo el JPEG embebido de un PDF
-  real (no bastaba con la vista previa de baja resolución) — **nunca se pudo reproducir en
-  Chrome/Puppeteer**, parece específico de Safari. Se descartaron dos causas antes de encontrar
-  la real: las líneas de medida técnica (`dimLineH`/`dimLineV`, A/B test visual idéntico) y el
-  paño fijo (ese commit no toca nada de correderas) — ninguno de los dos es responsable.
-  **Causa real**: `html2canvas` no captura bien un `<svg>` inline complejo (reconstruye el árbol
-  SVG a mano en vez de usar el renderizado nativo del navegador, y con muchos elementos falla).
-  **Arreglo, en `exportPDF()`**: antes de capturar, cada `<svg>` dentro de `.drawing-area` se
-  reemplaza por un `<img>` — pero el SVG como `<img src="data:image/svg+xml,...">` SIGUE
-  saliendo en blanco con `html2canvas` (probado y confirmado); hay que ir un paso más:
-  rasterizar ese SVG a un PNG real primero, vía un `<canvas>` intermedio
-  (`ctx.drawImage(imgConSvg, ...)` + `canvas.toDataURL('image/png')`), y usar ESE PNG como
-  imagen de reemplazo — ahí sí lo captura bien, como cualquier imagen normal. Verificado
-  extrayendo el JPEG del PDF generado con las 10 tarjetas reales del caso reportado (3 páginas),
-  todas correctas. El SVG real (oculto con `display:none`, nunca destruido) se restaura después,
-  antes de `teardownPrintSheets()`.
-  **Qué NO usar en este paso** (se probó y causó colgados/imágenes en blanco antes de encontrar
-  el arreglo de arriba):
-  - `requestAnimationFrame` en cualquier punto de `exportPDF()`: en una pestaña sin foco/en
-    segundo plano el navegador puede no dispararlo nunca, colgando la generación para siempre.
-  - `img.decode()` para esperar a que cargue el SVG intermedio: puede quedarse colgado para
-    siempre con un SVG de `width="100%"` (sin tamaño intrínseco absoluto, como los de esta app)
-    — usar `onload`/`onerror` con un `Promise.race` contra un timeout.
-  - Blob URL (`URL.createObjectURL`) para la imagen intermedia: el `<img>` carga bien en el DOM
-    normal, pero `html2canvas` la captura en blanco igual (parece no poder acceder al blob desde
-    el contexto que clona internamente) — usar `data:image/svg+xml;charset=utf-8,` +
-    `encodeURIComponent(svgStr)` en su lugar.
-  - La clase `plan-view-card` (más alto al `.drawing-area` de corredera/galandaje en el PDF, un
-    intento anterior) quedó en el CSS como margen de aire extra, pero **no era la causa real** —
-    el arreglo de fondo es la rasterización a PNG de arriba.
+- **Correderas/galandajes en PDF: el dibujo sale deformado** (una de las polygon del marco
+  extruido se estira mal, invadiendo la vista de planta de abajo) **al capturar con
+  `html2canvas`. SIN RESOLVER todavía** — reportado por el usuario, confirmado extrayendo el
+  JPEG embebido de un PDF real (la vista previa de baja resolución no alcanza para verlo) —
+  **nunca se pudo reproducir en Chrome/Puppeteer**, parece específico de Safari (el dispositivo
+  real del usuario). Se descartaron con evidencia dos causas que NO son responsables: las líneas
+  de medida técnica (`dimLineH`/`dimLineV`, A/B test visual idéntico) y el paño fijo (ese commit
+  no toca nada de correderas).
+  Se probó (y se **revirtió**, a pedido del usuario, porque seguía sin arreglar el problema en su
+  dispositivo real pese a verse perfecto en las pruebas locales): reemplazar cada `<svg>` de
+  `.drawing-area` por una imagen antes de capturar. Registro de los intentos, para no repetirlos
+  a ciegas:
+  - `<img src="data:image/svg+xml,...">` directo → `html2canvas` lo captura **en blanco**.
+  - Rasterizar ESE SVG a un PNG real primero (vía un `<canvas>` intermedio,
+    `ctx.drawImage(imgConSvg,...)` + `canvas.toDataURL('image/png')`) y usar el PNG → en las
+    pruebas locales (Chrome/Puppeteer, con las 10 tarjetas reales del caso reportado) salió
+    **perfecto**, pero el usuario confirmó que en su dispositivo real **seguía sin arreglarse** —
+    así que el diagnóstico ("html2canvas no captura bien el SVG inline") puede ser incompleto, o
+    hay algo más específico de Safari que ni el PNG-rasterizado esquiva.
+  - Errores de implementación encontrados en el camino (evitar si se retoma esto):
+    `requestAnimationFrame` en cualquier punto de `exportPDF()` puede no dispararse nunca en una
+    pestaña sin foco, colgando la generación para siempre; `img.decode()` puede colgarse para
+    siempre con un SVG de `width="100%"` (usar `onload`/`onerror` + `Promise.race` con timeout);
+    un Blob URL (`URL.createObjectURL`) para la imagen intermedia también sale en blanco con
+    `html2canvas` (usar `data:image/svg+xml;charset=utf-8,` + `encodeURIComponent` en su lugar).
+  - También se probó (y se revirtió) subir el alto del `.drawing-area` de corredera/galandaje
+    (clase `plan-view-card`, 44mm en vez de 34mm) — tampoco resolvió el problema real.
+  **Próximo paso si se retoma**: conseguir acceso directo a un dispositivo Safari (Mac/iPad) para
+  poder reproducir el bug de verdad, en vez de iterar a ciegas contra un entorno que nunca lo
+  muestra — ese fue el cuello de botella en todos los intentos de esta sesión.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados
