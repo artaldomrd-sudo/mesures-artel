@@ -276,6 +276,14 @@ estilo simplificado del CAD.
   distintas — dentro de cajas ya calculadas para Arimo, y el texto sale cortado o corrido
   (reproducido en el encabezado del proyecto). `exportPDF()` hace `await document.fonts.ready`
   antes de capturar cada hoja (no agrega demora si las fuentes ya cargaron).
+- **Nunca usar `requestAnimationFrame` dentro de `exportPDF()`** (se probó y se revirtió): en una
+  pestaña sin foco/en segundo plano el navegador puede no dispararlo nunca, colgando la
+  generación del PDF para siempre (botón atascado en "Generando PDF…"). El único espera-a-que-
+  se-asiente-el-layout seguro acá es un `setTimeout` plano (150ms). Por el mismo motivo, esperar
+  a que cargue una imagen con `img.decode()` tampoco es seguro: para un SVG con `width="100%"`
+  (sin tamaño intrínseco absoluto, como los de esta app) `decode()` puede quedarse colgado para
+  siempre en vez de resolver o rechazar — usar `onload`/`onerror` con un `Promise.race` contra un
+  timeout si hace falta esperar una imagen.
 - **html2canvas no usa el renderizado nativo del navegador para `<input>`/`<textarea>`** — los
   vuelve a dibujar él mismo con su propio motor de texto, y ese motor falla de dos formas: en
   `<textarea>` no hace salto de línea (una nota larga sale como una sola línea cortada a la
