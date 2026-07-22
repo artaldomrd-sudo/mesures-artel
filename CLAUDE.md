@@ -312,6 +312,21 @@ estilo simplificado del CAD.
 - **Hoja con un solo ítem**: `buildPrintSheets()` le agrega la clase `single-item` al
   `.sheet-grid` cuando el grupo tiene 1 sola tarjeta (no panorámica), para que se agrande y
   centre en la página en vez de quedar chica y pegada a la esquina.
+- **Correderas/galandajes en PDF: el dibujo sale comprimido en `html2canvas` con solo 34mm de
+  alto.** Estos tipos agregan la vista de planta (rieles) debajo de la elevación en el mismo
+  SVG — contenido más alto/denso que un tipo simple. En pantalla el navegador dibuja el SVG
+  nativo y se ve bien; en el PDF, `html2canvas` reconstruye el SVG a mano y con poco alto sale
+  comprimido/superpuesto (reportado por el usuario, confirmado comparando el mismo ítem en la
+  app vs. en un PDF real — **no se pudo reproducir en Chrome/Puppeteer**, parece específico de
+  Safari). Se probaron y se DESCARTARON dos causas: las líneas de medida técnica (`dimLineH`/
+  `dimLineV`, A/B test visual idéntico) y el paño fijo (ese commit no toca nada de correderas).
+  También se probó y se REVIRTIÓ convertir el dibujo a `<img>` antes de capturar (dos intentos:
+  colgó la generación por `requestAnimationFrame`/`img.decode()`, y luego salió en blanco) — ver
+  la nota de más abajo sobre qué evitar. Arreglo actual (sin confirmar en el dispositivo real
+  donde se reportó, es un cambio defensivo de bajo riesgo): clase `plan-view-card` en `addItem`
+  para `categoria` corredera/galandaje + `body.printing-sheets .item-card.plan-view-card
+  .drawing-area { height: 44mm }` (vs. 34mm para el resto), dándole más aire al contenido más
+  denso.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados
