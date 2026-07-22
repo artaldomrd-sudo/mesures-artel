@@ -312,21 +312,38 @@ estilo simplificado del CAD.
 - **Hoja con un solo ítem**: `buildPrintSheets()` le agrega la clase `single-item` al
   `.sheet-grid` cuando el grupo tiene 1 sola tarjeta (no panorámica), para que se agrande y
   centre en la página en vez de quedar chica y pegada a la esquina.
-- **Correderas/galandajes en PDF: el dibujo sale comprimido en `html2canvas` con solo 34mm de
-  alto.** Estos tipos agregan la vista de planta (rieles) debajo de la elevación en el mismo
-  SVG — contenido más alto/denso que un tipo simple. En pantalla el navegador dibuja el SVG
-  nativo y se ve bien; en el PDF, `html2canvas` reconstruye el SVG a mano y con poco alto sale
-  comprimido/superpuesto (reportado por el usuario, confirmado comparando el mismo ítem en la
-  app vs. en un PDF real — **no se pudo reproducir en Chrome/Puppeteer**, parece específico de
-  Safari). Se probaron y se DESCARTARON dos causas: las líneas de medida técnica (`dimLineH`/
-  `dimLineV`, A/B test visual idéntico) y el paño fijo (ese commit no toca nada de correderas).
-  También se probó y se REVIRTIÓ convertir el dibujo a `<img>` antes de capturar (dos intentos:
-  colgó la generación por `requestAnimationFrame`/`img.decode()`, y luego salió en blanco) — ver
-  la nota de más abajo sobre qué evitar. Arreglo actual (sin confirmar en el dispositivo real
-  donde se reportó, es un cambio defensivo de bajo riesgo): clase `plan-view-card` en `addItem`
-  para `categoria` corredera/galandaje + `body.printing-sheets .item-card.plan-view-card
-  .drawing-area { height: 44mm }` (vs. 34mm para el resto), dándole más aire al contenido más
-  denso.
+- **Correderas/galandajes en PDF: el dibujo salía deformado** (una de las polygon del marco
+  extruido se estiraba mal, invadiendo la vista de planta de abajo) **al capturar con
+  `html2canvas`.** Reportado por el usuario, confirmado extrayendo el JPEG embebido de un PDF
+  real (no bastaba con la vista previa de baja resolución) — **nunca se pudo reproducir en
+  Chrome/Puppeteer**, parece específico de Safari. Se descartaron dos causas antes de encontrar
+  la real: las líneas de medida técnica (`dimLineH`/`dimLineV`, A/B test visual idéntico) y el
+  paño fijo (ese commit no toca nada de correderas) — ninguno de los dos es responsable.
+  **Causa real**: `html2canvas` no captura bien un `<svg>` inline complejo (reconstruye el árbol
+  SVG a mano en vez de usar el renderizado nativo del navegador, y con muchos elementos falla).
+  **Arreglo, en `exportPDF()`**: antes de capturar, cada `<svg>` dentro de `.drawing-area` se
+  reemplaza por un `<img>` — pero el SVG como `<img src="data:image/svg+xml,...">` SIGUE
+  saliendo en blanco con `html2canvas` (probado y confirmado); hay que ir un paso más:
+  rasterizar ese SVG a un PNG real primero, vía un `<canvas>` intermedio
+  (`ctx.drawImage(imgConSvg, ...)` + `canvas.toDataURL('image/png')`), y usar ESE PNG como
+  imagen de reemplazo — ahí sí lo captura bien, como cualquier imagen normal. Verificado
+  extrayendo el JPEG del PDF generado con las 10 tarjetas reales del caso reportado (3 páginas),
+  todas correctas. El SVG real (oculto con `display:none`, nunca destruido) se restaura después,
+  antes de `teardownPrintSheets()`.
+  **Qué NO usar en este paso** (se probó y causó colgados/imágenes en blanco antes de encontrar
+  el arreglo de arriba):
+  - `requestAnimationFrame` en cualquier punto de `exportPDF()`: en una pestaña sin foco/en
+    segundo plano el navegador puede no dispararlo nunca, colgando la generación para siempre.
+  - `img.decode()` para esperar a que cargue el SVG intermedio: puede quedarse colgado para
+    siempre con un SVG de `width="100%"` (sin tamaño intrínseco absoluto, como los de esta app)
+    — usar `onload`/`onerror` con un `Promise.race` contra un timeout.
+  - Blob URL (`URL.createObjectURL`) para la imagen intermedia: el `<img>` carga bien en el DOM
+    normal, pero `html2canvas` la captura en blanco igual (parece no poder acceder al blob desde
+    el contexto que clona internamente) — usar `data:image/svg+xml;charset=utf-8,` +
+    `encodeURIComponent(svgStr)` en su lugar.
+  - La clase `plan-view-card` (más alto al `.drawing-area` de corredera/galandaje en el PDF, un
+    intento anterior) quedó en el CSS como margen de aire extra, pero **no era la causa real** —
+    el arreglo de fondo es la rasterización a PNG de arriba.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados

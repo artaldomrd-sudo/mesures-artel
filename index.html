@@ -720,6 +720,42 @@
             fieldReplacements.push({ field, el });
         });
 
+        // html2canvas reconstruye a mano cada SVG inline (no lo captura tal cual) y esa
+        // reconstrucción falla para los dibujos más densos (vista de planta de correderas y
+        // galandajes): una de las formas del marco extruido sale deformada, invadiendo la vista
+        // de planta de abajo — se ve bien en pantalla (el navegador dibuja el SVG nativo) pero
+        // mal en el PDF. Reemplazar el SVG por un <img> con el mismo SVG como data URI NO
+        // alcanza (html2canvas también lo captura en blanco) — hay que rasterizarlo A UN PNG
+        // real primero (vía un <canvas> intermedio) y usar ESE PNG como imagen; ahí sí lo
+        // captura bien, como cualquier imagen normal. Probado y confirmado visualmente antes de
+        // aplicar acá. Nunca usar `img.decode()` para esperar a que cargue el SVG intermedio
+        // (puede quedarse colgado para siempre con `width="100%"`, sin tamaño intrínseco) — se
+        // usa `onload`/`onerror` con límite de tiempo.
+        const drawingReplacements = [];
+        for (const svg of document.querySelectorAll('#print-area .drawing-area svg')) {
+            const container = svg.parentElement;
+            const svgStr = new XMLSerializer().serializeToString(svg);
+            const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+            const loader = new Image();
+            loader.src = svgDataUrl;
+            await Promise.race([
+                new Promise(res => { loader.onload = res; loader.onerror = res; }),
+                new Promise(res => setTimeout(res, 2000))
+            ]);
+            const rasterScale = 3;
+            const w = loader.naturalWidth || 200, h = loader.naturalHeight || 150;
+            const cvs = document.createElement('canvas');
+            cvs.width = w * rasterScale; cvs.height = h * rasterScale;
+            const ctx2d = cvs.getContext('2d');
+            try { ctx2d.drawImage(loader, 0, 0, cvs.width, cvs.height); } catch (e) { }
+            const img = document.createElement('img');
+            img.style.cssText = 'width:100%; height:100%; object-fit:contain;';
+            img.src = cvs.toDataURL('image/png');
+            container.insertBefore(img, svg);
+            svg.style.display = 'none';
+            drawingReplacements.push({ svg, img });
+        }
+
         try {
             // Si la fuente Arimo (Google Fonts) todavía no terminó de cargar cuando
             // html2canvas captura, dibuja con la fuente de reemplazo del navegador — que tiene
@@ -761,6 +797,7 @@
             // teardownPrintSheets() — si no, viajarían junto con la tarjeta de vuelta a su lugar
             // y quedaría un texto duplicado visible en la edición normal.
             fieldReplacements.forEach(({ field, el }) => { el.remove(); field.style.display = ''; });
+            drawingReplacements.forEach(({ svg, img }) => { img.remove(); svg.style.display = ''; });
             teardownPrintSheets();
             if (btn) { btn.disabled = false; btn.innerHTML = originalBtnHtml; }
         }
