@@ -533,6 +533,24 @@ adiciones puntuales y explícitas (ver más abajo).
   (checklist `checklist=fabrica` en el visor de la ficha, escribe
   `itemsListosFabrica.{itemId}`) y mandar el pedido a chofer/instalador antes de terminar el
   resto — quedan visibles en verde/naranja en la ficha técnica que ve el chofer.
+- **Fabricación: ALUCUFEL vs. taller propio (`destino`).** No todos los proyectos de
+  fabricación los hace ALUCUFEL — algunos los fabrica ARTAL internamente, y esos NO deben
+  aparecer en la página de ALUCUFEL. `enviarOrden(destino, btnEl)` en `index.html` solo pide el
+  destino (`'alucufel'` | `'interno'`) cuando el documento es de Fabricación — en Cotización
+  siempre es `'alucufel'`, sin cambios (cotización interna queda pendiente para cuando se
+  conecte el ERP nuevo al Panel de Control). En pantalla, el botón único "Enviar Cotización" se
+  reemplaza por un par ("A ALUCUFEL" / "Oficina interna", `.destino-row`) **solo cuando el
+  cuaderno está en modo Fabricación** — controlado por CSS pura sobre `body.doc-fab` (mismo
+  mecanismo ya usado para ocultar `.medida-toggle`), sin tocar `setDocType()`.
+  `ops/alucufel/fabrica.html` excluye `destino === 'interno'` de su tablero (mismo patrón ya
+  usado para excluir `directoInstalacion`). `ops/fabrica-interna.html` (nuevo, top-level en
+  `ops/`, NO dentro de `ops/alucufel/` — para no repetir el bug de rutas relativas de esa
+  subcarpeta) es una copia del mismo tablero de `ops/alucufel/fabrica.html` (Pendientes →
+  En fábrica → Parcialmente listo/Listo para cargar → Completado) pero filtrado a
+  `destino === 'interno'`, con `requireAuth([])` (solo gerencia/admin — decisión explícita del
+  usuario, sin rol dedicado todavía). Tile nuevo en `ops/index.html` ("Fábrica Interna") con su
+  propio badge, mismo criterio que el de ALUCUFEL (comentario sin atender o pedido recién
+  llegado a `pendiente_fabrica`) pero separado por `destino`.
 
 ### `ops/alucufel/` — ALUCUFEL unificado
 

@@ -34,6 +34,7 @@
         <a class="card-link" href="calendario.html"><div class="emoji">📅</div><div class="title">Calendario</div><div class="desc">Agendar citas y avisar al equipo con notificación</div></a>
         <a class="card-link" href="historial.html"><div class="emoji">🗂️</div><div class="title">Historial</div><div class="desc">Buscar cualquier pedido, sin importar el estado</div></a>
         <a class="card-link" href="alucufel/index.html"><span class="tile-badge" id="badge-alucufel"></span><div class="emoji">🏗️</div><div class="title">ALUCUFEL</div><div class="desc">Cotizaciones de costo y fábrica</div></a>
+        <a class="card-link" href="fabrica-interna.html"><span class="tile-badge" id="badge-fabrica-interna"></span><div class="emoji">🏭</div><div class="title">Fábrica Interna</div><div class="desc">Obras que fabrica ARTAL (no ALUCUFEL)</div></a>
         <a class="card-link" href="cotizaciones.html"><span class="tile-badge" id="badge-cotizaciones"></span><div class="emoji">💵</div><div class="title">Cotizaciones</div><div class="desc">Armar y enviar precio final al cliente</div></a>
         <a class="card-link" href="compras.html"><div class="emoji">🧾</div><div class="title">Compra Directa</div><div class="desc">Registrar compra a proveedor externo</div></a>
         <a class="card-link" href="chofer.html"><span class="tile-badge" id="badge-chofer"></span><div class="emoji">🚚</div><div class="title">Chofer</div><div class="desc">Pedidos listos para cargar</div></a>
@@ -67,17 +68,24 @@
     }
 
     onSnapshot(collection(db, 'orders'), (snap) => {
-        let alucufel = 0, cotizaciones = 0, chofer = 0, instalador = 0;
+        let alucufel = 0, fabricaInterna = 0, cotizaciones = 0, chofer = 0, instalador = 0;
         snap.docs.forEach(d => {
             const o = d.data();
+            const esInterno = o.destino === 'interno';
             // ALUCUFEL: comentario de fábrica sin atender, o una cotización de costo recién
             // subida (status 'costeada') — cualquiera de las dos es "novedad" de su lado.
-            if (o.comentarioFabrica && o.comentarioFabricaAtendido !== true) alucufel++;
-            if (o.status === 'costeada') { alucufel++; cotizaciones++; }
+            // (Los pedidos de destino "interno" no le corresponden a ALUCUFEL.)
+            if (!esInterno && o.comentarioFabrica && o.comentarioFabricaAtendido !== true) alucufel++;
+            if (!esInterno && o.status === 'costeada') { alucufel++; cotizaciones++; }
+            // Fábrica Interna: mismo criterio que ALUCUFEL (comentario sin atender o pedido
+            // recién llegado a pendiente_fabrica), pero solo para lo que fabrica ARTAL.
+            if (esInterno && o.comentarioFabrica && o.comentarioFabricaAtendido !== true) fabricaInterna++;
+            if (esInterno && o.status === 'pendiente_fabrica') fabricaInterna++;
             if (tieneProblemaSinAtender(o.itemStatus)) chofer++;
             if (tieneProblemaSinAtender(o.itemStatusInstalador)) instalador++;
         });
         setBadge('badge-alucufel', alucufel);
+        setBadge('badge-fabrica-interna', fabricaInterna);
         setBadge('badge-cotizaciones', cotizaciones);
         setBadge('badge-chofer', chofer);
         setBadge('badge-instalador', instalador);

@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARTAL — ALUCUFEL: Fábrica</title>
+<title>ARTAL — Fábrica Interna</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../shared.css">
+<link rel="stylesheet" href="shared.css">
 <style>
     .order-card.status-pendiente_fabrica { border-left-color: var(--artal-yellow); }
     .order-card.status-en_fabrica { border-left-color: #3498db; }
@@ -30,9 +30,9 @@
 
 <header>
     <div class="header-title">
-        <a class="btn-back" href="index.html" title="Volver a ALUCUFEL">← ALUCUFEL</a>
-        <img class="logo" src="../../logo.png" alt="ARTAL">
-        <h1>Fábrica</h1>
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Fábrica Interna</h1>
     </div>
     <div class="who">
         <span id="user-name"></span>
@@ -50,15 +50,17 @@
 </main>
 
 <script type="module">
-    import { requireAuth, auth, signOut } from '../auth-common.js';
-    import { enableNotifications } from '../notifications.js';
-    import { db } from '../firebase-config.js';
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { enableNotifications } from './notifications.js';
+    import { db } from './firebase-config.js';
     import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-    import { openOrderPreview } from '../order-preview.js';
+    import { openOrderPreview } from './order-preview.js';
     window.openOrderPreview = openOrderPreview;
 
-    const usuario = await requireAuth(['fabrica']);
-    const esGerencia = usuario.roles.includes('admin');
+    // Solo gerencia (admin): fabricación interna la maneja el taller propio de ARTAL, sin un rol
+    // dedicado todavía (a diferencia de ALUCUFEL, que sí tiene su rol 'fabrica' para el
+    // contratista externo).
+    const usuario = await requireAuth([]);
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
@@ -102,7 +104,7 @@
             <div class="order-meta">
                 ${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
                 <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver hoja de fabricación</a>
-                · <a href="../etiquetas.html?orderId=${id}" target="_blank">🏷 Etiquetas</a>
+                · <a href="etiquetas.html?orderId=${id}" target="_blank">🏷 Etiquetas</a>
             </div>
             ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
             ${actionsHtml}
@@ -110,7 +112,7 @@
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
             </div>
-            ${esGerencia ? `<div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar obra (gerencia)</a></div>` : ''}
+            <div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar obra</a></div>
         </div>`;
     }
 
@@ -126,10 +128,9 @@
 
     function render() {
         const statuses = currentTab === 'pendientes' ? PENDIENTES : ENVIADOS;
-        // Los envíos directos a Instalaciones (directoInstalacion) no pasan por fábrica: se
-        // ocultan. Igual los de destino "interno" (los fabrica ARTAL, no ALUCUFEL) — ver
-        // ops/fabrica-interna.html.
-        const docs = allOrders.filter(d => statuses.includes(d.data().status) && !d.data().directoInstalacion && d.data().destino !== 'interno');
+        // Solo lo que se fabrica adentro (destino 'interno') — lo de ALUCUFEL vive en
+        // ops/alucufel/fabrica.html, y los envíos directos a Instalaciones no pasan por acá.
+        const docs = allOrders.filter(d => statuses.includes(d.data().status) && !d.data().directoInstalacion && d.data().destino === 'interno');
         const list = document.getElementById('orders-list');
         if (!docs.length) {
             list.innerHTML = currentTab === 'pendientes'
@@ -174,8 +175,7 @@
         alert('Comentario guardado.');
     };
 
-    // Solo gerencia (admin): borrar una obra enviada por duplicado o por error. Doble
-    // confirmación para no borrar por accidente.
+    // Doble confirmación para no borrar por accidente.
     window.eliminarPedido = async function (id) {
         const o = allOrders.find(d => d.id === id);
         const nombre = o ? [o.data().cliente, o.data().obra].filter(Boolean).join(' — ') : '';
