@@ -744,7 +744,17 @@
             const ctx2d = cvs.getContext('2d');
             try { ctx2d.drawImage(loader, 0, 0, cvs.width, cvs.height); } catch (e) { }
             const img = document.createElement('img');
-            img.style.cssText = 'width:100%; height:100%; object-fit:contain;';
+            // `object-fit: contain` con width/height 100% NO alcanza — html2canvas no lo
+            // respeta de forma confiable (otra limitación conocida) y estira la imagen para
+            // llenar la caja entera, deformando la proporción real del dibujo. Se calcula el
+            // tamaño exacto en píxeles que mantiene la proporción dentro del contenedor, y se
+            // fija como width/height explícitos (no porcentaje, no object-fit) — así no hay
+            // nada que html2canvas tenga que interpretar, solo una imagen de tamaño fijo.
+            const boxRect = container.getBoundingClientRect();
+            const boxW = boxRect.width || 300, boxH = boxRect.height || 150;
+            const fitScale = Math.min(boxW / w, boxH / h);
+            const dispW = w * fitScale, dispH = h * fitScale;
+            img.style.cssText = `display:block; width:${dispW.toFixed(1)}px; height:${dispH.toFixed(1)}px; margin:${((boxH - dispH) / 2).toFixed(1)}px auto;`;
             img.src = cvs.toDataURL('image/png');
             container.insertBefore(img, svg);
             svg.style.display = 'none';

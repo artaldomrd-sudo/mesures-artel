@@ -344,10 +344,20 @@ estilo simplificado del CAD.
   `html2canvas` (usar `data:image/svg+xml;charset=utf-8,` + `encodeURIComponent` en su lugar).
   También se probó (y se descartó) subir el alto del `.drawing-area` de corredera/galandaje
   (clase `plan-view-card`, 44mm en vez de 34mm) — no era la causa real, no hizo falta.
-  **Pendiente**: confirmación del usuario en su dispositivo real (Safari) de esta versión
-  reaplicada — la ronda anterior de "sigue sin funcionar" puede haber estado mezclada con la
-  confusión de los archivos de prueba de arriba, así que no es un dato confiable sobre si este
-  arreglo específico funciona o no en su dispositivo.
+  **Confirmado por el usuario en su dispositivo real (Safari)**: "PROBE Y FUNCIONA" — la
+  deformación de capas ya no ocurre.
+  **Segundo problema encontrado tras el arreglo anterior: el dibujo salía estirado** (proporción
+  incorrecta, no ya "descompuesto" sino deformado como imagen). Causa: el `<img>` de reemplazo
+  usaba `width:100%; height:100%; object-fit:contain` para encajar en `.drawing-area` —
+  `html2canvas` **no respeta `object-fit` de forma confiable** (otra limitación del mismo tipo
+  que las de arriba) y estira la imagen para llenar la caja entera. **Arreglo**: calcular a mano,
+  en JS, el tamaño en píxeles que mantiene la proporción real dentro del contenedor
+  (`container.getBoundingClientRect()` para la caja + `naturalWidth`/`naturalHeight` de la
+  imagen cargada → `fitScale = Math.min(boxW/w, boxH/h)`) y fijarlo como `width`/`height`
+  explícitos en px (no porcentaje, no `object-fit`) — así no queda nada por interpretar del lado
+  de `html2canvas`. Verificado visualmente (réplica manual de bytes, nunca `exportPDF()` real)
+  comparando el PDF extraído contra el dibujo en vivo para `cor2` y `win_ob` + paño fijo abajo:
+  proporciones coinciden.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados
