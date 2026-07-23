@@ -7,6 +7,13 @@ const { getMessaging } = require('firebase-admin/messaging');
 initializeApp();
 const db = getFirestore();
 
+// enviarRecordatorios corre cada 5 minutos (ver más abajo) — un recordatorio "a la hora" (0 min
+// antes) solo está "vigente" en el instante exacto del evento, así que sin margen el tick de
+// las 5 min casi siempre lo agarra unos minutos DESPUÉS de la hora y lo marca como enviado sin
+// mandar el push (por el filtro `ahora <= fecha`). Este margen deja mandarlo igual si el tick
+// cae poco después de la hora, sin reabrir recordatorios de eventos realmente viejos.
+const GRACE_MS = 15 * 60000;
+
 async function tokenDe(email) {
     if (!email) return null;
     const s = await db.collection('usuarios').doc(email).get();
@@ -99,7 +106,7 @@ async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPr
         for (const off of offsets) {
             if (enviados.includes(off)) continue;
             if (ahora < fecha - off * 60000) continue; // aún no toca este aviso
-            if (ahora <= fecha) {
+            if (ahora <= fecha + GRACE_MS) {
                 const token = await tokenDe(d[campoEmail]);
                 if (token) {
                     const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
@@ -121,7 +128,7 @@ async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPr
             enviados.push(off);
             cambio = true;
         }
-        const pendientes = (ahora <= fecha) && offsets.some(o => !enviados.includes(o));
+        const pendientes = (ahora <= fecha + GRACE_MS) && offsets.some(o => !enviados.includes(o));
         if (cambio || pendientes !== (d.recordatoriosPendientes === true)) {
             await docu.ref.update({ recordatoriosEnviados: enviados, recordatoriosPendientes: pendientes });
         }

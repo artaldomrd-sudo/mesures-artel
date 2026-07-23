@@ -16,6 +16,10 @@
 
     .new-cita-btn { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 10px; padding: 14px; font-weight: bold; font-size: 15px; cursor: pointer; font-family: 'Arimo'; min-height: 48px; }
 
+    .persona-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .persona-tabs button { flex: 1; min-width: 70px; padding: 9px 6px; border: 1.5px solid var(--artal-blue); background: #fff; color: var(--artal-blue); border-radius: 8px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; }
+    .persona-tabs button.active { background: var(--artal-blue); color: #fff; }
+
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
     .grid-weekday { text-align: center; font-size: 11px; font-weight: bold; color: #999; text-transform: uppercase; padding-bottom: 4px; }
     .grid-day { min-height: 44px; padding: 8px 0 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: bold; color: var(--artal-blue); position: relative; transition: 0.1s; }
@@ -87,7 +91,13 @@
 </header>
 
 <main>
-    <button class="new-cita-btn" onclick="abrirNuevaCita()">+ Nueva cita</button>
+    <button class="new-cita-btn" onclick="abrirNuevaCita()">+ Nuevo evento</button>
+    <div class="persona-tabs" id="persona-tabs">
+        <button type="button" class="active" onclick="setFiltroPersona('todos')">Todos</button>
+        <button type="button" onclick="setFiltroPersona('Anny')">Anny</button>
+        <button type="button" onclick="setFiltroPersona('Andrea')">Andrea</button>
+        <button type="button" onclick="setFiltroPersona('Dylan')">Dylan</button>
+    </div>
     <div class="leyenda">
         <span><i class="punto" style="background:#F6B93B;"></i>Dylan</span>
         <span><i class="punto" style="background:#3498db;"></i>Rolanny</span>
@@ -109,7 +119,7 @@
 
 <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box">
-        <h2 id="modal-title">Nueva cita</h2>
+        <h2 id="modal-title">Nuevo evento</h2>
 
         <div class="toggle-row">
             <button type="button" id="evento-cita-btn" class="active" onclick="setTipoEvento('cita')">📅 Cita</button>
@@ -151,6 +161,7 @@
 
         <label>Recordatorios (puedes marcar varios)</label>
         <div id="cita-recordar" class="recordar-group">
+            <label><input type="checkbox" value="0"> A la hora</label>
             <label><input type="checkbox" value="15"> 15 min antes</label>
             <label><input type="checkbox" value="30"> 30 min antes</label>
             <label><input type="checkbox" value="60"> 1 hora antes</label>
@@ -161,8 +172,17 @@
 
         <label>¿Para quién es?</label>
         <div class="toggle-row">
-            <button type="button" id="para-gerente-btn" class="active" onclick="setAsignadoA('gerente')">Para mí (gerente)</button>
+            <button type="button" id="para-gerente-btn" class="active" onclick="setAsignadoA('gerente')">Gerencia</button>
             <button type="button" id="para-instalador-btn" onclick="setAsignadoA('instalador')">Equipo de instalación</button>
+        </div>
+
+        <div id="gerencia-select-wrap">
+            <label>¿Quién de gerencia?</label>
+            <select id="cita-gerencia">
+                <option value="Andrea">Andrea</option>
+                <option value="Anny">Anny</option>
+                <option value="Dylan">Dylan</option>
+            </select>
         </div>
 
         <div id="instalador-select-wrap" style="display:none;">
@@ -175,7 +195,7 @@
 
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarNuevaCita()">Cancelar</button>
-            <button class="btn-guardar" onclick="guardarCita()">Guardar cita</button>
+            <button class="btn-guardar" onclick="guardarCita()">Guardar evento</button>
         </div>
     </div>
 </div>
@@ -204,12 +224,32 @@
     let currentMonth = new Date(); currentMonth.setDate(1);
     let selectedDay = null; // Date (medianoche) del día tocado en la grilla, o null = ver todo el mes
     let allCitas = [];
+    // 'todos' o un nombre de gerencia (Anny/Andrea/Dylan) — cada quien puede filtrar el
+    // calendario para ver solo sus propias citas y recordatorios ("secciones" por persona).
+    // Solo filtra eventos asignados a gerencia: lo asignado al equipo de instalación no es
+    // "de" ninguna de las 3 personas, así que sigue viéndose únicamente en "Todos".
+    let filtroPersona = 'todos';
     const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
     const DIAS_SEMANA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 
     function sameDay(a, b) {
         return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     }
+
+    function esDePersona(c, persona) {
+        return c.asignadoA === 'gerente' && (c.asignadoNombre || '') === persona;
+    }
+    function citasParaFiltro(arr) {
+        return filtroPersona === 'todos' ? arr : arr.filter(c => esDePersona(c, filtroPersona));
+    }
+
+    window.setFiltroPersona = function (persona) {
+        filtroPersona = persona;
+        document.querySelectorAll('#persona-tabs button').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.trim() === (persona === 'todos' ? 'Todos' : persona));
+        });
+        render();
+    };
 
     function renderGrid() {
         const grid = document.getElementById('calendar-grid');
@@ -223,7 +263,7 @@
         for (let i = 0; i < firstWeekday; i++) html += `<div class="grid-day empty"></div>`;
         for (let day = 1; day <= daysInMonth; day++) {
             const cellDate = new Date(year, month, day);
-            const delDia = allCitas.filter(c => {
+            const delDia = citasParaFiltro(allCitas).filter(c => {
                 const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
                 return f && sameDay(f, cellDate);
             });
@@ -282,7 +322,7 @@
                 <span class="hora">${horaTxt}</span>
             </div>
             <div class="meta">
-                ${c.asignadoA === 'instalador' ? '🔧 ' + esc(c.asignadoNombre) : '👤 Gerente'}
+                ${c.asignadoA === 'instalador' ? '🔧 ' + esc(c.asignadoNombre) : '👤 ' + esc(c.asignadoNombre || 'Gerencia')}
                 ${lugar ? ' · ' + esc(lugar) : ''}
                 ${c.descripcion ? '<br>' + esc(c.descripcion) : ''}
                 <br>Agendado por ${esc(c.creadoPorNombre)}
@@ -307,7 +347,7 @@
             bar.style.display = 'flex';
             document.getElementById('selected-day-label').textContent =
                 selectedDay.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
-            citasAMostrar = allCitas.filter(c => {
+            citasAMostrar = citasParaFiltro(allCitas).filter(c => {
                 const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
                 return f && sameDay(f, selectedDay);
             }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
@@ -321,7 +361,7 @@
         bar.style.display = 'none';
         const start = new Date(currentMonth);
         const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-        const delMes = allCitas.filter(c => {
+        const delMes = citasParaFiltro(allCitas).filter(c => {
             const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
             return f && f >= start && f < end && !c.completada;
         }).sort((a, b) => a.fecha.toDate() - b.fecha.toDate());
@@ -362,6 +402,7 @@
     let editingId = null;      // id de la cita que se está editando, o null si es nueva
     let ordersCache = [];
     let instaladoresCache = [];
+    let adminsCache = []; // { email, nombre, ... } — para mandarle el push a la persona de gerencia elegida, no a quien esté creando el evento
 
     // "Quién agenda" viene por defecto con la cuenta conectada, pero se puede elegir a mano otro
     // nombre de oficina (la lista sale de los usuarios con rol admin/gerencia).
@@ -370,6 +411,7 @@
             const roles = Array.isArray(u.rol) ? u.rol : [u.rol];
             return roles.includes('admin');
         });
+        adminsCache = admins;
         let nombres = admins.map(u => u.nombre).filter(Boolean);
         if (!nombres.includes(usuario.nombre)) nombres.unshift(usuario.nombre);
         nombres = [...new Set(nombres)].sort((a, b) => a.localeCompare(b, 'es'));
@@ -399,6 +441,7 @@
         document.getElementById('cita-fecha').value = '';
         document.getElementById('cita-duracion').value = '60';
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
+        document.getElementById('cita-gerencia').value = 'Andrea';
         setTipoEvento('cita');
         setTipoCita('libre');
         setAsignadoA('gerente');
@@ -406,7 +449,7 @@
 
     window.abrirNuevaCita = function () {
         resetForm();
-        document.getElementById('modal-title').textContent = 'Nueva cita';
+        document.getElementById('modal-title').textContent = 'Nuevo evento';
         if (selectedDay) {
             const pad = (n) => String(n).padStart(2, '0');
             const d = selectedDay;
@@ -436,6 +479,7 @@
         document.getElementById('para-gerente-btn').classList.toggle('active', val === 'gerente');
         document.getElementById('para-instalador-btn').classList.toggle('active', val === 'instalador');
         document.getElementById('instalador-select-wrap').style.display = val === 'instalador' ? 'block' : 'none';
+        document.getElementById('gerencia-select-wrap').style.display = val === 'gerente' ? 'block' : 'none';
     };
 
     window.guardarCita = async function () {
@@ -457,8 +501,13 @@
 
         let asignadoEmail = '', asignadoNombre = '';
         if (asignadoA === 'gerente') {
-            asignadoEmail = auth.currentUser.email;
-            asignadoNombre = 'Gerente';
+            asignadoNombre = document.getElementById('cita-gerencia').value;
+            // El push tiene que llegarle a la persona elegida, no a quien está creando el
+            // evento — si su usuario no tiene el rol admin cargado con ese nombre exacto, cae
+            // a la cuenta conectada para no dejar el campo vacío (fallback silencioso, igual que
+            // el resto de la sincronización con Firestore en esta app).
+            const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === asignadoNombre.toLowerCase());
+            asignadoEmail = persona ? persona.email : auth.currentUser.email;
         } else {
             asignadoEmail = document.getElementById('cita-instalador').value;
             const inst = instaladoresCache.find(x => x.email === asignadoEmail);
@@ -548,7 +597,19 @@
         if (c.orderId) document.getElementById('cita-pedido').value = c.orderId;
         // Para quién
         setAsignadoA(c.asignadoA === 'instalador' ? 'instalador' : 'gerente');
-        if (c.asignadoA === 'instalador') document.getElementById('cita-instalador').value = c.asignadoEmail || '';
+        if (c.asignadoA === 'instalador') {
+            document.getElementById('cita-instalador').value = c.asignadoEmail || '';
+        } else {
+            // Eventos creados antes de este cambio traen asignadoNombre:'Gerente' (genérico,
+            // sin persona) — no coincide con ninguna opción del select, así que se agrega
+            // igual que "quién agenda" arriba, en vez de perder silenciosamente el dato viejo.
+            const selG = document.getElementById('cita-gerencia');
+            const nombreG = c.asignadoNombre || 'Andrea';
+            if (![...selG.options].some(o => o.value === nombreG)) {
+                selG.insertAdjacentHTML('beforeend', `<option value="${esc(nombreG)}">${esc(nombreG)}</option>`);
+            }
+            selG.value = nombreG;
+        }
         // Quién agenda
         if (c.creadoPorNombre) {
             const sel = document.getElementById('cita-creador');

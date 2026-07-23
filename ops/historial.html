@@ -12,8 +12,16 @@
     main { max-width: 900px; }
     #search-input, #audit-search, #carpeta-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
     .carpeta { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid #8e44ad; }
+    .carpeta-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
     .carpeta > h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
     .carpeta .cliente { font-size: 12px; color: #888; }
+    .combinar-btn { flex-shrink: 0; padding: 6px 10px; border: 1.5px solid #ddd; border-radius: 7px; background: #fff; color: #555; font-family: 'Arimo'; font-size: 12px; cursor: pointer; }
+    .combinar-btn:hover { border-color: #8e44ad; color: #8e44ad; }
+    .combinar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; padding: 10px; background: #faf7fc; border-radius: 8px; border: 1px dashed #d9c6e8; }
+    .combinar-row select { flex: 1; min-width: 180px; padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
+    .combinar-row button { padding: 8px 12px; border: none; border-radius: 7px; font-weight: bold; font-family: 'Arimo'; font-size: 12.5px; cursor: pointer; }
+    .combinar-row .btn-ok { background: #8e44ad; color: #fff; }
+    .combinar-row .btn-cancel { background: #eee; color: #555; }
     .carpeta-doc { border-top: 1px solid #f0f0f0; padding: 9px 0; margin-top: 6px; }
     .carpeta-doc .doc-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .carpeta-doc .doc-tag { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 12px; color: #fff; }
@@ -483,6 +491,11 @@
         return { cls: 'cot', label: 'Cotización' };
     }
 
+    // Carpetas actualmente en pantalla (se repuebla en cada renderCarpetas()) — combinarCarpetas
+    // referencia una carpeta por su índice en este array en vez de por su texto (cliente/obra
+    // pueden traer comillas, tildes, etc. que complicarían escaparlas dentro de un onclick).
+    let carpetasArr = [];
+
     function renderCarpetas() {
         const term = document.getElementById('carpeta-search').value.trim().toLowerCase();
         const grupos = new Map();
@@ -497,13 +510,27 @@
         let arr = Array.from(grupos.values());
         if (term) arr = arr.filter(g => (g.titulo + ' ' + g.cliente).toLowerCase().includes(term));
         arr.sort((a, b) => Math.max(...b.docs.map(d => orderDate(d.o))) - Math.max(...a.docs.map(d => orderDate(d.o))));
+        carpetasArr = arr;
 
         const list = document.getElementById('carpetas-list');
         if (!arr.length) { list.innerHTML = '<p class="empty">No hay obras registradas.</p>'; return; }
-        list.innerHTML = arr.map(g => `
+        list.innerHTML = arr.map((g, i) => `
             <div class="carpeta">
-                <h3>${esc(g.titulo)}</h3>
-                ${g.cliente && g.cliente.toLowerCase() !== g.titulo.toLowerCase() ? `<div class="cliente">${esc(g.cliente)}</div>` : ''}
+                <div class="carpeta-top">
+                    <div>
+                        <h3>${esc(g.titulo)}</h3>
+                        ${g.cliente && g.cliente.toLowerCase() !== g.titulo.toLowerCase() ? `<div class="cliente">${esc(g.cliente)}</div>` : ''}
+                    </div>
+                    ${arr.length > 1 ? `<button class="combinar-btn" onclick="toggleCombinar(${i})">🔗 Combinar con otra</button>` : ''}
+                </div>
+                <div class="combinar-row" id="combinar-row-${i}" style="display:none;">
+                    <select id="combinar-select-${i}">
+                        <option value="">-- elegir la otra carpeta --</option>
+                        ${arr.map((o2, j) => j === i ? '' : `<option value="${j}">${esc(o2.titulo)}${o2.cliente && o2.cliente.toLowerCase() !== o2.titulo.toLowerCase() ? ' — ' + esc(o2.cliente) : ''} (${o2.docs.length})</option>`).join('')}
+                    </select>
+                    <button class="btn-ok" onclick="confirmarCombinar(${i})">Unir aquí</button>
+                    <button class="btn-cancel" onclick="toggleCombinar(${i})">Cancelar</button>
+                </div>
                 ${g.docs.slice().sort((a, b) => orderDate(b.o) - orderDate(a.o)).map(({ id, o }) => {
                     const t = docTag(o);
                     const links = [];
@@ -526,6 +553,35 @@
     }
 
     document.getElementById('carpeta-search').addEventListener('input', renderCarpetas);
+
+    // Combinar dos carpetas que en realidad son la misma obra pero quedaron separadas por
+    // haberse escrito el nombre distinto en dos envíos: reescribe cliente/obra de TODOS los
+    // pedidos de la carpeta de origen para que coincidan exactamente con los de la carpeta
+    // destino (así renderCarpetas() los agrupa juntos la próxima vez que llegue el snapshot).
+    window.toggleCombinar = function (i) {
+        const row = document.getElementById('combinar-row-' + i);
+        if (row) row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+    };
+
+    window.confirmarCombinar = async function (i) {
+        const sel = document.getElementById('combinar-select-' + i);
+        const j = sel.value === '' ? NaN : Number(sel.value);
+        if (Number.isNaN(j)) { alert('Elegí con cuál carpeta combinarla.'); return; }
+        const origen = carpetasArr[i];
+        const destino = carpetasArr[j];
+        if (!origen || !destino) return;
+        const destCliente = (destino.docs[0].o.cliente || '').trim();
+        const destObra = (destino.docs[0].o.obra || '').trim();
+        if (!confirm(`¿Combinar "${origen.titulo}" dentro de "${destino.titulo}"?\n\nSe van a renombrar ${origen.docs.length} documento(s) para que queden juntos bajo "${destino.titulo}"${destino.cliente ? ' (' + destino.cliente + ')' : ''}. Esta acción no se deshace con un clic — habría que volver a separarlos a mano.`)) return;
+        try {
+            for (const { id } of origen.docs) {
+                await updateDoc(doc(db, 'orders', id), { cliente: destCliente, obra: destObra });
+            }
+            alert('Combinado correctamente.');
+        } catch (e) {
+            alert('No se pudo combinar: ' + (e && e.message ? e.message : e));
+        }
+    };
 
     onSnapshot(collection(db, 'movimientosInstalaciones'), (snap) => {
         auditMovs = snap.docs.map(d => d.data());

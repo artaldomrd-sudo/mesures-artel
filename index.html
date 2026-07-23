@@ -439,7 +439,8 @@
             </div>
             <div class="header-field hf-obra">
                 <label>NOMBRE DEL PROYECTO</label>
-                <input type="text" id="header-obra" placeholder="ej: Altea Villa 11">
+                <input type="text" id="header-obra" placeholder="ej: Altea Villa 11" list="obra-datalist" autocomplete="off">
+                <datalist id="obra-datalist"></datalist>
             </div>
             <div class="header-field hf-ubicacion">
                 <label>UBICACIÓN</label>
@@ -4319,8 +4320,9 @@
 
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
-    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+    import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
     // Sincroniza clientes/obras del cuaderno a Firestore (colección `clientes`) para que
     // ops/compras.html y ops/historial.html puedan sugerir TODOS los clientes del cuaderno, no
@@ -4353,7 +4355,36 @@
             localStorage.setItem('artal_clients_synced_v1', '1');
         } catch (e) { /* se reintenta la próxima vez que haya sesión */ }
     }
-    onAuthStateChanged(auth, (user) => { if (user) bulkSyncClientesUnaVez(); });
+    onAuthStateChanged(auth, (user) => { if (user) { bulkSyncClientesUnaVez(); startFsClientListeners(); } });
+
+    // Sugerencias de "obra" para evitar el caso real reportado: la misma obra terminó en dos
+    // "carpetas" distintas en ops/historial.html porque se escribió con un nombre levemente
+    // distinto en dos envíos. Fuente: colecciones `orders`/`clientes` de Firestore (mismo par de
+    // fuentes y misma utilidad — buildClientMap — que ya usa ops/compras.html), no
+    // `artal_projects` local (eso solo cubre este dispositivo). Solo se activa con sesión
+    // iniciada (las reglas de Firestore exigen auth para leer) y falla en silencio sin internet.
+    let fsClientMap = new Map();
+    let fsOrdersCache = [], fsClientesCache = [];
+    let fsListenersStarted = false;
+    function refreshFsClientMap() {
+        fsClientMap = buildClientMap(fsOrdersCache, fsClientesCache);
+        refreshObraDatalist();
+    }
+    function refreshObraDatalist() {
+        const dl = document.getElementById('obra-datalist');
+        const clienteEl = document.getElementById('header-cliente');
+        if (!dl || !clienteEl) return;
+        const entry = fsClientMap.get(normClienteKey(clienteEl.value));
+        const obras = entry ? Array.from(entry.obras.values()) : [];
+        dl.innerHTML = obras.map(o => `<option value="${escAttr(o)}"></option>`).join('');
+    }
+    function startFsClientListeners() {
+        if (fsListenersStarted) return;
+        fsListenersStarted = true;
+        onSnapshot(collection(db, 'orders'), (snap) => { fsOrdersCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
+        onSnapshot(collection(db, 'clientes'), (snap) => { fsClientesCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
+    }
+    document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
     window.enviarOrden = async function () {
         const btn = document.getElementById('btn-enviar-orden');
@@ -4377,6 +4408,12 @@
 
             const isFab = (appJSON.docType || '').indexOf('FAB') === 0;
 
+            // Si ya existe (en Firestore) un cliente/obra con el mismo texto salvo mayúsculas o
+            // espacios, usa esa grafía "canónica" en vez de la que se acaba de escribir — así no
+            // termina siendo una "carpeta" nueva en ops/historial.html por una diferencia menor.
+            const clienteEnviado = normalizarCliente(appJSON.header.cliente, fsClientMap);
+            const obraEnviada = normalizarObra(appJSON.header.cliente, appJSON.header.obra, fsClientMap);
+
             const items = appJSON.order.map(id => {
                 const state = appJSON.cardsState[id] || {};
                 const inputs = appJSON.inputsData[id] || {};
@@ -4393,8 +4430,8 @@
             if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
 
             await addDoc(collection(db, 'orders'), {
-                cliente: appJSON.header.cliente,
-                obra: appJSON.header.obra,
+                cliente: clienteEnviado,
+                obra: obraEnviada,
                 docType: appJSON.docType,
                 material: appJSON.header.material,
                 color: appJSON.header.color,
@@ -4404,7 +4441,7 @@
                 appJSON,
                 ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
             });
-            syncClienteObra(appJSON.header.cliente, appJSON.header.obra);
+            syncClienteObra(clienteEnviado, obraEnviada);
             alert(isFab ? 'Enviado a fábrica correctamente.' : 'Cotización enviada al contratista correctamente.');
         } catch (e) {
             alert('No se pudo enviar: ' + (e && e.message ? e.message : e));

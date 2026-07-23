@@ -399,6 +399,21 @@ estilo simplificado del CAD.
   mayúsculas/tildes/espacios al escribirlo a mano — pero sigue siendo un campo de texto libre
   (a diferencia de un `<select>`), así que registrar un cliente nuevo simplemente escribiéndolo
   sigue funcionando igual que antes.
+- **Campo NOMBRE DEL PROYECTO con autocompletar + auto-normalización, fuente Firestore.**
+  Motivo: la "obra" de un pedido enviado a fábrica/cotización (`enviarOrden()`) es lo que agrupa
+  "Carpetas por obra" en `ops/historial.html` (ver más abajo) — si dos envíos de la misma obra
+  real usan un nombre levemente distinto, terminan en dos carpetas separadas. `<input
+  list="obra-datalist">` sugiere las obras ya conocidas PARA el cliente escrito en ese momento
+  (`refreshObraDatalist()`, recalculado con el evento `input` del campo CLIENTE), usando
+  `buildClientMap` de `ops/clients.js` (mismas dos fuentes que ya usa `ops/compras.html`:
+  colección `clientes` + `orders`, con `onSnapshot` — solo se activa con sesión iniciada, ver
+  `startFsClientListeners()`, las reglas de Firestore exigen auth para leer). Además,
+  `enviarOrden()` pasa `cliente`/`obra` por `normalizarCliente`/`normalizarObra` (mismas
+  funciones) **antes** de escribir el pedido: si el texto coincide con uno ya conocido salvo
+  mayúsculas/espacios, se guarda con la grafía "canónica" en vez de la recién escrita — sin
+  tocar nombres realmente distintos. Esto es la fuente `orders`/`clientes` de Firestore
+  (multi-dispositivo), **distinta** del datalist de CLIENTE de arriba (que usa `artal_projects`
+  local, un solo dispositivo) — se mantienen separados a propósito.
 
 ## Plataforma de Operaciones (`ops/`)
 
@@ -484,8 +499,23 @@ dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
 Para evitar que "Pablo" y "PABLO" terminen como clientes distintos (con cientos de trabajos al
 año, esto importa): `buildClientMap()` agrupa los `cliente`/`obra` de todos los `orders` ya
 existentes sin importar mayúsculas/espacios. Se usa en `ops/compras.html` (datalist +
-normaliza al guardar) y `ops/historial.html` (datalist en el buscador, que ya era
-case-insensitive).
+normaliza al guardar), `ops/historial.html` (datalist en el buscador, que ya era
+case-insensitive) e `index.html` (ver "Guardar → Campo NOMBRE DEL PROYECTO con autocompletar",
+sección "Proyectos guardados" más arriba).
+
+### Carpetas por obra: combinar duplicadas (`ops/historial.html`)
+
+`renderCarpetas()` agrupa TODOS los pedidos por `(cliente+'|||'+obra).toLowerCase()` exacto — si
+la obra se escribió distinto en dos envíos (antes del autocompletar/normalización de arriba, o
+si el nombre no coincidía con nada conocido en ese momento), quedan como dos carpetas separadas
+de la misma obra real. Cada carpeta tiene un botón **"🔗 Combinar con otra"** (oculto si solo hay
+una carpeta) que despliega un `<select>` con las demás carpetas + botón "Unir aquí": con
+`confirm()` de por medio (muestra cuántos documentos se van a mover y a qué carpeta), reescribe
+`cliente`/`obra` de **todos** los pedidos de la carpeta de origen para que coincidan
+exactamente con los de la carpeta destino (`updateDoc` por cada uno) — así `renderCarpetas()` los
+agrupa juntos en el próximo `onSnapshot`. Las carpetas de la vista actual se guardan en
+`carpetasArr` (módulo) y se referencian por **índice** en los `onclick` (no por el texto de
+cliente/obra, que podría traer comillas y complicar el escapado dentro del atributo).
 
 ### Notificaciones y badges
 
@@ -497,6 +527,45 @@ case-insensitive).
   cantidad de pedidos que necesitan atención *ahora* en cada sección (no un historial de todo lo
   pasado) — ALUCUFEL y Cotizaciones cuentan `status==='costeada'`, comentarios de fábrica sin
   atender, etc.
+
+### Calendario (`ops/calendario.html`) — secciones por persona de gerencia
+
+- El botón/modal para crear un evento dice **"Nuevo evento"** (antes "Nueva cita") porque
+  siempre pudo crear una Cita O un Recordatorio (toggle `tipoEvento`) — "cita" era impreciso.
+  Nombres internos (`window.abrirNuevaCita`, `guardarCita`, ids `cita-*`, colección Firestore
+  `citas`) NO se tocaron, solo el texto visible.
+- **Recordatorio "A la hora"** (`value="0"` en `#cita-recordar`, primero de la lista): exige un
+  ajuste en la Cloud Function `enviarRecordatorios` (`functions/index.js`,
+  `procesarRecordatoriosMulti`) — corre cada 5 minutos, y el filtro `ahora <= fecha` original
+  solo mandaba el push si el tick caía **antes o exactamente en** la hora del evento; con offset
+  0 esa ventana es prácticamente un instante, así que la mayoría de las veces el tick de 5 min
+  cae un poco DESPUÉS y el recordatorio se marcaba "enviado" sin mandarse. Se agregó
+  `GRACE_MS = 15 * 60000` y el filtro pasó a `ahora <= fecha + GRACE_MS` (en el envío y en el
+  cálculo de `recordatoriosPendientes`) — dentro de esa ventana igual se manda, más allá se
+  sigue descartando como recordatorio viejo. Aplica a **todos** los offsets, no solo 0 (mismo
+  tipo de gap que ya podía pasarle a cualquiera si el tick caía justo tarde), sin tocar
+  `procesarRecordatorios` (la función singular vieja, solo de compatibilidad — ningún flujo
+  actual escribe `recordarAntesMin`, todo pasa por el array `recordatorios`).
+- **"¿Para quién es?" → "Gerencia"** (antes "Para mí (gerente)"): al elegir Gerencia aparece un
+  `<select id="cita-gerencia">` con **Andrea / Anny / Dylan** fijos (a propósito, no derivados
+  de `usuarios` con rol admin — más simple y no depende de que esos 3 usuarios ya estén
+  cargados/con el rol correcto en Firestore). `guardarCita()` busca el email de la persona
+  elegida en `adminsCache` (la misma lista que ya se traía para el select de "quién agenda") y
+  lo usa como `asignadoEmail` — **antes** siempre era `auth.currentUser.email` (quien creaba el
+  evento), lo cual estaba bien cuando "gerente" no distinguía persona, pero ahora el push tiene
+  que llegarle a la persona elegida, no a quien lo agenda. Si esa persona no tiene un `usuarios`
+  doc con rol admin coincidente, cae a `auth.currentUser.email` (fallback silencioso, mismo
+  estilo que el resto de la sincronización con Firestore de esta app).
+- **Secciones Todos/Anny/Andrea/Dylan** (`#persona-tabs`, `filtroPersona`, `citasParaFiltro()`):
+  filtra `allCitas` por `asignadoA==='gerente' && asignadoNombre===persona` — se aplica tanto a
+  los puntos de la grilla (`renderGrid()`) como a la lista de eventos (`render()`), en las dos
+  vistas (mes y día). Un evento asignado al equipo de instalación **no** entra en ninguna de las
+  3 secciones personales (solo se ve en "Todos") — no es "de" ninguna de las 3 personas de
+  gerencia, es del equipo de instalación. Eventos viejos con `asignadoNombre:'Gerente'`
+  (genérico, de antes de este cambio) tampoco caen en ninguna sección personal por el mismo
+  motivo — se siguen viendo en "Todos", y al abrir "✏ Modificar" se puede elegir la persona real
+  (`modificarCita()` inserta esa opción extra en el `<select>` si no coincide con ninguna de las
+  3, mismo patrón defensivo que ya usaba el select de "quién agenda").
 
 ## Convenciones aprendidas (para no repetir errores)
 
