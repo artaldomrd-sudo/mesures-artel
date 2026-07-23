@@ -434,7 +434,8 @@
         <div class="project-header">
             <div class="header-field hf-cliente">
                 <label>CLIENTE</label>
-                <input type="text" id="header-cliente" placeholder="ej: Dupont">
+                <input type="text" id="header-cliente" placeholder="ej: Dupont" list="cliente-datalist" autocomplete="off">
+                <datalist id="cliente-datalist"></datalist>
             </div>
             <div class="header-field hf-obra">
                 <label>NOMBRE DEL PROYECTO</label>
@@ -897,7 +898,7 @@
         // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en
         // silencio — pasó en la práctica: dos hojas distintas (ej. una para barandas) guardadas
         // sin querer con el mismo nombre de cliente/proyecto, la segunda borró la primera.
-        const targetKey = (cliKey + ' ' + obraKey).toLowerCase();
+        const targetKey = (cliKey + '|' + obraKey).toLowerCase();
         const yaExiste = projects[cliKey][obraKey] !== undefined;
         if (yaExiste && targetKey !== openedProjectKey) {
             if (!confirm(`Ya existe un proyecto "${obraKey}" del cliente "${cliKey}" guardado.\n\n¿Seguro que quieres reemplazarlo? Se perderá lo que tenía guardado.`)) return;
@@ -967,11 +968,17 @@
     }
 
     function updateClientList() {
+        const projects = getProjects();
+        const clientes = Object.keys(projects).sort((a, b) => a.localeCompare(b));
+        // Datalist del campo "CLIENTE" del encabezado: sugiere clientes ya guardados (para no
+        // duplicar uno por una mayúscula/tilde distinta) pero deja escribir libre para uno nuevo
+        // (a diferencia de un <select>, un <input list="..."> no obliga a elegir una opción).
+        const dl = document.getElementById('cliente-datalist');
+        if (dl) dl.innerHTML = clientes.map(c => `<option value="${escAttr(c)}"></option>`).join('');
+
         const sel = document.getElementById('select-cliente');
         if (!sel) return;
-        const projects = getProjects();
         const prev = sel.value;
-        const clientes = Object.keys(projects).sort((a, b) => a.localeCompare(b));
         sel.innerHTML = '<option value="">-- Cliente --</option>' + clientes.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('');
         if (clientes.indexOf(prev) >= 0) sel.value = prev;
         updateObraList();
@@ -994,7 +1001,7 @@
         const projects = getProjects();
         if (projects[cliente] && projects[cliente][obra]) {
             restoreData(projects[cliente][obra]);
-            openedProjectKey = (cliente + ' ' + obra).toLowerCase();
+            openedProjectKey = (cliente + '|' + obra).toLowerCase();
             saveProgress();
             alert(`Proyecto "${obra}" (${cliente}) abierto.`);
         } else {

@@ -389,7 +389,16 @@ estilo simplificado del CAD.
   guardado sin tocar nada. Guardar repetidamente el mismo proyecto ya abierto (el caso normal de
   uso, guardar seguido mientras se mide) **no pregunta** — solo el caso de colisión de nombre
   entre hojas distintas. `resetNotebook()` ("Hoja en blanco") limpia `openedProjectKey` a `null`
-  para no arrastrar por error el "proyecto abierto" de la hoja anterior.
+  para no arrastrar por error el "proyecto abierto" de la hoja anterior. (Nota: el separador
+  `cliente + '|' + obra` usado para armar `openedProjectKey`/`targetKey` tiene que ser
+  **idéntico** en `saveProject()` y `loadProject()` — si difiere, la comparación nunca coincide y
+  el aviso saldría siempre, incluso guardando tu propio proyecto abierto.)
+- **Campo CLIENTE con autocompletar (`<input list="cliente-datalist">`)**: sugiere los clientes
+  ya guardados (vía `<datalist>`, poblado por `updateClientList()` junto con el `<select>` de
+  "Abrir proyecto") para evitar que el mismo cliente quede duplicado por una variación de
+  mayúsculas/tildes/espacios al escribirlo a mano — pero sigue siendo un campo de texto libre
+  (a diferencia de un `<select>`), así que registrar un cliente nuevo simplemente escribiéndolo
+  sigue funcionando igual que antes.
 
 ## Plataforma de Operaciones (`ops/`)
 
