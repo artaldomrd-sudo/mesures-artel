@@ -13,8 +13,8 @@
     .form-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 20px; }
     .form-box label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
     .form-box label:first-child { margin-top: 0; }
-    .form-box input[type="text"], .form-box input[type="number"], .form-box input[type="file"], .form-box textarea {
-        width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box;
+    .form-box input[type="text"], .form-box input[type="number"], .form-box input[type="file"], .form-box textarea, .form-box select {
+        width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; background: #fff;
     }
     .form-box textarea { min-height: 60px; }
     .form-box .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -45,11 +45,11 @@
             Se sube la orden de compra y el pedido queda listo directo para chofer e instalador.
         </p>
         <label>Cliente</label>
-        <input type="text" id="c-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
-        <datalist id="clientes-datalist"></datalist>
+        <select id="c-cliente-sel" onchange="onClienteSel()"></select>
+        <input type="text" id="c-cliente" placeholder="Escribe el nombre del cliente nuevo" autocomplete="off" style="display:none; margin-top:6px;">
         <label>Obra / Ubicación</label>
-        <input type="text" id="c-obra" list="obras-datalist" placeholder="Obra o dirección" autocomplete="off">
-        <datalist id="obras-datalist"></datalist>
+        <select id="c-obra-sel" onchange="onObraSel()"></select>
+        <input type="text" id="c-obra" placeholder="Escribe la obra o dirección nueva" autocomplete="off" style="display:none; margin-top:6px;">
         <div class="row2">
             <div>
                 <label>Proveedor</label>
@@ -62,16 +62,8 @@
         </div>
         <label>Descripción</label>
         <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
-        <div class="row2">
-            <div>
-                <label>Monto de la compra (opcional)</label>
-                <input type="text" id="c-monto" placeholder="Ej: RD$ 25,000">
-            </div>
-            <div>
-                <label>Orden de compra (PDF)</label>
-                <input type="file" id="c-pdf" accept="application/pdf">
-            </div>
-        </div>
+        <label>Orden de compra (PDF)</label>
+        <input type="file" id="c-pdf" accept="application/pdf">
         <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra y enviar a chofer/instalador</button>
     </div>
 
@@ -94,23 +86,58 @@
     // Clientes/obras ya conocidos (sincronizados desde el cuaderno + cualquier pedido ya
     // registrado) — se ofrecen como sugerencia y, al guardar, se normaliza la grafía para que
     // "Pablo" y "PABLO" no terminen siendo dos clientes distintos.
+    const NUEVO = '__nuevo__';
     let clientMap = new Map();
     let ordersCache = [], clientesCache = [];
+
+    // Menú desplegable de clientes conocidos + opción "escribir nuevo" (que revela el input de
+    // texto). Preserva la selección actual al refrescar por un snapshot en segundo plano.
     function refreshClientMap() {
         clientMap = buildClientMap(ordersCache, clientesCache);
-        document.getElementById('clientes-datalist').innerHTML =
-            clientList(clientMap).map(c => `<option value="${esc(c.nombre)}">`).join('');
-        actualizarObrasDatalist();
+        const sel = document.getElementById('c-cliente-sel');
+        const prev = sel.value;
+        sel.innerHTML = `<option value="">— Elige un cliente —</option>`
+            + clientList(clientMap).map(c => `<option value="${esc(c.nombre)}">${esc(c.nombre)}</option>`).join('')
+            + `<option value="${NUEVO}">➕ Escribir cliente nuevo…</option>`;
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+        onClienteSel();
     }
     onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => d.data()); refreshClientMap(); });
     onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
 
-    function actualizarObrasDatalist() {
-        const entry = clientMap.get(document.getElementById('c-cliente').value.trim().toLowerCase());
-        const obras = entry ? Array.from(entry.obras.values()) : [];
-        document.getElementById('obras-datalist').innerHTML = obras.map(o => `<option value="${esc(o)}">`).join('');
+    // Nombre del cliente elegido en este momento (de la lista o escrito a mano).
+    function clienteActual() {
+        const sel = document.getElementById('c-cliente-sel').value;
+        return sel === NUEVO ? document.getElementById('c-cliente').value.trim() : sel;
     }
-    document.getElementById('c-cliente').addEventListener('input', actualizarObrasDatalist);
+
+    window.onClienteSel = function () {
+        const sel = document.getElementById('c-cliente-sel').value;
+        document.getElementById('c-cliente').style.display = sel === NUEVO ? 'block' : 'none';
+        poblarObras();
+    };
+
+    // Obras conocidas del cliente elegido + opción "escribir nueva". Si el cliente es nuevo
+    // (escrito a mano), no hay obras previas: solo queda la opción de escribirla.
+    function poblarObras() {
+        const sel = document.getElementById('c-obra-sel');
+        const prev = sel.value;
+        const entry = clientMap.get(clienteActual().toLowerCase());
+        const obras = entry ? Array.from(entry.obras.values()) : [];
+        sel.innerHTML = `<option value="">— Elige una obra —</option>`
+            + obras.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')
+            + `<option value="${NUEVO}">➕ Escribir obra nueva…</option>`;
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+        onObraSel();
+    }
+
+    window.onObraSel = function () {
+        const sel = document.getElementById('c-obra-sel').value;
+        document.getElementById('c-obra').style.display = sel === NUEVO ? 'block' : 'none';
+    };
+    // Si el cliente es nuevo y se escribe a mano, no hay obras que sugerir — igual mantener el
+    // select de obra en modo "escribir nueva" mientras teclea.
+    document.getElementById('c-cliente').addEventListener('input', poblarObras);
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -121,12 +148,13 @@
     const STATUS_LABEL = { listo_para_cargar: 'Listo para cargar/instalar', completado: 'Completado' };
 
     window.registrarCompra = async function () {
-        const cliente = normalizarCliente(document.getElementById('c-cliente').value, clientMap);
-        const obra = normalizarObra(cliente, document.getElementById('c-obra').value, clientMap);
+        const obraSel = document.getElementById('c-obra-sel').value;
+        const obraRaw = obraSel === NUEVO ? document.getElementById('c-obra').value : obraSel;
+        const cliente = normalizarCliente(clienteActual(), clientMap);
+        const obra = normalizarObra(cliente, obraRaw, clientMap);
         const proveedor = document.getElementById('c-proveedor').value.trim();
         const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
         const descripcion = document.getElementById('c-descripcion').value.trim();
-        const monto = document.getElementById('c-monto').value.trim();
         const fileInput = document.getElementById('c-pdf');
         const file = fileInput.files[0];
 
@@ -147,7 +175,7 @@
             const url = await getDownloadURL(fileRef);
 
             await setDoc(ref_, {
-                cliente, obra, proveedor, descripcion, monto,
+                cliente, obra, proveedor, descripcion,
                 docType: 'COMPRA_DIRECTA',
                 totalItems: cantidad,
                 status: 'listo_para_cargar',
@@ -163,13 +191,14 @@
                 nombre: cliente, [`obras.${obra.toLowerCase()}`]: obra
             }, { merge: true });
 
+            document.getElementById('c-cliente-sel').value = '';
             document.getElementById('c-cliente').value = '';
             document.getElementById('c-obra').value = '';
             document.getElementById('c-proveedor').value = '';
             document.getElementById('c-cantidad').value = '1';
             document.getElementById('c-descripcion').value = '';
-            document.getElementById('c-monto').value = '';
             fileInput.value = '';
+            onClienteSel();
             alert('Compra registrada. Ya está disponible para chofer e instalador.');
         } catch (e) {
             alert('No se pudo registrar la compra: ' + e.message);
@@ -187,7 +216,7 @@
                 <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
             </div>
             <div class="order-meta">
-                Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)${o.monto ? ' · ' + esc(o.monto) : ''}
+                Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)
                 ${o.compraPdfUrl ? `<a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>` : ''}
             </div>
             ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
