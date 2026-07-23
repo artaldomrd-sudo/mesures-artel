@@ -910,6 +910,7 @@
         localStorage.setItem('artal_projects', JSON.stringify(projects));
         openedProjectKey = targetKey;
         if (window.syncClienteObra) window.syncClienteObra(cliKey, obraKey);
+        if (window.syncProjectToCloud) window.syncProjectToCloud(cliKey, obraKey, jsonData);
 
         updateClientList();
         document.getElementById('select-cliente').value = cliKey;
@@ -995,6 +996,41 @@
         selO.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
     }
 
+    // Llamado por el listener de Firestore (script módulo, ver startFsProjectsListener) cuando
+    // llega desde la nube un proyecto guardado en OTRO dispositivo — mantiene
+    // localStorage['artal_projects'] al día en segundo plano, sin que ningún otro código tenga
+    // que cambiar (getProjects()/updateClientList()/etc. siguen leyendo local, como siempre).
+    function mergeCloudProject(cliente, obra, jsonData) {
+        if (!cliente || !obra || !jsonData) return;
+        const projects = getProjects();
+        let cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase()) || cliente;
+        if (!projects[cliKey]) projects[cliKey] = {};
+        let obraKey = Object.keys(projects[cliKey]).find(o => o.toLowerCase() === obra.toLowerCase()) || obra;
+        const key = (cliKey + '|' + obraKey).toLowerCase();
+
+        // Si esta hoja tiene ESTE proyecto abierto ahora mismo, no lo pisamos en localStorage
+        // (perdería ediciones en pantalla sin guardar) — solo avisamos una vez.
+        if (key === openedProjectKey) {
+            const local = projects[cliKey][obraKey];
+            const localTs = (local && local.header && local.header._syncUpdatedAt) || 0;
+            const incomingTs = (jsonData.header && jsonData.header._syncUpdatedAt) || 0;
+            if (incomingTs > localTs) {
+                alert(`"${obraKey}" (${cliKey}) se actualizó en otro dispositivo mientras lo tenías abierto aquí. Para ver esos cambios, abrilo de nuevo desde "Abrir proyecto" (tus cambios sin guardar en esta hoja se perderían).`);
+            }
+            return;
+        }
+
+        const existing = projects[cliKey][obraKey];
+        const existingTs = (existing && existing.header && existing.header._syncUpdatedAt) || 0;
+        const incomingTs = (jsonData.header && jsonData.header._syncUpdatedAt) || 0;
+        if (existing && incomingTs <= existingTs) return; // ya tenemos esta versión o una más nueva
+
+        projects[cliKey][obraKey] = jsonData;
+        localStorage.setItem('artal_projects', JSON.stringify(projects));
+        updateClientList();
+    }
+    window.mergeCloudProject = mergeCloudProject;
+
     function loadProject() {
         const cliente = document.getElementById('select-cliente').value;
         const obra = document.getElementById('select-proyecto').value;
@@ -1023,6 +1059,7 @@
             if (Object.keys(projects[cliente]).length === 0) delete projects[cliente];
             localStorage.setItem('artal_projects', JSON.stringify(projects));
         }
+        if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(cliente, obra);
         updateClientList();
         alert(`Proyecto "${obra}" eliminado.`);
     }
@@ -1398,6 +1435,9 @@
                 ubicacion: document.getElementById('header-ubicacion').value,
                 fechaCreacion: createdStr,
                 fechaModificacion: modStr,
+                // Reloj (no fecha-solo-texto) para que la sincronización entre dispositivos
+                // (ver saveProject/mergeCloudProject) sepa cuál versión es más reciente.
+                _syncUpdatedAt: Date.now(),
                 material: document.getElementById('header-material').value,
                 color: document.getElementById('header-color').value
             },
@@ -4343,7 +4383,7 @@
 
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
-    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
     import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
@@ -4378,7 +4418,101 @@
             localStorage.setItem('artal_clients_synced_v1', '1');
         } catch (e) { /* se reintenta la próxima vez que haya sesión */ }
     }
-    onAuthStateChanged(auth, (user) => { if (user) { bulkSyncClientesUnaVez(); startFsClientListeners(); } });
+
+    // ===================== Sincronización de proyectos guardados entre dispositivos =====================
+    // Firestore acá funciona solo como TRANSPORTE en segundo plano: localStorage['artal_projects']
+    // sigue siendo lo único que getProjects()/saveProject()/loadProject()/etc. (script clásico)
+    // leen y escriben — nada de eso cambia. Este bloque solo empuja los guardados hacia la nube
+    // y trae de vuelta los que lleguen de otros dispositivos, escribiéndolos en ese mismo
+    // localStorage vía window.mergeCloudProject (definida en el script clásico).
+    // Un nombre de obra/cliente puede traer "/", que Firestore no permite en un ID de documento
+    // — a diferencia de normClienteKey (que solo recorta/minúsculas), esto sí lo sanea.
+    function sanitizeDocIdPart(s) {
+        return String(s || '').trim().toLowerCase()
+            .replace(/[\/\.\#\$\[\]]/g, '-')
+            .replace(/\s+/g, '_')
+            .slice(0, 300) || 'x';
+    }
+    function proyectoDocId(cliente, obra) {
+        return `${sanitizeDocIdPart(cliente)}__${sanitizeDocIdPart(obra)}`;
+    }
+    function getDeviceId() {
+        let id = localStorage.getItem('artal_device_id');
+        if (!id) {
+            id = (crypto.randomUUID ? crypto.randomUUID() : ('d_' + Date.now() + '_' + Math.random().toString(36).slice(2)));
+            localStorage.setItem('artal_device_id', id);
+        }
+        return id;
+    }
+
+    async function syncProjectToCloud(cliente, obra, jsonData) {
+        if (!auth.currentUser || !cliente || !obra) return;
+        try {
+            const payload = {
+                cliente: String(cliente).trim(), obra: String(obra).trim(),
+                clienteKey: normClienteKey(cliente), obraKey: normClienteKey(obra),
+                jsonData,
+                updatedAt: (jsonData.header && jsonData.header._syncUpdatedAt) || Date.now(),
+                updatedAtServer: serverTimestamp(),
+                deviceId: getDeviceId()
+            };
+            // Límite de Firestore: 1 MiB por documento. Un proyecto muy grande se queda solo
+            // local (el guardado local ya se hizo antes de llegar acá, no se ve afectado).
+            const size = new Blob([JSON.stringify(payload)]).size;
+            if (size > 900 * 1024) { console.warn('Proyecto muy grande para sincronizar a la nube (queda solo local):', size); return; }
+            await setDoc(doc(db, 'proyectosGuardados', proyectoDocId(cliente, obra)), payload);
+        } catch (e) { /* sin internet u otro fallo: no bloquea el guardado local */ }
+    }
+    window.syncProjectToCloud = syncProjectToCloud;
+
+    async function deleteProjectFromCloud(cliente, obra) {
+        if (!auth.currentUser || !cliente || !obra) return;
+        try { await deleteDoc(doc(db, 'proyectosGuardados', proyectoDocId(cliente, obra))); }
+        catch (e) { /* offline: queda huérfano en la nube hasta el próximo intento */ }
+    }
+    window.deleteProjectFromCloud = deleteProjectFromCloud;
+
+    // Sube (una sola vez por dispositivo, mismo patrón que bulkSyncClientesUnaVez) todos los
+    // proyectos que ya existían localmente ANTES de este cambio, para que no dependan de un
+    // re-guardado manual para aparecer en la nube.
+    async function bulkSyncProjectsUnaVez() {
+        if (localStorage.getItem('artal_projects_synced_v1') || !auth.currentUser) return;
+        try {
+            const projects = getProjects();
+            for (const cliente of Object.keys(projects)) {
+                for (const obra of Object.keys(projects[cliente] || {})) {
+                    await syncProjectToCloud(cliente, obra, projects[cliente][obra]);
+                }
+            }
+            localStorage.setItem('artal_projects_synced_v1', '1');
+        } catch (e) { /* se reintenta la próxima vez que haya sesión */ }
+    }
+
+    // Escucha en segundo plano: cuando otro dispositivo guarda/actualiza un proyecto, lo trae
+    // acá y lo mezcla en localStorage (mergeCloudProject decide si es más nuevo que lo que ya
+    // hay y si esta hoja no lo tiene abierto en pantalla ahora mismo).
+    let fsProjectsListenerStarted = false;
+    function startFsProjectsListener() {
+        if (fsProjectsListenerStarted) return;
+        fsProjectsListenerStarted = true;
+        onSnapshot(collection(db, 'proyectosGuardados'), (snap) => {
+            snap.docChanges().forEach(ch => {
+                if (ch.doc.metadata.hasPendingWrites) return; // eco de nuestra propia escritura optimista
+                if (ch.type === 'removed') return; // el borrado no se propaga solo (ver CLAUDE.md)
+                const d = ch.doc.data();
+                if (d && d.jsonData && window.mergeCloudProject) window.mergeCloudProject(d.cliente, d.obra, d.jsonData);
+            });
+        }, () => { /* sin internet: no bloquea nada, se reintenta solo al reconectar */ });
+    }
+
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            bulkSyncClientesUnaVez();
+            startFsClientListeners();
+            bulkSyncProjectsUnaVez();
+            startFsProjectsListener();
+        }
+    });
 
     // Sugerencias de "obra" para evitar el caso real reportado: la misma obra terminó en dos
     // "carpetas" distintas en ops/historial.html porque se escribió con un nombre levemente

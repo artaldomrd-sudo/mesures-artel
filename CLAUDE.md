@@ -427,6 +427,56 @@ estilo simplificado del CAD.
   tocar nombres realmente distintos. Esto es la fuente `orders`/`clientes` de Firestore
   (multi-dispositivo), **distinta** del datalist de CLIENTE de arriba (que usa `artal_projects`
   local, un solo dispositivo) — se mantienen separados a propósito.
+- **Sincronización de proyectos guardados entre dispositivos (iPad, computadora, etc.).**
+  Pedido explícito del usuario: que un proyecto guardado en un dispositivo aparezca solo en los
+  demás, ya que toda la plataforma vive en Firebase. **Diseño clave: `localStorage
+  ['artal_projects']` sigue siendo la única fuente que lee/escribe todo el código existente
+  (`getProjects`, `saveProject`, `loadProject`, `deleteProject`, `updateClientList`,
+  `importJSON`, etc.) — nada de eso cambió.** Firestore (colección nueva `proyectosGuardados`,
+  un doc por proyecto, ID `sanitizeDocIdPart(cliente)+'__'+sanitizeDocIdPart(obra)` — sanea `/` y
+  otros caracteres inválidos en un ID de Firestore, a diferencia de `normClienteKey` que solo
+  recorta/minúsculas) funciona **solo como transporte en segundo plano**:
+  - `saveProject()` sigue escribiendo local igual que siempre, y además llama (best-effort,
+    silencioso sin sesión/señal) a `window.syncProjectToCloud(cliKey, obraKey, jsonData)`.
+    `deleteProject()` igual con `window.deleteProjectFromCloud(cliente, obra)`.
+  - `getAppJSON()` agrega `header._syncUpdatedAt = Date.now()` (reloj real, a diferencia de
+    `fechaModificacion` que es solo texto de fecha sin hora) — viaja solo con el resto del blob,
+    es la base para decidir qué versión es más nueva.
+  - `startFsProjectsListener()` (script módulo, arranca solo con sesión iniciada, igual que
+    `startFsClientListeners()`): `onSnapshot(collection(db,'proyectosGuardados'))`, ignora
+    `hasPendingWrites` (eco de la propia escritura) y `removed` (el borrado **no** se propaga
+    solo a otros dispositivos — a propósito, para que un dispositivo que estuvo offline mucho
+    tiempo no "pierda" un proyecto sin aviso al reconectar; gap conocido, no un bug), y llama a
+    `window.mergeCloudProject(cliente, obra, jsonData)` (script clásico, para poder usar
+    `getProjects()`/`updateClientList()` directo) — que solo sobreescribe el local si
+    `_syncUpdatedAt` entrante es más nuevo, **y si el proyecto no es el que esta hoja tiene
+    abierto ahora mismo** (`openedProjectKey`): si lo es, no lo pisa (perdería ediciones sin
+    guardar en pantalla) y en cambio `alert()` una vez avisando que se actualizó en otro
+    dispositivo, invitando a reabrirlo desde "Abrir proyecto".
+  - `bulkSyncProjectsUnaVez()` (mismo patrón/flag que `bulkSyncClientesUnaVez`): sube una sola
+    vez, por dispositivo, todos los proyectos que ya existían localmente antes de este cambio.
+  - Proyecto que supere ~900KB (límite real de Firestore: 1 MiB por documento) no se sincroniza
+    a la nube (solo un `console.warn`, el guardado local nunca se ve afectado).
+  - **Riesgo aceptado, no resuelto**: si dos dispositivos editan el MISMO proyecto sin conexión
+    al mismo tiempo, gana el que tenga `_syncUpdatedAt` más reciente (reloj del cliente, no del
+    servidor) al reconectar — el otro se pierde de la nube (aunque sigue intacto en el
+    `localStorage` de ese dispositivo hasta que reciba el snapshot ganador). Sin merge tipo
+    CRDT; poco probable en el uso real (una persona por obra) pero posible.
+  - `ops/firebase-config.js` ahora usa `initializeFirestore(app, {localCache:
+    persistentLocalCache({tabManager: persistentMultipleTabManager()})})` en vez de
+    `getFirestore(app)` — habilita persistencia offline (necesaria para que esta sincronización
+    funcione de verdad al recuperar señal) con soporte multi-pestaña (varias pantallas de
+    `ops/*.html` ya se abren a la vez; el manager de una sola pestaña rompería con
+    `failed-precondition` en la segunda). Cambio compartido por TODAS las páginas de `ops/`, no
+    solo por el cuaderno.
+  - **`node verify.mjs` no prueba nada de esto**: su regex de extracción es `<script>` exacto,
+    nunca toca el `<script type="module">` donde vive toda esta lógica de Firestore — cualquier
+    cambio futuro acá necesita probarse a mano (dos sesiones/perfiles con la misma cuenta
+    Google), no alcanza con correr `verify.mjs` en verde.
+  - `firestore.rules` necesita `match /proyectosGuardados/{id} { allow write: if
+    puedeEscribir(); }` (la lectura ya la cubre la regla general) — **recordar pegarlo a mano en
+    Firebase Console → Firestore Database → Reglas**, igual que cualquier cambio a este archivo
+    (no se despliega solo con el push a GitHub Pages).
 
 ## Plataforma de Operaciones (`ops/`)
 
