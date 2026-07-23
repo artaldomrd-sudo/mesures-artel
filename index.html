@@ -59,9 +59,6 @@
         .saved-status-badge.unsaved { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.55); }
         .side-row { display: flex; gap: 6px; }
         .side-row .side-btn { flex: 1; font-size: 11px; padding: 8px 6px; }
-        .destino-row { display: none; }
-        body.doc-fab #btn-enviar-orden { display: none; }
-        body.doc-fab .destino-row { display: flex; }
         
         #sidebar h3 { font-size: 12px; text-transform: uppercase; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px; margin-bottom: 8px; margin-top: 15px; color: var(--artal-yellow); }
         #sidebar h3:first-child { margin-top: 0; }
@@ -413,11 +410,9 @@
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
 
-            <button id="btn-enviar-orden" class="side-btn fabrica" style="margin-top:8px; border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Envía este documento a la app de operaciones"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg> <span id="btn-enviar-orden-text">Enviar Cotización</span></button>
-
             <div class="side-row destino-row" style="margin-top:8px;">
-                <button class="side-btn fabrica" style="border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Lo fabrica ALUCUFEL (contratista externo)">A ALUCUFEL</button>
-                <button class="side-btn fabrica" style="border-color:#8e44ad; color:#8e44ad;" onclick="enviarOrden('interno', this)" title="Lo fabrica ARTAL internamente — no aparece en la página de ALUCUFEL">Oficina interna</button>
+                <button class="side-btn fabrica" style="border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Lo maneja ALUCUFEL (contratista externo)"><span id="btn-destino-alucufel-text">ALUCUFEL</span></button>
+                <button class="side-btn fabrica" style="border-color:#8e44ad; color:#8e44ad;" onclick="enviarOrden('interno', this)" title="Lo maneja ARTAL internamente — no aparece en la página de ALUCUFEL"><span id="btn-destino-interno-text">Oficina ARTAL</span></button>
             </div>
 
             <button id="btn-enviar-instalacion" class="side-btn fabrica" style="margin-top:8px; border-color:#9b59b6; color:#9b59b6;" onclick="enviarAInstalacion()" title="Envía directo a Instalaciones (no pasa por fábrica), con la hoja de fabricación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Enviar a Instalación</button>
@@ -514,8 +509,10 @@
         if (cot) cot.classList.toggle('active', !isFab);
         if (fab) fab.classList.toggle('active', isFab);
         document.body.classList.toggle('doc-fab', isFab);
-        const sendText = document.getElementById('btn-enviar-orden-text');
-        if (sendText) sendText.innerText = isFab ? 'Enviar a Fábrica' : 'Enviar Cotización';
+        const destinoAlucufelText = document.getElementById('btn-destino-alucufel-text');
+        const destinoInternoText = document.getElementById('btn-destino-interno-text');
+        if (destinoAlucufelText) destinoAlucufelText.innerText = isFab ? 'Fábrica ALUCUFEL' : 'ALUCUFEL';
+        if (destinoInternoText) destinoInternoText.innerText = isFab ? 'Fábrica Interna' : 'Oficina ARTAL';
         if (doSave) saveProgress();
     }
 
@@ -4602,7 +4599,7 @@
     document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
     window.enviarOrden = async function (destino, btnEl) {
-        const btn = btnEl || document.getElementById('btn-enviar-orden');
+        const btn = btnEl || null;
         const originalHtml = btn ? btn.innerHTML : '';
         try {
             if (!validateAllCards()) return;
@@ -4644,10 +4641,9 @@
 
             if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
 
-            // El destino (ALUCUFEL vs. oficina interna) solo importa para Fabricación — en
-            // Cotización siempre pasa por ALUCUFEL como hasta ahora (cotización interna queda
-            // para cuando se conecte el ERP nuevo al Panel de Control).
-            const destinoFinal = isFab ? (destino || 'alucufel') : 'alucufel';
+            // Destino: ALUCUFEL (contratista externo) u Oficina ARTAL/Fábrica Interna
+            // (internamente). Aplica tanto a Cotización como a Fabricación.
+            const destinoFinal = destino === 'interno' ? 'interno' : 'alucufel';
 
             await addDoc(collection(db, 'orders'), {
                 cliente: clienteEnviado,
@@ -4663,9 +4659,9 @@
                 ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
             });
             syncClienteObra(clienteEnviado, obraEnviada);
-            alert(!isFab ? 'Cotización enviada al contratista correctamente.'
-                : destinoFinal === 'interno' ? 'Enviado a fábrica interna correctamente.'
-                : 'Enviado a fábrica (ALUCUFEL) correctamente.');
+            alert(isFab
+                ? (destinoFinal === 'interno' ? 'Enviado a fábrica interna correctamente.' : 'Enviado a fábrica (ALUCUFEL) correctamente.')
+                : (destinoFinal === 'interno' ? 'Cotización enviada a la oficina interna correctamente.' : 'Cotización enviada al contratista correctamente.'));
         } catch (e) {
             alert('No se pudo enviar: ' + (e && e.message ? e.message : e));
         } finally {

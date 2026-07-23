@@ -99,13 +99,19 @@
                 ${finalLink}
             </div>
             <div class="aviso-fab">⚠ Antes de enviar a fábrica, confirma que las medidas de esta ficha son de <b>FABRICACIÓN</b> (no de cotización). Revisa la marca de cada ítem en "Ver ficha técnica".</div>
-            <button class="btn-aprobar" onclick="aprobarYEnviarFabrica('${id}')">✅ Cliente aprobó — Enviar a fábrica</button>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+                <button class="btn-aprobar" style="flex:1;" onclick="aprobarYEnviarFabrica('${id}', 'alucufel')">✅ A ALUCUFEL</button>
+                <button class="btn-aprobar" style="flex:1; background:#8e44ad;" onclick="aprobarYEnviarFabrica('${id}', 'interno')">✅ Oficina interna</button>
+            </div>
         </div>`;
     }
 
     let ordersCache = [];
     function render() {
-        const porEnviar = ordersCache.filter(d => d.data.status === 'costeada');
+        // "Por costear/enviar": las ya costeadas por ALUCUFEL, MÁS las de destino "Oficina
+        // ARTAL" (nunca pasan por el contratista — se cuesta y se manda el precio final
+        // directo desde acá; porEnviarCardHTML ya maneja bien la falta de PDF del contratista).
+        const porEnviar = ordersCache.filter(d => d.data.status === 'costeada' || (d.data.status === 'solicitada' && d.data.destino === 'interno'));
         const enviadas = ordersCache.filter(d => d.data.status === 'enviada_cliente' && !d.data.enviadaAFabrica);
 
         const l1 = document.getElementById('porenviar-list');
@@ -117,7 +123,7 @@
             : '<p class="empty">No hay cotizaciones enviadas esperando aprobación.</p>';
     }
 
-    const q = query(collection(db, 'orders'), where('status', 'in', ['costeada', 'enviada_cliente']));
+    const q = query(collection(db, 'orders'), where('status', 'in', ['solicitada', 'costeada', 'enviada_cliente']));
     onSnapshot(q, (snap) => { ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() })); render(); }, (err) => {
         document.getElementById('porenviar-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
@@ -125,14 +131,15 @@
     // Cliente aprobó → crea un pedido de FÁBRICA aparte (conserva la cotización), con la misma
     // ficha (appJSON) y ligado por cliente+obra. Advertencia previa para asegurar que las medidas
     // son de fabricación.
-    window.aprobarYEnviarFabrica = async function (id) {
+    window.aprobarYEnviarFabrica = async function (id, destino) {
         const o = (ordersCache.find(x => x.id === id) || {}).data;
         if (!o) return;
-        if (!confirm(`⚠ IMPORTANTE: ¿confirmas que las medidas de "${o.cliente} — ${o.obra}" son de FABRICACIÓN (no de cotización)?\n\nAl aceptar se crea el pedido de fábrica con esta ficha.`)) return;
+        if (!confirm(`⚠ IMPORTANTE: ¿confirmas que las medidas de "${o.cliente} — ${o.obra}" son de FABRICACIÓN (no de cotización)?\n\nAl aceptar se crea el pedido de fábrica con esta ficha, destino: ${destino === 'interno' ? 'Oficina interna' : 'ALUCUFEL'}.`)) return;
         try {
             await addDoc(collection(db, 'orders'), {
                 cliente: o.cliente || '', obra: o.obra || '',
                 docType: 'FABRICACIÓN',
+                destino: destino === 'interno' ? 'interno' : 'alucufel',
                 material: o.material || '', color: o.color || '',
                 status: 'pendiente_fabrica',
                 items: o.items || [], totalItems: o.totalItems || 0,
@@ -141,7 +148,7 @@
                 fechaCotizado: serverTimestamp()
             });
             await updateDoc(doc(db, 'orders', id), { enviadaAFabrica: true, fechaEnviadaFabrica: serverTimestamp(), enviadaFabricaPor: usuario.nombre });
-            alert('Enviado a fábrica correctamente. La cotización queda archivada.');
+            alert(destino === 'interno' ? 'Enviado a fábrica interna correctamente. La cotización queda archivada.' : 'Enviado a fábrica (ALUCUFEL) correctamente. La cotización queda archivada.');
         } catch (e) {
             alert('No se pudo enviar a fábrica: ' + e.message);
         }

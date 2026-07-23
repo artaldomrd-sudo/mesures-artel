@@ -533,24 +533,42 @@ adiciones puntuales y explícitas (ver más abajo).
   (checklist `checklist=fabrica` en el visor de la ficha, escribe
   `itemsListosFabrica.{itemId}`) y mandar el pedido a chofer/instalador antes de terminar el
   resto — quedan visibles en verde/naranja en la ficha técnica que ve el chofer.
-- **Fabricación: ALUCUFEL vs. taller propio (`destino`).** No todos los proyectos de
-  fabricación los hace ALUCUFEL — algunos los fabrica ARTAL internamente, y esos NO deben
-  aparecer en la página de ALUCUFEL. `enviarOrden(destino, btnEl)` en `index.html` solo pide el
-  destino (`'alucufel'` | `'interno'`) cuando el documento es de Fabricación — en Cotización
-  siempre es `'alucufel'`, sin cambios (cotización interna queda pendiente para cuando se
-  conecte el ERP nuevo al Panel de Control). En pantalla, el botón único "Enviar Cotización" se
-  reemplaza por un par ("A ALUCUFEL" / "Oficina interna", `.destino-row`) **solo cuando el
-  cuaderno está en modo Fabricación** — controlado por CSS pura sobre `body.doc-fab` (mismo
-  mecanismo ya usado para ocultar `.medida-toggle`), sin tocar `setDocType()`.
-  `ops/alucufel/fabrica.html` excluye `destino === 'interno'` de su tablero (mismo patrón ya
-  usado para excluir `directoInstalacion`). `ops/fabrica-interna.html` (nuevo, top-level en
-  `ops/`, NO dentro de `ops/alucufel/` — para no repetir el bug de rutas relativas de esa
-  subcarpeta) es una copia del mismo tablero de `ops/alucufel/fabrica.html` (Pendientes →
-  En fábrica → Parcialmente listo/Listo para cargar → Completado) pero filtrado a
-  `destino === 'interno'`, con `requireAuth([])` (solo gerencia/admin — decisión explícita del
-  usuario, sin rol dedicado todavía). Tile nuevo en `ops/index.html` ("Fábrica Interna") con su
-  propio badge, mismo criterio que el de ALUCUFEL (comentario sin atender o pedido recién
-  llegado a `pendiente_fabrica`) pero separado por `destino`.
+- **ALUCUFEL vs. taller/oficina propia (`destino`).** No todo lo que se manda a fábrica o
+  cotización lo maneja ALUCUFEL — parte lo hace ARTAL internamente, y eso NO debe aparecer en
+  las páginas de ALUCUFEL. Campo `destino: 'alucufel' | 'interno'` en cada pedido de `orders`,
+  para Cotización y para Fabricación por igual.
+  - **`index.html`**: `enviarOrden(destino, btnEl)` guarda `destino` en ambos modos. El botón
+    único de antes se reemplaza por un par fijo (`.destino-row`, siempre visible — ya no
+    depende de `body.doc-fab`) cuyo **texto** cambia según el modo (`setDocType()` actualiza
+    `#btn-destino-alucufel-text` / `#btn-destino-interno-text`): "ALUCUFEL" / "Oficina ARTAL" en
+    Cotización, "Fábrica ALUCUFEL" / "Fábrica Interna" en Fabricación — mismos dos botones,
+    mismas dos funciones, solo cambia la etiqueta visible.
+  - **Fabricación interna**: `ops/alucufel/fabrica.html` excluye `destino === 'interno'` de su
+    tablero (mismo patrón ya usado para excluir `directoInstalacion`).
+    `ops/fabrica-interna.html` (nuevo, top-level en `ops/`, NO dentro de `ops/alucufel/` — para
+    no repetir el bug de rutas relativas de esa subcarpeta) es una copia del mismo tablero de
+    `ops/alucufel/fabrica.html` (Pendiente → En fábrica → Parcialmente listo/Listo para cargar →
+    Completado) pero filtrado a `destino === 'interno'`, con `requireAuth([])` (solo
+    gerencia/admin — decisión explícita del usuario, sin rol dedicado todavía). Tile nuevo en
+    `ops/index.html` ("Fábrica Interna") con su propio badge, mismo criterio que el de ALUCUFEL
+    (comentario sin atender o pedido recién llegado a `pendiente_fabrica`) pero separado por
+    `destino`.
+  - **Cotización interna**: `ops/alucufel/cotizaciones.html` (el contratista sube su costo)
+    excluye `destino === 'interno'` de su query de `status:'solicitada'` — a ALUCUFEL nunca le
+    llegan. Esas quedan **sin costo de contratista** para siempre (no hay "fábrica interna" para
+    cotizaciones, todavía) — `ops/cotizaciones.html` (pantalla interna de precio final) las
+    incorpora directo a su lista "Por costear/enviar" junto con las ya `costeada`
+    (`render()` filtra `status==='costeada' || (status==='solicitada' && destino==='interno')`)
+    — `porEnviarCardHTML` ya mostraba "(sin PDF del contratista)" cuando falta, así que no hizo
+    falta tocar la plantilla, solo el filtro. La encargada sube el precio final directo, sin
+    pasar por ALUCUFEL. Esto es a propósito una solución simple: cuando se conecte el ERP nuevo
+    al Panel de Control, cotización interna se manejará ahí en vez de acá.
+  - **`aprobarYEnviarFabrica(id, destino)`** en `ops/cotizaciones.html` (cliente aprobó la
+    cotización → crea el pedido de fábrica aparte) también pide destino — dos botones ("A
+    ALUCUFEL" / "Oficina interna") en vez de uno solo. Este es un **segundo punto de creación**
+    de pedidos de fábrica además de `enviarOrden()` en el cuaderno — si se agrega un tercero en
+    el futuro, recordar setear `destino` ahí también (buscar `addDoc(collection(db, 'orders')`
+    para encontrar todos los puntos de creación).
 
 ### `ops/alucufel/` — ALUCUFEL unificado
 
