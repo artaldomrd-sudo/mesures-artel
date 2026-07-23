@@ -21,6 +21,7 @@
     .form-box button.submit { margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; font-size: 15px; cursor: pointer; min-height: 46px; }
     h2.section-title { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; }
     .order-card { border-left-color: #16a085; }
+    .aviso-existe { font-size: 12px; color: #b9770e; background: #fff8e8; border: 1.5px solid var(--artal-yellow); border-radius: 7px; padding: 7px 9px; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -47,19 +48,15 @@
         <label>Cliente</label>
         <select id="c-cliente-sel" onchange="onClienteSel()"></select>
         <input type="text" id="c-cliente" placeholder="Escribe el nombre del cliente nuevo" autocomplete="off" style="display:none; margin-top:6px;">
+        <div id="c-cliente-aviso" class="aviso-existe" style="display:none;"></div>
         <label>Obra / Ubicación</label>
         <select id="c-obra-sel" onchange="onObraSel()"></select>
         <input type="text" id="c-obra" placeholder="Escribe la obra o dirección nueva" autocomplete="off" style="display:none; margin-top:6px;">
-        <div class="row2">
-            <div>
-                <label>Proveedor</label>
-                <input type="text" id="c-proveedor" placeholder="Ej: Ferretería XYZ">
-            </div>
-            <div>
-                <label>Cantidad de artículos</label>
-                <input type="number" id="c-cantidad" min="1" value="1">
-            </div>
-        </div>
+        <label>Proveedor</label>
+        <select id="c-proveedor-sel" onchange="onProveedorSel()"></select>
+        <input type="text" id="c-proveedor" placeholder="Escribe el proveedor nuevo" autocomplete="off" style="display:none; margin-top:6px;">
+        <label>Cantidad de artículos</label>
+        <input type="number" id="c-cantidad" min="1" value="1">
         <label>Descripción</label>
         <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
         <label>Orden de compra (PDF)</label>
@@ -102,7 +99,7 @@
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
         onClienteSel();
     }
-    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => d.data()); refreshClientMap(); });
+    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => d.data()); refreshClientMap(); refreshProveedores(); });
     onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
 
     // Nombre del cliente elegido en este momento (de la lista o escrito a mano).
@@ -115,7 +112,22 @@
         const sel = document.getElementById('c-cliente-sel').value;
         document.getElementById('c-cliente').style.display = sel === NUEVO ? 'block' : 'none';
         poblarObras();
+        checkClienteAviso();
     };
+
+    // Aviso al escribir a mano un cliente que ya existe (case-insensitive), para no duplicarlo.
+    function checkClienteAviso() {
+        const av = document.getElementById('c-cliente-aviso');
+        const enModoNuevo = document.getElementById('c-cliente-sel').value === NUEVO;
+        const txt = document.getElementById('c-cliente').value.trim();
+        const existe = enModoNuevo && txt ? clientMap.get(txt.toLowerCase()) : null;
+        if (existe) {
+            av.innerHTML = `⚠ Este cliente ya existe como <b>${esc(existe.nombre)}</b>. Elígelo de la lista de arriba para no duplicarlo.`;
+            av.style.display = 'block';
+        } else {
+            av.style.display = 'none';
+        }
+    }
 
     // Obras conocidas del cliente elegido + opción "escribir nueva". Si el cliente es nuevo
     // (escrito a mano), no hay obras previas: solo queda la opción de escribirla.
@@ -136,8 +148,43 @@
         document.getElementById('c-obra').style.display = sel === NUEVO ? 'block' : 'none';
     };
     // Si el cliente es nuevo y se escribe a mano, no hay obras que sugerir — igual mantener el
-    // select de obra en modo "escribir nueva" mientras teclea.
-    document.getElementById('c-cliente').addEventListener('input', poblarObras);
+    // select de obra en modo "escribir nueva" mientras teclea; y avisar si ya existe.
+    document.getElementById('c-cliente').addEventListener('input', () => { poblarObras(); checkClienteAviso(); });
+
+    // Proveedores: menú desplegable con la lista habitual (semilla fija) + cualquier proveedor
+    // ya usado en compras anteriores (de `orders`, así se recuerdan entre dispositivos sin
+    // necesitar una colección nueva) + opción "agregar nuevo" que revela el input de texto.
+    const PROVEEDORES_SEED = [
+        'Industrias Domiguez', 'Jaraba', 'Plasticos comerciales', 'Plasticos y espejos',
+        'Euroamerica', 'Blinds company', 'Alucufel', 'Ferreteria Suplax', 'StockAlu',
+        'Delvis Shutters', 'Ferreteria Home Acosta', 'Ferreteria Hnos Esteban',
+        'Ferreteria Virgomar', 'A2N hierro', 'Mundo del cristal'
+    ];
+    function refreshProveedores() {
+        const sel = document.getElementById('c-proveedor-sel');
+        const prev = sel.value;
+        const map = new Map();
+        PROVEEDORES_SEED.forEach(p => map.set(p.toLowerCase(), p));
+        ordersCache.forEach(o => {
+            const p = (o.proveedor || '').trim();
+            if (p && !map.has(p.toLowerCase())) map.set(p.toLowerCase(), p);
+        });
+        const lista = Array.from(map.values()).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+        sel.innerHTML = `<option value="">— Elige un proveedor —</option>`
+            + lista.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('')
+            + `<option value="${NUEVO}">➕ Agregar proveedor nuevo…</option>`;
+        if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+        onProveedorSel();
+    }
+    window.onProveedorSel = function () {
+        const sel = document.getElementById('c-proveedor-sel').value;
+        document.getElementById('c-proveedor').style.display = sel === NUEVO ? 'block' : 'none';
+    };
+    function proveedorActual() {
+        const sel = document.getElementById('c-proveedor-sel').value;
+        return sel === NUEVO ? document.getElementById('c-proveedor').value.trim() : sel;
+    }
+    refreshProveedores();
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -152,7 +199,7 @@
         const obraRaw = obraSel === NUEVO ? document.getElementById('c-obra').value : obraSel;
         const cliente = normalizarCliente(clienteActual(), clientMap);
         const obra = normalizarObra(cliente, obraRaw, clientMap);
-        const proveedor = document.getElementById('c-proveedor').value.trim();
+        const proveedor = proveedorActual();
         const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
         const descripcion = document.getElementById('c-descripcion').value.trim();
         const fileInput = document.getElementById('c-pdf');
@@ -193,12 +240,15 @@
 
             document.getElementById('c-cliente-sel').value = '';
             document.getElementById('c-cliente').value = '';
+            document.getElementById('c-obra-sel').value = '';
             document.getElementById('c-obra').value = '';
+            document.getElementById('c-proveedor-sel').value = '';
             document.getElementById('c-proveedor').value = '';
             document.getElementById('c-cantidad').value = '1';
             document.getElementById('c-descripcion').value = '';
             fileInput.value = '';
             onClienteSel();
+            onProveedorSel();
             alert('Compra registrada. Ya está disponible para chofer e instalador.');
         } catch (e) {
             alert('No se pudo registrar la compra: ' + e.message);
