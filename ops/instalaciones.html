@@ -27,6 +27,7 @@
     .sin-agendar .pr-actions button { border: none; border-radius: 7px; padding: 8px 12px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12.5px; min-height: 38px; }
     .sin-agendar .pr-agendar { background: var(--artal-blue); color: #fff; }
     .sin-agendar .pr-recoger { background: #16a085; color: #fff; }
+    .sin-agendar .pr-borrar { background: #e74c3c; color: #fff; }
 
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
     .grid-weekday { text-align: center; font-size: 11px; font-weight: bold; color: #999; text-transform: uppercase; padding-bottom: 4px; }
@@ -396,11 +397,23 @@
                     <div class="pr-actions">
                         <button class="pr-agendar" onclick="agendarPedido('${o.id}')">📅 Agendar instalación</button>
                         <button class="pr-recoger" onclick="marcarSinInstalacion('${o.id}')">📦 Solo recoger</button>
+                        <button class="pr-borrar" onclick="borrarPedido('${o.id}')">🗑 Borrar</button>
                     </div>
                 </div>`;
             }).join('')}
         </div>`;
     }
+
+    // Borrar pedido (solo gerencia) — para eliminar un pedido duplicado que llegó dos veces.
+    // Doble verificación para no borrar por accidente. Borra el pedido de `orders`.
+    window.borrarPedido = async function (orderId) {
+        const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
+        if (!confirm(`¿Borrar el pedido "${d.cliente || ''} — ${d.obra || ''}"?\n\nÚsalo solo si es un DUPLICADO. Esta acción no se puede deshacer.`)) return;
+        if (!confirm('Confirma de nuevo: se borrará definitivamente de la plataforma.')) return;
+        try {
+            await deleteDoc(doc(db, 'orders', orderId));
+        } catch (e) { alert('No se pudo borrar: ' + e.message); }
+    };
 
     // "Solo recoger": el pedido no requiere instalación (el cliente lo busca / solo transporte).
     // Se marca en el pedido para que salga de la lista de "sin agendar", sin crear una instalación.
