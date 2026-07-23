@@ -1028,17 +1028,40 @@
     }
 
     // Copia de seguridad de TODOS los proyectos (para no perderlos nunca)
-    function backupAllProjects() {
+    async function backupAllProjects() {
         const projects = getProjects();
         if (Object.keys(projects).length === 0) { alert('No hay proyectos guardados para respaldar.\n\nGuarda al menos un proyecto primero.'); return; }
         const n = Object.keys(projects).reduce((a, c) => a + Object.keys(projects[c]).length, 0);
         const data = { __artal_backup__: true, fecha: new Date().toLocaleString('es-ES'), projects };
-        const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data));
+        const filename = 'ARTAL_copia_seguridad_' + new Date().toISOString().slice(0, 10) + '.json';
+        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+
+        // En iPad/iPhone, un <a download> con un data: URI grande (muchos proyectos) puede
+        // fallar en silencio o guardarse sin que el usuario sepa dónde (una carpeta "Descargas"
+        // escondida dentro de la app Archivos) — caso real reportado: "copia creada" pero no
+        // aparece en ningún lado. El selector nativo para compartir (navigator.share con un
+        // File real, no un data: URI) deja elegir A MANO dónde guardarlo (Archivos, iCloud
+        // Drive, etc.), así el usuario ve y controla el destino. Se usa cuando el navegador lo
+        // soporta (iOS/iPadOS Safari sí); si no, cae a la descarga de siempre pero con un Blob
+        // (más confiable que un data: URI para archivos grandes) en vez de data: URI.
+        const file = new File([blob], filename, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({ files: [file], title: filename });
+                return; // el usuario ya eligió dónde guardarlo desde el selector nativo
+            } catch (e) {
+                if (e && e.name === 'AbortError') return; // cerró el selector sin elegir, no es un error
+                // si falla por otro motivo, sigue con la descarga de abajo como respaldo
+            }
+        }
+
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.setAttribute('href', dataStr);
-        a.setAttribute('download', 'ARTAL_copia_seguridad_' + new Date().toISOString().slice(0, 10) + '.json');
+        a.href = url;
+        a.download = filename;
         document.body.appendChild(a); a.click(); a.remove();
-        alert(`Copia de seguridad creada con ${n} proyecto(s).\n\nGuarda este archivo en un lugar seguro. Si actualizas la app o cambias de dispositivo, podrás restaurarlo con "Importar archivo".`);
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        alert(`Copia de seguridad creada con ${n} proyecto(s): "${filename}".\n\nEn iPad/iPhone normalmente queda en la app Archivos, dentro de "Descargas". Si actualizas la app o cambias de dispositivo, podrás restaurarlo con "Importar archivo".`);
     }
 
     function generateSummary(id) {

@@ -376,6 +376,19 @@ estilo simplificado del CAD.
 - `getProjects` normaliza estructuras corruptas y **fusiona clientes duplicados sin importar
   mayúsculas** (Gabor = GABOR). `saveProject/loadProject/deleteProject/updateClientList/
   updateObraList/backupAllProjects`. Menú lateral: "Clientes" → "Proyecto".
+- **`backupAllProjects()` en iPad: "copia creada" pero no aparece en ningún lado.** Caso real
+  reportado por el usuario. Causa: un `<a download>` con un `data:` URI (todo el JSON de todos
+  los proyectos codificado como texto en la URL) es poco confiable en iOS/iPadOS Safari para
+  archivos grandes (16 proyectos ya puede ser varios MB una vez url-encoded) — puede fallar en
+  silencio o guardarse en una carpeta "Descargas" escondida dentro de la app Archivos, sin que
+  el usuario sepa que existe. **Arreglo**: el JSON se arma como `Blob` (no `data:` URI) y, si el
+  navegador soporta compartir archivos (`navigator.canShare({files:[...]})` — Safari en
+  iOS/iPadOS sí, es la respuesta directa a "agrégame opción para elegir dónde guardar"),
+  dispara el selector nativo (`navigator.share`) para que el usuario elija a mano el destino
+  (Archivos, iCloud Drive, etc.); si no hay soporte (navegadores de escritorio), cae a la
+  descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
+  confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
+  selector sin elegir) no se trata como error.
 - **Aviso antes de reemplazar un proyecto guardado.** Caso real reportado por el usuario: en la
   obra tomó medidas en una hoja, la mandó a fábrica (guardada), y luego en **otra hoja** (otra
   pestaña/sesión, para la parte de barandas) puso el **mismo** Cliente + Nombre de Proyecto y le
