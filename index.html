@@ -729,7 +729,14 @@
         const drawingReplacements = [];
         for (const svg of document.querySelectorAll('#print-area .drawing-area svg')) {
             const container = svg.parentElement;
-            const svgStr = new XMLSerializer().serializeToString(svg);
+            // Quitar el filter="url(#shadow-...)" (sombra del vidrio, feDropShadow) SOLO para
+            // esta rasterización: Safari, al pintar un SVG cargado como <img> (no en vivo en el
+            // DOM), no resuelve ese filter y por spec deja de pintar el elemento entero que lo
+            // referencia — el rect del vidrio desaparece junto con la sombra, así que el panel
+            // sale sin color. La sombra es puramente decorativa, se puede perder sin problema
+            // en el PDF; el relleno con gradiente (fill="url(#glass-...)") no se toca.
+            const svgStr = new XMLSerializer().serializeToString(svg)
+                .replace(/\s*filter="url\(#shadow-[^"]*\)"/g, '');
             const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
             const loader = new Image();
             loader.src = svgDataUrl;
