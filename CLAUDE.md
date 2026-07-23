@@ -141,6 +141,18 @@ un **PDF de Cotización o Fabricación** para el cliente.
   `preserveAspectRatio="none"`), sin deformar (porque la caja ya tiene la proporción real) y con
   el imán intacto (el vidrio llega a los bordes del módulo). `cadTechnical` dibuja las líneas
   técnicas/herrajes por tipo, proporcional a `W`/`H`.
+- **`item.img` (caché de la imagen rasterizada de cada módulo, seteada por
+  `updateCADItemImage`) es un `HTMLImageElement` en vivo — no serializable.** Bug real: un
+  proyecto con "Fachada Compuesta" fallaba al mandarlo a fábrica/cotización con
+  `FirebaseError: Function addDoc() called with invalid data. Unsupported field value: a custom
+  HTMLImageElement object` — Firestore, a diferencia de `JSON.stringify` (que un `Image` lo
+  convierte en `{}` sin romper nada), rechaza el documento entero de una. `getAppJSON()` ahora
+  arma `inputsData[id].cadItems` con `.map(({img, ...rest}) => rest)` — descarta `.img` al
+  exportar (para `localStorage`, `orders` y `proyectosGuardados`, los tres consumidores de
+  `getAppJSON()`), sin tocar el array en vivo `window['cadItems'+id]` que sigue dibujando en
+  pantalla. Seguro de omitir: al restaurar (`addItem`), ya se vuelve a llamar
+  `updateCADItemImage()` por cada item para regenerar `.img` desde cero — nunca se leía de
+  vuelta desde el guardado.
 
 ## Paño Fijo adosado (arriba/abajo) en ventanas/puertas
 
