@@ -54,6 +54,9 @@
         .side-btn.ghost { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.25); }
         .side-btn.danger { background: transparent; color: #ff8a80; border: 1px solid rgba(255,138,128,0.4); font-size: 11px; padding: 7px; }
         .side-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        .saved-status-badge { text-align: center; font-size: 12px; font-weight: bold; padding: 6px 8px; border-radius: 6px; margin-top: 6px; }
+        .saved-status-badge.saved { background: rgba(39,174,96,0.18); color: #6fdc9a; }
+        .saved-status-badge.unsaved { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.55); }
         .side-row { display: flex; gap: 6px; }
         .side-row .side-btn { flex: 1; font-size: 11px; padding: 8px 6px; }
         
@@ -403,6 +406,7 @@
             <div class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V1a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg> Acciones</div>
 
             <button class="side-btn save" onclick="saveProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar proyecto</button>
+            <div id="saved-status-badge" class="saved-status-badge unsaved">○ Sin guardar</div>
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
 
@@ -918,6 +922,7 @@
         document.getElementById('select-proyecto').value = obraKey;
 
         document.getElementById('header-fecha').innerText = `Creado: ${jsonData.header.fechaCreacion} | Mod: ${jsonData.header.fechaModificacion}`;
+        updateSavedStatusBadge();
 
         alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
     }
@@ -1031,6 +1036,33 @@
     }
     window.mergeCloudProject = mergeCloudProject;
 
+    // Aviso "✓ Proyecto guardado" / "○ Sin guardar" en la barra lateral: para saber de una
+    // mirada si hace falta volver a darle a "Guardar proyecto" o no. Se basa en openedProjectKey
+    // (la hoja abierta/guardada en ESTA sesión) — no detecta cambios sin guardar dentro de la
+    // misma sesión (eso exigiría comparar todo el contenido en cada tecla), y como
+    // openedProjectKey vive solo en memoria, tras recargar la página el aviso vuelve a
+    // "Sin guardar" aunque el proyecto ya estuviera guardado (hasta el próximo Guardar/Abrir).
+    function updateSavedStatusBadge() {
+        const badge = document.getElementById('saved-status-badge');
+        if (!badge) return;
+        const cliente = document.getElementById('header-cliente').value.trim();
+        const obra = document.getElementById('header-obra').value.trim();
+        let isSaved = false;
+        if (cliente && obra && openedProjectKey) {
+            const targetKey = (cliente + '|' + obra).toLowerCase();
+            if (targetKey === openedProjectKey) {
+                const projects = getProjects();
+                const cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase());
+                isSaved = !!(cliKey && Object.keys(projects[cliKey]).some(o => o.toLowerCase() === obra.toLowerCase()));
+            }
+        }
+        badge.textContent = isSaved ? '✓ Proyecto guardado' : '○ Sin guardar';
+        badge.classList.toggle('saved', isSaved);
+        badge.classList.toggle('unsaved', !isSaved);
+    }
+    document.getElementById('header-cliente').addEventListener('input', updateSavedStatusBadge);
+    document.getElementById('header-obra').addEventListener('input', updateSavedStatusBadge);
+
     function loadProject() {
         const cliente = document.getElementById('select-cliente').value;
         const obra = document.getElementById('select-proyecto').value;
@@ -1040,6 +1072,7 @@
             restoreData(projects[cliente][obra]);
             openedProjectKey = (cliente + '|' + obra).toLowerCase();
             saveProgress();
+            updateSavedStatusBadge();
             alert(`Proyecto "${obra}" (${cliente}) abierto.`);
         } else {
             alert('No se encontró ese proyecto.');
@@ -1585,11 +1618,13 @@
         const raw = localStorage.getItem('artal_live_progression');
         if (raw) { try { restoreData(JSON.parse(raw)); } catch(e) {} }
         updateClientList();
+        updateSavedStatusBadge();
     }
 
     function resetNotebook() {
         if(confirm('¿Empezar una hoja en blanco? Se borrarán las tarjetas actuales de la pantalla.')) {
             openedProjectKey = null;
+            updateSavedStatusBadge();
             document.getElementById('header-cliente').value = '';
             document.getElementById('header-obra').value = '';
             document.getElementById('header-ubicacion').value = '';
@@ -1608,8 +1643,8 @@
         }
     }
 
-    document.addEventListener('input', () => saveProgress());
-    document.addEventListener('change', () => saveProgress());
+    document.addEventListener('input', () => { saveProgress(); updateSavedStatusBadge(); });
+    document.addEventListener('change', () => { saveProgress(); updateSavedStatusBadge(); });
 
     function getCategoriaByType(type) {
         if(type.startsWith('cor')) return 'corredera';
@@ -4461,14 +4496,14 @@
             const size = new Blob([JSON.stringify(payload)]).size;
             if (size > 900 * 1024) { console.warn('Proyecto muy grande para sincronizar a la nube (queda solo local):', size); return; }
             await setDoc(doc(db, 'proyectosGuardados', proyectoDocId(cliente, obra)), payload);
-        } catch (e) { /* sin internet u otro fallo: no bloquea el guardado local */ }
+        } catch (e) { console.error('syncProjectToCloud falló (guardado local no se ve afectado):', e); }
     }
     window.syncProjectToCloud = syncProjectToCloud;
 
     async function deleteProjectFromCloud(cliente, obra) {
         if (!auth.currentUser || !cliente || !obra) return;
         try { await deleteDoc(doc(db, 'proyectosGuardados', proyectoDocId(cliente, obra))); }
-        catch (e) { /* offline: queda huérfano en la nube hasta el próximo intento */ }
+        catch (e) { console.error('deleteProjectFromCloud falló (queda huérfano en la nube):', e); }
     }
     window.deleteProjectFromCloud = deleteProjectFromCloud;
 
@@ -4502,7 +4537,7 @@
                 const d = ch.doc.data();
                 if (d && d.jsonData && window.mergeCloudProject) window.mergeCloudProject(d.cliente, d.obra, d.jsonData);
             });
-        }, () => { /* sin internet: no bloquea nada, se reintenta solo al reconectar */ });
+        }, (err) => { console.error('startFsProjectsListener falló (revisar permisos/reglas de Firestore):', err); });
     }
 
     onAuthStateChanged(auth, (user) => {
