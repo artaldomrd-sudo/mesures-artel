@@ -312,36 +312,42 @@ estilo simplificado del CAD.
 - **Hoja con un solo ítem**: `buildPrintSheets()` le agrega la clase `single-item` al
   `.sheet-grid` cuando el grupo tiene 1 sola tarjeta (no panorámica), para que se agrande y
   centre en la página en vez de quedar chica y pegada a la esquina.
-- **Correderas/galandajes en PDF: el dibujo sale deformado** (una de las polygon del marco
-  extruido se estira mal, invadiendo la vista de planta de abajo) **al capturar con
-  `html2canvas`. SIN RESOLVER todavía** — reportado por el usuario, confirmado extrayendo el
-  JPEG embebido de un PDF real (la vista previa de baja resolución no alcanza para verlo) —
-  **nunca se pudo reproducir en Chrome/Puppeteer**, parece específico de Safari (el dispositivo
-  real del usuario). Se descartaron con evidencia dos causas que NO son responsables: las líneas
-  de medida técnica (`dimLineH`/`dimLineV`, A/B test visual idéntico) y el paño fijo (ese commit
-  no toca nada de correderas).
-  Se probó (y se **revirtió**, a pedido del usuario, porque seguía sin arreglar el problema en su
-  dispositivo real pese a verse perfecto en las pruebas locales): reemplazar cada `<svg>` de
-  `.drawing-area` por una imagen antes de capturar. Registro de los intentos, para no repetirlos
-  a ciegas:
-  - `<img src="data:image/svg+xml,...">` directo → `html2canvas` lo captura **en blanco**.
-  - Rasterizar ESE SVG a un PNG real primero (vía un `<canvas>` intermedio,
-    `ctx.drawImage(imgConSvg,...)` + `canvas.toDataURL('image/png')`) y usar el PNG → en las
-    pruebas locales (Chrome/Puppeteer, con las 10 tarjetas reales del caso reportado) salió
-    **perfecto**, pero el usuario confirmó que en su dispositivo real **seguía sin arreglarse** —
-    así que el diagnóstico ("html2canvas no captura bien el SVG inline") puede ser incompleto, o
-    hay algo más específico de Safari que ni el PNG-rasterizado esquiva.
-  - Errores de implementación encontrados en el camino (evitar si se retoma esto):
-    `requestAnimationFrame` en cualquier punto de `exportPDF()` puede no dispararse nunca en una
-    pestaña sin foco, colgando la generación para siempre; `img.decode()` puede colgarse para
-    siempre con un SVG de `width="100%"` (usar `onload`/`onerror` + `Promise.race` con timeout);
-    un Blob URL (`URL.createObjectURL`) para la imagen intermedia también sale en blanco con
-    `html2canvas` (usar `data:image/svg+xml;charset=utf-8,` + `encodeURIComponent` en su lugar).
-  - También se probó (y se revirtió) subir el alto del `.drawing-area` de corredera/galandaje
-    (clase `plan-view-card`, 44mm en vez de 34mm) — tampoco resolvió el problema real.
-  **Próximo paso si se retoma**: conseguir acceso directo a un dispositivo Safari (Mac/iPad) para
-  poder reproducir el bug de verdad, en vez de iterar a ciegas contra un entorno que nunca lo
-  muestra — ese fue el cuello de botella en todos los intentos de esta sesión.
+- **Dibujos deformados en el PDF al capturar con `html2canvas`** (capas — vidrio, marco
+  extruido, líneas de apertura — visiblemente desalineadas entre sí, no solo en correderas/
+  galandajes: se vio igual en ventanas, puertas, y paño fijo adosado). Reportado por el usuario,
+  confirmado extrayendo el JPEG embebido de PDFs reales (la vista previa de baja resolución no
+  alcanza para verlo) — **nunca se pudo reproducir en Chrome/Puppeteer**, parece específico de
+  Safari (el dispositivo real del usuario). Se descartaron con evidencia dos causas que NO son
+  responsables: las líneas de medida técnica (`dimLineH`/`dimLineV`, A/B test visual idéntico) y
+  el paño fijo (ese commit no toca nada de correderas).
+  **Arreglo actual** (en `exportPDF()`): reemplazar cada `<svg>` de `.drawing-area` por una
+  imagen antes de capturar — pero el SVG como `<img src="data:image/svg+xml,...">` directo NO
+  alcanza (`html2canvas` lo captura en blanco); hace falta rasterizarlo A UN PNG real primero
+  (vía un `<canvas>` intermedio, `ctx.drawImage(imgConSvg,...)` + `canvas.toDataURL('image/png')`)
+  y usar ESE PNG. Probado en correderas, galandajes, ventanas (con y sin paño fijo), puertas,
+  baranda y vidrio de ducha — todos correctos en las pruebas locales.
+  **Nota importante sobre una falsa alarma en el camino**: en una ronda de prueba, el usuario
+  reportó "aparecen ítems que no tienen nada que ver con mi proyecto" — parecía un bug nuevo y
+  grave, pero **resultó ser contaminación de archivos**: al llamar a `exportPDF()` real (no la
+  réplica manual de bytes) durante las pruebas en este mismo Mac del usuario, se dispararon
+  descargas reales a su Desktop/Downloads, mezclándose con sus PDFs reales. Se identificaron y
+  borraron 2 archivos así (`...presupuesto.pdf`, `...presupuesto 20.09.10.pdf` — el sufijo
+  "presupuesto" los delataba: el proyecto real del usuario siempre está en modo Fabricación). Por
+  esto, **NUNCA llamar a `exportPDF()` real durante pruebas en la máquina del usuario** — usar
+  solo la réplica manual (`pdf.output('arraybuffer')` sin `.save()`) para extraer bytes sin
+  disparar una descarga real.
+  Errores de implementación encontrados en el camino (evitar si se retoma esto):
+  `requestAnimationFrame` en cualquier punto de `exportPDF()` puede no dispararse nunca en una
+  pestaña sin foco, colgando la generación para siempre; `img.decode()` puede colgarse para
+  siempre con un SVG de `width="100%"` (usar `onload`/`onerror` + `Promise.race` con timeout);
+  un Blob URL (`URL.createObjectURL`) para la imagen intermedia también sale en blanco con
+  `html2canvas` (usar `data:image/svg+xml;charset=utf-8,` + `encodeURIComponent` en su lugar).
+  También se probó (y se descartó) subir el alto del `.drawing-area` de corredera/galandaje
+  (clase `plan-view-card`, 44mm en vez de 34mm) — no era la causa real, no hizo falta.
+  **Pendiente**: confirmación del usuario en su dispositivo real (Safari) de esta versión
+  reaplicada — la ronda anterior de "sigue sin funcionar" puede haber estado mezclada con la
+  confusión de los archivos de prueba de arriba, así que no es un dato confiable sobre si este
+  arreglo específico funciona o no en su dispositivo.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados
