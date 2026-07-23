@@ -376,6 +376,20 @@ estilo simplificado del CAD.
 - `getProjects` normaliza estructuras corruptas y **fusiona clientes duplicados sin importar
   mayúsculas** (Gabor = GABOR). `saveProject/loadProject/deleteProject/updateClientList/
   updateObraList/backupAllProjects`. Menú lateral: "Clientes" → "Proyecto".
+- **Aviso antes de reemplazar un proyecto guardado.** Caso real reportado por el usuario: en la
+  obra tomó medidas en una hoja, la mandó a fábrica (guardada), y luego en **otra hoja** (otra
+  pestaña/sesión, para la parte de barandas) puso el **mismo** Cliente + Nombre de Proyecto y le
+  dio Guardar — `saveProject()` sobrescribió en silencio la entrada anterior en
+  `artal_projects`, perdiendo más de una hora de trabajo ya enviado a fábrica. `saveProject()`
+  ahora compara contra `openedProjectKey` (variable en memoria: el cliente+proyecto de la hoja
+  que está realmente abierta en esta sesión, seteada por `loadProject()` al abrir un proyecto
+  existente, o por el propio `saveProject()` tras guardar). Si el nombre de destino **ya existe**
+  en `artal_projects` y **no** es el proyecto que esta hoja tiene abierto, `confirm()` antes de
+  pisarlo ("Ya existe un proyecto... ¿Seguro que quieres reemplazarlo?") — cancelar aborta el
+  guardado sin tocar nada. Guardar repetidamente el mismo proyecto ya abierto (el caso normal de
+  uso, guardar seguido mientras se mide) **no pregunta** — solo el caso de colisión de nombre
+  entre hojas distintas. `resetNotebook()` ("Hoja en blanco") limpia `openedProjectKey` a `null`
+  para no arrastrar por error el "proyecto abierto" de la hoja anterior.
 
 ## Plataforma de Operaciones (`ops/`)
 
