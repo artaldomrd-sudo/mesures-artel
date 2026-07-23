@@ -81,6 +81,9 @@
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; }
     .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .modo-fecha-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .modo-fecha-row button { flex: 1; min-width: 90px; padding: 9px 6px; border: 2px solid var(--artal-blue); background: #fff; color: var(--artal-blue); border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12.5px; }
+    .modo-fecha-row button.active { background: var(--artal-blue); color: #fff; }
     .recordar-group { display: flex; flex-direction: column; gap: 6px; }
     .recordar-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
     .recordar-group input { width: auto; min-height: 0; }
@@ -105,6 +108,7 @@
     <button class="new-job-btn" id="new-job-btn" onclick="abrirNuevo()" style="display:none;">+ Nuevo trabajo de instalación</button>
 
     <div id="sin-agendar-wrap"></div>
+    <div id="por-programar-wrap"></div>
 
     <div class="month-nav">
         <button onclick="cambiarMes(-1)">‹ Anterior</button>
@@ -139,8 +143,26 @@
         </label>
         <input type="text" id="job-gps" placeholder="19.7934,-70.6884">
 
-        <label>Fecha y hora</label>
-        <input type="datetime-local" id="job-fecha">
+        <label>Tipo de agenda</label>
+        <div class="modo-fecha-row">
+            <button type="button" id="modo-unica-btn" class="active" onclick="setModoFecha('unica')">Día único</button>
+            <button type="button" id="modo-rango-btn" onclick="setModoFecha('rango')">Rango (inicio–fin)</button>
+            <button type="button" id="modo-sin-btn" onclick="setModoFecha('sin_fecha')">Sin fecha</button>
+        </div>
+
+        <div id="fecha-unica-wrap">
+            <label>Fecha y hora</label>
+            <input type="datetime-local" id="job-fecha">
+        </div>
+        <div id="fecha-rango-wrap" style="display:none;">
+            <label>Inicio</label>
+            <input type="datetime-local" id="job-fecha-inicio">
+            <label>Fin <span class="hint">(déjalo vacío si es "en curso", sin fecha de cierre)</span></label>
+            <input type="datetime-local" id="job-fecha-fin">
+        </div>
+        <div id="sin-fecha-nota" style="display:none;">
+            <p class="hint" style="margin:6px 0 0;">Se guardará <b>sin fecha</b> y aparecerá en "Por programar" arriba, hasta que le pongas una con Editar.</p>
+        </div>
 
         <label>Instalador asignado</label>
         <select id="job-instalador"></select>
@@ -236,7 +258,35 @@
     const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
     const DIAS_SEMANA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
     const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-    const jobDate = (j) => (j.fecha && j.fecha.toDate ? j.fecha.toDate() : null);
+    const d0 = (dt) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()); // medianoche (solo fecha)
+    const jobDate = (j) => (j.fecha && j.fecha.toDate ? j.fecha.toDate() : null); // inicio, o null si sin fecha
+    const jobFin = (j) => (j.fechaFin && j.fechaFin.toDate ? j.fechaFin.toDate() : null);
+    // Fin efectivo para el calendario: fin si está; si es rango "en curso" (sin fin), hasta hoy;
+    // si es día único, el mismo inicio.
+    function jobSpanFin(j) {
+        const ini = jobDate(j); if (!ini) return null;
+        const fin = jobFin(j);
+        if (fin) return fin;
+        if (j.modoFecha === 'rango') return new Date();
+        return ini;
+    }
+    // ¿El trabajo ocupa este día (celda)? Cubre día único y rangos (incl. "en curso").
+    function jobEnDia(j, cell) {
+        const ini = jobDate(j); if (!ini) return false;
+        const finEff = jobSpanFin(j);
+        return cell >= d0(ini) && cell <= d0(finEff);
+    }
+    // Texto de fecha para la tarjeta según el modo.
+    function fechaTxtJob(j) {
+        const ini = jobDate(j);
+        if (!ini) return '📋 Sin fecha (por programar)';
+        const fin = jobFin(j);
+        const fD = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
+        if (j.modoFecha === 'rango') {
+            return fin ? `Del ${fD(ini)} al ${fD(fin)}` : `En curso desde el ${fD(ini)}`;
+        }
+        return ini.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+    }
     const fmtFechaHora = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
     function renderGrid() {
@@ -249,7 +299,7 @@
         for (let i = 0; i < firstWeekday; i++) html += `<div class="grid-day empty"></div>`;
         for (let day = 1; day <= daysInMonth; day++) {
             const cellDate = new Date(year, month, day);
-            const delDia = allJobs.filter(j => { const f = jobDate(j); return f && sameDay(f, cellDate); });
+            const delDia = allJobs.filter(j => jobEnDia(j, cellDate));
             const hayActivo = delDia.some(j => j.estado !== 'completado');
             // Punto naranja si hay algo activo ese día; gris si solo quedan trabajos completados
             // (historial). Así se distingue lo pendiente de lo ya hecho.
@@ -270,8 +320,7 @@
     };
 
     function jobCardHTML(j) {
-        const f = jobDate(j);
-        const hora = f ? f.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : '';
+        const hora = fechaTxtJob(j);
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
         const g = parseGps(j.gps);
         let navHtml = '';
@@ -359,21 +408,35 @@
         } catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
 
+    // Instalaciones sin fecha (por programar): sección propia arriba, no en el calendario.
+    function renderPorProgramar() {
+        const wrap = document.getElementById('por-programar-wrap');
+        const sinFecha = allJobs.filter(j => !jobDate(j) && j.estado !== 'completado')
+            .sort((a, b) => ((a.fechaCreacion && a.fechaCreacion.toMillis ? a.fechaCreacion.toMillis() : 0) - (b.fechaCreacion && b.fechaCreacion.toMillis ? b.fechaCreacion.toMillis() : 0)));
+        if (!sinFecha.length) { wrap.innerHTML = ''; return; }
+        wrap.innerHTML = `
+        <div class="sin-agendar" style="background:#eef4fb;border-color:var(--artal-blue);">
+            <h3>📋 Instalaciones por programar (sin fecha) (${sinFecha.length})</h3>
+            <div class="day-group">${sinFecha.map(jobCardHTML).join('')}</div>
+        </div>`;
+    }
+
     function render() {
         document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
         renderGrid();
         renderSinAgendar();
+        renderPorProgramar();
 
         const bar = document.getElementById('selected-day-bar');
         const list = document.getElementById('jobs-list');
 
         if (selectedDay) {
-            // Vista de un día: se muestran TODAS (incluidas las completadas), para consultar el
-            // historial por fecha.
+            // Vista de un día: se muestran TODAS las que ocupan ese día (incluidas las de rango y
+            // las completadas), para consultar el historial por fecha.
             bar.style.display = 'flex';
             document.getElementById('selected-day-label').textContent =
                 selectedDay.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
-            const delDia = allJobs.filter(j => { const f = jobDate(j); return f && sameDay(f, selectedDay); })
+            const delDia = allJobs.filter(j => jobEnDia(j, selectedDay))
                 .sort((a, b) => jobDate(a) - jobDate(b));
             list.innerHTML = delDia.length
                 ? `<div class="day-group">${delDia.map(jobCardHTML).join('')}</div>`
@@ -381,13 +444,17 @@
             return;
         }
 
-        // Vista del mes: solo lo PENDIENTE/en proceso. Lo completado se archiva (sale de la lista
-        // pero queda en el calendario; se ve al abrir su día).
+        // Vista del mes: solo lo PENDIENTE/en proceso cuyo período toca este mes. Cada trabajo
+        // aparece UNA vez (agrupado por su día de inicio), con su etiqueta de rango/en curso. Lo
+        // completado se archiva; lo sin fecha va a "Por programar".
         bar.style.display = 'none';
-        const start = new Date(currentMonth);
+        const start = d0(currentMonth);
         const end = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
-        const delMes = allJobs.filter(j => { const f = jobDate(j); return f && f >= start && f < end && j.estado !== 'completado'; })
-            .sort((a, b) => jobDate(a) - jobDate(b));
+        const delMes = allJobs.filter(j => {
+            const ini = jobDate(j); if (!ini || j.estado === 'completado') return false;
+            const finEff = jobSpanFin(j);
+            return d0(ini) < end && d0(finEff) >= start; // el período interseca el mes
+        }).sort((a, b) => jobDate(a) - jobDate(b));
         if (!delMes.length) { list.innerHTML = '<p class="empty">No hay instalaciones pendientes este mes.</p>'; return; }
         const groups = {};
         delMes.forEach(j => {
@@ -446,13 +513,26 @@
 
     // ---------- Modal crear/editar ----------
     let editingId = null;
+    let modoFecha = 'unica'; // 'unica' | 'rango' | 'sin_fecha'
+
+    function setModoFecha(modo) {
+        modoFecha = modo;
+        document.getElementById('modo-unica-btn').classList.toggle('active', modo === 'unica');
+        document.getElementById('modo-rango-btn').classList.toggle('active', modo === 'rango');
+        document.getElementById('modo-sin-btn').classList.toggle('active', modo === 'sin_fecha');
+        document.getElementById('fecha-unica-wrap').style.display = modo === 'unica' ? 'block' : 'none';
+        document.getElementById('fecha-rango-wrap').style.display = modo === 'rango' ? 'block' : 'none';
+        document.getElementById('sin-fecha-nota').style.display = modo === 'sin_fecha' ? 'block' : 'none';
+    }
+    window.setModoFecha = setModoFecha;
 
     function limpiarForm() {
         editingId = null;
-        ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-notas'].forEach(id => document.getElementById(id).value = '');
+        ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-fecha-inicio','job-fecha-fin','job-notas'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('job-instalador').value = '';
         document.getElementById('job-estado').value = 'pendiente';
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = false);
+        setModoFecha('unica');
     }
 
     window.abrirNuevo = function () {
@@ -497,10 +577,15 @@
         const recs = Array.isArray(j.recordatorios) ? j.recordatorios.map(String) : [];
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = recs.includes(c.value));
         document.getElementById('job-notas').value = j.notas || '';
-        const f = jobDate(j);
-        if (f) {
-            const pad = (n) => String(n).padStart(2, '0');
-            document.getElementById('job-fecha').value = `${f.getFullYear()}-${pad(f.getMonth()+1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`;
+        const pad = (n) => String(n).padStart(2, '0');
+        const dtLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        const ini = jobDate(j), fin = jobFin(j);
+        const modo = !ini ? 'sin_fecha' : (j.modoFecha === 'rango' || fin) ? 'rango' : 'unica';
+        setModoFecha(modo);
+        if (modo === 'unica' && ini) document.getElementById('job-fecha').value = dtLocal(ini);
+        if (modo === 'rango') {
+            if (ini) document.getElementById('job-fecha-inicio').value = dtLocal(ini);
+            if (fin) document.getElementById('job-fecha-fin').value = dtLocal(fin);
         }
         document.getElementById('modal-overlay').classList.add('show');
     };
@@ -515,29 +600,48 @@
         const obra = document.getElementById('job-obra').value.trim();
         const direccion = document.getElementById('job-direccion').value.trim();
         const gps = document.getElementById('job-gps').value.trim();
-        const fechaStr = document.getElementById('job-fecha').value;
         const instaladorEmail = document.getElementById('job-instalador').value;
         const estado = document.getElementById('job-estado').value;
         const recordatorios = Array.from(document.querySelectorAll('#job-recordar input:checked')).map(c => Number(c.value));
         const notas = document.getElementById('job-notas').value.trim();
 
         if (!cliente) { alert('Escribe el cliente.'); return; }
-        if (!fechaStr) { alert('Elige fecha y hora.'); return; }
+
+        // Fechas según el tipo de agenda.
+        let fecha = null, fechaFin = null;
+        if (modoFecha === 'unica') {
+            const s = document.getElementById('job-fecha').value;
+            if (!s) { alert('Elige la fecha y hora.'); return; }
+            fecha = Timestamp.fromDate(new Date(s));
+        } else if (modoFecha === 'rango') {
+            const si = document.getElementById('job-fecha-inicio').value;
+            if (!si) { alert('Elige la fecha de inicio.'); return; }
+            fecha = Timestamp.fromDate(new Date(si));
+            const sf = document.getElementById('job-fecha-fin').value;
+            if (sf) {
+                if (new Date(sf) < new Date(si)) { alert('La fecha de fin no puede ser anterior al inicio.'); return; }
+                fechaFin = Timestamp.fromDate(new Date(sf));
+            }
+        }
+        // modoFecha === 'sin_fecha' → fecha y fechaFin quedan null
+
         if (gps && !parseGps(gps)) {
             if (!confirm('El GPS no parece coordenadas ni un link válido. ¿Guardar de todos modos?')) return;
         }
         const inst = instaladores.find(u => u.email === instaladorEmail);
+        const tieneInicio = !!fecha;
 
         const datos = {
             cliente, obra, direccion, gps,
-            fecha: Timestamp.fromDate(new Date(fechaStr)),
+            modoFecha,
+            fecha, fechaFin,
             instaladorEmail: instaladorEmail || '',
             instaladorNombre: inst ? inst.nombre : '',
             estado, notas, recordatorios,
-            // Al crear o editar se reinicia el estado de recordatorios para que vuelvan a
-            // evaluarse (útil si se cambió la fecha o los avisos).
+            // Los recordatorios solo aplican si hay fecha de inicio. Al guardar se reinician para
+            // que vuelvan a evaluarse (útil si se cambió la fecha o los avisos).
             recordatoriosEnviados: [],
-            recordatoriosPendientes: recordatorios.length > 0,
+            recordatoriosPendientes: tieneInicio && recordatorios.length > 0,
             orderId: window._orderIdParaGuardar || null
         };
 
