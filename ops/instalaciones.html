@@ -18,10 +18,15 @@
 
     .sin-agendar { background: #fff8e8; border: 1.5px solid var(--artal-yellow); border-radius: var(--radius); padding: 12px 14px; }
     .sin-agendar h3 { margin: 0 0 8px; font-size: 13px; color: var(--artal-blue); text-transform: uppercase; letter-spacing: 0.5px; }
-    .sin-agendar .pedido-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid #f0e6cc; }
+    .sin-agendar .pedido-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid #f0e6cc; }
     .sin-agendar .pedido-row:first-of-type { border-top: none; }
-    .sin-agendar .pedido-row b { color: var(--artal-blue); font-size: 14px; }
-    .sin-agendar .pedido-row button { background: var(--artal-blue); color: #fff; border: none; border-radius: 7px; padding: 8px 12px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12.5px; min-height: 38px; }
+    .sin-agendar .pr-info b { color: var(--artal-blue); font-size: 14px; }
+    .sin-agendar .pr-meta { font-size: 12px; color: #666; margin-top: 3px; }
+    .sin-agendar .pr-meta a { color: var(--artal-blue); font-weight: bold; text-decoration: none; }
+    .sin-agendar .pr-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sin-agendar .pr-actions button { border: none; border-radius: 7px; padding: 8px 12px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12.5px; min-height: 38px; }
+    .sin-agendar .pr-agendar { background: var(--artal-blue); color: #fff; }
+    .sin-agendar .pr-recoger { background: #16a085; color: #fff; }
 
     .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; }
     .grid-weekday { text-align: center; font-size: 11px; font-weight: bold; color: #999; text-transform: uppercase; padding-bottom: 4px; }
@@ -312,19 +317,47 @@
         if (!esAdmin) { wrap.innerHTML = ''; return; }
         const agendados = new Set(allJobs.map(j => j.orderId).filter(Boolean));
         const listos = ordersCache.filter(o =>
-            ['listo_para_cargar', 'parcialmente_listo'].includes(o.data.status) && !agendados.has(o.id)
+            ['listo_para_cargar', 'parcialmente_listo'].includes(o.data.status) && !agendados.has(o.id) && !o.data.sinInstalacion
         );
         if (!listos.length) { wrap.innerHTML = ''; return; }
         wrap.innerHTML = `
         <div class="sin-agendar">
             <h3>📦 Pedidos listos sin agendar (${listos.length})</h3>
-            ${listos.map(o => `
+            ${listos.map(o => {
+                const d = o.data;
+                const esCompra = d.docType === 'COMPRA_DIRECTA';
+                const meta = esCompra
+                    ? `Compra directa · Proveedor: ${esc(d.proveedor)} · ${esc(d.totalItems) || 0} artículo(s)`
+                    : `${esc(d.docType)} · ${esc(d.material)} ${esc(d.color)} · ${esc(d.totalItems) || 0} ítems`;
+                const verLink = esCompra
+                    ? (d.compraPdfUrl ? `<a href="${esc(d.compraPdfUrl)}" target="_blank">Ver orden de compra</a>` : '')
+                    : `<a href="#" onclick="openOrderPreview('${o.id}'); return false;">Ver ficha técnica</a>`;
+                return `
                 <div class="pedido-row">
-                    <b>${esc(o.data.cliente) || 'Sin cliente'} — ${esc(o.data.obra)}</b>
-                    <button onclick="agendarPedido('${o.id}')">📅 Agendar instalación</button>
-                </div>`).join('')}
+                    <div class="pr-info">
+                        <b>${esc(d.cliente) || 'Sin cliente'} — ${esc(d.obra)}</b>
+                        <div class="pr-meta">${meta}${verLink ? ' · ' + verLink : ''}</div>
+                    </div>
+                    <div class="pr-actions">
+                        <button class="pr-agendar" onclick="agendarPedido('${o.id}')">📅 Agendar instalación</button>
+                        <button class="pr-recoger" onclick="marcarSinInstalacion('${o.id}')">📦 Solo recoger</button>
+                    </div>
+                </div>`;
+            }).join('')}
         </div>`;
     }
+
+    // "Solo recoger": el pedido no requiere instalación (el cliente lo busca / solo transporte).
+    // Se marca en el pedido para que salga de la lista de "sin agendar", sin crear una instalación.
+    window.marcarSinInstalacion = async function (orderId) {
+        const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
+        if (!confirm(`¿Marcar "${d.cliente || ''} — ${d.obra || ''}" como SOLO RECOGER (no requiere instalación)?\n\nSaldrá de la lista de pendientes por agendar. Sigue disponible para el chofer.`)) return;
+        try {
+            await updateDoc(doc(db, 'orders', orderId), {
+                sinInstalacion: true, sinInstalacionPor: usuario.nombre, sinInstalacionFecha: serverTimestamp()
+            });
+        } catch (e) { alert('No se pudo marcar: ' + e.message); }
+    };
 
     function render() {
         document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
