@@ -489,6 +489,21 @@ estilo simplificado del CAD.
     puedeEscribir(); }` (la lectura ya la cubre la regla general) — **recordar pegarlo a mano en
     Firebase Console → Firestore Database → Reglas**, igual que cualquier cambio a este archivo
     (no se despliega solo con el push a GitHub Pages).
+  - **Confirmado por el usuario en producción**: guardó un proyecto en un dispositivo y apareció
+    solo en otro sin recargar manualmente. Funciona.
+  - **Trampa real encontrada: la app agregada al Dock/pantalla de inicio del iPad usa
+    almacenamiento AISLADO de Safari en el mismo dispositivo** (limitación conocida de iOS para
+    apps "Agregadas a Inicio") — un proyecto creado solo ahí adentro no aparece en Safari ni se
+    sincroniza a la nube hasta que:
+    (a) se **cierra del todo** esa app (deslizarla hacia arriba en el selector de apps, no solo
+    salir) y se vuelve a abrir — fuerza al service worker (`sw.js`, estrategia red-primero) a
+    traer el código actualizado; o
+    (b) si el proyecto quedó atrapado ahí con código viejo: abrirlo en esa misma app y usar
+    **"Exportar archivo"** (exporta SOLO el proyecto abierto, a diferencia de "Copia de
+    seguridad" que exporta todos) → **"Importar archivo"** desde Safari para traerlo al
+    contexto que sí sincroniza. Caso real: obra "Papito" creada solo en el Dock, rescatada así.
+    **Recomendación al usuario**: preferir Safari normal para el cuaderno en vez del ícono del
+    Dock, salvo que se confirme que éste se actualiza solo de forma confiable.
 
 ## Plataforma de Operaciones (`ops/`)
 
