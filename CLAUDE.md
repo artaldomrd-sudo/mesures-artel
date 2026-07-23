@@ -358,6 +358,17 @@ estilo simplificado del CAD.
   de `html2canvas`. Verificado visualmente (réplica manual de bytes, nunca `exportPDF()` real)
   comparando el PDF extraído contra el dibujo en vivo para `cor2` y `win_ob` + paño fijo abajo:
   proporciones coinciden.
+  **Tercer problema: el vidrio salía sin color** (solo el degradado del panel, líneas/texto/
+  flechas se veían bien). Causa: el `<rect>` del vidrio es el único elemento del dibujo que
+  lleva `filter="url(#shadow-${uid})"` (la sombra, `feDropShadow`) además de su
+  `fill="url(#glass-${uid})"` — Safari, al pintar el SVG como `<img>` (fuera del DOM en vivo,
+  contexto distinto al de renderizado normal), no siempre resuelve ese `filter` y, por spec,
+  dejar de pintar el elemento **completo** que lo referencia, no solo el efecto de sombra.
+  **Arreglo**: quitar `filter="url(#shadow-...)"` del string del SVG (regex) solo para esta
+  rasterización, antes de convertirlo a data URI — la sombra es decorativa y se pierde sin
+  problema en el PDF, el `fill` con gradiente no se toca. **Confirmado por el usuario en su
+  dispositivo real**: "probado, funciona" — los 3 problemas (capas desalineadas, estirado, y
+  vidrio sin color) quedan resueltos.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
 ## Proyectos guardados

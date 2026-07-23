@@ -18,6 +18,44 @@ try { new vm.Script(code, { filename: 'index.inline.js' }); }
 catch (e) { console.error('SYNTAX ERROR:', e.message); process.exit(1); }
 console.log('SYNTAX OK');
 
+// 1b) Guardrail de exportPDF(): estos 3 bugs de PDF (capas desalineadas, dibujo estirado,
+// vidrio sin color) costaron varias rondas de prueba en el dispositivo real del usuario
+// (Safari/iPad) para diagnosticar — ver CLAUDE.md, sección "PDF / Impresión". Si algún cambio
+// futuro en exportPDF() borra sin querer alguno de estos arreglos (o reintroduce un patrón ya
+// descartado por colgarse/fallar), esto debe fallar ruidosamente en vez de dejar que el bug
+// vuelva en silencio.
+{
+  const start = code.indexOf('async function exportPDF()');
+  if (start === -1) { console.error('GUARDRAIL: no se encontró exportPDF()'); process.exit(1); }
+  const braceStart = code.indexOf('{', start);
+  let depth = 0, i = braceStart;
+  for (; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}') { depth--; if (depth === 0) { i++; break; } }
+  }
+  const body = code.slice(start, i);
+  // Los comentarios explican a propósito los patrones prohibidos (para que no se repita el
+  // error) — si no se excluyen, esas mismas explicaciones harían "pasar" un check de ausencia
+  // (ej. el comentario que dice "nunca usar requestAnimationFrame" contiene la palabra prohibida).
+  const codeOnly = body.split('\n').filter(line => !/^\s*\/\//.test(line)).join('\n');
+  const checks = [
+    ['rasteriza el SVG a PNG vía <canvas> (drawImage)', /ctx2d\.drawImage\(/.test(codeOnly)],
+    ['quita el filter de sombra antes de rasterizar (si no, Safari no pinta el vidrio)', /replace\(\/\\s\*filter="url\\\(#shadow-/.test(codeOnly)],
+    ['calcula width\\/height explícitos en vez de depender de object-fit', /fitScale\s*=\s*Math\.min/.test(codeOnly)],
+    ['espera la carga de la imagen con onload\\/onerror + timeout (no img.decode())', /loader\.onload/.test(codeOnly) && !/\.decode\(/.test(codeOnly)],
+    ['usa data URI para el SVG intermedio (no Blob URL, que Safari captura en blanco)', /data:image\/svg\+xml/.test(codeOnly) && !/createObjectURL/.test(codeOnly)],
+    ['no usa requestAnimationFrame (puede no dispararse nunca en pestaña sin foco)', !/requestAnimationFrame/.test(codeOnly)],
+    ['no depende de object-fit (html2canvas no lo respeta de forma confiable)', !/object-fit/.test(codeOnly)],
+  ];
+  const failed = checks.filter(([, ok]) => !ok);
+  if (failed.length) {
+    console.error('GUARDRAIL exportPDF() FALLÓ — se perdió un arreglo conocido:');
+    failed.forEach(([label]) => console.error('  - ' + label));
+    process.exit(1);
+  }
+  console.log('GUARDRAIL exportPDF() OK (' + checks.length + ' checks)');
+}
+
 // 2) Stubs mínimos de DOM y ejecución
 const el = () => ({ value: '', innerHTML: '', style: {}, classList: { add() {}, remove() {}, toggle() {} }, appendChild() {}, addEventListener() {}, getContext() { return {}; }, querySelector() { return el(); }, querySelectorAll() { return []; } });
 const document = { getElementById: () => el(), querySelector: () => el(), querySelectorAll: () => [], createElement: () => el(), addEventListener() {}, body: el() };
