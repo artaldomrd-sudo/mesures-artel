@@ -281,7 +281,11 @@
     // Texto de fecha para la tarjeta según el modo.
     function fechaTxtJob(j) {
         const ini = jobDate(j);
-        if (!ini) return '📋 Sin fecha (por programar)';
+        if (!ini) {
+            // Sin fecha: si ya está en proceso, es una obra en curso sin fecha de entrega; si no,
+            // está por programar.
+            return j.estado === 'en_proceso' ? '🔧 En curso (sin fecha de entrega)' : '📋 Sin fecha (por programar)';
+        }
         const fin = jobFin(j);
         const fD = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
         if (j.modoFecha === 'rango') {
@@ -410,10 +414,11 @@
         } catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
 
-    // Instalaciones sin fecha (por programar): sección propia arriba, no en el calendario.
+    // Instalaciones sin fecha y aún PENDIENTES (por programar): sección propia arriba. Las que ya
+    // están "en proceso" sin fecha NO van aquí, van a la lista de abajo (En curso sin fecha).
     function renderPorProgramar() {
         const wrap = document.getElementById('por-programar-wrap');
-        const sinFecha = allJobs.filter(j => !jobDate(j) && j.estado !== 'completado')
+        const sinFecha = allJobs.filter(j => !jobDate(j) && (j.estado === 'pendiente' || !j.estado))
             .sort((a, b) => ((a.fechaCreacion && a.fechaCreacion.toMillis ? a.fechaCreacion.toMillis() : 0) - (b.fechaCreacion && b.fechaCreacion.toMillis ? b.fechaCreacion.toMillis() : 0)));
         if (!sinFecha.length) { wrap.innerHTML = ''; return; }
         wrap.innerHTML = `
@@ -457,17 +462,27 @@
             const finEff = jobSpanFin(j);
             return d0(ini) < end && d0(finEff) >= start; // el período interseca el mes
         }).sort((a, b) => jobDate(a) - jobDate(b));
-        if (!delMes.length) { list.innerHTML = '<p class="empty">No hay instalaciones pendientes este mes.</p>'; return; }
+
+        // Obras en curso sin fecha de entrega (activas, no atadas a un día): se muestran siempre
+        // debajo del calendario mientras estén en proceso.
+        const enCursoSin = allJobs.filter(j => !jobDate(j) && j.estado === 'en_proceso');
+
+        let html = '';
+        if (enCursoSin.length) {
+            html += `<div class="day-group"><div class="day-label">En curso (sin fecha de entrega)</div>${enCursoSin.map(jobCardHTML).join('')}</div>`;
+        }
         const groups = {};
         delMes.forEach(j => {
             const key = jobDate(j).toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' });
             (groups[key] = groups[key] || []).push(j);
         });
-        list.innerHTML = Object.entries(groups).map(([label, jobs]) => `
+        html += Object.entries(groups).map(([label, jobs]) => `
             <div class="day-group">
                 <div class="day-label">${esc(label)}</div>
                 ${jobs.map(jobCardHTML).join('')}
             </div>`).join('');
+
+        list.innerHTML = html || '<p class="empty">No hay instalaciones pendientes este mes.</p>';
     }
 
     onSnapshot(collection(db, 'instalaciones'), (snap) => {
