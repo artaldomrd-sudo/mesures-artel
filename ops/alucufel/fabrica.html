@@ -24,6 +24,10 @@
     .comment-box { margin-top: 10px; }
     .comment-box textarea { width: 100%; padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; min-height: 50px; }
     .comment-box button { margin-top: 6px; padding: 8px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; }
+    .assign-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+    .assign-row label { font-size: 12px; color: #666; font-weight: bold; }
+    .assign-row select { flex: 1; min-width: 160px; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
+    .assign-row button { padding: 9px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -79,6 +83,27 @@
         }[c]));
     }
 
+    // Control de chofer: Wilson por defecto (siempre) para que la carga le llegue directo, más
+    // los choferes registrados y la obra ya asignada si es otra, más la opción de escribir un
+    // nombre nuevo a mano para casos especiales. La asignación de chofer es solo informativa.
+    function choferControlHTML(id, o) {
+        const actual = o.asignadoChoferNombre != null ? o.asignadoChoferNombre : 'Wilson';
+        const base = ['Wilson', ...choferesCache.map(u => u.nombre).filter(Boolean)];
+        if (actual && !base.includes(actual)) base.push(actual);
+        const nombres = [...new Set(base)];
+        const opts = nombres.map(n => `<option value="${esc(n)}" ${n === actual ? 'selected' : ''}>${esc(n)}</option>`).join('');
+        return `<select id="asignar-chofer-${id}" onchange="onChoferSel('${id}')">
+                    ${opts}
+                    <option value="" ${actual === '' ? 'selected' : ''}>(sin asignar — cualquiera)</option>
+                    <option value="__nuevo__">➕ Escribir chofer nuevo…</option>
+                </select>
+                <input type="text" id="asignar-chofer-nuevo-${id}" placeholder="Nombre del chofer nuevo" style="display:none;flex:1;min-width:160px;padding:9px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">`;
+    }
+    window.onChoferSel = function (id) {
+        const sel = document.getElementById('asignar-chofer-' + id);
+        document.getElementById('asignar-chofer-nuevo-' + id).style.display = sel.value === '__nuevo__' ? 'block' : 'none';
+    };
+
     function orderCardHTML(id, o) {
         let actionsHtml;
         if (o.status === 'pendiente_fabrica') {
@@ -106,6 +131,11 @@
             </div>
             ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
             ${actionsHtml}
+            <div class="assign-row">
+                <label>Chofer:</label>
+                ${choferControlHTML(id, o)}
+                <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
+            </div>
             <div class="comment-box">
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
@@ -116,6 +146,7 @@
 
     let currentTab = 'pendientes';
     let allOrders = [];
+    let choferesCache = [];
 
     window.setTab = function (tab) {
         currentTab = tab;
@@ -145,6 +176,32 @@
     onSnapshot(q, (snap) => { allOrders = snap.docs; render(); }, (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+
+    // Choferes registrados, para el selector de asignación (Wilson va por defecto igual, aunque
+    // no esté registrado como usuario — la asignación de chofer es solo informativa).
+    onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'chofer')), (snap) => {
+        choferesCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
+        render();
+    });
+
+    // Asigna el chofer al pedido (mismos campos que leen Historial, Chofer e Instalador para
+    // mostrar "Asignado a …"). Con Wilson por defecto, ALUCUFEL no tiene que ponerlo a mano.
+    window.guardarAsignacion = async function (id) {
+        const choferRaw = document.getElementById('asignar-chofer-' + id).value;
+        const choferNombre = choferRaw === '__nuevo__'
+            ? document.getElementById('asignar-chofer-nuevo-' + id).value.trim()
+            : choferRaw;
+        const chofer = choferesCache.find(u => u.nombre === choferNombre);
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                asignadoChoferEmail: chofer ? chofer.email : null,
+                asignadoChoferNombre: choferNombre || null
+            });
+            alert('Chofer asignado.');
+        } catch (e) {
+            alert('No se pudo guardar la asignación: ' + e.message);
+        }
+    };
 
     window.tomarPedido = async function (id) {
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp() });

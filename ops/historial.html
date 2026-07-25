@@ -263,6 +263,27 @@
         return bits.length ? ' · ' + bits.join(' · ') : '';
     }
 
+    // Control de chofer: Wilson por defecto (siempre), más los choferes registrados y la obra ya
+    // asignada si es otra, más la opción de escribir un nombre nuevo a mano. La asignación de
+    // chofer es solo informativa (no restringe acceso), así que basta con el nombre.
+    function choferControlHTML(id, o) {
+        const actual = o.asignadoChoferNombre != null ? o.asignadoChoferNombre : 'Wilson';
+        const base = ['Wilson', ...choferesCache.map(u => u.nombre).filter(Boolean)];
+        if (actual && !base.includes(actual)) base.push(actual);
+        const nombres = [...new Set(base)];
+        const opts = nombres.map(n => `<option value="${esc(n)}" ${n === actual ? 'selected' : ''}>${esc(n)}</option>`).join('');
+        return `<select id="asignar-chofer-${id}" onchange="onChoferSel('${id}')">
+                    ${opts}
+                    <option value="" ${actual === '' ? 'selected' : ''}>(sin asignar — cualquiera)</option>
+                    <option value="__nuevo__">➕ Escribir chofer nuevo…</option>
+                </select>
+                <input type="text" id="asignar-chofer-nuevo-${id}" placeholder="Nombre del chofer nuevo" style="display:none;flex:1;min-width:160px;padding:9px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">`;
+    }
+    window.onChoferSel = function (id) {
+        const sel = document.getElementById('asignar-chofer-' + id);
+        document.getElementById('asignar-chofer-nuevo-' + id).style.display = sel.value === '__nuevo__' ? 'block' : 'none';
+    };
+
     function orderCardHTML(id, o) {
         const extraLinks = [];
         if (o.contratistaPdfUrl) extraLinks.push(`<a href="${esc(o.contratistaPdfUrl)}" target="_blank">PDF contratista</a>`);
@@ -301,10 +322,7 @@
             ${(isFab || isCompra) ? `
             <div class="assign-row">
                 <label>Chofer:</label>
-                <select id="asignar-chofer-${id}">
-                    <option value="">(sin asignar — cualquiera)</option>
-                    ${choferesCache.map(u => `<option value="${esc(u.email)}" ${o.asignadoChoferEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
-                </select>
+                ${choferControlHTML(id, o)}
                 <label>Instalador:</label>
                 <select id="asignar-instalador-${id}">
                     <option value="">(sin asignar — cualquiera)</option>
@@ -365,14 +383,17 @@
     // pedido queda visible para cualquier chofer/instalador (bolsa compartida) — asignar solo
     // lo restringe a esa persona (más tú, que siempre ves todo).
     window.guardarAsignacion = async function (id) {
-        const choferEmail = document.getElementById('asignar-chofer-' + id).value;
+        const choferRaw = document.getElementById('asignar-chofer-' + id).value;
+        const choferNombre = choferRaw === '__nuevo__'
+            ? document.getElementById('asignar-chofer-nuevo-' + id).value.trim()
+            : choferRaw;
         const instaladorEmail = document.getElementById('asignar-instalador-' + id).value;
-        const chofer = choferesCache.find(u => u.email === choferEmail);
+        const chofer = choferesCache.find(u => u.nombre === choferNombre);
         const instalador = instaladoresCache.find(u => u.email === instaladorEmail);
         try {
             await updateDoc(doc(db, 'orders', id), {
-                asignadoChoferEmail: choferEmail || null,
-                asignadoChoferNombre: chofer ? chofer.nombre : null,
+                asignadoChoferEmail: chofer ? chofer.email : null,
+                asignadoChoferNombre: choferNombre || null,
                 asignadoInstaladorEmail: instaladorEmail || null,
                 asignadoInstaladorNombre: instalador ? instalador.nombre : null
             });
