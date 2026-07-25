@@ -167,58 +167,129 @@ window.OBRAS=[
 ]
 },
 {
-"slug": "puertas-y-ventanas",
-"nombre": "Puertas y ventanas",
+"slug": "ventanas-oscilobatientes",
+"nombre": "Ventanas oscilo-batientes",
 "cat": "puertas",
 "catLabel": "Puertas y ventanas",
-"n": 46,
+"n": 3,
 "fotos": [
-"obras/puertas-y-ventanas/01.jpg",
-"obras/puertas-y-ventanas/02.jpg",
-"obras/puertas-y-ventanas/03.jpg",
-"obras/puertas-y-ventanas/04.jpg",
-"obras/puertas-y-ventanas/05.jpg",
-"obras/puertas-y-ventanas/06.jpg",
-"obras/puertas-y-ventanas/07.jpg",
-"obras/puertas-y-ventanas/08.jpg",
-"obras/puertas-y-ventanas/09.jpg",
-"obras/puertas-y-ventanas/10.jpg",
-"obras/puertas-y-ventanas/11.jpg",
-"obras/puertas-y-ventanas/12.jpg",
-"obras/puertas-y-ventanas/13.jpg",
-"obras/puertas-y-ventanas/14.jpg",
-"obras/puertas-y-ventanas/15.jpg",
-"obras/puertas-y-ventanas/16.jpg",
-"obras/puertas-y-ventanas/17.jpg",
-"obras/puertas-y-ventanas/18.jpg",
-"obras/puertas-y-ventanas/19.jpg",
-"obras/puertas-y-ventanas/20.jpg",
-"obras/puertas-y-ventanas/21.jpg",
-"obras/puertas-y-ventanas/22.jpg",
-"obras/puertas-y-ventanas/23.jpg",
-"obras/puertas-y-ventanas/24.jpg",
-"obras/puertas-y-ventanas/25.jpg",
-"obras/puertas-y-ventanas/26.jpg",
-"obras/puertas-y-ventanas/27.jpg",
-"obras/puertas-y-ventanas/28.jpg",
-"obras/puertas-y-ventanas/29.jpg",
-"obras/puertas-y-ventanas/30.jpg",
-"obras/puertas-y-ventanas/31.jpg",
-"obras/puertas-y-ventanas/32.jpg",
-"obras/puertas-y-ventanas/33.jpg",
-"obras/puertas-y-ventanas/34.jpg",
-"obras/puertas-y-ventanas/35.jpg",
-"obras/puertas-y-ventanas/36.jpg",
-"obras/puertas-y-ventanas/37.jpg",
-"obras/puertas-y-ventanas/38.jpg",
-"obras/puertas-y-ventanas/39.jpg",
-"obras/puertas-y-ventanas/40.jpg",
-"obras/puertas-y-ventanas/41.jpg",
-"obras/puertas-y-ventanas/42.jpg",
-"obras/puertas-y-ventanas/43.jpg",
-"obras/puertas-y-ventanas/44.jpg",
-"obras/puertas-y-ventanas/45.jpg",
-"obras/puertas-y-ventanas/46.jpg"
+"obras/ventanas-oscilobatientes/01.jpg",
+"obras/ventanas-oscilobatientes/02.jpg",
+"obras/ventanas-oscilobatientes/03.jpg"
+]
+},
+{
+"slug": "ventanas-proyectadas",
+"nombre": "Ventanas proyectadas",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 3,
+"fotos": [
+"obras/ventanas-proyectadas/01.jpg",
+"obras/ventanas-proyectadas/02.jpg",
+"obras/ventanas-proyectadas/03.jpg"
+]
+},
+{
+"slug": "ventanas-corredizas-e70",
+"nombre": "Ventanas corredizas E70",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 4,
+"fotos": [
+"obras/ventanas-corredizas-e70/01.jpg",
+"obras/ventanas-corredizas-e70/02.jpg",
+"obras/ventanas-corredizas-e70/03.jpg",
+"obras/ventanas-corredizas-e70/04.jpg"
+]
+},
+{
+"slug": "puertas-abisagradas",
+"nombre": "Puertas abisagradas",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 12,
+"fotos": [
+"obras/puertas-abisagradas/01.jpg",
+"obras/puertas-abisagradas/02.jpg",
+"obras/puertas-abisagradas/03.jpg",
+"obras/puertas-abisagradas/04.jpg",
+"obras/puertas-abisagradas/05.jpg",
+"obras/puertas-abisagradas/06.jpg",
+"obras/puertas-abisagradas/07.jpg",
+"obras/puertas-abisagradas/08.jpg",
+"obras/puertas-abisagradas/09.jpg",
+"obras/puertas-abisagradas/10.jpg",
+"obras/puertas-abisagradas/11.jpg",
+"obras/puertas-abisagradas/12.jpg"
+]
+},
+{
+"slug": "puertas-de-vidrio",
+"nombre": "Puertas de vidrio",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 4,
+"fotos": [
+"obras/puertas-de-vidrio/01.jpg",
+"obras/puertas-de-vidrio/02.jpg",
+"obras/puertas-de-vidrio/03.jpg",
+"obras/puertas-de-vidrio/04.jpg"
+]
+},
+{
+"slug": "puertas-corredizas-e70",
+"nombre": "Puertas corredizas E70",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 3,
+"fotos": [
+"obras/puertas-corredizas-e70/01.jpg",
+"obras/puertas-corredizas-e70/02.jpg",
+"obras/puertas-corredizas-e70/03.jpg"
+]
+},
+{
+"slug": "puertas-corredizas-e100",
+"nombre": "Puertas corredizas E100",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 10,
+"fotos": [
+"obras/puertas-corredizas-e100/01.jpg",
+"obras/puertas-corredizas-e100/02.jpg",
+"obras/puertas-corredizas-e100/03.jpg",
+"obras/puertas-corredizas-e100/04.jpg",
+"obras/puertas-corredizas-e100/05.jpg",
+"obras/puertas-corredizas-e100/06.jpg",
+"obras/puertas-corredizas-e100/07.jpg",
+"obras/puertas-corredizas-e100/08.jpg",
+"obras/puertas-corredizas-e100/09.jpg",
+"obras/puertas-corredizas-e100/10.jpg"
+]
+},
+{
+"slug": "puertas-corredizas-e200",
+"nombre": "Puertas corredizas E200",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 2,
+"fotos": [
+"obras/puertas-corredizas-e200/01.jpg",
+"obras/puertas-corredizas-e200/02.jpg"
+]
+},
+{
+"slug": "panos-fijos",
+"nombre": "Paños fijos",
+"cat": "puertas",
+"catLabel": "Puertas y ventanas",
+"n": 4,
+"fotos": [
+"obras/panos-fijos/01.jpg",
+"obras/panos-fijos/02.jpg",
+"obras/panos-fijos/03.jpg",
+"obras/panos-fijos/04.jpg"
 ]
 },
 {
