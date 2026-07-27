@@ -690,32 +690,43 @@ normaliza al guardar), `ops/historial.html` (datalist en el buscador, que ya era
 case-insensitive) e `index.html` (ver "Guardar → Campo NOMBRE DEL PROYECTO con autocompletar",
 sección "Proyectos guardados" más arriba).
 
-### Carpetas por obra: colapsadas por defecto + combinar duplicadas (`ops/historial.html`)
+### Carpetas por obra: navegación Cliente → Obra → Documentos (`ops/historial.html`)
 
-`renderCarpetas()` agrupa TODOS los pedidos por `(cliente+'|||'+obra).toLowerCase()` exacto — si
-la obra se escribió distinto en dos envíos (antes del autocompletar/normalización de arriba, o
-si el nombre no coincidía con nada conocido en ese momento), quedan como dos carpetas separadas
-de la misma obra real. Cada carpeta tiene un botón **"🔗 Combinar con otra"** (oculto si solo hay
-una carpeta) que despliega un `<select>` con las demás carpetas + botón "Unir aquí": con
-`confirm()` de por medio (muestra cuántos documentos se van a mover y a qué carpeta), reescribe
-`cliente`/`obra` de **todos** los pedidos de la carpeta de origen para que coincidan
-exactamente con los de la carpeta destino (`updateDoc` por cada uno) — así `renderCarpetas()` los
-agrupa juntos en el próximo `onSnapshot`. Las carpetas de la vista actual se guardan en
-`carpetasArr` (módulo) y se referencian por **índice** en los `onclick` (no por el texto de
-cliente/obra, que podría traer comillas y complicar el escapado dentro del atributo).
+Pedido explícito del usuario: la pestaña mostraba TODOS los documentos de TODAS las obras a la
+vez (una lista larga que había que desfilar). Un primer intento la colapsó en un acordeón
+(carpetas cerradas por defecto, clic para expandir en el mismo lugar) pero el usuario pidió algo
+más parecido al **Panel de Control** (`ops/index.html`): tarjetas (`.card-link`/`.grid`, mismas
+clases de `shared.css`) organizadas en 3 niveles, cada uno una pantalla propia dentro de
+`#carpetas-list`:
 
-**Carpetas reales (colapsadas por defecto).** Pedido explícito del usuario: la pestaña mostraba
-TODOS los documentos de TODAS las obras expandidos a la vez (una lista larga que había que
-desfilar). Cada carpeta ahora empieza cerrada — solo el encabezado (título, cliente, cantidad de
-documentos, y la etiqueta de tipo del documento más reciente) — y se expande/colapsa al hacer
-click en `.carpeta-top` (`window.toggleCarpeta(key)`). El estado abierto/cerrado se guarda en
-`carpetasAbiertas` (un `Set`, módulo) **por `key`** (`cliente+'|||'+obra`), no por índice: a
-diferencia de `carpetasArr` (que sí puede referenciarse por índice porque `confirmarCombinar` usa
-el array tal como está en ESE render), el índice de una carpeta cambia entre renders por el
-buscador y por el orden de "más reciente primero" — guardar el estado abierto por índice
-colapsaría o expandiría la carpeta equivocada en el siguiente `onSnapshot`. El botón "🔗 Combinar
-con otra" sigue viviendo dentro de `.carpeta-top` pero con `event.stopPropagation()` en su
-`onclick` para no disparar el toggle de la carpeta al usarlo.
+1. **Clientes** (`renderCarpetasClientes`) — un card 👤 por cliente, con cuántas obras y
+   documentos tiene en total. Es el nivel de entrada (`carpetaNivel = 'clientes'` al inicio y
+   cada vez que se hace clic en la pestaña "Carpetas por obra", ver `setVista`).
+2. **Obras** (`renderCarpetasObras`) — al abrir un cliente, un card 📁 por obra suya, con su
+   cantidad de documentos y la etiqueta del tipo del documento más reciente. Botón "← Clientes"
+   para volver.
+3. **Documentos** (`renderCarpetasDocs`) — al abrir una obra, la ficha completa de siempre (un
+   solo `.carpeta` expandido: enlaces "Ver ficha"/PDFs/firmas por documento) más el botón
+   **"🔗 Combinar con otra"** (sin cambios de comportamiento). Botón "← {Cliente}" para volver.
+
+`renderCarpetas()` sigue agrupando TODOS los pedidos por `(cliente+'|||'+obra).toLowerCase()`
+exacto en `carpetasArr` (módulo, sin filtrar) en cada render — sigue siendo la fuente que usan
+los 3 niveles y la que `toggleCombinar`/`confirmarCombinar` referencian **por índice** (para no
+tener que escapar texto libre con comillas/tildes dentro de un `onclick`).
+
+**Navegación por `data-*`, no por texto embebido en el `onclick`.** Los cards de Cliente/Obra sí
+necesitan la clave real (`cliente.toLowerCase()` / `cliente+'|||'+obra`) para sobrevivir a que
+`carpetasArr` se reordene entre renders (por búsqueda, o porque llegó un pedido nuevo y cambió
+"el más reciente primero") — un índice fijo, a diferencia de `combinar`, apuntaría a otro cliente
+distinto en el siguiente render. En vez de interpolar ese texto libre dentro de las comillas del
+`onclick` (que rompería el atributo si el nombre trae una comilla doble), el valor va en un
+atributo `data-ckey`/`data-okey` (escapado con `esc()`, como cualquier otro texto en el HTML) y
+`carpetaAbrirCliente(this)`/`carpetaAbrirObra(this)` lo leen de `this.dataset` — el navegador ya
+lo decodifica de vuelta al texto original sin que el código tenga que escaparlo a mano.
+
+`carpetaNivel`/`carpetaClienteSel`/`carpetaObraSel` (módulo) solo se resetean al nivel Clientes
+en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Firestore
+(`onSnapshot` → `renderCarpetas()`) nunca saca al usuario de la obra que está mirando.
 
 ### Notificaciones y badges
 

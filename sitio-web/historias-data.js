@@ -1,1 +1,33 @@
-window.HISTORIAS=[];
+window.HISTORIAS=[
+{
+"slug": "novedades",
+"titulo": "Novedades",
+"cover": "historias/novedades/cover.jpg",
+"n": 1,
+"slides": [
+{
+"tipo": "img",
+"src": "historias/novedades/01.jpg",
+"cap": "Hist cotiza"
+}
+]
+},
+{
+"slug": "antes-despues",
+"titulo": "Antes/Despues",
+"cover": "historias/antes-despues/cover.jpg",
+"n": 2,
+"slides": [
+{
+"tipo": "img",
+"src": "historias/antes-despues/01.jpg",
+"cap": "Cambio de puerta"
+},
+{
+"tipo": "img",
+"src": "historias/antes-despues/02.jpg",
+"cap": "Remodelacion Barandas"
+}
+]
+}
+];
