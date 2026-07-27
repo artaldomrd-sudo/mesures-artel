@@ -21,6 +21,23 @@ window.OBRAS=[
 "obras/villa-1/13.jpg",
 "obras/villa-1/14.jpg",
 "obras/villa-1/15.jpg"
+],
+"caps": [
+"Fachada baño",
+"Baranda terraza 2",
+"Baranda detalles",
+"Baranda terraza",
+"Barandas 1",
+"Escalera 1",
+"Escalera 2",
+"Fachada Escalera",
+"Puerta corrediza 2 hojas E100",
+"Puerta corrediza 4 hojas 2",
+"Puerta corrediza 4 hojas E100",
+"Puerta corrediza E100",
+"Puerta corrediza sala",
+"Techo Aluminio",
+"Terraza fachada"
 ]
 },
 {
@@ -50,6 +67,28 @@ window.OBRAS=[
 "obras/villa-2/18.jpg",
 "obras/villa-2/19.jpg",
 "obras/villa-2/20.jpg"
+],
+"caps": [
+"Portada",
+"Baranda murocortina",
+"Carbonita escalera zoom",
+"Carbonita piscina",
+"Carbonita plegable galandage3",
+"Carbonita plegable soufflet",
+"Escalera 1",
+"Escalera 2",
+"Escalera 3",
+"Escalera 4",
+"Escalera baranda",
+"Estructura techo",
+"Frente villa",
+"Frente 2",
+"Frente piscina",
+"Frente Villa",
+"",
+"",
+"Plegable galandage",
+"Plegable galandage2"
 ]
 },
 {
@@ -74,6 +113,23 @@ window.OBRAS=[
 "obras/villa-3/13.jpg",
 "obras/villa-3/14.jpg",
 "obras/villa-3/15.jpg"
+],
+"caps": [
+"Mahana1",
+"Mahana10",
+"Mahana11",
+"Mahana12",
+"Mahana13",
+"Mahana14",
+"Mahana15",
+"Mahana2",
+"Mahana3",
+"Mahana4",
+"Mahana5",
+"Mahana6",
+"Mahana7",
+"Mahana8",
+"Mahana9"
 ]
 },
 {
@@ -95,6 +151,20 @@ window.OBRAS=[
 "obras/villa-4/10.jpg",
 "obras/villa-4/11.jpg",
 "obras/villa-4/12.jpg"
+],
+"caps": [
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"Mahina 2",
+"Mahina 3"
 ]
 },
 {
@@ -115,6 +185,19 @@ window.OBRAS=[
 "obras/villa-5/09.jpg",
 "obras/villa-5/10.jpg",
 "obras/villa-5/11.jpg"
+],
+"caps": [
+"Altea1",
+"Altea10",
+"Altea11",
+"Altea2",
+"Altea3",
+"Altea4",
+"Altea5",
+"Altea6",
+"Altea7",
+"Altea8",
+"Altea9"
 ]
 },
 {
@@ -128,6 +211,12 @@ window.OBRAS=[
 "obras/villa-6/02.jpg",
 "obras/villa-6/03.jpg",
 "obras/villa-6/04.jpg"
+],
+"caps": [
+"Villacoson1",
+"Villacoson2",
+"Villacoson3",
+"Villacoson4"
 ]
 },
 {
@@ -142,6 +231,13 @@ window.OBRAS=[
 "obras/villa-7/03.jpg",
 "obras/villa-7/04.jpg",
 "obras/villa-7/05.jpg"
+],
+"caps": [
+"Plaza sabrina aereo",
+"Plaza sabrinaaereo",
+"Residencial plazasabrina",
+"Residencial sabrinaaereo",
+"Residencialsabrina"
 ]
 },
 {
@@ -153,6 +249,10 @@ window.OBRAS=[
 "fotos": [
 "obras/villa-8/01.jpg",
 "obras/villa-8/02.jpg"
+],
+"caps": [
+"Villaalain1",
+"Villaalain2"
 ]
 },
 {
@@ -164,6 +264,10 @@ window.OBRAS=[
 "fotos": [
 "obras/villa-9/01.jpg",
 "obras/villa-9/02.jpg"
+],
+"caps": [
+"",
+""
 ]
 },
 {
@@ -176,6 +280,11 @@ window.OBRAS=[
 "obras/ventanas-oscilobatientes/01.jpg",
 "obras/ventanas-oscilobatientes/02.jpg",
 "obras/ventanas-oscilobatientes/03.jpg"
+],
+"caps": [
+"",
+"",
+""
 ]
 },
 {
@@ -188,6 +297,11 @@ window.OBRAS=[
 "obras/ventanas-proyectadas/01.jpg",
 "obras/ventanas-proyectadas/02.jpg",
 "obras/ventanas-proyectadas/03.jpg"
+],
+"caps": [
+"",
+"",
+""
 ]
 },
 {
@@ -201,6 +315,12 @@ window.OBRAS=[
 "obras/ventanas-corredizas-e70/02.jpg",
 "obras/ventanas-corredizas-e70/03.jpg",
 "obras/ventanas-corredizas-e70/04.jpg"
+],
+"caps": [
+"Puerta E70 y Fachada superior",
+"Corrediza E70",
+"E70 Blanca",
+"E70 negra con ventilacion"
 ]
 },
 {
@@ -222,6 +342,20 @@ window.OBRAS=[
 "obras/puertas-abisagradas/10.jpg",
 "obras/puertas-abisagradas/11.jpg",
 "obras/puertas-abisagradas/12.jpg"
+],
+"caps": [
+"Puerta fachada",
+"",
+"",
+"Puerta con divisiones Blancas",
+"Puerta de entrada",
+"Puerta de servicio ventilacion Blanca",
+"Puerta local basura",
+"Puerta ventilacion color grafito",
+"Puerta Ventilacion+cerradura inteligente",
+"Puertacondivisiones",
+"Puertadivisiones",
+"PuertaTitan"
 ]
 },
 {
@@ -235,6 +369,12 @@ window.OBRAS=[
 "obras/puertas-de-vidrio/02.jpg",
 "obras/puertas-de-vidrio/03.jpg",
 "obras/puertas-de-vidrio/04.jpg"
+],
+"caps": [
+"Puerta doble abisagrada",
+"Puerta doble suspendida",
+"Puerta suspendida con parte fija+ Mampara de ducha",
+"Viñera"
 ]
 },
 {
@@ -247,6 +387,11 @@ window.OBRAS=[
 "obras/puertas-corredizas-e70/01.jpg",
 "obras/puertas-corredizas-e70/02.jpg",
 "obras/puertas-corredizas-e70/03.jpg"
+],
+"caps": [
+"Puerta corrediza 4 hojas Frente",
+"Puerta corrediza 4 hojas lateral",
+"Puerta pocket door 4 hojas"
 ]
 },
 {
@@ -266,6 +411,18 @@ window.OBRAS=[
 "obras/puertas-corredizas-e100/08.jpg",
 "obras/puertas-corredizas-e100/09.jpg",
 "obras/puertas-corredizas-e100/10.jpg"
+],
+"caps": [
+"",
+"",
+"E100",
+"",
+"",
+"",
+"",
+"",
+"",
+""
 ]
 },
 {
@@ -277,6 +434,10 @@ window.OBRAS=[
 "fotos": [
 "obras/puertas-corredizas-e200/01.jpg",
 "obras/puertas-corredizas-e200/02.jpg"
+],
+"caps": [
+"",
+""
 ]
 },
 {
@@ -290,6 +451,12 @@ window.OBRAS=[
 "obras/panos-fijos/02.jpg",
 "obras/panos-fijos/03.jpg",
 "obras/panos-fijos/04.jpg"
+],
+"caps": [
+"",
+"",
+"",
+""
 ]
 },
 {
@@ -325,6 +492,34 @@ window.OBRAS=[
 "obras/fachadas-techos/24.jpg",
 "obras/fachadas-techos/25.jpg",
 "obras/fachadas-techos/26.jpg"
+],
+"caps": [
+"Portadaseccion",
+"",
+"",
+"",
+"",
+"Estructura1",
+"Estructuramurocortina",
+"Fachada tubos",
+"Fachada1",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"Murocortina",
+"Palillera mahina1",
+"Palillera Mahina2",
+"Techo perfileria muro cortina color grafito",
+"Techoalu",
+"Techoalu2",
+"Techoalu3",
+"Techoreflectivo",
+"Tubos estructura"
 ]
 },
 {
@@ -349,6 +544,23 @@ window.OBRAS=[
 "obras/barandas-de-vidrio/13.jpg",
 "obras/barandas-de-vidrio/14.jpg",
 "obras/barandas-de-vidrio/15.jpg"
+],
+"caps": [
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+"",
+""
 ]
 },
 {
@@ -365,6 +577,15 @@ window.OBRAS=[
 "obras/mamparas/05.jpg",
 "obras/mamparas/06.jpg",
 "obras/mamparas/07.jpg"
+],
+"caps": [
+"",
+"",
+"",
+"",
+"",
+"",
+""
 ]
 },
 {
@@ -378,6 +599,12 @@ window.OBRAS=[
 "obras/shutters/02.jpg",
 "obras/shutters/03.jpg",
 "obras/shutters/04.jpg"
+],
+"caps": [
+"Shutter 6 metros de ancho",
+"Shutter negro",
+"Shutter negro2",
+"Shutter negro3"
 ]
 },
 {
@@ -388,6 +615,9 @@ window.OBRAS=[
 "n": 1,
 "fotos": [
 "obras/cortinas/01.jpg"
+],
+"caps": [
+""
 ]
 },
 {
@@ -400,6 +630,11 @@ window.OBRAS=[
 "obras/espejos/01.jpg",
 "obras/espejos/02.jpg",
 "obras/espejos/03.jpg"
+],
+"caps": [
+"",
+"",
+""
 ]
 },
 {
@@ -413,6 +648,12 @@ window.OBRAS=[
 "obras/decoracion/02.jpg",
 "obras/decoracion/03.jpg",
 "obras/decoracion/04.jpg"
+],
+"caps": [
+"Antes",
+"Antes",
+"Despues",
+"Despues"
 ]
 }
 ];
