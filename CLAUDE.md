@@ -690,7 +690,7 @@ normaliza al guardar), `ops/historial.html` (datalist en el buscador, que ya era
 case-insensitive) e `index.html` (ver "Guardar → Campo NOMBRE DEL PROYECTO con autocompletar",
 sección "Proyectos guardados" más arriba).
 
-### Carpetas por obra: combinar duplicadas (`ops/historial.html`)
+### Carpetas por obra: colapsadas por defecto + combinar duplicadas (`ops/historial.html`)
 
 `renderCarpetas()` agrupa TODOS los pedidos por `(cliente+'|||'+obra).toLowerCase()` exacto — si
 la obra se escribió distinto en dos envíos (antes del autocompletar/normalización de arriba, o
@@ -703,6 +703,19 @@ exactamente con los de la carpeta destino (`updateDoc` por cada uno) — así `r
 agrupa juntos en el próximo `onSnapshot`. Las carpetas de la vista actual se guardan en
 `carpetasArr` (módulo) y se referencian por **índice** en los `onclick` (no por el texto de
 cliente/obra, que podría traer comillas y complicar el escapado dentro del atributo).
+
+**Carpetas reales (colapsadas por defecto).** Pedido explícito del usuario: la pestaña mostraba
+TODOS los documentos de TODAS las obras expandidos a la vez (una lista larga que había que
+desfilar). Cada carpeta ahora empieza cerrada — solo el encabezado (título, cliente, cantidad de
+documentos, y la etiqueta de tipo del documento más reciente) — y se expande/colapsa al hacer
+click en `.carpeta-top` (`window.toggleCarpeta(key)`). El estado abierto/cerrado se guarda en
+`carpetasAbiertas` (un `Set`, módulo) **por `key`** (`cliente+'|||'+obra`), no por índice: a
+diferencia de `carpetasArr` (que sí puede referenciarse por índice porque `confirmarCombinar` usa
+el array tal como está en ESE render), el índice de una carpeta cambia entre renders por el
+buscador y por el orden de "más reciente primero" — guardar el estado abierto por índice
+colapsaría o expandiría la carpeta equivocada en el siguiente `onSnapshot`. El botón "🔗 Combinar
+con otra" sigue viviendo dentro de `.carpeta-top` pero con `event.stopPropagation()` en su
+`onclick` para no disparar el toggle de la carpeta al usarlo.
 
 ### Notificaciones y badges
 

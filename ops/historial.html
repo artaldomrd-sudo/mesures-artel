@@ -11,10 +11,15 @@
 <style>
     main { max-width: 900px; }
     #search-input, #audit-search, #carpeta-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
-    .carpeta { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid #8e44ad; }
-    .carpeta-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-    .carpeta > h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
+    .carpeta { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 16px; border-left: 6px solid #8e44ad; }
+    .carpeta.abierta { padding-bottom: 14px; }
+    .carpeta-top { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 4px 0; }
+    .carpeta-toggle-icon { flex-shrink: 0; width: 14px; color: #8e44ad; font-size: 13px; }
+    .carpeta-info { flex: 1; min-width: 0; }
+    .carpeta-info h3 { margin: 0 0 2px; color: var(--artal-blue); font-size: 16px; }
     .carpeta .cliente { font-size: 12px; color: #888; }
+    .carpeta-resumen { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+    .carpeta-count { font-size: 12px; color: #888; white-space: nowrap; }
     .combinar-btn { flex-shrink: 0; padding: 6px 10px; border: 1.5px solid #ddd; border-radius: 7px; background: #fff; color: #555; font-family: 'Arimo'; font-size: 12px; cursor: pointer; }
     .combinar-btn:hover { border-color: #8e44ad; color: #8e44ad; }
     .combinar-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; padding: 10px; background: #faf7fc; border-radius: 8px; border: 1px dashed #d9c6e8; }
@@ -550,6 +555,18 @@
     // pueden traer comillas, tildes, etc. que complicarían escaparlas dentro de un onclick).
     let carpetasArr = [];
 
+    // Carpetas abiertas (expandidas) en pantalla — guardadas por `key` (cliente+obra), no por
+    // índice, porque el orden de `carpetasArr` cambia con la búsqueda y con la fecha del
+    // documento más reciente de cada obra: un índice fijo se referiría a una carpeta distinta
+    // en el próximo render. Todas empiezan cerradas para que la lista sea compacta.
+    let carpetasAbiertas = new Set();
+
+    window.toggleCarpeta = function (key) {
+        if (carpetasAbiertas.has(key)) carpetasAbiertas.delete(key);
+        else carpetasAbiertas.add(key);
+        renderCarpetas();
+    };
+
     function renderCarpetas() {
         const term = document.getElementById('carpeta-search').value.trim().toLowerCase();
         const grupos = new Map();
@@ -558,7 +575,7 @@
             const obra = (o.obra || '').trim();
             const titulo = obra || cliente || 'Sin obra';
             const key = (cliente + '|||' + obra).toLowerCase();
-            if (!grupos.has(key)) grupos.set(key, { titulo, cliente, docs: [] });
+            if (!grupos.has(key)) grupos.set(key, { key, titulo, cliente, docs: [] });
             grupos.get(key).docs.push({ id, o });
         });
         let arr = Array.from(grupos.values());
@@ -568,14 +585,23 @@
 
         const list = document.getElementById('carpetas-list');
         if (!arr.length) { list.innerHTML = '<p class="empty">No hay obras registradas.</p>'; return; }
-        list.innerHTML = arr.map((g, i) => `
-            <div class="carpeta">
-                <div class="carpeta-top">
-                    <div>
+        list.innerHTML = arr.map((g, i) => {
+            const abierta = carpetasAbiertas.has(g.key);
+            const docsOrdenados = g.docs.slice().sort((a, b) => orderDate(b.o) - orderDate(a.o));
+            const ultimo = docsOrdenados[0].o;
+            return `
+            <div class="carpeta ${abierta ? 'abierta' : ''}">
+                <div class="carpeta-top" onclick="toggleCarpeta('${g.key.replace(/'/g, "\\'")}')">
+                    <div class="carpeta-toggle-icon">${abierta ? '▾' : '▸'}</div>
+                    <div class="carpeta-info">
                         <h3>${esc(g.titulo)}</h3>
                         ${g.cliente && g.cliente.toLowerCase() !== g.titulo.toLowerCase() ? `<div class="cliente">${esc(g.cliente)}</div>` : ''}
                     </div>
-                    ${arr.length > 1 ? `<button class="combinar-btn" onclick="toggleCombinar(${i})">🔗 Combinar con otra</button>` : ''}
+                    <div class="carpeta-resumen">
+                        <span class="carpeta-count">${g.docs.length} doc${g.docs.length === 1 ? '' : 's'}</span>
+                        ${!abierta ? `<span class="doc-tag ${docTag(ultimo).cls}">${docTag(ultimo).label}</span>` : ''}
+                    </div>
+                    ${arr.length > 1 ? `<button class="combinar-btn" onclick="event.stopPropagation(); toggleCombinar(${i})">🔗 Combinar con otra</button>` : ''}
                 </div>
                 <div class="combinar-row" id="combinar-row-${i}" style="display:none;">
                     <select id="combinar-select-${i}">
@@ -585,7 +611,7 @@
                     <button class="btn-ok" onclick="confirmarCombinar(${i})">Unir aquí</button>
                     <button class="btn-cancel" onclick="toggleCombinar(${i})">Cancelar</button>
                 </div>
-                ${g.docs.slice().sort((a, b) => orderDate(b.o) - orderDate(a.o)).map(({ id, o }) => {
+                ${abierta ? docsOrdenados.map(({ id, o }) => {
                     const t = docTag(o);
                     const links = [];
                     if (o.docType !== 'COMPRA_DIRECTA') links.push(`<a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha</a>`);
@@ -602,8 +628,9 @@
                         </div>
                         <div class="doc-links">${links.join('')}</div>
                     </div>`;
-                }).join('')}
-            </div>`).join('');
+                }).join('') : ''}
+            </div>`;
+        }).join('');
     }
 
     document.getElementById('carpeta-search').addEventListener('input', renderCarpetas);
