@@ -8,7 +8,7 @@ window.HISTORIAS=[
 {
 "tipo": "img",
 "src": "historias/novedades/01.jpg",
-"cap": "Hist cotiza"
+"cap": "Tu proyecto en mente ?"
 }
 ]
 },
