@@ -17,6 +17,8 @@
     .signature-canvas { width: 100%; max-width: 320px; height: 130px; border: 1.5px solid #ddd; border-radius: 7px; background: #fff; touch-action: none; display: block; }
     .signature-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
     .signature-row button { background: transparent; border: 1.5px solid #ccc; color: #666; border-radius: 7px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: 'Arimo'; }
+    .btn-enruta { background: #3498db; color: #fff; }
+    .enruta-badge { font-size: 12.5px; color: #3498db; font-weight: bold; margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -70,11 +72,13 @@
         const resuelto = checklistResuelto(o);
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcial = o.status === 'parcialmente_listo';
+        const enRuta = o.enRuta === true;
         const metaLine = esCompra
             ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>`
             : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>`;
+        const borderColor = esParcial ? '#e67e22' : (enRuta ? '#3498db' : '');
         return `
-        <div class="order-card" ${esParcial ? 'style="border-left-color:#e67e22;"' : ''}>
+        <div class="order-card" ${borderColor ? `style="border-left-color:${borderColor};"` : ''}>
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
             </div>
@@ -84,7 +88,9 @@
             </div>
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
+            ${enRuta ? '<div class="enruta-badge">🚚 En ruta</div>' : ''}
             <div class="actions">
+                ${enRuta ? '' : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
                 <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
                 ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
             </div>
@@ -121,6 +127,12 @@
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+
+    // El chofer marca "En ruta" apenas recoge el pedido — puramente informativo (no bloquea ni
+    // exige nada para llegar a "Entregado"), solo para que se sepa que ya salió a la calle.
+    window.marcarEnRuta = async function (id) {
+        await updateDoc(doc(db, 'orders', id), { enRuta: true, fechaEnRuta: serverTimestamp() });
+    };
 
     window.abrirRecepcion = function (id) {
         const form = document.getElementById('recepcion-' + id);
