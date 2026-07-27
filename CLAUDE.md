@@ -733,26 +733,46 @@ cliente/obra, que podría traer comillas y complicar el escapado dentro del atri
   tipo de gap que ya podía pasarle a cualquiera si el tick caía justo tarde), sin tocar
   `procesarRecordatorios` (la función singular vieja, solo de compatibilidad — ningún flujo
   actual escribe `recordarAntesMin`, todo pasa por el array `recordatorios`).
-- **"¿Para quién es?" → "Gerencia"** (antes "Para mí (gerente)"): al elegir Gerencia aparece un
-  `<select id="cita-gerencia">` con **Andrea / Anny / Dylan** fijos (a propósito, no derivados
-  de `usuarios` con rol admin — más simple y no depende de que esos 3 usuarios ya estén
-  cargados/con el rol correcto en Firestore). `guardarCita()` busca el email de la persona
-  elegida en `adminsCache` (la misma lista que ya se traía para el select de "quién agenda") y
-  lo usa como `asignadoEmail` — **antes** siempre era `auth.currentUser.email` (quien creaba el
-  evento), lo cual estaba bien cuando "gerente" no distinguía persona, pero ahora el push tiene
-  que llegarle a la persona elegida, no a quien lo agenda. Si esa persona no tiene un `usuarios`
-  doc con rol admin coincidente, cae a `auth.currentUser.email` (fallback silencioso, mismo
-  estilo que el resto de la sincronización con Firestore de esta app).
+- **"¿Para quién es?" → "Gerencia"** (antes "Para mí (gerente)"): al elegir Gerencia aparecen
+  checkboxes con **Andrea / Anny / Dylan** fijos (a propósito, no derivados de `usuarios` con
+  rol admin — más simple y no depende de que esos 3 usuarios ya estén cargados/con el rol
+  correcto en Firestore).
+- **Varias personas por evento** (`asignados: [{email, nombre}]`, reemplaza a los viejos campos
+  singulares `asignadoEmail`/`asignadoNombre`): tanto "¿Quién de gerencia?" como "¿Quién del
+  equipo de instalación?" son ahora **checkboxes** (`.personas-group`, no `<select>`) — se puede
+  marcar más de una persona para el mismo evento/recordatorio, cada una recibe su propio push.
+  `guardarCita()` arma `asignados` a partir de las casillas marcadas; para gerencia busca el
+  email de cada nombre en `adminsCache` (fallback a `auth.currentUser.email` si esa persona no
+  tiene un `usuarios` doc con rol admin coincidente — mismo estilo silencioso que el resto de la
+  sincronización con Firestore de esta app). **Compatibilidad con eventos viejos** (un solo
+  campo, de antes de esto): `asignadosDe(c)` es la ÚNICA función que debe leer quién está
+  asignado a un evento (la usan `citaCardHTML`, `esDePersona`, `modificarCita`) — si no hay
+  `asignados`, arma un array de 1 a partir de `asignadoEmail`/`asignadoNombre`.
+  - **Cloud Functions también actualizadas** (`functions/index.js`): `enviarNotificacionCita`
+    (push inmediato al crear) y `procesarRecordatoriosMulti` (recordatorios programados) ahora
+    mandan un push **por cada persona** en `asignados` (helper `emailsAsignados(cita)`, misma
+    lógica de compatibilidad que `asignadosDe()` del lado del cliente) — antes solo le llegaba a
+    una. `instalaciones` (colección aparte, `ops/instalaciones.html`) no se tocó, sigue con un
+    solo `instaladorEmail`. **Recordar desplegar** (`firebase deploy --only functions`) — ver
+    nota de deploy pendiente más abajo.
+- **"Gerente" (genérico, sin persona) ya no es una opción válida — se normaliza a "Dylan".**
+  Antes de tener el selector Andrea/Anny/Dylan, los eventos de gerencia se guardaban con
+  `asignadoNombre:'Gerente'` sin distinguir quién. Pedido explícito del usuario: sacar esa
+  opción de la vista y que lo que hoy dice "Gerente" se lea como Dylan. `asignadosDe(c)` hace
+  esta normalización automáticamente para cualquier evento con `asignadoA==='gerente'`
+  (`normalizaNombreGerencia`: nombre vacío o `'gerente'` case-insensitive → `'Dylan'`,
+  conservando el email real que ya tuviera guardado) — como es la única función que lee quién
+  está asignado, la normalización aplica sola en la tarjeta, el filtro por persona, y el
+  formulario de "Modificar" (que ya no necesita inyectar una opción "Gerente" dinámica). Al
+  guardar de nuevo un evento viejo así (aunque sea sin cambiar nada), `guardarCita()` escribe
+  `asignados:[{nombre:'Dylan',...}]` de verdad — se corrige solo con el uso normal, sin
+  necesidad de una migración manual de datos en Firestore.
 - **Secciones Todos/Anny/Andrea/Dylan** (`#persona-tabs`, `filtroPersona`, `citasParaFiltro()`):
-  filtra `allCitas` por `asignadoA==='gerente' && asignadoNombre===persona` — se aplica tanto a
-  los puntos de la grilla (`renderGrid()`) como a la lista de eventos (`render()`), en las dos
-  vistas (mes y día). Un evento asignado al equipo de instalación **no** entra en ninguna de las
-  3 secciones personales (solo se ve en "Todos") — no es "de" ninguna de las 3 personas de
-  gerencia, es del equipo de instalación. Eventos viejos con `asignadoNombre:'Gerente'`
-  (genérico, de antes de este cambio) tampoco caen en ninguna sección personal por el mismo
-  motivo — se siguen viendo en "Todos", y al abrir "✏ Modificar" se puede elegir la persona real
-  (`modificarCita()` inserta esa opción extra en el `<select>` si no coincide con ninguna de las
-  3, mismo patrón defensivo que ya usaba el select de "quién agenda").
+  filtra `allCitas` por `asignadoA==='gerente' && asignadosDe(c).some(p => p.nombre===persona)`
+  — se aplica tanto a los puntos de la grilla (`renderGrid()`) como a la lista de eventos
+  (`render()`), en las dos vistas (mes y día). Un evento asignado al equipo de instalación
+  **no** entra en ninguna de las 3 secciones personales (solo se ve en "Todos") — no es "de"
+  ninguna de las 3 personas de gerencia, es del equipo de instalación.
 
 ## Convenciones aprendidas (para no repetir errores)
 

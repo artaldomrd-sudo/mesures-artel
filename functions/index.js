@@ -20,18 +20,24 @@ async function tokenDe(email) {
     return s.exists ? (s.data().fcmToken || null) : null;
 }
 
+// Una cita/recordatorio puede tener VARIAS personas asignadas (`asignados: [{email,nombre}]`,
+// ver ops/calendario.html) — antes solo admitía una (`asignadoEmail`/`asignadoNombre`). Se
+// mantiene compatibilidad con citas viejas que todavía tienen solo el campo singular.
+function emailsAsignados(cita) {
+    if (Array.isArray(cita.asignados) && cita.asignados.length) {
+        return cita.asignados.map((a) => a && a.email).filter(Boolean);
+    }
+    return cita.asignadoEmail ? [cita.asignadoEmail] : [];
+}
+
 // Se dispara al crear una cita en ops/calendario.html. Manda un push (solo "data", el service
-// worker en sw.js decide cómo mostrarlo) a quien esté asignado — o al gerente que la creó, si
-// la cita es para él mismo. No hace nada si esa persona nunca activó notificaciones (no tiene
-// fcmToken guardado en usuarios/{email}).
+// worker en sw.js decide cómo mostrarlo) a cada persona asignada — o al gerente que la creó, si
+// la cita es para él mismo. No hace nada con quien nunca activó notificaciones (sin fcmToken
+// guardado en usuarios/{email}).
 exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (event) => {
     const cita = event.data.data();
-    const email = cita.asignadoEmail;
-    if (!email) return;
-
-    const userSnap = await db.collection('usuarios').doc(email).get();
-    const token = userSnap.exists ? userSnap.data().fcmToken : null;
-    if (!token) return;
+    const emails = emailsAsignados(cita);
+    if (!emails.length) return;
 
     const fecha = cita.fecha && cita.fecha.toDate ? cita.fecha.toDate() : null;
     const fechaTexto = fecha
@@ -39,17 +45,21 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
         : '';
     const lugar = [cita.cliente, cita.obra].filter(Boolean).join(' — ');
 
-    try {
-        await getMessaging().send({
-            token,
-            data: {
-                title: 'Nueva cita: ' + (cita.titulo || 'Sin título'),
-                body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                url: 'ops/calendario.html'
-            }
-        });
-    } catch (e) {
-        console.error('No se pudo enviar la notificación de la cita', event.params.citaId, e);
+    for (const email of emails) {
+        const token = await tokenDe(email);
+        if (!token) continue;
+        try {
+            await getMessaging().send({
+                token,
+                data: {
+                    title: 'Nueva cita: ' + (cita.titulo || 'Sin título'),
+                    body: [fechaTexto, lugar].filter(Boolean).join(' · '),
+                    url: 'ops/calendario.html'
+                }
+            });
+        } catch (e) {
+            console.error('No se pudo enviar la notificación de la cita', event.params.citaId, email, e);
+        }
     }
 });
 
@@ -92,7 +102,10 @@ async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix)
 // Múltiples recordatorios por evento: `recordatorios` es un array de minutos-antes (ej. [30,1440]).
 // `recordatoriosEnviados` guarda los que ya se mandaron; `recordatoriosPendientes` es true mientras
 // falte alguno por enviar y el evento no haya pasado (se usa para la consulta).
-async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPrefix) {
+// `getEmails(d)` reemplaza al viejo `campoEmail` (nombre de campo fijo) para poder mandarle el
+// mismo aviso a VARIAS personas a la vez (citas con `asignados: [{email,nombre}]`) sin tocar
+// `instalaciones`, que sigue con un solo `instaladorEmail`.
+async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPrefix) {
     const ahora = Date.now();
     const snap = await db.collection(coll).where('recordatoriosPendientes', '==', true).get();
     for (const docu of snap.docs) {
@@ -107,10 +120,11 @@ async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPr
             if (enviados.includes(off)) continue;
             if (ahora < fecha - off * 60000) continue; // aún no toca este aviso
             if (ahora <= fecha + GRACE_MS) {
-                const token = await tokenDe(d[campoEmail]);
-                if (token) {
-                    const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
-                    const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
+                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
+                const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
+                for (const email of getEmails(d)) {
+                    const token = await tokenDe(email);
+                    if (!token) continue;
                     try {
                         await getMessaging().send({
                             token,
@@ -121,7 +135,7 @@ async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPr
                             }
                         });
                     } catch (e) {
-                        console.error('No se pudo enviar el recordatorio', coll, docu.id, off, e);
+                        console.error('No se pudo enviar el recordatorio', coll, docu.id, off, email, e);
                     }
                 }
             }
@@ -137,9 +151,10 @@ async function procesarRecordatoriosMulti(coll, campoEmail, urlDestino, tituloPr
 
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     // Nuevo esquema (varios avisos por evento)
-    await procesarRecordatoriosMulti('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
-    await procesarRecordatoriosMulti('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
-    // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso)
+    await procesarRecordatoriosMulti('citas', emailsAsignados, 'ops/calendario.html', 'Recordatorio: ');
+    await procesarRecordatoriosMulti('instalaciones', (d) => d.instaladorEmail ? [d.instaladorEmail] : [], 'ops/instalaciones.html', 'Instalación próxima: ');
+    // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso,
+    // siempre una sola persona — no aplica lo de "varias personas", es de antes de eso)
     await procesarRecordatorios('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
     await procesarRecordatorios('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
 });

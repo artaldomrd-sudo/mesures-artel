@@ -73,6 +73,9 @@
     .recordar-group { display: flex; flex-direction: column; gap: 6px; }
     .recordar-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
     .recordar-group input { width: auto; min-height: 0; }
+    .personas-group { display: flex; flex-direction: column; gap: 6px; }
+    .personas-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
+    .personas-group input { width: auto; min-height: 0; }
 </style>
 </head>
 <body>
@@ -177,17 +180,17 @@
         </div>
 
         <div id="gerencia-select-wrap">
-            <label>¿Quién de gerencia?</label>
-            <select id="cita-gerencia">
-                <option value="Andrea">Andrea</option>
-                <option value="Anny">Anny</option>
-                <option value="Dylan">Dylan</option>
-            </select>
+            <label>¿Quién de gerencia? (puedes marcar varios)</label>
+            <div id="cita-gerencia" class="personas-group">
+                <label><input type="checkbox" value="Andrea"> Andrea</label>
+                <label><input type="checkbox" value="Anny"> Anny</label>
+                <label><input type="checkbox" value="Dylan"> Dylan</label>
+            </div>
         </div>
 
         <div id="instalador-select-wrap" style="display:none;">
-            <label>Instalador asignado</label>
-            <select id="cita-instalador"></select>
+            <label>¿Quién del equipo de instalación? (puedes marcar varios)</label>
+            <div id="cita-instalador" class="personas-group"></div>
         </div>
 
         <label>¿Quién está agendando esto?</label>
@@ -237,8 +240,27 @@
         return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
     }
 
+    // "Gerente" (genérico, sin persona — de antes de que existiera el selector Andrea/Anny/
+    // Dylan) ya no es una opción válida: se normaliza directo a "Dylan" en todos lados donde se
+    // lee un evento, para que nunca vuelva a aparecer como opción ni haya que elegirlo a mano.
+    function normalizaNombreGerencia(nombre) {
+        const n = (nombre || '').trim();
+        return (!n || n.toLowerCase() === 'gerente') ? 'Dylan' : n;
+    }
+
+    // Lista de personas asignadas — un evento puede tener varias (`asignados:
+    // [{email,nombre}]`). Compatible con eventos viejos que solo tienen el campo singular
+    // `asignadoEmail`/`asignadoNombre` (de antes de poder elegir varios a la vez).
+    function asignadosDe(c) {
+        let lista;
+        if (Array.isArray(c.asignados) && c.asignados.length) lista = c.asignados;
+        else if (c.asignadoEmail || c.asignadoNombre) lista = [{ email: c.asignadoEmail || '', nombre: c.asignadoNombre || '' }];
+        else return [];
+        if (c.asignadoA !== 'gerente') return lista;
+        return lista.map(p => ({ ...p, nombre: normalizaNombreGerencia(p.nombre) }));
+    }
     function esDePersona(c, persona) {
-        return c.asignadoA === 'gerente' && (c.asignadoNombre || '') === persona;
+        return c.asignadoA === 'gerente' && asignadosDe(c).some(p => (p.nombre || '') === persona);
     }
     function citasParaFiltro(arr) {
         return filtroPersona === 'todos' ? arr : arr.filter(c => esDePersona(c, filtroPersona));
@@ -309,6 +331,7 @@
         let horaTxt = fmtHora(fecha);
         if (!esRec && dur > 0) horaTxt = fmtHora(fecha) + '–' + fmtHora(new Date(fecha.getTime() + dur * 60000));
         const hecha = !!c.completada;
+        const nombresAsignados = asignadosDe(c).map(p => p.nombre).filter(Boolean).join(', ') || 'Gerencia';
         const borde = esRec ? '' : `style="border-left-color:${colorCreador(c.creadoPorNombre)};"`;
         const acciones = hecha
             ? `<button class="btn-reabrir" onclick="reabrirCita('${c.id}')">↩ Reabrir</button>
@@ -323,7 +346,7 @@
                 <span class="hora">${horaTxt}</span>
             </div>
             <div class="meta">
-                ${c.asignadoA === 'instalador' ? '🔧 ' + esc(c.asignadoNombre) : '👤 ' + esc(c.asignadoNombre || 'Gerencia')}
+                ${c.asignadoA === 'instalador' ? '🔧 ' : '👤 '}${esc(nombresAsignados)}
                 ${lugar ? ' · ' + esc(lugar) : ''}
                 ${c.descripcion ? '<br>' + esc(c.descripcion) : ''}
                 <br>Agendado por ${esc(c.creadoPorNombre)}
@@ -432,9 +455,12 @@
 
     onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'instalador')), (snap) => {
         instaladoresCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
-        const sel = document.getElementById('cita-instalador');
-        sel.innerHTML = instaladoresCache.map(u => `<option value="${esc(u.email)}">${esc(u.nombre)}</option>`).join('')
-            || '<option value="">(no hay instaladores registrados)</option>';
+        const wrap = document.getElementById('cita-instalador');
+        // Conserva los que ya estaban marcados si la lista se actualiza con el modal abierto.
+        const marcados = new Set([...wrap.querySelectorAll('input:checked')].map(i => i.value));
+        wrap.innerHTML = instaladoresCache.length
+            ? instaladoresCache.map(u => `<label><input type="checkbox" value="${esc(u.email)}" ${marcados.has(u.email) ? 'checked' : ''}> ${esc(u.nombre)}</label>`).join('')
+            : '<span style="font-size:13px;color:#888;">(no hay instaladores registrados)</span>';
     });
 
     function resetForm() {
@@ -444,7 +470,7 @@
         document.getElementById('cita-fecha').value = '';
         document.getElementById('cita-duracion').value = '60';
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
-        document.getElementById('cita-gerencia').value = 'Andrea';
+        document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
         setTipoEvento('cita');
         setTipoCita('libre');
         setAsignadoA('gerente');
@@ -502,20 +528,29 @@
             cliente = o.data.cliente || ''; obra = o.data.obra || '';
         }
 
-        let asignadoEmail = '', asignadoNombre = '';
+        // Puede ir a varias personas a la vez (gerencia o instalación) — cada una recibe su
+        // propio push. `asignados` reemplaza a los viejos campos singulares `asignadoEmail`/
+        // `asignadoNombre` (que solo admitían una persona); esos siguen leyéndose para eventos
+        // creados antes de esto (ver asignadosDe()/emailsAsignados()).
+        let asignados = [];
         if (asignadoA === 'gerente') {
-            asignadoNombre = document.getElementById('cita-gerencia').value;
-            // El push tiene que llegarle a la persona elegida, no a quien está creando el
-            // evento — si su usuario no tiene el rol admin cargado con ese nombre exacto, cae
-            // a la cuenta conectada para no dejar el campo vacío (fallback silencioso, igual que
-            // el resto de la sincronización con Firestore en esta app).
-            const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === asignadoNombre.toLowerCase());
-            asignadoEmail = persona ? persona.email : auth.currentUser.email;
+            const nombresMarcados = Array.from(document.querySelectorAll('#cita-gerencia input:checked')).map(c => c.value);
+            if (!nombresMarcados.length) { alert('Marca al menos una persona de gerencia.'); return; }
+            asignados = nombresMarcados.map(nombre => {
+                // El push tiene que llegarle a la persona elegida, no a quien está creando el
+                // evento — si su usuario no tiene el rol admin cargado con ese nombre exacto,
+                // cae a la cuenta conectada para no dejar el campo vacío (fallback silencioso,
+                // igual que el resto de la sincronización con Firestore en esta app).
+                const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+                return { nombre, email: persona ? persona.email : auth.currentUser.email };
+            });
         } else {
-            asignadoEmail = document.getElementById('cita-instalador').value;
-            const inst = instaladoresCache.find(x => x.email === asignadoEmail);
-            if (!inst) { alert('Selecciona un instalador.'); return; }
-            asignadoNombre = inst.nombre;
+            const emailsMarcados = Array.from(document.querySelectorAll('#cita-instalador input:checked')).map(c => c.value);
+            if (!emailsMarcados.length) { alert('Marca al menos un instalador.'); return; }
+            asignados = emailsMarcados.map(email => {
+                const inst = instaladoresCache.find(x => x.email === email);
+                return { email, nombre: inst ? inst.nombre : email };
+            });
         }
 
         const recordatorios = Array.from(document.querySelectorAll('#cita-recordar input:checked')).map(c => Number(c.value));
@@ -527,7 +562,7 @@
             fecha: Timestamp.fromDate(new Date(fechaStr)),
             duracionMin,
             orderId, cliente, obra,
-            asignadoA, asignadoEmail, asignadoNombre,
+            asignadoA, asignados,
             creadoPorNombre,
             recordatorios,
             recordatoriosEnviados: [],
@@ -600,18 +635,34 @@
         if (c.orderId) document.getElementById('cita-pedido').value = c.orderId;
         // Para quién
         setAsignadoA(c.asignadoA === 'instalador' ? 'instalador' : 'gerente');
+        const asignados = asignadosDe(c);
         if (c.asignadoA === 'instalador') {
-            document.getElementById('cita-instalador').value = c.asignadoEmail || '';
+            const wrap = document.getElementById('cita-instalador');
+            asignados.forEach(a => {
+                let chk = wrap.querySelector(`input[value="${CSS.escape(a.email || '')}"]`);
+                // Instalador que ya no está en la lista actual (ej. cambió de rol) — se agrega
+                // igual, en vez de perder silenciosamente el dato viejo (mismo criterio que
+                // "quién agenda" más abajo).
+                if (!chk && a.email) {
+                    wrap.insertAdjacentHTML('beforeend', `<label><input type="checkbox" value="${esc(a.email)}"> ${esc(a.nombre || a.email)}</label>`);
+                    chk = wrap.querySelector(`input[value="${CSS.escape(a.email)}"]`);
+                }
+                if (chk) chk.checked = true;
+            });
         } else {
             // Eventos creados antes de este cambio traen asignadoNombre:'Gerente' (genérico,
-            // sin persona) — no coincide con ninguna opción del select, así que se agrega
-            // igual que "quién agenda" arriba, en vez de perder silenciosamente el dato viejo.
-            const selG = document.getElementById('cita-gerencia');
-            const nombreG = c.asignadoNombre || 'Andrea';
-            if (![...selG.options].some(o => o.value === nombreG)) {
-                selG.insertAdjacentHTML('beforeend', `<option value="${esc(nombreG)}">${esc(nombreG)}</option>`);
-            }
-            selG.value = nombreG;
+            // sin persona) — no coincide con ninguna de las 3 casillas fijas, así que se agrega
+            // igual, en vez de perder silenciosamente el dato viejo.
+            const wrap = document.getElementById('cita-gerencia');
+            (asignados.length ? asignados : [{ nombre: 'Andrea' }]).forEach(a => {
+                const nombre = a.nombre || 'Andrea';
+                let chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
+                if (!chk) {
+                    wrap.insertAdjacentHTML('beforeend', `<label><input type="checkbox" value="${esc(nombre)}"> ${esc(nombre)}</label>`);
+                    chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
+                }
+                if (chk) chk.checked = true;
+            });
         }
         // Quién agenda
         if (c.creadoPorNombre) {
