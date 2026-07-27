@@ -702,25 +702,69 @@ clases de `shared.css`) organizadas en 3 niveles, cada uno una pantalla propia d
 1. **Clientes** (`renderCarpetasClientes`) — un card 👤 por cliente, con cuántas obras y
    documentos tiene en total. Es el nivel de entrada (`carpetaNivel = 'clientes'` al inicio y
    cada vez que se hace clic en la pestaña "Carpetas por obra", ver `setVista`).
-2. **Obras** (`renderCarpetasObras`) — al abrir un cliente, un card 📁 por obra suya, con su
-   cantidad de documentos y la etiqueta del tipo del documento más reciente. Botón "← Clientes"
-   para volver.
-3. **Documentos** (`renderCarpetasDocs`) — al abrir una obra, la ficha completa de siempre (un
-   solo `.carpeta` expandido: enlaces "Ver ficha"/PDFs/firmas por documento) más el botón
-   **"🔗 Combinar con otra"** (sin cambios de comportamiento). Botón "← {Cliente}" para volver.
+2. **Obras** (`renderCarpetasObras`) — al abrir un cliente, un card 📁 por **proyecto** suyo
+   (ver "Agrupar por proyecto" más abajo — puede incluir varias obras fusionadas), con la
+   cantidad total de documentos y la etiqueta del tipo del documento más reciente. Botón
+   "← Clientes" para volver.
+3. **Documentos** (`renderCarpetasDocs`) — al abrir un proyecto, la ficha completa de siempre:
+   enlaces "Ver ficha"/PDFs/firmas por documento, dentro de un solo `.carpeta` expandido. Si el
+   proyecto fusiona varias obras, cada documento muestra además su propio texto de obra original
+   (`.carpeta-doc-obra`, ej. "Casa Aarón barandas") cuando difiere del título de la carpeta, para
+   no perder esa distinción. Botón "← {Cliente}" para volver.
 
-`renderCarpetas()` sigue agrupando TODOS los pedidos por `(cliente+'|||'+obra).toLowerCase()`
-exacto en `carpetasArr` (módulo, sin filtrar) en cada render — sigue siendo la fuente que usan
-los 3 niveles y la que `toggleCombinar`/`confirmarCombinar` referencian **por índice** (para no
-tener que escapar texto libre con comillas/tildes dentro de un `onclick`).
+`renderCarpetas()` sigue agrupando TODOS los pedidos por `cliente+'|||'+obra` (normalizado, ver
+abajo) en `carpetasArr` (módulo, sin filtrar) en cada render — sigue siendo la fuente que usan
+los 3 niveles.
 
-**Navegación por `data-*`, no por texto embebido en el `onclick`.** Los cards de Cliente/Obra sí
-necesitan la clave real (`cliente.toLowerCase()` / `cliente+'|||'+obra`) para sobrevivir a que
-`carpetasArr` se reordene entre renders (por búsqueda, o porque llegó un pedido nuevo y cambió
-"el más reciente primero") — un índice fijo, a diferencia de `combinar`, apuntaría a otro cliente
-distinto en el siguiente render. En vez de interpolar ese texto libre dentro de las comillas del
-`onclick` (que rompería el atributo si el nombre trae una comilla doble), el valor va en un
-atributo `data-ckey`/`data-okey` (escapado con `esc()`, como cualquier otro texto en el HTML) y
+**Agrupación insensible a mayúsculas/acentos (`normTexto`).** Antes la clave de agrupación era
+`.toLowerCase()` a secas, así que "Casa Aarón" y "casa aaron" (mismo nombre, un acento de
+diferencia) quedaban en dos carpetas separadas — reportado por el usuario con un caso real
+("Casa Aarón barandas" / "Casa arron completivo" / "Casa Aarón" bajo el mismo cliente). La clave
+de `carpetasArr` ahora usa `normTexto(s)` (`trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,
+'')`, el mismo truco estándar de "descomponer y quitar los diacríticos") en vez de
+`.toLowerCase()` — aplicado también al filtro de búsqueda y a la comparación de cliente
+seleccionado en `renderCarpetasObras`. Esto solo une carpetas cuyo nombre es **exactamente el
+mismo** salvo mayúsculas/acentos — el paso siguiente (`agruparPorProyecto`) es el que junta
+nombres genuinamente distintos que son la misma obra.
+
+**Agrupar por proyecto (`agruparPorProyecto`, `mismoProyecto`).** Pedido explícito del usuario:
+una obra medida/cotizada en partes (ej. "Casa Aarón ventanas" + "Casa Aarón barandas", o "Altea
+Villa 11 ventanas" + "Altea Villa 11 barandas") es UN solo proyecto para el negocio, aunque cada
+parte se haya guardado con un nombre de obra distinto — deben verse en la misma carpeta al nivel
+de Obras. `renderCarpetasObras`/`renderCarpetasDocs` corren `agruparPorProyecto` sobre las obras
+YA agrupadas por `normTexto` de un mismo cliente, uniendo (unión-búsqueda, para que la
+transitividad funcione: A+B y B+C → A/B/C juntos aunque A y C solas no calcen) las que
+`mismoProyecto(wa, wb)` considera el mismo proyecto, comparando palabra por palabra (nunca por
+caracteres — "Casa Bel" nunca matchea "Casa Beltrán"), con dos patrones:
+  1. **Extensión**: todas las palabras de la obra más corta calzan al principio de la más larga
+     (ej. "Casa Aarón" + "Casa Aarón barandas").
+  2. **Mismo largo, difieren solo en la última palabra** (ej. "Altea Villa 11 ventanas" +
+     "Altea Villa 11 barandas" — ninguna es prefijo de la otra). Exige al menos 3 palabras: con
+     solo 2 ("Villa Marisa" vs "Villa Castillo") la primera palabra sola no es suficiente
+     evidencia de que sea el mismo sitio — probado con ese caso exacto para no fusionarlo.
+La obra con menos palabras del grupo resultante es la "raíz": su texto es el nombre del
+proyecto (el título del card en Obras y el encabezado en Documentos); `rootKey` (el texto de la
+raíz, unión de sus palabras normalizadas) es la clave estable que usa `data-okey`/
+`carpetaObraSel` para sobrevivir a que el array se reordene entre renders.
+
+**Sin botón de combinar manual.** Hubo un `"🔗 Combinar con otra"` (con `confirm()`, reescribía
+`cliente`/`obra` de todos los documentos de una carpeta para unirla con otra) — se quitó a
+pedido explícito del usuario una vez que la navegación Cliente → Obra + el agrupado automático
+por proyecto (de arriba) dejaron todo lo suficientemente organizado como para no necesitarlo. Si
+alguna vez hace falta unir dos carpetas que `agruparPorProyecto` no detecta como el mismo
+proyecto, hay que hacerlo a mano editando `cliente`/`obra` de los pedidos correspondientes en
+Firestore (no hay una herramienta de autoservicio para eso). **Idea pendiente, pedida
+explícitamente por el usuario pero marcada "eventualmente" (no urgente):** una opción para mover
+un documento/proyecto a otra carpeta a mano, por si alguna vez queda mal clasificado — no
+implementada todavía.
+
+**Navegación por `data-*`, no por texto embebido en el `onclick`.** Los cards de Cliente/Obra
+necesitan la clave real (`normTexto(cliente)` / `normTexto(cliente)+'|||'+normTexto(obra)`) para
+sobrevivir a que `carpetasArr` se reordene entre renders (por búsqueda, o porque llegó un pedido
+nuevo y cambió "el más reciente primero") — un índice fijo apuntaría a otro cliente distinto en
+el siguiente render. En vez de interpolar ese texto libre dentro de las comillas del `onclick`
+(que rompería el atributo si el nombre trae una comilla doble), el valor va en un atributo
+`data-ckey`/`data-okey` (escapado con `esc()`, como cualquier otro texto en el HTML) y
 `carpetaAbrirCliente(this)`/`carpetaAbrirObra(this)` lo leen de `this.dataset` — el navegador ya
 lo decodifica de vuelta al texto original sin que el código tenga que escaparlo a mano.
 
