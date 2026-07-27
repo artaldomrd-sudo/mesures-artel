@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARTAL — Chofer</title>
+<title>ARTAL — Transportes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
@@ -27,7 +27,7 @@
     <div class="header-title">
         <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
         <img class="logo" src="../logo.png" alt="ARTAL">
-        <h1>Chofer</h1>
+        <h1>Transportes</h1>
     </div>
     <div class="who">
         <span id="user-name"></span>
@@ -37,6 +37,11 @@
 </header>
 
 <main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-espera" onclick="setTab('espera')">En espera</button>
+        <button class="tab-btn" id="tab-ruta" onclick="setTab('ruta')">En ruta</button>
+        <button class="tab-btn" id="tab-entregado" onclick="setTab('entregado')">Entregado</button>
+    </div>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
 </main>
 
@@ -73,10 +78,29 @@
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcial = o.status === 'parcialmente_listo';
         const enRuta = o.enRuta === true;
+        const entregado = o.entregado === true;
         const metaLine = esCompra
             ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>`
             : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>`;
-        const borderColor = esParcial ? '#e67e22' : (enRuta ? '#3498db' : '');
+        const borderColor = entregado ? '#999' : (esParcial ? '#e67e22' : (enRuta ? '#3498db' : ''));
+
+        // Pestaña "Entregado": solo lectura, sin formulario de recepción ni acciones de estado.
+        if (entregado) {
+            const rec = o.recepcionInstalador || {};
+            const fecha = o.fechaEntregado && o.fechaEntregado.toDate ? o.fechaEntregado.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+            return `
+            <div class="order-card" style="border-left-color:${borderColor};">
+                <div class="order-head">
+                    <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                </div>
+                <div class="order-meta">
+                    ${metaLine}
+                    ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
+                </div>
+                <div class="enruta-badge" style="color:#2ecc71;">✓ Entregado${fecha ? ' — ' + esc(fecha) : ''}${rec.nombre ? ' · recibió ' + esc(rec.nombre) : ''}</div>
+            </div>`;
+        }
+
         return `
         <div class="order-card" ${borderColor ? `style="border-left-color:${borderColor};"` : ''}>
             <div class="order-head">
@@ -108,22 +132,49 @@
     }
 
     let signaturePads = {};
+    let currentTab = 'espera';
+    let allDocs = [];
+
+    window.setTab = function (tab) {
+        currentTab = tab;
+        document.getElementById('tab-espera').classList.toggle('active', tab === 'espera');
+        document.getElementById('tab-ruta').classList.toggle('active', tab === 'ruta');
+        document.getElementById('tab-entregado').classList.toggle('active', tab === 'entregado');
+        render(allDocs);
+    };
 
     function render(docs) {
+        allDocs = docs;
         const list = document.getElementById('orders-list');
         // La asignación (ver historial.html) es solo informativa: cualquier chofer ve todos los
         // pedidos, así uno puede cubrir al otro si falta.
-        const pendientes = docs.filter(d => !d.data().entregado);
+        let filtrados;
+        if (currentTab === 'entregado') {
+            filtrados = docs.filter(d => d.data().entregado === true);
+        } else if (currentTab === 'ruta') {
+            filtrados = docs.filter(d => !d.data().entregado && d.data().enRuta === true);
+        } else {
+            filtrados = docs.filter(d => !d.data().entregado && d.data().enRuta !== true);
+        }
         signaturePads = {};
-        if (!pendientes.length) { list.innerHTML = '<p class="empty">No hay pedidos listos para cargar.</p>'; return; }
-        list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
-        pendientes.forEach(d => {
-            const canvas = document.getElementById('firma-' + d.id);
-            if (canvas) signaturePads[d.id] = setupSignaturePad(canvas);
-        });
+        if (!filtrados.length) {
+            list.innerHTML = currentTab === 'entregado' ? '<p class="empty">No hay pedidos entregados todavía.</p>'
+                : currentTab === 'ruta' ? '<p class="empty">No hay pedidos en ruta ahora mismo.</p>'
+                : '<p class="empty">No hay pedidos en espera.</p>';
+            return;
+        }
+        list.innerHTML = filtrados.map(d => orderCardHTML(d.id, d.data())).join('');
+        if (currentTab !== 'entregado') {
+            filtrados.forEach(d => {
+                const canvas = document.getElementById('firma-' + d.id);
+                if (canvas) signaturePads[d.id] = setupSignaturePad(canvas);
+            });
+        }
     }
 
-    const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo']));
+    // Incluye 'completado' para que los pedidos ya entregados (y, si corresponde, instalados)
+    // sigan visibles en la pestaña "Entregado" en vez de desaparecer de esta pantalla.
+    const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'completado']));
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
@@ -150,7 +201,14 @@
         if (!pad || pad.isEmpty()) { alert('Falta la firma de quien recibe.'); return; }
 
         const snap = await getDoc(doc(db, 'orders', id));
-        const yaInstalado = snap.exists() && snap.data().instalado === true;
+        const d = snap.exists() ? snap.data() : {};
+        // Un pedido pasa a "Completado" con solo la entrega si nunca hay instalador de por medio
+        // (Compra Directa, ej. al almacén propio) o si un admin ya lo marcó "sin instalación"
+        // desde ops/instalaciones.html — si no, hace falta ADEMÁS que el instalador confirme.
+        // Antes esto exigía siempre las dos cosas, así que una Compra Directa entregada se
+        // quedaba mostrando "Listo para cargar/instalar" para siempre (bug real reportado).
+        const noNecesitaInstalador = d.docType === 'COMPRA_DIRECTA' || d.sinInstalacion === true;
+        const yaInstalado = d.instalado === true || noNecesitaInstalador;
         await updateDoc(doc(db, 'orders', id), {
             entregado: true,
             fechaEntregado: serverTimestamp(),

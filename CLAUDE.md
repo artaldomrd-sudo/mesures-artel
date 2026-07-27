@@ -604,6 +604,40 @@ dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
 - La asignación de chofer/instalador a un pedido (`ops/historial.html`) es **informativa**, no
   restringe acceso — cualquier chofer/instalador ve todos los pedidos por si hay que cubrirse.
 
+### Transportes (`ops/chofer.html`) — pestañas En espera / En ruta / Entregado
+
+- La pantalla se ve como **"Transportes"** (título, tile del Panel de Control), pero el rol
+  Firestore sigue siendo `chofer` internamente (`requireAuth(['chofer'])`, campos
+  `asignadoChoferEmail`/`asignadoChoferNombre`, nombre de archivo `chofer.html`) — cambiar eso
+  implicaría migrar el campo `rol` de usuarios ya existentes en Firestore, no vale la pena solo
+  por el texto visible.
+- **Pestañas**: "En espera" (`!entregado && !enRuta`), "En ruta" (`!entregado && enRuta`),
+  "Entregado" (`entregado === true`) — mismo patrón de tabs que `ops/alucufel/fabrica.html`. La
+  pestaña "Entregado" es de solo lectura (sin formulario de recepción/firma ni botones de
+  acción), muestra fecha y quién recibió. La query de Firestore incluye `status:'completado'`
+  además de `listo_para_cargar`/`parcialmente_listo` para que un pedido ya completado no
+  desaparezca de esta pantalla — sigue visible en "Entregado" (mismo criterio que usa
+  `ops/alucufel/fabrica.html` con su tab "Enviados", que también guarda `completado`
+  indefinidamente; `ops/historial.html` es el lugar para buscar histórico viejo).
+- **Botón "En ruta"** (`marcarEnRuta`): el chofer lo marca apenas recoge el pedido — solo
+  informativo (badge azul + borde de tarjeta azul), no bloquea ni exige nada para después
+  marcar "Entregado".
+- **Bug real corregido: una Compra Directa entregada quedaba mostrando "Listo para
+  cargar/instalar" para siempre.** Causa: `confirmarEntrega()` solo ponía `status:'completado'`
+  si `instalado === true` — pero `ops/instalador.html` **excluye explícitamente**
+  `docType === 'COMPRA_DIRECTA'` de su cola (esos pedidos, ej. a un almacén propio, nunca pasan
+  por instalador), así que `instalado` nunca se cumplía y el pedido se quedaba atascado en
+  `status:'listo_para_cargar'` aunque `entregado` sí fuera `true` — cualquier pantalla que
+  mostrara el estado leyendo `status` (badges de `ops/historial.html`/`ops/compras.html`) seguía
+  diciendo "Listo para cargar/instalar" para siempre. **Arreglo**: `confirmarEntrega()` ahora
+  también da por cumplida la condición si `docType === 'COMPRA_DIRECTA'` **o** si un admin ya
+  marcó el pedido `sinInstalacion:true` desde `ops/instalaciones.html` (botón "📦 Solo recoger",
+  `marcarSinInstalacion()`) — antes ese campo solo se usaba para ocultar el pedido de la lista
+  de Instalaciones, no estaba conectado a la lógica de `chofer.html` que decide si el pedido
+  queda `completado`. **Pedidos ya atascados de antes de este arreglo** no se corrigen solos —
+  hay que cambiarles el estado a mano una vez desde el desplegable de `ops/historial.html`
+  (`cambiarEstado`).
+
 ### Ficha técnica compartida (visor de solo lectura + checklists)
 
 - `index.html?orderId=X` carga un pedido de Firestore en modo solo lectura
