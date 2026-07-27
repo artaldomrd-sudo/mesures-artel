@@ -638,6 +638,33 @@ dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
   hay que cambiarles el estado a mano una vez desde el desplegable de `ops/historial.html`
   (`cambiarEstado`).
 
+### Historial (`ops/historial.html`) — mosaicos agrupados por tipo de documento
+
+- **Caso real reportado**: el mosaico "Completadas" (pestaña Pedidos) mezclaba Fabricaciones y
+  Compras Directas completadas sin poder distinguirlas — porque ambos tipos pueden llegar al
+  mismo `status:'completado'` (ver `STATUS_OPTIONS_BY_TYPE`), y el filtro de cada mosaico
+  original solo miraba `status`, nunca `docType`. El mismo problema, sin reportar todavía,
+  existía igual en "Lista para cargar/instalar" (`listo_para_cargar` también lo comparten
+  Fabricación y Compra Directa).
+- **Arreglo**: cada entrada de `CATEGORIES` ahora puede pedir, además de `statuses`, un `tipo`
+  (función que confirma el `docType` — `esFabricacion`/`esCompraDirecta`/`esCotizacion`,
+  definidas contra el mismo criterio que ya usa `orderCardHTML`/`STATUS_OPTIONS_BY_TYPE`).
+  `matchesCategory(cat, o)` centraliza el chequeo (statuses + tipo), usado tanto por
+  `renderTiles()` (conteo) como por `render()` (listado) — antes cada uno repetía la condición a
+  mano. **Cada pedido cae en exactamente un mosaico específico** (verificado con casos de
+  prueba: ningún tipo+status queda sin mosaico ni matchea dos a la vez).
+- **Mosaicos reorganizados en 3 grupos con encabezado** (`CATEGORY_GROUPS`, div
+  `.cat-group-label` antes de cada fila de `.cat-grid`) en vez de una sola grilla plana de 7:
+  "Todos" queda aparte arriba; **Cotización** (Pendiente, Enviada al cliente); **Fabricación**
+  (Pendiente, Parcialmente lista, Lista para cargar, Completada); **Compra Directa** (Lista para
+  cargar, Entregada) — 9 mosaicos en total, cada uno de un solo tipo de documento.
+  `#cat-grid` pasó de tener la clase `.cat-grid` fija en el HTML a ser un contenedor vacío que
+  `renderTiles()` llena con varios `<div class="cat-grid">` (uno por grupo) + sus etiquetas.
+- **`progresoExtra()`** (texto inline "Entregado ✓ · Instalado ✓" en cada tarjeta) ahora también
+  muestra "🚚 En ruta" cuando `enRuta && !entregado` — coherencia con el badge/estado que ya usa
+  `ops/chofer.html` ("Transportes"), sin agregar un mosaico nuevo para eso (evita duplicar la
+  granularidad de Transportes acá, que es para auditoría/búsqueda, no para operar el día a día).
+
 ### Ficha técnica compartida (visor de solo lectura + checklists)
 
 - `index.html?orderId=X` carga un pedido de Firestore en modo solo lectura

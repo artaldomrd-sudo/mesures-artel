@@ -40,7 +40,9 @@
     .audit-estado.en_proceso { color: #3498db; }
     .audit-estado.pendiente { color: #e67e22; }
     .audit-meta { color: #888; }
-    .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 6px; }
+    .cat-group-label { font-size: 12px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
+    .cat-group-label:first-of-type { margin-top: 10px; }
     .cat-tile {
         background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 14px;
         border: 3px solid transparent; cursor: pointer; text-align: center; font-family: 'Arimo';
@@ -95,7 +97,7 @@
         <div id="alerts-section"></div>
         <input type="text" id="search-input" list="clientes-datalist" placeholder="🔎 Buscar por cliente u obra…" autocomplete="off">
         <datalist id="clientes-datalist"></datalist>
-        <div class="cat-grid" id="cat-grid"></div>
+        <div id="cat-grid"></div>
         <div id="orders-list"><p class="empty">Cargando…</p></div>
     </div>
 
@@ -141,16 +143,40 @@
         COMPRA_DIRECTA: ['listo_para_cargar', 'completado']
     };
 
+    // Un pedido de Fabricación y uno de Compra Directa pueden compartir el mismo status
+    // (`listo_para_cargar`, `completado` — ver STATUS_OPTIONS_BY_TYPE arriba), así que filtrar
+    // solo por status mezclaba ambos tipos en el mismo mosaico (caso real reportado: "Completadas"
+    // mostraba Compras Directas y Fabricaciones juntas sin poder distinguirlas). Cada categoría
+    // ahora también puede pedir un `tipo` (función que confirma el docType) para separarlas.
+    function esFabricacion(o) { return (o.docType || '').indexOf('FAB') === 0; }
+    function esCompraDirecta(o) { return o.docType === 'COMPRA_DIRECTA'; }
+    function esCotizacion(o) { return !esFabricacion(o) && !esCompraDirecta(o); }
+
+    // Grupos en el orden en que se muestran; cada categoría pertenece a uno solo (o a ninguno,
+    // como "Todos", que queda aparte arriba de los grupos).
     const CATEGORIES = [
-        { key: 'todos', emoji: '🗂️', label: 'Todos', statuses: null },
-        { key: 'cot_pendiente', emoji: '📐', label: 'Cotización pendiente', statuses: ['solicitada', 'costeada'] },
-        { key: 'cot_enviada', emoji: '💵', label: 'Cotización enviada', statuses: ['enviada_cliente'] },
-        { key: 'fab_pendiente', emoji: '🏭', label: 'Fabricación pendiente', statuses: ['pendiente_fabrica', 'en_fabrica'] },
-        { key: 'fab_parcial', emoji: '🟠', label: 'Parcialmente listo', statuses: ['parcialmente_listo'] },
-        { key: 'fab_lista', emoji: '🚚', label: 'Lista para cargar/instalar', statuses: ['listo_para_cargar'] },
-        { key: 'fab_completa', emoji: '✅', label: 'Completadas', statuses: ['completado'] }
+        { key: 'todos', emoji: '🗂️', label: 'Todos', group: null, statuses: null },
+
+        { key: 'cot_pendiente', emoji: '📐', label: 'Pendiente', group: 'Cotización', statuses: ['solicitada', 'costeada'], tipo: esCotizacion },
+        { key: 'cot_enviada', emoji: '💵', label: 'Enviada al cliente', group: 'Cotización', statuses: ['enviada_cliente'], tipo: esCotizacion },
+
+        { key: 'fab_pendiente', emoji: '🏭', label: 'Pendiente', group: 'Fabricación', statuses: ['pendiente_fabrica', 'en_fabrica'], tipo: esFabricacion },
+        { key: 'fab_parcial', emoji: '🟠', label: 'Parcialmente lista', group: 'Fabricación', statuses: ['parcialmente_listo'], tipo: esFabricacion },
+        { key: 'fab_lista', emoji: '📦', label: 'Lista para cargar', group: 'Fabricación', statuses: ['listo_para_cargar'], tipo: esFabricacion },
+        { key: 'fab_completa', emoji: '✅', label: 'Completada', group: 'Fabricación', statuses: ['completado'], tipo: esFabricacion },
+
+        { key: 'compra_lista', emoji: '🧾', label: 'Lista para cargar', group: 'Compra Directa', statuses: ['listo_para_cargar'], tipo: esCompraDirecta },
+        { key: 'compra_completa', emoji: '✅', label: 'Entregada', group: 'Compra Directa', statuses: ['completado'], tipo: esCompraDirecta }
     ];
+    const CATEGORY_GROUPS = ['Cotización', 'Fabricación', 'Compra Directa'];
     let currentCategory = 'todos';
+
+    function matchesCategory(cat, o) {
+        if (!cat.statuses) return true; // "Todos"
+        if (!cat.statuses.includes(o.status)) return false;
+        if (cat.tipo && !cat.tipo(o)) return false;
+        return true;
+    }
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -217,19 +243,25 @@
         await updateDoc(doc(db, 'orders', id), { [`${field}.${itemId}.atendido`]: true });
     };
 
+    function tileHTML(cat) {
+        const count = allOrders.filter(({ data: o }) => matchesCategory(cat, o)).length;
+        return `
+        <div class="cat-tile ${cat.key === currentCategory ? 'active' : ''}" onclick="setCategory('${cat.key}')">
+            <div class="emoji">${cat.emoji}</div>
+            <div class="count">${count}</div>
+            <div class="label">${esc(cat.label)}</div>
+        </div>`;
+    }
+
     function renderTiles() {
         const grid = document.getElementById('cat-grid');
-        grid.innerHTML = CATEGORIES.map(cat => {
-            const count = cat.statuses
-                ? allOrders.filter(({ data: o }) => cat.statuses.includes(o.status)).length
-                : allOrders.length;
-            return `
-            <div class="cat-tile ${cat.key === currentCategory ? 'active' : ''}" onclick="setCategory('${cat.key}')">
-                <div class="emoji">${cat.emoji}</div>
-                <div class="count">${count}</div>
-                <div class="label">${esc(cat.label)}</div>
-            </div>`;
-        }).join('');
+        const todos = CATEGORIES.find(c => c.key === 'todos');
+        let html = `<div class="cat-grid">${tileHTML(todos)}</div>`;
+        CATEGORY_GROUPS.forEach(g => {
+            const cats = CATEGORIES.filter(c => c.group === g);
+            html += `<div class="cat-group-label">${esc(g)}</div><div class="cat-grid">${cats.map(tileHTML).join('')}</div>`;
+        });
+        grid.innerHTML = html;
     }
 
     window.setCategory = function (key) {
@@ -258,6 +290,7 @@
 
     function progresoExtra(o) {
         const bits = [];
+        if (o.enRuta && !o.entregado) bits.push('🚚 En ruta');
         if (o.entregado) bits.push('Entregado ✓');
         if (o.instalado) bits.push('Instalado ✓');
         return bits.length ? ' · ' + bits.join(' · ') : '';
@@ -337,7 +370,7 @@
         const term = document.getElementById('search-input').value.trim().toLowerCase();
         const cat = CATEGORIES.find(c => c.key === currentCategory);
         const filtered = allOrders.filter(({ data: o }) => {
-            if (cat.statuses && !cat.statuses.includes(o.status)) return false;
+            if (!matchesCategory(cat, o)) return false;
             if (!term) return true;
             const haystack = ((o.cliente || '') + ' ' + (o.obra || '')).toLowerCase();
             return haystack.includes(term);
