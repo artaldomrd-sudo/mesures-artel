@@ -29,5 +29,18 @@ window.HISTORIAS=[
 "cap": "Remodelacion Barandas"
 }
 ]
+},
+{
+"slug": "videos",
+"titulo": "Videos",
+"cover": "historias/videos/cover.jpg",
+"n": 1,
+"slides": [
+{
+"tipo": "video",
+"src": "historias/videos/01.mp4",
+"cap": ""
+}
+]
 }
 ];
