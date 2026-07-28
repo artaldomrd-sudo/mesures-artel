@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Solicitudes web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 720px; }
+    .order-card { border-left-color: #e67e22; }
+    .order-card.atendida { border-left-color: #2ecc71; opacity: 0.78; }
+    .sol-tipo { display: inline-block; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; background: var(--artal-light); color: var(--artal-blue); padding: 3px 9px; border-radius: 20px; }
+    .sol-msg { font-size: 13.5px; color: #444; margin: 10px 0 0; white-space: pre-wrap; line-height: 1.4; }
+    .sol-fecha { font-size: 11.5px; color: #999; margin-top: 8px; }
+    .sol-contacto { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .sol-contacto a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; font-size: 13px; font-family: 'Arimo'; min-height: 40px; }
+    .c-wa { background: #25d366; color: #fff; }
+    .c-tel { background: var(--artal-blue); color: #fff; }
+    .c-mail { background: var(--artal-light); color: var(--artal-blue); border: 1.5px solid #ddd; }
+    .sol-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .sol-actions button { padding: 9px 14px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13px; min-height: 40px; }
+    .btn-atender { background: #2ecc71; color: #fff; }
+    .btn-reabrir { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; }
+    .btn-borrar { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Solicitudes web</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-nuevas" onclick="setTab('nuevas')">Nuevas</button>
+        <button class="tab-btn" id="tab-atendidas" onclick="setTab('atendidas')">Atendidas</button>
+    </div>
+    <div id="sol-list"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { enableNotifications } from './notifications.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Solo gerencia (admin/oficina): es la bandeja de leads que llegan del sitio web.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+    const fmtFecha = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+    // Deja solo dígitos para armar el link de WhatsApp/llamada (agrega el 1 de RD si hace falta).
+    function telParaWa(tel) {
+        let d = String(tel || '').replace(/\D/g, '');
+        if (!d) return '';
+        if (d.length === 10) d = '1' + d; // número local de 10 dígitos → anteponer código país RD
+        return d;
+    }
+
+    function solCardHTML(id, s) {
+        const atendida = s.estado === 'atendida';
+        const waNum = telParaWa(s.telefono);
+        const contactos = [];
+        if (waNum) {
+            const txt = encodeURIComponent(`Hola ${s.nombre || ''}, le escribimos de ARTAL Dominicana sobre su solicitud de ${s.tipo || 'cotización'}.`);
+            contactos.push(`<a class="c-wa" href="https://wa.me/${waNum}?text=${txt}" target="_blank" rel="noopener">💬 WhatsApp</a>`);
+            contactos.push(`<a class="c-tel" href="tel:${esc(s.telefono)}">📞 Llamar</a>`);
+        }
+        if (s.email) contactos.push(`<a class="c-mail" href="mailto:${esc(s.email)}?subject=${encodeURIComponent('Su solicitud a ARTAL Dominicana')}">✉ Correo</a>`);
+
+        return `
+        <div class="order-card ${atendida ? 'atendida' : ''}">
+            <div class="order-head">
+                <b>${esc(s.nombre) || 'Sin nombre'}</b>
+                <span class="sol-tipo">${esc(s.tipo) || 'Solicitud'}</span>
+            </div>
+            <div class="order-meta">
+                ${s.telefono ? '📞 ' + esc(s.telefono) : ''}${(s.telefono && s.email) ? ' · ' : ''}${s.email ? '✉ ' + esc(s.email) : ''}
+            </div>
+            ${s.mensaje ? `<p class="sol-msg">${esc(s.mensaje)}</p>` : ''}
+            <div class="sol-fecha">Recibida: ${esc(fmtFecha(s.fecha)) || '—'}${atendida && s.atendidaPor ? ' · Atendida por ' + esc(s.atendidaPor) : ''}</div>
+            ${contactos.length ? `<div class="sol-contacto">${contactos.join('')}</div>` : ''}
+            <div class="sol-actions">
+                ${atendida
+                    ? `<button class="btn-reabrir" onclick="reabrir('${id}')">↩ Reabrir</button>`
+                    : `<button class="btn-atender" onclick="atender('${id}')">✓ Marcar atendida</button>`}
+                <button class="btn-borrar" onclick="borrar('${id}')">🗑 Borrar</button>
+            </div>
+        </div>`;
+    }
+
+    let currentTab = 'nuevas';
+    let allSol = [];
+
+    window.setTab = function (tab) {
+        currentTab = tab;
+        document.getElementById('tab-nuevas').classList.toggle('active', tab === 'nuevas');
+        document.getElementById('tab-atendidas').classList.toggle('active', tab === 'atendidas');
+        render();
+    };
+
+    function render() {
+        const list = document.getElementById('sol-list');
+        const filtradas = allSol
+            .filter(s => currentTab === 'nuevas' ? s.data.estado !== 'atendida' : s.data.estado === 'atendida')
+            .sort((a, b) => {
+                const fa = a.data.fecha, fb = b.data.fecha;
+                return (fb && fb.toMillis ? fb.toMillis() : 0) - (fa && fa.toMillis ? fa.toMillis() : 0);
+            });
+        if (!filtradas.length) {
+            list.innerHTML = currentTab === 'nuevas'
+                ? '<p class="empty">No hay solicitudes nuevas.</p>'
+                : '<p class="empty">No hay solicitudes atendidas.</p>';
+            return;
+        }
+        list.innerHTML = filtradas.map(s => solCardHTML(s.id, s.data)).join('');
+    }
+
+    onSnapshot(collection(db, 'solicitudesWeb'), (snap) => {
+        allSol = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        render();
+    }, (err) => {
+        document.getElementById('sol-list').innerHTML = '<p class="empty">Error cargando solicitudes: ' + err.message + '</p>';
+    });
+
+    window.atender = async function (id) {
+        try {
+            await updateDoc(doc(db, 'solicitudesWeb', id), {
+                estado: 'atendida', atendidaPor: usuario.nombre, fechaAtendida: serverTimestamp()
+            });
+        } catch (e) { alert('No se pudo marcar: ' + e.message); }
+    };
+    window.reabrir = async function (id) {
+        try { await updateDoc(doc(db, 'solicitudesWeb', id), { estado: 'nueva' }); }
+        catch (e) { alert('No se pudo reabrir: ' + e.message); }
+    };
+    window.borrar = async function (id) {
+        const s = (allSol.find(x => x.id === id) || {}).data || {};
+        if (!confirm(`¿Borrar la solicitud de "${s.nombre || ''}"? Esta acción no se puede deshacer.`)) return;
+        try { await deleteDoc(doc(db, 'solicitudesWeb', id)); }
+        catch (e) { alert('No se pudo borrar: ' + e.message); }
+    };
+</script>
+
+</body>
+</html>

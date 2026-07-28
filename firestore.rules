@@ -22,6 +22,20 @@ service cloud.firestore {
         && ('admin' in rolesDelUsuario() || !('lector' in rolesDelUsuario()));
     }
 
+    // Solicitud del formulario del sitio web: la crea el público SIN sesión, así que se valida a
+    // mano (solo los campos esperados, con tipos y tamaños acotados) para no dejar entrar basura.
+    function solicitudWebValida() {
+      let d = request.resource.data;
+      return d.origen == 'web'
+        && d.estado == 'nueva'
+        && d.nombre is string && d.nombre.size() > 0 && d.nombre.size() < 120
+        && d.telefono is string && d.telefono.size() < 40
+        && d.email is string && d.email.size() < 160
+        && d.tipo is string && d.tipo.size() < 60
+        && d.mensaje is string && d.mensaje.size() < 3000
+        && d.keys().hasOnly(['origen','estado','nombre','telefono','email','tipo','mensaje','fecha']);
+    }
+
     // Todo se puede LEER estando autenticado.
     match /{document=**} {
       allow read: if request.auth != null;
@@ -41,5 +55,14 @@ service cloud.firestore {
     match /clientes/{id}             { allow write: if puedeEscribir(); }
     match /usuarios/{id}             { allow write: if puedeEscribir(); }
     match /proyectosGuardados/{id}   { allow write: if puedeEscribir(); }
+
+    // Solicitudes del sitio web: CREAR lo puede el público SIN sesión (validado arriba); un
+    // visitante anónimo NO puede leer (la lectura de más arriba exige `request.auth != null`, así
+    // que solo el equipo con sesión ve las solicitudes). Editar/borrar (marcar atendida, etc.)
+    // requiere ser personal que pueda escribir.
+    match /solicitudesWeb/{id} {
+      allow update, delete: if puedeEscribir();
+      allow create: if solicitudWebValida();
+    }
   }
 }

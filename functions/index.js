@@ -63,6 +63,37 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
     }
 });
 
+// Se dispara al crear una solicitud desde el formulario del sitio web (la muestra
+// ops/solicitudes.html). Avisa por push a todo el personal de gerencia (rol admin) que tenga las
+// notificaciones activadas. La colección `usuarios` es chica, así que se leen todos y se filtra
+// en memoria (el rol puede ser string o array).
+exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', async (event) => {
+    const s = event.data.data();
+    const usuarios = await db.collection('usuarios').get();
+    const admins = usuarios.docs.filter((u) => {
+        const rol = u.data().rol;
+        const roles = Array.isArray(rol) ? rol : [rol];
+        return roles.includes('admin');
+    });
+    const cuerpo = [s.tipo, s.nombre, s.telefono].filter(Boolean).join(' · ');
+    for (const u of admins) {
+        const token = u.data().fcmToken;
+        if (!token) continue;
+        try {
+            await getMessaging().send({
+                token,
+                data: {
+                    title: 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''),
+                    body: cuerpo || 'Un cliente pidió cotización desde el sitio web',
+                    url: 'ops/solicitudes.html'
+                }
+            });
+        } catch (e) {
+            console.error('No se pudo enviar la notificación de solicitud web', event.params.id, u.id, e);
+        }
+    }
+});
+
 // Recordatorios programados: cada 5 minutos revisa citas e instalaciones que tengan un
 // recordatorio pendiente (recordarAntesMin > 0 y recordatorioEnviado == false) y, cuando falta
 // ese tiempo o menos para el evento, manda el push y marca recordatorioEnviado = true (para no
