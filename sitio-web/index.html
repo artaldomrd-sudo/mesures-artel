@@ -1513,6 +1513,12 @@ window.enviarSolicitud = async function(e){
 .acp-foot textarea{flex:1;resize:none;max-height:90px;padding:11px 13px;border:1px solid rgba(18,49,75,.2);border-radius:14px;font-family:'Inter',sans-serif;font-size:.9rem;line-height:1.3;background:rgba(255,255,255,.85)}
 .acp-foot .acp-send{background:linear-gradient(135deg,#12314B,#1C4E7A);color:#fff;border:none;border-radius:50%;width:44px;height:44px;flex-shrink:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 8px 20px -8px rgba(18,49,75,.6)}
 .acp-foot .acp-send svg{width:18px;height:18px}
+.acp-attach{width:44px;height:44px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#12314B;border:1px solid rgba(18,49,75,.2);border-radius:14px;background:rgba(255,255,255,.85)}
+.acp-attach svg{width:20px;height:20px}
+.acp-chip{display:none;align-items:center;gap:8px;margin:0 12px 8px;padding:8px 12px;background:rgba(242,194,0,.18);border:1px solid rgba(242,194,0,.55);border-radius:11px;font-size:.8rem;color:#12314B}
+.acp-chip.show{display:flex}
+.acp-chip b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.acp-chip button{margin-left:auto;background:none;border:none;color:#c0392b;font-size:1.15rem;cursor:pointer;line-height:1;padding:0 2px}
 </style>
 
 <button id="artal-chat-btn" onclick="artalChatToggle(true)">
@@ -1530,6 +1536,7 @@ window.enviarSolicitud = async function(e){
     <button class="acp-close" onclick="artalChatToggle(false)" aria-label="Cerrar">×</button>
   </div>
   <div class="acp-msgs" id="acp-msgs"></div>
+  <div class="acp-chip" id="acp-chip"><span>📎</span><b></b><button onclick="artalQuitarAdjunto()" aria-label="Quitar">×</button></div>
   <div class="acp-datos" onclick="artalLeadToggle()">📋 Dejar mis datos para que me contacten</div>
   <div class="acp-lead" id="acp-lead">
     <input type="text" id="acp-nombre" placeholder="Tu nombre">
@@ -1537,6 +1544,10 @@ window.enviarSolicitud = async function(e){
     <button onclick="artalLeadEnviar()">Enviar</button>
   </div>
   <div class="acp-foot">
+    <label class="acp-attach" title="Adjuntar foto o PDF">
+      <input type="file" id="acp-file" accept="image/*,application/pdf" style="display:none" onchange="artalArchivo(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+    </label>
     <textarea id="acp-input" rows="1" placeholder="Escríbele a Cristal…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();artalChatSend();}"></textarea>
     <button class="acp-send" onclick="artalChatSend()" aria-label="Enviar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
@@ -1549,6 +1560,7 @@ window.enviarSolicitud = async function(e){
   var FN_URL='https://us-central1-artal-operaciones.cloudfunctions.net/chatBot';
   var historial=[];           // [{role, content}] que se manda a la función
   var iniciado=false;
+  var adjunto=null;           // {tipo:'image'|'pdf', media_type, data(base64), nombre}
   function el(id){return document.getElementById(id);}
   function burbuja(texto,clase){
     var m=el('acp-msgs'); var d=document.createElement('div');
@@ -1579,15 +1591,47 @@ window.enviarSolicitud = async function(e){
       burbuja('No pude guardar tus datos ahora. Escríbenos por WhatsApp al +1 (849) 260-6106.','bot');
     }
   };
+  // Adjuntar foto (se comprime) o PDF (hasta 5MB). Guarda base64 en 'adjunto' y muestra el chip.
+  window.artalArchivo=function(input){
+    var f=input.files&&input.files[0]; input.value='';
+    if(!f) return;
+    var esPdf=f.type==='application/pdf', esImg=/^image\//.test(f.type);
+    if(!esPdf&&!esImg){ burbuja('Solo puedo recibir fotos o PDF.','bot'); return; }
+    if(esPdf){
+      if(f.size>5*1024*1024){ burbuja('Ese PDF pesa mucho (máx 5 MB). Mándalo por WhatsApp al +1 (849) 260-6106.','bot'); return; }
+      var rd=new FileReader();
+      rd.onload=function(){ adjunto={tipo:'pdf', data:String(rd.result).split(',')[1], nombre:f.name}; mostrarChip(f.name); };
+      rd.onerror=function(){ burbuja('No pude leer ese archivo.','bot'); };
+      rd.readAsDataURL(f); return;
+    }
+    var url=URL.createObjectURL(f), img=new Image();
+    img.onload=function(){
+      var max=1400, w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      if(w>max||h>max){ var s=Math.min(max/w,max/h); w=Math.round(w*s); h=Math.round(h*s); }
+      var c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+      adjunto={tipo:'image', media_type:'image/jpeg', data:c.toDataURL('image/jpeg',0.82).split(',')[1], nombre:f.name};
+      mostrarChip(f.name);
+    };
+    img.onerror=function(){ URL.revokeObjectURL(url); burbuja('No pude leer esa imagen.','bot'); };
+    img.src=url;
+  };
+  function mostrarChip(nombre){ var c=el('acp-chip'); c.querySelector('b').textContent=nombre; c.classList.add('show'); }
+  window.artalQuitarAdjunto=function(){ adjunto=null; el('acp-chip').classList.remove('show'); };
+
   window.artalChatSend=async function(){
     var input=el('acp-input'); var texto=input.value.trim();
-    if(!texto) return;
+    if(!texto && !adjunto) return;
     input.value='';
-    burbuja(texto,'user');
-    historial.push({role:'user',content:texto});
+    var contenido=texto || '¿Qué me puedes decir de esto?';
+    var d=burbuja(contenido,'user');
+    if(adjunto){ var n=document.createElement('div'); n.style.cssText='font-size:.75rem;opacity:.85;margin-top:5px'; n.textContent='📎 '+adjunto.nombre; d.appendChild(n); }
+    historial.push({role:'user',content:contenido});
+    var envAdj=adjunto?{tipo:adjunto.tipo,media_type:adjunto.media_type,data:adjunto.data}:undefined;
+    adjunto=null; el('acp-chip').classList.remove('show');
     var pensando=burbuja('Cristal está escribiendo…','bot pensando');
     try{
-      var r=await fetch(FN_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:historial})});
+      var r=await fetch(FN_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:historial, attachment:envAdj})});
       var data=await r.json().catch(function(){return {};});
       pensando.remove();
       if(r.ok && data.reply){

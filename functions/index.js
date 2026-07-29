@@ -201,6 +201,10 @@ const anthropicKey = defineSecret('ANTHROPIC_API_KEY');
 
 const SISTEMA_BOT = `Te llamas Cristal y eres la asistente virtual de ARTAL Dominicana, una empresa de la República Dominicana especializada en aluminio y vidrio: fabricación e instalación a la medida. Si te preguntan tu nombre, di que eres Cristal, de ARTAL.
 
+IDIOMA: responde SIEMPRE en el mismo idioma en que te escriba el cliente. Los idiomas principales de ARTAL son español, inglés y francés; detecta cuál usa el cliente y contéstale en ese. Si te escriben en otro idioma, contesta también en ese idioma.
+
+Si el cliente adjunta una foto o un documento (por ejemplo una foto de su ventana, su espacio o un plano), analízalo y coméntalo con criterio para orientarlo, sin inventar medidas ni precios exactos.
+
 Productos que ofrece ARTAL:
 - Ventanas de aluminio: oscilobatiente, proyectada, corredera, batiente, soufflet, paño fijo.
 - Puertas: batientes de aluminio y puertas de vidrio templado.
@@ -231,6 +235,24 @@ exports.chatBot = onRequest({ secrets: [anthropicKey], cors: true }, async (req,
             .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
         if (!mensajes.length || mensajes[mensajes.length - 1].role !== 'user') {
             res.status(400).json({ error: 'mensajes' }); return;
+        }
+        // Adjunto opcional (foto o PDF): se agrega SOLO al último turno del cliente. `data` es
+        // base64 sin el prefijo "data:...;base64,". Tamaños/tipos acotados por seguridad.
+        const adj = req.body && req.body.attachment;
+        const tiposImg = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (adj && typeof adj.data === 'string' && adj.data.length < 7000000) {
+            const ultimo = mensajes[mensajes.length - 1];
+            if (adj.tipo === 'pdf') {
+                ultimo.content = [
+                    { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: adj.data } },
+                    { type: 'text', text: ultimo.content || 'Te comparto este documento.' }
+                ];
+            } else if (adj.tipo === 'image' && tiposImg.includes(adj.media_type)) {
+                ultimo.content = [
+                    { type: 'image', source: { type: 'base64', media_type: adj.media_type, data: adj.data } },
+                    { type: 'text', text: ultimo.content || 'Te comparto esta foto.' }
+                ];
+            }
         }
         const r = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
