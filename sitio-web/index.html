@@ -1405,6 +1405,19 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
+// Guarda un lead captado por el bot en la misma bandeja del Panel (Solicitudes web).
+window.__guardarLeadBot = async function(nombre, telefono, transcript){
+  await addDoc(collection(db, 'solicitudesWeb'), {
+    origen: 'web', estado: 'nueva',
+    nombre: String(nombre || '').slice(0,110),
+    telefono: String(telefono || '').slice(0,38),
+    email: '',
+    tipo: 'Chat asistente',
+    mensaje: String(transcript || '').slice(0,2900),
+    fecha: serverTimestamp()
+  });
+};
+
 function mostrarGracias(){
   const form = document.getElementById('form');
   if(!form) return;
@@ -1465,6 +1478,116 @@ window.enviarSolicitud = async function(e){
   document.getElementById('cookie-ok').addEventListener('click',function(){
     localStorage.setItem('artal_cookies_ok','1'); box.style.display='none';
   });
+})();
+</script>
+<!-- ===== Asistente virtual (bot con Claude) ===== -->
+<style>
+#artal-chat-btn{position:fixed;right:18px;bottom:18px;z-index:9998;display:inline-flex;align-items:center;gap:9px;background:#12314B;color:#fff;border:none;border-radius:100px;padding:13px 20px;font-family:'Archivo',sans-serif;font-weight:700;font-size:.95rem;cursor:pointer;box-shadow:0 14px 34px -12px rgba(18,49,75,.6)}
+#artal-chat-btn svg{width:20px;height:20px}
+#artal-chat-panel{position:fixed;right:18px;bottom:18px;z-index:9999;width:min(380px,calc(100vw - 24px));height:min(560px,calc(100vh - 40px));background:#fff;border-radius:20px;box-shadow:0 30px 70px -20px rgba(20,49,75,.55);display:none;flex-direction:column;overflow:hidden;font-family:'Inter',sans-serif}
+#artal-chat-panel.open{display:flex}
+.acp-head{background:#12314B;color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
+.acp-head b{font-family:'Archivo',sans-serif;font-size:1rem}
+.acp-head .acp-sub{font-size:.72rem;opacity:.8;font-weight:400;display:block;margin-top:2px}
+.acp-close{background:transparent;border:none;color:#fff;font-size:1.5rem;line-height:1;cursor:pointer;padding:0 4px}
+.acp-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:#F4F1EA}
+.acp-msg{max-width:82%;padding:10px 13px;border-radius:14px;font-size:.9rem;line-height:1.4;white-space:pre-wrap;word-wrap:break-word}
+.acp-msg.bot{background:#fff;color:#16222C;align-self:flex-start;border-bottom-left-radius:4px;box-shadow:0 2px 8px -4px rgba(20,49,75,.3)}
+.acp-msg.user{background:#12314B;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.acp-msg.esc{align-self:center;font-size:.78rem;color:#7a8794;background:transparent;padding:2px}
+.acp-lead{padding:10px 14px;background:#fff;border-top:1px solid #eee;display:none;gap:8px;flex-wrap:wrap}
+.acp-lead.show{display:flex}
+.acp-lead input{flex:1;min-width:120px;padding:9px 11px;border:1.5px solid #ddd;border-radius:9px;font-family:'Inter',sans-serif;font-size:.88rem}
+.acp-lead button{background:#F2C200;color:#12314B;border:none;border-radius:9px;padding:9px 15px;font-weight:700;font-family:'Archivo',sans-serif;cursor:pointer}
+.acp-foot{padding:10px 12px;border-top:1px solid #eee;display:flex;gap:8px;align-items:flex-end;background:#fff}
+.acp-foot textarea{flex:1;resize:none;max-height:90px;padding:10px 12px;border:1.5px solid #ddd;border-radius:12px;font-family:'Inter',sans-serif;font-size:.9rem;line-height:1.3}
+.acp-foot .acp-send{background:#12314B;color:#fff;border:none;border-radius:12px;width:42px;height:42px;flex-shrink:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.acp-foot .acp-send svg{width:18px;height:18px}
+.acp-datos{font-size:.75rem;color:#12314B;text-decoration:underline;cursor:pointer;padding:0 14px 8px;background:#fff;text-align:center}
+</style>
+
+<button id="artal-chat-btn" onclick="artalChatToggle(true)">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+  ¿Dudas? Escríbenos
+</button>
+
+<div id="artal-chat-panel" role="dialog" aria-label="Asistente ARTAL">
+  <div class="acp-head">
+    <div><b>Asistente ARTAL</b><span class="acp-sub">Aluminio y vidrio · te respondo al instante</span></div>
+    <button class="acp-close" onclick="artalChatToggle(false)" aria-label="Cerrar">×</button>
+  </div>
+  <div class="acp-msgs" id="acp-msgs"></div>
+  <div class="acp-datos" onclick="artalLeadToggle()">📋 Dejar mis datos para que me contacten</div>
+  <div class="acp-lead" id="acp-lead">
+    <input type="text" id="acp-nombre" placeholder="Tu nombre">
+    <input type="tel" id="acp-tel" placeholder="Tu teléfono">
+    <button onclick="artalLeadEnviar()">Enviar</button>
+  </div>
+  <div class="acp-foot">
+    <textarea id="acp-input" rows="1" placeholder="Escribe tu pregunta…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();artalChatSend();}"></textarea>
+    <button class="acp-send" onclick="artalChatSend()" aria-label="Enviar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>
+    </button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var FN_URL='https://us-central1-artal-operaciones.cloudfunctions.net/chatBot';
+  var historial=[];           // [{role, content}] que se manda a la función
+  var iniciado=false;
+  function el(id){return document.getElementById(id);}
+  function burbuja(texto,clase){
+    var m=el('acp-msgs'); var d=document.createElement('div');
+    d.className='acp-msg '+clase; d.textContent=texto; m.appendChild(d);
+    m.scrollTop=m.scrollHeight; return d;
+  }
+  window.artalChatToggle=function(abrir){
+    el('artal-chat-panel').classList.toggle('open',abrir);
+    el('artal-chat-btn').style.display=abrir?'none':'inline-flex';
+    if(abrir&&!iniciado){
+      iniciado=true;
+      burbuja('¡Hola! 👋 Soy el asistente de ARTAL Dominicana. Cuéntame qué proyecto tienes en mente (ventanas, puertas, correderas, vidrio de ducha, barandas…) y te oriento. ¿En qué te ayudo?','bot');
+    }
+    if(abrir) el('acp-input').focus();
+  };
+  window.artalLeadToggle=function(){ el('acp-lead').classList.toggle('show'); };
+  window.artalLeadEnviar=async function(){
+    var nombre=el('acp-nombre').value.trim();
+    if(!nombre){ el('acp-nombre').focus(); return; }
+    var tel=el('acp-tel').value.trim();
+    var transcript=historial.map(function(m){return (m.role==='user'?'Cliente: ':'Bot: ')+m.content;}).join('\n');
+    try{
+      if(window.__guardarLeadBot){ await window.__guardarLeadBot(nombre,tel,transcript); }
+      el('acp-lead').classList.remove('show');
+      el('acp-nombre').value=''; el('acp-tel').value='';
+      burbuja('¡Gracias, '+nombre+'! Tomamos tus datos y el equipo de ARTAL te contactará pronto. 🙌','bot');
+    }catch(e){
+      burbuja('No pude guardar tus datos ahora. Escríbenos por WhatsApp al +1 (849) 260-6106.','bot');
+    }
+  };
+  window.artalChatSend=async function(){
+    var input=el('acp-input'); var texto=input.value.trim();
+    if(!texto) return;
+    input.value='';
+    burbuja(texto,'user');
+    historial.push({role:'user',content:texto});
+    var pensando=burbuja('Escribiendo…','bot');
+    try{
+      var r=await fetch(FN_URL,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:historial})});
+      var data=await r.json().catch(function(){return {};});
+      pensando.remove();
+      if(r.ok && data.reply){
+        historial.push({role:'assistant',content:data.reply});
+        burbuja(data.reply,'bot');
+      }else{
+        burbuja('Disculpa, tuve un problema para responder. Escríbenos por WhatsApp al +1 (849) 260-6106 o deja tus datos aquí abajo. 📋','bot');
+      }
+    }catch(e){
+      pensando.remove();
+      burbuja('No hay conexión en este momento. Escríbenos por WhatsApp al +1 (849) 260-6106.','bot');
+    }
+  };
 })();
 </script>
 </body>

@@ -1,5 +1,7 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
@@ -188,4 +190,72 @@ exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     // siempre una sola persona — no aplica lo de "varias personas", es de antes de eso)
     await procesarRecordatorios('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
     await procesarRecordatorios('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
+});
+
+// ---------- Bot del sitio web (asistente con Claude) ----------
+// Proxy seguro entre el chat del sitio (público) y la API de Claude: la clave vive como
+// "secreto" en Firebase (ANTHROPIC_API_KEY), NUNCA en la web. Recibe el historial de la
+// conversación y devuelve la respuesta del asistente. Modelo económico (Haiku) — centavos por
+// conversación. Sin estado: el sitio manda el historial completo en cada llamada.
+const anthropicKey = defineSecret('ANTHROPIC_API_KEY');
+
+const SISTEMA_BOT = `Eres el asistente virtual de ARTAL Dominicana, una empresa de la República Dominicana especializada en aluminio y vidrio: fabricación e instalación a la medida.
+
+Productos que ofrece ARTAL:
+- Ventanas de aluminio: oscilobatiente, proyectada, corredera, batiente, soufflet, paño fijo.
+- Puertas: batientes de aluminio y puertas de vidrio templado.
+- Correderas premium en 3 series: E200 y E100 (grandes dimensiones, hasta 2000x3100mm) y E70 (europea). En 2, 3, 4 o 6 hojas.
+- Galandajes / plegables (serie E63).
+- Vidrios y mamparas: vidrio de ducha, mamparas de baño, paños fijos. Vidrio templado o laminado, varios espesores y tintes (natural, negro, azul, esmerilado, reflectivo).
+- Barandas de vidrio.
+- Fachadas y muro cortina.
+- Shutters (manuales o motorizados), cortinas (roller, zebra, blackout, etc.) y toldos.
+- Paneles y pisos PVC, espejos y estructuras de aluminio.
+- 6 acabados de aluminio (natural, negro, antracita, blanco, bronce, madera) y colores RAL.
+
+Tu tarea:
+- Responder dudas sobre los productos y orientar al cliente sobre qué le conviene según lo que describe.
+- Hablar en español dominicano neutro, tratando de "tú", cálido y profesional. Respuestas breves y claras.
+- NO inventes precios ni medidas exactas ni tiempos de entrega: para cotizar, invita al cliente a dejar sus datos (nombre y teléfono) para que el equipo lo contacte, o a escribir por WhatsApp al +1 (849) 260-6106.
+- Si te preguntan algo que no tiene que ver con ARTAL, redirige amablemente al tema de aluminio y vidrio.
+- No prometas nada que ARTAL no ofrezca. Si no sabes algo, dilo y ofrece que el equipo lo confirme.`;
+
+exports.chatBot = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    try {
+        const entrada = Array.isArray(req.body && req.body.messages) ? req.body.messages : [];
+        // Saneo anti-abuso: solo roles válidos, texto acotado, máximo 20 turnos.
+        const mensajes = entrada
+            .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+            .slice(-20)
+            .map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+        if (!mensajes.length || mensajes[mensajes.length - 1].role !== 'user') {
+            res.status(400).json({ error: 'mensajes' }); return;
+        }
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': anthropicKey.value(),
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5',
+                max_tokens: 600,
+                system: SISTEMA_BOT,
+                messages: mensajes
+            })
+        });
+        if (!r.ok) {
+            const detalle = await r.text();
+            console.error('Error de la API de Claude', r.status, detalle);
+            res.status(502).json({ error: 'ia' }); return;
+        }
+        const data = await r.json();
+        const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+        res.json({ reply: texto || 'Disculpa, no pude generar una respuesta. Escríbenos por WhatsApp al +1 (849) 260-6106.' });
+    } catch (e) {
+        console.error('chatBot', e);
+        res.status(500).json({ error: 'server' });
+    }
 });
