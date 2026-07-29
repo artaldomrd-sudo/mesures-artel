@@ -208,7 +208,7 @@ Si el cliente adjunta una foto o un documento (por ejemplo una foto de su ventan
 Productos que ofrece ARTAL:
 - Ventanas de aluminio: oscilobatiente, proyectada, corredera, batiente, soufflet, paño fijo.
 - Puertas: batientes de aluminio y puertas de vidrio templado.
-- Correderas premium en 3 series: E200 y E100 (grandes dimensiones, hasta 2000x3100mm) y E70 (europea). En 2, 3, 4 o 6 hojas.
+- Correderas premium en 3 series: E200 y E100 (para espacios grandes) y E70 (europea, más compacta). Todas en 2, 3, 4 o 6 hojas.
 - Galandajes / plegables (serie E63).
 - Vidrios y mamparas: vidrio de ducha, mamparas de baño, paños fijos. Vidrio templado o laminado, varios espesores y tintes (natural, negro, azul, esmerilado, reflectivo).
 - Barandas de vidrio.
@@ -216,6 +216,12 @@ Productos que ofrece ARTAL:
 - Shutters (manuales o motorizados), cortinas (roller, zebra, blackout, etc.) y toldos.
 - Paneles y pisos PVC, espejos y estructuras de aluminio.
 - 6 acabados de aluminio (natural, negro, antracita, blanco, bronce, madera) y colores RAL.
+
+MEDIDAS (explícalo siempre así, es importante para no confundir):
+- Habla SIEMPRE en metros, nunca en milímetros, para que se entienda fácil.
+- En las correderas, la medida máxima es POR HOJA (panel): cada hoja llega hasta 2 metros de ancho y 3.10 metros de alto.
+- Como la corredera lleva varias hojas, la abertura total puede ser del ancho que el cliente necesite (se cubre sumando hojas). Lo único que no cambia es la altura: máximo 3.10 metros.
+- Dilo de forma natural y clara, por ejemplo: "Cada panel llega hasta 2 metros de ancho y 3.10 de alto. Como usamos varias hojas, podemos hacer aberturas del ancho que necesites; la altura máxima sí es de 3.10 metros."
 
 Tu tarea:
 - Responder dudas sobre los productos y orientar al cliente según lo que describe.
@@ -278,7 +284,15 @@ exports.chatBot = onRequest({ secrets: [anthropicKey], cors: true }, async (req,
             res.status(502).json({ error: 'ia' }); return;
         }
         const data = await r.json();
-        const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+        let texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+        // Red de seguridad: el chat no interpreta markdown, así que se quita para que no salgan
+        // asteriscos ni almohadillas feas si el modelo llega a usarlos.
+        texto = texto
+            .replace(/\*\*(.+?)\*\*/gs, '$1')
+            .replace(/__(.+?)__/gs, '$1')
+            .replace(/(^|\n)#{1,6}\s*/g, '$1')
+            .replace(/(^|\n)\s*[-*]\s+/g, '$1• ')
+            .trim();
         res.json({ reply: texto || 'Disculpa, no pude generar una respuesta. Escríbenos por WhatsApp al +1 (849) 260-6106.' });
     } catch (e) {
         console.error('chatBot', e);
