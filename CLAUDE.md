@@ -530,9 +530,12 @@ selects con opciones reales.
   marcado en negro cuando su guía está activa (ver punto anterior). Cortina: rectángulo del
   color elegido + 16 franjas horizontales alternadas claro/oscuro (`towardWhite(fill,0.18)`/
   `shade(fill,-16)`) simulando la corrugación de las lamas de aluminio de la foto — **sin barra
-  de cierre fija** (ver corrección arriba). **Motor/manivela**: si `tipo_motor==='manual'`,
-  varilla+mango al costado (mismo patrón que la manivela del roller); cualquier variante
-  motorizada dibuja el **motor completo dentro del cajón** (tubo con degradado metálico + tapa/
+  de cierre fija** (ver corrección arriba). **Motor/manivela**: si `tipo_motor==='manual'`, **sin
+  dibujo** — el usuario vio la línea suelta de la manivela (varilla+mango, mismo patrón que la
+  del roller) y pidió explícitamente quitarla del dibujo en vez de mejorarla (quedaba lo
+  suficientemente ambigua como para leerse como un error, "una línea que sale de atrás del
+  shutter"); el mecanismo manual queda solo en el select "Motor" y en el resumen/PDF. Cualquier
+  variante motorizada dibuja el **motor completo dentro del cajón** (tubo con degradado metálico + tapa/
   cara oscura en el extremo, mismo gradiente que el tubo del roller sin cajón, `motorW=16`
   dentro de los límites del cajón, empujado hacia el borde inferior del cajón — `motorH=2.1` en
   vez de ocupar todo el alto — para dejar hueco arriba) del lado de `orientacion` — a pedido
@@ -711,6 +714,18 @@ selects con opciones reales.
   descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
   confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
   selector sin elegir) no se trata como error.
+- **Ofrecer hoja en blanco después de guardar.** Pedido explícito del usuario: la persona
+  siguiente que abre la app se encuentra la última tarjeta guardada todavía en pantalla (por el
+  autosave `artal_live_progression`) y no sabe si es un proyecto ajeno ya guardado o algo a
+  medio hacer — "cada vez que entramos estamos con el miedo de borrar algo por inadvertencia".
+  `saveProject()`, después del `alert()` de éxito, hace `confirm('¿Dejar la hoja en blanco para
+  el próximo proyecto?')` — **es una pregunta, no automático**: guardar seguido mientras se
+  sigue midiendo el mismo proyecto (el uso normal, ver el punto de "Aviso antes de reemplazar"
+  más abajo) puede responder que no y seguir exactamente donde estaba, sin perder tarjetas. Si
+  acepta, llama a `clearNotebookToBlank()` — la misma lógica que ya usaba `resetNotebook()`
+  ("Hoja en blanco" del menú lateral), extraída a una función compartida para no duplicarla;
+  `resetNotebook()` sigue pidiendo su propio `confirm()` antes de llamarla (dos confirmaciones
+  con textos distintos, cada una en su contexto — no se fusionaron).
 - **Aviso antes de reemplazar un proyecto guardado.** Caso real reportado por el usuario: en la
   obra tomó medidas en una hoja, la mandó a fábrica (guardada), y luego en **otra hoja** (otra
   pestaña/sesión, para la parte de barandas) puso el **mismo** Cliente + Nombre de Proyecto y le

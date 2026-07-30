@@ -939,6 +939,16 @@
         updateSavedStatusBadge();
 
         alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
+
+        // Pedido explícito del usuario: después de guardar, ofrecer dejar la hoja en blanco —
+        // así la próxima persona que abra la app no se encuentra con un proyecto ajeno ya
+        // guardado en pantalla (miedo a tocar/borrar algo por accidente). Es una PREGUNTA, no
+        // automático: si todavía sigue midiendo el mismo proyecto y solo estaba guardando
+        // progreso ("guardar seguido mientras se mide" es el uso normal, ver saveProject más
+        // arriba), puede decir que no y seguir donde estaba sin perder las tarjetas.
+        if (confirm('¿Dejar la hoja en blanco para el próximo proyecto?')) {
+            clearNotebookToBlank();
+        }
     }
 
     // ===================== GESTIÓN DE PROYECTOS (Mis Proyectos) =====================
@@ -1687,25 +1697,32 @@
         updateSavedStatusBadge();
     }
 
+    // Deja la hoja en blanco (mismo estado que "Hoja en blanco" del menú) sin preguntar —
+    // se usa tanto ahí (con confirm() antes) como después de guardar un proyecto con éxito,
+    // donde no hace falta confirmar de nuevo porque ya fue una acción explícita del usuario.
+    function clearNotebookToBlank() {
+        openedProjectKey = null;
+        updateSavedStatusBadge();
+        document.getElementById('header-cliente').value = '';
+        document.getElementById('header-obra').value = '';
+        document.getElementById('header-ubicacion').value = '';
+        document.getElementById('header-material').value = '';
+        document.getElementById('header-color').value = '';
+
+        let displayDate = document.getElementById('header-fecha');
+        displayDate.dataset.created = '';
+        displayDate.innerText = 'Nuevo Proyecto';
+
+        document.getElementById('item-list').innerHTML = '';
+        cardsState = {};
+        itemId = 0;
+        setDocType('COTIZACIÓN');
+        saveProgress();
+    }
+
     function resetNotebook() {
         if(confirm('¿Empezar una hoja en blanco? Se borrarán las tarjetas actuales de la pantalla.')) {
-            openedProjectKey = null;
-            updateSavedStatusBadge();
-            document.getElementById('header-cliente').value = '';
-            document.getElementById('header-obra').value = '';
-            document.getElementById('header-ubicacion').value = '';
-            document.getElementById('header-material').value = '';
-            document.getElementById('header-color').value = '';
-            
-            let displayDate = document.getElementById('header-fecha');
-            displayDate.dataset.created = '';
-            displayDate.innerText = 'Nuevo Proyecto';
-
-            document.getElementById('item-list').innerHTML = '';
-            cardsState = {};
-            itemId = 0;
-            setDocType('COTIZACIÓN');
-            saveProgress();
+            clearNotebookToBlank();
         }
     }
 
@@ -3232,19 +3249,13 @@
                 svg += `<rect x="${bx}" y="${(by + bh - guiaInfH).toFixed(1)}" width="${bw}" height="${guiaInfH.toFixed(1)}" fill="${fill}" stroke="#000" stroke-width="1"/>`;
             }
 
-            // Manual: manivela al costado de la cortina (mismo criterio que el roller). Cualquier
-            // variante motorizada: motor completo (tubo + tapa oscura) DENTRO del cajón, del lado
-            // indicado, con una etiqueta "MOTOR" arriba del tubo (dentro del propio cajón, en un
-            // chip oscuro para que se lea sobre cualquier color de acabado) — para que no quede
-            // duda de qué es ni de qué lado está, sin asomar fuera del cajón.
-            if (state.tipo_motor === 'manual') {
-                const sideX = isD ? bx + bw : bx;
-                const sideSign = isD ? 1 : -1;
-                const cy1 = by + bh * 0.55, cy2 = cy1 + 3;
-                const cx2 = sideX + sideSign * 6;
-                svg += `<line x1="${sideX}" y1="${cy1.toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${cy2.toFixed(1)}" stroke="#111" stroke-width="1"/>`;
-                svg += `<line x1="${cx2.toFixed(1)}" y1="${(cy2 - 1.5).toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${(cy2 + 1.5).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
-            } else {
+            // Manual (manivela): sin dibujo — el mecanismo manual queda solo en el menú/resumen
+            // (a pedido explícito del usuario, que vio la línea suelta de la manivela y prefirió
+            // quitarla del dibujo en vez de convertirla en un mango más claro). Cualquier
+            // variante motorizada sigue dibujando el motor completo (tubo + tapa oscura) DENTRO
+            // del cajón, del lado indicado, con una etiqueta "MOTOR" arriba del tubo (dentro del
+            // propio cajón, en un chip oscuro para que se lea sobre cualquier color de acabado).
+            if (state.tipo_motor !== 'manual') {
                 const motorGradId = `shutter-motor-${id}`;
                 svg += `<defs><linearGradient id="${motorGradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7c868d"/><stop offset="50%" stop-color="#3d444a"/><stop offset="100%" stop-color="#1a1d1f"/></linearGradient></defs>`;
                 const motorW = 16, motorH = 2.1, motorY = cajY + cajH - motorH - 0.3;
