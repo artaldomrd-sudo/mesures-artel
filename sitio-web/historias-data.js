@@ -34,11 +34,21 @@ window.HISTORIAS=[
 "slug": "videos",
 "titulo": "Videos",
 "cover": "historias/videos/cover.jpg",
-"n": 1,
+"n": 3,
 "slides": [
 {
 "tipo": "video",
 "src": "historias/videos/01.mp4",
+"cap": ""
+},
+{
+"tipo": "video",
+"src": "historias/videos/02.mp4",
+"cap": ""
+},
+{
+"tipo": "video",
+"src": "historias/videos/03.mp4",
 "cap": ""
 }
 ]
