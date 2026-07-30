@@ -55,8 +55,16 @@ un **PDF de Cotización o Fabricación** para el cliente.
 - **Barandas**: `baranda_bal` (baranda con constructor de tramos). *(`ducha_cab` "Cabina de
   Ducha" ya NO está en el menú; el `type` sigue existiendo para proyectos guardados que ya
   la tengan.)*
+- **Cortinas/Enrollables** (`categoria: 'cortina'`): `cort_roller` (cortina enrollable) y
+  `cort_shutter` (persiana de seguridad enrollable — rediseñado 2026-07-30 a partir de una foto
+  real, ver detalle en la sección "Cortinas/Enrollables" más abajo) — arrancó solo con estos dos
+  por pedido explícito del usuario ("sus características son bien similares"); los otros tipos
+  que ya vende ARTAL en
+  el sitio web (Ondas, Perma, Roman, Venecianas, Verticales, Zebra) quedan pendientes de agregar
+  si hace falta. Producto de tela/PVC, sin vidrio ni perfil de aluminio — ver más abajo.
 - **Especial**: dibujo libre / **CAD** ("Fachada Compuesta", `type:'draw'`): lienzo donde se
-  insertan módulos que se pegan con imán (vidrio con vidrio).
+  insertan módulos que se pegan con imán (vidrio con vidrio). Cortinas/enrollables NO participan
+  del CAD (mismo criterio que baranda/ducha/cerramiento, que tampoco se insertan ahí).
 
 ## Sistema de dibujo (SVG)
 
@@ -246,6 +254,308 @@ estilo simplificado del CAD.
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).
+
+## Cortinas/Enrollables (`categoria: 'cortina'`)
+
+Categoría nueva, sin vidrio ni perfil de aluminio (producto de tela/PVC) — arranca con
+`cort_roller` (cortina enrollable) y `cort_shutter` (persiana tipo shutter/lama), agregados
+juntos a pedido del usuario por tener características similares.
+
+- **`getCategoriaByType`**: el check `type.startsWith('cort_')` va **antes** del check de
+  `'cor'` (corredera) — cualquier `type` que empiece con "cort" también empieza con "cor", así
+  que el orden importa (si no, "cort_roller"/"cort_shutter" caerían como `categoria:'corredera'`
+  por error).
+- **`addItem`**: defaults propios (`instalacion_cortina:'dentro'` para ambos tipos; roller
+  además `color_cortina:'chalk'`, `tela:'screen3'`, `mecanismo:'cadena'`, `cajon:'sin_cajon'`;
+  shutter además `color_cortina:'blanco'`, `tipo_motor:'manual'`, `instalacion_tipo:'hueco'`,
+  `guiaIzq/guiaDer/cajonExtra:false` — ver "Shutter" más abajo) — nunca toca
+  `vidrio`/`espesor`/`color_perfil` (quedan seteados por el default general pero no se leen en
+  ningún lado de esta categoría, dato muerto inofensivo).
+- **`getMenuOpciones`**: rama propia `categoria === 'cortina'` — color (con opción
+  "Personalizado" que revela un campo de texto libre, mismo patrón que RAL en `color_perfil`),
+  instalación (dentro/sobre el marco en roller; "Por Dentro/Por Fuera" en shutter, mismos
+  valores `dentro`/`fuera` con etiqueta distinta según `type`), y según `type`: tela+mecanismo+
+  cajón (roller) o tipo de motor+montaje (shutter, ver más abajo). Ignora a propósito
+  `vidriosBasicos`/`colorPerfilSel`/`tipoAluminioHtml` (se calculan igual arriba por cómo está
+  armada la función, pero no se usan — mismo patrón que ya usan fachada/mampara/ducha/baranda
+  para las opciones que no les aplican).
+- **Catálogos reales de tela del roller — por colección (`TELA_COLECCIONES`)**, cargados a
+  pedido del usuario a partir de fotos de muestrarios físicos, uno a la vez a lo largo de varias
+  rondas — **diseñado a propósito para que agregar el próximo catálogo sea solo sumar una
+  entrada al objeto, sin tocar ninguna otra función.** Dos menús dependientes en vez de uno:
+  **"Tipo de tela"** elige la colección/catálogo y **"Referencia y color"** elige el color
+  DENTRO de esa colección (options generadas desde `TELA_COLECCIONES[tela_tipo].colores`, solo
+  para `type==='cort_roller'` — el shutter usa su propia paleta acotada, ver "Shutter" más
+  abajo). `TELA_COLECCIONES` es la fuente única
+  de verdad (`getMenuOpciones`, `generateSummary`, `renderCortina` y `cortinaAnchoMaxMm` la
+  consultan, nunca hay una lista de colores/anchos duplicada a mano) — cada entrada tiene:
+  - `label`: nombre mostrado en "Tipo de tela".
+  - `aperturas`: qué opciones del selector de Apertura aplican (colecciones distintas pueden
+    tener aperturas totalmente distintas — Screen variable, Blackout fijo, Día/Noche fijo).
+  - `colores`: array de `{value, label, hex}` — el label ya incluye el código de referencia del
+    proveedor cuando existe, para pedir sin ambigüedad. Los hex están aproximados a ojo desde
+    las fotos del muestrario físico, no son un color picker exacto — si hace falta más fidelidad
+    (ej. para el sitio web) pedir códigos Pantone/RAL reales al proveedor.
+  - `anchoMaxMm` (opcional): número fijo, o `function(apertura)` cuando el máximo depende de la
+    apertura elegida (caso Essential) — ver "Ancho máximo" más abajo.
+  - `zebra` (opcional, `true`): dispara el dibujo con franjas alternadas en vez de un rectángulo
+    sólido — ver "Dibujo con franjas" más abajo.
+
+  Colecciones cargadas hasta ahora:
+  - **`essential`** — Essential (Coulisse), tela Screen, `aperturas: ['screen1','screen3',
+    'screen5','screen10']`. 8 colores serie SCR-3005: `chalk` (SCR-3005-01), `chalk_beige_cream`
+    (SCR-3005-02), `chalk_soft_grey` (SCR-3005-03), `charcoal_iron_grey` (SCR-3005-05), `ebony`
+    (SCR-3005-06), `soft_grey` (SCR-3005-08), `charcoal_dark_bronze` (SCR-3005-10),
+    `beige_pearl_grey` (SCR-3005-11).
+  - **`plain_xl_blackout`** — Plain XL (Coulisse), 100% Blackout, `aperturas: ['blackout']`
+    (una sola, es opaca). 7 colores serie RF-PLAIN-XL: `snow_white` (-5120), `metal` (-5600),
+    `dust` (-6310), `fossil` (-5420), `blue_night` (-6000), `taupe` (-5430), `black` (-6320).
+  - **`zebra_cyprus`** (`zebra: true`) — "Zebra Cyprus" (así le dice ARTAL a este tipo: franjas
+    alternadas sólido/transparente, día y noche — "Cyprus" es el nombre del patrón dentro de
+    Coulisse, "Zebra" es el nombre de familia que usa ARTAL). `aperturas: ['dia_noche']` (una
+    sola — "Light Filtering / Dim Out", no tiene sentido de % de apertura como Screen). **7
+    colores** reales del muestrario físico (sin código de referencia — este catálogo no trae
+    códigos, solo el nombre en la etiqueta): `grey`, `cream`, `light_brown`, `ivory`,
+    `dark_brown`, `chocolate`, `white` — 280cm/110in de ancho de rollo, pero **"Max Blind
+    Width" recomendado 265cm** (más angosto que el ancho crudo, por la costura/unión de las
+    franjas — ver `anchoMaxMm` más abajo).
+  - **`zakynthos`** (`zebra: true`) — mismo tipo de producto que Zebra Cyprus (el usuario aclaró
+    explícitamente: "la diferencia entre zakynthos y cyprus es la textura y acabados de la
+    tela", no el mecanismo — por eso comparte el mismo dibujo con franjas y el mismo
+    `anchoMaxMm: 2650`, ficha técnica idéntica a Cyprus). `aperturas: ['dia_noche']`. **14
+    colores** numerados del muestrario físico (`#1 Bright White` … `#29 Dust`, sin código de
+    proveedor tipo SCR-xxx — solo el número de referencia + nombre de cada etiqueta):
+    `bright_white`, `peach`, `croissant`, `mocha`, `metal`, `steel_grey`, `pirate_black`,
+    `cinder`, `blue_night`, `sand`, `fossil`, `copper_brown`, `autumn`, `dust`.
+  - **`hampton`** — Screen con textura "efecto lino" (linen look), **NO es zebra** (roller liso
+    normal, mismo dibujo que Essential/Plain XL). `aperturas: ['screen15']` (un solo factor de
+    apertura fijo, 15% — a diferencia de Essential que tiene 4 variantes). `anchoMaxMm: 3000`.
+    **4 colores** de la variante Screen (serie HAMPTON-0xxx): `white` (-0150), `off_white`
+    (-0500), `light_grey` (-0100), `sand` (-0200). ⚠️ **El catálogo dice explícitamente "the
+    collection includes screen as well as black-out fabrics"** — el usuario solo mandó fotos de
+    la variante Screen hasta ahora. Si más adelante manda la variante Black-out, agregarla como
+    colección aparte (ej. `hampton_blackout`), **no mezclar colores de las dos bajo la misma
+    entrada** — son tonos distintos aunque compartan el nombre "Hampton".
+  - **`dakar_blackout`** — "Dakar Blackout" (línea Intimate), 100% Blackout con textura tejida
+    tipo lino (parecida a la de Hampton, pero opaca) — **NO es zebra** (roller liso normal,
+    mismo dibujo que Essential/Plain XL/Hampton). `aperturas: ['blackout']` (una sola, es
+    opaca — mismo criterio que Plain XL). `anchoMaxMm: 3000` (ancho de rollo 300cm/116in, la
+    ficha no trae un Max Blind Width separado, a diferencia de Cyprus/Zakynthos). **5 colores**
+    del muestrario físico: `off_white` (G3001TS), `beige` (G3003TS), `grey` (G3007TS MH),
+    `slate` (G3007TS Dark Grey — mismo código de referencia base que "Grey" pero matiz más
+    oscuro, dos colores reales distintos igual), `travertine` (G3005TS). Última tela cargada
+    "por el momento" según el usuario — catálogo completo, sin variantes pendientes.
+  - **Cambiar `tela_tipo`** invalida `color_cortina`/`tela` si no existen en la colección
+    nueva — se resetean al primero de la lista nueva (mismo patrón que "espesor" resetea
+    "vidrio" para vidrio/aluminio), manejado en `updateState` (bloque dedicado
+    `key === 'tela_tipo'`).
+  - `cortinaColorHex(telaTipo, colorKey)` es el único lugar que resuelve el hex de un color de
+    roller (shutter sigue usando `CORTINA_COLORS` directo, paleta plana). "Personalizado" cae
+    a un gris genérico en ambos casos (no hay hex real que mostrar).
+- **Dibujo con franjas (colecciones con `zebra: true`)**: a diferencia de las demás colecciones
+  (un rectángulo sólido), `renderCortina` dibuja el roller con **franjas horizontales
+  alternadas** cuando `(TELA_COLECCIONES[state.tela_tipo] || {}).zebra` es verdadero — pedido
+  explícito del usuario tras mandar fotos de un roller Zebra real, para que se note a simple
+  vista que es día/noche y no un roller liso. Gatillado por el flag de la colección, **no** por
+  comparar `tela_tipo` contra un nombre fijo (así Zakynthos quedó cubierto gratis al agregarla,
+  sin tocar `renderCortina`). Proporción de referencia (Cyprus: Height Solid Part 100mm / Height
+  Sheer Part 55-60mm, ≈64%/36% — se reusa igual para todas las colecciones zebra; la diferencia
+  entre ellas es la tela, no cuánto mide cada franja). Cada franja "sólida" usa el color elegido
+  (`fill`), cada franja "sheer" usa `towardWhite(fill, 0.5)` — **no** `shade(fill, p)` con `p`
+  positivo: un color de tela ya claro (ej. "Bright White" de Zakynthos) saturaría a blanco puro
+  con `shade()` y la franja sheer quedaría indistinguible del fondo blanco del PDF (mismo bug ya
+  encontrado y arreglado en la cara superior del cajón, ver más abajo).
+- **Ancho máximo de rollo por catálogo (aviso, no bloquea)**: `cortinaAnchoMaxMm(telaTipo,
+  aperturaValue)` lee `TELA_COLECCIONES[telaTipo].anchoMaxMm` (número, o lo ejecuta como función
+  si es una función) — **ninguno de los catálogos que mandó el usuario trae un ALTO máximo** (el
+  largo del rollo no aparece limitado en esas fichas), así que solo se avisa por ancho. Essential
+  usa una función porque depende de la apertura elegida (`screen10` → 2500mm, el resto → 3000mm
+  — confirmado explícitamente en la ficha: "Width 98in-118in/250-300cm" para 1/3/5%, pero
+  "98in/250cm" nada más para 10%); las demás colecciones usan un número fijo. `refreshCortinaWarn(id)`
+  compara `state.ancho` contra ese máximo y muestra/oculta un `<div id="cortina-warn-${id}">`
+  (clase `.cortina-warn`, oculto por defecto) con un mensaje — se llama desde `updateState` cuando
+  cambia `ancho`/`tela_tipo`/`tela`, y una vez al crear/restaurar la tarjeta en `addItem`. Es
+  solo un aviso (no impide fijar el ítem): puede haber unión/costura del proveedor que lo
+  resuelva, no es información que la app pueda decidir por sí sola.
+- **Rollo con/sin cajón (roller)**: `state.cajon` (`'sin_cajon'` default o `'con_cajon'`) —
+  pedido explícito del usuario. Con cajón: caja del **mismo color que la tela elegida** (usa el
+  mismo `fill` que el panel, no un color fijo) — así se ve como una cajonera que tapa el
+  mecanismo, no como un tubo expuesto pintado. Ver `renderCortina`.
+  - **Un poco de 3D (pedido explícito del usuario: "a ver si se aprecia más el cajón o rollo
+    según el caso")** — antes ambas variantes eran un rectángulo plano, ahora:
+    - **Sin cajón**: el tubo tiene un degradado vertical (claro arriba → oscuro abajo, gris) en
+      vez de un gris plano, más una elipse pequeña en cada extremo (tapa del cilindro) — se lee
+      como un tubo redondo visto de frente, no una barra.
+    - **Con cajón**: caja isométrica de verdad — cara frontal (el `fill` de la tela sin tocar),
+      cara superior (`towardWhite(fill, 0.35)`) y cara lateral derecha (`shade(fill, -18)`),
+      como un cubo con una esquina visible (mismo truco que un dado de línea dibujado a mano).
+    - **`towardWhite(hex, frac)`** (nueva, junto a `shade`): mezcla una FRACCIÓN de lo que le
+      falta a un color para llegar a blanco, en vez de sumarle un número fijo de "puntos de
+      brillo" como hace `shade(hex, p)` con `p` positivo. Bug real encontrado al implementar
+      esto: con un color casi blanco como **Chalk** (`#efece3`), `shade(fill, 12)` ya daba
+      `#ffffff` puro (el canal rojo, 239, satura con solo sumarle ~6 puntos) — la cara "superior
+      más clara" del cajón se veía blanca lisa, totalmente desconectada del color de la tela.
+      `towardWhite` no satura nunca (asintótico hacia blanco): un color ya claro se ve apenas un
+      poco más claro, uno oscuro se aclara bastante — el comportamiento correcto en los dos
+      casos. Se usa `shade(fill, -18)` sin cambios para la cara oscura (oscurecer restando no
+      tiene el mismo problema de saturación, el piso es 0 y ningún color de tela está tan cerca
+      de negro puro).
+- **Mecanismo y accesorios de exterior — condicionados por `tela_tipo`, no por un toggle
+  interior/exterior nuevo (decisión explícita del usuario: "Essential" YA es la tela que ARTAL
+  usa de exterior).** Cuando `tela_tipo === 'essential'` (`esExterior` en `getMenuOpciones`):
+  - El `<select>` de Mecanismo cambia de Cadena Manual/Motorizado a **Manual (Manivela)** /
+    **Motorizada** (`state.mecanismo`: `'manivela'` o `'motor'`, en vez de `'cadena'`/`'motor'`)
+    — una manivela, no una cadena colgante, por el tamaño/viento de un roller de exterior.
+    Default de un roller nuevo: `'manivela'` (ver `addItem`). Al cambiar `tela_tipo` en
+    `updateState`, si el mecanismo actual no es válido en la colección nueva (`['manivela',
+    'motor']` para Essential, `['cadena','motor']` para el resto) se resetea al default de esa
+    colección — mismo patrón que ya resetea color/apertura ahí mismo.
+  - Aparecen dos **checkboxes independientes** ("Accesorios exterior:", mismo patrón visual que
+    la Cerradura de puerta de vidrio — `cerr_luna`/`cerr_digital`/`cerr_piso`): **Cables
+    Laterales** (`state.cables_laterales`) y **Ganchos de Sujeción** (`state.ganchos`). Son dos
+    accesorios independientes (pueden ir los dos juntos, uno solo, o ninguno) — **no son la
+    misma cosa ni alternativas entre sí** (corrección explícita del usuario: un primer intento
+    los puso como un único `<select>` "Cables o Ganchos" y estaba mal — cables laterales es un
+    sistema de guía/riel para la tela, ganchos es un accesorio de sujeción abajo, cosas
+    distintas). Solo se muestran/leen para Essential; en otras colecciones quedan `undefined`
+    (no se limpian al cambiar de colección, dato muerto inofensivo).
+  - `renderCortina` dibuja el mecanismo según `state.mecanismo`: `'manivela'` → varilla+mango al
+    costado (lado de `orientacion`, igual que la cadena); `'cadena'` (o vacío) → cuenta colgante
+    de siempre; `'motor'` → **no dibuja nada** (motorizado no tiene mecanismo manual visible).
+  - `generateSummary` arma el texto del mecanismo con un mapa (`Motorizada` para exterior vs
+    `Motorizado` para interior, `Manual (Manivela)` vs `Cadena Manual`) y agrega
+    "Accesorios exterior: Cables Laterales + Ganchos de Sujeción" (solo los que estén marcados,
+    solo si `esExterior` y al menos uno está activo).
+- **Reutiliza `orientacion` ('I'/'D') como "lado"** (de la cadena/manivela en roller, del
+  motor/manivela en shutter) en vez de inventar un campo nuevo: el toggle "A LA
+  IZQUIERDA/DERECHA" que ya existe para ventanas/correderas se activa agregando `'cortina'` a la
+  lista `showOrientation` en `addItem` — mismo mecanismo (`setOrientation(id, 'I'|'D')`), sin
+  tocar nada más.
+- **`renderCortina(state, id)`** (dibujo SVG, definida junto a `renderDucha`): mismas
+  `dimLineH`/`dimLineV` que usa el resto de la app (mismo margen `y=4`/`x=borde+4` que la medida
+  universal ancho/alto del switch grande, para que se vea igual de "técnico" que los demás
+  ítems). Roller: tubo/cajón arriba (según `cajon`) + tela **como una sola pieza continua, sin
+  líneas de pliegue** (una tela enrollable no tiene costuras visibles — se probaron esas líneas
+  y el usuario pidió quitarlas) + cadena con "cuenta" del lado de `orientacion`. Shutter: ver
+  subsección propia más abajo.
+- **Dispatch en `renderSVG`**: `if (state.categoria === 'cortina') return renderCortina(...)`
+  va en el mismo punto que baranda/ducha/cerramiento, **antes** del check `isCAD` — por eso
+  cortinas/enrollables no participan del CAD (no hace falta excluirlas a mano de ningún lado,
+  simplemente nunca llegan a `renderCADProportional`).
+- **`generateSummary`**: rama propia (mismo patrón que ducha/baranda/cerramiento — `return`
+  temprano antes del bloque genérico, que si no imprimiría "Acabado: ..." sin sentido para un
+  producto sin perfil de aluminio). Para roller, agrega "Tipo de tela: {label de la colección}"
+  además de color/apertura, leyendo todo de `TELA_COLECCIONES` (nunca una copia local del texto).
+  `instTxt` (línea "Instalación: ...") se calcula distinto según `type`: "Dentro del
+  marco"/"Sobre el marco" para roller, "Por Dentro"/"Por Fuera" para shutter — mismos valores
+  `dentro`/`fuera` guardados en `instalacion_cortina`, solo cambia la etiqueta mostrada.
+- **`updateState`**: los campos nuevos (`color_cortina`, `tela`, `tela_tipo`, `mecanismo`,
+  `cajon`, `instalacion_cortina`, `tipo_motor`, `instalacion_tipo`) están en la lista blanca de
+  re-render del dibujo; `color_cortina` además dispara la regeneración de las opciones (para
+  mostrar/ocultar el campo de texto de "Personalizado"); `tela_tipo` tiene su propio bloque
+  dedicado (resetea color/apertura si hace falta + regenera opciones + redibuja, todo junto,
+  igual que hace "espesor" con "vidrio"). `guiaIzq`/`guiaDer`/`cajonExtra` (ver "Shutter") NO
+  pasan por `updateState` — tienen su propio toggle dedicado, `toggleShutterExtra(id, key)`.
+
+### Shutter (`type: 'cort_shutter'`) — persiana de seguridad enrollable
+
+Rediseñado por completo (2026-07-30) a partir de una foto de referencia real que mandó el
+usuario (persiana enrollable de aluminio negra, cajón superior, rieles laterales, lamas
+corrugadas) — el diseño anterior (paneles abisagrados con lamas tipo "shutter" plegable) no
+correspondía al producto real. Los tipos de guía/cajón todavía no tienen ficha técnica (el
+usuario los definirá más adelante) — mientras tanto son solo notas en el dibujo, no
+selects con opciones reales.
+
+- **Colores**: paleta acotada a 3 (`getMenuOpciones`, rama `type === 'cort_shutter'`) — Blanco,
+  Negro, Marrón (+ Personalizado, mismo patrón de campo de texto libre que el resto de la
+  categoría). `CORTINA_COLORS` conserva `beige`/`gris`/`madera` solo por compatibilidad con
+  proyectos guardados de antes del rediseño (dato muerto inofensivo, ya no aparecen en el
+  selector); `negro` se oscureció a `#1a1a1a` (antes `#2b2f33`) para que se vea más parecido al
+  aluminio mate negro de la foto — cambio seguro porque `CORTINA_COLORS` solo lo usa el shutter
+  (el roller resuelve su color con `cortinaColorHex`/`TELA_COLECCIONES`, no toca esta paleta).
+- **Motor**: `state.tipo_motor` (default `'manual'`), select de 5 opciones — `motorizado`,
+  `manual` (Manivela), `motor_manivela` (Motorizado c/ Manivela de Emergencia),
+  `motor_inteligente` (Motorizado + Sistema Conectado Inteligente), `motor_solar` (Motorizado
+  Solar). El **lado** del motor/manivela reutiliza `orientacion` (mismo toggle "A LA
+  IZQUIERDA/DERECHA" ya activo para la categoría, sin campo nuevo).
+- **Montaje**: `state.instalacion_tipo` (default `'hueco'`) — Dentro del Hueco / En Aplique.
+  Campo nuevo y **distinto** de `instalacion_cortina` (que para shutter pasó a significar "Por
+  Dentro/Por Fuera" — dos conceptos de instalación separados, ambos pedidos explícitamente por
+  el usuario).
+- **Guías y cajón extra — booleanos simples, sin sub-configuración todavía**
+  (`guiaIzq`/`guiaDer`/`guiaInf`/`cajonExtra` en el state, default `false` los 4): cuatro botones
+  tipo `.toggle-btn.small` (`renderShutterExtras(id)`, div `id="shutter-extras-${id}"` insertado
+  en la plantilla de la tarjeta justo debajo de `.measure-inputs`, generado una sola vez en
+  `addItem` — **no** dentro de `.config-options`, mismo motivo que los botones de Paño Fijo:
+  `updateState` regenera `#options-${id}` completo al cambiar otros campos y borraría estos
+  botones) — "+ Guía Izq." y "+ Guía Der." bajo el campo Ancho; "+ Guía Inf." (guía horizontal
+  inferior) y "+ Cajón" bajo el campo Alto (botones abreviados por espacio; el dibujo y el
+  resumen sí usan la palabra completa, ver abajo). `toggleShutterExtra(id, key)` invierte el
+  booleano, refresca el mini-bloque de botones y redibuja el SVG (mismo patrón que `togglePano`,
+  pero sin objeto de sub-configuración porque todavía no hay tipos/dimensiones reales que pedir).
+  Al activarse, cada uno agrega **en el dibujo** una nota de texto con la palabra completa
+  ("+ Guía Izquierda" / "+ Guía Derecha" / "+ Guía Inferior" / "+ Cajón", debajo de la cortina,
+  **solo si está activo** — nunca aparece de por sí, a pedido explícito del usuario) y una línea
+  "Extras: ..." en el resumen/PDF (`generateSummary`). **Sin cálculo de medida**: el usuario
+  aclaró explícitamente que agregar guías aumenta el ancho total real del shutter, pero ese
+  cálculo lo hace el técnico según qué guías use — la app **no** le suma nada a `state.ancho`
+  todavía (pendiente para una versión futura que desglose medidas de verdad; por ahora es solo
+  una nota informativa).
+- **Marca visual de cada guía activa (no solo texto)** — pedido explícito del usuario tras ver
+  el primer resultado ("marca completo... para que quede bien claro en el dibujo"):
+  - **Izquierda/Derecha**: el riel lateral correspondiente (ver "Dibujo" abajo, siempre
+    dibujado) cambia su borde de sutil (`shade(fill,-12)`, 0.4 de grosor) a **negro y grueso**
+    (`#000`, 1 de grosor) cuando `guiaIzq`/`guiaDer` está activo — mismo relleno (`fill`) en
+    ambos casos, solo cambia el borde.
+  - **Inferior**: a diferencia de los rieles laterales, **no hay barra inferior por defecto**
+    (ver corrección de la "barra final" más abajo) — el rectángulo de la guía inferior
+    (`bx,by+bh-2.5` a `bx+bw,by+bh`, mismo `fill` que la cortina + borde negro `#000` de 1 de
+    grosor) **solo se dibuja si `guiaInf` está activo**, exactamente el mismo criterio que el
+    usuario pidió para las notas de texto ("la guía inferior aparece solo si la selecciono").
+- **Corrección: ya no hay una barra gris fija en la base del shutter.** El diseño anterior
+  dibujaba siempre una "barra final" (`shade(fill,-25)`) en el borde inferior de la cortina —
+  para colores claros (blanco) esa resta de 25% de brillo daba un gris claramente visible y
+  desentonado que el usuario reportó como un rectángulo gris que "no debe estar presente". Se
+  quitó por completo; el borde inferior de la cortina ahora solo se marca cuando el usuario
+  activa `guiaInf` (ver punto anterior) — mismo elemento visual, pero condicionado al toggle en
+  vez de fijo.
+- **Dibujo (`renderCortina`, rama `type === 'cort_shutter'`)**: cajón superior con el mismo
+  truco isométrico 3D (cara superior + lateral, `towardWhite`/`shade`) que ya usa el cajón del
+  roller — mismas coordenadas (`cajY = by-4`, `cajH = 4`, `depth = 1.6`) para no chocar con la
+  línea de medida de ancho, que ya usa `y=4`. **Rieles laterales al ras del cajón**: dos barras
+  verticales finas, mismo ancho que el voladizo del cajón por lado (`railW = 1`, calculado como
+  `cajX+cajW - (bx+bw)` para que quede siempre exacto aunque cambien las constantes del cajón) y
+  **del mismo color que la cortina** (`fill`, no un gris fijo — corregido a pedido del usuario,
+  que notó que se veían "por fuera" del cajón cuando el ancho/color no coincidían), con borde
+  marcado en negro cuando su guía está activa (ver punto anterior). Cortina: rectángulo del
+  color elegido + 16 franjas horizontales alternadas claro/oscuro (`towardWhite(fill,0.18)`/
+  `shade(fill,-16)`) simulando la corrugación de las lamas de aluminio de la foto — **sin barra
+  de cierre fija** (ver corrección arriba). **Motor/manivela**: si `tipo_motor==='manual'`,
+  varilla+mango al costado (mismo patrón que la manivela del roller); cualquier variante
+  motorizada dibuja el **motor completo dentro del cajón** (tubo con degradado metálico + tapa/
+  cara oscura en el extremo, mismo gradiente que el tubo del roller sin cajón, `motorW=16`
+  dentro de los límites del cajón, empujado hacia el borde inferior del cajón — `motorH=2.1` en
+  vez de ocupar todo el alto — para dejar hueco arriba) del lado de `orientacion` — a pedido
+  explícito del usuario, para que el lado del motor se note "de un vistazo" sin asomar afuera
+  del cajón (el diseño anterior era una cajita de 3×2 en el borde, muy difícil de ver). **Con
+  una etiqueta "MOTOR" arriba del tubo, dentro del cajón** — pedido explícito del usuario ("para
+  que no quede duda"): un chip oscuro fijo (`fill="#111"`, no el color de la cortina) + texto
+  blanco, porque el chip tiene que leerse igual de bien sobre cualquier acabado (blanco, negro,
+  marrón). Solo se dibuja para variantes motorizadas, no para `manual` (la manivela ya es
+  autoexplicativa). No hay espacio disponible **encima** del cajón completo (el borde superior
+  del cajón, `cajY-depth`, queda a solo 0.4 unidades de la línea de medida de ancho que usa
+  `y=4`) — por eso la etiqueta vive **dentro** del cajón, arriba del tubo, no por fuera.
+- **`verify.mjs`**: `cort_roller`/`cort_shutter` agregados al array `types` (se prueban con el
+  mismo fixture genérico que el resto — los campos que no usan quedan sin efecto, y los que sí
+  usan tienen `|| valor` de respaldo en `getMenuOpciones`/`renderCortina`, así que renderizan
+  bien igual sin necesitar un fixture dedicado).
+- **Info complementaria de los catálogos, guardada para cuando el usuario arranque el rediseño
+  del sitio web** — ver memoria `[[artal-sitio-web-presentacion]]` sección "Cortinas/Rollers":
+  fichas técnicas completas (material, tejido, peso, grosor, certificaciones FR/Oeko-Tex,
+  tabla de confort térmico/visual por color de Essential, especificaciones de corte/soldado),
+  guía de apertura recomendada por orientación de fachada, y una tercera ficha ("Cyprus",
+  tela day/night light-filtering con parte sólida + parte sheer) recibida SIN colores todavía
+  — pendiente agregarla como colección nueva cuando lleguen las fotos de color.
 
 ## PDF / Impresión
 

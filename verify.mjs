@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'fachada_din'];
+  'door_slide', 'fachada_din', 'cort_roller', 'cort_shutter'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {

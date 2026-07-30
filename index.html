@@ -154,9 +154,16 @@
         
         .error-pulse { border: 2px solid #e74c3c !important; box-shadow: 0 0 8px rgba(231, 76, 60, 0.4) !important; background-color: #fadbd8 !important; }
 
+        .cortina-warn { margin-top: 6px; padding: 7px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #fdecea; color: #c0392b; border: 1px solid #f5b7b1; display: none; }
+        .cortina-warn.show { display: block; }
+
         .orientation-toggle { display: flex; gap: 5px; font-size: 11px; margin-top: 5px; }
         .toggle-btn { flex: 1; text-align: center; padding: 6px 8px; border: 1px solid #ddd; cursor: pointer; border-radius: 3px; background: #f9f9f9; font-weight: bold; color: #777; transition: 0.2s;}
         .toggle-btn.active { background: var(--artal-yellow); color: var(--artal-blue); border-color: var(--artal-yellow); }
+
+        .shutter-extras-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+        .shutter-extras-row .extras-label { font-size: 10px; font-weight: bold; color: var(--artal-blue); min-width: 32px; }
+        .toggle-btn.small { flex: 0 0 auto; padding: 4px 8px; font-size: 10px; }
 
         .config-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f4f6f7; padding: 10px; border-radius: 4px; border: 1px solid #e1e8ed; }
         .config-options select { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; outline: none; background: white; color: var(--text-dark); font-family: 'Arimo'; }
@@ -398,6 +405,10 @@
 
         <h3>Barandas</h3>
         <button class="btn-cat" onclick="addItem('Baranda de Vidrio', 'baranda_bal', 'baranda')">Baranda de Vidrio</button>
+
+        <h3>Cortinas/Enrollables</h3>
+        <button class="btn-cat" onclick="addItem('Cortina Enrollable', 'cort_roller', 'cortina')">Cortina Enrollable (Roller)</button>
+        <button class="btn-cat" onclick="addItem('Shutter', 'cort_shutter', 'cortina')">Shutter</button>
 
         <h3>Especial</h3>
         <button class="btn-cat" style="background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('Fachada Compuesta', 'draw', 'dibujo')">+ FACHADA COMPUESTA (CAD)</button>
@@ -1207,6 +1218,53 @@
             return;
         }
 
+        if (state.categoria === 'cortina') {
+            // Roller: catálogo real por colección (TELA_COLECCIONES, ver CLAUDE.md — fuente
+            // única compartida con getMenuOpciones/renderCortina). Shutter: paleta acotada
+            // (blanco/negro/marrón, ver CORTINA_COLORS).
+            const instTxt = state.type === 'cort_shutter'
+                ? (state.instalacion_cortina === 'fuera' ? 'Por Fuera' : 'Por Dentro')
+                : (state.instalacion_cortina === 'fuera' ? 'Sobre el marco' : 'Dentro del marco');
+            const ladoTxt = state.orientacion === 'D' ? 'Derecha' : 'Izquierda';
+            let tituloTxt, colorTxt, extraTxt;
+            if (state.type === 'cort_shutter') {
+                const colMapShutter = { blanco: 'Blanco', negro: 'Negro', marron: 'Marrón', beige: 'Beige', gris: 'Gris', madera: 'Madera', personalizado: (state.color_cortina_texto || 'Personalizado') };
+                const motorMap = { motorizado: '#1 Motorizado', manual: '#2 Manual (Manivela)', motor_manivela: '#3 Motorizado c/ Manivela de Emergencia', motor_inteligente: '#4 Motorizado + Sistema Inteligente', motor_solar: '#5 Motorizado Solar' };
+                colorTxt = colMapShutter[state.color_cortina || 'blanco'] || colMapShutter.blanco;
+                tituloTxt = 'SHUTTER';
+                const motorTxt = motorMap[state.tipo_motor] || motorMap.manual;
+                const montajeTxt = state.instalacion_tipo === 'aplique' ? 'En Aplique' : 'Dentro del Hueco';
+                const notas = [state.guiaIzq && 'Guía Izquierda', state.guiaDer && 'Guía Derecha', state.guiaInf && 'Guía Inferior', state.cajonExtra && 'Cajón adicional'].filter(Boolean);
+                extraTxt = `<div>Motor: ${motorTxt} · Lado: ${ladoTxt}</div><div>Montaje: ${montajeTxt}</div>${notas.length ? `<div>Extras: ${notas.join(' + ')}</div>` : ''}`;
+            } else {
+                const tt = state.tela_tipo || 'essential';
+                const coleccion = TELA_COLECCIONES[tt] || TELA_COLECCIONES.essential;
+                const colorEntry = coleccion.colores.find(c => c.value === state.color_cortina);
+                colorTxt = state.color_cortina === 'personalizado'
+                    ? (state.color_cortina_texto || 'Personalizado')
+                    : (colorEntry ? colorEntry.label : coleccion.colores[0].label);
+                const esExterior = tt === 'essential';
+                const mecMap = { motor: esExterior ? 'Motorizada' : 'Motorizado', manivela: 'Manual (Manivela)', cadena: 'Cadena Manual' };
+                const mecTxt = mecMap[state.mecanismo] || (esExterior ? mecMap.manivela : mecMap.cadena);
+                const ladoLabel = state.mecanismo === 'manivela' ? 'Lado de manivela' : 'Lado de cadena';
+                const cajonTxt = state.cajon === 'con_cajon' ? 'Con Cajón' : 'Sin Cajón';
+                let accesoriosTxt = '';
+                if (esExterior && (state.cables_laterales || state.ganchos)) {
+                    const acc = [state.cables_laterales && 'Cables Laterales', state.ganchos && 'Ganchos de Sujeción'].filter(Boolean).join(' + ');
+                    accesoriosTxt = `<div>Accesorios exterior: ${acc}</div>`;
+                }
+                tituloTxt = 'CORTINA ENROLLABLE';
+                extraTxt = `<div>Tipo de tela: ${coleccion.label}</div><div>Apertura: ${CORTINA_APERTURA_LABELS[state.tela] || CORTINA_APERTURA_LABELS[coleccion.aperturas[0]]}</div><div>Rollo: ${cajonTxt}</div><div>Mecanismo: ${mecTxt}${state.mecanismo !== 'motor' ? ' · ' + ladoLabel + ': ' + ladoTxt : ''}</div>${accesoriosTxt}`;
+            }
+            summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
+                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>${tituloTxt}</strong> — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
+                <div>Color: ${colorTxt}</div>
+                ${extraTxt}
+                <div>Instalación: ${instTxt}</div>
+            </div>`;
+            return;
+        }
+
         const getAperturaSpec = (itemState, type, cat) => {
             if (type === 'win_proy' && itemState.apertura_proy) {
                 return `Apertura hacia: ${itemState.apertura_proy === 'adentro' ? 'Adentro' : 'Afuera'}`;
@@ -1655,6 +1713,7 @@
     document.addEventListener('change', () => { saveProgress(); updateSavedStatusBadge(); });
 
     function getCategoriaByType(type) {
+        if(type.startsWith('cort_')) return 'cortina'; // antes del check de 'cor' (corredera) — "cort_" también empieza con "cor"
         if(type.startsWith('cor')) return 'corredera';
         if(type.startsWith('gal')) return 'galandaje';
         if(type.startsWith('win') || type === 'door_abat') return 'ventana';
@@ -1814,6 +1873,91 @@
             const vt = state.vidrio || 'templado';
             const barVidrio = `<select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option></select>${espesorHtml}${vidrioColor}`;
             return poseSel + fijSel + colorCtrl + barVidrio;
+        } else if (categoria === 'cortina') {
+            // Cortinas/enrollables son de tela/PVC, no de aluminio+vidrio — ignora a propósito
+            // vidriosBasicos/colorPerfilSel/tipoAluminioHtml (quedan calculados arriba sin usar,
+            // igual que en fachada/mampara/ducha/baranda para las opciones que no les aplican).
+            const cc = state.color_cortina || (type === 'cort_roller' ? 'chalk' : 'blanco');
+            let colorSel;
+            if (type === 'cort_roller') {
+                // Roller: dos menús dependientes — "Tipo de tela" elige la COLECCIÓN (catálogo
+                // físico) y "Referencia y color" elige el color DENTRO de esa colección. Cuando
+                // se agreguen más catálogos (el usuario los va mandando), solo hace falta sumar
+                // una entrada a TELA_COLECCIONES — este código no cambia.
+                const tt = state.tela_tipo || 'essential';
+                const coleccion = TELA_COLECCIONES[tt] || TELA_COLECCIONES.essential;
+                const telaTipoSel = `<select onchange="${fn}, 'tela_tipo', this.value)" title="Colección/catálogo de tela">
+                    ${Object.keys(TELA_COLECCIONES).map(k => `<option value="${k}" ${tt===k?'selected':''}>Tipo de tela: ${TELA_COLECCIONES[k].label}</option>`).join('')}
+                </select>`;
+                const refColorSel = `<select onchange="${fn}, 'color_cortina', this.value)" title="Referencia y color dentro de la colección">
+                    ${coleccion.colores.map(c => `<option value="${c.value}" ${cc===c.value?'selected':''}>Ref./Color: ${c.label}</option>`).join('')}
+                    <option value="personalizado" ${cc==='personalizado'?'selected':''}>Ref./Color: Personalizado</option>
+                </select>`;
+                colorSel = telaTipoSel + refColorSel;
+            } else if (type === 'cort_shutter') {
+                // Shutter (persiana de seguridad enrollable): por ahora solo 3 colores reales
+                // (blanco/negro/marrón) — el resto de CORTINA_COLORS queda solo por compatibilidad
+                // con proyectos guardados de antes del rediseño.
+                colorSel = `<select onchange="${fn}, 'color_cortina', this.value)"><option value="blanco" ${cc==='blanco'?'selected':''}>Color: Blanco</option><option value="negro" ${cc==='negro'?'selected':''}>Color: Negro</option><option value="marron" ${cc==='marron'?'selected':''}>Color: Marrón</option><option value="personalizado" ${cc==='personalizado'?'selected':''}>Color: Personalizado</option></select>`;
+            } else {
+                colorSel = `<select onchange="${fn}, 'color_cortina', this.value)"><option value="blanco" ${cc==='blanco'?'selected':''}>Color: Blanco</option><option value="beige" ${cc==='beige'?'selected':''}>Color: Beige</option><option value="gris" ${cc==='gris'?'selected':''}>Color: Gris</option><option value="negro" ${cc==='negro'?'selected':''}>Color: Negro</option><option value="madera" ${cc==='madera'?'selected':''}>Color: Madera</option><option value="personalizado" ${cc==='personalizado'?'selected':''}>Color: Personalizado</option></select>`;
+            }
+            if (cc === 'personalizado') colorSel += `<input type="text" value="${state.color_cortina_texto || ''}" placeholder="Especificar color/tela" oninput="${fn}, 'color_cortina_texto', this.value)" style="grid-column: span 2; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:11px;">`;
+
+            const instC = state.instalacion_cortina || 'dentro';
+            const instSel = type === 'cort_shutter'
+                ? `<select onchange="${fn}, 'instalacion_cortina', this.value)" title="Instalación por dentro o por fuera"><option value="dentro" ${instC==='dentro'?'selected':''}>Instalación: Por Dentro</option><option value="fuera" ${instC==='fuera'?'selected':''}>Instalación: Por Fuera</option></select>`
+                : `<select onchange="${fn}, 'instalacion_cortina', this.value)" title="Tipo de instalación"><option value="dentro" ${instC==='dentro'?'selected':''}>Instalación: Dentro del marco</option><option value="fuera" ${instC==='fuera'?'selected':''}>Instalación: Sobre el marco</option></select>`;
+
+            let tipoSel = '';
+            if (type === 'cort_roller') {
+                // La apertura disponible depende de la colección elegida arriba (Essential:
+                // 4 factores Screen; Plain XL: una sola, 100% Blackout).
+                const ttSel = state.tela_tipo || 'essential';
+                const aperturasColeccion = (TELA_COLECCIONES[ttSel] || TELA_COLECCIONES.essential).aperturas;
+                const tela = aperturasColeccion.includes(state.tela) ? state.tela : aperturasColeccion[0];
+                tipoSel += `<select onchange="${fn}, 'tela', this.value)" title="Factor de apertura de la tela">
+                    ${aperturasColeccion.map(a => `<option value="${a}" ${tela===a?'selected':''}>Apertura: ${CORTINA_APERTURA_LABELS[a]}</option>`).join('')}
+                </select>`;
+                // La tela Essential es la que ARTAL usa de exterior — mecanismo manual ahí es
+                // manivela (no cadena, por el tamaño/viento) y además ofrece guía lateral
+                // (cables o ganchos, para que la tela no se mueva con el viento cuando está
+                // desenrollada). El resto de las colecciones (interior) sigue con cadena/motor
+                // simple, sin guía lateral.
+                const esExterior = ttSel === 'essential';
+                const mec = state.mecanismo || (esExterior ? 'manivela' : 'cadena');
+                tipoSel += esExterior
+                    ? `<select onchange="${fn}, 'mecanismo', this.value)" title="Mecanismo de accionamiento"><option value="manivela" ${mec==='manivela'?'selected':''}>Mecanismo: Manual (Manivela)</option><option value="motor" ${mec==='motor'?'selected':''}>Mecanismo: Motorizada</option></select>`
+                    : `<select onchange="${fn}, 'mecanismo', this.value)" title="Mecanismo de accionamiento"><option value="cadena" ${mec==='cadena'?'selected':''}>Mecanismo: Cadena Manual</option><option value="motor" ${mec==='motor'?'selected':''}>Mecanismo: Motorizado</option></select>`;
+                if (esExterior) {
+                    // Cables laterales (guía que trackea la tela en sus rieles) y ganchos de
+                    // sujeción (para trabar la tela abajo cuando está desenrollada/suelta) son
+                    // dos accesorios independientes, no alternativas del mismo campo — pueden
+                    // ir juntos, uno solo, o ninguno. Checkboxes, mismo patrón que la
+                    // "Cerradura" de puerta de vidrio (cerr_luna/cerr_digital/cerr_piso).
+                    const chkCables = state.cables_laterales ? 'checked' : '';
+                    const chkGanchos = state.ganchos ? 'checked' : '';
+                    const chkStyle = 'style="width:15px;height:15px;accent-color:#0A3D62;margin:0;"';
+                    tipoSel += `<div style="grid-column: span 2; display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:#fff; border:1px solid #ccc; border-radius:3px; padding:6px 9px; font-size:12px;"><span style="font-weight:bold; color:#0A3D62;">Accesorios exterior:</span><label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${chkCables} ${chkStyle} onchange="${fn}, 'cables_laterales', this.checked)">Cables Laterales</label><label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${chkGanchos} ${chkStyle} onchange="${fn}, 'ganchos', this.checked)">Ganchos de Sujeción</label></div>`;
+                }
+                const caj = state.cajon || 'sin_cajon';
+                tipoSel += `<select onchange="${fn}, 'cajon', this.value)" title="Rollo con o sin cajón"><option value="sin_cajon" ${caj==='sin_cajon'?'selected':''}>Rollo: Sin Cajón</option><option value="con_cajon" ${caj==='con_cajon'?'selected':''}>Rollo: Con Cajón</option></select>`;
+            } else if (type === 'cort_shutter') {
+                // Tipos de guía/cajón todavía sin ficha técnica real (pendiente) — por ahora solo
+                // el tipo de motor y el montaje (hueco/aplique). El lado del motor reutiliza el
+                // toggle de orientación ('I'/'D') que ya se muestra arriba para esta categoría.
+                const tipoMotor = state.tipo_motor || 'manual';
+                tipoSel += `<select onchange="${fn}, 'tipo_motor', this.value)" title="Tipo de accionamiento" style="grid-column: span 2;">
+                    <option value="motorizado" ${tipoMotor==='motorizado'?'selected':''}>#1 Motorizado</option>
+                    <option value="manual" ${tipoMotor==='manual'?'selected':''}>#2 Manual (Manivela)</option>
+                    <option value="motor_manivela" ${tipoMotor==='motor_manivela'?'selected':''}>#3 Motorizado c/ Manivela de Emergencia</option>
+                    <option value="motor_inteligente" ${tipoMotor==='motor_inteligente'?'selected':''}>#4 Motorizado + Sistema Inteligente</option>
+                    <option value="motor_solar" ${tipoMotor==='motor_solar'?'selected':''}>#5 Motorizado Solar</option>
+                </select>`;
+                const instTipo = state.instalacion_tipo || 'hueco';
+                tipoSel += `<select onchange="${fn}, 'instalacion_tipo', this.value)" title="Montaje dentro del hueco o en aplique"><option value="hueco" ${instTipo==='hueco'?'selected':''}>Montaje: Dentro del Hueco</option><option value="aplique" ${instTipo==='aplique'?'selected':''}>Montaje: En Aplique</option></select>`;
+            }
+            return colorSel + tipoSel + instSel;
         }
         return '';
     }
@@ -1981,6 +2125,25 @@
                 cardsState[id].tramos = [{ L: 2000 }];
                 cardsState[id].alto = 1200;
                 cardsState[id].ancho = 2000;
+            } else if (categoria === 'cortina') {
+                cardsState[id].instalacion_cortina = 'dentro';
+                if (type === 'cort_roller') {
+                    cardsState[id].tela_tipo = 'essential';
+                    cardsState[id].color_cortina = 'chalk';
+                    cardsState[id].tela = 'screen3';
+                    cardsState[id].mecanismo = 'manivela'; // Essential = tela de exterior en ARTAL: manivela, no cadena
+                    cardsState[id].cables_laterales = false;
+                    cardsState[id].ganchos = false;
+                    cardsState[id].cajon = 'sin_cajon';
+                } else if (type === 'cort_shutter') {
+                    cardsState[id].color_cortina = 'blanco';
+                    cardsState[id].tipo_motor = 'manual';
+                    cardsState[id].instalacion_tipo = 'hueco';
+                    cardsState[id].guiaIzq = false;
+                    cardsState[id].guiaDer = false;
+                    cardsState[id].guiaInf = false;
+                    cardsState[id].cajonExtra = false;
+                }
             }
             // Acabado por defecto = color del encabezado (se puede cambiar por ítem)
             const ha = headerAcabado();
@@ -2146,7 +2309,7 @@
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
             const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
-            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio'].includes(cardsState[id].categoria);
+            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina'].includes(cardsState[id].categoria);
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
                 : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
@@ -2181,6 +2344,8 @@
                         <div class="measure-field"><label>A:</label><input type="text" inputmode="numeric" id="ancho-${id}" value="${cardsState[id].ancho || ''}" oninput="updateState(${id}, 'ancho', this.value); this.classList.remove('error-pulse');" placeholder="Ancho (mm)"></div>
                         <div class="measure-field"><label>H:</label><input type="text" inputmode="numeric" id="alto-${id}" value="${cardsState[id].alto || ''}" oninput="updateState(${id}, 'alto', this.value); this.classList.remove('error-pulse');" placeholder="Alto (mm)"></div>
                     </div>
+                    <div id="shutter-extras-${id}">${renderShutterExtras(id)}</div>
+                    ${cardsState[id].categoria === 'cortina' ? `<div id="cortina-warn-${id}"></div>` : ''}
                 </div>
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
@@ -2188,6 +2353,7 @@
         }
 
         insertarMarcaMedida(id, card);
+        if (cardsState[id].categoria === 'cortina') refreshCortinaWarn(id);
 
         if (savedData) {
             const refEl = card.querySelector('.card-ref-row input');
@@ -2275,6 +2441,43 @@
             if (sc) sc.innerHTML = renderSVG(id);
         }
 
+        // Cambiar de colección de tela (roller) invalida el color y la apertura elegidos si no
+        // existen en la colección nueva — se resetean al primero de la lista nueva, igual que
+        // "espesor" resetea "vidrio" arriba.
+        if (key === 'tela_tipo' && cardsState[id].categoria === 'cortina') {
+            const coleccionNueva = TELA_COLECCIONES[value] || TELA_COLECCIONES.essential;
+            if (!coleccionNueva.colores.some(c => c.value === cardsState[id].color_cortina)) {
+                cardsState[id].color_cortina = coleccionNueva.colores[0].value;
+            }
+            if (!coleccionNueva.aperturas.includes(cardsState[id].tela)) {
+                cardsState[id].tela = coleccionNueva.aperturas[0];
+            }
+            // Essential (exterior en ARTAL) usa manivela/motor; el resto (interior) usa
+            // cadena/motor — si el mecanismo actual no es válido en la colección nueva, resetea.
+            const esExteriorNueva = value === 'essential';
+            const mecanismosValidos = esExteriorNueva ? ['manivela', 'motor'] : ['cadena', 'motor'];
+            if (!mecanismosValidos.includes(cardsState[id].mecanismo)) {
+                cardsState[id].mecanismo = esExteriorNueva ? 'manivela' : 'cadena';
+            }
+            const oc = document.getElementById('options-' + id);
+            if (oc) {
+                oc.innerHTML = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
+                oc.querySelectorAll('select').forEach(sel => {
+                    const m = (sel.getAttribute('onchange') || '').match(/,\s*'([^']+)'\s*,/);
+                    if (m && m[1] && cardsState[id][m[1]] !== undefined) sel.value = cardsState[id][m[1]];
+                });
+            }
+            const sc = document.getElementById('schematic-' + id);
+            if (sc) sc.innerHTML = renderSVG(id);
+        }
+
+        // Aviso (no bloquea) si el ancho pedido supera el ancho de rollo del catálogo real de
+        // la tela elegida — los catálogos que mandó el usuario no dan un alto máximo, así que
+        // solo se valida ancho. Ver cortinaAnchoMaxMm().
+        if (cardsState[id].categoria === 'cortina' && ['ancho', 'tela_tipo', 'tela'].includes(key)) {
+            refreshCortinaWarn(id);
+        }
+
         if (cardsState[id].categoria === 'ducha' || cardsState[id].categoria === 'baranda') {
             if (key === 'pose') {
                 barandaRecalc(id);
@@ -2293,11 +2496,11 @@
         }
 
         if (cardsState[id].type !== 'draw') {
-            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color'].includes(key)) {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
             }
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion') {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina') {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -2326,6 +2529,30 @@
         if(btnD) btnD.className = 'toggle-btn' + (side === 'D' ? ' active' : '');
         updateState(id, 'orientacion', side);
     }
+
+    // --- Shutter: guías/cajón extra (booleanos simples, sin tipos/dimensiones todavía —
+    // pendiente de fichas técnicas reales) — botones junto a Ancho/Alto que solo agregan una
+    // nota en el dibujo, mismo patrón visual que togglePano pero sin sub-configuración. ---
+    function renderShutterExtras(id) {
+        const state = cardsState[id];
+        if (!state || state.type !== 'cort_shutter') return '';
+        const btn = (key, label) => `<div class="toggle-btn small ${state[key] ? 'active' : ''}" onclick="toggleShutterExtra(${id}, '${key}')">${label}</div>`;
+        return `
+            <div class="shutter-extras-row"><span class="extras-label">Ancho:</span>${btn('guiaIzq', '+ Guía Izq.')}${btn('guiaDer', '+ Guía Der.')}</div>
+            <div class="shutter-extras-row"><span class="extras-label">Alto:</span>${btn('guiaInf', '+ Guía Inf.')}${btn('cajonExtra', '+ Cajón')}</div>
+        `;
+    }
+
+    window.toggleShutterExtra = function(id, key) {
+        if (!cardsState[id]) return;
+        cardsState[id][key] = !cardsState[id][key];
+        const extras = document.getElementById('shutter-extras-' + id);
+        if (extras) extras.innerHTML = renderShutterExtras(id);
+        const sc = document.getElementById('schematic-' + id);
+        if (sc) sc.innerHTML = renderSVG(id);
+        if (cardsState[id].locked) generateSummary(id);
+        saveProgress();
+    };
 
     // --- Paño Fijo adosado (arriba/abajo) en ventanas/puertas: modelo de datos + UI ---------
     function getPanoDefault() {
@@ -2423,6 +2650,15 @@
         let n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
         const f = x => Math.max(0, Math.min(255, Math.round(x + (p / 100) * 255)));
         return '#' + ((1 << 24) + (f(r) << 16) + (f(g) << 8) + f(b)).toString(16).slice(1);
+    }
+    // Mezcla proporcional hacia blanco (nunca satura de golpe como shade() con p positivo — un
+    // color casi blanco como "Chalk" con shade(fill,12) ya da #ffffff puro porque suma pixeles
+    // fijos; acá se acerca una FRACCIÓN de lo que falta para blanco, así que un color ya claro
+    // se ve apenas un poco más claro en vez de lavarse a blanco de una).
+    function towardWhite(hex, frac) {
+        let n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        const mix = c => Math.round(c + (255 - c) * frac);
+        return '#' + ((1 << 24) + (mix(r) << 16) + (mix(g) << 8) + mix(b)).toString(16).slice(1);
     }
     // Aproximación de códigos RAL comunes en perfiles de aluminio (no es la carta RAL completa,
     // solo los más usados acá) — si el usuario escribe un hex se usa ese directo; si escribe un
@@ -2767,6 +3003,339 @@
             }
         });
         return { inner, box };
+    }
+
+    // ---- CORTINAS / ENROLLABLES ----
+    // Dibujo simple a propósito (sin gradiente de vidrio ni perfil extruido de aluminio, que no
+    // aplican a un producto de tela/PVC): un rectángulo con el color elegido representando la
+    // tela o las lamas, más las mismas líneas de medida (dimLineH/dimLineV) que usa el resto de
+    // la app, para mantener consistencia visual sin construir un dibujo técnico completo.
+    // Shutter: paleta genérica (sin catálogo todavía). Roller: catálogos reales por colección de
+    // tela — cada colección trae sus propias referencias/colores (ver TELA_COLECCIONES). Fuente
+    // única de verdad para el hex de cada color: cortinaColorHex() la consulta, así el `<select>`
+    // de "Referencia y color" y el dibujo nunca quedan desincronizados entre sí.
+    // blanco/negro/marrón son los 3 colores reales del shutter (persiana de seguridad
+    // enrollable) por ahora; beige/gris/madera quedan solo por compatibilidad con proyectos
+    // guardados de antes del rediseño (dato muerto inofensivo, ya no aparecen en el selector).
+    const CORTINA_COLORS = { blanco: '#f2f0ea', beige: '#d9c9a8', gris: '#9aa1a6', negro: '#1a1a1a', marron: '#4a2e1a', madera: '#7a5330', personalizado: '#c9c9c9' };
+
+    // Catálogos reales de tela para Roller, uno por colección — el usuario va mandando fotos de
+    // catálogos físicos y se van agregando acá (ver CLAUDE.md "Cortinas/Enrollables"). Cada
+    // colección es una fuente/línea de tela distinta (ej. Coulisse Essential = tela Screen); el
+    // menú "Tipo de tela" elige la colección y "Referencia y color" elige el color DENTRO de esa
+    // colección (options dependientes, ver getMenuOpciones).
+    // `aperturas`: qué opciones del <select> de "Apertura" (más abajo) aplican a esta colección
+    // — Essential es tela Screen (factor de apertura variable); Plain XL es 100% Blackout (una
+    // sola variante, opaca). El menú de Apertura se filtra según la colección elegida.
+    // `zebra: true` → renderCortina dibuja franjas alternadas (día/noche) en vez de un
+    // rectángulo sólido, ver más abajo. `anchoMaxMm`: número fijo, o función(apertura) cuando el
+    // máximo depende de la apertura elegida (caso Essential) — cortinaAnchoMaxMm() lo resuelve.
+    const TELA_COLECCIONES = {
+        essential: {
+            label: 'Essential (Coulisse) — Screen',
+            aperturas: ['screen1', 'screen3', 'screen5', 'screen10'],
+            // 250-300cm según el código de apertura, pero el 10% viene más angosto (solo hasta
+            // 250cm, confirmado en la ficha técnica) — por eso depende de la apertura elegida.
+            anchoMaxMm: (apertura) => apertura === 'screen10' ? 2500 : 3000,
+            colores: [
+                { value: 'chalk', label: 'Chalk (SCR-3005-01)', hex: '#efece3' },
+                { value: 'chalk_beige_cream', label: 'Chalk Beige Cream (SCR-3005-02)', hex: '#e6d9bd' },
+                { value: 'chalk_soft_grey', label: 'Chalk Soft Grey (SCR-3005-03)', hex: '#c8c9c4' },
+                { value: 'charcoal_iron_grey', label: 'Charcoal Iron Grey (SCR-3005-05)', hex: '#3c3c3c' },
+                { value: 'ebony', label: 'Ebony (SCR-3005-06)', hex: '#1a1a1a' },
+                { value: 'soft_grey', label: 'Soft Grey (SCR-3005-08)', hex: '#98988f' },
+                { value: 'charcoal_dark_bronze', label: 'Charcoal Dark Bronze (SCR-3005-10)', hex: '#3a322c' },
+                { value: 'beige_pearl_grey', label: 'Beige Pearl Grey (SCR-3005-11)', hex: '#a39a86' },
+            ]
+        },
+        plain_xl_blackout: {
+            label: 'Plain XL (Coulisse) — Blackout 100%',
+            aperturas: ['blackout'],
+            anchoMaxMm: 3000,
+            colores: [
+                { value: 'snow_white', label: 'Snow White (RF-PLAIN-XL-5120)', hex: '#f2f0ec' },
+                { value: 'metal', label: 'Metal (RF-PLAIN-XL-5600)', hex: '#b7bbbf' },
+                { value: 'dust', label: 'Dust (RF-PLAIN-XL-6310)', hex: '#75797d' },
+                { value: 'fossil', label: 'Fossil (RF-PLAIN-XL-5420)', hex: '#e6dfc7' },
+                { value: 'blue_night', label: 'Blue Night (RF-PLAIN-XL-6000)', hex: '#1c2333' },
+                { value: 'taupe', label: 'Taupe (RF-PLAIN-XL-5430)', hex: '#a89f8f' },
+                { value: 'black', label: 'Black (RF-PLAIN-XL-6320)', hex: '#17171a' },
+            ]
+        },
+        // "Zebra" (día/noche, franjas alternadas sólido/transparente) — así le dice ARTAL a
+        // este tipo de tela, no "Cyprus" a secas (Cyprus es el nombre del patrón/colección
+        // dentro de Coulisse). 7 colores reales del muestrario físico (etiqueta de cada tela,
+        // sin código de referencia — a diferencia de Essential/Plain XL, este catálogo no trae
+        // códigos, solo el nombre). Hex aproximado a ojo desde la foto de cada muestra.
+        zebra_cyprus: {
+            label: 'Zebra Cyprus (Coulisse) — Light Filtering / Dim Out',
+            aperturas: ['dia_noche'],
+            zebra: true,
+            // La ficha distingue "Ancho" (280cm, el rollo crudo) de "Max Blind Width" 265cm
+            // (recomendado) — más angosto por la costura/unión de las franjas.
+            anchoMaxMm: 2650,
+            colores: [
+                { value: 'grey', label: 'Grey', hex: '#8b8f95' },
+                { value: 'cream', label: 'Cream', hex: '#e8dfc0' },
+                { value: 'light_brown', label: 'Light Brown', hex: '#c9a06a' },
+                { value: 'ivory', label: 'Ivory', hex: '#ece3c0' },
+                { value: 'dark_brown', label: 'Dark Brown', hex: '#8b6239' },
+                { value: 'chocolate', label: 'Chocolate', hex: '#3b2a1c' },
+                { value: 'white', label: 'White', hex: '#efe8d0' },
+            ]
+        },
+        // Zakynthos: mismo tipo de producto que Zebra Cyprus (día/noche, franjas) — el usuario
+        // aclaró que la diferencia entre las dos es la textura/acabado de la tela, no el
+        // mecanismo, así que comparte el mismo dibujo con franjas (`zebra: true`) y el mismo
+        // Max Blind Width (ficha técnica idéntica a Cyprus: Ancho 280cm, Max Blind Width 265cm).
+        // 14 colores numerados del muestrario físico (sin código de proveedor tipo SCR-xxx, solo
+        // el número de referencia + nombre que trae cada etiqueta).
+        zakynthos: {
+            label: 'Zakynthos (Coulisse) — Light Filtering / Dim Out',
+            aperturas: ['dia_noche'],
+            zebra: true,
+            anchoMaxMm: 2650,
+            colores: [
+                { value: 'bright_white', label: '#1 Bright White', hex: '#f5f4ef' },
+                { value: 'peach', label: '#4 Peach', hex: '#e8ddb8' },
+                { value: 'croissant', label: '#5 Croissant', hex: '#d1a860' },
+                { value: 'mocha', label: '#6 Mocha', hex: '#a15c34' },
+                { value: 'metal', label: '#8 Metal', hex: '#a8adae' },
+                { value: 'steel_grey', label: '#9 Steel Grey', hex: '#7c7275' },
+                { value: 'pirate_black', label: '#10 Pirate Black', hex: '#17181a' },
+                { value: 'cinder', label: '#12 Cinder', hex: '#a9ab9d' },
+                { value: 'blue_night', label: '#20 Blue Night', hex: '#232c42' },
+                { value: 'sand', label: '#25 Sand', hex: '#d9c79c' },
+                { value: 'fossil', label: '#26 Fossil', hex: '#a89a7f' },
+                { value: 'copper_brown', label: '#27 Copper Brown', hex: '#6b4a3a' },
+                { value: 'autumn', label: '#28 Autumn', hex: '#4f473d' },
+                { value: 'dust', label: '#29 Dust', hex: '#c7cabb' },
+            ]
+        },
+        // Hampton: tela Screen con textura "efecto lino", NO es zebra (roller liso normal, como
+        // Essential) — apertura fija 15% (un solo valor, a diferencia de Essential que tiene
+        // 1/3/5/10%). El catálogo dice "the collection includes screen as well as black-out
+        // fabrics" — el usuario solo mandó fotos de la variante Screen todavía; si más adelante
+        // manda la variante Black-out, agregarla como colección aparte (`hampton_blackout`), no
+        // mezclar colores de las dos bajo esta misma entrada (los blackout serán otros tonos).
+        hampton: {
+            label: 'Hampton (Coulisse) — Screen 15% (efecto lino)',
+            aperturas: ['screen15'],
+            anchoMaxMm: 3000,
+            colores: [
+                { value: 'white', label: 'White (HAMPTON-0150)', hex: '#f0efe9' },
+                { value: 'off_white', label: 'Off White (HAMPTON-0500)', hex: '#e8dfb8' },
+                { value: 'light_grey', label: 'Light Grey (HAMPTON-0100)', hex: '#a8a29a' },
+                { value: 'sand', label: 'Sand (HAMPTON-0200)', hex: '#8f8377' },
+            ]
+        },
+        // Dakar Blackout (Intimate): 100% Blackout con textura tejida tipo lino (parecida a la
+        // textura de Hampton, pero opaca) — NO es zebra (roller liso normal). Apertura fija
+        // 'blackout' (una sola, como Plain XL). Ancho de rollo 300cm, sin Max Blind Width
+        // separado en la ficha (a diferencia de Cyprus/Zakynthos). 5 colores del muestrario
+        // físico, dos de ellos comparten referencia G3007TS con distinto matiz (Grey/Slate).
+        dakar_blackout: {
+            label: 'Dakar Blackout (Intimate) — 100% Blackout (textura tejida)',
+            aperturas: ['blackout'],
+            anchoMaxMm: 3000,
+            colores: [
+                { value: 'off_white', label: 'Off White (G3001TS)', hex: '#efece3' },
+                { value: 'beige', label: 'Beige (G3003TS)', hex: '#cbb392' },
+                { value: 'grey', label: 'Grey (G3007TS MH)', hex: '#6b6b60' },
+                { value: 'slate', label: 'Slate / Dark Grey (G3007TS)', hex: '#47473f' },
+                { value: 'travertine', label: 'Travertine (G3005TS)', hex: '#c7c2ae' },
+            ]
+        }
+    };
+    const CORTINA_APERTURA_LABELS = { screen1: 'Screen 1%', screen3: 'Screen 3%', screen5: 'Screen 5%', screen10: 'Screen 10%', screen15: 'Screen 15%', blackout: 'Blackout (Opaca)', translucida: 'Translúcida', dia_noche: 'Día y Noche (Light Filtering / Dim Out)' };
+
+    // Ancho máximo de rollo según el catálogo real (mm), leído directo de TELA_COLECCIONES —
+    // ninguno de los catálogos que mandó el usuario trae un ALTO máximo (el largo del rollo no
+    // aparece limitado en esas fotos), así que esto solo avisa por ancho. Es un AVISO, no
+    // bloquea fijar el ítem (puede haber unión/costura del proveedor que lo resuelva; no es al
+    // usuario a quien le toca decidir eso acá, solo alertarlo).
+    function cortinaAnchoMaxMm(telaTipo, aperturaValue) {
+        const coleccion = TELA_COLECCIONES[telaTipo];
+        if (!coleccion || coleccion.anchoMaxMm === undefined) return null;
+        return typeof coleccion.anchoMaxMm === 'function' ? coleccion.anchoMaxMm(aperturaValue) : coleccion.anchoMaxMm;
+    }
+    function refreshCortinaWarn(id) {
+        const st = cardsState[id];
+        const div = document.getElementById('cortina-warn-' + id);
+        if (!div || !st || st.categoria !== 'cortina') return;
+        if (st.type !== 'cort_roller') { div.classList.remove('show'); div.textContent = ''; return; }
+        const max = cortinaAnchoMaxMm(st.tela_tipo || 'essential', st.tela);
+        if (max && st.ancho > max) {
+            div.textContent = `⚠ El ancho (${st.ancho} mm) supera el ancho de rollo de esta tela (máx. ${max} mm) — confirmar con el proveedor si admite unión/costura.`;
+            div.classList.add('show');
+        } else {
+            div.textContent = '';
+            div.classList.remove('show');
+        }
+    }
+    function cortinaColorHex(telaTipo, colorKey) {
+        if (colorKey === 'personalizado') return CORTINA_COLORS.personalizado;
+        const coleccion = TELA_COLECCIONES[telaTipo];
+        const col = coleccion ? coleccion.colores.find(c => c.value === colorKey) : null;
+        return col ? col.hex : CORTINA_COLORS.personalizado;
+    }
+    function renderCortina(state, id) {
+        const bx = 10, by = 10, bw = 80, bh = 40;
+        const fill = state.type === 'cort_roller'
+            ? cortinaColorHex(state.tela_tipo || 'essential', state.color_cortina || 'chalk')
+            : (CORTINA_COLORS[state.color_cortina || 'blanco'] || CORTINA_COLORS.blanco);
+        const isD = state.orientacion === 'D';
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -6 144 70" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
+        svg += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
+        svg += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="none" stroke="#bdc3c7" stroke-width="1"/>`;
+
+        if (state.type === 'cort_shutter') {
+            // Persiana de seguridad enrollable (foto de referencia real del usuario): cajón
+            // superior (mismo truco isométrico 3D que el cajón del roller), rieles laterales AL
+            // RAS del cajón (mismo ancho que su voladizo de 1 unidad a cada lado, para que no se
+            // vean "por fuera" del cajón) y del mismo color que la cortina (no un gris fijo),
+            // cortina de lamas corrugadas (franjas claro/oscuro alternadas) con barra final más
+            // oscura abajo, y motor/manivela del lado de `orientacion`. Tipos reales de guía/
+            // cajón todavía sin ficha técnica — mientras tanto, +Guía Izq./+Guía Der./+Guía Inf./
+            // +Cajón (guiaIzq/guiaDer/guiaInf/cajonExtra) solo agregan una nota en el dibujo
+            // (cada una aparece SOLO si su botón está activo).
+            const cajX = bx - 1, cajY = by - 4, cajW = bw + 2, cajH = 4, depth = 1.6;
+            const topShade = towardWhite(fill, 0.3), sideShade = shade(fill, -20);
+            svg += `<polygon points="${cajX.toFixed(1)},${cajY.toFixed(1)} ${(cajX + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW).toFixed(1)},${cajY.toFixed(1)}" fill="${topShade}" stroke="#0A3D62" stroke-width="0.6"/>`;
+            svg += `<polygon points="${(cajX + cajW).toFixed(1)},${cajY.toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth + cajH).toFixed(1)} ${(cajX + cajW).toFixed(1)},${(cajY + cajH).toFixed(1)}" fill="${sideShade}" stroke="#0A3D62" stroke-width="0.6"/>`;
+            svg += `<rect x="${cajX.toFixed(1)}" y="${cajY.toFixed(1)}" width="${cajW.toFixed(1)}" height="${cajH.toFixed(1)}" fill="${fill}" stroke="#0A3D62" stroke-width="1"/>`;
+
+            // Rieles laterales al ras del cajón, siempre del color de la cortina — con borde
+            // negro más grueso cuando el botón +Guía correspondiente está activo, para que se
+            // note cuál guía se pidió explícitamente (borde sutil por defecto, es solo la
+            // representación genérica del riel que cualquier persiana enrollable tiene).
+            const railW = cajX + cajW - (bx + bw); // = 1, el mismo voladizo del cajón por lado
+            const railShadeDefault = shade(fill, -12);
+            const railIzqStroke = state.guiaIzq ? '#000' : railShadeDefault;
+            const railDerStroke = state.guiaDer ? '#000' : railShadeDefault;
+            svg += `<rect x="${cajX.toFixed(1)}" y="${by}" width="${railW}" height="${bh}" fill="${fill}" stroke="${railIzqStroke}" stroke-width="${state.guiaIzq ? 1 : 0.4}"/>`;
+            svg += `<rect x="${(bx + bw).toFixed(1)}" y="${by}" width="${railW}" height="${bh}" fill="${fill}" stroke="${railDerStroke}" stroke-width="${state.guiaDer ? 1 : 0.4}"/>`;
+
+            svg += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="${fill}" stroke="#0A3D62" stroke-width="1"/>`;
+            const nSlats = 16, slatH = bh / nSlats;
+            const light = towardWhite(fill, 0.18), dark = shade(fill, -16);
+            for (let i = 0; i < nSlats; i++) {
+                const ly = by + i * slatH;
+                svg += `<line x1="${bx}" y1="${ly.toFixed(1)}" x2="${(bx + bw).toFixed(1)}" y2="${ly.toFixed(1)}" stroke="${light}" stroke-width="0.5" opacity="0.7"/>`;
+                svg += `<line x1="${bx}" y1="${(ly + slatH * 0.55).toFixed(1)}" x2="${(bx + bw).toFixed(1)}" y2="${(ly + slatH * 0.55).toFixed(1)}" stroke="${dark}" stroke-width="0.5" opacity="0.6"/>`;
+            }
+
+            // Guía inferior horizontal: SOLO si está activada (no hay barra de cierre fija por
+            // defecto) — mismo color que la cortina, con borde negro grueso para que se vea.
+            if (state.guiaInf) {
+                const guiaInfH = 2.5;
+                svg += `<rect x="${bx}" y="${(by + bh - guiaInfH).toFixed(1)}" width="${bw}" height="${guiaInfH.toFixed(1)}" fill="${fill}" stroke="#000" stroke-width="1"/>`;
+            }
+
+            // Manual: manivela al costado de la cortina (mismo criterio que el roller). Cualquier
+            // variante motorizada: motor completo (tubo + tapa oscura) DENTRO del cajón, del lado
+            // indicado, con una etiqueta "MOTOR" arriba del tubo (dentro del propio cajón, en un
+            // chip oscuro para que se lea sobre cualquier color de acabado) — para que no quede
+            // duda de qué es ni de qué lado está, sin asomar fuera del cajón.
+            if (state.tipo_motor === 'manual') {
+                const sideX = isD ? bx + bw : bx;
+                const sideSign = isD ? 1 : -1;
+                const cy1 = by + bh * 0.55, cy2 = cy1 + 3;
+                const cx2 = sideX + sideSign * 6;
+                svg += `<line x1="${sideX}" y1="${cy1.toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${cy2.toFixed(1)}" stroke="#111" stroke-width="1"/>`;
+                svg += `<line x1="${cx2.toFixed(1)}" y1="${(cy2 - 1.5).toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${(cy2 + 1.5).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
+            } else {
+                const motorGradId = `shutter-motor-${id}`;
+                svg += `<defs><linearGradient id="${motorGradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7c868d"/><stop offset="50%" stop-color="#3d444a"/><stop offset="100%" stop-color="#1a1d1f"/></linearGradient></defs>`;
+                const motorW = 16, motorH = 2.1, motorY = cajY + cajH - motorH - 0.3;
+                const motorX = isD ? (cajX + cajW - 1 - motorW) : (cajX + 1);
+                svg += `<rect x="${motorX.toFixed(1)}" y="${motorY.toFixed(1)}" width="${motorW}" height="${motorH.toFixed(1)}" rx="${(motorH / 2).toFixed(1)}" fill="url(#${motorGradId})" stroke="#111" stroke-width="0.4"/>`;
+                const capX = isD ? motorX + motorW - 1.2 : motorX + 1.2;
+                svg += `<circle cx="${capX.toFixed(1)}" cy="${(motorY + motorH / 2).toFixed(1)}" r="${(motorH / 2 - 0.3).toFixed(1)}" fill="#111"/>`;
+                const labelW = motorW, labelH = 1.5;
+                const labelX = motorX, labelY = motorY - labelH - 0.2;
+                svg += `<rect x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelW}" height="${labelH}" rx="0.4" fill="#111"/>`;
+                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+            }
+
+            const notes = [];
+            if (state.guiaIzq) notes.push('+ Guía Izquierda');
+            if (state.guiaDer) notes.push('+ Guía Derecha');
+            if (state.guiaInf) notes.push('+ Guía Inferior');
+            if (state.cajonExtra) notes.push('+ Cajón');
+            notes.forEach((n, i) => {
+                svg += `<text x="${bx}" y="${(by + bh + 4 + i * 3.3).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#2c3742" stroke="none">${n}</text>`;
+            });
+        } else {
+            // Roller: tubo superior (o cajón) + tela (una sola pieza continua, sin costuras) +
+            // cadena del lado indicado. Con cajón: caja con un poco de 3D (cara superior +
+            // lateral, mismo truco isométrico que un cubo con una esquina visible) del mismo
+            // color de la tela (tapa el tubo) — pedido explícito del usuario para que se note
+            // más si es cajón o tubo expuesto. Sin cajón: tubo con tapas ovaladas en los
+            // extremos (sugiere cilindro) + degradado vertical, en vez del rectángulo plano de
+            // antes.
+            if (state.cajon === 'con_cajon') {
+                const cajX = bx - 1, cajY = by - 4, cajW = bw + 2, cajH = 4, depth = 1.6;
+                const topShade = towardWhite(fill, 0.35), sideShade = shade(fill, -18);
+                svg += `<polygon points="${cajX.toFixed(1)},${cajY.toFixed(1)} ${(cajX + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW).toFixed(1)},${cajY.toFixed(1)}" fill="${topShade}" stroke="#0A3D62" stroke-width="0.6"/>`;
+                svg += `<polygon points="${(cajX + cajW).toFixed(1)},${cajY.toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth).toFixed(1)} ${(cajX + cajW + depth * 0.6).toFixed(1)},${(cajY - depth + cajH).toFixed(1)} ${(cajX + cajW).toFixed(1)},${(cajY + cajH).toFixed(1)}" fill="${sideShade}" stroke="#0A3D62" stroke-width="0.6"/>`;
+                svg += `<rect x="${cajX.toFixed(1)}" y="${cajY.toFixed(1)}" width="${cajW.toFixed(1)}" height="${cajH.toFixed(1)}" fill="${fill}" stroke="#0A3D62" stroke-width="1"/>`;
+            } else {
+                const tuboGradId = `cortina-tubo-${id}`;
+                svg += `<defs><linearGradient id="${tuboGradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#c3cbd1"/><stop offset="50%" stop-color="#8d99a4"/><stop offset="100%" stop-color="#5a6772"/></linearGradient></defs>`;
+                svg += `<rect x="${(bx - 1).toFixed(1)}" y="${(by - 2.5).toFixed(1)}" width="${(bw + 2).toFixed(1)}" height="3" rx="1.5" fill="url(#${tuboGradId})" stroke="#5a6772" stroke-width="0.5"/>`;
+                svg += `<ellipse cx="${(bx - 1).toFixed(1)}" cy="${(by - 1).toFixed(1)}" rx="0.9" ry="1.5" fill="#5a6772"/>`;
+                svg += `<ellipse cx="${(bx + bw + 1).toFixed(1)}" cy="${(by - 1).toFixed(1)}" rx="0.9" ry="1.5" fill="#5a6772"/>`;
+            }
+            if ((TELA_COLECCIONES[state.tela_tipo] || {}).zebra) {
+                // Zebra (día/noche, cualquier colección con zebra:true — Cyprus, Zakynthos, las
+                // que se agreguen después): franjas horizontales alternadas sólido/transparente
+                // — la tela "entera" no existe en este producto, es lo que la distingue del
+                // roller liso. Proporción de referencia (Cyprus: Height Solid Part 100mm /
+                // Height Sheer Part 55-60mm, ≈64%/36% — se reusa igual para todas las colecciones
+                // zebra, la diferencia entre ellas es la tela, no cuánto mide cada franja). La
+                // franja sheer se dibuja más clara (mezcla hacia blanco) en vez de transparente
+                // de verdad, para que se note incluso sobre un fondo blanco de PDF —
+                // `towardWhite`, no `shade` con p positivo: un color de tela ya claro (ej.
+                // "Bright White" de Zakynthos) saturaría a blanco puro con shade() y la franja
+                // sheer quedaría indistinguible del fondo (mismo bug ya encontrado y arreglado
+                // en la cara superior del cajón).
+                const bandH = 5, solidFrac = 0.64;
+                const sheerFill = towardWhite(fill, 0.5);
+                let yBand = by;
+                while (yBand < by + bh - 0.05) {
+                    const solidH = Math.min(bandH * solidFrac, by + bh - yBand);
+                    svg += `<rect x="${bx}" y="${yBand.toFixed(1)}" width="${bw}" height="${solidH.toFixed(1)}" fill="${fill}"/>`;
+                    yBand += solidH;
+                    if (yBand >= by + bh - 0.05) break;
+                    const sheerH = Math.min(bandH * (1 - solidFrac), by + bh - yBand);
+                    svg += `<rect x="${bx}" y="${yBand.toFixed(1)}" width="${bw}" height="${sheerH.toFixed(1)}" fill="${sheerFill}"/>`;
+                    yBand += sheerH;
+                }
+                svg += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="none" stroke="#0A3D62" stroke-width="1"/>`;
+            } else {
+                svg += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" fill="${fill}" stroke="#0A3D62" stroke-width="1"/>`;
+            }
+            // Mecanismo manual: cadena (cuenta colgante, interior) o manivela (varilla+mango al
+            // costado, exterior/Essential) — motorizado no lleva mecanismo manual a la vista.
+            if (state.mecanismo === 'manivela') {
+                const sideX = isD ? bx + bw : bx;
+                const sideSign = isD ? 1 : -1;
+                const cy1 = by + bh * 0.55, cy2 = cy1 + 3;
+                const cx2 = sideX + sideSign * 6;
+                svg += `<line x1="${sideX}" y1="${cy1.toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${cy2.toFixed(1)}" stroke="#111" stroke-width="1"/>`;
+                svg += `<line x1="${cx2.toFixed(1)}" y1="${(cy2 - 1.5).toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${(cy2 + 1.5).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
+            } else if (state.mecanismo !== 'motor') {
+                const chainX = isD ? bx + bw - 3 : bx + 3;
+                svg += `<line x1="${chainX}" y1="${(by + bh).toFixed(1)}" x2="${chainX}" y2="${(by + bh + 6).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
+                svg += `<circle cx="${chainX}" cy="${(by + bh + 7).toFixed(1)}" r="1" fill="#111"/>`;
+            }
+        }
+
+        svg += dimLineH(bx, bx + bw, 4, by, `${state.ancho || 0} mm`, 7);
+        svg += dimLineV(by, by + bh, bx + bw + 4, bx + bw, `${state.alto || 0} mm`, 7);
+        svg += `</svg>`;
+        return svg;
     }
 
     // ---- CABINA DE DUCHA ----
@@ -3710,6 +4279,7 @@
         if (state.categoria === 'baranda') return applyFinish(renderBaranda(state, id), state.color_perfil, state.color_ral);
         if (state.categoria === 'ducha') return applyFinish(renderDucha(state, id), state.color_perfil, state.color_ral);
         if (state.categoria === 'cerramiento') return renderFacade(state, id);
+        if (state.categoria === 'cortina') return renderCortina(state, id);
 
         const isCAD = (id === 'temp');
         const uid = id;
