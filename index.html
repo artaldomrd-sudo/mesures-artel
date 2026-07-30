@@ -4379,11 +4379,18 @@
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
 
             // startX/w se pasan desde el rect real del panel (ver PROP_BOX/fitPropRect) para que
-            // la vista de planta quede alineada bajo la elevación, sea cual sea el ancho real.
+            // la vista de planta quede alineada bajo la elevación, sea cual sea el ancho real —
+            // pero el radio del giro (r) NO puede crecer libre con el ancho: el viewBox reserva
+            // un espacio vertical FIJO para esta vista (de y0=85 al borde inferior), así que con
+            // las cajas de proporción real más anchas (ver PROP_BOX) un panel ancho podía generar
+            // un radio que se salía del viewBox (dibujo "cortado"). `maxR` limita el radio al
+            // espacio vertical realmente disponible — para anchos normales no cambia nada (el
+            // radio real es menor que el límite); solo comprime el giro en casos muy anchos.
             let centerX = 50;
+            const maxR = 40; // dy máximo = maxR*0.5 = 20, dentro del margen hasta el borde del viewBox
 
             if (is2Hojas) {
-                let r = w / 2;
+                let r = Math.min(w / 2, maxR);
                 let dx = r * 0.866;
                 let dy = r * 0.5 * dirY;
 
@@ -4393,7 +4400,7 @@
                 html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
                 html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
             } else {
-                let r = w * 0.875;
+                let r = Math.min(w * 0.875, maxR);
                 let hingeX = startX;
                 let freeX = startX + w;
                 let dx = r * 0.866;

@@ -127,10 +127,19 @@ un **PDF de Cotización o Fabricación** para el cliente.
   constantes fijas por tipo, para que la vista de planta quede alineada bajo la elevación sea
   cual sea el ancho real — su posición vertical (`y0=85`, dentro del viewBox más alto
   `hasPlan`) no cambia, y como el panel real nunca puede superar la caja máxima de antes, nunca
-  invade ese espacio. El Paño Fijo adosado (`panoArriba`/`panoAbajo`, ver más abajo) sigue
-  funcionando sin tocar nada — ya leía `getPanelRects(state)[0]` dinámicamente, así que se
-  ancla solo al nuevo borde real del panel (probado: un paño abajo de una ventana angosta queda
-  correctamente igual de angosto).
+  invade ese espacio. **Bug real encontrado al agrandar `PROP_BOX`** (ver más abajo): el radio
+  del arco de giro (`r = w*0.875` en la rama de 1 hoja, `r = w/2` en la de 2 hojas) SÍ dependía
+  linealmente de `w` sin límite — con las cajas nuevas más anchas (`maxW` hasta 65) un ítem ancho
+  con 1 hoja podía generar un radio tan grande que el arco se salía por abajo del viewBox
+  (dibujo "cortado", reportado por el usuario con una foto real: ventana 900×700 con el semicírculo
+  de giro recortado). El viewBox reserva un espacio vertical FIJO para esta vista (de `y0=85` al
+  borde inferior) que no crece con `w` — `maxR = 40` limita el radio a ese espacio disponible en
+  las dos ramas (`Math.min(w*0.875, maxR)` / `Math.min(w/2, maxR)`): para anchos normales no
+  cambia nada (el radio real ya es menor que el límite), solo comprime el giro cuando el ancho es
+  grande. El Paño Fijo adosado (`panoArriba`/`panoAbajo`, ver más abajo) sigue funcionando sin
+  tocar nada — ya leía `getPanelRects(state)[0]` dinámicamente, así que se ancla solo al nuevo
+  borde real del panel (probado: un paño abajo de una ventana angosta queda correctamente igual
+  de angosto).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,
