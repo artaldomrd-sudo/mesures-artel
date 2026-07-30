@@ -100,13 +100,20 @@ un **PDF de Cotización o Fabricación** para el cliente.
   las únicas que reflejan la medida real, como texto) — pero para `fachada_din`, `win_proy`,
   `win_souf`, `win_abat`, `win_ob` y `door_abat`, `getPanelRects(state)` (única fuente, también
   usada por `renderSVG`, `glassLayer`, `composePanos`) ahora llama a `fitPropRect(state)`: ajusta
-  el rect del panel al `ancho`/`alto` real cargado, sin deformar, dentro de la misma caja máxima
-  que usaba el rectángulo fijo de antes (`PROP_BOX[type] = {maxW, maxH, top}`, un objeto por
-  tipo con los mismos números que tenía cada `case` hardcodeado). Un ítem angosto y alto se ve
+  el rect del panel al `ancho`/`alto` real cargado, sin deformar, dentro de una caja máxima por
+  tipo (`PROP_BOX[type] = {maxW, maxH, top}`). **La caja NO es el tamaño del rectángulo fijo de
+  antes** (primer intento: copiar esos números — con medidas reales típicas, ej. puerta
+  1800×2200, el panel quedaba chico dentro de esa caja, muy por debajo del espacio real
+  disponible). Corregido a pedido explícito del usuario ("agrándalo, no se vea tan pequeño"):
+  los números de `PROP_BOX` ahora usan casi todo el espacio real del viewBox (revisado a mano
+  para no chocar con la línea de medida de ancho arriba ni con la vista de planta abajo en los
+  tipos que la tienen) — `win_proy`/`win_souf` 80×45, `win_abat`/`win_ob`/`door_abat` 65×62 (los
+  3 comparten caja, ya que la proporción real es la que ahora determina la forma final, no hace
+  falta una caja angosta aparte para puerta), `fachada_din` 84×53. Un ítem angosto y alto se ve
   angosto y alto; uno ancho y bajo se ve ancho y bajo. Sin medida cargada (`ancho`/`alto` = 0),
-  cae al tamaño de siempre (usa `maxW`/`maxH` como "real"). Piso de tamaño al 25% de la caja
-  máxima para que una proporción extremadamente angosta o extremadamente ancha no colapse el
-  dibujo a una línea ilegible. El panel **siempre queda centrado en x=50** (`bx = 50 - w/2`) sin
+  cae al tamaño de la caja completa. Piso de tamaño al 25% de la caja máxima para que una
+  proporción extremadamente angosta o extremadamente ancha no colapse el dibujo a una línea
+  ilegible. El panel **siempre queda centrado en x=50** (`bx = 50 - w/2`) sin
   importar el ancho real — necesario porque el espejo de `orientacion === 'D'`
   (`scale(-1,1) translate(-100,0)`) mira alrededor de x=50; si el panel no quedara centrado ahí,
   el volteo dejaría de coincidir con el dibujo. `renderSVG` deriva su propio `bx,by,bw,bh` local
