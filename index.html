@@ -2839,6 +2839,33 @@
         return s;
     }
 
+    // Proporción real (Paño Fijo, Ventanas, Puerta Abisagrada): a diferencia del resto de la
+    // app (rectángulo esquemático de tamaño fijo, ver dimLineH/V más abajo), estos tipos
+    // ajustan el rect del panel al ancho/alto real cargado — sin deformar, dentro de la misma
+    // caja máxima que usaba el dibujo fijo de antes (`maxW`/`maxH`) — para que una medida
+    // angosta y alta se vea angosta y alta, y una ancha y baja se vea ancha y baja. Pedido
+    // explícito del usuario, acotado a estos tipos (correderas/galandajes siguen con el
+    // esquema fijo de siempre). `top` es el borde superior original de cada tipo, para
+    // centrar verticalmente el panel más chico dentro del mismo espacio de antes. El panel
+    // siempre queda centrado en x=50 (necesario para que el espejo de `orientacion === 'D'`,
+    // que mira alrededor de x=50, siga funcionando igual sin importar el ancho real).
+    const PROP_BOX = {
+        win_proy: { maxW: 50, maxH: 30, top: 15 }, win_souf: { maxW: 50, maxH: 30, top: 15 },
+        win_abat: { maxW: 40, maxH: 40, top: 10 }, win_ob: { maxW: 40, maxH: 40, top: 10 },
+        door_abat: { maxW: 30, maxH: 50, top: 5 }, fachada_din: { maxW: 80, maxH: 50, top: 5 },
+    };
+    function fitPropRect(state) {
+        const box = PROP_BOX[state.type];
+        const realW = state.ancho > 0 ? state.ancho : box.maxW;
+        const realH = state.alto > 0 ? state.alto : box.maxH;
+        const scale = Math.min(box.maxW / realW, box.maxH / realH);
+        // Piso de tamaño (25% de la caja máxima) para que una proporción extrema no colapse el
+        // dibujo a una línea ilegible — sacrifica algo de fidelidad en casos raros a cambio de
+        // que el esquema siga siendo legible.
+        const w = Math.max(realW * scale, box.maxW * 0.25);
+        const h = Math.max(realH * scale, box.maxH * 0.25);
+        return [50 - w / 2, box.top + (box.maxH - h) / 2, w, h];
+    }
     function getPanelRects(state) {
         const t = state.type, isD = state.orientacion === 'D';
         switch (t) {
@@ -2851,13 +2878,11 @@
             case 'gal4_2v': return [[20, 10, 60, 40]];
             case 'gal4_4v': return [isD ? [0, 10, 80, 40] : [20, 10, 80, 40]];
             case 'gal6_3v': return [[20, 10, 60, 40]];
-            case 'win_proy': case 'win_souf': return [[25, 15, 50, 30]];
-            case 'win_abat': case 'win_ob': return [[30, 10, 40, 40]];
-            case 'door_abat': return [[35, 5, 30, 50]];
+            case 'win_proy': case 'win_souf': case 'win_abat': case 'win_ob': case 'door_abat': case 'fachada_din':
+                return [fitPropRect(state)];
             case 'mamp_fija': return [[30, 5, 40, 50]];
             case 'door_glass': return [[30, 5, 40, 50]];
             case 'door_slide': return [[30, 9, 40, 47]];
-            case 'fachada_din': return [[10, 5, 80, 50]];
         }
         return [];
     }
@@ -4299,9 +4324,7 @@
         let bx = 10, by = 5, bw = 80, bh = 50;
         if (state.categoria === 'corredera') { bx = 10; by = 10; bw = 80; bh = 40; }
         else if (state.categoria === 'galandaje') { bx = 5; by = 10; bw = 90; bh = 40; }
-        else if (state.type === 'win_proy' || state.type === 'win_souf') { bx = 25; by = 15; bw = 50; bh = 30; }
-        else if (state.type === 'win_abat' || state.type === 'win_ob') { bx = 30; by = 10; bw = 40; bh = 40; }
-        else if (state.type === 'door_abat') { bx = 35; by = 5; bw = 30; bh = 50; }
+        else if (PROP_BOX[state.type]) { [bx, by, bw, bh] = fitPropRect(state); }
         else if (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio') { bx = 30; by = 5; bw = 40; bh = 50; }
 
         const hasPlan = ['win_abat', 'door_abat', 'win_ob'].includes(state.type);
@@ -4336,7 +4359,7 @@
         // putArrow.
         const putArrowCorStair = putArrow;
 
-        const drawPlanView = (type, stateInfo) => {
+        const drawPlanView = (type, stateInfo, startX, w) => {
             let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
             let opensAfuera = stateInfo.apertura && stateInfo.apertura.includes('afuera');
             if (type === 'win_ob') opensAfuera = false;
@@ -4348,8 +4371,8 @@
             let y0 = 85;
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
 
-            let w = type === 'door_abat' ? 30 : 40;
-            let startX = type === 'door_abat' ? 35 : 30;
+            // startX/w se pasan desde el rect real del panel (ver PROP_BOX/fitPropRect) para que
+            // la vista de planta quede alineada bajo la elevación, sea cual sea el ancho real.
             let centerX = 50;
 
             if (is2Hojas) {
@@ -4439,33 +4462,37 @@
                 drawing += `<g transform="translate(25,30)">${arrowL}</g><g transform="translate(35,30)">${arrowL}</g><g transform="translate(45,30)">${arrowL}</g><g transform="translate(55,30)">${arrowR}</g><g transform="translate(65,30)">${arrowR}</g><g transform="translate(75,30)">${arrowR}</g>`;
                 break;
 
-            case 'win_proy': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 15l25 30l25-30"/>'; break;
-            case 'win_souf': drawing += '<rect x="25" y="15" width="50" height="30"/><path d="M25 45l25-30l25 30"/>'; break;
+            case 'win_proy':
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><path d="M${bx} ${by}l${bw / 2} ${bh}l${bw / 2} ${-bh}"/>`;
+                break;
+            case 'win_souf':
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><path d="M${bx} ${by + bh}l${bw / 2} ${-bh}l${bw / 2} ${bh}"/>`;
+                break;
 
             case 'win_abat':
-                drawing += '<rect x="30" y="10" width="40" height="40"/>';
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/>`;
                 if (state.apertura && state.apertura.includes('2')) {
-                    drawing += '<line x1="50" y1="10" x2="50" y2="50"/>';
-                    drawing += '<path d="M30 10l20 20l-20 20 M70 10l-20 20l20 20"/>';
+                    drawing += `<line x1="${bx + bw / 2}" y1="${by}" x2="${bx + bw / 2}" y2="${by + bh}"/>`;
+                    drawing += `<path d="M${bx} ${by}l${bw / 2} ${bh / 2}l${-bw / 2} ${bh / 2} M${bx + bw} ${by}l${-bw / 2} ${bh / 2}l${bw / 2} ${bh / 2}"/>`;
                 } else {
-                    drawing += '<path d="M30 10l40 20l-40 20"/>';
+                    drawing += `<path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}"/>`;
                 }
-                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state, bx, bw)}</g>`;
                 break;
             case 'door_abat':
-                drawing += '<rect x="35" y="5" width="30" height="50"/>';
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/>`;
                 if (state.apertura && state.apertura.includes('2')) {
-                    drawing += '<line x1="50" y1="5" x2="50" y2="55"/>';
-                    drawing += '<path d="M35 5l15 25l-15 25 M65 5l-15 25l15 25"/>';
+                    drawing += `<line x1="${bx + bw / 2}" y1="${by}" x2="${bx + bw / 2}" y2="${by + bh}"/>`;
+                    drawing += `<path d="M${bx} ${by}l${bw / 2} ${bh / 2}l${-bw / 2} ${bh / 2} M${bx + bw} ${by}l${-bw / 2} ${bh / 2}l${bw / 2} ${bh / 2}"/>`;
                 } else {
-                    drawing += '<path d="M35 5l30 25l-30 25"/>';
+                    drawing += `<path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}"/>`;
                 }
-                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state, bx, bw)}</g>`;
                 break;
 
             case 'win_ob':
-                drawing += '<rect x="30" y="10" width="40" height="40"/><path d="M30 10l40 20l-40 20M30 50l20-40l20 40"/>';
-                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state)}</g>`;
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}M${bx} ${by + bh}l${bw / 2} ${-bh}l${bw / 2} ${bh}"/>`;
+                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state, bx, bw)}</g>`;
                 break;
 
             case 'mamp_fija': {
@@ -4550,15 +4577,16 @@
                 let n = parseInt(state.panos) || 1;
                 let isTope = state.union === 'tope';
                 let innerStroke = isTope ? 0.5 : 2;
+                let fFontSize = Math.min(12, bh * 0.4);
 
-                drawing += '<rect x="10" y="5" width="80" height="50"/>';
+                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/>`;
                 for (let i = 1; i < n; i++) {
-                    let posX = 10 + (80 / n) * i;
-                    drawing += `<line x1="${posX}" y1="5" x2="${posX}" y2="${55}" stroke-width="${innerStroke}"/>`;
+                    let posX = bx + (bw / n) * i;
+                    drawing += `<line x1="${posX}" y1="${by}" x2="${posX}" y2="${by + bh}" stroke-width="${innerStroke}"/>`;
                 }
                 for (let i = 0; i < n; i++) {
-                    let centerX = 10 + (80 / n) * i + (80 / n) / 2;
-                    drawing += `<text x="${centerX}" y="33" font-family="Arimo" font-size="12" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
+                    let centerX = bx + (bw / n) * i + (bw / n) / 2;
+                    drawing += `<text x="${centerX}" y="${by + bh / 2 + fFontSize * 0.35}" font-family="Arimo" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
                 }
                 break;
         }

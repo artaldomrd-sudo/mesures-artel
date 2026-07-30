@@ -93,6 +93,37 @@ un **PDF de Cotización o Fabricación** para el cliente.
   superponerse ni salirse. Usadas en: la medida universal ancho/alto de `renderSVG` (después del
   switch grande), los paneles de `renderFacade` (Vidrio de Ducha), y las medidas del Paño Fijo
   adosado (individual de cada paño + el total a la izquierda, ver más abajo).
+- **Proporción real del panel — Paño Fijo, Ventanas y Puerta Abisagrada, NO correderas/
+  galandajes** (pedido explícito del usuario: "así estaba antes" — no había evidencia de eso en
+  el historial de git, pero se implementó igual como pedido nuevo, acotado a estos tipos). El
+  resto de la app sigue con el rectángulo esquemático de tamaño FIJO de siempre (dimLineH/V son
+  las únicas que reflejan la medida real, como texto) — pero para `fachada_din`, `win_proy`,
+  `win_souf`, `win_abat`, `win_ob` y `door_abat`, `getPanelRects(state)` (única fuente, también
+  usada por `renderSVG`, `glassLayer`, `composePanos`) ahora llama a `fitPropRect(state)`: ajusta
+  el rect del panel al `ancho`/`alto` real cargado, sin deformar, dentro de la misma caja máxima
+  que usaba el rectángulo fijo de antes (`PROP_BOX[type] = {maxW, maxH, top}`, un objeto por
+  tipo con los mismos números que tenía cada `case` hardcodeado). Un ítem angosto y alto se ve
+  angosto y alto; uno ancho y bajo se ve ancho y bajo. Sin medida cargada (`ancho`/`alto` = 0),
+  cae al tamaño de siempre (usa `maxW`/`maxH` como "real"). Piso de tamaño al 25% de la caja
+  máxima para que una proporción extremadamente angosta o extremadamente ancha no colapse el
+  dibujo a una línea ilegible. El panel **siempre queda centrado en x=50** (`bx = 50 - w/2`) sin
+  importar el ancho real — necesario porque el espejo de `orientacion === 'D'`
+  (`scale(-1,1) translate(-100,0)`) mira alrededor de x=50; si el panel no quedara centrado ahí,
+  el volteo dejaría de coincidir con el dibujo. `renderSVG` deriva su propio `bx,by,bw,bh` local
+  de `getPanelRects(state)[0]` en vez de un `if/else` de números fijos, y los `case` del switch
+  grande (chevrones de apertura, línea divisora de 2 hojas, rect del Paño Fijo, líneas
+  divisorias entre paños, posición de la "F") se reescribieron en términos de `bx/by/bw/bh` en
+  vez de coordenadas hardcodeadas — mismas fórmulas geométricas de siempre (ej. el chevron de 1
+  hoja sigue siendo "esquina superior → punto medio del borde libre → esquina inferior"), solo
+  que ahora parametrizadas. `drawPlanView(type, stateInfo, startX, w)` (vista de planta de
+  `win_abat`/`win_ob`/`door_abat`) recibe el mismo `bx`/`bw` del panel real en vez de sus propias
+  constantes fijas por tipo, para que la vista de planta quede alineada bajo la elevación sea
+  cual sea el ancho real — su posición vertical (`y0=85`, dentro del viewBox más alto
+  `hasPlan`) no cambia, y como el panel real nunca puede superar la caja máxima de antes, nunca
+  invade ese espacio. El Paño Fijo adosado (`panoArriba`/`panoAbajo`, ver más abajo) sigue
+  funcionando sin tocar nada — ya leía `getPanelRects(state)[0]` dinámicamente, así que se
+  ancla solo al nuevo borde real del panel (probado: un paño abajo de una ventana angosta queda
+  correctamente igual de angosto).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,
