@@ -37,6 +37,11 @@
     .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
     @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
     .hint { font-size: 11.5px; color: #8a93a0; margin: 4px 0 0; }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .chk-group { display: flex; flex-wrap: wrap; gap: 8px; border: 1.5px solid #ddd; border-radius: 8px; padding: 10px; min-height: 44px; box-sizing: border-box; }
+    .chk-group label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13.5px; font-weight: normal; color: #333; background: #f3f4f6; padding: 7px 12px; border-radius: 20px; cursor: pointer; }
+    .chk-group input { width: auto; min-height: 0; margin: 0; }
+    .chk-group .none { font-size: 12.5px; color: #8a93a0; align-self: center; }
     .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; }
@@ -86,37 +91,31 @@
         </div>
         <label>Correo</label>
         <input type="email" id="f-correo" placeholder="correo@ejemplo.com">
+        <label>Cargo(s) <span class="lbl-opt">— puedes marcar varios</span></label>
+        <div class="chk-group" id="f-cargos"></div>
         <div class="grid2">
-            <div>
-                <label>Cargo</label>
-                <select id="f-cargo"></select>
-            </div>
             <div>
                 <label>Departamento</label>
                 <select id="f-departamento"></select>
             </div>
-        </div>
-        <div class="grid2">
             <div>
                 <label>Sucursal</label>
                 <select id="f-sucursal"></select>
             </div>
+        </div>
+        <div class="grid2">
             <div>
                 <label>Fecha de ingreso</label>
                 <input type="date" id="f-ingreso">
             </div>
-        </div>
-        <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <a href="rrhh-catalogos.html" target="_blank" style="color:var(--artal-blue);font-weight:bold;">Catálogos</a> (se abre en otra pestaña) y vuelve aquí.</p>
-        <div class="grid2">
             <div>
                 <label>Sueldo base (opcional)</label>
                 <input type="number" id="f-sueldo" min="0" step="0.01" placeholder="RD$">
             </div>
-            <div>
-                <label>Dirección</label>
-                <input type="text" id="f-direccion" placeholder="Dirección">
-            </div>
         </div>
+        <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <a href="rrhh-catalogos.html" target="_blank" style="color:var(--artal-blue);font-weight:bold;">Catálogos</a> (se abre en otra pestaña) y vuelve aquí.</p>
+        <label>Dirección</label>
+        <input type="text" id="f-direccion" placeholder="Dirección">
         <label>Notas (opcional)</label>
         <textarea id="f-notas" placeholder="Información adicional…"></textarea>
         <div class="modal-actions">
@@ -140,6 +139,9 @@
     }
     const iniciales = (n) => (String(n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('') || '?').toUpperCase();
     const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); };
+    // Un empleado puede tener varios cargos (cargoNombres); compat. con el campo viejo cargoNombre.
+    const cargosTexto = (e) => Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || '');
+    const cargosIdsDe = (e) => Array.isArray(e.cargoIds) ? e.cargoIds : (e.cargoId ? [e.cargoId] : []);
 
     let empleados = [];
     let cargos = [], departamentos = [], sucursales = [];
@@ -160,9 +162,22 @@
     onSnapshot(collection(db, 'rrhhDepartamentos'), (s) => { departamentos = s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre); refreshSelects(); });
     onSnapshot(collection(db, 'rrhhSucursales'), (s) => { sucursales = s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre); refreshSelects(); });
     const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+
+    // Cargos = varias casillas (un empleado puede tener más de un cargo).
+    function cargosMarcados() {
+        return Array.from(document.querySelectorAll('#f-cargos input:checked')).map(c => c.value);
+    }
+    function renderCargos(sel) {
+        const box = document.getElementById('f-cargos');
+        const marcados = sel || cargosMarcados();
+        if (!cargos.length) { box.innerHTML = '<span class="none">Aún no hay cargos. Agrégalos en Catálogos.</span>'; return; }
+        box.innerHTML = cargos.map(c =>
+            `<label><input type="checkbox" value="${esc(c.id)}" ${marcados.includes(c.id) ? 'checked' : ''}>${esc(c.nombre)}</label>`).join('');
+    }
     function refreshSelects() {
-        const c = document.getElementById('f-cargo'), d = document.getElementById('f-departamento'), s = document.getElementById('f-sucursal');
-        c.innerHTML = opts(cargos, c.value); d.innerHTML = opts(departamentos, d.value); s.innerHTML = opts(sucursales, s.value);
+        const d = document.getElementById('f-departamento'), s = document.getElementById('f-sucursal');
+        renderCargos();
+        d.innerHTML = opts(departamentos, d.value); s.innerHTML = opts(sucursales, s.value);
         document.getElementById('cat-hint').style.display = (cargos.length && departamentos.length && sucursales.length) ? 'none' : 'block';
     }
 
@@ -177,7 +192,7 @@
         const term = document.getElementById('search').value.trim().toLowerCase();
         const lista = empleados
             .filter(e => (e.estado || 'activo') === currentTab)
-            .filter(e => !term || [e.nombre, e.cedula, e.cargoNombre, e.departamentoNombre, e.sucursalNombre].some(v => String(v || '').toLowerCase().includes(term)))
+            .filter(e => !term || [e.nombre, e.cedula, cargosTexto(e), e.departamentoNombre, e.sucursalNombre].some(v => String(v || '').toLowerCase().includes(term)))
             .sort(byNombre);
         const cont = document.getElementById('lista');
         if (!lista.length) { cont.innerHTML = `<p class="empty">${currentTab === 'activo' ? 'No hay empleados activos.' : 'No hay empleados inactivos.'}</p>`; return; }
@@ -186,7 +201,7 @@
 
     function cardHTML(e) {
         const estado = e.estado || 'activo';
-        const meta = [e.cargoNombre, e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
+        const meta = [cargosTexto(e), e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
         const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : ''].filter(Boolean).join('  ·  ');
         return `
         <div class="order-card emp-card">
@@ -207,8 +222,9 @@
     function limpiar() {
         editingId = null;
         ['f-nombre', 'f-cedula', 'f-telefono', 'f-correo', 'f-ingreso', 'f-sueldo', 'f-direccion', 'f-notas'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
         refreshSelects();
-        document.getElementById('f-cargo').value = ''; document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
+        renderCargos([]);
     }
     window.abrirNuevo = function () { limpiar(); document.getElementById('modal-title').textContent = 'Nuevo empleado'; document.getElementById('modal').classList.add('show'); };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
@@ -224,16 +240,17 @@
         document.getElementById('f-sueldo').value = e.sueldoBase != null ? e.sueldoBase : '';
         document.getElementById('f-direccion').value = e.direccion || '';
         document.getElementById('f-notas').value = e.notas || '';
-        document.getElementById('f-cargo').value = e.cargoId || '';
         document.getElementById('f-departamento').value = e.departamentoId || '';
         document.getElementById('f-sucursal').value = e.sucursalId || '';
+        renderCargos(cargosIdsDe(e));
         document.getElementById('modal').classList.add('show');
     };
 
     window.guardar = async function () {
         const nombre = document.getElementById('f-nombre').value.trim();
         if (!nombre) { alert('Escribe el nombre del empleado.'); return; }
-        const cargoId = document.getElementById('f-cargo').value;
+        const cargoIds = cargosMarcados();
+        const cargoNombres = cargoIds.map(id => (cargos.find(x => x.id === id) || {}).nombre).filter(Boolean);
         const departamentoId = document.getElementById('f-departamento').value;
         const sucursalId = document.getElementById('f-sucursal').value;
         const nombreDe = (arr, id) => (arr.find(x => x.id === id) || {}).nombre || '';
@@ -247,7 +264,7 @@
             fechaIngreso: document.getElementById('f-ingreso').value || '',
             sueldoBase: sueldoRaw ? Number(sueldoRaw) : null,
             notas: document.getElementById('f-notas').value.trim(),
-            cargoId, cargoNombre: nombreDe(cargos, cargoId),
+            cargoIds, cargoNombres,
             departamentoId, departamentoNombre: nombreDe(departamentos, departamentoId),
             sucursalId, sucursalNombre: nombreDe(sucursales, sucursalId)
         };
