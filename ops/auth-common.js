@@ -81,6 +81,21 @@ export function requireAuth(rolesPermitidos) {
       const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
       const autorizado = roles.includes('admin') || roles.includes('lector') || roles.some((r) => rolesPermitidos.includes(r));
       if (!data || data.activo === false || !autorizado) {
+        // Blindaje: si es una cuenta válida y activa con un rol de campo conocido, pero esta no
+        // es su pantalla, lo mandamos a la pantalla de su rol en vez de dejarlo aquí — así un
+        // instalador/ayudante/chofer NUNCA aterriza en el panel de admin ni en pantallas ajenas
+        // (salvo que su doc tenga admin/lector, que por definición ven todo — ese control es de datos).
+        if (data && data.activo !== false && roles.length) {
+          const home = homePorRol(roles);
+          const actual = location.pathname.split('/').pop() || 'index.html';
+          if (home.split('/').pop() !== actual) {
+            const carpeta = location.pathname.replace(/[^/]*$/, '');
+            const opsIdx = carpeta.indexOf('/ops/');
+            const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
+            location.replace('../'.repeat(prof) + home);
+            return;
+          }
+        }
         showUnauthorizedScreen(user.email);
         return;
       }
