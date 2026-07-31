@@ -70,6 +70,14 @@ function showUnauthorizedScreen(email) {
  * servidor (ver firestore.rules), así que puede mirar todo sin poder modificar nada.
  */
 export function requireAuth(rolesPermitidos) {
+  // Tapa el contenido de la página de INMEDIATO (antes de leer nada en Firestore), para que
+  // ninguna pantalla muestre su contenido mientras se verifica el acceso. Sin esto, el panel
+  // dibuja sus tarjetas y quedan visibles durante el `await getDoc` — un rol de campo alcanzaba
+  // a ver el panel de admin en ese lapso, aunque después quedara bloqueado.
+  showOverlay(
+    '<img src="' + rootPath('logo.png') + '" alt="ARTAL" style="height:56px;width:auto;object-fit:contain;">' +
+    '<p style="opacity:.85;margin:0;">Verificando acceso…</p>'
+  );
   return new Promise((resolve) => {
     onAuthStateChanged(auth, async (user) => {
       if (!user || !user.email) {
