@@ -1448,14 +1448,19 @@ window.enviarSolicitud = async function(e){
   if(g('empresa-web')){ mostrarGracias(); return false; }
 
   const tipo = (window.tiposSeleccionados ? window.tiposSeleccionados() : '');
+  // Si el cliente venía del chat con Cristal, adjuntamos el resumen de la conversación
+  let mensaje = g('msg');
+  if(window.__chatTranscript){
+    mensaje = (mensaje ? mensaje + '\n\n' : '') + window.__chatTranscript;
+  }
   const datos = {
     origen: 'web',
     estado: 'nueva',
     nombre,
     telefono: g('tel'),
     email: g('email'),
-    tipo,
-    mensaje: g('msg'),
+    tipo: tipo + (window.__chatTranscript ? ' · vía chat' : ''),
+    mensaje,
     fecha: serverTimestamp()
   };
 
@@ -1464,6 +1469,7 @@ window.enviarSolicitud = async function(e){
   if(btn){ btn.disabled = true; btn.innerHTML = 'Enviando…'; }
   try {
     await addDoc(collection(db, 'solicitudesWeb'), datos);
+    window.__chatTranscript = null;
     mostrarGracias();
   } catch(err){
     // Respaldo: abrir WhatsApp con la solicitud lista, para no perder al cliente si falla la red.
@@ -1549,7 +1555,7 @@ window.enviarSolicitud = async function(e){
   </div>
   <div class="acp-msgs" id="acp-msgs"></div>
   <div class="acp-chip" id="acp-chip"><span>📎</span><b></b><button onclick="artalQuitarAdjunto()" aria-label="Quitar">×</button></div>
-  <div class="acp-datos" onclick="artalLeadToggle()">📋 Dejar mis datos para que me contacten</div>
+  <div class="acp-datos" onclick="artalIrAContacto()">📋 Dejar mis datos para que me contacten</div>
   <div class="acp-lead" id="acp-lead">
     <input type="text" id="acp-nombre" placeholder="Tu nombre">
     <input type="tel" id="acp-tel" placeholder="Tu teléfono">
@@ -1588,7 +1594,14 @@ window.enviarSolicitud = async function(e){
     }
     if(abrir) el('acp-input').focus();
   };
-  window.artalLeadToggle=function(){ el('acp-lead').classList.toggle('show'); };
+  window.artalLeadToggle=function(){ var l=el('acp-lead'); if(l) l.classList.toggle('show'); };
+  // Lleva al cliente al formulario grande de contacto, llevándose el resumen de la charla
+  window.artalIrAContacto=function(){
+    try{ window.__chatTranscript = historial.map(function(m){return (m.role==='user'?'Cliente: ':'Cristal: ')+m.content;}).join('\n'); }catch(e){}
+    artalChatToggle(false);
+    var c=document.getElementById('contacto');
+    if(c){ c.scrollIntoView({behavior:'smooth'}); setTimeout(function(){ var n=document.getElementById('nombre'); if(n) n.focus(); }, 650); }
+  };
   window.artalLeadEnviar=async function(){
     var nombre=el('acp-nombre').value.trim();
     if(!nombre){ el('acp-nombre').focus(); return; }
