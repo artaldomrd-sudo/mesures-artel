@@ -132,6 +132,7 @@
 
     const TIPOS = {
         promocion: { label: 'Promoción / Cambio', icon: '⬆️' },
+        vacaciones: { label: 'Vacaciones', icon: '🏖️' },
         amonestacion: { label: 'Amonestación', icon: '⚠️' },
         reconocimiento: { label: 'Reconocimiento', icon: '🏆' },
         capacitacion: { label: 'Capacitación', icon: '🎓' },
@@ -199,6 +200,8 @@
         const del = ev.sintetico ? '' : `<button class="tl-del" title="Eliminar" onclick="borrarEvento('${ev.id}')">🗑</button>`;
         const adj = (ev.adjunto && ev.adjunto.url)
             ? `<div><a class="justif-link" href="${esc(ev.adjunto.url)}" target="_blank" rel="noopener">${ev.adjunto.tipo === 'pdf' ? '📄' : (ev.adjunto.tipo === 'doc' ? '📃' : '🖼️')} Ver adjunto</a></div>` : '';
+        const carpeta = (ev.tipo === 'vacaciones' && !ev.sintetico)
+            ? `<div><a class="justif-link" href="rrhh-vacaciones.html?emp=${esc(ev.empleadoId || '')}">📁 Ver carpeta de vacaciones</a></div>` : '';
         return `<div class="tl-item">
             <div class="tl-dot">${t.icon}</div>
             <div class="tl-card">
@@ -206,6 +209,7 @@
                 ${ev.titulo && ev.titulo !== t.label ? `<div class="tl-meta">${t.icon} ${esc(t.label)}</div>` : ''}
                 ${ev.detalle ? `<div class="tl-det">${esc(ev.detalle)}</div>` : ''}
                 ${adj}
+                ${carpeta}
                 ${extra.length ? `<div class="tl-meta">${esc(extra.join(' · '))} ${del}</div>` : `<div class="tl-meta" style="text-align:right">${del}</div>`}
             </div>
         </div>`;
@@ -297,8 +301,23 @@
                     if (nuevo) await updateDoc(doc(db, 'rrhhEmpleados', empId), { sueldoBase: Number(nuevo) });
                 }
             }
+            // Vacaciones: crea automáticamente la carpeta en el apartado Vacaciones, vinculada al evento.
+            let msgExtra = '';
+            if (tipo === 'vacaciones' && emp) {
+                const anio = Number((fecha || '').slice(0, 4)) || new Date().getFullYear();
+                const rv = await addDoc(collection(db, 'rrhhVacaciones'), {
+                    empleadoId: empId, empleadoNombre: emp.nombre, anio,
+                    titulo: 'Vacaciones ' + emp.nombre + ' ' + anio,
+                    fechaInicio: fecha || '', fechaFin: '', estado: 'programada',
+                    notas: detalle || '', documentos: [], origen: 'evento',
+                    eventoId: refDoc.id, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                });
+                await updateDoc(doc(db, 'rrhhEventos', refDoc.id), { vacacionId: rv.id });
+                msgExtra = 'Se creó la carpeta “Vacaciones ' + emp.nombre + ' ' + anio + '” en el apartado Vacaciones, lista para subir documentos.';
+            }
             cerrarEvento();
             if (!selEmp) { selEmp = empId; document.getElementById('sel-emp').value = empId; render(); }
+            if (msgExtra) alert(msgExtra);
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
         finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
     };
