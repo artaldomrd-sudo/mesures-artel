@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Oportunidades</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 1200px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 18px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input.buscar { flex: 1; min-width: 160px; padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+    .col { flex: 0 0 250px; background: #eef1f4; border-radius: 12px; padding: 10px; min-height: 120px; }
+    .col.drag-over { outline: 2px dashed var(--artal-blue); outline-offset: -2px; background: #e4ebf3; }
+    .col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 0 2px; }
+    .col-head .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+    .col-head .t { font-weight: bold; font-size: 12.5px; color: var(--artal-blue); text-transform: uppercase; letter-spacing: .03em; }
+    .col-head .c { margin-left: auto; font-size: 11px; color: #778; background: #fff; border-radius: 20px; padding: 1px 8px; font-weight: bold; }
+    .col-val { font-size: 11px; color: #667; margin: -4px 2px 8px; }
+
+    .opp { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 11px 12px; margin-bottom: 9px; cursor: grab; border-left: 4px solid #ccc; }
+    .opp:active { cursor: grabbing; }
+    .opp .tit { font-weight: bold; color: var(--artal-blue); font-size: 14px; }
+    .opp .cli { font-size: 12px; color: #556; margin-top: 2px; }
+    .opp .val { font-size: 13.5px; font-weight: bold; color: #1f9d61; margin-top: 4px; }
+    .opp .sub { font-size: 11px; color: #8a93a0; margin-top: 4px; }
+    .opp-actions { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+    .opp-actions button { border: none; background: #f1f3f6; color: var(--artal-blue); border-radius: 7px; padding: 5px 8px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; min-height: 32px; }
+    .opp-actions .mv { min-width: 30px; } .opp-actions .sp { flex: 1; }
+    .opp-actions .ed { background: var(--artal-blue); color: #fff; } .opp-actions .del { background: transparent; color: #e74c3c; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 500px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .modal-box textarea { min-height: 56px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="ventas.html" title="Volver a Ventas">← Ventas</a>
+        <a class="btn-back" href="index.html" title="Ir al Panel de Control">🏠 Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Oportunidades</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-y" onclick="abrirNueva()">+ Nueva oportunidad</button>
+        <input class="buscar" id="buscar" placeholder="Buscar por título, cliente o vendedor…" oninput="render()">
+    </div>
+    <div class="board" id="board"><p class="empty">Cargando…</p></div>
+</main>
+
+<datalist id="clientes-list"></datalist>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva oportunidad</h2>
+        <label>Título *</label>
+        <input type="text" id="o-titulo" placeholder="Ej. Ventanas + baranda casa Pérez">
+        <label>Cliente</label>
+        <input type="text" id="o-cliente" list="clientes-list" placeholder="Nombre del cliente">
+        <div class="grid2">
+            <div><label>Valor estimado (RD$)</label><input type="number" id="o-valor" min="0" step="0.01" placeholder="0.00"></div>
+            <div><label>Etapa</label><select id="o-etapa"></select></div>
+        </div>
+        <div class="grid2">
+            <div><label>Vendedor</label><input type="text" id="o-vendedor"></div>
+            <div><label>Fuente</label><select id="o-fuente"><option>Referido</option><option>Sitio web</option><option>Redes sociales</option><option>Cliente recurrente</option><option>Llamada entrante</option><option>Otro</option></select></div>
+        </div>
+        <div class="grid2">
+            <div><label>Cierre esperado <span class="lbl-opt">— opcional</span></label><input type="date" id="o-cierre"></div>
+            <div><label>Probabilidad (%) <span class="lbl-opt">— opcional</span></label><input type="number" id="o-prob" min="0" max="100" step="5"></div>
+        </div>
+        <label>Notas / seguimiento</label>
+        <textarea id="o-notas" placeholder="Última conversación, próximos pasos…"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['cotizaciones']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); };
+
+    const ETAPAS = [
+        ['prospecto', 'Prospecto', '#8a93a0'],
+        ['contactado', 'Contactado', '#2f6fd0'],
+        ['cotizado', 'Cotizado', '#7d3ac1'],
+        ['negociacion', 'Negociación', '#c07a12'],
+        ['ganada', 'Ganada', '#1f9d61'],
+        ['perdida', 'Perdida', '#d9483b']
+    ];
+    const IDX = Object.fromEntries(ETAPAS.map(([v], i) => [v, i]));
+    const COLOR = Object.fromEntries(ETAPAS.map(([v, , c]) => [v, c]));
+    const abierta = (e) => e !== 'ganada' && e !== 'perdida';
+
+    document.getElementById('o-etapa').innerHTML = ETAPAS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+
+    let oportunidades = [], editId = null, dragId = null;
+
+    onSnapshot(collection(db, 'ventasOportunidades'), (snap) => {
+        oportunidades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, (err) => { document.getElementById('board').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    // Sugerencias de cliente desde el directorio.
+    onSnapshot(collection(db, 'clientes'), (snap) => {
+        const nombres = snap.docs.map(d => (d.data().nombre || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+        document.getElementById('clientes-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }, () => {});
+
+    // ---------- Modal ----------
+    window.abrirNueva = function () {
+        editId = null;
+        document.getElementById('modal-title').textContent = 'Nueva oportunidad';
+        ['o-titulo', 'o-cliente', 'o-valor', 'o-vendedor', 'o-cierre', 'o-prob', 'o-notas'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('o-vendedor').value = usuario.nombre || '';
+        document.getElementById('o-etapa').value = 'prospecto';
+        document.getElementById('o-fuente').value = 'Referido';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const o = oportunidades.find(x => x.id === id); if (!o) return;
+        editId = id;
+        document.getElementById('modal-title').textContent = 'Editar oportunidad';
+        document.getElementById('o-titulo').value = o.titulo || '';
+        document.getElementById('o-cliente').value = o.clienteNombre || '';
+        document.getElementById('o-valor').value = o.valor != null ? o.valor : '';
+        document.getElementById('o-etapa').value = o.etapa || 'prospecto';
+        document.getElementById('o-vendedor').value = o.vendedor || '';
+        document.getElementById('o-fuente').value = o.fuente || 'Referido';
+        document.getElementById('o-cierre').value = o.fechaCierre || '';
+        document.getElementById('o-prob').value = o.probabilidad != null ? o.probabilidad : '';
+        document.getElementById('o-notas').value = o.notas || '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const titulo = document.getElementById('o-titulo').value.trim();
+        if (!titulo) { alert('Escribe un título.'); return; }
+        const probRaw = document.getElementById('o-prob').value;
+        const datos = {
+            titulo,
+            clienteNombre: document.getElementById('o-cliente').value.trim(),
+            valor: n2(document.getElementById('o-valor').value),
+            etapa: document.getElementById('o-etapa').value,
+            vendedor: document.getElementById('o-vendedor').value.trim(),
+            fuente: document.getElementById('o-fuente').value,
+            fechaCierre: document.getElementById('o-cierre').value || '',
+            probabilidad: probRaw === '' ? null : n2(probRaw),
+            notas: document.getElementById('o-notas').value.trim(),
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'ventasOportunidades', editId), datos);
+            else await addDoc(collection(db, 'ventasOportunidades'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar esta oportunidad?')) return;
+        try { await deleteDoc(doc(db, 'ventasOportunidades', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.mover = async function (id, delta) {
+        const o = oportunidades.find(x => x.id === id); if (!o) return;
+        const i = Math.max(0, Math.min(ETAPAS.length - 1, (IDX[o.etapa] ?? 0) + delta));
+        const nueva = ETAPAS[i][0];
+        if (nueva === o.etapa) return;
+        try { await updateDoc(doc(db, 'ventasOportunidades', id), { etapa: nueva, actualizado: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Drag & drop (escritorio) ----------
+    window.onDragStart = function (ev, id) { dragId = id; if (ev.dataTransfer) { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', id); } };
+    window.onDragOver = function (ev, etapa) { ev.preventDefault(); const col = ev.currentTarget; col.classList.add('drag-over'); };
+    window.onDragLeave = function (ev) { ev.currentTarget.classList.remove('drag-over'); };
+    window.onDrop = async function (ev, etapa) {
+        ev.preventDefault();
+        ev.currentTarget.classList.remove('drag-over');
+        const id = dragId || (ev.dataTransfer && ev.dataTransfer.getData('text/plain'));
+        dragId = null;
+        const o = oportunidades.find(x => x.id === id);
+        if (!o || o.etapa === etapa) return;
+        try { await updateDoc(doc(db, 'ventasOportunidades', id), { etapa, actualizado: serverTimestamp() }); }
+        catch (e) { alert('No se pudo mover: ' + e.message); }
+    };
+
+    // ---------- Render ----------
+    function render() {
+        const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
+        const lista = oportunidades.filter(o => !term || [o.titulo, o.clienteNombre, o.vendedor].some(v => String(v || '').toLowerCase().includes(term)));
+
+        // KPIs
+        const abiertas = oportunidades.filter(o => abierta(o.etapa || 'prospecto'));
+        const pipeline = abiertas.reduce((a, o) => a + n2(o.valor), 0);
+        const ganadas = oportunidades.filter(o => o.etapa === 'ganada');
+        const valGanadas = ganadas.reduce((a, o) => a + n2(o.valor), 0);
+        const cerradas = oportunidades.filter(o => o.etapa === 'ganada' || o.etapa === 'perdida').length;
+        const tasa = cerradas ? Math.round(ganadas.length / cerradas * 100) : 0;
+        document.getElementById('kpis').innerHTML = [
+            ['Abiertas', abiertas.length], ['Valor pipeline', fmt(pipeline)], ['Ganadas', ganadas.length], ['Valor ganado', fmt(valGanadas)], ['Tasa de cierre', tasa + '%']
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        const board = document.getElementById('board');
+        if (!oportunidades.length) { board.innerHTML = '<p class="empty">Aún no hay oportunidades. Crea la primera con «+ Nueva oportunidad».</p>'; return; }
+        board.innerHTML = ETAPAS.map(([etapa, label, color]) => {
+            const items = lista.filter(o => (o.etapa || 'prospecto') === etapa).sort((a, b) => n2(b.valor) - n2(a.valor));
+            const valCol = items.reduce((a, o) => a + n2(o.valor), 0);
+            return `<div class="col" ondragover="onDragOver(event,'${etapa}')" ondragleave="onDragLeave(event)" ondrop="onDrop(event,'${etapa}')">
+                <div class="col-head"><span class="dot" style="background:${color}"></span><span class="t">${label}</span><span class="c">${items.length}</span></div>
+                ${valCol ? `<div class="col-val">${fmt(valCol)}</div>` : ''}
+                ${items.map(oppHTML).join('')}
+            </div>`;
+        }).join('');
+    }
+
+    function oppHTML(o) {
+        const etapa = o.etapa || 'prospecto', i = IDX[etapa] ?? 0;
+        const sub = [o.vendedor ? '👤 ' + esc(o.vendedor) : '', o.fechaCierre ? '📅 ' + esc(fmtFecha(o.fechaCierre)) : '', (o.probabilidad != null && o.probabilidad !== '') ? o.probabilidad + '%' : ''].filter(Boolean).join('  ·  ');
+        return `<div class="opp" draggable="true" ondragstart="onDragStart(event,'${o.id}')" style="border-left-color:${COLOR[etapa]}">
+            <div class="tit">${esc(o.titulo)}</div>
+            ${o.clienteNombre ? `<div class="cli">${esc(o.clienteNombre)}</div>` : ''}
+            ${o.valor ? `<div class="val">${fmt(o.valor)}</div>` : ''}
+            ${sub ? `<div class="sub">${sub}</div>` : ''}
+            <div class="opp-actions">
+                <button class="mv" title="Etapa anterior" onclick="mover('${o.id}',-1)" ${i === 0 ? 'disabled style="opacity:.35"' : ''}>◀</button>
+                <button class="mv" title="Etapa siguiente" onclick="mover('${o.id}',1)" ${i === ETAPAS.length - 1 ? 'disabled style="opacity:.35"' : ''}>▶</button>
+                <span class="sp"></span>
+                <button class="ed" onclick="editar('${o.id}')">✏</button>
+                <button class="del" onclick="borrar('${o.id}')">🗑</button>
+            </div>
+        </div>`;
+    }
+</script>
+
+</body>
+</html>
