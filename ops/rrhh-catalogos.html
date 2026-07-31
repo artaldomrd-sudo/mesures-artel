@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Catálogos RRHH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 640px; }
+    .add-row { display: flex; gap: 10px; margin: 4px 0 16px; }
+    .add-row input { flex: 1; padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .add-row button { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 0 18px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .cat-item { display: flex; align-items: center; gap: 10px; }
+    .cat-item .nom { flex: 1; color: var(--artal-blue); font-weight: bold; font-size: 15px; }
+    .cat-item .cnt { font-size: 12px; color: #8a93a0; }
+    .cat-item button { border: none; border-radius: 8px; padding: 8px 11px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .b-ren { background: var(--artal-blue); color: #fff; }
+    .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .nota { font-size: 12px; color: #8a93a0; margin: -8px 0 14px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="rrhh.html" title="Volver a RRHH">← RRHH</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Catálogos</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-departamentos" onclick="setTab('departamentos')">Departamentos</button>
+        <button class="tab-btn" id="tab-cargos" onclick="setTab('cargos')">Cargos</button>
+        <button class="tab-btn" id="tab-sucursales" onclick="setTab('sucursales')">Sucursales</button>
+    </div>
+    <p class="nota" id="nota"></p>
+    <div class="add-row">
+        <input type="text" id="nuevo" placeholder="Agregar…" onkeydown="if(event.key==='Enter')agregar()">
+        <button onclick="agregar()">+ Agregar</button>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const CAT = {
+        departamentos: { col: 'rrhhDepartamentos', campo: 'departamentoId', singular: 'departamento', nota: 'Áreas de la empresa (Producción, Ventas, Administración…).' },
+        cargos: { col: 'rrhhCargos', campo: 'cargoId', singular: 'cargo', nota: 'Puestos de trabajo (Instalador, Chofer, Medidor…).' },
+        sucursales: { col: 'rrhhSucursales', campo: 'sucursalId', singular: 'sucursal', nota: 'Ubicaciones o tiendas de ARTAL.' }
+    };
+    let currentTab = 'departamentos';
+    const cache = { departamentos: [], cargos: [], sucursales: [] };
+    let empleados = [];
+
+    Object.keys(CAT).forEach(tab => {
+        onSnapshot(collection(db, CAT[tab].col), (snap) => {
+            cache[tab] = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+            if (tab === currentTab) render();
+        });
+    });
+    onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => { empleados = snap.docs.map(d => d.data()); render(); });
+
+    window.setTab = function (t) {
+        currentTab = t;
+        Object.keys(CAT).forEach(k => document.getElementById('tab-' + k).classList.toggle('active', k === t));
+        document.getElementById('nuevo').value = '';
+        document.getElementById('nota').textContent = CAT[t].nota;
+        render();
+    };
+
+    function usoCount(tab, id) {
+        const campo = CAT[tab].campo;
+        return empleados.filter(e => e[campo] === id).length;
+    }
+
+    window.render = function () {
+        document.getElementById('nota').textContent = CAT[currentTab].nota;
+        const items = cache[currentTab];
+        const cont = document.getElementById('lista');
+        if (!items.length) { cont.innerHTML = '<p class="empty">Aún no hay nada aquí. Agrega el primero arriba.</p>'; return; }
+        cont.innerHTML = items.map(it => {
+            const n = usoCount(currentTab, it.id);
+            return `<div class="order-card cat-item">
+                <span class="nom">${esc(it.nombre)}</span>
+                <span class="cnt">${n} empleado${n === 1 ? '' : 's'}</span>
+                <button class="b-ren" onclick="renombrar('${it.id}')">✏</button>
+                <button class="b-del" onclick="borrar('${it.id}', ${n})">🗑</button>
+            </div>`;
+        }).join('');
+    };
+
+    window.agregar = async function () {
+        const input = document.getElementById('nuevo');
+        const nombre = input.value.trim();
+        if (!nombre) return;
+        const existe = cache[currentTab].some(x => String(x.nombre || '').toLowerCase() === nombre.toLowerCase());
+        if (existe) { alert('Ya existe "' + nombre + '" en esta lista.'); return; }
+        try {
+            await addDoc(collection(db, CAT[currentTab].col), { nombre, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            input.value = '';
+        } catch (e) { alert('No se pudo agregar: ' + e.message); }
+    };
+
+    window.renombrar = async function (id) {
+        const it = cache[currentTab].find(x => x.id === id); if (!it) return;
+        const nombre = prompt('Nuevo nombre:', it.nombre);
+        if (nombre == null) return;
+        const t = nombre.trim(); if (!t) return;
+        try { await updateDoc(doc(db, CAT[currentTab].col, id), { nombre: t }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    window.borrar = async function (id, n) {
+        if (n > 0) { alert('No se puede eliminar: hay ' + n + ' empleado(s) usando este ' + CAT[currentTab].singular + '. Reasígnalos primero.'); return; }
+        if (!confirm('¿Eliminar este ' + CAT[currentTab].singular + '?')) return;
+        try { await deleteDoc(doc(db, CAT[currentTab].col, id)); } catch (e) { alert('No se pudo eliminar: ' + e.message); }
+    };
+
+    setTab('departamentos');
+</script>
+
+</body>
+</html>

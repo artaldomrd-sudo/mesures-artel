@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Empleados</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 820px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .toolbar input.search { flex: 1; min-width: 180px; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .btn-nuevo { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .emp-card { display: flex; align-items: center; gap: 14px; }
+    .avatar { width: 46px; height: 46px; border-radius: 50%; background: var(--artal-blue); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; font-size: 17px; flex: 0 0 auto; }
+    .emp-info { flex: 1; min-width: 0; }
+    .emp-info b { color: var(--artal-blue); font-size: 15.5px; }
+    .emp-info .meta { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .estado { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; letter-spacing: .5px; }
+    .estado.activo { background: #e7f7ee; color: #1f9d61; }
+    .estado.inactivo { background: #f1f1f4; color: #8a93a0; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row-actions button { border: none; border-radius: 8px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .b-editar { background: var(--artal-blue); color: #fff; }
+    .b-toggle { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; }
+    .b-borrar { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .modal-box textarea { min-height: 60px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .hint { font-size: 11.5px; color: #8a93a0; margin: 4px 0 0; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; }
+    .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="rrhh.html" title="Volver a RRHH">← RRHH</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Empleados</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-activos" onclick="setTab('activo')">Activos</button>
+        <button class="tab-btn" id="tab-inactivos" onclick="setTab('inactivo')">Inactivos</button>
+    </div>
+    <div class="toolbar">
+        <input type="text" class="search" id="search" placeholder="Buscar por nombre, cédula, cargo…" oninput="render()">
+        <button class="btn-nuevo" onclick="abrirNuevo()">+ Nuevo empleado</button>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nuevo empleado</h2>
+        <label>Nombre completo *</label>
+        <input type="text" id="f-nombre" placeholder="Nombre y apellido">
+        <div class="grid2">
+            <div>
+                <label>Cédula</label>
+                <input type="text" id="f-cedula" placeholder="000-0000000-0">
+            </div>
+            <div>
+                <label>Teléfono</label>
+                <input type="tel" id="f-telefono" placeholder="809-000-0000">
+            </div>
+        </div>
+        <label>Correo</label>
+        <input type="email" id="f-correo" placeholder="correo@ejemplo.com">
+        <div class="grid2">
+            <div>
+                <label>Cargo</label>
+                <select id="f-cargo"></select>
+            </div>
+            <div>
+                <label>Departamento</label>
+                <select id="f-departamento"></select>
+            </div>
+        </div>
+        <div class="grid2">
+            <div>
+                <label>Sucursal</label>
+                <select id="f-sucursal"></select>
+            </div>
+            <div>
+                <label>Fecha de ingreso</label>
+                <input type="date" id="f-ingreso">
+            </div>
+        </div>
+        <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <b>Catálogos</b>.</p>
+        <div class="grid2">
+            <div>
+                <label>Sueldo base (opcional)</label>
+                <input type="number" id="f-sueldo" min="0" step="0.01" placeholder="RD$">
+            </div>
+            <div>
+                <label>Dirección</label>
+                <input type="text" id="f-direccion" placeholder="Dirección">
+            </div>
+        </div>
+        <label>Notas (opcional)</label>
+        <textarea id="f-notas" placeholder="Información adicional…"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    const iniciales = (n) => (String(n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('') || '?').toUpperCase();
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); };
+
+    let empleados = [];
+    let cargos = [], departamentos = [], sucursales = [];
+    let currentTab = 'activo';
+    let editingId = null;
+
+    onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
+        empleados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    // Catálogos para los selects.
+    function opts(arr, sel) {
+        return '<option value="">—</option>' + arr.map(c =>
+            `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('');
+    }
+    onSnapshot(collection(db, 'rrhhCargos'), (s) => { cargos = s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre); refreshSelects(); });
+    onSnapshot(collection(db, 'rrhhDepartamentos'), (s) => { departamentos = s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre); refreshSelects(); });
+    onSnapshot(collection(db, 'rrhhSucursales'), (s) => { sucursales = s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre); refreshSelects(); });
+    const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+    function refreshSelects() {
+        const c = document.getElementById('f-cargo'), d = document.getElementById('f-departamento'), s = document.getElementById('f-sucursal');
+        c.innerHTML = opts(cargos, c.value); d.innerHTML = opts(departamentos, d.value); s.innerHTML = opts(sucursales, s.value);
+        document.getElementById('cat-hint').style.display = (cargos.length && departamentos.length && sucursales.length) ? 'none' : 'block';
+    }
+
+    window.setTab = function (t) {
+        currentTab = t;
+        document.getElementById('tab-activos').classList.toggle('active', t === 'activo');
+        document.getElementById('tab-inactivos').classList.toggle('active', t === 'inactivo');
+        render();
+    };
+
+    window.render = function () {
+        const term = document.getElementById('search').value.trim().toLowerCase();
+        const lista = empleados
+            .filter(e => (e.estado || 'activo') === currentTab)
+            .filter(e => !term || [e.nombre, e.cedula, e.cargoNombre, e.departamentoNombre, e.sucursalNombre].some(v => String(v || '').toLowerCase().includes(term)))
+            .sort(byNombre);
+        const cont = document.getElementById('lista');
+        if (!lista.length) { cont.innerHTML = `<p class="empty">${currentTab === 'activo' ? 'No hay empleados activos.' : 'No hay empleados inactivos.'}</p>`; return; }
+        cont.innerHTML = lista.map(cardHTML).join('');
+    };
+
+    function cardHTML(e) {
+        const estado = e.estado || 'activo';
+        const meta = [e.cargoNombre, e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
+        const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : ''].filter(Boolean).join('  ·  ');
+        return `
+        <div class="order-card emp-card">
+            <span class="avatar">${esc(iniciales(e.nombre))}</span>
+            <div class="emp-info">
+                <b>${esc(e.nombre) || 'Sin nombre'}</b> <span class="estado ${estado}">${estado}</span>
+                ${meta ? `<div class="meta">${esc(meta)}</div>` : ''}
+                ${extra ? `<div class="meta">${extra}</div>` : ''}
+            </div>
+            <div class="row-actions">
+                <button class="b-editar" onclick="editar('${e.id}')">✏ Editar</button>
+                <button class="b-toggle" onclick="toggle('${e.id}')">${estado === 'activo' ? 'Desactivar' : 'Reactivar'}</button>
+                <button class="b-borrar" onclick="borrar('${e.id}')">🗑</button>
+            </div>
+        </div>`;
+    }
+
+    function limpiar() {
+        editingId = null;
+        ['f-nombre', 'f-cedula', 'f-telefono', 'f-correo', 'f-ingreso', 'f-sueldo', 'f-direccion', 'f-notas'].forEach(id => document.getElementById(id).value = '');
+        refreshSelects();
+        document.getElementById('f-cargo').value = ''; document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
+    }
+    window.abrirNuevo = function () { limpiar(); document.getElementById('modal-title').textContent = 'Nuevo empleado'; document.getElementById('modal').classList.add('show'); };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.editar = function (id) {
+        const e = empleados.find(x => x.id === id); if (!e) return;
+        limpiar(); editingId = id;
+        document.getElementById('modal-title').textContent = 'Editar empleado';
+        document.getElementById('f-nombre').value = e.nombre || '';
+        document.getElementById('f-cedula').value = e.cedula || '';
+        document.getElementById('f-telefono').value = e.telefono || '';
+        document.getElementById('f-correo').value = e.correo || '';
+        document.getElementById('f-ingreso').value = e.fechaIngreso || '';
+        document.getElementById('f-sueldo').value = e.sueldoBase != null ? e.sueldoBase : '';
+        document.getElementById('f-direccion').value = e.direccion || '';
+        document.getElementById('f-notas').value = e.notas || '';
+        document.getElementById('f-cargo').value = e.cargoId || '';
+        document.getElementById('f-departamento').value = e.departamentoId || '';
+        document.getElementById('f-sucursal').value = e.sucursalId || '';
+        document.getElementById('modal').classList.add('show');
+    };
+
+    window.guardar = async function () {
+        const nombre = document.getElementById('f-nombre').value.trim();
+        if (!nombre) { alert('Escribe el nombre del empleado.'); return; }
+        const cargoId = document.getElementById('f-cargo').value;
+        const departamentoId = document.getElementById('f-departamento').value;
+        const sucursalId = document.getElementById('f-sucursal').value;
+        const nombreDe = (arr, id) => (arr.find(x => x.id === id) || {}).nombre || '';
+        const sueldoRaw = document.getElementById('f-sueldo').value;
+        const datos = {
+            nombre,
+            cedula: document.getElementById('f-cedula').value.trim(),
+            telefono: document.getElementById('f-telefono').value.trim(),
+            correo: document.getElementById('f-correo').value.trim(),
+            direccion: document.getElementById('f-direccion').value.trim(),
+            fechaIngreso: document.getElementById('f-ingreso').value || '',
+            sueldoBase: sueldoRaw ? Number(sueldoRaw) : null,
+            notas: document.getElementById('f-notas').value.trim(),
+            cargoId, cargoNombre: nombreDe(cargos, cargoId),
+            departamentoId, departamentoNombre: nombreDe(departamentos, departamentoId),
+            sucursalId, sucursalNombre: nombreDe(sucursales, sucursalId)
+        };
+        try {
+            if (editingId) {
+                await updateDoc(doc(db, 'rrhhEmpleados', editingId), datos);
+            } else {
+                await addDoc(collection(db, 'rrhhEmpleados'), { ...datos, estado: 'activo', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            }
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+
+    window.toggle = async function (id) {
+        const e = empleados.find(x => x.id === id); if (!e) return;
+        const nuevo = (e.estado || 'activo') === 'activo' ? 'inactivo' : 'activo';
+        try { await updateDoc(doc(db, 'rrhhEmpleados', id), { estado: nuevo }); } catch (err) { alert('No se pudo: ' + err.message); }
+    };
+    window.borrar = async function (id) {
+        const e = empleados.find(x => x.id === id) || {};
+        if (!confirm(`¿Eliminar a "${e.nombre || ''}" del sistema? Esta acción no se puede deshacer.\n\n(Si solo dejó de trabajar, mejor usa "Desactivar" para conservar su expediente.)`)) return;
+        try { await deleteDoc(doc(db, 'rrhhEmpleados', id)); } catch (err) { alert('No se pudo eliminar: ' + err.message); }
+    };
+</script>
+
+</body>
+</html>

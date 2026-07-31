@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Recursos Humanos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; padding-top: 24px; }
+    .welcome { color: var(--artal-blue); font-size: 15px; margin: 0; font-weight: bold; }
+    .cat-label { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: bold;
+        text-transform: uppercase; letter-spacing: .08em; color: var(--artal-blue); margin: 22px 0 2px; }
+    .cat-label .ic { font-size: 18px; }
+    .card-link.soon { opacity: .6; cursor: default; border-top-color: #cfd6dd; }
+    .card-link.soon:hover { transform: none; box-shadow: var(--shadow); }
+    .soon-badge { position: absolute; top: 10px; right: 12px; font-size: 9.5px; font-weight: bold;
+        text-transform: uppercase; letter-spacing: .05em; color: #8a93a0; background: #eef1f4;
+        border-radius: 20px; padding: 3px 8px; }
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+    .kpi { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 18px; flex: 1; min-width: 130px; }
+    .kpi .n { font-size: 26px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 11.5px; color: #778; text-transform: uppercase; letter-spacing: .04em; margin-top: 5px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" id="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Recursos <span class="accent">Humanos</span></h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="welcome" id="welcome-msg"></p>
+
+    <div class="kpi-row">
+        <div class="kpi"><div class="n" id="kpi-activos">—</div><div class="l">Empleados activos</div></div>
+        <div class="kpi"><div class="n" id="kpi-departamentos">—</div><div class="l">Departamentos</div></div>
+        <div class="kpi"><div class="n" id="kpi-sucursales">—</div><div class="l">Sucursales</div></div>
+    </div>
+
+    <div class="cat-label"><span class="ic">👥</span> Personal</div>
+    <div class="grid">
+        <a class="card-link" href="rrhh-empleados.html"><div class="emoji">🧑‍💼</div><div class="title">Empleados</div><div class="desc">Expediente, alta y edición del personal</div></a>
+        <a class="card-link" href="rrhh-catalogos.html"><div class="emoji">🗂️</div><div class="title">Catálogos</div><div class="desc">Departamentos, cargos y sucursales</div></a>
+    </div>
+
+    <div class="cat-label"><span class="ic">🕒</span> Próximas fases</div>
+    <div class="grid">
+        <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">📅</div><div class="title">Asistencia y Permisos</div><div class="desc">Fichaje GPS/QR, permisos, turnos, feriados</div></div>
+        <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">📈</div><div class="title">Ciclo del empleado</div><div class="desc">Promociones, amonestaciones, salidas</div></div>
+        <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">🔎</div><div class="title">Reclutamiento (ATS)</div><div class="desc">Vacantes, candidatos, entrevistas</div></div>
+        <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">💵</div><div class="title">Nómina (RD)</div><div class="desc">Sueldos, TSS, ISR, regalía, liquidaciones</div></div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Solo gerencia (admin): RRHH maneja datos sensibles del personal.
+    const usuario = await requireAuth([]);
+    wireBackButton(usuario.roles);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('welcome-msg').textContent = 'Hola, ' + usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    onSnapshot(query(collection(db, 'rrhhEmpleados'), where('estado', '==', 'activo')),
+        (s) => set('kpi-activos', s.size), () => set('kpi-activos', '0'));
+    onSnapshot(collection(db, 'rrhhDepartamentos'), (s) => set('kpi-departamentos', s.size), () => set('kpi-departamentos', '0'));
+    onSnapshot(collection(db, 'rrhhSucursales'), (s) => set('kpi-sucursales', s.size), () => set('kpi-sucursales', '0'));
+</script>
+
+</body>
+</html>
