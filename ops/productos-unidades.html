@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Unidades de Medida</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 620px; }
+    .intro { color: #667; font-size: 13px; margin: 0 0 12px; }
+    .add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .add-row input { padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .add-row .nom { flex: 1; min-width: 150px; } .add-row .abrev { width: 110px; }
+    .add-row button { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 0 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .nota { font-size: 12px; color: #8a93a0; margin: 2px 0 14px; }
+    .u-item { display: flex; align-items: center; gap: 10px; }
+    .u-item .nom { flex: 1; color: var(--artal-blue); font-weight: bold; font-size: 15px; }
+    .u-item .abrev { font-size: 12px; color: #556; background: #eef1f4; border-radius: 20px; padding: 2px 10px; font-weight: bold; }
+    .u-item .cnt { font-size: 11.5px; color: #8a93a0; }
+    .u-item button { border: none; border-radius: 8px; padding: 8px 11px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 36px; }
+    .b-ed { background: var(--artal-blue); color: #fff; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="productos.html" title="Volver">← Productos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Unidades de Medida</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="intro">Unidades con que se venden los productos y servicios. Aparecen en el selector de unidad al dar de alta un ítem.</p>
+    <div class="add-row">
+        <input class="nom" type="text" id="u-nombre" placeholder="Nombre (ej. Metro cuadrado)" onkeydown="if(event.key==='Enter')agregar()">
+        <input class="abrev" type="text" id="u-abrev" placeholder="Abrev. (m²)" onkeydown="if(event.key==='Enter')agregar()">
+        <button onclick="agregar()">+ Agregar</button>
+    </div>
+    <p class="nota">¿Vacío? <button class="btn-o" onclick="cargarComunes()">Cargar unidades comunes</button></p>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+
+    let unidades = [], productos = [];
+
+    onSnapshot(collection(db, 'productosUnidades'), (snap) => {
+        unidades = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNombre);
+        render();
+    }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'productos'), (snap) => { productos = snap.docs.map(d => d.data()); render(); }, () => {});
+
+    const usoDe = (abrev) => productos.filter(p => (p.unidad || '') === abrev).length;
+
+    window.agregar = async function () {
+        const nombre = document.getElementById('u-nombre').value.trim();
+        const abrev = document.getElementById('u-abrev').value.trim();
+        if (!nombre) { alert('Escribe el nombre de la unidad.'); return; }
+        if (!abrev) { alert('Escribe la abreviatura.'); return; }
+        if (unidades.some(u => (u.abreviatura || '').toLowerCase() === abrev.toLowerCase())) { alert('Ya existe una unidad con esa abreviatura.'); return; }
+        try {
+            await addDoc(collection(db, 'productosUnidades'), { nombre, abreviatura: abrev, activo: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            document.getElementById('u-nombre').value = ''; document.getElementById('u-abrev').value = '';
+            document.getElementById('u-nombre').focus();
+        } catch (e) { alert('No se pudo agregar: ' + e.message); }
+    };
+    window.renombrar = async function (id) {
+        const u = unidades.find(x => x.id === id); if (!u) return;
+        const nombre = prompt('Nombre de la unidad:', u.nombre); if (nombre == null) return;
+        const abrev = prompt('Abreviatura:', u.abreviatura || ''); if (abrev == null) return;
+        if (!nombre.trim() || !abrev.trim()) return;
+        try { await updateDoc(doc(db, 'productosUnidades', id), { nombre: nombre.trim(), abreviatura: abrev.trim() }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.borrar = async function (id) {
+        const u = unidades.find(x => x.id === id) || {};
+        const n = usoDe(u.abreviatura);
+        if (!confirm('¿Eliminar la unidad "' + (u.nombre || '') + '"?' + (n ? '\n\n(' + n + ' producto(s) la usan; no se borran.)' : ''))) return;
+        try { await deleteDoc(doc(db, 'productosUnidades', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.cargarComunes = async function () {
+        const comunes = [['Unidad', 'und'], ['Metro cuadrado', 'm²'], ['Metro lineal', 'ml'], ['Metro', 'm'], ['Pie', 'pie'], ['Pie cuadrado', 'pie²'], ['Pulgada', 'pulg'], ['Juego', 'jgo'], ['Par', 'par'], ['Hora', 'hr'], ['Servicio', 'serv'], ['Kilogramo', 'kg'], ['Litro', 'L'], ['Galón', 'gal'], ['Rollo', 'rollo'], ['Caja', 'caja']];
+        const faltan = comunes.filter(([, ab]) => !unidades.some(u => (u.abreviatura || '').toLowerCase() === ab.toLowerCase()));
+        if (!faltan.length) { alert('Las unidades comunes ya están cargadas.'); return; }
+        if (!confirm('Se agregarán ' + faltan.length + ' unidades comunes.')) return;
+        try { for (const [nombre, abreviatura] of faltan) await addDoc(collection(db, 'productosUnidades'), { nombre, abreviatura, activo: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); }
+        catch (e) { alert('No se pudo cargar todo: ' + e.message); }
+    };
+
+    function render() {
+        const cont = document.getElementById('lista');
+        if (!unidades.length) { cont.innerHTML = '<p class="empty">Aún no hay unidades. Agrega una arriba o carga las comunes.</p>'; return; }
+        cont.innerHTML = unidades.map(u => `<div class="order-card u-item">
+            <span class="nom">${esc(u.nombre)}</span>
+            <span class="abrev">${esc(u.abreviatura || '')}</span>
+            <span class="cnt">${usoDe(u.abreviatura)} ítem(s)</span>
+            <button class="b-ed" onclick="renombrar('${u.id}')">✏</button>
+            <button class="b-del" onclick="borrar('${u.id}')">🗑</button>
+        </div>`).join('');
+    }
+</script>
+
+</body>
+</html>

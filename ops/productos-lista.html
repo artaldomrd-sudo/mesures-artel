@@ -90,7 +90,7 @@
         <input type="text" id="i-nombre" placeholder="Ej. Ventana corredera de aluminio">
         <div class="grid2">
             <div><label>Categoría</label><input type="text" id="i-categoria" list="cat-list" placeholder="Ej. Ventanas"><datalist id="cat-list"><option value="Ventanas"></option><option value="Puertas"></option><option value="Correderas"></option><option value="Galandajes"></option><option value="Mamparas"></option><option value="Vidrio de ducha"></option><option value="Barandas"></option><option value="Vidrios"></option><option value="Perfiles de aluminio"></option><option value="Herrajes"></option><option value="Accesorios"></option><option value="Cortinas / enrollables"></option><option value="Servicio de instalación"></option><option value="Servicio de medición"></option><option value="Servicio de reparación"></option></datalist></div>
-            <div><label>Unidad de medida</label><select id="i-unidad"><option value="unidad">Unidad</option><option value="m2">Metro cuadrado (m²)</option><option value="ml">Metro lineal (ml)</option><option value="pie">Pie</option><option value="pie2">Pie cuadrado</option><option value="juego">Juego</option><option value="par">Par</option><option value="hora">Hora</option><option value="servicio">Servicio</option><option value="kg">Kilogramo</option><option value="litro">Litro</option></select></div>
+            <div><label>Unidad de medida</label><select id="i-unidad"></select></div>
         </div>
         <div class="grid2">
             <div><label>Precio de venta (RD$)</label><input type="number" id="i-precio" min="0" step="0.01" placeholder="0.00"></div>
@@ -126,7 +126,19 @@
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const n2 = (x) => (Number(x) || 0);
     const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const UNIDAD = { unidad: 'Unidad', m2: 'm²', ml: 'ml', pie: 'pie', pie2: 'pie²', juego: 'juego', par: 'par', hora: 'hora', servicio: 'servicio', kg: 'kg', litro: 'L' };
+    // Unidades: valores viejos codificados (compat.) → texto lindo; una abreviatura nueva se muestra tal cual.
+    const UNIDAD_LEGACY = { unidad: 'Unidad', m2: 'm²', ml: 'ml', pie: 'pie', pie2: 'pie²', juego: 'juego', par: 'par', hora: 'hora', servicio: 'servicio', kg: 'kg', litro: 'L' };
+    const unidadTxt = (u) => UNIDAD_LEGACY[u] || u || 'unidad';
+    const UNIDAD_DEFAULT = [['und', 'Unidad'], ['m²', 'Metro cuadrado'], ['ml', 'Metro lineal'], ['m', 'Metro'], ['pie', 'Pie'], ['pie²', 'Pie cuadrado'], ['pulg', 'Pulgada'], ['jgo', 'Juego'], ['par', 'Par'], ['hr', 'Hora'], ['serv', 'Servicio'], ['kg', 'Kilogramo'], ['L', 'Litro']];
+    let unidadesCat = [];
+    function opcionesUnidad() { return unidadesCat.length ? unidadesCat.map(u => [u.abreviatura || u.nombre, u.nombre]) : UNIDAD_DEFAULT; }
+    function pintarUnidades(actual) {
+        const sel = document.getElementById('i-unidad'); if (!sel) return;
+        const arr = opcionesUnidad();
+        let html = arr.map(([v, l]) => `<option value="${esc(v)}">${esc(l)} (${esc(v)})</option>`).join('');
+        if (actual && !arr.some(([v]) => v === actual)) html = `<option value="${esc(actual)}">${esc(unidadTxt(actual))}</option>` + html;
+        sel.innerHTML = html; if (actual) sel.value = actual;
+    }
 
     let productos = [], editId = null;
 
@@ -142,6 +154,11 @@
         const todas = [...new Set([...CAT_DEFAULT, ...gestionadas])].sort((a, b) => a.localeCompare(b, 'es'));
         const dl = document.getElementById('cat-list');
         if (dl) dl.innerHTML = todas.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }, () => {});
+    // Unidades gestionadas (módulo Unidades de Medida): pueblan el selector de unidad.
+    onSnapshot(collection(db, 'productosUnidades'), (snap) => {
+        unidadesCat = snap.docs.map(d => d.data()).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+        pintarUnidades(document.getElementById('i-unidad').value);
     }, () => {});
 
     function cats() { return [...new Set(productos.map(p => (p.categoria || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')); }
@@ -183,7 +200,7 @@
         editId = null; document.getElementById('modal-title').textContent = 'Nuevo ítem';
         document.getElementById('i-tipo').value = 'producto';
         ['i-codigo', 'i-nombre', 'i-categoria', 'i-precio', 'i-costo', 'i-desc', 'i-foto'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('i-unidad').value = 'unidad';
+        pintarUnidades('');
         document.getElementById('i-itbis').checked = true;
         document.getElementById('i-itbispct').value = 18;
         document.getElementById('i-stock').checked = false;
@@ -197,7 +214,7 @@
         document.getElementById('i-codigo').value = p.codigo || '';
         document.getElementById('i-nombre').value = p.nombre || '';
         document.getElementById('i-categoria').value = p.categoria || '';
-        document.getElementById('i-unidad').value = p.unidad || 'unidad';
+        pintarUnidades(p.unidad || '');
         document.getElementById('i-precio').value = p.precioVenta != null ? p.precioVenta : '';
         document.getElementById('i-costo').value = p.costo != null ? p.costo : '';
         document.getElementById('i-itbis').checked = p.itbisAplica !== false;
@@ -282,7 +299,7 @@
             p.itbisAplica !== false ? `<span class="b itbis">ITBIS ${n2(p.itbisPct) || 18}%</span>` : '<span class="b inactivo">Exento</span>',
             (margen != null) ? `<span class="b margen">Margen ${margen}%</span>` : ''
         ].filter(Boolean).join(' ');
-        const meta = [p.codigo ? 'SKU ' + esc(p.codigo) : '', 'x ' + (UNIDAD[p.unidad] || p.unidad || 'unidad'), p.manejaStock ? '📦 stock' : ''].filter(Boolean).join('  ·  ');
+        const meta = [p.codigo ? 'SKU ' + esc(p.codigo) : '', 'x ' + esc(unidadTxt(p.unidad)), p.manejaStock ? '📦 stock' : ''].filter(Boolean).join('  ·  ');
         return `<div class="order-card it-card">
             ${thumb}
             <div class="it-info">
