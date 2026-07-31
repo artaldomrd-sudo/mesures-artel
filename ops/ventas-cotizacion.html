@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Cotización</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; }
+    .view { display: none; } .view.show { display: block; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input.buscar { flex: 1; min-width: 180px; padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    /* Lista */
+    .cot-card .info b { color: var(--artal-blue); font-size: 15.5px; }
+    .cot-card .info .l { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .cot-card .tot { font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .row-actions button { border: none; border-radius: 8px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .b-editar { background: var(--artal-blue); color: #fff; } .b-sec { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; }
+    .b-borrar { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .estado-badge { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 3px 9px; border-radius: 20px; letter-spacing: .4px; }
+    .estado-badge.borrador { background: #f1f1f4; color: #8a93a0; } .estado-badge.enviada { background: #e9f0fb; color: #2f6fd0; }
+    .estado-badge.aprobada { background: #e7f7ee; color: #1f9d61; } .estado-badge.rechazada { background: #fdeaea; color: #d9483b; }
+
+    /* Editor */
+    .ed-card { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .ed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+    @media (max-width: 560px) { .ed-grid { grid-template-columns: 1fr; } }
+    .ed-card label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 10px 0 4px; }
+    .ed-card input, .ed-card select, .ed-card textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .ed-card textarea { min-height: 60px; }
+    .sec-title { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: var(--artal-blue); margin: 4px 0 10px; }
+
+    table.items { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.items th { color: #778; font-size: 11px; text-transform: uppercase; padding: 6px 4px; text-align: right; }
+    table.items th.l { text-align: left; }
+    table.items td { padding: 4px; border-bottom: 1px solid #eef1f4; text-align: right; }
+    table.items input { padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; box-sizing: border-box; }
+    table.items .in-desc { width: 100%; text-align: left; } table.items .in-num { width: 92px; text-align: right; }
+    table.items .imp { font-weight: bold; color: var(--artal-blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    table.items .del { background: transparent; border: none; color: #c9ced6; cursor: pointer; font-size: 15px; }
+    table.items .del:hover { color: #e74c3c; }
+
+    .tot-box { max-width: 340px; margin-left: auto; margin-top: 8px; }
+    .tot-box .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
+    .tot-box .row.grand { border-top: 2px solid var(--artal-blue); margin-top: 6px; padding-top: 8px; font-weight: bold; font-size: 18px; color: var(--artal-blue); }
+    .tot-box .row .v { font-variant-numeric: tabular-nums; }
+    .inline-set { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .inline-set input[type=number] { width: 120px; }
+    .chk-line { display: inline-flex; align-items: center; gap: 6px; } .chk-line input { width: auto; min-height: 0; }
+    .ed-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 30px; }
+
+    /* Impresión / presentación */
+    #print-zone { display: none; }
+    .pres { max-width: 720px; margin: 0 auto; color: #1a1a1a; font-size: 13px; }
+    .pres-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid var(--artal-blue); padding-bottom: 12px; margin-bottom: 4px; }
+    .pres-head .logo-p { height: 54px; }
+    .pres-head .r { text-align: right; }
+    .pres-head .r .t { font-size: 22px; font-weight: bold; color: var(--artal-blue); letter-spacing: 1px; }
+    .pres-head .r .n { color: #667; font-size: 13px; }
+    .pres-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; margin: 14px 0; font-size: 13px; }
+    .pres-meta .k { color: #8a93a0; font-size: 11px; text-transform: uppercase; }
+    .pres table.p { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .pres table.p th { background: var(--artal-blue); color: #fff; font-size: 11px; text-transform: uppercase; padding: 8px 6px; text-align: right; }
+    .pres table.p th.l { text-align: left; }
+    .pres table.p td { padding: 7px 6px; border-bottom: 1px solid #e7ebef; text-align: right; font-variant-numeric: tabular-nums; }
+    .pres table.p td.l { text-align: left; }
+    .pres table.p tr:nth-child(even) td { background: #f7f9fb; }
+    .pres .tot-p { max-width: 300px; margin-left: auto; margin-top: 10px; }
+    .pres .tot-p .row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .pres .tot-p .row.grand { border-top: 2px solid var(--artal-blue); margin-top: 4px; padding-top: 6px; font-weight: bold; font-size: 16px; color: var(--artal-blue); }
+    .pres .notas { margin-top: 18px; font-size: 12px; color: #445; white-space: pre-wrap; border-top: 1px dashed #cbd2da; padding-top: 10px; }
+    .pres .firmas { display: flex; justify-content: space-between; margin-top: 40px; gap: 40px; }
+    .pres .firmas div { flex: 1; border-top: 1px solid #333; padding-top: 5px; text-align: center; font-size: 12px; color: #445; }
+    @media print { body.printing > *:not(#print-zone) { display: none !important; } #print-zone { display: block !important; } }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="ventas.html" title="Volver a Ventas">← Ventas</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Cotización</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <!-- LISTA -->
+    <section class="view show" id="view-lista">
+        <div class="bar">
+            <button class="btn-y" onclick="nueva()">+ Nueva cotización</button>
+            <input class="buscar" id="buscar" placeholder="Buscar por cliente, obra o número…" oninput="renderLista()">
+        </div>
+        <div id="lista"><p class="empty">Cargando…</p></div>
+    </section>
+
+    <!-- EDITOR -->
+    <section class="view" id="view-editor">
+        <div class="ed-card">
+            <div class="sec-title">Datos de la cotización</div>
+            <div class="ed-grid">
+                <div><label>Cliente *</label><input type="text" id="e-cliente" placeholder="Nombre del cliente"></div>
+                <div><label>Obra / ubicación</label><input type="text" id="e-obra" placeholder="Proyecto o dirección"></div>
+                <div><label>Número</label><input type="text" id="e-numero"></div>
+                <div><label>Fecha</label><input type="date" id="e-fecha"></div>
+                <div><label>Vendedor</label><input type="text" id="e-vendedor"></div>
+                <div><label>Validez (días)</label><input type="number" id="e-validez" value="15" min="0"></div>
+                <div><label>Estado</label><select id="e-estado"><option value="borrador">Borrador</option><option value="enviada">Enviada</option><option value="aprobada">Aprobada</option><option value="rechazada">Rechazada</option></select></div>
+            </div>
+        </div>
+
+        <div class="ed-card">
+            <div class="sec-title">Ítems</div>
+            <table class="items">
+                <thead><tr><th class="l">Descripción</th><th>Cant.</th><th>Precio unit.</th><th>Importe</th><th></th></tr></thead>
+                <tbody id="items-body"></tbody>
+            </table>
+            <button class="btn-o" style="margin-top:10px" onclick="agregarItem()">+ Agregar ítem</button>
+        </div>
+
+        <div class="ed-card">
+            <div class="sec-title">Cargos, impuestos y totales</div>
+            <div class="ed-grid">
+                <div><label>Transporte (RD$)</label><input type="number" id="e-transporte" value="0" step="0.01" onchange="recalc()"></div>
+                <div><label>Instalación (RD$)</label><input type="number" id="e-instalacion" value="0" step="0.01" onchange="recalc()"></div>
+                <div><label>Descuento (RD$)</label><input type="number" id="e-descuento" value="0" step="0.01" onchange="recalc()"></div>
+                <div><label>ITBIS</label>
+                    <div class="inline-set" style="min-height:44px">
+                        <span class="chk-line"><input type="checkbox" id="e-itbis-aplica" checked onchange="recalc()"> aplicar</span>
+                        <input type="number" id="e-itbis-pct" value="18" step="0.01" onchange="recalc()" style="width:80px"> %
+                    </div>
+                </div>
+            </div>
+            <div class="tot-box" id="tot-box"></div>
+        </div>
+
+        <div class="ed-card">
+            <div class="sec-title">Condiciones / notas</div>
+            <textarea id="e-notas"></textarea>
+        </div>
+
+        <div class="ed-actions">
+            <button class="btn-o" onclick="volverLista()">← Volver</button>
+            <button class="btn-y" onclick="guardar()">💾 Guardar</button>
+            <button class="btn-o" onclick="imprimir()">🖨 Vista previa / Imprimir</button>
+        </div>
+    </section>
+</main>
+
+<div id="print-zone"></div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }); };
+    const NOTAS_DEF = 'Precios en Pesos Dominicanos (RD$).\nCotización válida por 15 días.\nTiempo de entrega a coordinar tras la aprobación y el anticipo.\nCualquier trabajo adicional se cotiza aparte.';
+
+    let cotizaciones = [], editId = null, editItems = [];
+
+    onSnapshot(collection(db, 'ventasCotizaciones'), (snap) => {
+        cotizaciones = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderLista();
+    });
+
+    // ---------- LISTA ----------
+    function renderLista() {
+        const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
+        const lista = cotizaciones
+            .filter(c => !term || [c.cliente, c.obra, c.numero].some(v => String(v || '').toLowerCase().includes(term)))
+            .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        const cont = document.getElementById('lista');
+        if (!cotizaciones.length) { cont.innerHTML = '<p class="empty">Aún no hay cotizaciones. Crea la primera con «+ Nueva cotización».</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin resultados para esa búsqueda.</p>'; return; }
+        cont.innerHTML = lista.map(c => {
+            const total = (c.totales && c.totales.total) || 0;
+            const est = c.estado || 'borrador';
+            return `<div class="order-card cot-card"><div class="info">
+                <b>${esc(c.cliente || 'Sin cliente')}</b> <span class="estado-badge ${est}">${est}</span>
+                <div class="l">${esc(c.numero || '')}${c.obra ? ' · ' + esc(c.obra) : ''} · ${esc(fmtFecha(c.fecha))}</div>
+                <div class="tot">${fmt(total)}</div>
+                <div class="row-actions">
+                    <button class="b-editar" onclick="editar('${c.id}')">✏ Editar</button>
+                    <button class="b-sec" onclick="imprimirDe('${c.id}')">🖨 Imprimir</button>
+                    <button class="b-sec" onclick="duplicar('${c.id}')">⧉ Duplicar</button>
+                    <button class="b-borrar" onclick="borrar('${c.id}')">🗑</button>
+                </div>
+            </div></div>`;
+        }).join('');
+    }
+
+    // ---------- EDITOR ----------
+    window.nueva = function () {
+        editId = null;
+        editItems = [{ desc: '', cant: 1, precio: 0 }];
+        document.getElementById('e-cliente').value = '';
+        document.getElementById('e-obra').value = '';
+        document.getElementById('e-numero').value = 'COT-' + String(cotizaciones.length + 1).padStart(4, '0');
+        document.getElementById('e-fecha').value = hoyISO();
+        document.getElementById('e-vendedor').value = usuario.nombre || '';
+        document.getElementById('e-validez').value = 15;
+        document.getElementById('e-estado').value = 'borrador';
+        document.getElementById('e-transporte').value = 0;
+        document.getElementById('e-instalacion').value = 0;
+        document.getElementById('e-descuento').value = 0;
+        document.getElementById('e-itbis-aplica').checked = true;
+        document.getElementById('e-itbis-pct').value = 18;
+        document.getElementById('e-notas').value = NOTAS_DEF;
+        renderItems(); recalc(); mostrarEditor();
+    };
+    window.editar = function (id) {
+        const c = cotizaciones.find(x => x.id === id); if (!c) return;
+        editId = id;
+        editItems = Array.isArray(c.items) && c.items.length ? c.items.map(i => ({ desc: i.desc || '', cant: n2(i.cant), precio: n2(i.precio) })) : [{ desc: '', cant: 1, precio: 0 }];
+        document.getElementById('e-cliente').value = c.cliente || '';
+        document.getElementById('e-obra').value = c.obra || '';
+        document.getElementById('e-numero').value = c.numero || '';
+        document.getElementById('e-fecha').value = c.fecha || hoyISO();
+        document.getElementById('e-vendedor').value = c.vendedor || '';
+        document.getElementById('e-validez').value = c.validezDias != null ? c.validezDias : 15;
+        document.getElementById('e-estado').value = c.estado || 'borrador';
+        document.getElementById('e-transporte').value = n2(c.transporte);
+        document.getElementById('e-instalacion').value = n2(c.instalacion);
+        document.getElementById('e-descuento').value = n2(c.descuento);
+        document.getElementById('e-itbis-aplica').checked = c.itbisAplica !== false;
+        document.getElementById('e-itbis-pct').value = c.itbisPct != null ? c.itbisPct : 18;
+        document.getElementById('e-notas').value = c.notas || NOTAS_DEF;
+        renderItems(); recalc(); mostrarEditor();
+    };
+    function mostrarEditor() { document.getElementById('view-lista').classList.remove('show'); document.getElementById('view-editor').classList.add('show'); window.scrollTo(0, 0); }
+    window.volverLista = function () { document.getElementById('view-editor').classList.remove('show'); document.getElementById('view-lista').classList.add('show'); };
+
+    window.agregarItem = function () { leerItems(); editItems.push({ desc: '', cant: 1, precio: 0 }); renderItems(); recalc(); };
+    window.quitarItem = function (i) { leerItems(); editItems.splice(i, 1); if (!editItems.length) editItems.push({ desc: '', cant: 1, precio: 0 }); renderItems(); recalc(); };
+    function leerItems() {
+        document.querySelectorAll('#items-body tr').forEach((tr, i) => {
+            if (!editItems[i]) return;
+            editItems[i].desc = tr.querySelector('.in-desc').value;
+            editItems[i].cant = n2(tr.querySelector('.in-cant').value);
+            editItems[i].precio = n2(tr.querySelector('.in-precio').value);
+        });
+    }
+    function renderItems() {
+        document.getElementById('items-body').innerHTML = editItems.map((it, i) => `<tr>
+            <td><input class="in-desc" value="${esc(it.desc)}" placeholder="Descripción del ítem" oninput="onItemInput()"></td>
+            <td><input class="in-num in-cant" type="number" step="0.01" value="${it.cant}" oninput="onItemInput()"></td>
+            <td><input class="in-num in-precio" type="number" step="0.01" value="${it.precio}" oninput="onItemInput()"></td>
+            <td class="imp" id="imp-${i}">${fmt(n2(it.cant) * n2(it.precio))}</td>
+            <td><button class="del" title="Quitar" onclick="quitarItem(${i})">🗑</button></td>
+        </tr>`).join('');
+    }
+    window.onItemInput = function () { leerItems(); editItems.forEach((it, i) => { const c = document.getElementById('imp-' + i); if (c) c.textContent = fmt(n2(it.cant) * n2(it.precio)); }); recalc(); };
+
+    function calcularTotales() {
+        leerItems();
+        const subtotalItems = editItems.reduce((a, it) => a + n2(it.cant) * n2(it.precio), 0);
+        const transporte = n2(document.getElementById('e-transporte').value);
+        const instalacion = n2(document.getElementById('e-instalacion').value);
+        const descuento = n2(document.getElementById('e-descuento').value);
+        const base = Math.max(0, subtotalItems + transporte + instalacion - descuento);
+        const aplica = document.getElementById('e-itbis-aplica').checked;
+        const pct = n2(document.getElementById('e-itbis-pct').value);
+        const itbis = aplica ? base * pct / 100 : 0;
+        const total = base + itbis;
+        return { subtotalItems, transporte, instalacion, descuento, base, itbisAplica: aplica, itbisPct: pct, itbis, total };
+    }
+    window.recalc = function () {
+        const t = calcularTotales();
+        document.getElementById('tot-box').innerHTML =
+            `<div class="row"><span>Subtotal ítems</span><span class="v">${fmt(t.subtotalItems)}</span></div>` +
+            (t.transporte ? `<div class="row"><span>Transporte</span><span class="v">${fmt(t.transporte)}</span></div>` : '') +
+            (t.instalacion ? `<div class="row"><span>Instalación</span><span class="v">${fmt(t.instalacion)}</span></div>` : '') +
+            (t.descuento ? `<div class="row"><span>Descuento</span><span class="v">- ${fmt(t.descuento)}</span></div>` : '') +
+            (t.itbisAplica ? `<div class="row"><span>ITBIS (${t.itbisPct}%)</span><span class="v">${fmt(t.itbis)}</span></div>` : '') +
+            `<div class="row grand"><span>TOTAL</span><span class="v">${fmt(t.total)}</span></div>`;
+    };
+
+    function datosActuales() {
+        const t = calcularTotales();
+        return {
+            numero: document.getElementById('e-numero').value.trim(),
+            cliente: document.getElementById('e-cliente').value.trim(),
+            obra: document.getElementById('e-obra').value.trim(),
+            fecha: document.getElementById('e-fecha').value || hoyISO(),
+            vendedor: document.getElementById('e-vendedor').value.trim(),
+            validezDias: n2(document.getElementById('e-validez').value),
+            estado: document.getElementById('e-estado').value,
+            items: editItems.filter(it => it.desc || it.precio).map(it => ({ desc: it.desc, cant: n2(it.cant), precio: n2(it.precio) })),
+            transporte: t.transporte, instalacion: t.instalacion, descuento: t.descuento,
+            itbisAplica: t.itbisAplica, itbisPct: t.itbisPct,
+            notas: document.getElementById('e-notas').value,
+            totales: { subtotalItems: t.subtotalItems, base: t.base, itbis: t.itbis, total: t.total }
+        };
+    }
+    window.guardar = async function () {
+        const d = datosActuales();
+        if (!d.cliente) { alert('Escribe el nombre del cliente.'); return; }
+        if (!d.items.length) { alert('Agrega al menos un ítem con precio.'); return; }
+        try {
+            if (editId) await updateDoc(doc(db, 'ventasCotizaciones', editId), { ...d, actualizado: serverTimestamp(), actualizadoPor: usuario.nombre });
+            else { const r = await addDoc(collection(db, 'ventasCotizaciones'), { ...d, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); editId = r.id; }
+            alert('Cotización guardada.');
+            volverLista();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar esta cotización?')) return;
+        try { await deleteDoc(doc(db, 'ventasCotizaciones', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.duplicar = async function (id) {
+        const c = cotizaciones.find(x => x.id === id); if (!c) return;
+        const { id: _omit, fechaCreacion, actualizado, ...rest } = c;
+        try {
+            await addDoc(collection(db, 'ventasCotizaciones'), {
+                ...rest, numero: 'COT-' + String(cotizaciones.length + 1).padStart(4, '0'),
+                estado: 'borrador', fecha: hoyISO(), creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+        } catch (e) { alert('No se pudo duplicar: ' + e.message); }
+    };
+
+    // ---------- PRESENTACIÓN / IMPRESIÓN ----------
+    function presentacionHTML(d) {
+        const filas = (d.items || []).map(it => `<tr>
+            <td class="l">${esc(it.desc)}</td>
+            <td>${n2(it.cant).toLocaleString('es-DO', { maximumFractionDigits: 2 })}</td>
+            <td>${fmt(it.precio)}</td>
+            <td>${fmt(n2(it.cant) * n2(it.precio))}</td>
+        </tr>`).join('');
+        const t = d.totales || {};
+        const validez = d.validezDias ? `Válida por ${d.validezDias} días` : '';
+        return `<div class="pres">
+            <div class="pres-head">
+                <img class="logo-p" src="../logo.png" alt="ARTAL">
+                <div class="r"><div class="t">COTIZACIÓN</div><div class="n">${esc(d.numero || '')}</div><div class="n">${esc(fmtFecha(d.fecha))}</div></div>
+            </div>
+            <div class="pres-meta">
+                <div><div class="k">Cliente</div><div>${esc(d.cliente || '')}</div></div>
+                <div><div class="k">Obra / ubicación</div><div>${esc(d.obra || '-')}</div></div>
+                <div><div class="k">Vendedor</div><div>${esc(d.vendedor || '-')}</div></div>
+                <div><div class="k">Validez</div><div>${esc(validez || '-')}</div></div>
+            </div>
+            <table class="p">
+                <thead><tr><th class="l">Descripción</th><th>Cant.</th><th>Precio unit.</th><th>Importe</th></tr></thead>
+                <tbody>${filas}</tbody>
+            </table>
+            <div class="tot-p">
+                <div class="row"><span>Subtotal ítems</span><span>${fmt(t.subtotalItems)}</span></div>
+                ${d.transporte ? `<div class="row"><span>Transporte</span><span>${fmt(d.transporte)}</span></div>` : ''}
+                ${d.instalacion ? `<div class="row"><span>Instalación</span><span>${fmt(d.instalacion)}</span></div>` : ''}
+                ${d.descuento ? `<div class="row"><span>Descuento</span><span>- ${fmt(d.descuento)}</span></div>` : ''}
+                ${d.itbisAplica ? `<div class="row"><span>ITBIS (${d.itbisPct}%)</span><span>${fmt(t.itbis)}</span></div>` : ''}
+                <div class="row grand"><span>TOTAL</span><span>${fmt(t.total)}</span></div>
+            </div>
+            ${d.notas ? `<div class="notas">${esc(d.notas)}</div>` : ''}
+            <div class="firmas"><div>Aprobado por el cliente</div><div>Por ARTAL Dominicana</div></div>
+        </div>`;
+    }
+    function imprimirHTML(html) {
+        const z = document.getElementById('print-zone');
+        z.innerHTML = html;
+        document.body.classList.add('printing');
+        const limpiar = () => { document.body.classList.remove('printing'); z.innerHTML = ''; window.removeEventListener('afterprint', limpiar); };
+        window.addEventListener('afterprint', limpiar);
+        window.print();
+        setTimeout(() => { if (document.body.classList.contains('printing')) limpiar(); }, 1500);
+    }
+    window.imprimir = function () {
+        const d = datosActuales();
+        if (!d.items.length) { alert('Agrega al menos un ítem.'); return; }
+        imprimirHTML(presentacionHTML(d));
+    };
+    window.imprimirDe = function (id) {
+        const c = cotizaciones.find(x => x.id === id); if (!c) return;
+        imprimirHTML(presentacionHTML(c));
+    };
+</script>
+
+</body>
+</html>
