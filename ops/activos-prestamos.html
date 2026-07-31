@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Préstamo y Renta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 860px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 17px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input.buscar, .bar select { padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .bar input.buscar { flex: 1; min-width: 150px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .pr-card { display: flex; align-items: flex-start; gap: 12px; }
+    .pr-card .info { flex: 1; min-width: 0; }
+    .pr-card .info b { color: var(--artal-blue); font-size: 15px; }
+    .pr-card .info .l { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .pr-card .info .venc { color: #d9483b; font-weight: bold; }
+    .b { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; letter-spacing: .3px; }
+    .b.fuera { background: #fff2dc; color: #c07a12; } .b.devuelto { background: #e7f7ee; color: #1f9d61; }
+    .b.renta { background: #f3eefb; color: #7d3ac1; } .b.prestamo { background: #eef3ff; color: #3457b2; } .b.venc { background: #fdeaea; color: #d9483b; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row-actions button { border: none; border-radius: 8px; padding: 8px 11px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 36px; }
+    .b-ok { background: #2ecc71; color: #fff; } .b-editar { background: var(--artal-blue); color: #fff; }
+    .b-borrar { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 500px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .modal-box textarea { min-height: 52px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .extra { display: none; } .extra.show { display: block; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="activos.html" title="Volver a Activos">← Activos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Préstamo y Renta</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-y" onclick="abrirNuevo()">+ Nuevo préstamo / renta</button>
+        <input class="buscar" id="buscar" placeholder="Buscar por activo o persona…" oninput="render()">
+        <select id="f-estado" onchange="render()"><option value="">Todos</option><option value="fuera">Fuera (sin devolver)</option><option value="vencido">Vencidos</option><option value="devuelto">Devueltos</option></select>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<datalist id="personas-list"></datalist>
+
+<!-- Modal préstamo/renta -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nuevo préstamo / renta</h2>
+        <label>Activo *</label>
+        <select id="p-activo"></select>
+        <div class="grid2">
+            <div><label>Tipo</label><select id="p-tipo" onchange="onTipo()"><option value="prestamo">Préstamo (sin costo)</option><option value="renta">Renta (con costo)</option></select></div>
+            <div><label>¿A quién?</label><select id="p-tipopersona"><option value="empleado">Empleado</option><option value="cliente">Cliente</option><option value="otro">Otro</option></select></div>
+        </div>
+        <label>Nombre de la persona *</label>
+        <input type="text" id="p-persona" list="personas-list" placeholder="Nombre de quien lo recibe">
+        <div class="grid2">
+            <div><label>Contacto <span class="lbl-opt">— tel/opcional</span></label><input type="tel" id="p-contacto"></div>
+            <div><label>Entregado por</label><input type="text" id="p-entregado"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Fecha de salida</label><input type="date" id="p-salida"></div>
+            <div><label>Devolución esperada</label><input type="date" id="p-esperada"></div>
+        </div>
+        <div class="extra" id="extra-renta">
+            <div class="grid2">
+                <div><label>Monto de renta (RD$)</label><input type="number" id="p-monto" min="0" step="0.01"></div>
+                <div><label>Período</label><select id="p-periodo"><option value="total">Total</option><option value="dia">Por día</option><option value="semana">Por semana</option><option value="mes">Por mes</option></select></div>
+            </div>
+        </div>
+        <label>Notas <span class="lbl-opt">— opcional</span></label>
+        <textarea id="p-notas"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal devolución -->
+<div class="modal-overlay" id="modal-dev">
+    <div class="modal-box">
+        <h2>Registrar devolución</h2>
+        <p class="lbl-opt" id="dev-info" style="font-size:13px;color:#556"></p>
+        <div class="grid2">
+            <div><label>Fecha de devolución</label><input type="date" id="d-fecha"></div>
+            <div><label>Condición</label><select id="d-condicion"><option value="Buen estado">Buen estado</option><option value="Con daños">Con daños</option><option value="Incompleto">Incompleto</option></select></div>
+        </div>
+        <label>Notas de devolución <span class="lbl-opt">— opcional</span></label>
+        <textarea id="d-notas"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarDev()">Cancelar</button>
+            <button class="btn-guardar" onclick="confirmarDevolucion()">Confirmar devolución</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); };
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    const PERIODO = { total: '', dia: '/día', semana: '/semana', mes: '/mes' };
+
+    let prestamos = [], activos = [], empleados = [], clientes = [], editId = null, devId = null;
+
+    onSnapshot(collection(db, 'activosPrestamos'), (snap) => { prestamos = snap.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'activos'), (snap) => { activos = snap.docs.map(d => ({ id: d.id, ...d.data() })); llenarActivos(); });
+    onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => { empleados = snap.docs.map(d => d.data().nombre).filter(Boolean); llenarPersonas(); }, () => {});
+    onSnapshot(collection(db, 'clientes'), (snap) => { clientes = snap.docs.map(d => d.data().nombre).filter(Boolean); llenarPersonas(); }, () => {});
+
+    function llenarActivos() {
+        const sel = document.getElementById('p-activo'); const cur = sel.value;
+        const disp = activos.filter(a => (a.estado || 'activo') !== 'baja').sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+        sel.innerHTML = '<option value="">— Elegir activo —</option>' + disp.map(a => `<option value="${esc(a.id)}">${esc(a.nombre)}${a.codigo ? ' (' + esc(a.codigo) + ')' : ''}${a.estado === 'prestado' ? ' — ya prestado' : ''}</option>`).join('');
+        sel.value = cur;
+    }
+    function llenarPersonas() {
+        const nombres = [...new Set([...empleados, ...clientes])].sort((a, b) => a.localeCompare(b, 'es'));
+        document.getElementById('personas-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }
+
+    const vencido = (p) => (p.estado || 'fuera') === 'fuera' && p.fechaDevolucionEsperada && p.fechaDevolucionEsperada < hoyISO();
+
+    // ---------- Modal ----------
+    window.onTipo = function () { document.getElementById('extra-renta').classList.toggle('show', document.getElementById('p-tipo').value === 'renta'); };
+    window.abrirNuevo = function () {
+        editId = null; document.getElementById('modal-title').textContent = 'Nuevo préstamo / renta';
+        document.getElementById('p-activo').value = '';
+        document.getElementById('p-tipo').value = 'prestamo';
+        document.getElementById('p-tipopersona').value = 'empleado';
+        ['p-persona', 'p-contacto', 'p-monto', 'p-notas'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('p-entregado').value = usuario.nombre || '';
+        document.getElementById('p-salida').value = hoyISO();
+        document.getElementById('p-esperada').value = '';
+        document.getElementById('p-periodo').value = 'total';
+        onTipo();
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar préstamo / renta';
+        document.getElementById('p-activo').value = p.activoId || '';
+        document.getElementById('p-tipo').value = p.tipo || 'prestamo';
+        document.getElementById('p-tipopersona').value = p.tipoPersona || 'empleado';
+        document.getElementById('p-persona').value = p.prestadoA || '';
+        document.getElementById('p-contacto').value = p.contacto || '';
+        document.getElementById('p-entregado').value = p.entregadoPor || '';
+        document.getElementById('p-salida').value = p.fechaSalida || hoyISO();
+        document.getElementById('p-esperada').value = p.fechaDevolucionEsperada || '';
+        document.getElementById('p-monto').value = p.monto != null ? p.monto : '';
+        document.getElementById('p-periodo').value = p.periodo || 'total';
+        document.getElementById('p-notas').value = p.notas || '';
+        onTipo();
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const activoId = document.getElementById('p-activo').value;
+        const activo = activos.find(a => a.id === activoId);
+        const persona = document.getElementById('p-persona').value.trim();
+        if (!activoId) { alert('Elige el activo.'); return; }
+        if (!persona) { alert('Escribe el nombre de la persona.'); return; }
+        const tipo = document.getElementById('p-tipo').value;
+        const datos = {
+            activoId, activoNombre: activo ? activo.nombre : '', activoCodigo: activo ? (activo.codigo || '') : '',
+            tipo, prestadoA: persona, tipoPersona: document.getElementById('p-tipopersona').value,
+            contacto: document.getElementById('p-contacto').value.trim(),
+            entregadoPor: document.getElementById('p-entregado').value.trim(),
+            fechaSalida: document.getElementById('p-salida').value || hoyISO(),
+            fechaDevolucionEsperada: document.getElementById('p-esperada').value || '',
+            monto: tipo === 'renta' ? n2(document.getElementById('p-monto').value) : 0,
+            periodo: tipo === 'renta' ? document.getElementById('p-periodo').value : '',
+            notas: document.getElementById('p-notas').value.trim(),
+            actualizado: serverTimestamp()
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'activosPrestamos', editId), datos);
+            else {
+                await addDoc(collection(db, 'activosPrestamos'), { ...datos, estado: 'fuera', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+                // Marca el activo como prestado (si no está de baja/defectuoso).
+                if (activo && (activo.estado || 'activo') === 'activo') await updateDoc(doc(db, 'activos', activoId), { estado: 'prestado' });
+            }
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar este registro de préstamo/renta?')) return;
+        try { await deleteDoc(doc(db, 'activosPrestamos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Devolución ----------
+    window.abrirDevolucion = function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        devId = id;
+        document.getElementById('dev-info').textContent = (p.activoNombre || '') + ' — prestado a ' + (p.prestadoA || '');
+        document.getElementById('d-fecha').value = hoyISO();
+        document.getElementById('d-condicion').value = 'Buen estado';
+        document.getElementById('d-notas').value = '';
+        document.getElementById('modal-dev').classList.add('show');
+    };
+    window.cerrarDev = function () { document.getElementById('modal-dev').classList.remove('show'); };
+    window.confirmarDevolucion = async function () {
+        const p = prestamos.find(x => x.id === devId); if (!p) return;
+        try {
+            await updateDoc(doc(db, 'activosPrestamos', devId), {
+                estado: 'devuelto', fechaDevolucionReal: document.getElementById('d-fecha').value || hoyISO(),
+                condicionDevolucion: document.getElementById('d-condicion').value,
+                notasDevolucion: document.getElementById('d-notas').value.trim(), recibidoPor: usuario.nombre
+            });
+            // Devuelve el activo a "activo" (o defectuoso si volvió con daños), solo si seguía prestado.
+            const activo = activos.find(a => a.id === p.activoId);
+            if (activo && activo.estado === 'prestado') {
+                const nuevoEstado = document.getElementById('d-condicion').value === 'Con daños' ? 'defectuoso' : 'activo';
+                await updateDoc(doc(db, 'activos', p.activoId), { estado: nuevoEstado });
+            }
+            cerrarDev();
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+
+    // ---------- Render ----------
+    function render() {
+        const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
+        const fe = document.getElementById('f-estado').value;
+        const fuera = prestamos.filter(p => (p.estado || 'fuera') === 'fuera');
+        document.getElementById('kpis').innerHTML = [
+            ['Fuera (activos)', fuera.length], ['Vencidos', fuera.filter(vencido).length], ['Rentas activas', fuera.filter(p => p.tipo === 'renta').length], ['Devueltos', prestamos.filter(p => p.estado === 'devuelto').length]
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        let lista = prestamos.slice();
+        if (fe === 'vencido') lista = lista.filter(vencido);
+        else if (fe) lista = lista.filter(p => (p.estado || 'fuera') === fe);
+        if (term) lista = lista.filter(p => [p.activoNombre, p.prestadoA, p.activoCodigo].some(v => String(v || '').toLowerCase().includes(term)));
+        lista.sort((a, b) => {
+            const ea = (a.estado || 'fuera') === 'fuera' ? 0 : 1, eb = (b.estado || 'fuera') === 'fuera' ? 0 : 1;
+            return ea - eb || String(b.fechaSalida || '').localeCompare(String(a.fechaSalida || ''));
+        });
+
+        const cont = document.getElementById('lista');
+        if (!prestamos.length) { cont.innerHTML = '<p class="empty">Aún no hay préstamos ni rentas. Registra el primero.</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin resultados para el filtro.</p>'; return; }
+        cont.innerHTML = lista.map(cardHTML).join('');
+    }
+
+    function cardHTML(p) {
+        const est = p.estado || 'fuera', venc = vencido(p);
+        const badges = [
+            `<span class="b ${est}">${est === 'fuera' ? 'Fuera' : 'Devuelto'}</span>`,
+            `<span class="b ${p.tipo === 'renta' ? 'renta' : 'prestamo'}">${p.tipo === 'renta' ? 'Renta' : 'Préstamo'}</span>`,
+            venc ? '<span class="b venc">Vencido</span>' : ''
+        ].filter(Boolean).join(' ');
+        const linea = ['👤 ' + esc(p.prestadoA || ''), p.tipoPersona ? esc(p.tipoPersona) : '', p.tipo === 'renta' && p.monto ? '💵 ' + fmt(p.monto) + (PERIODO[p.periodo] || '') : ''].filter(Boolean).join('  ·  ');
+        const fechas = ['Salida ' + fmtFecha(p.fechaSalida),
+            p.fechaDevolucionEsperada ? (est === 'fuera' ? `<span class="${venc ? 'venc' : ''}">Devuelve ${fmtFecha(p.fechaDevolucionEsperada)}</span>` : 'Esperada ' + fmtFecha(p.fechaDevolucionEsperada)) : '',
+            est === 'devuelto' && p.fechaDevolucionReal ? 'Devuelto ' + fmtFecha(p.fechaDevolucionReal) + (p.condicionDevolucion ? ' (' + esc(p.condicionDevolucion) + ')' : '') : ''
+        ].filter(Boolean).join('  ·  ');
+        return `<div class="order-card pr-card"><div class="info">
+            <b>${esc(p.activoNombre || 'Activo')}</b>${p.activoCodigo ? ' <span class="l" style="display:inline">· ' + esc(p.activoCodigo) + '</span>' : ''} ${badges}
+            <div class="l">${linea}</div>
+            <div class="l">${fechas}</div>
+            ${p.notas ? `<div class="l">“${esc(p.notas)}”</div>` : ''}
+        </div><div class="row-actions">
+            ${est === 'fuera' ? `<button class="b-ok" onclick="abrirDevolucion('${p.id}')">✓ Devolver</button>` : ''}
+            <button class="b-editar" onclick="editar('${p.id}')">✏</button>
+            <button class="b-borrar" onclick="borrar('${p.id}')">🗑</button>
+        </div></div>`;
+    }
+</script>
+
+</body>
+</html>
