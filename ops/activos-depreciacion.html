@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Depreciación DR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 980px; }
+    .aviso { background: #fff5e0; border: 1.5px solid var(--artal-yellow); color: #7a5e13; border-radius: 10px; padding: 11px 15px; font-size: 12.5px; margin-bottom: 14px; line-height: 1.5; }
+    .aviso b { color: #6b4f0a; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar label { font-weight: bold; color: var(--artal-blue); font-size: 13px; }
+    .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 16px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+
+    .tabla-wrap { overflow-x: auto; }
+    table.dep { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+    table.dep th { background: var(--artal-blue); color: #fff; font-size: 11px; text-transform: uppercase; padding: 8px 6px; text-align: right; }
+    table.dep th.l { text-align: left; }
+    table.dep td { padding: 7px 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    table.dep td.l { text-align: left; }
+    table.dep td.nom { font-weight: bold; color: var(--artal-blue); white-space: nowrap; }
+    table.dep tr.cat td { background: #f3eefb; color: #7d3ac1; font-weight: bold; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; }
+    table.dep tr.sub td { background: #f7f9fb; font-weight: bold; border-top: 1.5px solid #d9c9ee; }
+    table.dep tr.tot td { background: var(--artal-blue); color: #fff; font-weight: bold; }
+
+    #print-zone { display: none; }
+    .rep { max-width: 900px; margin: 0 auto; color: #111; font-size: 12px; }
+    .rep h3 { color: var(--artal-blue); margin: 0 0 2px; } .rep .sub { color: #667; margin-bottom: 12px; font-size: 12px; }
+    .rep table { width: 100%; border-collapse: collapse; } .rep th, .rep td { padding: 5px 6px; border-bottom: 1px solid #e7ebef; text-align: right; }
+    .rep th.l, .rep td.l { text-align: left; } .rep th { background: var(--artal-blue); color: #fff; font-size: 10px; text-transform: uppercase; }
+    .rep tr.cat td { background: #eee; font-weight: bold; } .rep tr.sub td { font-weight: bold; border-top: 1.5px solid #999; } .rep tr.tot td { font-weight: bold; border-top: 2px solid #111; }
+    @media print { body.printing > *:not(#print-zone) { display: none !important; } #print-zone { display: block !important; } }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="activos.html" title="Volver a Activos">← Activos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Depreciación DR (05-07)</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="aviso">⚠️ <b>Cálculo orientativo, no asesoría fiscal.</b> Según Norma 05-07 / Código Tributario: <b>Categoría 1</b> Edificaciones 5% (línea recta) · <b>Categoría 2</b> Vehículos, equipo/muebles de oficina y computadoras 25% · <b>Categoría 3</b> otros bienes 15% (ambas por saldo decreciente). La convención de año, el prorrateo y el ajuste por inflación pueden variar — confírmalo con tu contadora antes de usarlo en la declaración.</div>
+    <div class="bar">
+        <label>Año fiscal:</label>
+        <select id="anio" onchange="render()"></select>
+        <button class="btn-o" onclick="imprimir()">🖨 Imprimir reporte</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div id="cont"><p class="empty">Cargando…</p></div>
+</main>
+
+<div id="print-zone"></div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+
+    const DR = { '1': { rate: 0.05, label: 'Categoría 1 — Edificaciones (5%, línea recta)', metodo: 'recta' },
+                 '2': { rate: 0.25, label: 'Categoría 2 — Vehículos, oficina, computadoras (25%, saldo decreciente)', metodo: 'saldo' },
+                 '3': { rate: 0.15, label: 'Categoría 3 — Otros bienes (15%, saldo decreciente)', metodo: 'saldo' } };
+
+    // Depreciación del activo para el año fiscal Y (fin de año).
+    function calc(a, Y) {
+        const cat = String(a.categoriaDR || ''), info = DR[cat];
+        const costo = n2(a.valorAdquisicion);
+        if (!info || !costo || !a.fechaAdquisicion || a.estado === 'baja') return null;
+        const acq = new Date(a.fechaAdquisicion + 'T00:00:00'); if (isNaN(acq)) return null;
+        const acqY = acq.getFullYear();
+        const rate = info.rate;
+        if (Y < acqY) return { cat, costo, rate, enServicio: false, depAnio: 0, acum: 0, libros: costo };
+        const nPrev = Y - acqY; // años completos antes del año Y
+        let depAnio, acum, libros;
+        if (info.metodo === 'recta') {
+            const acumPrev = Math.min(costo, costo * rate * nPrev);
+            const acumEnd = Math.min(costo, costo * rate * (nPrev + 1));
+            depAnio = acumEnd - acumPrev; acum = acumEnd; libros = costo - acumEnd;
+        } else {
+            const bookStart = costo * Math.pow(1 - rate, nPrev);
+            depAnio = bookStart * rate;
+            libros = bookStart - depAnio; acum = costo - libros;
+        }
+        return { cat, costo, rate, enServicio: true, depAnio, acum, libros };
+    }
+
+    let activos = [];
+    onSnapshot(collection(db, 'activos'), (snap) => {
+        activos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        llenarAnios(); render();
+    }, (err) => { document.getElementById('cont').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    function llenarAnios() {
+        const sel = document.getElementById('anio'); if (sel.options.length) return;
+        const now = new Date().getFullYear();
+        let min = now;
+        activos.forEach(a => { if (a.fechaAdquisicion) { const y = new Date(a.fechaAdquisicion + 'T00:00:00').getFullYear(); if (!isNaN(y) && y < min) min = y; } });
+        const años = [];
+        for (let y = now + 1; y >= Math.min(min, now - 8); y--) años.push(y);
+        sel.innerHTML = años.map(y => `<option value="${y}" ${y === now ? 'selected' : ''}>${y}</option>`).join('');
+    }
+
+    function filasPorCategoria(Y) {
+        const grupos = { '1': [], '2': [], '3': [] };
+        activos.forEach(a => { const r = calc(a, Y); if (r && r.enServicio && String(a.categoriaDR) in grupos) grupos[String(a.categoriaDR)].push({ a, r }); });
+        return grupos;
+    }
+
+    window.render = function () {
+        const Y = +document.getElementById('anio').value || new Date().getFullYear();
+        const grupos = filasPorCategoria(Y);
+        const tot = { costo: 0, dep: 0, acum: 0, libros: 0 };
+        let cuerpo = '';
+        ['1', '2', '3'].forEach(cat => {
+            const items = grupos[cat]; if (!items.length) return;
+            const sub = { costo: 0, dep: 0, acum: 0, libros: 0 };
+            cuerpo += `<tr class="cat"><td class="l" colspan="6">${esc(DR[cat].label)}</td></tr>`;
+            items.sort((x, y) => String(x.a.nombre || '').localeCompare(String(y.a.nombre || ''), 'es')).forEach(({ a, r }) => {
+                sub.costo += r.costo; sub.dep += r.depAnio; sub.acum += r.acum; sub.libros += r.libros;
+                cuerpo += `<tr>
+                    <td class="l nom">${esc(a.nombre)}${a.codigo ? ' <span style="color:#8a93a0;font-weight:normal">· ' + esc(a.codigo) + '</span>' : ''}</td>
+                    <td>${(r.rate * 100).toFixed(0)}%</td>
+                    <td>${fmt(r.costo)}</td>
+                    <td>${fmt(r.depAnio)}</td>
+                    <td>${fmt(r.acum)}</td>
+                    <td>${fmt(r.libros)}</td>
+                </tr>`;
+            });
+            cuerpo += `<tr class="sub"><td class="l">Subtotal ${cat}</td><td></td><td>${fmt(sub.costo)}</td><td>${fmt(sub.dep)}</td><td>${fmt(sub.acum)}</td><td>${fmt(sub.libros)}</td></tr>`;
+            tot.costo += sub.costo; tot.dep += sub.dep; tot.acum += sub.acum; tot.libros += sub.libros;
+        });
+
+        document.getElementById('kpis').innerHTML = [
+            ['Costo depreciable', fmt0(tot.costo)], ['Depreciación ' + Y, fmt0(tot.dep)], ['Dep. acumulada', fmt0(tot.acum)], ['Valor en libros', fmt0(tot.libros)]
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        const cont = document.getElementById('cont');
+        if (!cuerpo) { cont.innerHTML = '<p class="empty">No hay activos con categoría de depreciación y valor para el año ' + Y + '. Complétalos en Activos.</p>'; return; }
+        cont.innerHTML = `<div class="tabla-wrap"><table class="dep">
+            <thead><tr><th class="l">Activo</th><th>Tasa</th><th>Costo</th><th>Dep. ${Y}</th><th>Dep. acumulada</th><th>Valor en libros</th></tr></thead>
+            <tbody>${cuerpo}</tbody>
+            <tfoot><tr class="tot"><td class="l">TOTAL GENERAL</td><td></td><td>${fmt(tot.costo)}</td><td>${fmt(tot.dep)}</td><td>${fmt(tot.acum)}</td><td>${fmt(tot.libros)}</td></tr></tfoot>
+        </table></div>`;
+    };
+
+    window.imprimir = function () {
+        const Y = +document.getElementById('anio').value || new Date().getFullYear();
+        const grupos = filasPorCategoria(Y);
+        const tot = { costo: 0, dep: 0, acum: 0, libros: 0 };
+        let cuerpo = '';
+        ['1', '2', '3'].forEach(cat => {
+            const items = grupos[cat]; if (!items.length) return;
+            const sub = { costo: 0, dep: 0, acum: 0, libros: 0 };
+            cuerpo += `<tr class="cat"><td class="l" colspan="6">${esc(DR[cat].label)}</td></tr>`;
+            items.sort((x, y) => String(x.a.nombre || '').localeCompare(String(y.a.nombre || ''), 'es')).forEach(({ a, r }) => {
+                sub.costo += r.costo; sub.dep += r.depAnio; sub.acum += r.acum; sub.libros += r.libros;
+                cuerpo += `<tr><td class="l">${esc(a.nombre)}${a.codigo ? ' · ' + esc(a.codigo) : ''}</td><td>${(r.rate * 100).toFixed(0)}%</td><td>${fmt(r.costo)}</td><td>${fmt(r.depAnio)}</td><td>${fmt(r.acum)}</td><td>${fmt(r.libros)}</td></tr>`;
+            });
+            cuerpo += `<tr class="sub"><td class="l">Subtotal</td><td></td><td>${fmt(sub.costo)}</td><td>${fmt(sub.dep)}</td><td>${fmt(sub.acum)}</td><td>${fmt(sub.libros)}</td></tr>`;
+            tot.costo += sub.costo; tot.dep += sub.dep; tot.acum += sub.acum; tot.libros += sub.libros;
+        });
+        const html = `<div class="rep"><h3>ARTAL — Reporte de depreciación (Norma 05-07)</h3>
+            <div class="sub">Año fiscal ${Y}</div>
+            <table><thead><tr><th class="l">Activo</th><th>Tasa</th><th>Costo</th><th>Dep. ${Y}</th><th>Dep. acum.</th><th>Valor en libros</th></tr></thead>
+            <tbody>${cuerpo || '<tr><td colspan="6">Sin activos depreciables</td></tr>'}</tbody>
+            <tfoot><tr class="tot"><td class="l">TOTAL</td><td></td><td>${fmt(tot.costo)}</td><td>${fmt(tot.dep)}</td><td>${fmt(tot.acum)}</td><td>${fmt(tot.libros)}</td></tr></tfoot></table>
+            <p style="font-size:10px;color:#667;margin-top:12px">Cálculo orientativo según Norma 05-07 — verificar con la contadora.</p></div>`;
+        const z = document.getElementById('print-zone');
+        z.innerHTML = html; document.body.classList.add('printing');
+        const limpiar = () => { document.body.classList.remove('printing'); z.innerHTML = ''; window.removeEventListener('afterprint', limpiar); };
+        window.addEventListener('afterprint', limpiar);
+        window.print();
+        setTimeout(() => { if (document.body.classList.contains('printing')) limpiar(); }, 1500);
+    };
+</script>
+
+</body>
+</html>
