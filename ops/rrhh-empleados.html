@@ -43,6 +43,14 @@
     .chk-group label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13.5px; font-weight: normal; color: #333; background: #f3f4f6; padding: 7px 12px; border-radius: 20px; cursor: pointer; }
     .chk-group input { width: auto; min-height: 0; margin: 0; }
     .chk-group .none { font-size: 12.5px; color: #8a93a0; align-self: center; }
+    .docs-add { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .docs-add select { flex: 1; }
+    .doc-add-btn { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 10px 14px; border: 1.5px dashed var(--artal-blue); border-radius: 8px; background: #fff; color: var(--artal-blue); font-weight: bold; font-size: 13px; cursor: pointer; min-height: 44px; box-sizing: border-box; }
+    .doc-add-btn:hover { background: var(--artal-light); }
+    .doc-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #f7f9fb; border-radius: 8px; margin-bottom: 6px; }
+    .doc-item a { flex: 1; color: var(--artal-blue); font-weight: bold; font-size: 13px; text-decoration: none; word-break: break-word; }
+    .doc-del { background: transparent; border: none; color: #c9ced6; font-size: 18px; cursor: pointer; padding: 0 4px; line-height: 1; }
+    .doc-del:hover { color: #e74c3c; }
     .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; }
@@ -119,6 +127,20 @@
         <input type="text" id="f-direccion" placeholder="Dirección">
         <label>Notas (opcional)</label>
         <textarea id="f-notas" placeholder="Información adicional…"></textarea>
+
+        <div id="emp-docs-section" style="display:none;">
+            <label>Documentos del empleado <span class="lbl-opt">— contrato, cédula, etc. (PDF, imagen o texto)</span></label>
+            <div class="docs-add">
+                <select id="doc-categoria">
+                    <option>Contrato de trabajo</option>
+                    <option>Documento de identidad</option>
+                    <option>Otro documento</option>
+                </select>
+                <label class="doc-add-btn">＋ Subir<input type="file" id="doc-file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" style="display:none" onchange="subirDocEmpleado(this)"></label>
+            </div>
+            <div id="emp-docs-list"></div>
+        </div>
+
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
             <button class="btn-guardar" onclick="guardar()">Guardar</button>
@@ -128,8 +150,9 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
-    import { db } from './firebase-config.js';
+    import { db, storage } from './firebase-config.js';
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
     const usuario = await requireAuth([]);
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -152,7 +175,67 @@
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
+        if (editingId && document.getElementById('modal').classList.contains('show')) renderDocsEmpleado();
     }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    // ---------- Subida de archivos (imagen se comprime a JPEG; PDF y documentos se suben tal cual) ----------
+    function comprimirImg(file) {
+        return new Promise((resolve) => {
+            if (!file || !/^image\//.test(file.type)) { resolve(file); return; }
+            const url = URL.createObjectURL(file); const img = new Image();
+            img.onload = () => {
+                const max = 1600; let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+                if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
+                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
+                c.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+            img.src = url;
+        });
+    }
+    async function subirArchivo(file, pathPrefix) {
+        const esImg = /^image\//.test(file.type);
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        let blob = file, contentType = file.type || 'application/octet-stream';
+        let ext = ((file.name || '').split('.').pop() || 'bin').toLowerCase();
+        if (esImg) { blob = await comprimirImg(file).catch(() => file); contentType = 'image/jpeg'; ext = 'jpg'; }
+        const nombre = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+        const r = ref(storage, `${pathPrefix}/${nombre}`);
+        await uploadBytes(r, blob, { contentType });
+        return { url: await getDownloadURL(r), nombre: file.name || ('archivo.' + ext), tipo: esImg ? 'img' : (esPdf ? 'pdf' : 'doc') };
+    }
+    const docIcon = (t) => t === 'pdf' ? '📄' : (t === 'img' ? '🖼️' : '📃');
+
+    window.subirDocEmpleado = async function (input) {
+        const file = (input.files || [])[0]; if (!file || !editingId) return;
+        const categoria = document.getElementById('doc-categoria').value;
+        const label = input.parentElement; input.disabled = true; if (label) label.style.opacity = '.5';
+        try {
+            const arch = await subirArchivo(file, `rrhhEmpleados/${editingId}`);
+            const e = empleados.find(x => x.id === editingId) || {};
+            const prev = Array.isArray(e.documentos) ? e.documentos : [];
+            await updateDoc(doc(db, 'rrhhEmpleados', editingId), { documentos: prev.concat([{ ...arch, categoria, subidoPor: usuario.nombre }]) });
+        } catch (err) { alert('No se pudo subir: ' + (err && err.message ? err.message : err)); }
+        finally { input.value = ''; input.disabled = false; if (label) label.style.opacity = '1'; }
+    };
+    window.borrarDocEmpleado = async function (url) {
+        if (!editingId || !confirm('¿Quitar este documento?')) return;
+        const e = empleados.find(x => x.id === editingId) || {};
+        const prev = Array.isArray(e.documentos) ? e.documentos : [];
+        try { await updateDoc(doc(db, 'rrhhEmpleados', editingId), { documentos: prev.filter(d => d && d.url !== url) }); }
+        catch (err) { alert('No se pudo: ' + err.message); }
+    };
+    function renderDocsEmpleado() {
+        const cont = document.getElementById('emp-docs-list'); if (!cont || !editingId) return;
+        const e = empleados.find(x => x.id === editingId) || {};
+        const docs = Array.isArray(e.documentos) ? e.documentos : [];
+        if (!docs.length) { cont.innerHTML = '<p class="hint">Aún no hay documentos cargados.</p>'; return; }
+        cont.innerHTML = docs.map(d => `<div class="doc-item">
+            <a href="${esc(d.url)}" target="_blank" rel="noopener">${docIcon(d.tipo)} ${d.categoria ? esc(d.categoria) + ' — ' : ''}${esc(d.nombre)}</a>
+            <button class="doc-del" title="Quitar" onclick="borrarDocEmpleado('${esc(d.url)}')">×</button>
+        </div>`).join('');
+    }
 
     // Catálogos para los selects.
     function opts(arr, sel) {
@@ -203,7 +286,8 @@
     function cardHTML(e) {
         const estado = e.estado || 'activo';
         const meta = [cargosTexto(e), e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
-        const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : ''].filter(Boolean).join('  ·  ');
+        const nDocs = Array.isArray(e.documentos) ? e.documentos.length : 0;
+        const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : '', nDocs ? '📎 ' + nDocs + ' doc' + (nDocs === 1 ? '' : 's') : ''].filter(Boolean).join('  ·  ');
         return `
         <div class="order-card emp-card">
             <span class="avatar">${esc(iniciales(e.nombre))}</span>
@@ -228,7 +312,7 @@
         refreshSelects();
         renderCargos([]);
     }
-    window.abrirNuevo = function () { limpiar(); document.getElementById('modal-title').textContent = 'Nuevo empleado'; document.getElementById('modal').classList.add('show'); };
+    window.abrirNuevo = function () { limpiar(); document.getElementById('modal-title').textContent = 'Nuevo empleado'; document.getElementById('emp-docs-section').style.display = 'none'; document.getElementById('modal').classList.add('show'); };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
     window.editar = function (id) {
         const e = empleados.find(x => x.id === id); if (!e) return;
@@ -245,6 +329,8 @@
         document.getElementById('f-departamento').value = e.departamentoId || '';
         document.getElementById('f-sucursal').value = e.sucursalId || '';
         renderCargos(cargosIdsDe(e));
+        document.getElementById('emp-docs-section').style.display = 'block';
+        renderDocsEmpleado();
         document.getElementById('modal').classList.add('show');
     };
 

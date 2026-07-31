@@ -157,8 +157,8 @@
         </div>
         <label>Motivo / nota</label>
         <textarea id="p-motivo" placeholder="Opcional"></textarea>
-        <label>Justificativo <span class="lbl-opt">— foto o PDF (opcional)</span></label>
-        <input type="file" id="p-justificativo" accept="image/*,application/pdf">
+        <label>Justificativo <span class="lbl-opt">— PDF, imagen o documento (opcional)</span></label>
+        <input type="file" id="p-justificativo" accept="image/*,application/pdf,.doc,.docx,.txt,.odt">
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarPermiso()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarPermiso()">Guardar</button>
@@ -205,15 +205,17 @@
         });
     }
     async function subirJustif(file, pathPrefix) {
+        // Imagen se comprime a JPEG; PDF y documentos de texto se suben tal cual.
+        const esImg = /^image\//.test(file.type);
         const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-        if (!esPdf && !/^image\//.test(file.type)) throw new Error('El justificativo debe ser una imagen o un PDF.');
-        const blob = esPdf ? file : await comprimirImg(file).catch(() => file);
-        const ext = esPdf ? 'pdf' : 'jpg';
+        let blob = file, contentType = file.type || 'application/octet-stream';
+        let ext = ((file.name || '').split('.').pop() || 'bin').toLowerCase();
+        if (esImg) { blob = await comprimirImg(file).catch(() => file); contentType = 'image/jpeg'; ext = 'jpg'; }
         const nombre = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
         const r = ref(storage, `${pathPrefix}/${nombre}`);
-        await uploadBytes(r, blob, { contentType: esPdf ? 'application/pdf' : 'image/jpeg' });
+        await uploadBytes(r, blob, { contentType });
         const url = await getDownloadURL(r);
-        return { url, nombre: file.name || ('justificativo.' + ext), tipo: esPdf ? 'pdf' : 'img' };
+        return { url, nombre: file.name || ('justificativo.' + ext), tipo: esImg ? 'img' : (esPdf ? 'pdf' : 'doc') };
     }
 
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
@@ -377,8 +379,8 @@
                     ${p.motivo ? `<div class="l">“${esc(p.motivo)}”</div>` : ''}
                     ${p.resueltoPor ? `<div class="l">Resuelto por ${esc(p.resueltoPor)}</div>` : ''}
                     <div>${p.justificativo && p.justificativo.url
-                        ? `<a class="justif-link" href="${esc(p.justificativo.url)}" target="_blank" rel="noopener">${p.justificativo.tipo === 'pdf' ? '📄' : '📎'} Ver justificativo</a>`
-                        : `<label class="justif-add">📎 Adjuntar justificativo<input type="file" accept="image/*,application/pdf" style="display:none" onchange="subirJustifPermiso('${p.id}',this)"></label>`}</div>
+                        ? `<a class="justif-link" href="${esc(p.justificativo.url)}" target="_blank" rel="noopener">${p.justificativo.tipo === 'pdf' ? '📄' : (p.justificativo.tipo === 'doc' ? '📃' : '🖼️')} Ver justificativo</a>`
+                        : `<label class="justif-add">📎 Adjuntar justificativo<input type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" style="display:none" onchange="subirJustifPermiso('${p.id}',this)"></label>`}</div>
                 </div>
                 <div class="perm-actions">${acciones}</div>
             </div>`;

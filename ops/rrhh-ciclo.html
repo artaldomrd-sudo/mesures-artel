@@ -105,8 +105,8 @@
             <div class="chk-line"><input type="checkbox" id="e-inactivo" checked><label for="e-inactivo">Marcar al empleado como inactivo</label></div>
         </div>
 
-        <label>Adjunto <span class="lbl-opt">— foto o PDF (opcional)</span></label>
-        <input type="file" id="e-adjunto" accept="image/*,application/pdf">
+        <label>Adjunto <span class="lbl-opt">— PDF, imagen o documento (opcional)</span></label>
+        <input type="file" id="e-adjunto" accept="image/*,application/pdf,.doc,.docx,.txt,.odt">
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarEvento()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarEvento()">Guardar</button>
@@ -198,7 +198,7 @@
         const nombreTop = selEmp ? '' : `<span class="fecha" style="margin-left:0;color:#556;font-weight:bold">${esc(ev.empleadoNombre || '')}</span>`;
         const del = ev.sintetico ? '' : `<button class="tl-del" title="Eliminar" onclick="borrarEvento('${ev.id}')">🗑</button>`;
         const adj = (ev.adjunto && ev.adjunto.url)
-            ? `<div><a class="justif-link" href="${esc(ev.adjunto.url)}" target="_blank" rel="noopener">${ev.adjunto.tipo === 'pdf' ? '📄' : '📎'} Ver adjunto</a></div>` : '';
+            ? `<div><a class="justif-link" href="${esc(ev.adjunto.url)}" target="_blank" rel="noopener">${ev.adjunto.tipo === 'pdf' ? '📄' : (ev.adjunto.tipo === 'doc' ? '📃' : '🖼️')} Ver adjunto</a></div>` : '';
         return `<div class="tl-item">
             <div class="tl-dot">${t.icon}</div>
             <div class="tl-card">
@@ -228,15 +228,17 @@
         });
     }
     async function subirAdjunto(file, pathPrefix) {
+        // Imagen se comprime a JPEG; PDF y documentos de texto se suben tal cual.
+        const esImg = /^image\//.test(file.type);
         const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-        if (!esPdf && !/^image\//.test(file.type)) throw new Error('El adjunto debe ser una imagen o un PDF.');
-        const blob = esPdf ? file : await comprimirImg(file).catch(() => file);
-        const ext = esPdf ? 'pdf' : 'jpg';
+        let blob = file, contentType = file.type || 'application/octet-stream';
+        let ext = ((file.name || '').split('.').pop() || 'bin').toLowerCase();
+        if (esImg) { blob = await comprimirImg(file).catch(() => file); contentType = 'image/jpeg'; ext = 'jpg'; }
         const nombre = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
         const r = ref(storage, `${pathPrefix}/${nombre}`);
-        await uploadBytes(r, blob, { contentType: esPdf ? 'application/pdf' : 'image/jpeg' });
+        await uploadBytes(r, blob, { contentType });
         const url = await getDownloadURL(r);
-        return { url, nombre: file.name || ('adjunto.' + ext), tipo: esPdf ? 'pdf' : 'img' };
+        return { url, nombre: file.name || ('adjunto.' + ext), tipo: esImg ? 'img' : (esPdf ? 'pdf' : 'doc') };
     }
 
     // ---------- Modal ----------
