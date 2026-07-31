@@ -22,6 +22,9 @@
     .tr-cli .who { color: #2d7dd2; }
     .tr-artal { background: #fff6e0; border-left: 3px solid var(--artal-yellow); color: #3a2f12; align-self: flex-end; }
     .tr-artal .who { color: #b9770e; }
+    .sol-nota { margin: 10px 0 0; padding: 9px 12px; background: #f3f6f9; border: 1px solid #e1e8ee; border-left: 3px solid #94a3b0; border-radius: 9px; font-size: 13.5px; color: #33414c; white-space: pre-wrap; line-height: 1.42; word-wrap: break-word; }
+    .sol-nota .nota-lbl { display: block; font-size: 10.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7a86; margin-bottom: 3px; }
+    .chat-lbl { font-size: 10.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; color: #8a97a2; margin: 13px 0 1px; }
     .sol-fecha { font-size: 11.5px; color: #999; margin-top: 8px; }
     .sol-contacto { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
     .sol-contacto a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; font-size: 13px; font-family: 'Arimo'; min-height: 40px; }
@@ -84,9 +87,19 @@
     function formatMensaje(txt) {
         txt = String(txt || '');
         if (!esChat(txt)) return `<p class="sol-msg">${esc(txt)}</p>`;
+        // Todo lo que va ANTES de la primera línea "Cliente:/Cristal:" es la nota escrita
+        // en el formulario (no es parte del chat) → se muestra aparte y etiquetada.
+        const lineas = txt.split('\n');
+        const iChat = lineas.findIndex(ln => /^\s*(Cliente|Bot|Cristal)\s*:/i.test(ln));
+        const notaTxt = lineas.slice(0, iChat).join('\n').trim();
+        const chatTxt = lineas.slice(iChat).join('\n');
+        let html = '';
+        if (notaTxt) {
+            html += `<div class="sol-nota"><span class="nota-lbl">📝 Nota escrita en el formulario</span>${esc(limpiaMd(notaTxt))}</div>`;
+        }
         const bloques = [];
         let cur = null;
-        for (const ln of txt.split('\n')) {
+        for (const ln of chatTxt.split('\n')) {
             const m = ln.match(/^\s*(Cliente|Bot|Cristal)\s*:\s?(.*)$/i);
             if (m) {
                 if (cur) bloques.push(cur);
@@ -98,10 +111,12 @@
             }
         }
         if (cur) bloques.push(cur);
-        return '<div class="tr">' + bloques.map(b => {
+        if (notaTxt) html += `<div class="chat-lbl">💬 Conversación con Cristal</div>`;
+        html += '<div class="tr">' + bloques.map(b => {
             const label = b.who === 'cli' ? 'Cliente' : 'ARTAL · Cristal';
             return `<div class="tr-turn tr-${b.who}"><span class="who">${label}</span>${esc(limpiaMd(b.text).trim())}</div>`;
         }).join('') + '</div>';
+        return html;
     }
     // Deja solo dígitos para armar el link de WhatsApp/llamada (agrega el 1 de RD si hace falta).
     function telParaWa(tel) {
