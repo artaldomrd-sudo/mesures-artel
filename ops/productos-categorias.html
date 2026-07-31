@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Categorías</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 680px; }
+    .intro { color: #667; font-size: 13px; margin: 0 0 12px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .cat-node { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px; }
+    .cat-row { display: flex; align-items: center; gap: 10px; }
+    .cat-row .nom { flex: 1; font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .cat-row .cnt { font-size: 11.5px; color: #8a93a0; background: #eef1f4; border-radius: 20px; padding: 2px 9px; font-weight: bold; }
+    .cat-row.sub { margin-top: 8px; padding-left: 16px; border-left: 3px solid #e3e7ec; }
+    .cat-row.sub .nom { font-size: 14px; font-weight: normal; color: #445; }
+    .subs { margin-top: 4px; }
+    .mini { border: none; border-radius: 7px; padding: 6px 9px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; min-height: 34px; }
+    .m-sub { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; }
+    .m-ed { background: var(--artal-blue); color: #fff; } .m-del { background: transparent; color: #e74c3c; }
+    .b.inactivo { background: #f1f1f4; color: #8a93a0; font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 420px; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="productos.html" title="Volver">← Productos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Categorías</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="intro">Organiza el catálogo en categorías y subcategorías. Las categorías que crees aquí aparecen como sugerencia al dar de alta un producto o servicio.</p>
+    <div class="bar"><button class="btn-y" onclick="abrirNueva('')">+ Nueva categoría</button></div>
+    <div id="arbol"><p class="empty">Cargando…</p></div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva categoría</h2>
+        <label>Nombre *</label>
+        <input type="text" id="c-nombre" placeholder="Ej. Ventanas" onkeydown="if(event.key==='Enter')guardar()">
+        <div id="padre-wrap"><label>Categoría principal <span style="font-weight:normal;color:#8a93a0;font-size:11px">— déjalo en «ninguna» para una categoría de primer nivel</span></label>
+            <select id="c-padre"><option value="">— Ninguna (categoría principal) —</option></select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+
+    let categorias = [], productos = [], editId = null;
+
+    onSnapshot(collection(db, 'productosCategorias'), (snap) => {
+        categorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        llenarPadres(); render();
+    }, (err) => { document.getElementById('arbol').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'productos'), (snap) => { productos = snap.docs.map(d => d.data()); render(); }, () => {});
+
+    const principales = () => categorias.filter(c => !c.padreId).sort(byNombre);
+    const hijos = (id) => categorias.filter(c => c.padreId === id).sort(byNombre);
+    const cuentaProp = (nombre) => productos.filter(p => (p.categoria || '') === nombre).length;
+
+    function llenarPadres() {
+        const sel = document.getElementById('c-padre'); const cur = sel.value;
+        sel.innerHTML = '<option value="">— Ninguna (categoría principal) —</option>' + principales().map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('');
+        sel.value = cur;
+    }
+
+    window.abrirNueva = function (padreId) {
+        editId = null; document.getElementById('modal-title').textContent = padreId ? 'Nueva subcategoría' : 'Nueva categoría';
+        document.getElementById('c-nombre').value = '';
+        document.getElementById('c-padre').value = padreId || '';
+        document.getElementById('padre-wrap').style.display = padreId ? 'none' : 'block';
+        document.getElementById('modal').classList.add('show');
+        setTimeout(() => document.getElementById('c-nombre').focus(), 50);
+    };
+    window.editar = function (id) {
+        const c = categorias.find(x => x.id === id); if (!c) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar categoría';
+        document.getElementById('c-nombre').value = c.nombre || '';
+        document.getElementById('c-padre').value = c.padreId || '';
+        document.getElementById('padre-wrap').style.display = 'block';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const nombre = document.getElementById('c-nombre').value.trim();
+        if (!nombre) { alert('Escribe el nombre.'); return; }
+        let padreId = document.getElementById('c-padre').value;
+        if (editId && padreId === editId) padreId = ''; // no puede ser su propio padre
+        const datos = { nombre, padreId: padreId || '' };
+        try {
+            if (editId) await updateDoc(doc(db, 'productosCategorias', editId), datos);
+            else await addDoc(collection(db, 'productosCategorias'), { ...datos, activo: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        const c = categorias.find(x => x.id === id) || {};
+        if (hijos(id).length) { alert('Esta categoría tiene subcategorías. Elimínalas primero.'); return; }
+        const n = cuentaProp(c.nombre);
+        if (!confirm('¿Eliminar la categoría "' + (c.nombre || '') + '"?' + (n ? '\n\n(' + n + ' producto(s) la usan; no se borran, solo quedan con ese nombre de categoría.)' : ''))) return;
+        try { await deleteDoc(doc(db, 'productosCategorias', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    function render() {
+        const cont = document.getElementById('arbol');
+        const tops = principales();
+        if (!categorias.length) { cont.innerHTML = '<p class="empty">Aún no hay categorías. Crea la primera con «+ Nueva categoría».</p>'; return; }
+        cont.innerHTML = tops.map(cat => {
+            const subs = hijos(cat.id);
+            const totalProd = cuentaProp(cat.nombre) + subs.reduce((a, s) => a + cuentaProp(s.nombre), 0);
+            const subsHTML = subs.map(s => `<div class="cat-row sub">
+                <span class="nom">${esc(s.nombre)}</span>
+                <span class="cnt">${cuentaProp(s.nombre)}</span>
+                <button class="mini m-ed" onclick="editar('${s.id}')">✏</button>
+                <button class="mini m-del" onclick="borrar('${s.id}')">🗑</button>
+            </div>`).join('');
+            return `<div class="cat-node">
+                <div class="cat-row">
+                    <span class="nom">${esc(cat.nombre)}</span>
+                    <span class="cnt">${totalProd}</span>
+                    <button class="mini m-sub" onclick="abrirNueva('${cat.id}')">+ Subcategoría</button>
+                    <button class="mini m-ed" onclick="editar('${cat.id}')">✏</button>
+                    <button class="mini m-del" onclick="borrar('${cat.id}')">🗑</button>
+                </div>
+                ${subs.length ? `<div class="subs">${subsHTML}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+</script>
+
+</body>
+</html>
