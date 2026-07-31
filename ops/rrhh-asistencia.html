@@ -61,6 +61,9 @@
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
     .nota { font-size: 12px; color: #8a93a0; margin: 2px 0 12px; }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .justif-link { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: bold; color: var(--artal-blue); text-decoration: none; margin-top: 4px; }
+    .justif-add { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: bold; color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 8px; padding: 6px 10px; cursor: pointer; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -154,6 +157,8 @@
         </div>
         <label>Motivo / nota</label>
         <textarea id="p-motivo" placeholder="Opcional"></textarea>
+        <label>Justificativo <span class="lbl-opt">— foto o PDF (opcional)</span></label>
+        <input type="file" id="p-justificativo" accept="image/*,application/pdf">
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarPermiso()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarPermiso()">Guardar</button>
@@ -163,8 +168,9 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
-    import { db } from './firebase-config.js';
+    import { db, storage } from './firebase-config.js';
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
     const usuario = await requireAuth([]);
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -180,6 +186,35 @@
     function horasEntre(e, s) { if (!e || !s) return 0; const [h1, m1] = e.split(':').map(Number), [h2, m2] = s.split(':').map(Number); let mins = (h2 * 60 + m2) - (h1 * 60 + m1); if (mins < 0) mins += 24 * 60; return Math.round(mins / 6) / 10; }
 
     let empleados = [], asistencia = {}, permisos = [], turnos = [], feriados = [];
+
+    // Justificativo: imagen (se comprime a JPEG) o PDF (se sube tal cual). Devuelve {url, nombre, tipo}.
+    function comprimirImg(file) {
+        return new Promise((resolve) => {
+            if (!file || !/^image\//.test(file.type)) { resolve(file); return; }
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                const max = 1600; let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+                if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
+                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
+                c.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+            img.src = url;
+        });
+    }
+    async function subirJustif(file, pathPrefix) {
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        if (!esPdf && !/^image\//.test(file.type)) throw new Error('El justificativo debe ser una imagen o un PDF.');
+        const blob = esPdf ? file : await comprimirImg(file).catch(() => file);
+        const ext = esPdf ? 'pdf' : 'jpg';
+        const nombre = Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+        const r = ref(storage, `${pathPrefix}/${nombre}`);
+        await uploadBytes(r, blob, { contentType: esPdf ? 'application/pdf' : 'image/jpeg' });
+        const url = await getDownloadURL(r);
+        return { url, nombre: file.name || ('justificativo.' + ext), tipo: esPdf ? 'pdf' : 'img' };
+    }
 
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => (e.estado || 'activo') === 'activo').sort(byNombre);
@@ -270,6 +305,7 @@
         document.getElementById('p-inicio').value = hoyISO();
         document.getElementById('p-fin').value = hoyISO();
         document.getElementById('p-motivo').value = '';
+        document.getElementById('p-justificativo').value = '';
         document.getElementById('modal-permiso').classList.add('show');
     };
     window.cerrarPermiso = function () { document.getElementById('modal-permiso').classList.remove('show'); };
@@ -280,17 +316,39 @@
         if (!empId) { alert('Elige el empleado.'); return; }
         if (!inicio || !fin) { alert('Indica las fechas.'); return; }
         if (fin < inicio) { alert('La fecha "Hasta" no puede ser anterior a "Desde".'); return; }
+        const btn = document.querySelector('#modal-permiso .btn-guardar');
+        const file = (document.getElementById('p-justificativo').files || [])[0];
+        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
         try {
-            await addDoc(collection(db, 'rrhhPermisos'), {
+            const refDoc = await addDoc(collection(db, 'rrhhPermisos'), {
                 empleadoId: empId, empleadoNombre: emp ? emp.nombre : '',
                 tipo: document.getElementById('p-tipo').value,
                 fechaInicio: inicio, fechaFin: fin, dias: diffDias(inicio, fin),
                 motivo: document.getElementById('p-motivo').value.trim(),
                 estado: 'pendiente', solicitadoPor: usuario.nombre, fechaSolicitud: serverTimestamp()
             });
+            if (file) {
+                const just = await subirJustif(file, `rrhhPermisos/${refDoc.id}`);
+                await updateDoc(doc(db, 'rrhhPermisos', refDoc.id), { justificativo: just });
+            }
             cerrarPermiso();
             setTab('permisos');
-        } catch (e) { alert('No se pudo guardar: ' + e.message); }
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
+    };
+
+    // Adjuntar/reemplazar justificativo después (ej. la licencia médica llega días después).
+    window.subirJustifPermiso = async function (id, input) {
+        const file = (input.files || [])[0];
+        if (!file) return;
+        const label = input.parentElement;
+        input.disabled = true;
+        if (label) label.style.opacity = '.5';
+        try {
+            const just = await subirJustif(file, `rrhhPermisos/${id}`);
+            await updateDoc(doc(db, 'rrhhPermisos', id), { justificativo: just });
+        } catch (e) { alert('No se pudo subir: ' + (e && e.message ? e.message : e)); }
+        finally { input.value = ''; input.disabled = false; if (label) label.style.opacity = '1'; }
     };
     window.resolverPermiso = async function (id, estado) {
         try { await updateDoc(doc(db, 'rrhhPermisos', id), { estado, resueltoPor: usuario.nombre, fechaResolucion: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
@@ -318,6 +376,9 @@
                     <div class="l">${esc(p.tipo)} · ${rango} · ${p.dias} día${p.dias === 1 ? '' : 's'}</div>
                     ${p.motivo ? `<div class="l">“${esc(p.motivo)}”</div>` : ''}
                     ${p.resueltoPor ? `<div class="l">Resuelto por ${esc(p.resueltoPor)}</div>` : ''}
+                    <div>${p.justificativo && p.justificativo.url
+                        ? `<a class="justif-link" href="${esc(p.justificativo.url)}" target="_blank" rel="noopener">${p.justificativo.tipo === 'pdf' ? '📄' : '📎'} Ver justificativo</a>`
+                        : `<label class="justif-add">📎 Adjuntar justificativo<input type="file" accept="image/*,application/pdf" style="display:none" onchange="subirJustifPermiso('${p.id}',this)"></label>`}</div>
                 </div>
                 <div class="perm-actions">${acciones}</div>
             </div>`;
