@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Nómina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 960px; }
+    .panel { display: none; } .panel.show { display: block; }
+    .aviso { background: #fff5e0; border: 1.5px solid var(--artal-yellow); color: #7a5e13; border-radius: 10px; padding: 12px 15px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
+    .aviso b { color: #6b4f0a; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .sec-title { font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: var(--artal-blue); margin: 20px 0 10px; }
+
+    /* Parámetros */
+    .param-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+    @media (max-width: 560px) { .param-grid { grid-template-columns: 1fr; } }
+    .param-grid label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
+    .param-grid input { width: 100%; padding: 9px 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; }
+    .param-card { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px; }
+    .tabla-isr { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .tabla-isr th, .tabla-isr td { padding: 6px 6px; text-align: right; }
+    .tabla-isr th { color: #778; font-size: 11px; text-transform: uppercase; }
+    .tabla-isr input { width: 100%; padding: 7px 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; text-align: right; box-sizing: border-box; }
+
+    /* Nómina tabla */
+    .tabla-wrap { overflow-x: auto; }
+    table.nom { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+    table.nom th { background: var(--artal-blue); color: #fff; font-size: 11px; text-transform: uppercase; padding: 8px 6px; position: sticky; top: 0; }
+    table.nom td { padding: 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    table.nom td.nom-name { text-align: left; font-weight: bold; color: var(--artal-blue); white-space: nowrap; }
+    table.nom input { width: 92px; padding: 6px 7px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; text-align: right; box-sizing: border-box; }
+    table.nom tr.tot td { font-weight: bold; border-top: 2px solid var(--artal-blue); background: #f7f9fb; }
+    table.nom .btn-vol { background: var(--artal-blue); color: #fff; border: none; border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .neg { color: #d9483b; } .pos { color: #1f9d61; }
+
+    /* Liquidación / regalía */
+    .form-liq { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .form-liq label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 10px 0 4px; }
+    .form-liq input, .form-liq select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .desglose { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 16px; }
+    .desglose .row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed #e3e7ec; font-size: 14px; }
+    .desglose .row.total { border-bottom: none; border-top: 2px solid var(--artal-blue); margin-top: 6px; font-weight: bold; font-size: 16px; color: var(--artal-blue); }
+    .desglose .row .lbl { color: #445; } .desglose .row .val { font-variant-numeric: tabular-nums; font-weight: bold; }
+    .chk-inc { display: inline-flex; align-items: center; gap: 6px; }
+    .muted { font-size: 11.5px; color: #8a93a0; }
+
+    /* Volante / impresión */
+    #print-zone { display: none; }
+    .volante { max-width: 640px; margin: 0 auto; font-size: 13px; color: #111; }
+    .volante h3 { color: var(--artal-blue); margin: 0 0 2px; } .volante .vsub { color: #667; font-size: 12px; margin-bottom: 12px; }
+    .volante table { width: 100%; border-collapse: collapse; }
+    .volante td { padding: 5px 4px; border-bottom: 1px solid #eee; }
+    .volante td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    .volante .vtot td { font-weight: bold; border-top: 2px solid var(--artal-blue); }
+    @media print {
+        body.printing > *:not(#print-zone) { display: none !important; }
+        #print-zone { display: block !important; }
+    }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="rrhh.html" title="Volver a RRHH">← RRHH</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Nómina</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-mensual" onclick="setTab('mensual')">Nómina mensual</button>
+        <button class="tab-btn" id="tab-regalia" onclick="setTab('regalia')">Regalía</button>
+        <button class="tab-btn" id="tab-liquidacion" onclick="setTab('liquidacion')">Liquidación</button>
+        <button class="tab-btn" id="tab-parametros" onclick="setTab('parametros')">Parámetros</button>
+    </div>
+
+    <div class="aviso">⚠️ <b>Estos cálculos son una guía interna, no asesoría fiscal.</b> Las tasas de TSS, la escala de ISR y las reglas de liquidación cambian por resolución/ley. Verifica los <b>Parámetros</b> con tu contadora antes de usar estos montos en pagos reales.</div>
+
+    <!-- NÓMINA MENSUAL -->
+    <section class="panel show" id="panel-mensual">
+        <div class="bar">
+            <input type="month" id="nom-periodo">
+            <button class="btn-y" onclick="generarNomina()">Generar / cargar</button>
+            <button class="btn-o" onclick="guardarNomina()">💾 Guardar</button>
+        </div>
+        <div id="nom-cont"><p class="empty">Elige un período y pulsa «Generar / cargar».</p></div>
+    </section>
+
+    <!-- REGALÍA -->
+    <section class="panel" id="panel-regalia">
+        <div class="bar">
+            <input type="number" id="reg-anio" min="2020" max="2100" step="1" style="width:110px" title="Año">
+            <button class="btn-y" onclick="calcularRegalia()">Calcular</button>
+            <button class="btn-o" onclick="imprimirRegalia()">🖨 Imprimir</button>
+        </div>
+        <p class="muted">Regalía pascual = 1/12 del salario ordinario ganado en el año (Ley 16-92). Exenta de ISR y TSS. Ajusta los meses trabajados o el salario promedio por empleado si hace falta.</p>
+        <div id="reg-cont"><p class="empty">Pulsa «Calcular».</p></div>
+    </section>
+
+    <!-- LIQUIDACIÓN -->
+    <section class="panel" id="panel-liquidacion">
+        <div class="form-liq">
+            <label>Empleado</label>
+            <select id="liq-emp" onchange="liqDesdeEmpleado()"></select>
+            <div class="param-grid">
+                <div><label>Fecha de ingreso</label><input type="date" id="liq-ingreso" oninput="calcularLiquidacion()"></div>
+                <div><label>Fecha de salida</label><input type="date" id="liq-salida" oninput="calcularLiquidacion()"></div>
+                <div><label>Último salario mensual (RD$)</label><input type="number" id="liq-salario" min="0" step="0.01" oninput="calcularLiquidacion()"></div>
+                <div><label>Causa de la salida</label>
+                    <select id="liq-causa" onchange="liqPreset();calcularLiquidacion()">
+                        <option value="desahucio">Desahucio (la empresa termina)</option>
+                        <option value="despido_justificado">Despido justificado</option>
+                        <option value="dimision_justificada">Dimisión justificada</option>
+                        <option value="renuncia">Renuncia</option>
+                        <option value="fin_contrato">Fin de contrato / mutuo acuerdo</option>
+                    </select>
+                </div>
+            </div>
+            <div class="param-grid" style="margin-top:10px">
+                <div class="chk-inc"><input type="checkbox" id="liq-inc-preaviso" onchange="calcularLiquidacion()"> <label style="margin:0">Incluir preaviso</label></div>
+                <div class="chk-inc"><input type="checkbox" id="liq-inc-cesantia" onchange="calcularLiquidacion()"> <label style="margin:0">Incluir cesantía</label></div>
+                <div class="chk-inc"><input type="checkbox" id="liq-inc-vacaciones" onchange="calcularLiquidacion()"> <label style="margin:0">Incluir vacaciones</label></div>
+                <div class="chk-inc"><input type="checkbox" id="liq-inc-regalia" onchange="calcularLiquidacion()"> <label style="margin:0">Incluir regalía proporcional</label></div>
+            </div>
+            <button class="btn-o" style="margin-top:12px" onclick="imprimirLiquidacion()">🖨 Imprimir cálculo</button>
+        </div>
+        <div id="liq-cont"></div>
+    </section>
+
+    <!-- PARÁMETROS -->
+    <section class="panel" id="panel-parametros">
+        <div class="param-card">
+            <div class="sec-title" style="margin-top:0">Seguridad Social (TSS) — porcentajes</div>
+            <div class="param-grid">
+                <div><label>AFP / Pensión — empleado (%)</label><input type="number" id="p-afpEmp" step="0.01"></div>
+                <div><label>AFP / Pensión — empleador (%)</label><input type="number" id="p-afpPat" step="0.01"></div>
+                <div><label>SFS / Salud — empleado (%)</label><input type="number" id="p-sfsEmp" step="0.01"></div>
+                <div><label>SFS / Salud — empleador (%)</label><input type="number" id="p-sfsPat" step="0.01"></div>
+                <div><label>Riesgos Laborales — empleador (%)</label><input type="number" id="p-srlPat" step="0.01"></div>
+                <div></div>
+                <div><label>Tope salarial AFP (RD$/mes, 0 = sin tope)</label><input type="number" id="p-topeAfp" step="0.01"></div>
+                <div><label>Tope salarial SFS (RD$/mes, 0 = sin tope)</label><input type="number" id="p-topeSfs" step="0.01"></div>
+            </div>
+        </div>
+        <div class="param-card">
+            <div class="sec-title" style="margin-top:0">Escala de ISR (anual)</div>
+            <p class="muted" style="margin-top:0">El ISR mensual se calcula sobre el salario gravable ya menos AFP y SFS: ISR = escala&nbsp;anual(gravable×12) ÷ 12. «Cuota fija» y «Excedente sobre» vienen de la escala oficial de la DGII.</p>
+            <table class="tabla-isr">
+                <thead><tr><th>Tramo</th><th>Hasta (RD$/año)</th><th>Tasa (%)</th><th>Cuota fija (RD$)</th><th>Excedente sobre (RD$)</th></tr></thead>
+                <tbody id="isr-body"></tbody>
+            </table>
+            <p class="muted">En el último tramo deja «Hasta» en 0 (o vacío) para indicar «en adelante».</p>
+        </div>
+        <button class="btn-y" onclick="guardarParametros()">💾 Guardar parámetros</button>
+        <span id="param-msg" class="muted" style="margin-left:10px"></span>
+    </section>
+</main>
+
+<div id="print-zone"></div>
+
+<!-- Modal Volante -->
+<div class="modal-overlay" id="modal-volante">
+    <div class="modal-box">
+        <div id="volante-modal-body"></div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="document.getElementById('modal-volante').classList.remove('show')">Cerrar</button>
+            <button class="btn-guardar" onclick="imprimirVolante()">🖨 Imprimir</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, doc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' }); };
+
+    // Valores oficiales de referencia (editables por la contadora).
+    const DEFAULTS = {
+        afpEmp: 2.87, afpPat: 7.10, sfsEmp: 3.04, sfsPat: 7.09, srlPat: 1.15,
+        topeAfp: 0, topeSfs: 0,
+        isrTramos: [
+            { limite: 416220.00, tasa: 0, fijo: 0, base: 0 },
+            { limite: 624329.00, tasa: 15, fijo: 0, base: 416220.00 },
+            { limite: 867123.00, tasa: 20, fijo: 31216.00, base: 624329.00 },
+            { limite: 0, tasa: 25, fijo: 79776.00, base: 867123.00 }
+        ]
+    };
+    let cfg = JSON.parse(JSON.stringify(DEFAULTS));
+    let empleados = [];
+    let nominaActual = null; // {periodo, lineas:[...]}
+
+    onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
+        empleados = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => (e.estado || 'activo') === 'activo').sort(byNombre);
+        llenarLiqEmpleados();
+    });
+    // Configuración de nómina.
+    getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => {
+        if (s.exists()) cfg = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), s.data());
+        pintarParametros();
+    }).catch(() => pintarParametros());
+
+    window.setTab = function (t) {
+        ['mensual', 'regalia', 'liquidacion', 'parametros'].forEach(k => {
+            document.getElementById('tab-' + k).classList.toggle('active', k === t);
+            document.getElementById('panel-' + k).classList.toggle('show', k === t);
+        });
+    };
+
+    // ---------- PARÁMETROS ----------
+    function pintarParametros() {
+        const g = (id, v) => document.getElementById(id).value = v;
+        g('p-afpEmp', cfg.afpEmp); g('p-afpPat', cfg.afpPat); g('p-sfsEmp', cfg.sfsEmp); g('p-sfsPat', cfg.sfsPat);
+        g('p-srlPat', cfg.srlPat); g('p-topeAfp', cfg.topeAfp); g('p-topeSfs', cfg.topeSfs);
+        document.getElementById('isr-body').innerHTML = cfg.isrTramos.map((t, i) => `<tr>
+            <td style="text-align:left;color:#667">${i + 1}</td>
+            <td><input type="number" step="0.01" data-i="${i}" data-k="limite" value="${t.limite}"></td>
+            <td><input type="number" step="0.01" data-i="${i}" data-k="tasa" value="${t.tasa}"></td>
+            <td><input type="number" step="0.01" data-i="${i}" data-k="fijo" value="${t.fijo}"></td>
+            <td><input type="number" step="0.01" data-i="${i}" data-k="base" value="${t.base}"></td>
+        </tr>`).join('');
+    }
+    function leerParametros() {
+        const v = (id) => n2(document.getElementById(id).value);
+        cfg.afpEmp = v('p-afpEmp'); cfg.afpPat = v('p-afpPat'); cfg.sfsEmp = v('p-sfsEmp'); cfg.sfsPat = v('p-sfsPat');
+        cfg.srlPat = v('p-srlPat'); cfg.topeAfp = v('p-topeAfp'); cfg.topeSfs = v('p-topeSfs');
+        document.querySelectorAll('#isr-body input').forEach(inp => {
+            cfg.isrTramos[+inp.dataset.i][inp.dataset.k] = n2(inp.value);
+        });
+    }
+    window.guardarParametros = async function () {
+        leerParametros();
+        try {
+            await setDoc(doc(db, 'rrhhConfig', 'nomina'), { ...cfg, actualizadoPor: usuario.nombre, actualizado: serverTimestamp() });
+            document.getElementById('param-msg').textContent = '✓ Guardado ' + new Date().toLocaleTimeString('es-DO');
+        } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+
+    // ---------- CÁLCULOS ----------
+    function isrAnual(gravableAnual) {
+        // Toma el tramo correcto (limite 0 = "en adelante", último).
+        let tr = cfg.isrTramos[0];
+        for (const t of cfg.isrTramos) {
+            if (t.limite === 0 || gravableAnual <= t.limite) { tr = t; break; }
+            tr = t;
+        }
+        return Math.max(0, tr.fijo + (gravableAnual - tr.base) * (tr.tasa / 100));
+    }
+    function calcLinea(l) {
+        const sueldo = n2(l.sueldo);
+        const ingresos = n2(l.ingresos);       // otros ingresos gravables
+        const baseAfp = cfg.topeAfp > 0 ? Math.min(sueldo, cfg.topeAfp) : sueldo;
+        const baseSfs = cfg.topeSfs > 0 ? Math.min(sueldo, cfg.topeSfs) : sueldo;
+        const afp = baseAfp * (cfg.afpEmp / 100);
+        const sfs = baseSfs * (cfg.sfsEmp / 100);
+        const gravableMensual = (sueldo + ingresos) - afp - sfs;
+        const isr = isrAnual(gravableMensual * 12) / 12;
+        const deducciones = n2(l.deducciones); // préstamos, avances, etc.
+        const neto = (sueldo + ingresos) - afp - sfs - isr - deducciones;
+        // Aportes del empleador (informativo).
+        const afpPat = baseAfp * (cfg.afpPat / 100), sfsPat = baseSfs * (cfg.sfsPat / 100), srlPat = baseSfs * (cfg.srlPat / 100);
+        return { ...l, sueldo, ingresos, afp, sfs, isr, deducciones, neto, afpPat, sfsPat, srlPat };
+    }
+
+    // ---------- NÓMINA MENSUAL ----------
+    window.generarNomina = async function () {
+        const periodo = document.getElementById('nom-periodo').value;
+        if (!periodo) { alert('Elige el período (mes).'); return; }
+        let guardada = null;
+        try { const s = await getDoc(doc(db, 'rrhhNominas', periodo)); if (s.exists()) guardada = s.data(); } catch (e) { }
+        const previos = {}; if (guardada && Array.isArray(guardada.lineas)) guardada.lineas.forEach(l => previos[l.empleadoId] = l);
+        const lineas = empleados.map(e => {
+            const p = previos[e.id] || {};
+            return { empleadoId: e.id, nombre: e.nombre, sueldo: p.sueldo != null ? p.sueldo : n2(e.sueldoBase), ingresos: n2(p.ingresos), deducciones: n2(p.deducciones) };
+        });
+        // Conserva líneas guardadas de empleados que ya no están activos.
+        if (guardada && Array.isArray(guardada.lineas)) {
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresos: n2(l.ingresos), deducciones: n2(l.deducciones) }); });
+        }
+        nominaActual = { periodo, lineas };
+        renderNomina();
+    };
+
+    window.recalcNom = function () {
+        if (!nominaActual) return;
+        document.querySelectorAll('#nom-tbody tr[data-id]').forEach(tr => {
+            const id = tr.dataset.id, l = nominaActual.lineas.find(x => x.empleadoId === id);
+            if (!l) return;
+            l.sueldo = n2(tr.querySelector('[data-k=sueldo]').value);
+            l.ingresos = n2(tr.querySelector('[data-k=ingresos]').value);
+            l.deducciones = n2(tr.querySelector('[data-k=deducciones]').value);
+        });
+        renderNomina();
+    };
+
+    function renderNomina() {
+        if (!nominaActual) return;
+        const calc = nominaActual.lineas.map(calcLinea);
+        const tot = calc.reduce((a, l) => ({ sueldo: a.sueldo + l.sueldo, ingresos: a.ingresos + l.ingresos, afp: a.afp + l.afp, sfs: a.sfs + l.sfs, isr: a.isr + l.isr, deducciones: a.deducciones + l.deducciones, neto: a.neto + l.neto }), { sueldo: 0, ingresos: 0, afp: 0, sfs: 0, isr: 0, deducciones: 0, neto: 0 });
+        const fmtP = (p) => { const [y, m] = p.split('-'); return new Date(y, m - 1, 1).toLocaleDateString('es-DO', { month: 'long', year: 'numeric' }); };
+        const rows = calc.map(l => `<tr data-id="${esc(l.empleadoId)}">
+            <td class="nom-name">${esc(l.nombre)}</td>
+            <td><input type="number" data-k="sueldo" value="${l.sueldo}" onchange="recalcNom()"></td>
+            <td><input type="number" data-k="ingresos" value="${l.ingresos}" onchange="recalcNom()"></td>
+            <td class="neg">${fmt(l.afp)}</td>
+            <td class="neg">${fmt(l.sfs)}</td>
+            <td class="neg">${fmt(l.isr)}</td>
+            <td><input type="number" data-k="deducciones" value="${l.deducciones}" onchange="recalcNom()"></td>
+            <td class="pos"><b>${fmt(l.neto)}</b></td>
+            <td><button class="btn-vol" onclick="verVolante('${esc(l.empleadoId)}')">Volante</button></td>
+        </tr>`).join('');
+        document.getElementById('nom-cont').innerHTML = `
+        <div class="sec-title">Nómina de ${fmtP(nominaActual.periodo)} · ${calc.length} empleados</div>
+        <div class="tabla-wrap"><table class="nom">
+            <thead><tr><th style="text-align:left">Empleado</th><th>Sueldo</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Otras ded.</th><th>Neto</th><th></th></tr></thead>
+            <tbody id="nom-tbody">${rows}</tbody>
+            <tfoot><tr class="tot">
+                <td class="nom-name">TOTALES</td><td>${fmt(tot.sueldo)}</td><td>${fmt(tot.ingresos)}</td>
+                <td>${fmt(tot.afp)}</td><td>${fmt(tot.sfs)}</td><td>${fmt(tot.isr)}</td><td>${fmt(tot.deducciones)}</td>
+                <td>${fmt(tot.neto)}</td><td></td>
+            </tr></tfoot>
+        </table></div>
+        <p class="muted" style="margin-top:8px">Aporte del empleador (informativo, no se descuenta al empleado): AFP ${fmt(calc.reduce((a, l) => a + l.afpPat, 0))} · SFS ${fmt(calc.reduce((a, l) => a + l.sfsPat, 0))} · Riesgos Lab. ${fmt(calc.reduce((a, l) => a + l.srlPat, 0))}.</p>`;
+    }
+
+    window.guardarNomina = async function () {
+        if (!nominaActual) { alert('Primero genera la nómina de un período.'); return; }
+        recalcNom();
+        const calc = nominaActual.lineas.map(calcLinea);
+        try {
+            await setDoc(doc(db, 'rrhhNominas', nominaActual.periodo), {
+                periodo: nominaActual.periodo, lineas: calc, parametros: cfg,
+                guardadoPor: usuario.nombre, fechaGuardado: serverTimestamp()
+            });
+            alert('Nómina guardada.');
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+
+    // ---------- VOLANTE ----------
+    let volanteHTML = '';
+    function volanteDe(l, periodo) {
+        const fmtP = (p) => { const [y, m] = p.split('-'); return new Date(y, m - 1, 1).toLocaleDateString('es-DO', { month: 'long', year: 'numeric' }); };
+        const totalDed = l.afp + l.sfs + l.isr + l.deducciones;
+        return `<div class="volante">
+            <h3>ARTAL — Volante de pago</h3>
+            <div class="vsub">${esc(l.nombre)} · Período: ${esc(fmtP(periodo))}</div>
+            <table>
+                <tr><td>Sueldo base</td><td class="r">${fmt(l.sueldo)}</td></tr>
+                ${l.ingresos ? `<tr><td>Otros ingresos</td><td class="r">${fmt(l.ingresos)}</td></tr>` : ''}
+                <tr><td>AFP (${cfg.afpEmp}%)</td><td class="r">- ${fmt(l.afp)}</td></tr>
+                <tr><td>SFS (${cfg.sfsEmp}%)</td><td class="r">- ${fmt(l.sfs)}</td></tr>
+                <tr><td>ISR</td><td class="r">- ${fmt(l.isr)}</td></tr>
+                ${l.deducciones ? `<tr><td>Otras deducciones</td><td class="r">- ${fmt(l.deducciones)}</td></tr>` : ''}
+                <tr><td>Total ingresos</td><td class="r">${fmt(l.sueldo + l.ingresos)}</td></tr>
+                <tr><td>Total deducciones</td><td class="r">- ${fmt(totalDed)}</td></tr>
+                <tr class="vtot"><td>Neto a pagar</td><td class="r">${fmt(l.neto)}</td></tr>
+            </table>
+            <p class="muted" style="margin-top:14px">Aporte del empleador (no se descuenta): AFP ${fmt(l.afpPat)} · SFS ${fmt(l.sfsPat)} · Riesgos Laborales ${fmt(l.srlPat)}.</p>
+        </div>`;
+    }
+    window.verVolante = function (empId) {
+        recalcNom();
+        const l = nominaActual.lineas.map(calcLinea).find(x => x.empleadoId === empId);
+        if (!l) return;
+        volanteHTML = volanteDe(l, nominaActual.periodo);
+        document.getElementById('volante-modal-body').innerHTML = volanteHTML;
+        document.getElementById('modal-volante').classList.add('show');
+    };
+    window.imprimirVolante = function () { imprimir(volanteHTML); };
+
+    // ---------- REGALÍA ----------
+    let regaliaData = [];
+    window.calcularRegalia = function () {
+        const anio = +document.getElementById('reg-anio').value || new Date().getFullYear();
+        regaliaData = empleados.map(e => {
+            let meses = 12;
+            if (e.fechaIngreso) {
+                const d = new Date(e.fechaIngreso + 'T00:00:00');
+                if (!isNaN(d) && d.getFullYear() === anio) meses = 12 - d.getMonth();
+                else if (!isNaN(d) && d.getFullYear() > anio) meses = 0;
+            }
+            return { id: e.id, nombre: e.nombre, salario: n2(e.sueldoBase), meses };
+        });
+        renderRegalia(anio);
+    };
+    window.recalcReg = function () {
+        document.querySelectorAll('#reg-tbody tr[data-id]').forEach(tr => {
+            const r = regaliaData.find(x => x.id === tr.dataset.id); if (!r) return;
+            r.salario = n2(tr.querySelector('[data-k=salario]').value);
+            r.meses = n2(tr.querySelector('[data-k=meses]').value);
+        });
+        renderRegalia(+document.getElementById('reg-anio').value || new Date().getFullYear());
+    };
+    function renderRegalia(anio) {
+        if (!regaliaData.length) { document.getElementById('reg-cont').innerHTML = '<p class="empty">No hay empleados activos.</p>'; return; }
+        let total = 0;
+        const rows = regaliaData.map(r => {
+            const reg = r.salario * (r.meses / 12); total += reg;
+            return `<tr data-id="${esc(r.id)}">
+                <td class="nom-name">${esc(r.nombre)}</td>
+                <td><input type="number" data-k="salario" value="${r.salario}" onchange="recalcReg()"></td>
+                <td><input type="number" data-k="meses" value="${r.meses}" min="0" max="12" step="0.01" onchange="recalcReg()"></td>
+                <td class="pos"><b>${fmt(reg)}</b></td>
+            </tr>`;
+        }).join('');
+        document.getElementById('reg-cont').innerHTML = `<div class="sec-title">Regalía ${anio}</div>
+        <div class="tabla-wrap"><table class="nom">
+            <thead><tr><th style="text-align:left">Empleado</th><th>Salario mensual</th><th>Meses trabajados</th><th>Regalía</th></tr></thead>
+            <tbody id="reg-tbody">${rows}</tbody>
+            <tfoot><tr class="tot"><td class="nom-name">TOTAL</td><td></td><td></td><td>${fmt(total)}</td></tr></tfoot>
+        </table></div>`;
+    }
+    window.imprimirRegalia = function () {
+        const anio = +document.getElementById('reg-anio').value || new Date().getFullYear();
+        let total = 0;
+        const rows = regaliaData.map(r => { const reg = r.salario * (r.meses / 12); total += reg; return `<tr><td>${esc(r.nombre)}</td><td class="r">${fmt(reg)}</td></tr>`; }).join('');
+        imprimir(`<div class="volante"><h3>ARTAL — Regalía pascual ${anio}</h3><div class="vsub">1/12 del salario ordinario del año</div>
+            <table>${rows}<tr class="vtot"><td>Total</td><td class="r">${fmt(total)}</td></tr></table></div>`);
+    };
+
+    // ---------- LIQUIDACIÓN ----------
+    function llenarLiqEmpleados() {
+        const s = document.getElementById('liq-emp');
+        const cur = s.value;
+        s.innerHTML = '<option value="">— Elegir empleado (o llenar a mano) —</option>' + empleados.map(e => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('');
+        s.value = cur;
+    }
+    window.liqDesdeEmpleado = function () {
+        const e = empleados.find(x => x.id === document.getElementById('liq-emp').value);
+        if (!e) return;
+        if (e.fechaIngreso) document.getElementById('liq-ingreso').value = e.fechaIngreso;
+        document.getElementById('liq-salida').value = document.getElementById('liq-salida').value || hoyISO();
+        if (e.sueldoBase) document.getElementById('liq-salario').value = e.sueldoBase;
+        calcularLiquidacion();
+    };
+    window.liqPreset = function () {
+        const c = document.getElementById('liq-causa').value;
+        const set = (id, v) => document.getElementById(id).checked = v;
+        // Presets editables: el usuario/contadora puede ajustar las casillas después.
+        const conCesantia = (c === 'desahucio' || c === 'dimision_justificada');
+        set('liq-inc-preaviso', c === 'desahucio');
+        set('liq-inc-cesantia', conCesantia);
+        set('liq-inc-vacaciones', true);
+        set('liq-inc-regalia', true);
+    };
+    function mesesEntre(d1, d2) { return (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth()) + (d2.getDate() >= d1.getDate() ? 0 : -1); }
+    window.calcularLiquidacion = function () {
+        const ingreso = document.getElementById('liq-ingreso').value, salida = document.getElementById('liq-salida').value;
+        const salarioMes = n2(document.getElementById('liq-salario').value);
+        const cont = document.getElementById('liq-cont');
+        if (!ingreso || !salida || !salarioMes) { cont.innerHTML = '<p class="muted">Completa fecha de ingreso, salida y último salario para ver el cálculo.</p>'; return; }
+        const di = new Date(ingreso + 'T00:00:00'), ds = new Date(salida + 'T00:00:00');
+        if (isNaN(di) || isNaN(ds) || ds < di) { cont.innerHTML = '<p class="muted">Revisa las fechas.</p>'; return; }
+        const meses = mesesEntre(di, ds), anios = meses / 12;
+        const salarioDia = salarioMes / 23.83; // divisor legal del salario diario en RD
+
+        // Preaviso (días según antigüedad).
+        let diasPreaviso = 0;
+        if (meses >= 3 && meses < 6) diasPreaviso = 7; else if (meses >= 6 && meses < 12) diasPreaviso = 14; else if (meses >= 12) diasPreaviso = 28;
+        // Cesantía (días por antigüedad; años completos, tramo 21/23 días).
+        let diasCesantia = 0;
+        if (meses >= 3 && meses < 6) diasCesantia = 6;
+        else if (meses >= 6 && meses < 12) diasCesantia = 13;
+        else if (meses >= 12) { const y = Math.floor(anios); diasCesantia = Math.min(y, 5) * 21 + Math.max(0, y - 5) * 23; }
+        // Vacaciones.
+        let diasVac = 0;
+        if (meses >= 12) diasVac = anios >= 5 ? 18 : 14; else if (meses >= 5) diasVac = Math.round(14 * (meses / 12));
+        // Regalía proporcional (meses trabajados en el año de salida).
+        const mesesAnio = ds.getMonth() + 1 - (di.getFullYear() === ds.getFullYear() ? di.getMonth() : 0);
+        const regaliaProp = salarioMes * (Math.max(0, Math.min(12, mesesAnio)) / 12);
+
+        const inc = (id) => document.getElementById(id).checked;
+        const items = [];
+        if (inc('liq-inc-preaviso')) items.push(['Preaviso (' + diasPreaviso + ' días)', diasPreaviso * salarioDia]);
+        if (inc('liq-inc-cesantia')) items.push(['Auxilio de cesantía (' + diasCesantia + ' días)', diasCesantia * salarioDia]);
+        if (inc('liq-inc-vacaciones')) items.push(['Vacaciones (' + diasVac + ' días)', diasVac * salarioDia]);
+        if (inc('liq-inc-regalia')) items.push(['Regalía proporcional', regaliaProp]);
+        const total = items.reduce((a, [, v]) => a + v, 0);
+
+        window.__liqPrint = { ingreso, salida, salarioMes, meses, items, total };
+        cont.innerHTML = `<div class="desglose">
+            <div class="sec-title" style="margin-top:0">Cálculo de prestaciones</div>
+            <div class="muted" style="margin-bottom:8px">Antigüedad: ${Math.floor(anios)} año(s) ${meses % 12} mes(es) · Salario diario ${fmt(salarioDia)} (÷23.83)</div>
+            ${items.map(([l, v]) => `<div class="row"><span class="lbl">${esc(l)}</span><span class="val">${fmt(v)}</span></div>`).join('') || '<div class="muted">No hay componentes marcados.</div>'}
+            <div class="row total"><span>Total prestaciones</span><span>${fmt(total)}</span></div>
+            <p class="muted" style="margin-top:10px">Cálculo orientativo según Ley 16-92. La cesantía puede incluir días proporcionales de la fracción final del último año y otras variables (bonificación, salario pendiente, notificación al Ministerio de Trabajo). Confírmalo con tu contadora.</p>
+        </div>`;
+    };
+    window.imprimirLiquidacion = function () {
+        const d = window.__liqPrint;
+        if (!d) { alert('Primero completa el cálculo.'); return; }
+        const rows = d.items.map(([l, v]) => `<tr><td>${esc(l)}</td><td class="r">${fmt(v)}</td></tr>`).join('');
+        imprimir(`<div class="volante"><h3>ARTAL — Cálculo de liquidación</h3>
+            <div class="vsub">Ingreso: ${fmtFecha(d.ingreso)} · Salida: ${fmtFecha(d.salida)} · Salario: ${fmt(d.salarioMes)}</div>
+            <table>${rows}<tr class="vtot"><td>Total prestaciones</td><td class="r">${fmt(d.total)}</td></tr></table>
+            <p class="muted" style="margin-top:14px">Cálculo orientativo según Ley 16-92 — verificar con la contadora.</p></div>`);
+    };
+
+    // ---------- Impresión compartida ----------
+    function imprimir(html) {
+        const z = document.getElementById('print-zone');
+        z.innerHTML = html;
+        document.body.classList.add('printing');
+        const limpiar = () => { document.body.classList.remove('printing'); z.innerHTML = ''; window.removeEventListener('afterprint', limpiar); };
+        window.addEventListener('afterprint', limpiar);
+        window.print();
+        setTimeout(() => { if (document.body.classList.contains('printing')) limpiar(); }, 1500);
+    }
+
+    // init
+    document.getElementById('nom-periodo').value = hoyISO().slice(0, 7);
+    document.getElementById('reg-anio').value = new Date().getFullYear();
+    liqPreset();
+</script>
+
+</body>
+</html>
