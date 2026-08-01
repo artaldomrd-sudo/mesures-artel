@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Centros de Costo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; }
+    .panel { display: none; } .panel.show { display: block; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar select, .bar input { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 17px; font-weight: bold; line-height: 1; } .kpi .n.ing { color: #1f9d61; } .kpi .n.gas { color: #d9483b; } .kpi .n.bal { color: var(--artal-blue); }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+
+    .tabla-wrap { overflow-x: auto; }
+    table.rep { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 620px; }
+    table.rep th { background: var(--artal-blue); color: #fff; font-size: 11px; text-transform: uppercase; padding: 8px 6px; text-align: right; }
+    table.rep th.l { text-align: left; }
+    table.rep td { padding: 8px 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    table.rep td.l { text-align: left; font-weight: bold; color: var(--artal-blue); }
+    table.rep td .tipo { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    table.rep tr.tot td { font-weight: bold; border-top: 2px solid var(--artal-blue); background: #f7f9fb; }
+    .ing { color: #1f9d61; } .gas { color: #d9483b; } .bal-pos { color: #1f9d61; font-weight: bold; } .bal-neg { color: #d9483b; font-weight: bold; }
+
+    .cc-item { display: flex; align-items: center; gap: 10px; }
+    .cc-item .nom { flex: 1; font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .cc-item .b { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; background: #eef1f4; color: #556; }
+    .cc-item .cnt { font-size: 11.5px; color: #8a93a0; }
+    .cc-item button { border: none; border-radius: 8px; padding: 8px 11px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 36px; }
+    .b-ed { background: var(--artal-blue); color: #fff; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .add-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .add-row input { flex: 1; min-width: 150px; padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
+    .add-row select { padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Centros de Costo</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-reporte" onclick="setTab('reporte')">Rentabilidad</button>
+        <button class="tab-btn" id="tab-catalogo" onclick="setTab('catalogo')">Catálogo</button>
+    </div>
+
+    <section class="panel show" id="panel-reporte">
+        <div class="bar">
+            <select id="f-periodo" onchange="renderReporte()"><option value="todo">Todo</option><option value="anio">Este año</option><option value="mes">Este mes</option></select>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div id="reporte"><p class="empty">Cargando…</p></div>
+    </section>
+
+    <section class="panel" id="panel-catalogo">
+        <div class="add-row">
+            <input type="text" id="cc-nombre" placeholder="Nombre (ej. Casa Aarón)" onkeydown="if(event.key==='Enter')agregar()">
+            <select id="cc-tipo"><option value="obra">Obra / proyecto</option><option value="area">Área</option><option value="sucursal">Sucursal</option><option value="otro">Otro</option></select>
+            <button class="btn-y" onclick="agregar()">+ Agregar</button>
+        </div>
+        <div id="catalogo"><p class="empty">Cargando…</p></div>
+    </section>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const TIPO = { obra: 'Obra', area: 'Área', sucursal: 'Sucursal', otro: 'Otro' };
+
+    let centros = [], movs = [];
+    onSnapshot(collection(db, 'contaCentros'), (s) => { centros = s.docs.map(d => ({ id: d.id, ...d.data() })); renderReporte(); renderCatalogo(); },
+        (err) => { document.getElementById('reporte').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'contaMovimientos'), (s) => { movs = s.docs.map(d => d.data()); renderReporte(); renderCatalogo(); }, () => {});
+
+    window.setTab = function (t) {
+        document.getElementById('tab-reporte').classList.toggle('active', t === 'reporte');
+        document.getElementById('tab-catalogo').classList.toggle('active', t === 'catalogo');
+        document.getElementById('panel-reporte').classList.toggle('show', t === 'reporte');
+        document.getElementById('panel-catalogo').classList.toggle('show', t === 'catalogo');
+    };
+
+    function enPeriodo(fecha, periodo) {
+        if (periodo === 'todo') return true;
+        const d = new Date((fecha || '') + 'T00:00:00'); if (isNaN(d)) return false;
+        const now = new Date();
+        if (periodo === 'anio') return d.getFullYear() === now.getFullYear();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+    const usoDe = (nombre) => movs.filter(m => (m.centroCosto || '').trim() === nombre).length;
+
+    window.renderReporte = function () {
+        const periodo = document.getElementById('f-periodo').value;
+        const enP = movs.filter(m => enPeriodo(m.fecha, periodo));
+        const g = {}; // por nombre de centro
+        const key = (m) => (m.centroCosto || '').trim() || '(Sin centro asignado)';
+        enP.forEach(m => { const k = key(m); (g[k] = g[k] || { ing: 0, gas: 0 }); if (m.tipo === 'ingreso') g[k].ing += n2(m.monto); else g[k].gas += n2(m.monto); });
+        // Asegura que cada centro del catálogo aparezca aunque no tenga movimientos.
+        centros.forEach(c => { const k = (c.nombre || '').trim(); if (k && !g[k]) g[k] = { ing: 0, gas: 0 }; });
+        const tipoDe = (nombre) => { const c = centros.find(x => (x.nombre || '').trim() === nombre); return c ? (TIPO[c.tipo] || '') : (nombre === '(Sin centro asignado)' ? '' : 'no catalogado'); };
+        const filas = Object.entries(g).map(([nombre, v]) => ({ nombre, ing: v.ing, gas: v.gas, bal: v.ing - v.gas })).sort((a, b) => b.bal - a.bal);
+        const tot = filas.reduce((a, f) => ({ ing: a.ing + f.ing, gas: a.gas + f.gas }), { ing: 0, gas: 0 });
+
+        document.getElementById('kpis').innerHTML =
+            `<div class="kpi"><div class="n ing">${fmt0(tot.ing)}</div><div class="l">Ingresos</div></div>` +
+            `<div class="kpi"><div class="n gas">${fmt0(tot.gas)}</div><div class="l">Gastos</div></div>` +
+            `<div class="kpi"><div class="n bal">${fmt0(tot.ing - tot.gas)}</div><div class="l">Balance</div></div>`;
+
+        const cont = document.getElementById('reporte');
+        if (!filas.length) { cont.innerHTML = '<p class="empty">Aún no hay movimientos ni centros. Registra ingresos/gastos con centro de costo, o crea centros en el Catálogo.</p>'; return; }
+        cont.innerHTML = `<div class="tabla-wrap"><table class="rep">
+            <thead><tr><th class="l">Centro de costo</th><th>Ingresos</th><th>Gastos</th><th>Balance</th><th>Margen</th></tr></thead>
+            <tbody>${filas.map(f => {
+                const margen = f.ing > 0 ? Math.round(f.bal / f.ing * 100) : null;
+                return `<tr><td class="l">${esc(f.nombre)} <span class="tipo">${esc(tipoDe(f.nombre))}</span></td>
+                    <td class="ing">${fmt(f.ing)}</td><td class="gas">${fmt(f.gas)}</td>
+                    <td class="${f.bal < 0 ? 'bal-neg' : 'bal-pos'}">${fmt(f.bal)}</td>
+                    <td>${margen == null ? '—' : margen + '%'}</td></tr>`;
+            }).join('')}</tbody>
+            <tfoot><tr class="tot"><td class="l">TOTAL</td><td>${fmt(tot.ing)}</td><td>${fmt(tot.gas)}</td><td>${fmt(tot.ing - tot.gas)}</td><td></td></tr></tfoot>
+        </table></div>`;
+    };
+
+    // ---------- Catálogo ----------
+    window.agregar = async function () {
+        const nombre = document.getElementById('cc-nombre').value.trim();
+        if (!nombre) { alert('Escribe el nombre del centro.'); return; }
+        if (centros.some(c => (c.nombre || '').toLowerCase() === nombre.toLowerCase())) { alert('Ya existe un centro con ese nombre.'); return; }
+        try {
+            await addDoc(collection(db, 'contaCentros'), { nombre, tipo: document.getElementById('cc-tipo').value, activo: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            document.getElementById('cc-nombre').value = ''; document.getElementById('cc-nombre').focus();
+        } catch (e) { alert('No se pudo agregar: ' + e.message); }
+    };
+    window.editar = async function (id) {
+        const c = centros.find(x => x.id === id); if (!c) return;
+        const nombre = prompt('Nombre del centro:', c.nombre); if (nombre == null || !nombre.trim()) return;
+        try { await updateDoc(doc(db, 'contaCentros', id), { nombre: nombre.trim() }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.borrar = async function (id) {
+        const c = centros.find(x => x.id === id) || {};
+        const n = usoDe((c.nombre || '').trim());
+        if (!confirm('¿Eliminar el centro "' + (c.nombre || '') + '"?' + (n ? '\n\n(' + n + ' movimiento(s) lo usan; no se borran, solo quedan con ese nombre.)' : ''))) return;
+        try { await deleteDoc(doc(db, 'contaCentros', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    function renderCatalogo() {
+        const cont = document.getElementById('catalogo');
+        if (!centros.length) { cont.innerHTML = '<p class="empty">Aún no hay centros. Agrega el primero arriba (ej. una obra o un área).</p>'; return; }
+        cont.innerHTML = centros.slice().sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')).map(c => `<div class="order-card cc-item">
+            <span class="nom">${esc(c.nombre)}</span>
+            <span class="b">${esc(TIPO[c.tipo] || c.tipo || '')}</span>
+            <span class="cnt">${usoDe((c.nombre || '').trim())} mov.</span>
+            <button class="b-ed" onclick="editar('${c.id}')">✏</button>
+            <button class="b-del" onclick="borrar('${c.id}')">🗑</button>
+        </div>`).join('');
+    }
+</script>
+
+</body>
+</html>
