@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Cuentas por Cobrar / Pagar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 17px; font-weight: bold; color: var(--artal-blue); line-height: 1; } .kpi .n.venc { color: #d9483b; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input.buscar, .bar select { padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .bar input.buscar { flex: 1; min-width: 150px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .cx-card { display: flex; align-items: flex-start; gap: 12px; }
+    .cx-info { flex: 1; min-width: 0; }
+    .cx-info b { color: var(--artal-blue); font-size: 15px; }
+    .cx-info .l { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .saldo { font-weight: bold; font-size: 16px; margin-top: 4px; color: var(--artal-blue); }
+    .prog { height: 6px; background: #eef1f4; border-radius: 4px; margin-top: 6px; overflow: hidden; max-width: 220px; }
+    .prog > i { display: block; height: 100%; background: #2ecc71; }
+    .b { font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 2px 8px; border-radius: 20px; letter-spacing: .3px; }
+    .b.pendiente { background: #fff2dc; color: #c07a12; } .b.parcial { background: #e9f0fb; color: #2f6fd0; }
+    .b.pagada { background: #e7f7ee; color: #1f9d61; } .b.vencida { background: #fdeaea; color: #d9483b; }
+    .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row-actions button { border: none; border-radius: 8px; padding: 8px 11px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 36px; }
+    .b-ok { background: #2ecc71; color: #fff; } .b-ed { background: var(--artal-blue); color: #fff; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 460px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .abonos-list { font-size: 12px; color: #556; margin-top: 6px; }
+    .abonos-list .ab { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dashed #e3e7ec; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Cuentas por Cobrar / Pagar</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-cobrar" onclick="setTab('cobrar')">Por Cobrar (clientes)</button>
+        <button class="tab-btn" id="tab-pagar" onclick="setTab('pagar')">Por Pagar (proveedores)</button>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-y" id="btn-nueva" onclick="abrir()">+ Nueva cuenta</button>
+        <select id="f-estado" onchange="render()"><option value="">Todas</option><option value="pendiente">Pendientes</option><option value="parcial">Parciales</option><option value="vencida">Vencidas</option><option value="pagada">Pagadas</option></select>
+        <input class="buscar" id="buscar" placeholder="Buscar tercero o referencia…" oninput="render()">
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<datalist id="clientes-list"></datalist>
+<datalist id="proveedores-list"></datalist>
+
+<!-- Modal cuenta -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva cuenta</h2>
+        <label id="lbl-tercero">Cliente *</label>
+        <input type="text" id="c-tercero" placeholder="Nombre">
+        <label>Referencia / factura <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="c-ref" placeholder="N.º de factura o concepto">
+        <div class="grid2">
+            <div><label>Fecha de emisión</label><input type="date" id="c-emision"></div>
+            <div><label>Vencimiento</label><input type="date" id="c-venc"></div>
+        </div>
+        <label>Monto total (RD$) *</label>
+        <input type="number" id="c-monto" min="0" step="0.01">
+        <label>Notas <span class="lbl-opt">— opcional</span></label>
+        <textarea id="c-notas" style="min-height:46px"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal abono -->
+<div class="modal-overlay" id="modal-abono">
+    <div class="modal-box">
+        <h2 id="abono-title">Registrar abono</h2>
+        <p class="lbl-opt" id="abono-info" style="font-size:13px;color:#556"></p>
+        <div class="grid2">
+            <div><label>Fecha</label><input type="date" id="a-fecha"></div>
+            <div><label>Monto (RD$) *</label><input type="number" id="a-monto" min="0" step="0.01"></div>
+        </div>
+        <label>Método</label>
+        <select id="a-metodo"><option>Efectivo</option><option>Transferencia</option><option>Cheque</option><option>Tarjeta</option></select>
+        <label>Nota <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="a-nota">
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarAbono()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarAbono()">Registrar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+    let cuentas = [], tab = 'cobrar', editId = null, abonoId = null;
+    const params = new URLSearchParams(location.search); if (params.get('tab') === 'pagar') tab = 'pagar';
+
+    const pagado = (c) => (Array.isArray(c.abonos) ? c.abonos : []).reduce((a, x) => a + n2(x.monto), 0);
+    const saldoDe = (c) => Math.max(0, n2(c.monto) - pagado(c));
+    function estadoDe(c) {
+        const s = saldoDe(c), p = pagado(c);
+        if (s <= 0.001) return 'pagada';
+        if (c.vencimiento && c.vencimiento < hoyISO()) return 'vencida';
+        return p > 0 ? 'parcial' : 'pendiente';
+    }
+
+    onSnapshot(collection(db, 'contaCuentas'), (s) => { cuentas = s.docs.map(d => ({ id: d.id, ...d.data() })); llenarProveedores(); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'clientes'), (s) => {
+        const nombres = s.docs.map(d => (d.data().nombre || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+        document.getElementById('clientes-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }, () => {});
+    function llenarProveedores() {
+        const provs = [...new Set(cuentas.filter(c => c.tipo === 'pagar').map(c => (c.tercero || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        document.getElementById('proveedores-list').innerHTML = provs.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }
+
+    window.setTab = function (t) {
+        tab = t;
+        document.getElementById('tab-cobrar').classList.toggle('active', t === 'cobrar');
+        document.getElementById('tab-pagar').classList.toggle('active', t === 'pagar');
+        render();
+    };
+
+    // ---------- Cuenta ----------
+    window.abrir = function () {
+        editId = null;
+        document.getElementById('modal-title').textContent = tab === 'cobrar' ? 'Nueva cuenta por cobrar' : 'Nueva cuenta por pagar';
+        document.getElementById('lbl-tercero').textContent = tab === 'cobrar' ? 'Cliente *' : 'Proveedor *';
+        document.getElementById('c-tercero').setAttribute('list', tab === 'cobrar' ? 'clientes-list' : 'proveedores-list');
+        ['c-tercero', 'c-ref', 'c-monto', 'c-notas'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('c-emision').value = hoyISO();
+        document.getElementById('c-venc').value = '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const c = cuentas.find(x => x.id === id); if (!c) return;
+        editId = id;
+        document.getElementById('modal-title').textContent = 'Editar cuenta';
+        document.getElementById('lbl-tercero').textContent = c.tipo === 'cobrar' ? 'Cliente *' : 'Proveedor *';
+        document.getElementById('c-tercero').setAttribute('list', c.tipo === 'cobrar' ? 'clientes-list' : 'proveedores-list');
+        document.getElementById('c-tercero').value = c.tercero || '';
+        document.getElementById('c-ref').value = c.referencia || '';
+        document.getElementById('c-emision').value = c.emision || '';
+        document.getElementById('c-venc').value = c.vencimiento || '';
+        document.getElementById('c-monto').value = c.monto != null ? c.monto : '';
+        document.getElementById('c-notas').value = c.notas || '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const tercero = document.getElementById('c-tercero').value.trim();
+        if (!tercero) { alert('Escribe el ' + (tab === 'cobrar' ? 'cliente' : 'proveedor') + '.'); return; }
+        const monto = n2(document.getElementById('c-monto').value);
+        if (!monto) { alert('Indica el monto.'); return; }
+        const datos = {
+            tercero, referencia: document.getElementById('c-ref').value.trim(),
+            emision: document.getElementById('c-emision').value || '', vencimiento: document.getElementById('c-venc').value || '',
+            monto, notas: document.getElementById('c-notas').value.trim(),
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'contaCuentas', editId), datos);
+            else await addDoc(collection(db, 'contaCuentas'), { ...datos, tipo: tab, abonos: [], creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar esta cuenta y sus abonos?')) return;
+        try { await deleteDoc(doc(db, 'contaCuentas', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Abono ----------
+    window.abrirAbono = function (id) {
+        const c = cuentas.find(x => x.id === id); if (!c) return;
+        abonoId = id;
+        document.getElementById('abono-title').textContent = c.tipo === 'cobrar' ? 'Registrar cobro' : 'Registrar pago';
+        document.getElementById('abono-info').textContent = (c.tercero || '') + ' · Saldo ' + fmt(saldoDe(c));
+        document.getElementById('a-fecha').value = hoyISO();
+        document.getElementById('a-monto').value = saldoDe(c).toFixed(2);
+        document.getElementById('a-metodo').value = 'Transferencia';
+        document.getElementById('a-nota').value = '';
+        document.getElementById('modal-abono').classList.add('show');
+    };
+    window.cerrarAbono = function () { document.getElementById('modal-abono').classList.remove('show'); };
+    window.guardarAbono = async function () {
+        const c = cuentas.find(x => x.id === abonoId); if (!c) return;
+        const monto = n2(document.getElementById('a-monto').value);
+        if (!monto) { alert('Indica el monto del abono.'); return; }
+        const abono = { fecha: document.getElementById('a-fecha').value || hoyISO(), monto, metodo: document.getElementById('a-metodo').value, nota: document.getElementById('a-nota').value.trim(), por: usuario.nombre };
+        const prev = Array.isArray(c.abonos) ? c.abonos : [];
+        try { await updateDoc(doc(db, 'contaCuentas', abonoId), { abonos: prev.concat([abono]) }); cerrarAbono(); }
+        catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.quitarAbono = async function (id, idx) {
+        const c = cuentas.find(x => x.id === id); if (!c) return;
+        if (!confirm('¿Quitar este abono?')) return;
+        const arr = (Array.isArray(c.abonos) ? c.abonos : []).slice(); arr.splice(idx, 1);
+        try { await updateDoc(doc(db, 'contaCuentas', id), { abonos: arr }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Render ----------
+    function render() {
+        document.getElementById('btn-nueva').textContent = tab === 'cobrar' ? '+ Nueva por cobrar' : '+ Nueva por pagar';
+        const fe = document.getElementById('f-estado').value;
+        const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
+        const delTab = cuentas.filter(c => (c.tipo || 'cobrar') === tab);
+        const totalSaldo = delTab.reduce((a, c) => a + saldoDe(c), 0);
+        const vencidoSaldo = delTab.filter(c => estadoDe(c) === 'vencida').reduce((a, c) => a + saldoDe(c), 0);
+        const abiertas = delTab.filter(c => saldoDe(c) > 0.001).length;
+        document.getElementById('kpis').innerHTML =
+            `<div class="kpi"><div class="n">${fmt0(totalSaldo)}</div><div class="l">${tab === 'cobrar' ? 'Total por cobrar' : 'Total por pagar'}</div></div>` +
+            `<div class="kpi"><div class="n venc">${fmt0(vencidoSaldo)}</div><div class="l">Vencido</div></div>` +
+            `<div class="kpi"><div class="n">${abiertas}</div><div class="l">Cuentas abiertas</div></div>`;
+
+        let lista = delTab.slice();
+        if (fe) lista = lista.filter(c => estadoDe(c) === fe);
+        if (term) lista = lista.filter(c => [c.tercero, c.referencia].some(v => String(v || '').toLowerCase().includes(term)));
+        lista.sort((a, b) => {
+            const sa = saldoDe(a) > 0 ? 0 : 1, sb = saldoDe(b) > 0 ? 0 : 1;
+            return sa - sb || String(a.vencimiento || '9999').localeCompare(String(b.vencimiento || '9999'));
+        });
+
+        const cont = document.getElementById('lista');
+        if (!delTab.length) { cont.innerHTML = `<p class="empty">Aún no hay cuentas ${tab === 'cobrar' ? 'por cobrar' : 'por pagar'}. Crea la primera.</p>`; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin cuentas para el filtro.</p>'; return; }
+        cont.innerHTML = lista.map(cardHTML).join('');
+    }
+
+    function cardHTML(c) {
+        const est = estadoDe(c), pag = pagado(c), saldo = saldoDe(c), monto = n2(c.monto);
+        const pct = monto > 0 ? Math.min(100, Math.round(pag / monto * 100)) : 0;
+        const abonos = Array.isArray(c.abonos) ? c.abonos : [];
+        const abonosHTML = abonos.length ? `<div class="abonos-list">${abonos.map((a, i) => `<div class="ab"><span>${esc(fmtFecha(a.fecha))} · ${esc(a.metodo || '')}${a.nota ? ' · ' + esc(a.nota) : ''}</span><span>${fmt(a.monto)} <button onclick="quitarAbono('${c.id}',${i})" style="background:none;border:none;color:#c9ced6;cursor:pointer">×</button></span></div>`).join('')}</div>` : '';
+        const meta = [c.referencia ? esc(c.referencia) : '', c.emision ? 'Emitida ' + fmtFecha(c.emision) : '', c.vencimiento ? '<span class="' + (est === 'vencida' ? 'b vencida' : '') + '" style="padding:0">Vence ' + fmtFecha(c.vencimiento) + '</span>' : ''].filter(Boolean).join('  ·  ');
+        return `<div class="order-card cx-card"><div class="cx-info">
+            <b>${esc(c.tercero || '')}</b> <span class="b ${est}">${est}</span>
+            ${meta ? `<div class="l">${meta}</div>` : ''}
+            <div class="saldo">Saldo ${fmt(saldo)} <span class="l" style="display:inline;font-weight:normal">de ${fmt(monto)}${pag ? ' · pagado ' + fmt(pag) : ''}</span></div>
+            <div class="prog"><i style="width:${pct}%"></i></div>
+            ${abonosHTML}
+            ${c.notas ? `<div class="l">“${esc(c.notas)}”</div>` : ''}
+        </div><div class="row-actions">
+            ${saldo > 0.001 ? `<button class="b-ok" onclick="abrirAbono('${c.id}')">${c.tipo === 'cobrar' ? '✓ Cobro' : '✓ Pago'}</button>` : ''}
+            <button class="b-ed" onclick="editar('${c.id}')">✏</button>
+            <button class="b-del" onclick="borrar('${c.id}')">🗑</button>
+        </div></div>`;
+    }
+
+    if (tab === 'pagar') setTab('pagar'); else render();
+</script>
+
+</body>
+</html>
