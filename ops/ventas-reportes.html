@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Reportes de Ventas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 960px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 16px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 11px 15px; flex: 1; min-width: 130px; }
+    .kpi .n { font-size: 19px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    .sec { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .sec h3 { color: var(--artal-blue); font-size: 14px; margin: 0 0 12px; }
+    .empty-mini { color: #8a93a0; font-size: 13px; }
+
+    .bars { display: flex; flex-direction: column; gap: 8px; }
+    .bar-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center; }
+    @media (max-width: 560px) { .bar-row { grid-template-columns: 110px 1fr auto; } }
+    .bar-lab { font-size: 12.5px; color: #445; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { background: #eef1f4; border-radius: 6px; height: 20px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 6px; min-width: 2px; }
+    .bar-val { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    .vbars { display: flex; gap: 6px; align-items: flex-end; height: 160px; overflow-x: auto; padding-top: 18px; }
+    .vbar { flex: 1; min-width: 30px; display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+    .vbar .vt { font-size: 10px; color: #667; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+    .vbar .vf { width: 70%; background: linear-gradient(180deg, #2f7fd6, #0A3D62); border-radius: 5px 5px 0 0; min-height: 2px; }
+    .vbar .vl { font-size: 10px; color: #778; margin-top: 4px; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="ventas.html" title="Volver a Ventas">← Ventas</a>
+        <a class="btn-back" href="index.html" title="Ir al Panel de Control">🏠 Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Reportes de Ventas</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="sec"><h3>🎯 Pipeline por etapa (valor)</h3><div id="c-pipeline"></div></div>
+    <div class="sec"><h3>📈 Ingresos por mes (últimos 12 meses)</h3><div id="c-ingresos"></div></div>
+    <div class="sec"><h3>📄 Cotizaciones por estado</h3><div id="c-cotiz"></div></div>
+    <div class="sec"><h3>🧑‍💼 Top vendedores por comisión</h3><div id="c-vend"></div></div>
+    <div class="sec"><h3>🗂️ Pedidos por estado</h3><div id="c-pedidos"></div></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['cotizaciones']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+
+    function barsH(rows, opts = {}) {
+        rows = rows.filter(r => r.value > 0 || opts.mostrarCeros);
+        if (!rows.length) return '<p class="empty-mini">Sin datos todavía.</p>';
+        const max = Math.max(1, ...rows.map(r => r.value));
+        return '<div class="bars">' + rows.map(r => `<div class="bar-row">
+            <span class="bar-lab" title="${esc(r.label)}">${esc(r.label)}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${(r.value / max * 100).toFixed(1)}%;background:${r.color || 'var(--artal-blue)'}"></span></span>
+            <span class="bar-val">${opts.money ? fmt0(r.value) : r.value}</span>
+        </div>`).join('') + '</div>';
+    }
+    function barsV(rows) {
+        if (!rows.some(r => r.value > 0)) return '<p class="empty-mini">Sin datos todavía.</p>';
+        const max = Math.max(1, ...rows.map(r => r.value));
+        return '<div class="vbars">' + rows.map(r => `<div class="vbar" title="${esc(r.label)}: ${fmt0(r.value)}">
+            <span class="vt">${r.value ? Math.round(r.value / 1000) + 'k' : ''}</span>
+            <span class="vf" style="height:${(r.value / max * 100).toFixed(1)}%"></span>
+            <span class="vl">${esc(r.label)}</span>
+        </div>`).join('') + '</div>';
+    }
+
+    let oport = [], cotiz = [], comis = [], conta = [], orders = [], clientes = [];
+    const sub = (col, set) => onSnapshot(collection(db, col), (s) => { set(s.docs.map(d => d.data())); render(); }, () => { set([]); render(); });
+    sub('ventasOportunidades', v => oport = v);
+    sub('ventasCotizaciones', v => cotiz = v);
+    sub('ventasComisiones', v => comis = v);
+    sub('contaMovimientos', v => conta = v);
+    sub('orders', v => orders = v);
+    sub('clientes', v => clientes = v);
+
+    const ETAPAS = [['prospecto', 'Prospecto', '#8a93a0'], ['contactado', 'Contactado', '#2f6fd0'], ['cotizado', 'Cotizado', '#7d3ac1'], ['negociacion', 'Negociación', '#c07a12'], ['ganada', 'Ganada', '#1f9d61'], ['perdida', 'Perdida', '#d9483b']];
+    const COT_EST = [['borrador', 'Borrador', '#8a93a0'], ['enviada', 'Enviada', '#2f6fd0'], ['aprobada', 'Aprobada', '#1f9d61'], ['rechazada', 'Rechazada', '#d9483b']];
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+    function render() {
+        // KPIs
+        const abiertas = oport.filter(o => o.etapa !== 'ganada' && o.etapa !== 'perdida');
+        const pipeline = abiertas.reduce((a, o) => a + n2(o.valor), 0);
+        const ganadas = oport.filter(o => o.etapa === 'ganada');
+        const comPend = comis.filter(c => (c.estado || 'pendiente') !== 'pagada').reduce((a, c) => a + n2(c.comision), 0);
+        const now = new Date();
+        const ingMes = conta.filter(m => m.tipo === 'ingreso').filter(m => { const d = new Date((m.fecha || '') + 'T00:00:00'); return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).reduce((a, m) => a + n2(m.monto), 0);
+        document.getElementById('kpis').innerHTML = [
+            ['Ingresos del mes', fmt0(ingMes)], ['Pipeline abierto', fmt0(pipeline)], ['Oport. ganadas', ganadas.length], ['Cotizaciones', cotiz.length], ['Comisión pendiente', fmt0(comPend)], ['Clientes', clientes.length]
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        // Pipeline por etapa (valor)
+        document.getElementById('c-pipeline').innerHTML = barsH(ETAPAS.map(([v, l, c]) => ({ label: l, color: c, value: oport.filter(o => (o.etapa || 'prospecto') === v).reduce((a, o) => a + n2(o.valor), 0) })), { money: true });
+
+        // Ingresos por mes (últimos 12)
+        const meses = [];
+        for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); meses.push({ key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: MESES[d.getMonth()] + (d.getMonth() === 0 || i === 11 ? ' ' + String(d.getFullYear()).slice(2) : '') }); }
+        const ingPorMes = {}; conta.filter(m => m.tipo === 'ingreso').forEach(m => { const k = String(m.fecha || '').slice(0, 7); ingPorMes[k] = (ingPorMes[k] || 0) + n2(m.monto); });
+        document.getElementById('c-ingresos').innerHTML = barsV(meses.map(m => ({ label: m.label, value: ingPorMes[m.key] || 0 })));
+
+        // Cotizaciones por estado (count)
+        document.getElementById('c-cotiz').innerHTML = barsH(COT_EST.map(([v, l, c]) => ({ label: l, color: c, value: cotiz.filter(x => (x.estado || 'borrador') === v).length })));
+
+        // Top vendedores por comisión
+        const porVend = {}; comis.forEach(c => { const k = c.vendedorNombre || '(sin vendedor)'; porVend[k] = (porVend[k] || 0) + n2(c.comision); });
+        document.getElementById('c-vend').innerHTML = barsH(Object.entries(porVend).map(([l, v]) => ({ label: l, value: v, color: '#7d3ac1' })).sort((a, b) => b.value - a.value).slice(0, 8), { money: true });
+
+        // Pedidos por estado
+        const EST_LBL = { solicitada: 'Cotización solicitada', costeada: 'Costeada', enviada_cliente: 'Enviada al cliente', pendiente_fabrica: 'Pendiente fábrica', en_fabrica: 'En fábrica', parcialmente_listo: 'Parc. listo', listo_para_cargar: 'Listo p/ cargar', completado: 'Completado' };
+        const porEst = {}; orders.forEach(o => { const k = o.status || '—'; porEst[k] = (porEst[k] || 0) + 1; });
+        document.getElementById('c-pedidos').innerHTML = barsH(Object.entries(porEst).map(([k, v]) => ({ label: EST_LBL[k] || k, value: v })).sort((a, b) => b.value - a.value));
+    }
+    render();
+</script>
+
+</body>
+</html>
