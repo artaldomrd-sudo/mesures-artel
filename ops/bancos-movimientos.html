@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Movimientos Bancarios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+    main { max-width: 1000px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar select, .bar input { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .bar .cuenta-sel { min-width: 220px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 16px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+
+    .imp-panel { display: none; background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .imp-panel.show { display: block; }
+    .imp-panel h3 { color: var(--artal-blue); font-size: 15px; margin: 0 0 6px; }
+    .imp-panel .step { font-size: 13px; color: #556; margin: 10px 0 4px; font-weight: bold; }
+    .imp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    @media (max-width: 560px) { .imp-grid { grid-template-columns: 1fr; } }
+    .imp-panel label { font-size: 11.5px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 3px; }
+    .imp-panel select, .imp-panel input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13.5px; min-height: 40px; box-sizing: border-box; background: #fff; }
+    .prev { overflow-x: auto; margin-top: 10px; } .prev table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .prev th { background: #eef1f4; color: #556; padding: 5px; text-align: right; } .prev th.l { text-align: left; }
+    .prev td { padding: 5px; border-bottom: 1px solid #eef1f4; text-align: right; } .prev td.l { text-align: left; }
+
+    .tabla-wrap { overflow-x: auto; }
+    table.mov { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 720px; }
+    table.mov th { background: var(--artal-blue); color: #fff; font-size: 11px; text-transform: uppercase; padding: 8px 6px; text-align: right; }
+    table.mov th.l { text-align: left; }
+    table.mov td { padding: 7px 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    table.mov td.l { text-align: left; }
+    table.mov .deb { color: #d9483b; } table.mov .cre { color: #1f9d61; }
+    table.mov tr.noconc { background: #fffaf0; }
+    .conc-btn { border: none; border-radius: 20px; padding: 4px 10px; font-size: 11px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .conc-btn.si { background: #e7f7ee; color: #1f9d61; } .conc-btn.no { background: #fff2dc; color: #c07a12; }
+    .del-btn { background: transparent; border: none; color: #c9ced6; cursor: pointer; font-size: 14px; } .del-btn:hover { color: #e74c3c; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 460px; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="bancos.html" title="Volver">← Bancos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Movimientos</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="bar">
+        <select class="cuenta-sel" id="sel-cuenta" onchange="render()"></select>
+        <button class="btn-y" onclick="abrirMov()">+ Movimiento</button>
+        <button class="btn-o" onclick="toggleImport()">📥 Importar estado de cuenta</button>
+        <select id="f-conc" onchange="render()"><option value="">Todos</option><option value="no">Sin conciliar</option><option value="si">Conciliados</option></select>
+    </div>
+
+    <div class="imp-panel" id="imp-panel">
+        <h3>Importar estado de cuenta (CSV o XLSX)</h3>
+        <input type="file" id="imp-file" accept=".csv,.xlsx,.xls" onchange="leerArchivo()">
+        <div id="imp-config" style="display:none">
+            <div class="step">Indica qué columna es cada dato:</div>
+            <div class="imp-grid">
+                <div><label>Fila donde empiezan los datos</label><input type="number" id="m-inicio" min="1" value="2" onchange="previsualizar()"></div>
+                <div><label>Formato del monto</label><select id="m-modo" onchange="onModo();previsualizar()"><option value="signo">Una columna con signo (+/−)</option><option value="debcred">Débito y Crédito separados</option></select></div>
+                <div><label>Columna Fecha</label><select id="m-fecha" onchange="previsualizar()"></select></div>
+                <div><label>Columna Descripción</label><select id="m-desc" onchange="previsualizar()"></select></div>
+                <div id="col-monto"><label>Columna Monto</label><select id="m-monto" onchange="previsualizar()"></select></div>
+                <div id="col-deb" style="display:none"><label>Columna Débito (salidas)</label><select id="m-deb" onchange="previsualizar()"></select></div>
+                <div id="col-cre" style="display:none"><label>Columna Crédito (entradas)</label><select id="m-cre" onchange="previsualizar()"></select></div>
+            </div>
+            <div class="prev" id="imp-prev"></div>
+            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+                <button class="btn-y" id="btn-importar" onclick="importar()">Importar movimientos</button>
+                <button class="btn-o" onclick="toggleImport()">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+    <div id="lista"><p class="empty">Elige una cuenta.</p></div>
+</main>
+
+<!-- Modal movimiento manual -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nuevo movimiento</h2>
+        <label>Fecha</label>
+        <input type="date" id="mv-fecha">
+        <label>Descripción *</label>
+        <input type="text" id="mv-desc" placeholder="Ej. Pago proveedor, depósito cliente…">
+        <div class="grid2">
+            <div><label>Tipo</label><select id="mv-tipo"><option value="credito">Crédito (entra)</option><option value="debito">Débito (sale)</option></select></div>
+            <div><label>Monto (RD$)</label><input type="number" id="mv-monto" min="0" step="0.01"></div>
+        </div>
+        <label>Referencia <span style="font-weight:normal;color:#8a93a0;font-size:11px">— cheque/transf. (opcional)</span></label>
+        <input type="text" id="mv-ref">
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarMov()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarMov()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const SIM = { DOP: 'RD$', USD: 'US$', EUR: '€' };
+    let monedaActual = 'DOP';
+    const fmt = (x) => (SIM[monedaActual] || 'RD$') + ' ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+    // Normaliza fecha a ISO (yyyy-mm-dd). Acepta dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, yyyy/mm/dd.
+    function normFecha(s) {
+        s = String(s || '').trim(); if (!s) return '';
+        let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+        m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})/);
+        if (m) { let y = m[3]; if (y.length === 2) y = '20' + y; return y + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); }
+        return s;
+    }
+    // Convierte texto de monto a número. Detecta negativo por signo o paréntesis.
+    function parseMonto(s) {
+        let t = String(s == null ? '' : s).trim(); if (!t) return { val: 0, neg: false };
+        const neg = /\(.*\)/.test(t) || /-/.test(t);
+        t = t.replace(/[()]/g, '').replace(/[^0-9.,]/g, '');
+        if (t.indexOf(',') > -1 && t.indexOf('.') > -1) t = t.replace(/,/g, '');
+        else if (t.indexOf(',') > -1) { const p = t.split(','); t = (p.length === 2 && p[1].length <= 2) ? p[0] + '.' + p[1] : t.replace(/,/g, ''); }
+        return { val: Math.abs(parseFloat(t) || 0), neg };
+    }
+
+    let cuentas = [], movs = [], filas = [], editId = null;
+
+    onSnapshot(collection(db, 'bancosCuentas'), (s) => {
+        cuentas = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.alias || '').localeCompare(String(b.alias || ''), 'es'));
+        llenarCuentas(); render();
+    }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    onSnapshot(collection(db, 'bancosMovimientos'), (s) => { movs = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => {});
+
+    function llenarCuentas() {
+        const sel = document.getElementById('sel-cuenta'); const cur = sel.value || new URLSearchParams(location.search).get('cuenta') || '';
+        sel.innerHTML = cuentas.length ? cuentas.map(c => `<option value="${esc(c.id)}">${esc(c.alias)} — ${esc(c.banco || '')}</option>`).join('') : '<option value="">— Sin cuentas —</option>';
+        if (cur && cuentas.some(c => c.id === cur)) sel.value = cur;
+    }
+    const cuentaSel = () => cuentas.find(c => c.id === document.getElementById('sel-cuenta').value) || null;
+
+    // ---------- Movimiento manual ----------
+    window.abrirMov = function () {
+        if (!cuentaSel()) { alert('Primero elige (o crea) una cuenta.'); return; }
+        editId = null; document.getElementById('modal-title').textContent = 'Nuevo movimiento';
+        document.getElementById('mv-fecha').value = hoyISO();
+        document.getElementById('mv-desc').value = ''; document.getElementById('mv-monto').value = ''; document.getElementById('mv-ref').value = '';
+        document.getElementById('mv-tipo').value = 'credito';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editarMov = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar movimiento';
+        document.getElementById('mv-fecha').value = m.fecha || hoyISO();
+        document.getElementById('mv-desc').value = m.descripcion || '';
+        document.getElementById('mv-tipo').value = m.tipo || 'credito';
+        document.getElementById('mv-monto').value = m.monto != null ? m.monto : '';
+        document.getElementById('mv-ref').value = m.referencia || '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrarMov = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardarMov = async function () {
+        const c = cuentaSel(); if (!c) return;
+        const desc = document.getElementById('mv-desc').value.trim();
+        if (!desc) { alert('Escribe la descripción.'); return; }
+        const datos = {
+            cuentaId: c.id, fecha: document.getElementById('mv-fecha').value || hoyISO(), descripcion: desc,
+            tipo: document.getElementById('mv-tipo').value, monto: n2(document.getElementById('mv-monto').value),
+            referencia: document.getElementById('mv-ref').value.trim(), origen: 'manual'
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'bancosMovimientos', editId), datos);
+            else await addDoc(collection(db, 'bancosMovimientos'), { ...datos, conciliado: false, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrarMov();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.toggleConc = async function (id, val) {
+        try { await updateDoc(doc(db, 'bancosMovimientos', id), { conciliado: val }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.borrarMov = async function (id) {
+        if (!confirm('¿Eliminar este movimiento?')) return;
+        try { await deleteDoc(doc(db, 'bancosMovimientos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Importación ----------
+    window.toggleImport = function () {
+        const p = document.getElementById('imp-panel'); p.classList.toggle('show');
+        if (!p.classList.contains('show')) { document.getElementById('imp-file').value = ''; document.getElementById('imp-config').style.display = 'none'; filas = []; }
+    };
+    window.onModo = function () {
+        const dc = document.getElementById('m-modo').value === 'debcred';
+        document.getElementById('col-monto').style.display = dc ? 'none' : 'block';
+        document.getElementById('col-deb').style.display = dc ? 'block' : 'none';
+        document.getElementById('col-cre').style.display = dc ? 'block' : 'none';
+    };
+    window.leerArchivo = function () {
+        const file = (document.getElementById('imp-file').files || [])[0]; if (!file) return;
+        const esCsv = /\.csv$/i.test(file.name);
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                if (esCsv) filas = parseCSV(String(ev.target.result || ''));
+                else {
+                    if (!window.XLSX) { alert('No cargó el lector de XLSX. Prueba con un archivo CSV, o revisa tu conexión.'); return; }
+                    const wb = XLSX.read(ev.target.result, { type: 'array', cellDates: false });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    filas = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+                }
+                filas = filas.filter(r => Array.isArray(r) && r.some(c => String(c).trim() !== ''));
+                if (!filas.length) { alert('El archivo está vacío.'); return; }
+                prepararMapeo();
+            } catch (e) { alert('No se pudo leer el archivo: ' + (e && e.message ? e.message : e)); }
+        };
+        if (esCsv) reader.readAsText(file, 'utf-8'); else reader.readAsArrayBuffer(file);
+    };
+    function parseCSV(text) {
+        const delim = (text.split('\n')[0].split(';').length > text.split('\n')[0].split(',').length) ? ';' : ',';
+        const rows = []; let row = [], cell = '', q = false;
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+            else if (ch === '"') q = true;
+            else if (ch === delim) { row.push(cell); cell = ''; }
+            else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+            else if (ch !== '\r') cell += ch;
+        }
+        if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+        return rows;
+    }
+    function prepararMapeo() {
+        const maxCols = Math.max(...filas.map(r => r.length));
+        const enc = filas[0] || [];
+        const opts = (incVacio) => (incVacio ? '<option value="">—</option>' : '') + Array.from({ length: maxCols }, (_, i) => `<option value="${i}">Col ${i + 1}${enc[i] ? ' · ' + esc(String(enc[i]).slice(0, 18)) : ''}</option>`).join('');
+        ['m-fecha', 'm-desc', 'm-monto', 'm-deb', 'm-cre'].forEach((id, k) => { document.getElementById(id).innerHTML = opts(k >= 2); });
+        // heurística: busca encabezados típicos
+        const low = enc.map(c => String(c).toLowerCase());
+        const find = (arr) => { for (let i = 0; i < low.length; i++) if (arr.some(w => low[i].includes(w))) return i; return -1; };
+        const fi = find(['fecha', 'date']), di = find(['desc', 'concepto', 'detalle', 'referencia']), mo = find(['monto', 'importe', 'valor']);
+        if (fi >= 0) document.getElementById('m-fecha').value = fi;
+        if (di >= 0) document.getElementById('m-desc').value = di;
+        if (mo >= 0) document.getElementById('m-monto').value = mo;
+        const deb = find(['débito', 'debito', 'cargo', 'retiro']), cre = find(['crédito', 'credito', 'abono', 'depósito', 'deposito']);
+        if (deb >= 0 || cre >= 0) { document.getElementById('m-modo').value = 'debcred'; onModo(); if (deb >= 0) document.getElementById('m-deb').value = deb; if (cre >= 0) document.getElementById('m-cre').value = cre; }
+        else onModo();
+        document.getElementById('m-inicio').value = /[a-z]/i.test(String((enc || []).join(''))) ? 2 : 1;
+        document.getElementById('imp-config').style.display = 'block';
+        previsualizar();
+    }
+    function filasDatos() {
+        const inicio = Math.max(1, parseInt(document.getElementById('m-inicio').value, 10) || 1);
+        return filas.slice(inicio - 1);
+    }
+    function mapearFila(r) {
+        const gi = (id) => { const v = document.getElementById(id).value; return v === '' ? -1 : parseInt(v, 10); };
+        const fecha = normFecha(r[gi('m-fecha')]);
+        const descripcion = String(r[gi('m-desc')] == null ? '' : r[gi('m-desc')]).trim();
+        let tipo, monto;
+        if (document.getElementById('m-modo').value === 'debcred') {
+            const d = parseMonto(r[gi('m-deb')]).val, c = parseMonto(r[gi('m-cre')]).val;
+            if (c >= d) { tipo = 'credito'; monto = c; } else { tipo = 'debito'; monto = d; }
+        } else {
+            const p = parseMonto(r[gi('m-monto')]); monto = p.val; tipo = p.neg ? 'debito' : 'credito';
+        }
+        return { fecha, descripcion, tipo, monto };
+    }
+    window.previsualizar = function () {
+        const datos = filasDatos().map(mapearFila).filter(m => m.monto > 0 || m.descripcion);
+        const prev = datos.slice(0, 8);
+        document.getElementById('imp-prev').innerHTML = `<table><thead><tr><th class="l">Fecha</th><th class="l">Descripción</th><th>Débito</th><th>Crédito</th></tr></thead><tbody>${prev.map(m => `<tr><td class="l">${esc(m.fecha)}</td><td class="l">${esc(m.descripcion.slice(0, 40))}</td><td>${m.tipo === 'debito' ? fmt(m.monto) : ''}</td><td>${m.tipo === 'credito' ? fmt(m.monto) : ''}</td></tr>`).join('')}</tbody></table>
+            <p style="font-size:12px;color:#667;margin-top:6px">Se importarán <b>${datos.length}</b> movimientos. Revisa que las columnas estén bien mapeadas.</p>`;
+        document.getElementById('btn-importar').textContent = 'Importar ' + datos.length + ' movimientos';
+    };
+    window.importar = async function () {
+        const c = cuentaSel(); if (!c) { alert('Elige una cuenta.'); return; }
+        const datos = filasDatos().map(mapearFila).filter(m => m.monto > 0);
+        if (!datos.length) { alert('No hay filas válidas para importar. Revisa el mapeo.'); return; }
+        if (!confirm('Importar ' + datos.length + ' movimientos a la cuenta "' + c.alias + '"?')) return;
+        const btn = document.getElementById('btn-importar'); btn.disabled = true; btn.textContent = 'Importando…';
+        try {
+            for (const m of datos) {
+                await addDoc(collection(db, 'bancosMovimientos'), {
+                    cuentaId: c.id, fecha: m.fecha || hoyISO(), descripcion: m.descripcion || 'Movimiento importado',
+                    tipo: m.tipo, monto: m.monto, referencia: '', origen: 'importado', conciliado: false,
+                    creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                });
+            }
+            alert('Se importaron ' + datos.length + ' movimientos.');
+            toggleImport();
+        } catch (e) { alert('No se pudo importar todo: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; previsualizar(); }
+    };
+
+    // ---------- Render ----------
+    function render() {
+        const c = cuentaSel();
+        monedaActual = c ? (c.moneda || 'DOP') : 'DOP';
+        const cont = document.getElementById('lista');
+        if (!cuentas.length) { cont.innerHTML = '<p class="empty">No hay cuentas. Créalas en «Cuentas Bancarias».</p>'; document.getElementById('kpis').innerHTML = ''; return; }
+        if (!c) { cont.innerHTML = '<p class="empty">Elige una cuenta.</p>'; return; }
+        const fc = document.getElementById('f-conc').value;
+        // Todos los movimientos de la cuenta, orden ascendente para el saldo corriente.
+        const todos = movs.filter(m => m.cuentaId === c.id).sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')) || String(a.fechaCreacion || '').localeCompare(String(b.fechaCreacion || '')));
+        let saldo = n2(c.saldoInicial); const conSaldo = todos.map(m => { saldo += (m.tipo === 'credito' ? n2(m.monto) : -n2(m.monto)); return { ...m, saldo }; });
+        const sinConc = todos.filter(m => !m.conciliado).length;
+        document.getElementById('kpis').innerHTML = [
+            ['Saldo actual', fmt(saldo)], ['Movimientos', todos.length], ['Sin conciliar', sinConc]
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        let lista = conSaldo.slice().reverse(); // más recientes arriba
+        if (fc === 'no') lista = lista.filter(m => !m.conciliado);
+        else if (fc === 'si') lista = lista.filter(m => m.conciliado);
+        if (!todos.length) { cont.innerHTML = '<p class="empty">Sin movimientos en esta cuenta. Agrega uno o importa el estado de cuenta.</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin movimientos para el filtro.</p>'; return; }
+        cont.innerHTML = `<div class="tabla-wrap"><table class="mov">
+            <thead><tr><th class="l">Fecha</th><th class="l">Descripción</th><th>Débito</th><th>Crédito</th><th>Saldo</th><th>Conc.</th><th></th></tr></thead>
+            <tbody>${lista.map(m => `<tr class="${m.conciliado ? '' : 'noconc'}">
+                <td class="l">${esc(fmtFecha(m.fecha))}</td>
+                <td class="l">${esc(m.descripcion || '')}${m.origen === 'importado' ? ' <span style="color:#8a93a0;font-size:10px">📥</span>' : ''}${m.referencia ? ' <span style="color:#8a93a0;font-size:11px">· ' + esc(m.referencia) + '</span>' : ''}</td>
+                <td class="deb">${m.tipo === 'debito' ? fmt(m.monto) : ''}</td>
+                <td class="cre">${m.tipo === 'credito' ? fmt(m.monto) : ''}</td>
+                <td>${fmt(m.saldo)}</td>
+                <td><button class="conc-btn ${m.conciliado ? 'si' : 'no'}" onclick="toggleConc('${m.id}', ${!m.conciliado})">${m.conciliado ? '✓' : '○'}</button></td>
+                <td><button class="del-btn" title="Editar" onclick="editarMov('${m.id}')">✏</button> <button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button></td>
+            </tr>`).join('')}</tbody>
+        </table></div>`;
+    }
+</script>
+
+</body>
+</html>
