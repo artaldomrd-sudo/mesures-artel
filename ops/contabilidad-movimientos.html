@@ -50,6 +50,11 @@
     .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .btn-606 { background: var(--artal-blue); color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-scan { width: 100%; background: #eef4fb; color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 9px; padding: 11px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 46px; margin-bottom: 4px; }
+    .btn-scan:disabled { opacity: .6; cursor: default; }
+    .scan-status { font-size: 12.5px; margin: 2px 0 4px; min-height: 15px; }
+    .scan-status.ok { color: #1f9d61; } .scan-status.err { color: #d9483b; } .scan-status.work { color: var(--artal-blue); }
 </style>
 </head>
 <body>
@@ -74,6 +79,7 @@
         <select id="f-periodo" onchange="render()"><option value="mes">Este mes</option><option value="anio">Este año</option><option value="todo">Todo</option></select>
         <select id="f-tipo" onchange="render()"><option value="">Ingresos y gastos</option><option value="ingreso">Solo ingresos</option><option value="gasto">Solo gastos</option></select>
         <input class="buscar" id="buscar" placeholder="Buscar concepto, categoría, tercero…" oninput="render()">
+        <button class="btn-606" onclick="exportar606()" title="Exporta las compras con NCF del período — base para el 606 de la DGII">📥 606</button>
     </div>
     <div id="lista"><p class="empty">Cargando…</p></div>
 </main>
@@ -87,6 +93,9 @@
 <div class="modal-overlay" id="modal">
     <div class="modal-box">
         <h2 id="modal-title">Nuevo movimiento</h2>
+        <button type="button" class="btn-scan" id="btn-scan" onclick="document.getElementById('scan-file').click()">📸 Escanear factura con AI</button>
+        <div class="scan-status" id="scan-status"></div>
+        <input type="file" id="scan-file" accept="image/*,application/pdf" style="display:none">
         <div class="grid2">
             <div><label>Tipo</label><select id="m-tipo" onchange="onTipo()"><option value="ingreso">Ingreso</option><option value="gasto">Gasto</option></select></div>
             <div><label>Fecha</label><input type="date" id="m-fecha"></div>
@@ -107,6 +116,10 @@
         </div>
         <label>Cliente / proveedor <span class="lbl-opt">— opcional</span></label>
         <input type="text" id="m-tercero" list="terceros-list" placeholder="Nombre">
+        <div class="grid2">
+            <div><label>RNC / Cédula <span class="lbl-opt">— opcional</span></label><input type="text" id="m-rnc" placeholder="Solo dígitos"></div>
+            <div><label>NCF <span class="lbl-opt">— opcional</span></label><input type="text" id="m-ncf" placeholder="B01…"></div>
+        </div>
         <label>Comprobante <span class="lbl-opt">— foto o PDF (opcional)</span></label>
         <input type="file" id="m-foto" accept="image/*,application/pdf">
         <label>Notas <span class="lbl-opt">— opcional</span></label>
@@ -135,7 +148,8 @@
     const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
     function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
-    let movimientos = [], cuentas = [], editId = null;
+    let movimientos = [], cuentas = [], editId = null, scannedFile = null;
+    const FN_EXTRAER = 'https://us-central1-artal-operaciones.cloudfunctions.net/extraerFactura';
 
     onSnapshot(collection(db, 'contaMovimientos'), (s) => { movimientos = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
         (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
@@ -171,6 +185,77 @@
         return { url: await getDownloadURL(r), nombre: file.name || ('comprobante.' + ext), tipo: esPdf ? 'pdf' : 'img' };
     }
 
+    // ---------- Escanear factura con AI ----------
+    // Manda la foto/PDF a la Cloud Function extraerFactura (Claude visión) y pre-llena el
+    // formulario de gasto. Es una ayuda de captura: el usuario SIEMPRE revisa antes de guardar. El
+    // mismo archivo escaneado queda como comprobante al guardar (no hace falta adjuntarlo dos veces).
+    function setStatus(cls, txt) { const st = document.getElementById('scan-status'); st.className = 'scan-status' + (cls ? ' ' + cls : ''); st.textContent = txt; }
+    function fileABase64(file) {
+        return new Promise((resolve, reject) => {
+            const rd = new FileReader();
+            rd.onload = () => { const s = String(rd.result); resolve(s.slice(s.indexOf(',') + 1)); };
+            rd.onerror = () => reject(new Error('No se pudo leer el archivo')); rd.readAsDataURL(file);
+        });
+    }
+    function aplicarFactura(f, file) {
+        document.getElementById('m-tipo').value = 'gasto'; onTipo();
+        if (f.concepto) document.getElementById('m-concepto').value = f.concepto;
+        if (f.categoria) document.getElementById('m-categoria').value = f.categoria;
+        const total = Number(f.total) || Number(f.subtotal) || 0;
+        if (total) document.getElementById('m-monto').value = total;
+        if (Number(f.itbis)) document.getElementById('m-itbis').value = Number(f.itbis);
+        if (f.proveedor) document.getElementById('m-tercero').value = f.proveedor;
+        if (f.rnc) document.getElementById('m-rnc').value = String(f.rnc).replace(/\D/g, '');
+        if (f.ncf) document.getElementById('m-ncf').value = String(f.ncf).trim().toUpperCase();
+        if (f.fecha && /^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) document.getElementById('m-fecha').value = f.fecha;
+        scannedFile = file; // se sube como comprobante al guardar
+    }
+    document.getElementById('scan-file').addEventListener('change', async (ev) => {
+        const file = (ev.target.files || [])[0]; ev.target.value = '';
+        if (!file) return;
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        const btn = document.getElementById('btn-scan');
+        setStatus('work', '🔍 Leyendo la factura…'); btn.disabled = true;
+        try {
+            const blob = esPdf ? file : await comprimirImg(file).catch(() => file);
+            const data = await fileABase64(blob);
+            const attachment = esPdf
+                ? { tipo: 'pdf', data }
+                : { tipo: 'image', media_type: (blob === file ? (file.type || 'image/jpeg') : 'image/jpeg'), data };
+            const r = await fetch(FN_EXTRAER, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ attachment }) });
+            if (!r.ok) throw new Error('El lector no respondió (' + r.status + ')');
+            const resp = await r.json();
+            if (!resp || !resp.factura) throw new Error('No se pudieron leer los datos');
+            aplicarFactura(resp.factura, file);
+            setStatus('ok', '✅ Datos leídos. Revísalos y corrige lo que haga falta antes de guardar.');
+        } catch (e) {
+            setStatus('err', '⚠️ ' + (e && e.message ? e.message : 'No se pudo escanear') + '. Escribe los datos a mano.');
+        } finally { btn.disabled = false; }
+    });
+
+    // ---------- Export 606 (compras del período con NCF, para la DGII) ----------
+    window.exportar606 = function () {
+        const periodo = document.getElementById('f-periodo').value;
+        const gastos = movimientos.filter(m => m.tipo === 'gasto' && enPeriodo(m.fecha, periodo) && (m.ncf || '').trim());
+        if (!gastos.length) { alert('No hay gastos con NCF en el período seleccionado.\n\nEl 606 solo incluye compras con Número de Comprobante Fiscal. Escanea o registra el NCF en los gastos para que aparezcan aquí.'); return; }
+        gastos.sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+        const q = (s) => { s = String(s == null ? '' : s); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const cab = ['RNC/Cédula', 'Tipo Id (1=RNC,2=Céd)', 'NCF', 'Fecha (AAAAMMDD)', 'Monto facturado', 'ITBIS facturado', 'Total', 'Proveedor', 'Concepto'];
+        const filas = gastos.map(m => {
+            const rnc = (m.rnc || '').replace(/\D/g, '');
+            const tipoId = rnc.length === 9 ? '1' : (rnc.length === 11 ? '2' : ''); // 9 díg. = RNC, 11 = cédula
+            const total = n2(m.monto), itbis = n2(m.itbis), subtotal = +(total - itbis).toFixed(2);
+            return [rnc, tipoId, (m.ncf || '').toUpperCase(), (m.fecha || '').replace(/-/g, ''), subtotal.toFixed(2), itbis.toFixed(2), total.toFixed(2), m.tercero || '', m.concepto || ''];
+        });
+        const csv = '﻿' + [cab, ...filas].map(f => f.map(q).join(',')).join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const etq = periodo === 'mes' ? hoyISO().slice(0, 7) : (periodo === 'anio' ? String(new Date().getFullYear()) : 'todo');
+        const a = document.createElement('a'); a.href = url; a.download = '606-compras-' + etq + '.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
     // ---------- Modal ----------
     window.onTipo = function () {
         const ing = document.getElementById('m-tipo').value === 'ingreso';
@@ -179,7 +264,8 @@
     window.abrir = function (tipo) {
         editId = null; document.getElementById('modal-title').textContent = tipo === 'ingreso' ? 'Nuevo ingreso' : 'Nuevo gasto';
         document.getElementById('m-tipo').value = tipo;
-        ['m-concepto', 'm-categoria', 'm-monto', 'm-itbis', 'm-centro', 'm-tercero', 'm-notas', 'm-foto'].forEach(id => document.getElementById(id).value = '');
+        ['m-concepto', 'm-categoria', 'm-monto', 'm-itbis', 'm-centro', 'm-tercero', 'm-rnc', 'm-ncf', 'm-notas', 'm-foto'].forEach(id => document.getElementById(id).value = '');
+        setStatus('', ''); scannedFile = null;
         document.getElementById('m-fecha').value = hoyISO();
         document.getElementById('m-metodo').value = 'Transferencia';
         document.getElementById('m-cuenta').value = '';
@@ -198,8 +284,11 @@
         document.getElementById('m-cuenta').value = m.cuentaBancoId || '';
         document.getElementById('m-centro').value = m.centroCosto || '';
         document.getElementById('m-tercero').value = m.tercero || '';
+        document.getElementById('m-rnc').value = m.rnc || '';
+        document.getElementById('m-ncf').value = m.ncf || '';
         document.getElementById('m-notas').value = m.notas || '';
         document.getElementById('m-foto').value = '';
+        setStatus('', ''); scannedFile = null;
         onTipo(); document.getElementById('modal').classList.add('show');
     };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
@@ -217,10 +306,13 @@
             cuentaBancoId: document.getElementById('m-cuenta').value, cuentaBancoNombre: c ? c.alias : '',
             centroCosto: document.getElementById('m-centro').value.trim(),
             tercero: document.getElementById('m-tercero').value.trim(),
+            rnc: document.getElementById('m-rnc').value.replace(/\D/g, ''),
+            ncf: document.getElementById('m-ncf').value.trim().toUpperCase(),
             notas: document.getElementById('m-notas').value.trim(),
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
-        const file = (document.getElementById('m-foto').files || [])[0];
+        // Si no adjuntó nada a mano pero escaneó una factura, esa foto/PDF queda como comprobante.
+        const file = (document.getElementById('m-foto').files || [])[0] || scannedFile;
         const btn = document.querySelector('#modal .btn-guardar');
         if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
         try {

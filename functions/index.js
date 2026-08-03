@@ -306,3 +306,93 @@ exports.chatBot = onRequest({ secrets: [anthropicKey], cors: true }, async (req,
         res.status(500).json({ error: 'server' });
     }
 });
+
+// ---------- Captura de facturas de compra con AI (visión) ----------
+// Recibe una foto o PDF de una FACTURA DE COMPRA / recibo de proveedor (un GASTO) y extrae los
+// datos fiscales (proveedor, RNC, NCF, fecha, subtotal, ITBIS, total, concepto, categoría) con
+// Claude visión, para pre-llenar el formulario de Gastos de ops/contabilidad-movimientos.html —
+// que sirve luego para el reporte 606 a la DGII y, cuando se conecte, para empujar el gasto a
+// Citrus. La clave de Claude vive como secreto (la misma que el bot). El usuario SIEMPRE revisa y
+// corrige antes de guardar: esto es una ayuda de captura, no una fuente de verdad. Modelo
+// económico con visión (Haiku) — centavos por factura; si hace falta más precisión de OCR se
+// puede subir el modelo (ej. claude-sonnet-5) en una sola línea sin tocar el resto.
+const CATEGORIAS_GASTO = 'Materiales / insumos, Perfiles de aluminio, Vidrios, Herrajes, Nómina y honorarios, Alquiler, Electricidad / agua, Internet / teléfono, Combustible / transporte, Herramientas, Mantenimiento / reparación, Impuestos y tasas, Comisiones, Publicidad, Gastos bancarios, Otro gasto';
+
+const SISTEMA_FACTURA = `Eres un asistente de contabilidad de ARTAL Dominicana (aluminio y vidrio, República Dominicana). Te dan una foto o PDF de una FACTURA DE COMPRA o recibo de un proveedor (un GASTO de la empresa). Extrae los datos fiscales que veas y devuélvelos en JSON.
+
+Reglas:
+- proveedor: el nombre del comercio/proveedor que EMITE la factura (NO ARTAL, que es quien compra).
+- rnc: el RNC o cédula del proveedor, SOLO dígitos (sin guiones ni espacios). Vacío si no aparece.
+- ncf: el Número de Comprobante Fiscal (normalmente empieza con "B" y luego dígitos, ej. B0100000123). Vacío si no aparece.
+- fecha: la fecha de la factura en formato AAAA-MM-DD. Si el año viene con 2 dígitos, asume 20xx. Vacío si no la ves.
+- total: el monto TOTAL a pagar (el mayor, ya con ITBIS incluido). Solo el número, sin "RD$" ni comas de miles.
+- itbis: el ITBIS/impuesto que aparezca desglosado por separado. 0 si no está desglosado.
+- subtotal: total menos itbis. Si no hay itbis desglosado, subtotal = total.
+- concepto: descripción corta (3 a 6 palabras) de qué se compró, en español.
+- categoria: elige la que mejor aplique de esta lista EXACTA, o "Otro gasto": ${CATEGORIAS_GASTO}.
+
+Si un campo no aparece o no estás seguro, deja el string vacío o 0. NUNCA inventes un RNC, un NCF ni un monto. Devuelve SOLO el JSON, sin texto adicional.`;
+
+exports.extraerFactura = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    try {
+        // `attachment.data` es base64 SIN el prefijo "data:...;base64,". Tipos/tamaño acotados.
+        const adj = req.body && req.body.attachment;
+        if (!adj || typeof adj.data !== 'string' || adj.data.length > 7000000) { res.status(400).json({ error: 'archivo' }); return; }
+        const tiposImg = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        let bloque;
+        if (adj.tipo === 'pdf') {
+            bloque = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: adj.data } };
+        } else if (adj.tipo === 'image' && tiposImg.includes(adj.media_type)) {
+            bloque = { type: 'image', source: { type: 'base64', media_type: adj.media_type, data: adj.data } };
+        } else { res.status(400).json({ error: 'tipo' }); return; }
+
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'x-api-key': anthropicKey.value(),
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: 'claude-haiku-4-5',
+                max_tokens: 1024,
+                system: SISTEMA_FACTURA,
+                messages: [{ role: 'user', content: [bloque, { type: 'text', text: 'Extrae los datos de esta factura y devuélvelos en JSON.' }] }],
+                // Salida estructurada: obliga a devolver JSON válido con exactamente estos campos
+                // (Haiku 4.5 soporta output_config.format, GA — sin beta header). Igual se hace un
+                // JSON.parse defensivo por si algún día se cambia el modelo por uno sin soporte.
+                output_config: {
+                    format: {
+                        type: 'json_schema',
+                        schema: {
+                            type: 'object',
+                            properties: {
+                                proveedor: { type: 'string' }, rnc: { type: 'string' }, ncf: { type: 'string' },
+                                fecha: { type: 'string' }, subtotal: { type: 'number' }, itbis: { type: 'number' },
+                                total: { type: 'number' }, concepto: { type: 'string' }, categoria: { type: 'string' }
+                            },
+                            required: ['proveedor', 'rnc', 'ncf', 'fecha', 'subtotal', 'itbis', 'total', 'concepto', 'categoria'],
+                            additionalProperties: false
+                        }
+                    }
+                }
+            })
+        });
+        if (!r.ok) {
+            const detalle = await r.text();
+            console.error('extraerFactura Claude', r.status, detalle);
+            res.status(502).json({ error: 'ia' }); return;
+        }
+        const data = await r.json();
+        const texto = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+        let datos;
+        try { datos = JSON.parse(texto); }
+        catch (_) { const m = texto.match(/\{[\s\S]*\}/); datos = m ? JSON.parse(m[0]) : null; }
+        if (!datos || typeof datos !== 'object') { res.status(502).json({ error: 'parse' }); return; }
+        res.json({ factura: datos });
+    } catch (e) {
+        console.error('extraerFactura', e);
+        res.status(500).json({ error: 'server' });
+    }
+});
