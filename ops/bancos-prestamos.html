@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Préstamos Bancarios</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 960px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 10px 16px; flex: 1; min-width: 140px; }
+    .kpi .n { font-size: 18px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .pr-card { border-left: 4px solid var(--artal-blue); }
+    .pr-card.pagado { border-left-color: #1f9d61; opacity: .82; }
+    .pr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .pr-head b { color: var(--artal-blue); font-size: 15px; }
+    .pr-sis { font-size: 10.5px; font-weight: bold; text-transform: uppercase; letter-spacing: .04em; color: #7d3ac1; background: #f3eefb; border-radius: 20px; padding: 3px 9px; white-space: nowrap; }
+    .pr-grid { display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; font-size: 12.5px; color: #667; }
+    .pr-grid b { color: var(--artal-blue); font-variant-numeric: tabular-nums; }
+    .pr-prog { height: 7px; background: #eef1f4; border-radius: 6px; overflow: hidden; margin: 6px 0 2px; }
+    .pr-prog > span { display: block; height: 100%; background: linear-gradient(90deg, #2f7fd6, #0A3D62); }
+    .pr-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .pr-actions button { border: none; border-radius: 8px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .b-tabla { background: var(--artal-blue); color: #fff; } .b-pago { background: #2ecc71; color: #fff; } .b-quitar { background: #fff2dc; color: #c07a12; }
+    .b-ed { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue) !important; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box.wide { max-width: 720px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 12px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 10px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .cuota-prev { background: #f7f9fc; border-radius: 8px; padding: 9px 12px; font-size: 13px; color: #445; margin-top: 10px; }
+    .cuota-prev b { color: var(--artal-blue); }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+
+    .amort-wrap { overflow-x: auto; }
+    table.amort { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 560px; }
+    table.amort th { background: var(--artal-blue); color: #fff; font-size: 10.5px; text-transform: uppercase; padding: 7px 6px; text-align: right; position: sticky; top: 0; }
+    table.amort th.l { text-align: left; }
+    table.amort td { padding: 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    table.amort td.l { text-align: left; }
+    table.amort tr.pg { background: #eafaf1; } table.amort tr.pg td.l { color: #1f9d61; font-weight: bold; }
+    table.amort tfoot td { font-weight: bold; border-top: 2px solid var(--artal-blue); background: #f7f9fc; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="bancos.html" title="Volver">← Bancos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Préstamos Bancarios</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-y" onclick="abrir()">+ Nuevo préstamo</button>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<!-- Modal préstamo -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nuevo préstamo</h2>
+        <label>Descripción *</label>
+        <input type="text" id="p-desc" placeholder="Ej. Préstamo capital de trabajo">
+        <div class="grid2">
+            <div><label>Banco / entidad</label><input type="text" id="p-banco" placeholder="Banco"></div>
+            <div><label>Fecha de inicio</label><input type="date" id="p-inicio" oninput="prevCuota()"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Monto prestado (RD$) *</label><input type="number" id="p-monto" min="0" step="0.01" oninput="prevCuota()"></div>
+            <div><label>Tasa anual (%) *</label><input type="number" id="p-tasa" min="0" step="0.01" placeholder="Ej. 14" oninput="prevCuota()"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Plazo (meses) *</label><input type="number" id="p-plazo" min="1" step="1" placeholder="Ej. 36" oninput="prevCuota()"></div>
+            <div><label>Sistema</label><select id="p-sistema" onchange="prevCuota()"><option value="frances">Francés (cuota fija)</option><option value="aleman">Alemán (capital fijo)</option><option value="bullet">Bullet (paga al final)</option></select></div>
+        </div>
+        <label>Notas <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="p-notas" placeholder="Garantía, nº de préstamo…">
+        <div class="cuota-prev" id="cuota-prev"></div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal tabla de amortización -->
+<div class="modal-overlay" id="modal-amort">
+    <div class="modal-box wide">
+        <h2 id="amort-title">Tabla de amortización</h2>
+        <div class="amort-wrap" id="amort-body"></div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarAmort()" style="flex:0 0 auto;padding-left:24px;padding-right:24px;">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    const SIS = { frances: 'Francés', aleman: 'Alemán', bullet: 'Bullet' };
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    // Suma meses a una fecha ISO y devuelve ISO (para la fecha de cada cuota).
+    function addMeses(iso, m) {
+        const d = new Date((iso || hoyISO()) + 'T00:00:00'); if (isNaN(d)) return '';
+        d.setMonth(d.getMonth() + m);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    }
+
+    // Tabla de amortización. i = tasa mensual. Francés: cuota fija. Alemán: capital fijo (cuota
+    // decrece). Bullet: solo interés cada mes y todo el capital en la última. La última fila
+    // ajusta el capital al saldo restante para que cierre exacto sin arrastres de redondeo.
+    function amortizacion(P, tasaAnual, n, sistema) {
+        P = n2(P); n = Math.max(1, Math.floor(n2(n)));
+        const i = (n2(tasaAnual) / 100) / 12;
+        const rows = []; let saldo = P;
+        const capFijo = P / n;
+        const cuotaFr = i > 0 ? P * i / (1 - Math.pow(1 + i, -n)) : P / n;
+        for (let k = 1; k <= n; k++) {
+            const interes = saldo * i;
+            let capital;
+            if (sistema === 'aleman') capital = (k === n) ? saldo : capFijo;
+            else if (sistema === 'bullet') capital = (k === n) ? saldo : 0;
+            else capital = (k === n) ? saldo : (cuotaFr - interes);
+            capital = Math.min(capital, saldo);
+            saldo = Math.max(0, saldo - capital);
+            rows.push({ k, cuota: interes + capital, interes, capital, saldo });
+        }
+        return rows;
+    }
+
+    let prestamos = [];
+    onSnapshot(collection(db, 'bancosPrestamos'), (s) => { prestamos = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    // ---------- Modal préstamo ----------
+    let editId = null;
+    window.prevCuota = function () {
+        const P = n2(document.getElementById('p-monto').value), t = n2(document.getElementById('p-tasa').value), n = Math.floor(n2(document.getElementById('p-plazo').value)), sis = document.getElementById('p-sistema').value;
+        const box = document.getElementById('cuota-prev');
+        if (P <= 0 || n < 1) { box.innerHTML = 'Completa monto, tasa y plazo para ver la cuota.'; return; }
+        const rows = amortizacion(P, t, n, sis);
+        const totalInt = rows.reduce((a, r) => a + r.interes, 0);
+        const cuota1 = rows[0].cuota;
+        const txt = sis === 'frances' ? `Cuota mensual fija: <b>${fmt(cuota1)}</b>` :
+            sis === 'aleman' ? `Primera cuota: <b>${fmt(cuota1)}</b> (va bajando)` :
+                `Cuota mensual (interés): <b>${fmt(cuota1)}</b> + capital <b>${fmt(P)}</b> al final`;
+        box.innerHTML = `${txt}<br>Total a pagar: <b>${fmt(P + totalInt)}</b> · Intereses: <b>${fmt(totalInt)}</b>`;
+    };
+    window.abrir = function () {
+        editId = null; document.getElementById('modal-title').textContent = 'Nuevo préstamo';
+        ['p-desc', 'p-banco', 'p-monto', 'p-tasa', 'p-plazo', 'p-notas'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('p-inicio').value = hoyISO();
+        document.getElementById('p-sistema').value = 'frances';
+        prevCuota(); document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar préstamo';
+        document.getElementById('p-desc').value = p.descripcion || '';
+        document.getElementById('p-banco').value = p.banco || '';
+        document.getElementById('p-inicio').value = p.fechaInicio || hoyISO();
+        document.getElementById('p-monto').value = p.monto != null ? p.monto : '';
+        document.getElementById('p-tasa').value = p.tasaAnual != null ? p.tasaAnual : '';
+        document.getElementById('p-plazo').value = p.plazoMeses != null ? p.plazoMeses : '';
+        document.getElementById('p-sistema').value = p.sistema || 'frances';
+        document.getElementById('p-notas').value = p.notas || '';
+        prevCuota(); document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const desc = document.getElementById('p-desc').value.trim();
+        const monto = n2(document.getElementById('p-monto').value), tasa = n2(document.getElementById('p-tasa').value), plazo = Math.floor(n2(document.getElementById('p-plazo').value));
+        if (!desc) { alert('Escribe la descripción.'); return; }
+        if (monto <= 0) { alert('Escribe el monto prestado.'); return; }
+        if (plazo < 1) { alert('Escribe el plazo en meses.'); return; }
+        const datos = {
+            descripcion: desc, banco: document.getElementById('p-banco').value.trim(), fechaInicio: document.getElementById('p-inicio').value || hoyISO(),
+            monto, tasaAnual: tasa, plazoMeses: plazo, sistema: document.getElementById('p-sistema').value, notas: document.getElementById('p-notas').value.trim(),
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        const btn = document.querySelector('#modal .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+            if (editId) await updateDoc(doc(db, 'bancosPrestamos', editId), datos);
+            else await addDoc(collection(db, 'bancosPrestamos'), { ...datos, cuotasPagadas: 0, activo: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Guardar'; }
+    };
+    window.registrarPago = async function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        const pagadas = n2(p.cuotasPagadas), n = Math.floor(n2(p.plazoMeses));
+        if (pagadas >= n) { alert('Este préstamo ya está saldado.'); return; }
+        const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+        const prox = rows[pagadas];
+        if (!confirm('¿Registrar el pago de la cuota ' + (pagadas + 1) + ' de ' + n + ' (' + fmt(prox.cuota) + ')?')) return;
+        try { await updateDoc(doc(db, 'bancosPrestamos', id), { cuotasPagadas: pagadas + 1, ultimoPagoPor: usuario.nombre, ultimoPagoFecha: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.quitarPago = async function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        const pagadas = n2(p.cuotasPagadas);
+        if (pagadas <= 0) return;
+        if (!confirm('¿Deshacer el último pago registrado (cuota ' + pagadas + ')?')) return;
+        try { await updateDoc(doc(db, 'bancosPrestamos', id), { cuotasPagadas: pagadas - 1 }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar este préstamo y su tabla?')) return;
+        try { await deleteDoc(doc(db, 'bancosPrestamos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Tabla de amortización ----------
+    window.verAmort = function (id) {
+        const p = prestamos.find(x => x.id === id); if (!p) return;
+        const n = Math.floor(n2(p.plazoMeses)), pagadas = n2(p.cuotasPagadas);
+        const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+        const totInt = rows.reduce((a, r) => a + r.interes, 0), totCuota = rows.reduce((a, r) => a + r.cuota, 0);
+        document.getElementById('amort-title').textContent = 'Amortización — ' + (p.descripcion || 'Préstamo') + ' (' + (SIS[p.sistema] || p.sistema) + ')';
+        document.getElementById('amort-body').innerHTML = `<table class="amort">
+            <thead><tr><th class="l">#</th><th class="l">Fecha</th><th>Cuota</th><th>Interés</th><th>Capital</th><th>Saldo</th></tr></thead>
+            <tbody>${rows.map(r => `<tr class="${r.k <= pagadas ? 'pg' : ''}">
+                <td class="l">${r.k}${r.k <= pagadas ? ' ✓' : ''}</td>
+                <td class="l">${esc(fmtFecha(addMeses(p.fechaInicio, r.k)))}</td>
+                <td>${fmt(r.cuota)}</td><td>${fmt(r.interes)}</td><td>${fmt(r.capital)}</td><td>${fmt(r.saldo)}</td>
+            </tr>`).join('')}</tbody>
+            <tfoot><tr><td class="l" colspan="2">Totales</td><td>${fmt(totCuota)}</td><td>${fmt(totInt)}</td><td>${fmt(n2(p.monto))}</td><td></td></tr></tfoot>
+        </table>`;
+        document.getElementById('modal-amort').classList.add('show');
+    };
+    window.cerrarAmort = function () { document.getElementById('modal-amort').classList.remove('show'); };
+
+    function render() {
+        const activos = prestamos.slice();
+        // KPIs: deuda pendiente total y cuota del próximo mes (suma de la próxima cuota de cada préstamo no saldado).
+        let deuda = 0, cuotaMes = 0, vigentes = 0;
+        activos.forEach(p => {
+            const n = Math.floor(n2(p.plazoMeses)), pagadas = n2(p.cuotasPagadas);
+            const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+            const saldo = pagadas > 0 ? (rows[Math.min(pagadas, n) - 1].saldo) : n2(p.monto);
+            deuda += saldo;
+            if (pagadas < n) { vigentes++; cuotaMes += rows[pagadas].cuota; }
+        });
+        document.getElementById('kpis').innerHTML = [
+            ['Deuda pendiente', fmt0(deuda)], ['Préstamos vigentes', vigentes], ['Cuota próximo mes', fmt0(cuotaMes)]
+        ].map(([l, x]) => `<div class="kpi"><div class="n">${x}</div><div class="l">${l}</div></div>`).join('');
+
+        const cont = document.getElementById('lista');
+        if (!prestamos.length) { cont.innerHTML = '<p class="empty">Aún no hay préstamos. Registra uno con «+ Nuevo préstamo».</p>'; return; }
+        const orden = activos.sort((a, b) => String(b.fechaInicio || '').localeCompare(String(a.fechaInicio || '')));
+        cont.innerHTML = orden.map(p => {
+            const n = Math.floor(n2(p.plazoMeses)), pagadas = Math.min(n2(p.cuotasPagadas), n);
+            const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+            const saldo = pagadas > 0 ? rows[pagadas - 1].saldo : n2(p.monto);
+            const saldado = pagadas >= n;
+            const prox = saldado ? null : rows[pagadas];
+            const pct = n ? Math.round(pagadas / n * 100) : 0;
+            return `<div class="order-card pr-card ${saldado ? 'pagado' : ''}">
+                <div class="pr-head"><b>${esc(p.descripcion || 'Préstamo')}${p.banco ? ' · ' + esc(p.banco) : ''}</b><span class="pr-sis">${esc(SIS[p.sistema] || p.sistema)}</span></div>
+                <div class="pr-grid">
+                    <span>Monto <b>${fmt0(p.monto)}</b></span>
+                    <span>Tasa <b>${n2(p.tasaAnual)}%</b></span>
+                    <span>Plazo <b>${n} meses</b></span>
+                    <span>Saldo <b>${fmt0(saldo)}</b></span>
+                    ${prox ? `<span>Próx. cuota <b>${fmt0(prox.cuota)}</b> · ${esc(fmtFecha(addMeses(p.fechaInicio, pagadas + 1)))}</span>` : '<span style="color:#1f9d61;font-weight:bold">Saldado ✓</span>'}
+                </div>
+                <div class="pr-prog"><span style="width:${pct}%"></span></div>
+                <div class="pr-grid" style="margin:2px 0 0"><span>${pagadas} de ${n} cuotas pagadas (${pct}%)</span></div>
+                <div class="pr-actions">
+                    <button class="b-tabla" onclick="verAmort('${p.id}')">📋 Amortización</button>
+                    ${saldado ? '' : `<button class="b-pago" onclick="registrarPago('${p.id}')">✓ Registrar pago</button>`}
+                    ${pagadas > 0 ? `<button class="b-quitar" onclick="quitarPago('${p.id}')">↩ Deshacer pago</button>` : ''}
+                    <button class="b-ed" onclick="editar('${p.id}')">✏ Editar</button>
+                    <button class="b-del" onclick="borrar('${p.id}')">🗑</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    render();
+</script>
+
+</body>
+</html>
