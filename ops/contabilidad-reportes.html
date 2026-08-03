@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Reportes de Contabilidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 960px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 16px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 11px 15px; flex: 1; min-width: 130px; }
+    .kpi .n { font-size: 19px; font-weight: bold; line-height: 1; } .kpi .n.ing { color: #1f9d61; } .kpi .n.gas { color: #d9483b; } .kpi .n.bal { color: var(--artal-blue); } .kpi .n.mar { color: #7d3ac1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    .sec { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
+    .sec h3 { color: var(--artal-blue); font-size: 14px; margin: 0 0 12px; }
+    .empty-mini { color: #8a93a0; font-size: 13px; }
+    .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 14px; line-height: 1.5; }
+
+    .bars { display: flex; flex-direction: column; gap: 8px; }
+    .bar-row { display: grid; grid-template-columns: 160px 1fr auto; gap: 10px; align-items: center; }
+    @media (max-width: 560px) { .bar-row { grid-template-columns: 110px 1fr auto; } }
+    .bar-lab { font-size: 12.5px; color: #445; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { background: #eef1f4; border-radius: 6px; height: 20px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 6px; min-width: 2px; }
+    .bar-val { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+    .flujo { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .flujo th { background: var(--artal-blue); color: #fff; font-size: 10.5px; text-transform: uppercase; padding: 8px 6px; text-align: right; }
+    .flujo th.l { text-align: left; }
+    .flujo td { padding: 7px 6px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    .flujo td.l { text-align: left; font-weight: bold; color: #445; }
+    .flujo td.ing { color: #1f9d61; } .flujo td.gas { color: #d9483b; }
+    .flujo td.pos { color: #1f9d61; font-weight: bold; } .flujo td.neg { color: #d9483b; font-weight: bold; }
+    .flujo tfoot td { font-weight: bold; border-top: 2px solid var(--artal-blue); background: #f7f9fc; }
+    .flujo .barcell { position: relative; }
+    .flujo .minibar { display: inline-block; height: 9px; border-radius: 3px; vertical-align: middle; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Reportes</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">ℹ️ Reporte <b>operativo</b>: se arma con lo registrado en Ingresos y Gastos. Los estados financieros <b>formales</b> (para DGII, ISR/ITBIS, e-CF) son los de <b>Citrus</b> — estas cifras son para gestión interna y complementan las de Citrus, no las reemplazan.</div>
+    <div class="bar">
+        <label style="font-size:13px;color:#556;font-weight:bold">Año:</label>
+        <select id="f-anio" onchange="render()"></select>
+    </div>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="sec"><h3>📅 Flujo de caja mensual (ingresos, gastos y balance)</h3><div style="overflow-x:auto"><table class="flujo" id="t-flujo"></table></div></div>
+    <div class="sec"><h3>⬇️ Gastos por categoría</h3><div id="c-gastos"></div></div>
+    <div class="sec"><h3>⬆️ Ingresos por categoría</h3><div id="c-ingresos"></div></div>
+    <div class="sec"><h3>🎯 Rentabilidad por centro de costo</h3><div id="c-centros"></div></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    function barsH(rows, opts = {}) {
+        rows = rows.filter(r => Math.abs(r.value) > 0);
+        if (!rows.length) return '<p class="empty-mini">Sin datos en este año.</p>';
+        const max = Math.max(1, ...rows.map(r => Math.abs(r.value)));
+        return '<div class="bars">' + rows.map(r => `<div class="bar-row">
+            <span class="bar-lab" title="${esc(r.label)}">${esc(r.label)}</span>
+            <span class="bar-track"><span class="bar-fill" style="width:${(Math.abs(r.value) / max * 100).toFixed(1)}%;background:${r.color || 'var(--artal-blue)'}"></span></span>
+            <span class="bar-val" style="${r.value < 0 ? 'color:#d9483b' : ''}">${opts.money ? fmt0(r.value) : r.value}</span>
+        </div>`).join('') + '</div>';
+    }
+
+    let movs = [], centros = [];
+    onSnapshot(collection(db, 'contaMovimientos'), (s) => { movs = s.docs.map(d => d.data()); llenarAnios(); render(); },
+        (err) => { document.getElementById('t-flujo').innerHTML = '<tr><td>Error: ' + esc(err.message) + '</td></tr>'; });
+    onSnapshot(collection(db, 'contaCentros'), (s) => { centros = s.docs.map(d => d.data()); render(); }, () => {});
+
+    const anioDe = (m) => String(m.fecha || '').slice(0, 4);
+    const mesDe = (m) => parseInt(String(m.fecha || '').slice(5, 7), 10) - 1;
+
+    function llenarAnios() {
+        const sel = document.getElementById('f-anio'); if (sel.options.length && sel.value) return; // no repoblar si ya hay selección
+        const cur = new Date().getFullYear();
+        const anios = new Set([String(cur)]);
+        movs.forEach(m => { const a = anioDe(m); if (/^\d{4}$/.test(a)) anios.add(a); });
+        const lista = Array.from(anios).sort((a, b) => b.localeCompare(a));
+        const prev = sel.value;
+        sel.innerHTML = lista.map(a => `<option value="${a}">${a}</option>`).join('');
+        sel.value = prev && lista.includes(prev) ? prev : String(cur);
+    }
+
+    function render() {
+        const anio = document.getElementById('f-anio').value || String(new Date().getFullYear());
+        const delAnio = movs.filter(m => anioDe(m) === anio);
+        const ingTot = delAnio.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + n2(m.monto), 0);
+        const gasTot = delAnio.filter(m => m.tipo === 'gasto').reduce((a, m) => a + n2(m.monto), 0);
+        const util = ingTot - gasTot;
+        const margen = ingTot > 0 ? Math.round(util / ingTot * 100) : 0;
+        document.getElementById('kpis').innerHTML = [
+            ['n ing', fmt0(ingTot), 'Ingresos ' + anio], ['n gas', fmt0(gasTot), 'Gastos ' + anio],
+            ['n bal', fmt0(util), 'Utilidad operativa'], ['n mar', margen + '%', 'Margen']
+        ].map(([c, n, l]) => `<div class="kpi"><div class="${c}">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        // Flujo mensual
+        const ing = new Array(12).fill(0), gas = new Array(12).fill(0);
+        delAnio.forEach(m => { const mi = mesDe(m); if (mi >= 0 && mi < 12) { if (m.tipo === 'ingreso') ing[mi] += n2(m.monto); else if (m.tipo === 'gasto') gas[mi] += n2(m.monto); } });
+        const maxAbs = Math.max(1, ...ing.map((v, i) => Math.max(v, gas[i], Math.abs(v - gas[i]))));
+        let filas = '';
+        for (let i = 0; i < 12; i++) {
+            const bal = ing[i] - gas[i];
+            if (ing[i] === 0 && gas[i] === 0) continue;
+            const w = (Math.abs(bal) / maxAbs * 100).toFixed(0);
+            const barra = `<span class="minibar" style="width:${w}px;background:${bal >= 0 ? '#1f9d61' : '#d9483b'}"></span>`;
+            filas += `<tr>
+                <td class="l">${MESES[i]}</td>
+                <td class="ing">${ing[i] ? fmt0(ing[i]) : '—'}</td>
+                <td class="gas">${gas[i] ? fmt0(gas[i]) : '—'}</td>
+                <td class="barcell ${bal >= 0 ? 'pos' : 'neg'}">${fmt0(bal)}${barra}</td>
+            </tr>`;
+        }
+        document.getElementById('t-flujo').innerHTML =
+            `<thead><tr><th class="l">Mes</th><th>Ingresos</th><th>Gastos</th><th>Balance</th></tr></thead>
+             <tbody>${filas || '<tr><td class="l" colspan="4"><span class="empty-mini">Sin movimientos en ' + anio + '.</span></td></tr>'}</tbody>
+             ${filas ? `<tfoot><tr><td class="l">Total ${anio}</td><td class="ing">${fmt0(ingTot)}</td><td class="gas">${fmt0(gasTot)}</td><td class="${util >= 0 ? 'pos' : 'neg'}">${fmt0(util)}</td></tr></tfoot>` : ''}`;
+
+        // Gastos por categoría
+        const porCatG = {}; delAnio.filter(m => m.tipo === 'gasto').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatG[k] = (porCatG[k] || 0) + n2(m.monto); });
+        document.getElementById('c-gastos').innerHTML = barsH(Object.entries(porCatG).map(([l, v]) => ({ label: l, value: v, color: '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
+
+        // Ingresos por categoría
+        const porCatI = {}; delAnio.filter(m => m.tipo === 'ingreso').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatI[k] = (porCatI[k] || 0) + n2(m.monto); });
+        document.getElementById('c-ingresos').innerHTML = barsH(Object.entries(porCatI).map(([l, v]) => ({ label: l, value: v, color: '#2ecc71' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
+
+        // Rentabilidad por centro de costo (balance = ingresos − gastos por centro)
+        const porCentro = {};
+        delAnio.forEach(m => { const k = (m.centroCosto || '').trim(); if (!k) return; if (!porCentro[k]) porCentro[k] = 0; porCentro[k] += (m.tipo === 'ingreso' ? n2(m.monto) : -n2(m.monto)); });
+        const filasC = Object.entries(porCentro).map(([l, v]) => ({ label: l, value: v, color: v >= 0 ? '#1f9d61' : '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12);
+        document.getElementById('c-centros').innerHTML = filasC.length ? barsH(filasC, { money: true }) : '<p class="empty-mini">No hay movimientos con centro de costo asignado en ' + anio + '.</p>';
+    }
+
+    render();
+</script>
+
+</body>
+</html>
