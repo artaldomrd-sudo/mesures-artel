@@ -103,6 +103,8 @@
         </div>
         <label>Dirección</label>
         <input type="text" id="c-direccion" placeholder="Dirección">
+        <label>Lista de precios <span class="lbl-opt">— la que se le aplica al cotizar</span></label>
+        <select id="c-lista"><option value="">— Pública / por defecto —</option></select>
         <div class="grid2">
             <div><label>Estado</label><select id="c-estado"><option value="activo">Activo</option><option value="inactivo">No activo</option></select></div>
             <div class="chk-line" style="align-self:end"><input type="checkbox" id="c-dgii"><label for="c-dgii">Verificado por DGII</label></div>
@@ -131,12 +133,21 @@
     const iniciales = (n) => (String(n || '?').trim().split(/\s+/).slice(0, 2).map(p => p[0]).join('') || '?').toUpperCase();
     const normKey = (s) => String(s || '').trim().toLowerCase();  // misma clave que el cuaderno (normClienteKey)
 
-    let clientes = [], editId = null;
+    let clientes = [], listas = [], editId = null;
 
     onSnapshot(collection(db, 'clientes'), (snap) => {
         clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
     }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+    // Listas de precios (Ventas → Listas de precios) para asignarle una a cada cliente.
+    onSnapshot(collection(db, 'ventasListasPrecios'), (snap) => {
+        listas = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.activo !== false).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+        const sel = document.getElementById('c-lista'); const cur = sel.value;
+        sel.innerHTML = '<option value="">— Pública / por defecto —</option>' + listas.map(l => `<option value="${esc(l.id)}">${esc(l.nombre)}${l.publica ? ' ⭐' : ''}</option>`).join('');
+        sel.value = cur;
+        render();
+    }, () => {});
+    const listaNombre = (id) => { const l = listas.find(x => x.id === id); return l ? l.nombre : ''; };
 
     const estadoDe = (c) => c.estado || 'activo';
     const tipoDe = (c) => c.tipoCliente || 'nacional';
@@ -150,6 +161,7 @@
         document.getElementById('c-tipodoc').value = '';
         document.getElementById('c-estado').value = 'activo';
         document.getElementById('c-dgii').checked = false;
+        document.getElementById('c-lista').value = '';
         document.getElementById('modal').classList.add('show');
     };
     window.editar = function (id) {
@@ -168,6 +180,7 @@
         document.getElementById('c-direccion').value = c.direccion || '';
         document.getElementById('c-estado').value = estadoDe(c);
         document.getElementById('c-dgii').checked = !!c.verificadoDGII;
+        document.getElementById('c-lista').value = c.listaPreciosId || '';
         document.getElementById('c-notas').value = c.notas || '';
         document.getElementById('modal').classList.add('show');
     };
@@ -189,6 +202,8 @@
             direccion: document.getElementById('c-direccion').value.trim(),
             estado: document.getElementById('c-estado').value,
             verificadoDGII: document.getElementById('c-dgii').checked,
+            listaPreciosId: document.getElementById('c-lista').value,
+            listaPreciosNombre: listaNombre(document.getElementById('c-lista').value),
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
         try {
@@ -250,7 +265,8 @@
             (c.tipoDocumento && c.documento) ? esc(c.tipoDocumento + ' ' + c.documento) : '',
             c.telefono ? '📞 ' + esc(c.telefono) : '',
             c.ciudad ? '📍 ' + esc(c.ciudad) : '',
-            c.categoria ? '🏷️ ' + esc(c.categoria) : ''
+            c.categoria ? '🏷️ ' + esc(c.categoria) : '',
+            c.listaPreciosId ? '💲 ' + esc(listaNombre(c.listaPreciosId) || c.listaPreciosNombre || 'Lista') : ''
         ].filter(Boolean).join('  ·  ');
         return `<div class="order-card cli-card">
             <span class="avatar">${esc(iniciales(c.nombre))}</span>
