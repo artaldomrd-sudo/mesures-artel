@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Transferencias entre cuentas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 860px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 15px; }
+    .kpi .n { font-size: 17px; font-weight: bold; color: var(--artal-blue); line-height: 1; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 3px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .tr-card { display: flex; align-items: center; gap: 12px; }
+    .tr-ic { width: 40px; height: 40px; border-radius: 10px; background: #eef4fb; display: flex; align-items: center; justify-content: center; font-size: 18px; flex: 0 0 auto; }
+    .tr-info { flex: 1; min-width: 0; }
+    .tr-ruta { color: var(--artal-blue); font-size: 14.5px; font-weight: bold; }
+    .tr-ruta .arw { color: #8a93a0; margin: 0 6px; }
+    .tr-info .l { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .tr-monto { font-weight: bold; font-size: 15px; color: var(--artal-blue); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .del-btn { background: transparent; border: none; color: #c9ced6; cursor: pointer; font-size: 15px; } .del-btn:hover { color: #e74c3c; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 460px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .fx-note { font-size: 12px; color: #c07a12; background: #fff7e6; border-radius: 8px; padding: 8px 10px; margin-top: 10px; display: none; }
+    .fx-note.show { display: block; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="bancos.html" title="Volver">← Bancos</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Transferencias</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-y" onclick="abrir()">+ Nueva transferencia</button>
+        <select id="f-periodo" onchange="render()"><option value="mes">Este mes</option><option value="anio">Este año</option><option value="todo">Todo</option></select>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2>Nueva transferencia</h2>
+        <label>Desde (cuenta origen) *</label>
+        <select id="t-origen" onchange="onCuentas()"></select>
+        <label>Hacia (cuenta destino) *</label>
+        <select id="t-destino" onchange="onCuentas()"></select>
+        <div class="grid2">
+            <div><label>Fecha</label><input type="date" id="t-fecha"></div>
+            <div><label>Monto que sale <span id="t-cur-o" class="lbl-opt"></span> *</label><input type="number" id="t-monto" min="0" step="0.01" oninput="syncDest()"></div>
+        </div>
+        <div id="t-dest-wrap" style="display:none">
+            <label>Monto que recibe <span id="t-cur-d" class="lbl-opt"></span> *</label>
+            <input type="number" id="t-monto-dest" min="0" step="0.01">
+        </div>
+        <div class="grid2">
+            <div><label>Referencia <span class="lbl-opt">— opcional</span></label><input type="text" id="t-ref" placeholder="Nº transf./cheque"></div>
+            <div><label>Nota <span class="lbl-opt">— opcional</span></label><input type="text" id="t-nota" placeholder="Motivo"></div>
+        </div>
+        <div class="fx-note" id="fx-note">Las cuentas tienen monedas distintas: indica el monto que sale y el que se recibe (con la conversión ya aplicada).</div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Transferir</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const SIM = { DOP: 'RD$', USD: 'US$', EUR: '€' };
+    const fmtM = (x, mon) => (SIM[mon] || 'RD$') + ' ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+    let cuentas = [], transfers = [];
+
+    onSnapshot(collection(db, 'bancosCuentas'), (s) => {
+        cuentas = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.activo !== false).sort((a, b) => String(a.alias || '').localeCompare(String(b.alias || ''), 'es'));
+        llenarSelects(); render();
+    }, () => {});
+    onSnapshot(collection(db, 'bancosTransferencias'), (s) => { transfers = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    const cuentaDe = (id) => cuentas.find(c => c.id === id) || null;
+    const monedaDe = (id) => { const c = cuentaDe(id); return c ? (c.moneda || 'DOP') : 'DOP'; };
+
+    function llenarSelects() {
+        const opt = (c) => `<option value="${esc(c.id)}">${esc(c.alias)}${c.banco ? ' — ' + esc(c.banco) : ''} (${SIM[c.moneda] || 'RD$'})</option>`;
+        const o = document.getElementById('t-origen'), d = document.getElementById('t-destino');
+        const co = o.value, cd = d.value;
+        const html = cuentas.map(opt).join('');
+        o.innerHTML = html; d.innerHTML = html;
+        if (co) o.value = co; if (cd) d.value = cd;
+    }
+
+    // ---------- Modal ----------
+    window.onCuentas = function () {
+        const oId = document.getElementById('t-origen').value, dId = document.getElementById('t-destino').value;
+        const oM = monedaDe(oId), dM = monedaDe(dId);
+        document.getElementById('t-cur-o').textContent = '(' + (SIM[oM] || 'RD$') + ')';
+        document.getElementById('t-cur-d').textContent = '(' + (SIM[dM] || 'RD$') + ')';
+        const distinta = oId && dId && oM !== dM;
+        document.getElementById('t-dest-wrap').style.display = distinta ? 'block' : 'none';
+        document.getElementById('fx-note').classList.toggle('show', !!distinta);
+        syncDest();
+    };
+    window.syncDest = function () {
+        // Misma moneda: el monto que recibe es el mismo que sale.
+        if (document.getElementById('t-dest-wrap').style.display === 'none') {
+            document.getElementById('t-monto-dest').value = document.getElementById('t-monto').value;
+        }
+    };
+    window.abrir = function () {
+        if (cuentas.length < 2) { alert('Necesitas al menos 2 cuentas bancarias activas para transferir.'); return; }
+        document.getElementById('t-origen').selectedIndex = 0;
+        document.getElementById('t-destino').selectedIndex = Math.min(1, cuentas.length - 1);
+        document.getElementById('t-fecha').value = hoyISO();
+        ['t-monto', 't-monto-dest', 't-ref', 't-nota'].forEach(id => document.getElementById(id).value = '');
+        onCuentas();
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const oId = document.getElementById('t-origen').value, dId = document.getElementById('t-destino').value;
+        if (!oId || !dId) { alert('Elige las dos cuentas.'); return; }
+        if (oId === dId) { alert('La cuenta origen y destino no pueden ser la misma.'); return; }
+        const montoSalida = n2(document.getElementById('t-monto').value);
+        if (montoSalida <= 0) { alert('Escribe un monto mayor a cero.'); return; }
+        const distinta = document.getElementById('t-dest-wrap').style.display !== 'none';
+        const montoEntrada = distinta ? n2(document.getElementById('t-monto-dest').value) : montoSalida;
+        if (distinta && montoEntrada <= 0) { alert('Escribe el monto que recibe la cuenta destino.'); return; }
+        const o = cuentaDe(oId), d = cuentaDe(dId);
+        const fecha = document.getElementById('t-fecha').value || hoyISO();
+        const ref = document.getElementById('t-ref').value.trim();
+        const nota = document.getElementById('t-nota').value.trim();
+        const btn = document.querySelector('#modal .btn-guardar');
+        btn.disabled = true; btn.textContent = 'Transfiriendo…';
+        try {
+            // 1) doc de la transferencia (log). 2) los dos movimientos enlazados (débito en origen,
+            //    crédito en destino) — así los saldos de ambas cuentas se actualizan solos en
+            //    Movimientos y en el hub, sin lógica aparte. Se marcan conciliados (son internos y
+            //    conocidos, no salen de un estado de cuenta importado).
+            const tRef = await addDoc(collection(db, 'bancosTransferencias'), {
+                origenId: oId, origenAlias: o.alias || '', destinoId: dId, destinoAlias: d.alias || '',
+                montoSalida, montoEntrada, monedaOrigen: o.moneda || 'DOP', monedaDestino: d.moneda || 'DOP',
+                fecha, referencia: ref, nota, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+            const base = { origen: 'transferencia', transferenciaId: tRef.id, referencia: ref, fecha, conciliado: true, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() };
+            const mSal = await addDoc(collection(db, 'bancosMovimientos'), { ...base, cuentaId: oId, tipo: 'debito', monto: montoSalida, descripcion: 'Transferencia a ' + (d.alias || 'otra cuenta') + (nota ? ' — ' + nota : '') });
+            const mEnt = await addDoc(collection(db, 'bancosMovimientos'), { ...base, cuentaId: dId, tipo: 'credito', monto: montoEntrada, descripcion: 'Transferencia desde ' + (o.alias || 'otra cuenta') + (nota ? ' — ' + nota : '') });
+            await updateDoc(doc(db, 'bancosTransferencias', tRef.id), { movSalidaId: mSal.id, movEntradaId: mEnt.id });
+            cerrar();
+        } catch (e) { alert('No se pudo transferir: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Transferir'; }
+    };
+    window.borrar = async function (id) {
+        const t = transfers.find(x => x.id === id); if (!t) return;
+        if (!confirm('¿Anular esta transferencia? Se eliminarán los dos movimientos (salida y entrada) que generó.')) return;
+        try {
+            if (t.movSalidaId) await deleteDoc(doc(db, 'bancosMovimientos', t.movSalidaId)).catch(() => {});
+            if (t.movEntradaId) await deleteDoc(doc(db, 'bancosMovimientos', t.movEntradaId)).catch(() => {});
+            await deleteDoc(doc(db, 'bancosTransferencias', id));
+        } catch (e) { alert('No se pudo anular: ' + (e && e.message ? e.message : e)); }
+    };
+
+    function enPeriodo(fecha, periodo) {
+        if (periodo === 'todo') return true;
+        const d = new Date((fecha || '') + 'T00:00:00'); if (isNaN(d)) return false;
+        const now = new Date();
+        if (periodo === 'anio') return d.getFullYear() === now.getFullYear();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }
+
+    function render() {
+        const periodo = document.getElementById('f-periodo').value;
+        const lista = transfers.filter(t => enPeriodo(t.fecha, periodo)).sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || String(b.fechaCreacion && b.fechaCreacion.seconds || '').localeCompare(String(a.fechaCreacion && a.fechaCreacion.seconds || '')));
+        // KPI: total transferido en DOP del período (solo cuenta las salidas en DOP; las de otra
+        // moneda se listan pero no se suman al total DOP para no mezclar monedas).
+        const totalDOP = lista.filter(t => (t.monedaOrigen || 'DOP') === 'DOP').reduce((a, t) => a + n2(t.montoSalida), 0);
+        document.getElementById('kpis').innerHTML = [
+            ['Transferencias', lista.length], ['Total movido (DOP)', fmtM(totalDOP, 'DOP')]
+        ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        const cont = document.getElementById('lista');
+        if (!transfers.length) { cont.innerHTML = '<p class="empty">Aún no hay transferencias. Crea la primera con «+ Nueva transferencia».</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin transferencias en el período.</p>'; return; }
+        cont.innerHTML = lista.map(t => {
+            const mO = t.monedaOrigen || 'DOP', mD = t.monedaDestino || 'DOP';
+            const conv = (mO !== mD) ? ` → ${fmtM(t.montoEntrada, mD)}` : '';
+            const sub = [fmtFecha(t.fecha), t.referencia ? '# ' + esc(t.referencia) : '', t.nota ? '“' + esc(t.nota) + '”' : '', t.creadoPor ? 'por ' + esc(t.creadoPor) : ''].filter(Boolean).join('  ·  ');
+            return `<div class="order-card tr-card">
+                <div class="tr-ic">🔁</div>
+                <div class="tr-info">
+                    <div class="tr-ruta">${esc(t.origenAlias || '—')}<span class="arw">→</span>${esc(t.destinoAlias || '—')}</div>
+                    ${sub ? `<div class="l">${sub}</div>` : ''}
+                </div>
+                <div class="tr-monto">${fmtM(t.montoSalida, mO)}${conv}</div>
+                <button class="del-btn" title="Anular" onclick="borrar('${t.id}')">🗑</button>
+            </div>`;
+        }).join('');
+    }
+
+    render();
+</script>
+
+</body>
+</html>
