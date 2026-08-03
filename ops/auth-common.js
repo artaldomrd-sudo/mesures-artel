@@ -117,6 +117,7 @@ export function requireAuth(rolesPermitidos) {
 // (index.html) es solo de admin, así que un rol que no sea admin no debe caer ahí.
 export function homePorRol(roles) {
   if (roles.includes('admin')) return 'index.html';
+  if (roles.includes('contable')) return 'erp.html';
   if (roles.includes('ayudante')) return 'ayudante.html';
   if (roles.includes('instalador')) return 'instalacion.html';
   if (roles.includes('chofer')) return 'chofer.html';

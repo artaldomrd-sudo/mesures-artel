@@ -41,17 +41,18 @@
     <p class="intro">Módulos internos de gestión de ARTAL. Aquí se irán sumando las demás secciones.</p>
 
     <div class="cat-label"><span class="ic">🧩</span> Módulos</div>
-    <div class="grid">
-        <a class="card-link" href="rrhh.html"><span class="tile-badge" id="badge-rrhh"></span><div class="emoji">👥</div><div class="title">RRHH</div><div class="desc">Personal, asistencia, ciclo, reclutamiento y nómina</div></a>
-        <a class="card-link" href="ventas.html"><div class="emoji">🛒</div><div class="title">Ventas</div><div class="desc">Cotizaciones, CRM, clientes, comisiones y análisis</div></a>
-        <a class="card-link" href="activos.html"><div class="emoji">🏗️</div><div class="title">Activos Fijos</div><div class="desc">Registro, depreciación DR y gestión de activos</div></a>
-        <a class="card-link" href="productos.html"><div class="emoji">📦</div><div class="title">Productos y Servicios</div><div class="desc">Catálogo, categorías, unidades y precios</div></a>
-        <a class="card-link" href="bancos.html"><div class="emoji">🏦</div><div class="title">Bancos y Tesorería</div><div class="desc">Cuentas, movimientos, conciliación y financiamiento</div></a>
-        <a class="card-link" href="contabilidad.html"><div class="emoji">📒</div><div class="title">Contabilidad</div><div class="desc">Ingresos, gastos y cuentas por cobrar/pagar</div></a>
+    <div class="grid" id="mod-grid">
+        <a class="card-link" id="tile-rrhh" href="rrhh.html"><span class="tile-badge" id="badge-rrhh"></span><div class="emoji">👥</div><div class="title">RRHH</div><div class="desc">Personal, asistencia, ciclo, reclutamiento y nómina</div></a>
+        <a class="card-link" id="tile-ventas" href="ventas.html"><div class="emoji">🛒</div><div class="title">Ventas</div><div class="desc">Cotizaciones, CRM, clientes, comisiones y análisis</div></a>
+        <a class="card-link" id="tile-activos" href="activos.html"><div class="emoji">🏗️</div><div class="title">Activos Fijos</div><div class="desc">Registro, depreciación DR y gestión de activos</div></a>
+        <a class="card-link" id="tile-productos" href="productos.html"><div class="emoji">📦</div><div class="title">Productos y Servicios</div><div class="desc">Catálogo, categorías, unidades y precios</div></a>
+        <a class="card-link" id="tile-bancos" href="bancos.html"><div class="emoji">🏦</div><div class="title">Bancos y Tesorería</div><div class="desc">Cuentas, movimientos, conciliación y financiamiento</div></a>
+        <a class="card-link" id="tile-contabilidad" href="contabilidad.html"><div class="emoji">📒</div><div class="title">Contabilidad</div><div class="desc">Ingresos, gastos y cuentas por cobrar/pagar</div></a>
+        <a class="card-link" id="tile-nomina" href="rrhh-nomina.html" style="display:none"><div class="emoji">💵</div><div class="title">Nómina RD</div><div class="desc">Cálculo de nómina, AFP/SFS e ISR</div></a>
     </div>
 
-    <div class="cat-label"><span class="ic">🕒</span> Próximamente</div>
-    <div class="grid">
+    <div class="cat-label" id="soon-label"><span class="ic">🕒</span> Próximamente</div>
+    <div class="grid" id="soon-grid">
         <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">📊</div><div class="title">Contabilidad</div><div class="desc">Integración con Citrus (facturación / e-CF)</div></div>
         <div class="card-link soon"><span class="soon-badge">Próximamente</span><div class="emoji">🧱</div><div class="title">Producción</div><div class="desc">Costeo y control de obra</div></div>
     </div>
@@ -62,15 +63,34 @@
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
-    // Solo gerencia (admin): el ERP maneja datos internos sensibles.
-    const usuario = await requireAuth([]);
+    // Admin (gerencia) ve todo el ERP; la contable solo el área financiera/fiscal.
+    const usuario = await requireAuth(['contable']);
     wireBackButton(usuario.roles);
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('welcome-msg').textContent = 'Hola, ' + usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
-    // Badge de permisos pendientes en el tile de RRHH.
-    onSnapshot(query(collection(db, 'rrhhPermisos'), where('estado', '==', 'pendiente')), (s) => {
+    // Allowlist por rol: qué módulos del ERP ve cada rol que NO es admin. El admin ve todo. Un
+    // módulo NUEVO que se agregue al hub queda oculto para estos roles por defecto — para dárselo,
+    // basta sumar su id aquí. Así, a medida que incorporemos módulos, a la contable solo le
+    // aparecen los que le tocan (sin tener que tocar su acceso cada vez). Las páginas mismas
+    // validan el rol; esto es solo la navegación visible.
+    const TILES_POR_ROL = {
+        contable: ['tile-contabilidad', 'tile-bancos', 'tile-activos', 'tile-nomina']
+    };
+    const esAdmin = usuario.roles.includes('admin');
+    if (!esAdmin) {
+        const permitidos = new Set();
+        usuario.roles.forEach((r) => (TILES_POR_ROL[r] || []).forEach((id) => permitidos.add(id)));
+        document.querySelectorAll('#mod-grid > a.card-link').forEach((a) => {
+            a.style.display = permitidos.has(a.id) ? '' : 'none';
+        });
+        ['soon-label', 'soon-grid'].forEach((id) => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+        const intro = document.querySelector('.intro'); if (intro) intro.textContent = 'Área contable y financiera de ARTAL.';
+    }
+
+    // Badge de permisos pendientes en el tile de RRHH (solo admin lo ve).
+    if (esAdmin) onSnapshot(query(collection(db, 'rrhhPermisos'), where('estado', '==', 'pendiente')), (s) => {
         const b = document.getElementById('badge-rrhh');
         if (b) b.textContent = s.size ? s.size : '';
     }, () => {});
