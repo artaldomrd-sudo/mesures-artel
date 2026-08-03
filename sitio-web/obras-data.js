@@ -45,7 +45,7 @@ window.OBRAS=[
 "nombre": "Villa contemporánea",
 "cat": "residencial",
 "catLabel": "Residencial",
-"n": 20,
+"n": 16,
 "fotos": [
 "obras/villa-2/01.jpg",
 "obras/villa-2/02.jpg",
@@ -62,33 +62,25 @@ window.OBRAS=[
 "obras/villa-2/13.jpg",
 "obras/villa-2/14.jpg",
 "obras/villa-2/15.jpg",
-"obras/villa-2/16.jpg",
-"obras/villa-2/17.jpg",
-"obras/villa-2/18.jpg",
-"obras/villa-2/19.jpg",
-"obras/villa-2/20.jpg"
+"obras/villa-2/16.jpg"
 ],
 "caps": [
 "Portada",
+"Baranda de vidrio Escalera huellas de vidrio",
 "Baranda murocortina",
 "Carbonita escalera zoom",
 "Carbonita piscina",
 "Carbonita plegable galandage3",
 "Carbonita plegable soufflet",
-"Escalera 1",
-"Escalera 2",
-"Escalera 3",
-"Escalera 4",
-"Escalera baranda",
-"Estructura techo",
-"Frente villa",
-"Frente 2",
-"Frente piscina",
+"Cerramientos gris grafito",
+"Escalera y baranda de vidrio",
+"Escaleras huellas de vidrio",
+"Estructura de salida al techo en aluminio y vidrio",
 "Frente Villa",
 "",
 "",
-"Plegable galandage",
-"Plegable galandage2"
+"Piscina con pared de vidrio",
+"Puertas corredizas Muro cortina gris grafito"
 ]
 },
 {
@@ -153,18 +145,18 @@ window.OBRAS=[
 "obras/villa-4/12.jpg"
 ],
 "caps": [
+"Espejos mampara y fachada fija con ventilacion superior",
 "",
 "",
 "",
 "",
 "",
-"",
-"",
-"",
-"",
-"",
+"Esquina en perfileria de muro cortina",
 "Mahina 2",
-"Mahina 3"
+"Mahina 3",
+"Puerta corredera E100 con ventilacion superior",
+"Puerta corrediza 8 hojas 16 metros",
+"Vista aerea puertas correderas E100 negra"
 ]
 },
 {
@@ -266,8 +258,8 @@ window.OBRAS=[
 "obras/villa-9/02.jpg"
 ],
 "caps": [
-"",
-""
+"Captura de pantalla 2026 05 26 a la(s) 2.58.50 p. m.",
+"Captura de pantalla 2026 05 26 a la(s) 2.59.02 p. m."
 ]
 },
 {
@@ -464,7 +456,7 @@ window.OBRAS=[
 "nombre": "Fachadas y techos",
 "cat": "fachadas",
 "catLabel": "Fachadas",
-"n": 26,
+"n": 25,
 "fotos": [
 "obras/fachadas-techos/01.jpg",
 "obras/fachadas-techos/02.jpg",
@@ -490,8 +482,7 @@ window.OBRAS=[
 "obras/fachadas-techos/22.jpg",
 "obras/fachadas-techos/23.jpg",
 "obras/fachadas-techos/24.jpg",
-"obras/fachadas-techos/25.jpg",
-"obras/fachadas-techos/26.jpg"
+"obras/fachadas-techos/25.jpg"
 ],
 "caps": [
 "Portadaseccion",
@@ -502,7 +493,6 @@ window.OBRAS=[
 "Estructura1",
 "Estructuramurocortina",
 "Fachada tubos",
-"Fachada1",
 "",
 "",
 "",
@@ -625,14 +615,12 @@ window.OBRAS=[
 "nombre": "Espejos",
 "cat": "espejos",
 "catLabel": "Espejos & decoración",
-"n": 3,
+"n": 2,
 "fotos": [
 "obras/espejos/01.jpg",
-"obras/espejos/02.jpg",
-"obras/espejos/03.jpg"
+"obras/espejos/02.jpg"
 ],
 "caps": [
-"",
 "",
 ""
 ]
