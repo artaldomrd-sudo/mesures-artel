@@ -18,6 +18,18 @@
     .signature-canvas { width: 100%; max-width: 320px; height: 130px; border: 1.5px solid #ddd; border-radius: 7px; background: #fff; touch-action: none; display: block; }
     .signature-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
     .signature-row button { background: transparent; border: 1.5px solid #ccc; color: #666; border-radius: 7px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: 'Arimo'; }
+    .sec-title { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; font-weight: bold; }
+    #agenda-section { margin-bottom: 24px; }
+    .ag-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); border-left: 5px solid #3498db; padding: 12px 14px; margin-bottom: 10px; }
+    .ag-card.estado-en_proceso { border-left-color: #f39c12; }
+    .ag-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .ag-head b { color: var(--artal-blue); }
+    .ag-fecha { font-size: 12.5px; color: #444; font-weight: bold; white-space: nowrap; }
+    .ag-meta { font-size: 13px; color: #555; margin-top: 6px; line-height: 1.5; }
+    .ag-badge { display: inline-block; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 10px; color: #fff; background: #3498db; }
+    .ag-badge.en_proceso { background: #f39c12; }
+    .ag-navrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .ag-nav { font-size: 12.5px; font-weight: bold; text-decoration: none; padding: 8px 13px; border-radius: 7px; background: var(--artal-light); color: var(--artal-blue); }
 </style>
 </head>
 <body>
@@ -36,6 +48,11 @@
 </header>
 
 <main>
+    <section id="agenda-section">
+        <h2 class="sec-title">🗓️ Mi agenda de instalación</h2>
+        <div id="agenda-list"><p class="empty">Cargando…</p></div>
+    </section>
+    <h2 class="sec-title">🔧 Obras listas para instalar</h2>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
 </main>
 
@@ -131,6 +148,84 @@
     const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo']));
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
+    });
+
+    // ---------- Mi agenda de instalación (colección `instalaciones`) ----------
+    // Muestra, arriba de las obras, los trabajos agendados a ESTE instalador (fecha + GPS +
+    // estado). Los cambios de estado/fotos siguen viviendo en Agenda de Instalación
+    // (instalaciones.html), que audita cada cambio; aquí es una vista de consulta + navegación.
+    function parseGps(input) {
+        if (!input) return null;
+        const s = String(input).trim();
+        const m = s.match(/(-?\d{1,3}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/);
+        if (m) return { lat: m[1], lng: m[2] };
+        if (/^https?:\/\//i.test(s)) return { url: s };
+        return null;
+    }
+    const wazeUrl = (g) => `https://waze.com/ul?ll=${g.lat},${g.lng}&navigate=yes`;
+    const mapsUrl = (g) => g.url ? g.url : `https://www.google.com/maps/dir/?api=1&destination=${g.lat},${g.lng}`;
+    const AG_ESTADO = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
+
+    // Asignada a mí: por email en asignados[] (varios instaladores) o el campo singular heredado.
+    function agendaMia(j) {
+        const email = usuario.email;
+        if (Array.isArray(j.asignados) && j.asignados.length) return j.asignados.some(a => a && a.email === email);
+        return j.instaladorEmail === email;
+    }
+    const agFecha = (j) => (j.fecha && j.fecha.toDate) ? j.fecha.toDate() : null;
+    function agFechaTxt(j) {
+        const ini = agFecha(j);
+        if (!ini) return j.estado === 'en_proceso' ? '🔧 En curso' : '📋 Sin fecha';
+        const fin = (j.fechaFin && j.fechaFin.toDate) ? j.fechaFin.toDate() : null;
+        const fD = (d) => d.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' });
+        if (j.modoFecha === 'rango') return fin ? `${fD(ini)} → ${fD(fin)}` : `Desde ${fD(ini)}`;
+        return `${fD(ini)} · ${ini.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    function agendaCardHTML(j) {
+        const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
+        const g = parseGps(j.gps);
+        const estado = j.estado || 'pendiente';
+        let nav = '';
+        if (g) {
+            const b = [];
+            if (g.lat) b.push(`<a class="ag-nav" href="${wazeUrl(g)}" target="_blank" rel="noopener">🚗 Waze</a>`);
+            b.push(`<a class="ag-nav" href="${mapsUrl(g)}" target="_blank" rel="noopener">📍 Maps</a>`);
+            nav = `<div class="ag-navrow">${b.join('')}</div>`;
+        }
+        return `
+        <div class="ag-card estado-${estado}">
+            <div class="ag-head">
+                <b>${esc(lugar) || 'Sin cliente'}</b>
+                <span class="ag-fecha">${esc(agFechaTxt(j))}</span>
+            </div>
+            <div class="ag-meta">
+                <span class="ag-badge ${estado}">${esc(AG_ESTADO[estado] || estado)}</span>
+                ${j.direccion ? ' · 📌 ' + esc(j.direccion) : ''}
+                ${j.notas ? '<br>' + esc(j.notas) : ''}
+                ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
+            </div>
+            ${nav}
+        </div>`;
+    }
+
+    onSnapshot(collection(db, 'instalaciones'), (snap) => {
+        const list = document.getElementById('agenda-list');
+        const mias = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(j => agendaMia(j) && (j.estado || 'pendiente') !== 'completado');
+        // Primero las que tienen fecha (ascendente), luego las sin fecha.
+        mias.sort((a, b) => {
+            const da = agFecha(a), db_ = agFecha(b);
+            if (da && db_) return da - db_;
+            if (da) return -1;
+            if (db_) return 1;
+            return 0;
+        });
+        list.innerHTML = mias.length
+            ? mias.map(agendaCardHTML).join('')
+            : '<p class="empty">No tienes instalaciones agendadas.</p>';
+    }, (err) => {
+        document.getElementById('agenda-list').innerHTML = '<p class="empty">Error cargando la agenda: ' + esc(err.message) + '</p>';
     });
 
     window.abrirAprobacion = function (id) {
