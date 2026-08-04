@@ -185,7 +185,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     // Nuevo esquema (varios avisos por evento)
     await procesarRecordatoriosMulti('citas', emailsAsignados, 'ops/calendario.html', 'Recordatorio: ');
-    await procesarRecordatoriosMulti('instalaciones', (d) => d.instaladorEmail ? [d.instaladorEmail] : [], 'ops/instalaciones.html', 'Instalación próxima: ');
+    await procesarRecordatoriosMulti('instalaciones', (d) => (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map(a => a && a.email).filter(Boolean) : (d.instaladorEmail ? [d.instaladorEmail] : [])), 'ops/instalaciones.html', 'Instalación próxima: ');
     // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso,
     // siempre una sola persona — no aplica lo de "varias personas", es de antes de eso)
     await procesarRecordatorios('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');

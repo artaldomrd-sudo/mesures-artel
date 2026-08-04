@@ -165,8 +165,8 @@
             <p class="hint" style="margin:6px 0 0;">Se guardará <b>sin fecha</b> y aparecerá en "Por programar" arriba, hasta que le pongas una con Editar.</p>
         </div>
 
-        <label>Instalador asignado</label>
-        <select id="job-instalador"></select>
+        <label>Instaladores asignados <span class="hint">(puedes marcar varios)</span></label>
+        <div id="job-instaladores" class="recordar-group"></div>
 
         <div id="recordar-wrap">
             <label>Recordatorios (puedes marcar varios)</label>
@@ -350,7 +350,7 @@
             </div>
             <div class="job-meta">
                 <span class="estado-badge ${estado}">${esc(ESTADO_LABEL[estado] || estado)}</span>
-                ${j.instaladorNombre ? ' · 🔧 ' + esc(j.instaladorNombre) : ' · 🔧 sin asignar'}
+                ${(() => { const noms = Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map(a => a && a.nombre).filter(Boolean) : (j.instaladorNombre ? [j.instaladorNombre] : []); return noms.length ? ' · 🔧 ' + noms.map(esc).join(', ') : ' · 🔧 sin asignar'; })()}
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
                 ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
@@ -526,9 +526,11 @@
             const roles = Array.isArray(u.rol) ? u.rol : [u.rol];
             return roles.includes('instalador');
         });
-        const sel = document.getElementById('job-instalador');
-        sel.innerHTML = '<option value="">(sin asignar)</option>' +
-            instaladores.map(u => `<option value="${esc(u.email)}">${esc(u.nombre)}</option>`).join('');
+        const cont = document.getElementById('job-instaladores');
+        const marcados = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value); // conservar selección al refrescar
+        cont.innerHTML = instaladores.length
+            ? instaladores.map(u => `<label><input type="checkbox" value="${esc(u.email)}"${marcados.includes(u.email) ? ' checked' : ''}> ${esc(u.nombre)}</label>`).join('')
+            : '<span class="hint">No hay instaladores registrados todavía.</span>';
     });
 
     function refreshClientMap() {
@@ -564,7 +566,7 @@
     function limpiarForm() {
         editingId = null;
         ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-fecha-inicio','job-fecha-fin','job-notas'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('job-instalador').value = '';
+        document.querySelectorAll('#job-instaladores input').forEach(c => c.checked = false);
         document.getElementById('job-estado').value = 'pendiente';
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = false);
         setModoFecha('unica');
@@ -607,7 +609,8 @@
         document.getElementById('job-obra').value = j.obra || '';
         document.getElementById('job-direccion').value = j.direccion || '';
         document.getElementById('job-gps').value = j.gps || '';
-        document.getElementById('job-instalador').value = j.instaladorEmail || '';
+        const asigEmails = Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map(a => a && a.email).filter(Boolean) : (j.instaladorEmail ? [j.instaladorEmail] : []);
+        document.querySelectorAll('#job-instaladores input').forEach(c => c.checked = asigEmails.includes(c.value));
         document.getElementById('job-estado').value = j.estado || 'pendiente';
         const recs = Array.isArray(j.recordatorios) ? j.recordatorios.map(String) : [];
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = recs.includes(c.value));
@@ -635,7 +638,8 @@
         const obra = document.getElementById('job-obra').value.trim();
         const direccion = document.getElementById('job-direccion').value.trim();
         const gps = document.getElementById('job-gps').value.trim();
-        const instaladorEmail = document.getElementById('job-instalador').value;
+        const asigEmails = Array.from(document.querySelectorAll('#job-instaladores input:checked')).map(c => c.value);
+        const asignados = asigEmails.map(em => { const u = instaladores.find(x => x.email === em); return { email: em, nombre: u ? u.nombre : '' }; });
         const estado = document.getElementById('job-estado').value;
         const recordatorios = Array.from(document.querySelectorAll('#job-recordar input:checked')).map(c => Number(c.value));
         const notas = document.getElementById('job-notas').value.trim();
@@ -663,15 +667,17 @@
         if (gps && !parseGps(gps)) {
             if (!confirm('El GPS no parece coordenadas ni un link válido. ¿Guardar de todos modos?')) return;
         }
-        const inst = instaladores.find(u => u.email === instaladorEmail);
         const tieneInicio = !!fecha;
 
         const datos = {
             cliente, obra, direccion, gps,
             modoFecha,
             fecha, fechaFin,
-            instaladorEmail: instaladorEmail || '',
-            instaladorNombre: inst ? inst.nombre : '',
+            asignados,
+            // Se conserva el par singular (= primer asignado) por compatibilidad con datos y
+            // pantallas anteriores que aún leen instaladorEmail/instaladorNombre.
+            instaladorEmail: asigEmails[0] || '',
+            instaladorNombre: (asignados[0] && asignados[0].nombre) || '',
             estado, notas, recordatorios,
             // Los recordatorios solo aplican si hay fecha de inicio. Al guardar se reinician para
             // que vuelvan a evaluarse (útil si se cambió la fecha o los avisos).
