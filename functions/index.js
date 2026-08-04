@@ -46,6 +46,9 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
         ? fecha.toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' })
         : '';
     const lugar = [cita.cliente, cita.obra].filter(Boolean).join(' — ');
+    // Un aviso para el equipo de instalación abre SU pantalla (Trabajo en Obra), no el calendario
+    // (que es solo de gerencia). Los de gerencia siguen abriendo el calendario.
+    const urlDestino = cita.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html';
 
     for (const email of emails) {
         const token = await tokenDe(email);
@@ -56,7 +59,7 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
                 data: {
                     title: 'Nueva cita: ' + (cita.titulo || 'Sin título'),
                     body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                    url: 'ops/calendario.html'
+                    url: urlDestino
                 }
             });
         } catch (e) {
@@ -164,7 +167,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
                             data: {
                                 title: tituloPrefix + (d.titulo || lugar || 'Recordatorio'),
                                 body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                                url: urlDestino
+                                url: (typeof urlDestino === 'function' ? urlDestino(d) : urlDestino)
                             }
                         });
                     } catch (e) {
@@ -184,7 +187,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
 
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     // Nuevo esquema (varios avisos por evento)
-    await procesarRecordatoriosMulti('citas', emailsAsignados, 'ops/calendario.html', 'Recordatorio: ');
+    await procesarRecordatoriosMulti('citas', emailsAsignados, (d) => d.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html', 'Recordatorio: ');
     await procesarRecordatoriosMulti('instalaciones', (d) => (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map(a => a && a.email).filter(Boolean) : (d.instaladorEmail ? [d.instaladorEmail] : [])), 'ops/instalaciones.html', 'Instalación próxima: ');
     // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso,
     // siempre una sola persona — no aplica lo de "varias personas", es de antes de eso)
