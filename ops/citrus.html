@@ -50,7 +50,11 @@
     <div class="box">
         <h2>1) Probar conexión</h2>
         <p style="font-size:13px;color:#666;margin:0 0 10px;">Lee las <b>tiendas</b> del entorno de pruebas. Si responde <b>200</b>, el token y el puente funcionan (aunque la lista venga vacía).</p>
-        <button class="act ping" id="btn-ping" onclick="probar()">🔌 Probar conexión</button>
+        <div class="row">
+            <button class="act ping" id="btn-ping" onclick="probar()">🔌 Probar conexión</button>
+            <button class="act" id="btn-diag" onclick="diagnostico()" style="background:#8e44ad;">🩺 Diagnóstico de token</button>
+        </div>
+        <p style="font-size:12px;color:#888;margin:8px 0 0;">El diagnóstico prueba varios formatos de header y muestra cuál acepta Citrus (no expone el token, solo su longitud).</p>
     </div>
 
     <div class="box">
@@ -139,6 +143,31 @@
             btn.disabled = false;
         }
     }
+
+    window.diagnostico = async function () {
+        const btn = document.getElementById('btn-diag');
+        btn.disabled = true;
+        setEstado('Probando formatos de token…', '');
+        document.getElementById('out').style.display = 'none';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const r = await fetch(FN, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ diag: true })
+            });
+            const cuerpo = await r.json().catch(() => null);
+            if (!cuerpo) { setEstado('Respuesta vacía del puente (HTTP ' + r.status + ').', 'err'); return; }
+            const ganador = (cuerpo.resultados || []).find(x => x.status >= 200 && x.status < 300);
+            setEstado(
+                ganador ? '✅ Formato que funciona: ' + ganador.formato : '⚠ Ningún formato fue aceptado (longitud del token: ' + cuerpo.longitudToken + ')',
+                ganador ? 'ok' : 'err'
+            );
+            mostrar(cuerpo);
+        } catch (e) {
+            setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err');
+        } finally { btn.disabled = false; }
+    };
 
     window.probar = () => ejecutar('tienda', 0, document.getElementById('btn-ping'));
     window.leer = () => ejecutar(

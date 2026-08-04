@@ -444,6 +444,30 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
     const email = await callerAdmin(req);
     if (!email) { res.status(403).json({ error: 'no-autorizado' }); return; }
 
+    // Modo diagnóstico: prueba varios formatos de header contra /v5/tienda para descubrir cuál
+    // acepta Citrus, sin exponer el token (solo su longitud). Se dispara con { diag: true }.
+    if (req.body && req.body.diag) {
+        const t = citrusToken.value().trim();
+        const variantes = {
+            'crudo (token directo)': t,
+            'Bearer <token>': 'Bearer ' + t,
+            'Token <token>': 'Token ' + t
+        };
+        const probe = `${CITRUS_BASE}/v5/tienda/extraccionDatos`;
+        const resultados = [];
+        for (const [nombre, valor] of Object.entries(variantes)) {
+            try {
+                const rr = await fetch(probe, { headers: { 'Authorization': valor, 'Accept': 'application/json' } });
+                const txt = await rr.text();
+                let msg = txt;
+                try { const j = JSON.parse(txt); msg = j.MensajeAutorizacion || j.mensaje || (Array.isArray(j) ? `array[${j.length}]` : JSON.stringify(j).slice(0, 120)); } catch (_) { msg = txt.slice(0, 120); }
+                resultados.push({ formato: nombre, status: rr.status, mensaje: msg });
+            } catch (e) { resultados.push({ formato: nombre, error: String((e && e.message) || e) }); }
+        }
+        res.status(200).json({ diagnostico: true, longitudToken: t.length, resultados });
+        return;
+    }
+
     const entidad = String((req.body && req.body.entidad) || '').trim();
     if (!CITRUS_ENTIDADES.has(entidad)) { res.status(400).json({ error: 'entidad', permitidas: [...CITRUS_ENTIDADES] }); return; }
 
