@@ -59,8 +59,8 @@
         <input type="number" id="c-cantidad" min="1" value="1">
         <label>Descripción</label>
         <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
-        <label>Orden de compra (PDF)</label>
-        <input type="file" id="c-pdf" accept="application/pdf">
+        <label>Orden de compra (PDF o foto PNG/JPG)</label>
+        <input type="file" id="c-pdf" accept="application/pdf,image/png,image/jpeg">
         <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra y enviar a chofer/instalador</button>
     </div>
 
@@ -208,8 +208,10 @@
         if (!cliente) { alert('Escribe el cliente.'); return; }
         if (!obra) { alert('Escribe la obra o ubicación.'); return; }
         if (!proveedor) { alert('Escribe el proveedor.'); return; }
-        if (!file) { alert('Sube el PDF de la orden de compra.'); return; }
-        if (file.type !== 'application/pdf') { alert('El archivo debe ser un PDF.'); return; }
+        if (!file) { alert('Sube el PDF o la foto de la orden de compra.'); return; }
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        const esImg = /^image\/(png|jpe?g)$/i.test(file.type) || /\.(png|jpe?g)$/i.test(file.name || '');
+        if (!esPdf && !esImg) { alert('El archivo debe ser un PDF o una foto PNG/JPG.'); return; }
 
         const btn = document.getElementById('c-btn');
         btn.disabled = true;
@@ -217,8 +219,13 @@
 
         try {
             const ref_ = doc(collection(db, 'orders'));
-            const fileRef = ref(storage, `compras-pdfs/${ref_.id}.pdf`);
-            await uploadBytes(fileRef, file);
+            // Guarda con la extensión y el content-type reales (PDF o imagen) para que el link
+            // abra bien en cualquier visor. El campo sigue llamándose compraPdfUrl por
+            // compatibilidad con chofer/instalador/historial; compraArchivoTipo distingue foto/PDF.
+            const ext = esPdf ? 'pdf' : (/png/i.test(file.type + file.name) ? 'png' : 'jpg');
+            const contentType = esPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : 'image/jpeg');
+            const fileRef = ref(storage, `compras-pdfs/${ref_.id}.${ext}`);
+            await uploadBytes(fileRef, file, { contentType });
             const url = await getDownloadURL(fileRef);
 
             await setDoc(ref_, {
@@ -228,6 +235,7 @@
                 status: 'listo_para_cargar',
                 compraPdfUrl: url,
                 compraPdfNombre: file.name,
+                compraArchivoTipo: esPdf ? 'pdf' : 'img',
                 creadoPorNombre: usuario.nombre,
                 fechaCompra: serverTimestamp(),
                 fechaListoParaCargar: serverTimestamp()
