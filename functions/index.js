@@ -492,3 +492,40 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
         res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
     }
 });
+
+// Entidades que se permite CREAR (POST /v5/{entidad}) desde el panel. Empezamos solo con cliente
+// (prueba de escritura F1b); se irá ampliando (item, suplidor, factura-cliente...) a medida que
+// se conecten flujos reales.
+const CITRUS_WRITE_ENTIDADES = new Set(['cliente']);
+
+// Crea un registro en Citrus (POST). Solo admin. Recibe { entidad, body } y devuelve la respuesta
+// de Citrus tal cual (status + JSON) para inspeccionarla.
+exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const email = await callerAdmin(req);
+    if (!email) { res.status(403).json({ error: 'no-autorizado' }); return; }
+
+    const entidad = String((req.body && req.body.entidad) || '').trim();
+    if (!CITRUS_WRITE_ENTIDADES.has(entidad)) { res.status(400).json({ error: 'entidad', permitidas: [...CITRUS_WRITE_ENTIDADES] }); return; }
+    const body = req.body && req.body.body;
+    if (!body || typeof body !== 'object') { res.status(400).json({ error: 'body' }); return; }
+
+    const url = `${CITRUS_BASE}/v5/${entidad}`;
+    try {
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': citrusToken.value().trim(),
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        const text = await r.text();
+        let data; try { data = JSON.parse(text); } catch (_) { data = text; }
+        res.status(200).json({ ok: r.ok, status: r.status, entidad, url, data });
+    } catch (e) {
+        console.error('citrusWrite', entidad, e);
+        res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
+    }
+});
