@@ -40,10 +40,10 @@
 
 <main>
     <div class="form-box">
-        <h2 class="section-title">Registrar compra a proveedor</h2>
+        <h2 class="section-title" id="form-title">Registrar compra a proveedor</h2>
         <p style="font-size:12.5px;color:#666;margin:0 0 6px;">
             Para artículos que no pasan por fábrica (comprados ya hechos a un proveedor: tubos, puertas, vidrios, etc.).
-            Se sube la orden de compra y el pedido queda listo directo para chofer e instalador.
+            Se sube la orden de compra y, cuando esté lista para cargar, aparece para chofer e instalador.
         </p>
         <label>Cliente</label>
         <select id="c-cliente-sel" onchange="onClienteSel()"></select>
@@ -61,7 +61,18 @@
         <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
         <label>Orden de compra (PDF o foto PNG/JPG)</label>
         <input type="file" id="c-pdf" accept="application/pdf,image/png,image/jpeg">
-        <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra y enviar a chofer/instalador</button>
+        <div id="c-pdf-actual" style="font-size:12px;color:#666;margin-top:4px;display:none;"></div>
+        <label>Estado</label>
+        <select id="c-status">
+            <option value="pendiente_proveedor">Pendiente de confirmación de proveedor</option>
+            <option value="listo_para_cargar">Listo para cargar/instalar</option>
+        </select>
+        <p style="font-size:11.5px;color:#888;margin:4px 0 0;">
+            Mientras esté <b>Pendiente de confirmación de proveedor</b> no le aparece al chofer.
+            Cámbialo a <b>Listo para cargar</b> cuando el proveedor confirme.
+        </p>
+        <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra</button>
+        <button class="submit" id="c-cancel-btn" onclick="cancelarEdicion()" style="display:none;background:#888;margin-top:8px;">Cancelar edición</button>
     </div>
 
     <h2 class="section-title">Compras registradas recientemente</h2>
@@ -71,7 +82,7 @@
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db, storage } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { buildClientMap, clientList, normalizarCliente, normalizarObra } from './clients.js';
 
@@ -192,7 +203,15 @@
         }[c]));
     }
 
-    const STATUS_LABEL = { listo_para_cargar: 'Listo para cargar/instalar', completado: 'Completado' };
+    const STATUS_LABEL = {
+        pendiente_proveedor: 'Pendiente de confirmación de proveedor',
+        listo_para_cargar: 'Listo para cargar/instalar',
+        completado: 'Completado'
+    };
+
+    // Doc actualmente en edición (null = registrando uno nuevo) y caché de docs por id para editar.
+    let editandoId = null;
+    let comprasCache = {};
 
     window.registrarCompra = async function () {
         const obraSel = document.getElementById('c-obra-sel').value;
@@ -205,68 +224,179 @@
         const fileInput = document.getElementById('c-pdf');
         const file = fileInput.files[0];
 
+        const status = document.getElementById('c-status').value;
+
         if (!cliente) { alert('Escribe el cliente.'); return; }
         if (!obra) { alert('Escribe la obra o ubicación.'); return; }
         if (!proveedor) { alert('Escribe el proveedor.'); return; }
-        if (!file) { alert('Sube el PDF o la foto de la orden de compra.'); return; }
-        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-        const esImg = /^image\/(png|jpe?g)$/i.test(file.type) || /\.(png|jpe?g)$/i.test(file.name || '');
-        if (!esPdf && !esImg) { alert('El archivo debe ser un PDF o una foto PNG/JPG.'); return; }
+        // Al editar, el archivo es opcional: si no se sube uno nuevo, se conserva el existente.
+        if (!file && !editandoId) { alert('Sube el PDF o la foto de la orden de compra.'); return; }
+        let esPdf = false, esImg = false;
+        if (file) {
+            esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+            esImg = /^image\/(png|jpe?g)$/i.test(file.type) || /\.(png|jpe?g)$/i.test(file.name || '');
+            if (!esPdf && !esImg) { alert('El archivo debe ser un PDF o una foto PNG/JPG.'); return; }
+        }
 
         const btn = document.getElementById('c-btn');
         btn.disabled = true;
         btn.textContent = 'Guardando…';
 
         try {
-            const ref_ = doc(collection(db, 'orders'));
-            // Guarda con la extensión y el content-type reales (PDF o imagen) para que el link
-            // abra bien en cualquier visor. El campo sigue llamándose compraPdfUrl por
-            // compatibilidad con chofer/instalador/historial; compraArchivoTipo distingue foto/PDF.
-            const ext = esPdf ? 'pdf' : (/png/i.test(file.type + file.name) ? 'png' : 'jpg');
-            const contentType = esPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : 'image/jpeg');
-            const fileRef = ref(storage, `compras-pdfs/${ref_.id}.${ext}`);
-            await uploadBytes(fileRef, file, { contentType });
-            const url = await getDownloadURL(fileRef);
+            // Id del doc: el existente al editar, o uno nuevo al registrar.
+            const ref_ = editandoId ? doc(db, 'orders', editandoId) : doc(collection(db, 'orders'));
+            const previo = editandoId ? (comprasCache[editandoId] || {}) : {};
 
-            await setDoc(ref_, {
-                cliente, obra, proveedor, descripcion,
-                docType: 'COMPRA_DIRECTA',
-                totalItems: cantidad,
-                status: 'listo_para_cargar',
-                compraPdfUrl: url,
-                compraPdfNombre: file.name,
-                compraArchivoTipo: esPdf ? 'pdf' : 'img',
-                creadoPorNombre: usuario.nombre,
-                fechaCompra: serverTimestamp(),
-                fechaListoParaCargar: serverTimestamp()
-            });
+            // Datos base comunes a crear/editar.
+            const datos = { cliente, obra, proveedor, descripcion, totalItems: cantidad, status };
+
+            // Si se subió un archivo nuevo, se guarda con la extensión y content-type reales (PDF o
+            // imagen) para que el link abra bien en cualquier visor. El campo sigue llamándose
+            // compraPdfUrl por compatibilidad con chofer/instalador/historial; compraArchivoTipo
+            // distingue foto/PDF. Al editar sin subir archivo, se conservan los del doc previo.
+            if (file) {
+                const ext = esPdf ? 'pdf' : (/png/i.test(file.type + file.name) ? 'png' : 'jpg');
+                const contentType = esPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : 'image/jpeg');
+                const fileRef = ref(storage, `compras-pdfs/${ref_.id}.${ext}`);
+                await uploadBytes(fileRef, file, { contentType });
+                datos.compraPdfUrl = await getDownloadURL(fileRef);
+                datos.compraPdfNombre = file.name;
+                datos.compraArchivoTipo = esPdf ? 'pdf' : 'img';
+            }
+            // Marca de tiempo de "listo para cargar": se pone la primera vez que pasa a ese estado.
+            if (status === 'listo_para_cargar' && previo.status !== 'listo_para_cargar') {
+                datos.fechaListoParaCargar = serverTimestamp();
+            }
+
+            if (editandoId) {
+                await updateDoc(ref_, datos);
+            } else {
+                await setDoc(ref_, {
+                    ...datos,
+                    docType: 'COMPRA_DIRECTA',
+                    creadoPorNombre: usuario.nombre,
+                    fechaCompra: serverTimestamp()
+                });
+            }
             // Registra el cliente/obra en la colección central `clientes` (por si es nuevo y no
             // vino del cuaderno), para que aparezca como sugerencia en el futuro.
             await setDoc(doc(db, 'clientes', cliente.toLowerCase()), {
                 nombre: cliente, [`obras.${obra.toLowerCase()}`]: obra
             }, { merge: true });
 
-            document.getElementById('c-cliente-sel').value = '';
-            document.getElementById('c-cliente').value = '';
-            document.getElementById('c-obra-sel').value = '';
-            document.getElementById('c-obra').value = '';
-            document.getElementById('c-proveedor-sel').value = '';
-            document.getElementById('c-proveedor').value = '';
-            document.getElementById('c-cantidad').value = '1';
-            document.getElementById('c-descripcion').value = '';
-            fileInput.value = '';
-            onClienteSel();
-            onProveedorSel();
-            alert('Compra registrada. Ya está disponible para chofer e instalador.');
+            cancelarEdicion();
+            alert(editandoId ? 'Compra actualizada.'
+                : (status === 'listo_para_cargar'
+                    ? 'Compra registrada. Ya está disponible para chofer e instalador.'
+                    : 'Compra registrada como pendiente de confirmación del proveedor. No le aparece al chofer todavía.'));
         } catch (e) {
-            alert('No se pudo registrar la compra: ' + e.message);
+            alert('No se pudo guardar la compra: ' + e.message);
         } finally {
             btn.disabled = false;
-            btn.textContent = 'Registrar compra y enviar a chofer/instalador';
+            btn.textContent = editandoId ? 'Guardar cambios' : 'Registrar compra';
         }
     };
 
-    function orderCardHTML(o) {
+    // Vuelve el formulario al modo "registrar nuevo" y limpia todos los campos.
+    window.cancelarEdicion = function () {
+        editandoId = null;
+        document.getElementById('c-cliente-sel').value = '';
+        document.getElementById('c-cliente').value = '';
+        document.getElementById('c-obra-sel').value = '';
+        document.getElementById('c-obra').value = '';
+        document.getElementById('c-proveedor-sel').value = '';
+        document.getElementById('c-proveedor').value = '';
+        document.getElementById('c-cantidad').value = '1';
+        document.getElementById('c-descripcion').value = '';
+        document.getElementById('c-status').value = 'pendiente_proveedor';
+        document.getElementById('c-pdf').value = '';
+        document.getElementById('c-pdf-actual').style.display = 'none';
+        document.getElementById('form-title').textContent = 'Registrar compra a proveedor';
+        document.getElementById('c-btn').textContent = 'Registrar compra';
+        document.getElementById('c-cancel-btn').style.display = 'none';
+        onClienteSel();
+        onProveedorSel();
+    };
+
+    // Carga una compra existente en el formulario para corregirla.
+    window.editarCompra = function (id) {
+        const o = comprasCache[id];
+        if (!o) return;
+        editandoId = id;
+        // Cliente: si ya existe en la lista, seleccionarlo; si no, modo "escribir nuevo".
+        const cliSel = document.getElementById('c-cliente-sel');
+        if ([...cliSel.options].some(op => op.value === o.cliente)) {
+            cliSel.value = o.cliente;
+        } else {
+            cliSel.value = NUEVO;
+            document.getElementById('c-cliente').value = o.cliente || '';
+        }
+        onClienteSel();
+        // Obra (después de poblar las obras del cliente elegido).
+        const obraSel = document.getElementById('c-obra-sel');
+        if ([...obraSel.options].some(op => op.value === o.obra)) {
+            obraSel.value = o.obra;
+        } else {
+            obraSel.value = NUEVO;
+            document.getElementById('c-obra').value = o.obra || '';
+        }
+        onObraSel();
+        // Proveedor.
+        const provSel = document.getElementById('c-proveedor-sel');
+        if ([...provSel.options].some(op => op.value === o.proveedor)) {
+            provSel.value = o.proveedor;
+        } else {
+            provSel.value = NUEVO;
+            document.getElementById('c-proveedor').value = o.proveedor || '';
+        }
+        onProveedorSel();
+        document.getElementById('c-cantidad').value = o.totalItems || 1;
+        document.getElementById('c-descripcion').value = o.descripcion || '';
+        document.getElementById('c-status').value = o.status === 'completado' ? 'listo_para_cargar' : (o.status || 'pendiente_proveedor');
+        document.getElementById('c-pdf').value = '';
+        const actual = document.getElementById('c-pdf-actual');
+        actual.innerHTML = o.compraPdfUrl
+            ? `Archivo actual: <a href="${esc(o.compraPdfUrl)}" target="_blank">${esc(o.compraPdfNombre || 'ver')}</a>. Sube uno solo si quieres reemplazarlo.`
+            : '';
+        actual.style.display = o.compraPdfUrl ? 'block' : 'none';
+        document.getElementById('form-title').textContent = 'Editar compra';
+        document.getElementById('c-btn').textContent = 'Guardar cambios';
+        document.getElementById('c-cancel-btn').style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // Cambia solo el estado de una compra desde su tarjeta (sin abrir el formulario).
+    window.cambiarEstadoCompra = async function (id, nuevo) {
+        const o = comprasCache[id];
+        if (!o || nuevo === o.status) return;
+        const datos = { status: nuevo };
+        if (nuevo === 'listo_para_cargar' && o.status !== 'listo_para_cargar') {
+            datos.fechaListoParaCargar = serverTimestamp();
+        }
+        try {
+            await updateDoc(doc(db, 'orders', id), datos);
+        } catch (e) {
+            alert('No se pudo cambiar el estado: ' + e.message);
+        }
+    };
+
+    // Elimina una compra registrada (por si se creó por error).
+    window.eliminarCompra = async function (id) {
+        const o = comprasCache[id];
+        if (!o) return;
+        if (!confirm(`¿Eliminar la compra de "${o.cliente || ''} — ${o.obra || ''}"? Esta acción no se puede deshacer.`)) return;
+        try {
+            await deleteDoc(doc(db, 'orders', id));
+            if (editandoId === id) cancelarEdicion();
+        } catch (e) {
+            alert('No se pudo eliminar: ' + e.message);
+        }
+    };
+
+    function orderCardHTML(id, o) {
+        // El estado "completado" ya no se cambia desde aquí (lo maneja el chofer al entregar) —
+        // se muestra el badge y solo se permite volver a "listo para cargar" si hiciera falta.
+        const opciones = ['pendiente_proveedor', 'listo_para_cargar', 'completado'];
         return `
         <div class="order-card">
             <div class="order-head">
@@ -279,18 +409,27 @@
             </div>
             ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
             <p style="font-size:11.5px;color:#999;margin:8px 0 0;">Registrado por ${esc(o.creadoPorNombre)}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;">
+                <select onchange="cambiarEstadoCompra('${id}', this.value)" style="flex:1;min-width:180px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+                    ${opciones.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('')}
+                </select>
+                <button onclick="editarCompra('${id}')" style="padding:8px 12px;border:none;border-radius:7px;background:var(--artal-blue);color:#fff;font-family:'Arimo';font-weight:bold;font-size:13px;cursor:pointer;">✏ Editar</button>
+                <button onclick="eliminarCompra('${id}')" style="padding:8px 12px;border:none;border-radius:7px;background:#c0392b;color:#fff;font-family:'Arimo';font-weight:bold;font-size:13px;cursor:pointer;">🗑</button>
+            </div>
         </div>`;
     }
 
     const q = query(collection(db, 'orders'), where('docType', '==', 'COMPRA_DIRECTA'));
     onSnapshot(q, (snap) => {
         const list = document.getElementById('compras-list');
+        comprasCache = {};
+        snap.docs.forEach(d => { comprasCache[d.id] = d.data(); });
         if (!snap.size) { list.innerHTML = '<p class="empty">No hay compras registradas todavía.</p>'; return; }
         const docs = snap.docs.slice().sort((a, b) => {
             const fa = a.data().fechaCompra, fb = b.data().fechaCompra;
             return (fb && fb.toMillis ? fb.toMillis() : 0) - (fa && fa.toMillis ? fa.toMillis() : 0);
         });
-        list.innerHTML = docs.map(d => orderCardHTML(d.data())).join('');
+        list.innerHTML = docs.map(d => orderCardHTML(d.id, d.data())).join('');
     }, (err) => {
         document.getElementById('compras-list').innerHTML = '<p class="empty">Error cargando compras: ' + err.message + '</p>';
     });
