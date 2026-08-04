@@ -420,6 +420,7 @@
             <div id="saved-status-badge" class="saved-status-badge unsaved">○ Sin guardar</div>
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
+            <button class="side-btn pdf" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="openCotizCliente()" title="Cotización formal para el cliente, con precios y dibujos del cuaderno">💲 Cotización cliente</button>
 
             <div class="side-row destino-row" style="margin-top:8px;">
                 <button class="side-btn fabrica" style="border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Lo maneja ALUCUFEL (contratista externo)"><span id="btn-destino-alucufel-text">ALUCUFEL</span></button>
@@ -497,6 +498,10 @@
 <script>
     let cardsState = {};
     let itemId = 0;
+    // Config de la "Cotización para cliente" (precios por ítem viven en cardsState[id].precioCliente;
+    // esto es lo global: cargos, modo de ITBIS y líneas manuales). Se guarda con el proyecto y viaja
+    // a `orders` (getAppJSON) — preparado para mapear a /v5/cotizacion de Citrus cuando se conecte.
+    let cotizCli = { transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [] };
     let handleClicked = false; // SEGURO DE ARRASTRE EXCLUSIVO POR MANECILLA
     // Cliente+proyecto del notebook actualmente abierto (vía "Abrir proyecto" o un "Guardar"
     // exitoso previo en esta misma sesión) — para saber si un "Guardar" es continuar ESTE
@@ -1522,6 +1527,183 @@
         loadProgress();
     });
 
+    // ===================== COTIZACIÓN PARA CLIENTE =====================
+    // Panel dedicado (no toca las tarjetas): lista cada ítem del cuaderno con su dibujo + medidas,
+    // se le pone precio, se agregan transporte/instalación/líneas manuales y un toggle de ITBIS, y
+    // genera un PDF formal con el encabezado de ARTAL. Los precios viven en cardsState[id].precioCliente
+    // y la config en cotizCli (ambos se guardan con el proyecto y viajan a `orders` → Citrus-ready).
+    const czEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const czFmt = (x) => 'RD$ ' + (Number(x) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const czIds = () => Array.from(document.querySelectorAll('#item-list .item-card')).map(el => el.id.replace('card-', ''));
+    function czDesc(id) {
+        const s = cardsState[id] || {};
+        const titulo = s.label || s.type || 'Ítem';
+        const specs = [];
+        if (s.type !== 'draw' && s.vidrio && s.vidrio !== 'louvers') specs.push(String(s.vidrio) + ' ' + (s.espesor || '') + (s.color_vidrio && s.color_vidrio !== 'natural' ? ' ' + s.color_vidrio : ''));
+        if (s.color_perfil) specs.push('Acabado ' + (s.color_ral || s.color_perfil));
+        return { titulo, specs: specs.join(' · ') };
+    }
+    function czTotales() {
+        let subtotal = 0;
+        czIds().forEach(id => { const s = cardsState[id] || {}; subtotal += (Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0); });
+        const manual = (cotizCli.lineas || []).reduce((a, l) => a + (Number(l.cant) || 1) * (Number(l.precio) || 0), 0);
+        const transporte = Number(cotizCli.transporte) || 0, instalacion = Number(cotizCli.instalacion) || 0;
+        const base = subtotal + manual + transporte + instalacion;
+        let itbis = 0, total = base;
+        if (cotizCli.itbisModo === 'agregar') { itbis = base * (Number(cotizCli.itbisPct) || 18) / 100; total = base + itbis; }
+        return { subtotal, manual, transporte, instalacion, base, itbis, total };
+    }
+    window.openCotizCliente = function () {
+        if (!czIds().length) { alert('Agrega al menos un ítem al cuaderno antes de hacer la cotización.'); return; }
+        czRender();
+        document.getElementById('cotiz-cli-ov').style.display = 'flex';
+    };
+    window.closeCotizCliente = function () { document.getElementById('cotiz-cli-ov').style.display = 'none'; };
+    window.czSetPrecio = function (id, v) { if (cardsState[id]) cardsState[id].precioCliente = Number(v) || 0; czRecalcUI(); };
+    window.czSetCfg = function (k, v) { cotizCli[k] = (k === 'itbisModo') ? v : (Number(v) || 0); czRecalcUI(); };
+    window.czSetItbisModo = function (v) { cotizCli.itbisModo = v; czRecalcUI(); };
+    window.czAddLinea = function () { cotizCli.lineas.push({ desc: '', cant: 1, precio: 0 }); czRender(); };
+    window.czDelLinea = function (i) { cotizCli.lineas.splice(i, 1); czRender(); };
+    window.czSetLinea = function (i, k, v) { if (cotizCli.lineas[i]) { cotizCli.lineas[i][k] = (k === 'desc') ? v : (Number(v) || 0); czRecalcUI(); } };
+    function czRecalcUI() {
+        const t = czTotales();
+        czIds().forEach(id => { const s = cardsState[id] || {}; const c = document.getElementById('cz-imp-' + id); if (c) c.textContent = czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0)); });
+        (cotizCli.lineas || []).forEach((l, i) => { const c = document.getElementById('cz-mimp-' + i); if (c) c.textContent = czFmt((Number(l.cant) || 1) * (Number(l.precio) || 0)); });
+        const box = document.getElementById('cz-tot'); if (!box) return;
+        box.innerHTML =
+            `<div class="row"><span>Subtotal ítems</span><span>${czFmt(t.subtotal + t.manual)}</span></div>` +
+            (t.transporte ? `<div class="row"><span>Transporte</span><span>${czFmt(t.transporte)}</span></div>` : '') +
+            (t.instalacion ? `<div class="row"><span>Instalación</span><span>${czFmt(t.instalacion)}</span></div>` : '') +
+            (cotizCli.itbisModo === 'agregar' ? `<div class="row"><span>ITBIS (${Number(cotizCli.itbisPct) || 18}%)</span><span>${czFmt(t.itbis)}</span></div>` : '') +
+            (cotizCli.itbisModo === 'incluido' ? `<div class="row" style="color:#8a93a0;font-size:11px"><span>ITBIS incluido en los precios</span><span></span></div>` : '') +
+            `<div class="row grand"><span>TOTAL</span><span>${czFmt(t.total)}</span></div>`;
+    }
+    function czRender() {
+        const ids = czIds();
+        const filas = ids.map(id => {
+            const s = cardsState[id] || {}, d = czDesc(id);
+            const dib = s.type === 'draw' ? '<span style="color:#8a93a0;font-size:11px">Fachada</span>' : renderSVG(id);
+            return `<tr>
+                <td class="cz-dib">${dib}</td>
+                <td class="cz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}</div></td>
+                <td><input type="number" min="0" step="0.01" value="${s.precioCliente != null ? s.precioCliente : ''}" placeholder="Precio" oninput="czSetPrecio('${id}', this.value)"></td>
+                <td class="cz-imp" id="cz-imp-${id}">${czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0))}</td>
+            </tr>`;
+        }).join('');
+        const manuales = (cotizCli.lineas || []).map((l, i) => `<tr>
+            <td class="cz-dib" style="color:#c9ced6;font-size:11px">manual</td>
+            <td class="cz-d"><input type="text" value="${czEsc(l.desc)}" placeholder="Descripción (algo que no está en el cuaderno)" oninput="czSetLinea(${i},'desc',this.value)" style="width:100%"><div class="cz-med"><input type="number" min="0" step="1" value="${l.cant}" oninput="czSetLinea(${i},'cant',this.value)" style="width:70px"> unidades</div></td>
+            <td><input type="number" min="0" step="0.01" value="${l.precio || ''}" placeholder="Precio" oninput="czSetLinea(${i},'precio',this.value)"></td>
+            <td class="cz-imp" id="cz-mimp-${i}">${czFmt((Number(l.cant) || 1) * (Number(l.precio) || 0))}</td>
+        </tr><tr><td colspan="4" style="text-align:right;padding:0 6px 8px"><button class="cz-del" onclick="czDelLinea(${i})">✕ quitar línea manual</button></td></tr>`).join('');
+        document.getElementById('cz-body').innerHTML = `
+            <table class="cz-tbl">
+                <thead><tr><th class="cz-dib">Dibujo</th><th class="l">Descripción · Medidas</th><th>Precio unit.</th><th>Importe</th></tr></thead>
+                <tbody>${filas}${manuales}</tbody>
+            </table>
+            <button class="cz-add" onclick="czAddLinea()">+ Agregar línea manual</button>
+            <div class="cz-cfg">
+                <div><label>Transporte (RD$)</label><input type="number" min="0" step="0.01" value="${cotizCli.transporte || ''}" oninput="czSetCfg('transporte',this.value)"></div>
+                <div><label>Instalación (RD$)</label><input type="number" min="0" step="0.01" value="${cotizCli.instalacion || ''}" oninput="czSetCfg('instalacion',this.value)"></div>
+                <div><label>ITBIS</label><select onchange="czSetItbisModo(this.value)">
+                    <option value="incluido"${cotizCli.itbisModo === 'incluido' ? ' selected' : ''}>Ya incluido en los precios</option>
+                    <option value="agregar"${cotizCli.itbisModo === 'agregar' ? ' selected' : ''}>Agregar al final (18%)</option>
+                    <option value="ninguno"${cotizCli.itbisModo === 'ninguno' ? ' selected' : ''}>Sin ITBIS (exento)</option>
+                </select></div>
+            </div>
+            <div class="cz-tot" id="cz-tot"></div>`;
+        czRecalcUI();
+    }
+
+    // ---- PDF formal para el cliente (encabezado ARTAL + tabla estilo cotización) ----
+    async function czGenerarPDF(btn) {
+        const ids = czIds();
+        if (!ids.length) { alert('No hay ítems para cotizar.'); return; }
+        if (!window.html2canvas || !window.jspdf) { alert('No cargaron las librerías de PDF. Revisa la conexión.'); return; }
+        const t = czTotales();
+        const txt = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Generando PDF…'; }
+        const cliente = document.getElementById('header-cliente').value || '';
+        const obra = document.getElementById('header-obra').value || '';
+        const numero = 'COT-' + new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const hoy = new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' });
+        let filas = ids.map(id => {
+            const s = cardsState[id] || {}, d = czDesc(id);
+            const cant = Number(s.cantidad) || 1, pu = Number(s.precioCliente) || 0;
+            const dib = s.type === 'draw' ? '<div class="pz-nod">Fachada compuesta</div>' : renderSVG(id);
+            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}</td><td>${czFmt(cant * pu)}</td></tr>`;
+        }).join('');
+        (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}</td><td>${czFmt(cant * pu)}</td></tr>`; });
+        if (t.transporte) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte</b></td><td>—</td><td>—</td><td>${czFmt(t.transporte)}</td><td>${czFmt(t.transporte)}</td></tr>`;
+        if (t.instalacion) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Instalación</b></td><td>—</td><td>—</td><td>${czFmt(t.instalacion)}</td><td>${czFmt(t.instalacion)}</td></tr>`;
+        const html = `<style>
+            .pz{font-family:'Arimo',sans-serif;color:#1e2a35;font-size:12px;line-height:1.5;background:#fff;width:100%;}
+            .pz-top{display:flex;justify-content:space-between;align-items:center;background:#0A3D62;color:#fff;padding:18px 22px;}
+            .pz-top .logo{height:46px;filter:brightness(0) invert(1);} .pz-top .r{text-align:right;}
+            .pz-top .t{font-size:22px;font-weight:bold;letter-spacing:3px;} .pz-top .n{font-size:12px;opacity:.85;margin-top:3px;}
+            .pz-strip{background:#F6B93B;color:#5a4a12;font-size:10px;font-weight:bold;padding:6px 22px;text-align:center;}
+            .pz-meta{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;padding:14px 22px 6px;}
+            .pz-meta .k{color:#8a93a0;font-size:9px;text-transform:uppercase;font-weight:bold;letter-spacing:.5px;}
+            .pz-meta .v{font-size:13px;color:#0A3D62;font-weight:bold;}
+            table.pz-t{width:100%;border-collapse:collapse;margin:6px 0 0;}
+            table.pz-t th{background:#0A3D62;color:#fff;font-size:9.5px;text-transform:uppercase;padding:7px 6px;text-align:right;}
+            table.pz-t th.l{text-align:left;}
+            table.pz-t td{padding:7px 6px;border-bottom:1px solid #edf1f4;text-align:right;vertical-align:middle;white-space:nowrap;}
+            table.pz-t td.pz-d{text-align:left;white-space:normal;} table.pz-t td.pz-d b{color:#26333f;}
+            table.pz-t td.pz-c{text-align:center;} .pz-sp{font-size:10px;color:#667;}
+            td.pz-dib{width:104px;text-align:center;} td.pz-dib svg{width:92px;height:auto;display:block;margin:auto;}
+            .pz-nod{color:#8a93a0;font-size:10px;} table.pz-t tr:nth-child(even) td{background:#f8fafb;}
+            .pz-tot{max-width:300px;margin:12px 22px 0 auto;} .pz-tot .row{display:flex;justify-content:space-between;padding:4px 0;font-size:13px;}
+            .pz-tot .row.grand{border-top:2px solid #0A3D62;margin-top:5px;padding-top:8px;font-weight:bold;font-size:17px;color:#0A3D62;}
+            .pz-firmas{display:flex;justify-content:space-between;gap:50px;margin:40px 30px 6px;}
+            .pz-firmas div{flex:1;border-top:1.5px solid #26333f;padding-top:6px;text-align:center;font-size:11px;color:#445;}
+            .pz-pie{text-align:center;font-size:10px;color:#8a93a0;margin:14px 22px 18px;border-top:1px dashed #cbd2da;padding-top:8px;}
+        </style>
+        <div class="pz">
+            <div class="pz-top"><img class="logo" src="logo.png" alt="ARTAL"><div class="r"><div class="t">COTIZACIÓN</div><div class="n">${czEsc(numero)} · ${czEsc(hoy)}</div></div></div>
+            <div class="pz-strip">ARTAL DOMINICANA · ALUMINIO Y VIDRIO · LAS TERRENAS, SAMANÁ · TEL. +1 (849) 260-6106 · ARTALDOM.RD@GMAIL.COM</div>
+            <div class="pz-meta"><div><div class="k">Cliente</div><div class="v">${czEsc(cliente || '—')}</div></div><div><div class="k">Obra / ubicación</div><div class="v">${czEsc(obra || '—')}</div></div></div>
+            <table class="pz-t"><thead><tr><th class="l">Dibujo</th><th>Cant.</th><th class="l">Descripción</th><th>Ancho</th><th>Alto</th><th>P. Unit.</th><th>P. Total</th></tr></thead><tbody>${filas}</tbody></table>
+            <div class="pz-tot">
+                <div class="row"><span>Subtotal</span><span>${czFmt(t.subtotal + t.manual + t.transporte + t.instalacion)}</span></div>
+                ${cotizCli.itbisModo === 'agregar' ? `<div class="row"><span>ITBIS (${Number(cotizCli.itbisPct) || 18}%)</span><span>${czFmt(t.itbis)}</span></div>` : ''}
+                <div class="row grand"><span>TOTAL</span><span>${czFmt(t.total)}</span></div>
+            </div>
+            <div class="pz-firmas"><div>Aprobado por el cliente</div><div>Por ARTAL Dominicana</div></div>
+            <div class="pz-pie">${cotizCli.itbisModo === 'incluido' ? 'Precios con ITBIS incluido. ' : ''}Cotización válida por 15 días. No constituye una factura fiscal.</div>
+        </div>`;
+        const cont = document.createElement('div');
+        cont.style.cssText = 'position:fixed;left:-10000px;top:0;width:820px;background:#fff;z-index:-1;';
+        cont.innerHTML = html;
+        document.body.appendChild(cont);
+        try {
+            // Rasterizar cada dibujo SVG a PNG (mismo motivo que exportPDF: Safari no pinta bien un
+            // SVG con filtros/gradientes capturado por html2canvas; el PNG sí).
+            for (const svg of cont.querySelectorAll('.pz-dib svg')) {
+                const r = svg.getBoundingClientRect(); const w = r.width || 92, h = r.height || 70;
+                const svgStr = new XMLSerializer().serializeToString(svg).replace(/\s*filter="url\(#shadow-[^"]*\)"/g, '');
+                const loader = new Image(); loader.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+                await Promise.race([new Promise(res => { loader.onload = res; loader.onerror = res; }), new Promise(res => setTimeout(res, 2000))]);
+                const cvs = document.createElement('canvas'); const sc = 3; cvs.width = w * sc; cvs.height = h * sc;
+                try { cvs.getContext('2d').drawImage(loader, 0, 0, cvs.width, cvs.height); } catch (e) { }
+                const img = document.createElement('img'); img.style.cssText = `display:block;width:${w}px;height:${h}px;margin:auto;`;
+                img.src = cvs.toDataURL('image/png'); svg.parentElement.insertBefore(img, svg); svg.style.display = 'none';
+            }
+            if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
+            await new Promise(r => setTimeout(r, 150));
+            const canvas = await html2canvas(cont.querySelector('.pz'), { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+            const imgData = canvas.toDataURL('image/jpeg', 0.92);
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+            const ih = canvas.height * (pw / canvas.width);
+            if (ih <= ph) { pdf.addImage(imgData, 'JPEG', 0, 0, pw, ih); }
+            else { let pos = 0; while (pos < ih) { pdf.addImage(imgData, 'JPEG', 0, -pos, pw, ih); pos += ph; if (pos < ih) pdf.addPage(); } }
+            pdf.save('Cotizacion-' + String(cliente || 'cliente').replace(/[^\w]+/g, '_').slice(0, 30) + '.pdf');
+        } catch (e) { alert('No se pudo generar el PDF: ' + (e && e.message ? e.message : e)); }
+        finally { document.body.removeChild(cont); if (btn) { btn.disabled = false; btn.textContent = txt; } }
+    }
+    window.czGenerarPDF = czGenerarPDF;
+
     function getAppJSON() {
         let displayDate = document.getElementById('header-fecha');
         let createdStr = displayDate.dataset.created;
@@ -1585,11 +1767,13 @@
         });
         
         data.order = Array.from(cardElements).map(el => el.id.replace('card-', ''));
+        data.cotizCliente = cotizCli; // cargos/ITBIS/líneas manuales de la cotización al cliente
         return data;
     }
 
     function restoreData(data) {
         setDocType(data.docType || 'COTIZACIÓN');
+        cotizCli = Object.assign({ transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [] }, data.cotizCliente || {});
         if (data.header) {
             document.getElementById('header-cliente').value = data.header.cliente || '';
             document.getElementById('header-obra').value = data.header.obra || '';
@@ -5572,6 +5756,43 @@
         });
     }
 </script>
+
+<style>
+    #cotiz-cli-ov { position: fixed; inset: 0; background: rgba(10,30,50,.6); z-index: 4000; display: none; align-items: center; justify-content: center; padding: 14px; }
+    #cotiz-cli-ov .cz-box { background: #fff; border-radius: 14px; width: 100%; max-width: 760px; max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; }
+    #cotiz-cli-ov .cz-head { background: var(--artal-blue); color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; }
+    #cotiz-cli-ov .cz-head h2 { margin: 0; font-size: 17px; } #cotiz-cli-ov .cz-head .x { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; }
+    #cotiz-cli-ov #cz-body { padding: 16px 18px; overflow-y: auto; }
+    #cotiz-cli-ov .cz-foot { border-top: 1px solid #eef1f4; padding: 12px 18px; display: flex; gap: 10px; }
+    #cotiz-cli-ov .cz-foot button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 14px; }
+    #cotiz-cli-ov .cz-foot .pdf { background: var(--artal-blue); color: #fff; } #cotiz-cli-ov .cz-foot .cancel { background: transparent; color: #888; border: 1.5px solid #ddd; }
+    table.cz-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.cz-tbl th { color: #778; font-size: 10.5px; text-transform: uppercase; padding: 6px 5px; text-align: right; } table.cz-tbl th.l { text-align: left; }
+    table.cz-tbl td { padding: 7px 5px; border-bottom: 1px solid #eef1f4; text-align: right; vertical-align: middle; }
+    table.cz-tbl td.cz-dib { width: 76px; text-align: center; } table.cz-tbl td.cz-dib svg { width: 64px; height: auto; display: block; margin: auto; }
+    table.cz-tbl td.cz-d { text-align: left; } table.cz-tbl td.cz-d b { color: var(--artal-blue); } .cz-sp { font-size: 11px; color: #667; } .cz-med { font-size: 11px; color: #8a93a0; margin-top: 2px; }
+    table.cz-tbl input { padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; width: 100px; text-align: right; box-sizing: border-box; }
+    table.cz-tbl td.cz-d input[type=text] { text-align: left; width: 100%; } table.cz-tbl .cz-med input { width: 70px; text-align: center; }
+    table.cz-tbl td.cz-imp { font-weight: bold; color: var(--artal-blue); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .cz-add { margin: 8px 0 4px; background: transparent; color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 8px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; }
+    .cz-del { background: transparent; border: none; color: #e74c3c; font-size: 11.5px; cursor: pointer; font-family: 'Arimo'; font-weight: bold; }
+    .cz-cfg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 12px; margin: 14px 0 4px; }
+    @media (max-width: 560px) { .cz-cfg { grid-template-columns: 1fr; } }
+    .cz-cfg label { font-size: 11px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 3px; }
+    .cz-cfg input, .cz-cfg select { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13.5px; box-sizing: border-box; background: #fff; }
+    .cz-tot { max-width: 300px; margin: 14px 0 0 auto; } .cz-tot .row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13.5px; color: #556; }
+    .cz-tot .row.grand { border-top: 2px solid var(--artal-blue); margin-top: 5px; padding-top: 8px; font-weight: bold; font-size: 18px; color: var(--artal-blue); }
+</style>
+<div id="cotiz-cli-ov">
+    <div class="cz-box">
+        <div class="cz-head"><h2>💲 Cotización para cliente</h2><button class="x" onclick="closeCotizCliente()">×</button></div>
+        <div id="cz-body"></div>
+        <div class="cz-foot">
+            <button class="cancel" onclick="closeCotizCliente()">Cerrar</button>
+            <button class="pdf" onclick="czGenerarPDF(this)">📄 Generar PDF</button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>

@@ -743,6 +743,38 @@ selects con opciones reales.
   vidrio sin color) quedan resueltos.
 - Grosores en el resumen se muestran con `espesorLabel`: `3/8" (10mm)`, `1/2" (12mm)`, `3+3`…
 
+## Cotización para cliente (PDF formal desde el cuaderno)
+
+Salida NUEVA y aparte de la hoja interna de fabricación 2×2: un **PDF formal para el cliente**
+estilo "Devis" (una fila por ítem con **el dibujo del cuaderno** + Cant + Descripción + Ancho +
+Alto + Precio unit. + Precio total), con el encabezado azul de ARTAL + franja de contacto. Pedido
+explícito del usuario a partir de una foto de un Devis de la competencia ("cada ítem debe salir del
+cuaderno de relevo y solo agregamos precio; al final transporte, instalación y líneas a mano").
+
+- **Módulo autocontenido en `index.html`** (no toca las plantillas de tarjeta ni `exportPDF`): botón
+  lateral "💲 Cotización cliente" → `openCotizCliente()` abre un overlay (`#cotiz-cli-ov`) que lista
+  cada ítem con su `renderSVG(id)` en miniatura, medidas (`state.ancho`/`alto`/`cantidad`) y un
+  **input de precio** por ítem. Debajo: Transporte, Instalación, **toggle de ITBIS**
+  (`incluido`/`agregar 18%`/`ninguno`) y **"+ línea manual"** para vender cosas que no están en el
+  cuaderno (desc + cant + precio). Total en vivo.
+- **Persistencia:** el precio por ítem vive en `cardsState[id].precioCliente` (viaja solo en
+  `getAppJSON`, que guarda `cardsState[id]` completo); la config global en `cotizCli`
+  (`{transporte, instalacion, itbisModo, itbisPct, lineas:[]}`), agregada a `getAppJSON`/
+  `restoreData`. Ambos viajan a `orders` → **preparado para mapear a `/v5/cotizacion` de Citrus**
+  cuando llegue el token (ver `[[artal-citrus-erp-integracion]]`).
+- **PDF (`czGenerarPDF`)**: arma un contenedor fuera de pantalla con el layout formal (mismos colores
+  de marca que la cotización de `ops/ventas-cotizacion.html`), **rasteriza cada SVG a PNG con la
+  MISMA técnica que `exportPDF`** (quitar `filter="url(#shadow-...)"`, cargar como `<img>` data-URI,
+  dibujar en canvas ×3, reemplazar el SVG — por los líos de Safari con SVG+filtros), luego
+  `html2canvas` (scale 2) + `jsPDF` (una imagen JPEG partida en páginas A4 por offset). Los ítems
+  CAD (`type==='draw'`) no tienen SVG (usan canvas) → se muestran como texto "Fachada compuesta".
+- **Verificación:** `node verify.mjs` en verde (RENDER OK 73 / FAIL 0, guardrail exportPDF OK) + prueba
+  visual en navegador (panel + PDF real extraído con PyMuPDF). **Trampa de test encontrada:** parchar
+  `jsPDF.prototype.save` NO intercepta la descarga (jsPDF no lo tiene en el prototype) — al probar
+  `czGenerarPDF` se descargó un PDF real a Downloads; se verificó su contenido y se borró. Para probar
+  sin descargar, usar `pdf.output('arraybuffer')`/`'bloburl'` en una réplica, nunca dejar correr
+  `.save()` real en la máquina del usuario (misma regla que `exportPDF`).
+
 ## Proyectos guardados
 
 - `getProjects` normaliza estructuras corruptas y **fusiona clientes duplicados sin importar
