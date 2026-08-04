@@ -118,8 +118,9 @@ export function requireAuth(rolesPermitidos) {
 export function homePorRol(roles) {
   if (roles.includes('admin')) return 'index.html';
   if (roles.includes('contable')) return 'erp.html';
-  if (roles.includes('ayudante')) return 'ayudante.html';
-  if (roles.includes('instalador')) return 'instalacion.html';
+  // Instalador y ayudante comparten el mismo hub (instalacion.html) — antes había dos hubs
+  // casi idénticos (ayudante.html), ahora unificados para no duplicar.
+  if (roles.includes('instalador') || roles.includes('ayudante')) return 'instalacion.html';
   if (roles.includes('chofer')) return 'chofer.html';
   if (roles.includes('contratista') || roles.includes('fabrica')) return 'alucufel/index.html';
   if (roles.includes('cotizaciones')) return 'cotizaciones.html';

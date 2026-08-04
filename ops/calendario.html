@@ -103,7 +103,7 @@
     </div>
     <div class="leyenda">
         <span><i class="punto" style="background:#F6B93B;"></i>Dylan</span>
-        <span><i class="punto" style="background:#3498db;"></i>Rolanny</span>
+        <span><i class="punto" style="background:#3498db;"></i>Anny</span>
         <span><i class="punto" style="background:#2ecc71;"></i>Andrea</span>
         <span><i class="punto" style="background:#9b59b6;"></i>Otros</span>
     </div>
@@ -173,24 +173,18 @@
             <label><input type="checkbox" value="1440"> 1 día antes</label>
         </div>
 
-        <label>¿Para quién es?</label>
-        <div class="toggle-row">
-            <button type="button" id="para-gerente-btn" class="active" onclick="setAsignadoA('gerente')">Gerencia</button>
-            <button type="button" id="para-instalador-btn" onclick="setAsignadoA('instalador')">Equipo de instalación</button>
-        </div>
-
         <div id="gerencia-select-wrap">
-            <label>¿Quién de gerencia? (puedes marcar varios)</label>
+            <label>¿Para quién es? (puedes marcar varios)</label>
             <div id="cita-gerencia" class="personas-group">
                 <label><input type="checkbox" value="Andrea"> Andrea</label>
                 <label><input type="checkbox" value="Anny"> Anny</label>
                 <label><input type="checkbox" value="Dylan"> Dylan</label>
             </div>
-        </div>
-
-        <div id="instalador-select-wrap" style="display:none;">
-            <label>¿Quién del equipo de instalación? (puedes marcar varios)</label>
-            <div id="cita-instalador" class="personas-group"></div>
+            <p style="font-size:12px;color:#666;margin:6px 0 0;background:#f4f7fb;border-radius:7px;padding:8px 10px;">
+                🔧 ¿Es una <b>instalación</b> para el equipo de campo? Agéndala en
+                <a href="instalaciones.html">Agenda de Instalación</a>: lleva GPS, estados y le
+                aparece al instalador en su propia pantalla (aquí solo se agenda a gerencia).
+            </p>
         </div>
 
         <label>¿Quién está agendando esto?</label>
@@ -453,14 +447,10 @@
         ).join('') || '<option value="">(no hay pedidos)</option>';
     });
 
+    // (El calendario ya no asigna instaladores — eso vive en Agenda de Instalación. Se conserva
+    // instaladoresCache por compatibilidad al editar/leer eventos antiguos asignados a campo.)
     onSnapshot(query(collection(db, 'usuarios'), where('rol', 'array-contains', 'instalador')), (snap) => {
         instaladoresCache = snap.docs.map(d => ({ email: d.id, ...d.data() }));
-        const wrap = document.getElementById('cita-instalador');
-        // Conserva los que ya estaban marcados si la lista se actualiza con el modal abierto.
-        const marcados = new Set([...wrap.querySelectorAll('input:checked')].map(i => i.value));
-        wrap.innerHTML = instaladoresCache.length
-            ? instaladoresCache.map(u => `<label><input type="checkbox" value="${esc(u.email)}" ${marcados.has(u.email) ? 'checked' : ''}> ${esc(u.nombre)}</label>`).join('')
-            : '<span style="font-size:13px;color:#888;">(no hay instaladores registrados)</span>';
     });
 
     function resetForm() {
@@ -470,7 +460,7 @@
         document.getElementById('cita-fecha').value = '';
         document.getElementById('cita-duracion').value = '60';
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
-        document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
+        document.querySelectorAll('#cita-gerencia input:checked').forEach(c => c.checked = false);
         setTipoEvento('cita');
         setTipoCita('libre');
         setAsignadoA('gerente');
@@ -503,12 +493,10 @@
         document.getElementById('tipo-pedido-btn').classList.toggle('active', tipo === 'pedido');
         document.getElementById('pedido-select-wrap').style.display = tipo === 'pedido' ? 'block' : 'none';
     };
-    window.setAsignadoA = function (val) {
-        asignadoA = val;
-        document.getElementById('para-gerente-btn').classList.toggle('active', val === 'gerente');
-        document.getElementById('para-instalador-btn').classList.toggle('active', val === 'instalador');
-        document.getElementById('instalador-select-wrap').style.display = val === 'instalador' ? 'block' : 'none';
-        document.getElementById('gerencia-select-wrap').style.display = val === 'gerente' ? 'block' : 'none';
+    // El calendario solo agenda a gerencia; las instalaciones para el equipo de campo se agendan
+    // en Agenda de Instalación (instalaciones.html). `asignadoA` queda siempre 'gerente'.
+    window.setAsignadoA = function () {
+        asignadoA = 'gerente';
     };
 
     window.guardarCita = async function () {
@@ -517,7 +505,7 @@
         const fechaStr = document.getElementById('cita-fecha').value;
         const creadoPorNombre = document.getElementById('cita-creador').value || usuario.nombre;
 
-        if (!titulo) { alert('Escribe un título para la cita.'); return; }
+        if (!titulo) { alert('Escribe un título para el evento.'); return; }
         if (!fechaStr) { alert('Elige fecha y hora.'); return; }
 
         let cliente = '', obra = '', orderId = null;
@@ -532,26 +520,16 @@
         // propio push. `asignados` reemplaza a los viejos campos singulares `asignadoEmail`/
         // `asignadoNombre` (que solo admitían una persona); esos siguen leyéndose para eventos
         // creados antes de esto (ver asignadosDe()/emailsAsignados()).
-        let asignados = [];
-        if (asignadoA === 'gerente') {
-            const nombresMarcados = Array.from(document.querySelectorAll('#cita-gerencia input:checked')).map(c => c.value);
-            if (!nombresMarcados.length) { alert('Marca al menos una persona de gerencia.'); return; }
-            asignados = nombresMarcados.map(nombre => {
-                // El push tiene que llegarle a la persona elegida, no a quien está creando el
-                // evento — si su usuario no tiene el rol admin cargado con ese nombre exacto,
-                // cae a la cuenta conectada para no dejar el campo vacío (fallback silencioso,
-                // igual que el resto de la sincronización con Firestore en esta app).
-                const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
-                return { nombre, email: persona ? persona.email : auth.currentUser.email };
-            });
-        } else {
-            const emailsMarcados = Array.from(document.querySelectorAll('#cita-instalador input:checked')).map(c => c.value);
-            if (!emailsMarcados.length) { alert('Marca al menos un instalador.'); return; }
-            asignados = emailsMarcados.map(email => {
-                const inst = instaladoresCache.find(x => x.email === email);
-                return { email, nombre: inst ? inst.nombre : email };
-            });
-        }
+        // El calendario solo agenda a gerencia (las instalaciones de campo van a Agenda de
+        // Instalación). El push le llega a la persona elegida, no a quien crea el evento — si su
+        // usuario no tiene el rol admin cargado con ese nombre exacto, cae a la cuenta conectada
+        // para no dejar el campo vacío (fallback silencioso, igual que el resto de la app).
+        const nombresMarcados = Array.from(document.querySelectorAll('#cita-gerencia input:checked')).map(c => c.value);
+        if (!nombresMarcados.length) { alert('Marca al menos una persona.'); return; }
+        const asignados = nombresMarcados.map(nombre => {
+            const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+            return { nombre, email: persona ? persona.email : auth.currentUser.email };
+        });
 
         const recordatorios = Array.from(document.querySelectorAll('#cita-recordar input:checked')).map(c => Number(c.value));
         const duracionMin = tipoEvento === 'cita' ? Number(document.getElementById('cita-duracion').value) || 0 : 0;
@@ -633,37 +611,21 @@
         // Ligada a pedido o libre
         setTipoCita(c.orderId ? 'pedido' : 'libre');
         if (c.orderId) document.getElementById('cita-pedido').value = c.orderId;
-        // Para quién
-        setAsignadoA(c.asignadoA === 'instalador' ? 'instalador' : 'gerente');
+        // Para quién — el calendario solo maneja gerencia. Un evento antiguo asignado a campo
+        // (asignadoA:'instalador') se muestra igual en el bloque de gerencia para no perder el
+        // dato; al reagendar instalaciones de campo se usa Agenda de Instalación.
+        setAsignadoA('gerente');
         const asignados = asignadosDe(c);
-        if (c.asignadoA === 'instalador') {
-            const wrap = document.getElementById('cita-instalador');
-            asignados.forEach(a => {
-                let chk = wrap.querySelector(`input[value="${CSS.escape(a.email || '')}"]`);
-                // Instalador que ya no está en la lista actual (ej. cambió de rol) — se agrega
-                // igual, en vez de perder silenciosamente el dato viejo (mismo criterio que
-                // "quién agenda" más abajo).
-                if (!chk && a.email) {
-                    wrap.insertAdjacentHTML('beforeend', `<label><input type="checkbox" value="${esc(a.email)}"> ${esc(a.nombre || a.email)}</label>`);
-                    chk = wrap.querySelector(`input[value="${CSS.escape(a.email)}"]`);
-                }
-                if (chk) chk.checked = true;
-            });
-        } else {
-            // Eventos creados antes de este cambio traen asignadoNombre:'Gerente' (genérico,
-            // sin persona) — no coincide con ninguna de las 3 casillas fijas, así que se agrega
-            // igual, en vez de perder silenciosamente el dato viejo.
-            const wrap = document.getElementById('cita-gerencia');
-            (asignados.length ? asignados : [{ nombre: 'Andrea' }]).forEach(a => {
-                const nombre = a.nombre || 'Andrea';
-                let chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
-                if (!chk) {
-                    wrap.insertAdjacentHTML('beforeend', `<label><input type="checkbox" value="${esc(nombre)}"> ${esc(nombre)}</label>`);
-                    chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
-                }
-                if (chk) chk.checked = true;
-            });
-        }
+        const wrap = document.getElementById('cita-gerencia');
+        (asignados.length ? asignados : [{ nombre: 'Andrea' }]).forEach(a => {
+            const nombre = a.nombre || 'Andrea';
+            let chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
+            if (!chk) {
+                wrap.insertAdjacentHTML('beforeend', `<label><input type="checkbox" value="${esc(nombre)}"> ${esc(nombre)}</label>`);
+                chk = wrap.querySelector(`input[value="${CSS.escape(nombre)}"]`);
+            }
+            if (chk) chk.checked = true;
+        });
         // Quién agenda
         if (c.creadoPorNombre) {
             const sel = document.getElementById('cita-creador');

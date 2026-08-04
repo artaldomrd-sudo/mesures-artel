@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARTAL — Instalador</title>
+<title>ARTAL — Trabajo en Obra</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
@@ -26,11 +26,11 @@
     <div class="header-title">
         <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
         <img class="logo" src="../logo.png" alt="ARTAL">
-        <h1>Instalador</h1>
+        <h1>Trabajo en Obra</h1>
     </div>
     <div class="who">
         <span id="user-name"></span>
-        <button id="notif-btn" title="Recibir avisos de citas en este dispositivo">🔔 Notificaciones</button>
+        <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
         <button id="signout-btn">Cerrar sesión</button>
     </div>
 </header>
@@ -67,8 +67,15 @@
         return items.every(it => status[it.id] && status[it.id].estado);
     }
 
+    function itemsFaltantes(o) {
+        const items = o.items || [];
+        const status = o.itemStatusInstalador || {};
+        return items.filter(it => !(status[it.id] && status[it.id].estado)).length;
+    }
+
     function orderCardHTML(id, o) {
         const resuelto = checklistResuelto(o);
+        const faltan = itemsFaltantes(o);
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcial = o.status === 'parcialmente_listo';
         const metaLine = esCompra
@@ -84,9 +91,9 @@
                 ${o.asignadoInstaladorNombre ? ' · 👤 Asignado a ' + esc(o.asignadoInstaladorNombre) : ''}
             </div>
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
-            ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar instalado.</div>`}
+            ${resuelto ? '' : `<div class="checklist-note">⚠ Faltan ${faltan} ítem(s) por completar en el checklist. Ábrelo en "Ver hoja de fabricación" y marca las etapas de cada ítem.</div>`}
             <div class="actions">
-                <button class="btn-instalado" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirAprobacion('${id}')` : ''}">Instalado</button>
+                <button class="btn-instalado" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirAprobacion('${id}')` : ''}">✅ Registrar instalación (firma)</button>
                 ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
             </div>
             <div class="aprobacion-form" id="aprobacion-${id}">
@@ -151,6 +158,7 @@
         });
     };
     window.regresarAFabrica = async function (id) {
+        if (!confirm('¿Regresar este pedido a fábrica? Desaparecerá de la lista de instalación y de la del chofer hasta que fábrica lo vuelva a dejar listo.')) return;
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica' });
     };
 </script>
