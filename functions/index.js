@@ -5,6 +5,7 @@ const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
+const { getAuth } = require('firebase-admin/auth');
 
 initializeApp();
 const db = getFirestore();
@@ -397,5 +398,71 @@ exports.extraerFactura = onRequest({ secrets: [anthropicKey], cors: true }, asyn
     } catch (e) {
         console.error('extraerFactura', e);
         res.status(500).json({ error: 'server' });
+    }
+});
+
+// ===================== Puente con Citrus ERP (API REST v5) =====================
+// El token de Citrus se genera en su portal (Seguridad → Autorización Token) y se guarda como
+// SECRETO de Firebase (nunca en el código ni en el repo):
+//   firebase functions:secrets:set CITRUS_TOKEN
+// Se manda a Citrus en el header `Authorization` (token directo, sin "Bearer"). Base de pruebas:
+// https://testapi.citrus.com.do — para producción se cambia el host.
+const citrusToken = defineSecret('CITRUS_TOKEN');
+const CITRUS_BASE = 'https://testapi.citrus.com.do';
+
+// Entidades con endpoint /extraccionDatos (lectura paginada de 1000). Whitelist para no dejar
+// pegarle a rutas arbitrarias desde el navegador.
+const CITRUS_ENTIDADES = new Set([
+    'tienda', 'cliente', 'item', 'suplidor', 'vendedor', 'categoria', 'marca', 'usuario',
+    'empleado', 'almacen', 'factura-cliente', 'factura-suplidor', 'cotizacion', 'recibo',
+    'orden-compra', 'orden-venta', 'conduce', 'anticipo', 'despacho', 'diario',
+    'movimientoInventario', 'notaCreditoCxC', 'notaDebitoCxC'
+]);
+
+// Verifica que quien llama sea un usuario admin autenticado (manda su ID token de Firebase en
+// `Authorization: Bearer <idToken>`). Devuelve el email o null.
+async function callerAdmin(req) {
+    const h = req.headers.authorization || '';
+    const m = h.match(/^Bearer (.+)$/);
+    if (!m) return null;
+    try {
+        const decoded = await getAuth().verifyIdToken(m[1]);
+        const email = decoded.email;
+        if (!email) return null;
+        const s = await db.collection('usuarios').doc(email).get();
+        if (!s.exists) return null;
+        const rol = s.data().rol;
+        const roles = Array.isArray(rol) ? rol : [rol];
+        return roles.includes('admin') ? email : null;
+    } catch (_) { return null; }
+}
+
+// Lectura de una entidad de Citrus (extraccionDatos). Solo admin. Devuelve tal cual la respuesta
+// de Citrus (status + JSON) para poder inspeccionarla desde la pantalla de pruebas.
+exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const email = await callerAdmin(req);
+    if (!email) { res.status(403).json({ error: 'no-autorizado' }); return; }
+
+    const entidad = String((req.body && req.body.entidad) || '').trim();
+    if (!CITRUS_ENTIDADES.has(entidad)) { res.status(400).json({ error: 'entidad', permitidas: [...CITRUS_ENTIDADES] }); return; }
+
+    // Para la primera prueba de conexión se llama sin query params (defaults de Citrus: página 0,
+    // desde 2011-07-01). Para paginar/traer detalles se agregan los parámetros del `request`.
+    const pagina = Number(req.body && req.body.pagina) || 0;
+    const params = new URLSearchParams();
+    if (pagina > 0) params.set('request.indiceDePagina', String(pagina));
+    if (req.body && req.body.detalles) params.set('request.cargarReferencias', 'true');
+    const qs = params.toString();
+    const url = `${CITRUS_BASE}/v5/${entidad}/extraccionDatos${qs ? '?' + qs : ''}`;
+
+    try {
+        const r = await fetch(url, { headers: { 'Authorization': citrusToken.value(), 'Accept': 'application/json' } });
+        const text = await r.text();
+        let data; try { data = JSON.parse(text); } catch (_) { data = text; }
+        res.status(200).json({ ok: r.ok, status: r.status, entidad, url, data });
+    } catch (e) {
+        console.error('citrusRead', entidad, e);
+        res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
     }
 });

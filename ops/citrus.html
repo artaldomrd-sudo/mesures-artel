@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Citrus (Integración)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 760px; }
+    .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 16px; line-height: 1.5; }
+    .box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 18px; }
+    .box h2 { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); }
+    select, input[type="number"] { padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; }
+    button.act { background: var(--artal-blue); color: #fff; border: none; border-radius: 8px; padding: 12px 16px; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; min-height: 46px; }
+    button.act.ping { background: #16a085; }
+    button.act:disabled { opacity: .5; cursor: default; }
+    .estado { font-size: 13px; font-weight: bold; margin: 12px 0 8px; }
+    .estado.ok { color: #16a085; }
+    .estado.err { color: #c0392b; }
+    pre.out { background: #0f1720; color: #d6e2ea; border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.45; overflow: auto; max-height: 460px; white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="erp.html" title="Volver">← ERP</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Citrus — Integración</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">
+        🔌 Pantalla de <b>pruebas de conexión</b> con Citrus ERP (entorno de pruebas
+        <code>testapi.citrus.com.do</code>). Lee datos de Citrus a través de la Cloud Function puente
+        <code>citrusRead</code> (el token vive como secreto de Firebase, nunca en el navegador).
+        Es de solo lectura: no crea ni modifica nada en Citrus.
+    </div>
+
+    <div class="box">
+        <h2>1) Probar conexión</h2>
+        <p style="font-size:13px;color:#666;margin:0 0 10px;">Lee las <b>tiendas</b> del entorno de pruebas. Si responde <b>200</b>, el token y el puente funcionan (aunque la lista venga vacía).</p>
+        <button class="act ping" id="btn-ping" onclick="probar()">🔌 Probar conexión</button>
+    </div>
+
+    <div class="box">
+        <h2>2) Explorar una entidad</h2>
+        <div class="row">
+            <label>Entidad</label>
+            <select id="entidad">
+                <option value="tienda">Tiendas</option>
+                <option value="vendedor">Vendedores</option>
+                <option value="cliente">Clientes</option>
+                <option value="item">Productos (item)</option>
+                <option value="suplidor">Proveedores (suplidor)</option>
+                <option value="categoria">Categorías</option>
+                <option value="marca">Marcas</option>
+                <option value="factura-cliente">Facturas de cliente</option>
+                <option value="factura-suplidor">Facturas de proveedor</option>
+                <option value="cotizacion">Cotizaciones</option>
+                <option value="recibo">Recibos</option>
+                <option value="almacen">Almacenes</option>
+                <option value="empleado">Empleados</option>
+            </select>
+            <label>Página</label>
+            <input type="number" id="pagina" value="0" min="0" style="width:90px;">
+            <button class="act" id="btn-leer" onclick="leer()">Leer</button>
+        </div>
+    </div>
+
+    <div id="estado" class="estado" style="display:none;"></div>
+    <pre class="out" id="out" style="display:none;"></pre>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+
+    // Solo gerencia/admin (o lector) — es una herramienta de integración/configuración.
+    const usuario = await requireAuth([]);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const FN = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusRead';
+
+    function setEstado(txt, cls) {
+        const el = document.getElementById('estado');
+        el.textContent = txt;
+        el.className = 'estado ' + (cls || '');
+        el.style.display = 'block';
+    }
+    function mostrar(obj) {
+        const out = document.getElementById('out');
+        out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+        out.style.display = 'block';
+    }
+
+    async function llamar(entidad, pagina) {
+        const token = await auth.currentUser.getIdToken();
+        const r = await fetch(FN, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token },
+            body: JSON.stringify({ entidad, pagina })
+        });
+        return { httpStatus: r.status, cuerpo: await r.json().catch(() => null) };
+    }
+
+    async function ejecutar(entidad, pagina, btn) {
+        btn.disabled = true;
+        setEstado('Consultando Citrus…', '');
+        document.getElementById('out').style.display = 'none';
+        try {
+            const { httpStatus, cuerpo } = await llamar(entidad, pagina);
+            if (httpStatus === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
+            if (!cuerpo) { setEstado('Respuesta vacía o no-JSON del puente (HTTP ' + httpStatus + ').', 'err'); return; }
+            if (cuerpo.error) { setEstado('Error del puente: ' + cuerpo.error + (cuerpo.detalle ? ' — ' + cuerpo.detalle : ''), 'err'); mostrar(cuerpo); return; }
+            // cuerpo = { ok, status (de Citrus), entidad, url, data }
+            const okCitrus = cuerpo.ok && cuerpo.status >= 200 && cuerpo.status < 300;
+            const n = Array.isArray(cuerpo.data) ? cuerpo.data.length
+                : (cuerpo.data && Array.isArray(cuerpo.data.data) ? cuerpo.data.data.length : null);
+            setEstado(
+                (okCitrus ? '✅ Conexión OK' : '⚠ Citrus respondió ' + cuerpo.status) +
+                ' · ' + entidad + (n != null ? ' · ' + n + ' registro(s)' : ''),
+                okCitrus ? 'ok' : 'err'
+            );
+            mostrar(cuerpo);
+        } catch (e) {
+            setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    window.probar = () => ejecutar('tienda', 0, document.getElementById('btn-ping'));
+    window.leer = () => ejecutar(
+        document.getElementById('entidad').value,
+        Number(document.getElementById('pagina').value) || 0,
+        document.getElementById('btn-leer')
+    );
+</script>
+
+</body>
+</html>
