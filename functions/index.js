@@ -457,7 +457,9 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
     const url = `${CITRUS_BASE}/v5/${entidad}/extraccionDatos${qs ? '?' + qs : ''}`;
 
     try {
-        const r = await fetch(url, { headers: { 'Authorization': citrusToken.value(), 'Accept': 'application/json' } });
+        // .trim() por si al guardar el secreto se coló un espacio/salto de línea (Citrus devuelve
+        // 401 "Authorization Token Invalido" ante cualquier carácter de más).
+        const r = await fetch(url, { headers: { 'Authorization': citrusToken.value().trim(), 'Accept': 'application/json' } });
         const text = await r.text();
         let data; try { data = JSON.parse(text); } catch (_) { data = text; }
         res.status(200).json({ ok: r.ok, status: r.status, entidad, url, data });
