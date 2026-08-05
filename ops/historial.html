@@ -358,6 +358,7 @@
                 ${extraLinks.join(' ')}
                 <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
             </div>
+            ${lineaTiempoHTML(o)}
             <div class="status-change-row">
                 <select id="status-select-${id}">
                     ${statusOptions.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('')}
@@ -514,6 +515,44 @@
     function fmtFechaHora(ts) {
         return (ts && ts.toDate) ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
     }
+
+    // ---- Línea de tiempo de un pedido (fechas de cada etapa + duraciones para comparar tiempos) ----
+    function fFechaCorta(ts) { return (ts && ts.toDate) ? ts.toDate().toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : ''; }
+    function duracion(a, b) {
+        if (!a || !a.toDate || !b || !b.toDate) return null;
+        const ms = b.toDate() - a.toDate();
+        if (ms < 0) return null;
+        const dias = ms / 86400000;
+        if (dias < 1) { const h = Math.max(1, Math.round(ms / 3600000)); return h + ' h'; }
+        const d = Math.round(dias); return d + (d === 1 ? ' día' : ' días');
+    }
+    function lineaTiempoHTML(o) {
+        const HITOS = [
+            ['fechaSolicitada', '📤 Cotización enviada al contratista'],
+            ['fechaCotizado', '📤 Enviado a fábrica'],
+            ['fechaCompra', '🧾 Compra registrada'],
+            ['fechaCosteada', '💲 Costeada por el contratista'],
+            ['fechaEnviadaCliente', '✉️ Cotización enviada al cliente'],
+            ['fechaEnFabrica', '🏭 Fábrica: puesto en proceso'],
+            ['fechaParcialListo', '🟠 Fábrica: entrega parcial'],
+            ['fechaListoParaCargar', '📦 Fábrica: entrega total (listo)'],
+            ['fechaEntregado', '🚚 Entregado por el chofer'],
+            ['fechaInstalado', '🔧 Instalado']
+        ].filter(([k]) => o[k] && o[k].toDate);
+        if (!hitosVale(o, HITOS)) return '';
+        const filas = HITOS.map(([k, lbl]) =>
+            `<div style="display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;border-bottom:1px dashed #eef1f4;"><span style="color:#445;">${lbl}</span><span style="color:#0A3D62;font-weight:bold;white-space:nowrap;font-variant-numeric:tabular-nums;">${fFechaCorta(o[k])}</span></div>`).join('');
+        const durs = [];
+        const dResp = duracion(o.fechaSolicitada, o.fechaCosteada);
+        if (dResp) durs.push('Respuesta del contratista: ' + dResp);
+        const dFab = duracion(o.fechaEnFabrica || o.fechaCotizado, o.fechaListoParaCargar || o.fechaParcialListo);
+        if (dFab) durs.push('En fábrica: ' + dFab);
+        const dTotal = duracion(o[HITOS[0][0]], o[HITOS[HITOS.length - 1][0]]);
+        if (dTotal) durs.push('Total: ' + dTotal);
+        const durHtml = durs.length ? `<div style="margin-top:7px;display:flex;gap:8px;flex-wrap:wrap;">${durs.map(d => `<span style="background:#eef3ff;color:#33518f;border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:bold;">⏱ ${d}</span>`).join('')}</div>` : '';
+        return `<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:12.5px;font-weight:bold;color:var(--artal-blue);">🕒 Fechas y tiempos</summary><div style="margin-top:6px;">${filas}${durHtml}</div></details>`;
+    }
+    function hitosVale(o, hitos) { return hitos.length > 0; }
 
     function renderAudit() {
         const term = document.getElementById('audit-search').value.trim().toLowerCase();
