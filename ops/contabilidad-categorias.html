@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Categorías / Cuentas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 820px; }
+    .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 14px; line-height: 1.5; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 16px; }
+    .btn-add { border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; color: #fff; }
+    .btn-ing { background: #2ecc71; } .btn-gas { background: #e74c3c; } .btn-seed { background: var(--artal-blue); }
+    .grupo { margin-bottom: 22px; }
+    .grupo h2 { font-size: 14px; color: var(--artal-blue); margin: 0 0 8px; padding-bottom: 5px; border-bottom: 2px solid #eef1f4; display: flex; align-items: center; gap: 7px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+    th, td { text-align: left; padding: 10px 12px; font-size: 13.5px; border-bottom: 1px solid #eef1f4; }
+    th { background: #f6f8fa; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #778; }
+    td.cod { font-family: monospace; color: #556; white-space: nowrap; }
+    td.act { text-align: right; white-space: nowrap; }
+    td.act button { border: none; border-radius: 7px; padding: 6px 9px; font-size: 12px; cursor: pointer; font-family: 'Arimo'; margin-left: 4px; }
+    .b-ed { background: var(--artal-blue); color: #fff; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .vacio { color: #888; font-size: 13px; padding: 12px; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 440px; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Categorías / Cuentas</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">ℹ️ Estas son las categorías con que el panel clasifica ingresos y gastos, cada una con un <b>código de cuenta contable</b> opcional para cuadrar con tu plan de cuentas. Alimentan el formulario de Ingresos y Gastos y los reportes. El libro mayor formal vive en <b>Citrus</b>.</div>
+
+    <div class="bar">
+        <button class="btn-add btn-ing" onclick="abrir('ingreso')">+ Categoría de ingreso</button>
+        <button class="btn-add btn-gas" onclick="abrir('gasto')">+ Categoría de gasto</button>
+        <button class="btn-add btn-seed" id="btn-seed" onclick="sembrar()" title="Carga una lista estándar para empezar">📋 Cargar lista estándar</button>
+    </div>
+
+    <div class="grupo">
+        <h2>⬆️ Ingresos</h2>
+        <div id="tabla-ing"></div>
+    </div>
+    <div class="grupo">
+        <h2>⬇️ Gastos</h2>
+        <div id="tabla-gas"></div>
+    </div>
+</main>
+
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva categoría</h2>
+        <label>Tipo</label>
+        <select id="c-tipo"><option value="ingreso">Ingreso</option><option value="gasto">Gasto</option></select>
+        <label>Nombre *</label>
+        <input type="text" id="c-nombre" placeholder="Ej. Perfiles de aluminio">
+        <label>Código de cuenta <span style="font-weight:normal;color:#8a93a0;">— opcional</span></label>
+        <input type="text" id="c-codigo" placeholder="Ej. 5-02">
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // Lista estándar de arranque (aluminio/vidrio + gastos operativos típicos RD). Los códigos son
+    // una sugerencia — la contable los ajusta a su plan de cuentas real.
+    const ESTANDAR = [
+        { tipo: 'ingreso', codigo: '4-01', nombre: 'Venta de productos' },
+        { tipo: 'ingreso', codigo: '4-02', nombre: 'Venta de servicios' },
+        { tipo: 'ingreso', codigo: '4-03', nombre: 'Instalación' },
+        { tipo: 'ingreso', codigo: '4-04', nombre: 'Anticipo de cliente' },
+        { tipo: 'ingreso', codigo: '4-09', nombre: 'Otro ingreso' },
+        { tipo: 'gasto', codigo: '5-01', nombre: 'Materiales / insumos' },
+        { tipo: 'gasto', codigo: '5-02', nombre: 'Perfiles de aluminio' },
+        { tipo: 'gasto', codigo: '5-03', nombre: 'Vidrios' },
+        { tipo: 'gasto', codigo: '5-04', nombre: 'Herrajes' },
+        { tipo: 'gasto', codigo: '6-01', nombre: 'Nómina y honorarios' },
+        { tipo: 'gasto', codigo: '6-02', nombre: 'Alquiler' },
+        { tipo: 'gasto', codigo: '6-03', nombre: 'Electricidad / agua' },
+        { tipo: 'gasto', codigo: '6-04', nombre: 'Internet / teléfono' },
+        { tipo: 'gasto', codigo: '6-05', nombre: 'Combustible / transporte' },
+        { tipo: 'gasto', codigo: '6-06', nombre: 'Herramientas' },
+        { tipo: 'gasto', codigo: '6-07', nombre: 'Mantenimiento / reparación' },
+        { tipo: 'gasto', codigo: '6-08', nombre: 'Impuestos y tasas' },
+        { tipo: 'gasto', codigo: '6-09', nombre: 'Comisiones' },
+        { tipo: 'gasto', codigo: '6-10', nombre: 'Publicidad' },
+        { tipo: 'gasto', codigo: '6-11', nombre: 'Gastos bancarios' },
+        { tipo: 'gasto', codigo: '6-99', nombre: 'Otro gasto' }
+    ];
+
+    let cats = [], editId = null;
+    onSnapshot(collection(db, 'contaCategorias'), (s) => {
+        cats = s.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, (err) => { document.getElementById('tabla-ing').innerHTML = '<p class="vacio">Error: ' + esc(err.message) + '</p>'; });
+
+    function ordenar(a, b) {
+        const ca = (a.codigo || '').trim(), cb = (b.codigo || '').trim();
+        if (ca && cb) return ca.localeCompare(cb, 'es', { numeric: true });
+        if (ca) return -1; if (cb) return 1;
+        return (a.nombre || '').localeCompare(b.nombre || '', 'es');
+    }
+    function tablaHTML(tipo) {
+        const filas = cats.filter(c => (c.tipo || 'gasto') === tipo).sort(ordenar);
+        if (!filas.length) return '<p class="vacio">Sin categorías. Usa “+ Categoría” o “Cargar lista estándar”.</p>';
+        return `<table><thead><tr><th style="width:90px;">Código</th><th>Nombre</th><th style="width:110px;"></th></tr></thead><tbody>` +
+            filas.map(c => `<tr>
+                <td class="cod">${esc(c.codigo || '—')}</td>
+                <td>${esc(c.nombre)}</td>
+                <td class="act">
+                    <button class="b-ed" onclick="editar('${c.id}')">✏</button>
+                    <button class="b-del" onclick="borrar('${c.id}')">🗑</button>
+                </td></tr>`).join('') + '</tbody></table>';
+    }
+    function render() {
+        document.getElementById('tabla-ing').innerHTML = tablaHTML('ingreso');
+        document.getElementById('tabla-gas').innerHTML = tablaHTML('gasto');
+    }
+
+    window.abrir = function (tipo) {
+        editId = null;
+        document.getElementById('modal-title').textContent = 'Nueva categoría';
+        document.getElementById('c-tipo').value = tipo || 'gasto';
+        document.getElementById('c-nombre').value = '';
+        document.getElementById('c-codigo').value = '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const c = cats.find(x => x.id === id); if (!c) return;
+        editId = id;
+        document.getElementById('modal-title').textContent = 'Editar categoría';
+        document.getElementById('c-tipo').value = c.tipo || 'gasto';
+        document.getElementById('c-nombre').value = c.nombre || '';
+        document.getElementById('c-codigo').value = c.codigo || '';
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const nombre = document.getElementById('c-nombre').value.trim();
+        if (!nombre) { alert('Escribe el nombre de la categoría.'); return; }
+        const datos = {
+            tipo: document.getElementById('c-tipo').value,
+            nombre,
+            codigo: document.getElementById('c-codigo').value.trim(),
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'contaCategorias', editId), datos);
+            else await addDoc(collection(db, 'contaCategorias'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        const c = cats.find(x => x.id === id);
+        if (!confirm('¿Eliminar la categoría "' + (c ? c.nombre : '') + '"? (No borra los movimientos que ya la usan.)')) return;
+        try { await deleteDoc(doc(db, 'contaCategorias', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.sembrar = async function () {
+        // Solo agrega las que falten (por nombre+tipo), para no duplicar si ya hay algunas.
+        const existentes = new Set(cats.map(c => (c.tipo || '') + '|' + (c.nombre || '').toLowerCase()));
+        const faltan = ESTANDAR.filter(e => !existentes.has(e.tipo + '|' + e.nombre.toLowerCase()));
+        if (!faltan.length) { alert('Ya tienes cargadas todas las categorías estándar.'); return; }
+        if (!confirm('Se agregarán ' + faltan.length + ' categoría(s) estándar. ¿Continuar?')) return;
+        const btn = document.getElementById('btn-seed'); btn.disabled = true;
+        try {
+            for (const e of faltan) {
+                await addDoc(collection(db, 'contaCategorias'), { ...e, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            }
+        } catch (err) { alert('No se pudo cargar: ' + err.message); }
+        finally { btn.disabled = false; }
+    };
+</script>
+
+</body>
+</html>

@@ -168,6 +168,21 @@
         const nombres = s.docs.map(d => (d.data().nombre || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
         document.getElementById('centros-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
     }, () => {});
+    // Categorías desde el catálogo editable (contabilidad-categorias.html). Si el catálogo tiene
+    // entradas, reemplaza las opciones estáticas de los datalists; si está vacío, se quedan las de
+    // fábrica (así nunca queda sin sugerencias). Muestra el código de cuenta como pista.
+    onSnapshot(collection(db, 'contaCategorias'), (s) => {
+        const cats = s.docs.map(d => d.data());
+        const pon = (tipo, listId) => {
+            const items = cats.filter(c => (c.tipo || 'gasto') === tipo && (c.nombre || '').trim())
+                .sort((a, b) => String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', { numeric: true }) || String(a.nombre).localeCompare(String(b.nombre), 'es'));
+            if (!items.length) return; // conserva las opciones estáticas
+            document.getElementById(listId).innerHTML = items.map(c =>
+                `<option value="${esc(c.nombre)}">${c.codigo ? esc(c.codigo) + ' · ' + esc(c.nombre) : ''}</option>`).join('');
+        };
+        pon('ingreso', 'cat-ing');
+        pon('gasto', 'cat-gas');
+    }, () => {});
 
     // ---------- Comprobante ----------
     function comprimirImg(file) {
