@@ -114,7 +114,7 @@
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, doc, deleteDoc, updateDoc, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, doc, deleteDoc, updateDoc, onSnapshot, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { buildClientMap, clientList } from './clients.js';
     window.openOrderPreview = openOrderPreview;
@@ -254,6 +254,22 @@
     window.atenderItem = async function (id, field, itemId) {
         await updateDoc(doc(db, 'orders', id), { [`${field}.${itemId}.atendido`]: true });
     };
+    // Instrucción/nota de la OFICINA para fábrica (canal aparte de comentarioFabrica, que es
+    // fábrica→oficina). Se guarda como pendiente para que le aparezca como alerta a ALUCUFEL en
+    // su panel de fábrica; cuando fábrica la marca atendida, aquí se ve "✓ Fábrica ya la vio".
+    window.guardarInstrFabrica = async function (id) {
+        const el = document.getElementById('instr-fab-' + id); if (!el) return;
+        const texto = el.value.trim();
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                comentarioParaFabrica: texto,
+                comentarioParaFabricaPor: usuario.nombre,
+                comentarioParaFabricaFecha: serverTimestamp(),
+                comentarioParaFabricaAtendido: texto ? false : true
+            });
+            alert(texto ? 'Instrucción enviada a fábrica. Le aparecerá como alerta en su panel.' : 'Instrucción borrada.');
+        } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
 
     function tileHTML(cat) {
         const count = allOrders.filter(({ data: o }) => matchesCategory(cat, o)).length;
@@ -375,6 +391,15 @@
                     ${instaladoresCache.map(u => `<option value="${esc(u.email)}" ${o.asignadoInstaladorEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
                 </select>
                 <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
+            </div>` : ''}
+            ${isFab ? `
+            <div class="instr-fabrica" style="margin-top:8px;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:9px;padding:9px 11px;">
+                <div style="font-size:12px;font-weight:bold;color:#b9770e;margin-bottom:5px;">📌 Instrucción / nota para fábrica (ALUCUFEL)</div>
+                <textarea id="instr-fab-${id}" placeholder="Ej: adelantar fabricación de las 2 PV3…" style="width:100%;min-height:44px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;box-sizing:border-box;">${esc(o.comentarioParaFabrica || '')}</textarea>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    <button onclick="guardarInstrFabrica('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Enviar a fábrica</button>
+                    ${o.comentarioParaFabrica ? (o.comentarioParaFabricaAtendido ? '<span style="font-size:12px;color:#16a085;font-weight:bold;">✓ Fábrica ya la vio</span>' : '<span style="font-size:12px;color:#b9770e;font-weight:bold;">⏳ Pendiente de que fábrica la marque</span>') : ''}
+                </div>
             </div>` : ''}
         </div>`;
     }
