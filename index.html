@@ -484,11 +484,13 @@
                 <label>CLIENTE</label>
                 <input type="text" id="header-cliente" placeholder="ej: Dupont" list="cliente-datalist" autocomplete="off">
                 <datalist id="cliente-datalist"></datalist>
+                <select id="header-cliente-sel" onchange="pickHeaderCliente(this.value)" title="Elegir un cliente ya registrado" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Elegir cliente registrado…</option></select>
             </div>
             <div class="header-field hf-obra">
                 <label>NOMBRE DEL PROYECTO</label>
                 <input type="text" id="header-obra" placeholder="ej: Altea Villa 11" list="obra-datalist" autocomplete="off">
                 <datalist id="obra-datalist"></datalist>
+                <select id="header-obra-sel" onchange="pickHeaderObra(this.value)" title="Elegir un proyecto ya registrado de este cliente" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Elegir proyecto registrado…</option></select>
             </div>
             <div class="header-field hf-ubicacion">
                 <label>UBICACIÓN</label>
@@ -1221,6 +1223,33 @@
         alert('Proyectos fusionados.');
     };
 
+    // Desplegables del encabezado para ELEGIR un cliente/proyecto ya registrado (evita escribirlo
+    // mal y crear un duplicado). Al elegir, rellenan el campo de texto y disparan su lógica normal.
+    window.pickHeaderCliente = function (v) {
+        if (!v) return;
+        const inp = document.getElementById('header-cliente');
+        inp.value = v;
+        inp.dispatchEvent(new Event('input', { bubbles: true })); // refresca badge + datalist de obra (Firestore)
+        fillHeaderObraSel();
+        const s = document.getElementById('header-cliente-sel'); if (s) s.value = '';
+    };
+    window.pickHeaderObra = function (v) {
+        if (!v) return;
+        const inp = document.getElementById('header-obra');
+        inp.value = v;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        const s = document.getElementById('header-obra-sel'); if (s) s.value = '';
+    };
+    // Llena el desplegable de proyecto con las obras guardadas del cliente escrito en el encabezado.
+    function fillHeaderObraSel() {
+        const sel = document.getElementById('header-obra-sel'); if (!sel) return;
+        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const projects = getProjects();
+        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+        const obras = cliKey ? Object.keys(projects[cliKey]).sort((a, b) => a.localeCompare(b)) : [];
+        sel.innerHTML = '<option value="">▾ Elegir proyecto registrado…</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+    }
+
     function updateClientList() {
         const projects = getProjects();
         const clientes = Object.keys(projects).sort((a, b) => a.localeCompare(b));
@@ -1229,6 +1258,11 @@
         // (a diferencia de un <select>, un <input list="..."> no obliga a elegir una opción).
         const dl = document.getElementById('cliente-datalist');
         if (dl) dl.innerHTML = clientes.map(c => `<option value="${escAttr(c)}"></option>`).join('');
+
+        // Desplegable del encabezado para ELEGIR un cliente ya registrado (evita escribirlo mal).
+        const hsel = document.getElementById('header-cliente-sel');
+        if (hsel) hsel.innerHTML = '<option value="">▾ Elegir cliente registrado…</option>' + clientes.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('');
+        fillHeaderObraSel();
 
         const sel = document.getElementById('select-cliente');
         if (!sel) return;
@@ -1308,6 +1342,7 @@
         badge.classList.toggle('unsaved', !isSaved);
     }
     document.getElementById('header-cliente').addEventListener('input', updateSavedStatusBadge);
+    document.getElementById('header-cliente').addEventListener('input', fillHeaderObraSel);
     document.getElementById('header-obra').addEventListener('input', updateSavedStatusBadge);
 
     function loadProject() {
