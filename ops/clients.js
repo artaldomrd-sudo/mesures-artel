@@ -7,7 +7,15 @@
 //   clientes/obras que guarda localmente, aunque nunca se haya enviado un pedido a fábrica.
 // - Colección `orders` (respaldo): por si algo se registró ahí sin pasar por el cuaderno (ej.
 //   una Compra Directa a un cliente nuevo) o quedó algo sin sincronizar todavía.
-const norm = (s) => String(s || '').trim().toLowerCase();
+// Clave de comparación a prueba de duplicados: ignora mayúsculas, tildes Y separadores/conectores
+// (para que "STEVE Y ALAIN", "STEVE/ALAIN" y "Steve & Alain" cuenten como el mismo cliente). Solo
+// se usa para AGRUPAR — el nombre mostrado sigue siendo el original (entry.nombre).
+const norm = (s) => String(s || '')
+    .trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[\/\\&+,._-]/g, ' ')
+    .replace(/\b(y|e|and)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
 
 // clienteDocs: array de documentos de la colección `clientes` (con .nombre y .obras).
 // orderDataList: array de o.data() de la colección `orders`.

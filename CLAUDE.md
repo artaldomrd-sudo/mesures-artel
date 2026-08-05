@@ -777,8 +777,14 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
 
 ## Proyectos guardados
 
-- `getProjects` normaliza estructuras corruptas y **fusiona clientes duplicados sin importar
-  mayúsculas** (Gabor = GABOR). `saveProject/loadProject/deleteProject/updateClientList/
+- `getProjects` normaliza estructuras corruptas y **fusiona clientes/obras duplicados** con
+  `normNombreKey` (ignora mayúsculas, tildes Y separadores/conectores: Gabor = GABOR,
+  "STEVE Y ALAIN" = "STEVE/ALAIN" = "Steve & Alain", "Marise y Ricky" = "Marise Ricky"). La
+  misma clave se usa al **guardar** (`saveProject`/`mergeCloudProject`) para caer en el
+  cliente/obra existente en vez de crear un duplicado, y en `ops/clients.js` (`norm`) para el
+  lado Firestore (datalist de proyecto del cuaderno + pantallas de ops). Solo compara; el nombre
+  mostrado es el original. Dedup de obras dentro de un cliente conserva la de `fechaModificacion`
+  más reciente. `saveProject/loadProject/deleteProject/updateClientList/
   updateObraList/backupAllProjects`. Menú lateral: "Clientes" → "Proyecto".
 - **`backupAllProjects()` en iPad: "copia creada" pero no aparece en ningún lado.** Caso real
   reportado por el usuario. Causa: un `<a download>` con un `data:` URI (todo el JSON de todos

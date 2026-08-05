@@ -912,11 +912,12 @@
             return;
         }
         const projects = getProjects();
-        // Reutiliza el cliente existente sin importar mayúsculas/minúsculas (Gabor = GABOR)
-        let cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase()) || cliente;
+        // Reutiliza el cliente existente aunque difiera en mayúsculas/tildes/separadores
+        // (Gabor = GABOR, "STEVE Y ALAIN" = "STEVE/ALAIN") — así no se crea un duplicado.
+        let cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente)) || cliente;
         if(!projects[cliKey]) projects[cliKey] = {};
         // Igual con el nombre del proyecto dentro del cliente
-        let obraKey = Object.keys(projects[cliKey]).find(o => o.toLowerCase() === obra.toLowerCase()) || obra;
+        let obraKey = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
 
         // Si ya existe un proyecto guardado con ese cliente+nombre Y esta hoja no es la que se
         // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en
@@ -965,6 +966,25 @@
         return v && typeof v === 'object' && (v.cardsState !== undefined || v.itemId !== undefined || (v.header !== undefined && v.inputsData !== undefined));
     }
 
+    // Clave de comparación de nombres (cliente/obra) a prueba de duplicados: ignora
+    // mayúsculas/tildes Y los separadores/conectores que hacían que "STEVE Y ALAIN" y
+    // "STEVE/ALAIN" (o "Marise & Ricky") se guardaran como clientes distintos. Solo se usa para
+    // COMPARAR/agrupar — el nombre que se muestra sigue siendo el original tal cual se escribió.
+    function normNombreKey(s) {
+        return String(s || '')
+            .trim().toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '')   // quita tildes
+            .replace(/[\/\\&+,._-]/g, ' ')                       // separadores → espacio
+            .replace(/\b(y|e|and)\b/g, ' ')                      // conectores "y/e/and" → espacio
+            .replace(/\s+/g, ' ').trim();
+    }
+    // Fecha de modificación (para elegir cuál conservar al fusionar dos proyectos "iguales").
+    function modMillis(data) {
+        const s = data && data.header && data.header.fechaModificacion;
+        const t = s ? Date.parse(String(s).replace(' ', 'T')) : NaN;
+        return isNaN(t) ? 0 : t;
+    }
+
     function getProjects() {
         let p;
         try { p = JSON.parse(localStorage.getItem('artal_projects') || '{}') || {}; }
@@ -987,17 +1007,36 @@
                 changed = true;
             }
         });
-        // Fusiona clientes repetidos por mayúsculas/minúsculas (Gabor = GABOR) en una sola entrada
+        // Fusiona clientes duplicados (Gabor = GABOR, "STEVE Y ALAIN" = "STEVE/ALAIN") en una sola
+        // entrada, usando la clave fuerte que ignora mayúsculas/tildes/separadores.
         const seen = {};
         Object.keys(p).forEach(cli => {
-            const lc = cli.trim().toLowerCase();
-            if (seen[lc] && seen[lc] !== cli) {
-                p[seen[lc]] = Object.assign({}, p[cli], p[seen[lc]]); // une los proyectos de ambos
+            const k = normNombreKey(cli);
+            if (seen[k] && seen[k] !== cli) {
+                p[seen[k]] = Object.assign({}, p[cli], p[seen[k]]); // une los proyectos de ambos
                 delete p[cli];
                 changed = true;
             } else {
-                seen[lc] = cli;
+                seen[k] = cli;
             }
+        });
+        // Dedup de OBRAS dentro de cada cliente (mismo nombre salvo mayúsculas/tildes/separadores):
+        // conserva la versión modificada más recientemente para no perder lo más nuevo.
+        Object.keys(p).forEach(cli => {
+            const obras = p[cli]; if (!obras || typeof obras !== 'object') return;
+            const vistoObra = {};
+            Object.keys(obras).forEach(ob => {
+                const k = normNombreKey(ob);
+                if (vistoObra[k] && vistoObra[k] !== ob) {
+                    const prevOb = vistoObra[k];
+                    // Se queda la más reciente; si la nueva gana, se renombra a la clave previa.
+                    if (modMillis(obras[ob]) > modMillis(obras[prevOb])) { obras[prevOb] = obras[ob]; }
+                    delete obras[ob];
+                    changed = true;
+                } else {
+                    vistoObra[k] = ob;
+                }
+            });
         });
         if (changed) localStorage.setItem('artal_projects', JSON.stringify(p));
         return p;
@@ -1037,9 +1076,9 @@
     function mergeCloudProject(cliente, obra, jsonData) {
         if (!cliente || !obra || !jsonData) return;
         const projects = getProjects();
-        let cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase()) || cliente;
+        let cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente)) || cliente;
         if (!projects[cliKey]) projects[cliKey] = {};
-        let obraKey = Object.keys(projects[cliKey]).find(o => o.toLowerCase() === obra.toLowerCase()) || obra;
+        let obraKey = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
         const key = (cliKey + '|' + obraKey).toLowerCase();
 
         // Si esta hoja tiene ESTE proyecto abierto ahora mismo, no lo pisamos en localStorage
@@ -1081,8 +1120,8 @@
             const targetKey = (cliente + '|' + obra).toLowerCase();
             if (targetKey === openedProjectKey) {
                 const projects = getProjects();
-                const cliKey = Object.keys(projects).find(c => c.toLowerCase() === cliente.toLowerCase());
-                isSaved = !!(cliKey && Object.keys(projects[cliKey]).some(o => o.toLowerCase() === obra.toLowerCase()));
+                const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+                isSaved = !!(cliKey && Object.keys(projects[cliKey]).some(o => normNombreKey(o) === normNombreKey(obra)));
             }
         }
         badge.textContent = isSaved ? '✓ Proyecto guardado' : '○ Sin guardar';
