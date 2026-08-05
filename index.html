@@ -373,6 +373,7 @@
             <select id="select-proyecto"><option value="">-- Proyecto --</option></select>
             <button class="side-btn primary" style="margin-top:4px;" onclick="loadProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z"/><path d="M3 9h18l-1.5 8a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/></svg> Abrir proyecto</button>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
+            <button class="side-btn" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="nuevaParteProyecto()" title="Arranca una hoja nueva del mismo proyecto (2da etapa, barandas, adicional…) sin pisar la parte anterior">➕ Nueva parte del proyecto</button>
             <button class="side-btn" style="margin-top:6px;" onclick="openDedup()">🔗 Fusionar duplicados</button>
         </div>
 
@@ -2162,6 +2163,37 @@
             clearNotebookToBlank();
         }
     }
+
+    // "Nueva parte del proyecto": para proyectos en varias etapas o adicionales (barandas después
+    // de las ventanas, 2da etapa, etc.). Arranca una HOJA NUEVA conservando el encabezado (cliente,
+    // material, color, ubicación) y vacía los ítems, con el nombre = base + " — " + la parte que se
+    // indique. Como es un proyecto nuevo (openedProjectKey=null), al Guardar se crea una entrada
+    // aparte sin pisar la parte anterior — y el historial de ops las agrupa bajo la misma obra.
+    window.nuevaParteProyecto = function () {
+        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const obra = (document.getElementById('header-obra').value || '').trim();
+        if (!cliente || !obra) { alert('Primero abre (o nombra arriba) el proyecto base — Cliente y Nombre del proyecto — para crear una nueva parte a partir de él.'); return; }
+        const parte = prompt('¿Qué parte o etapa vas a trabajar ahora?\n(ej. Barandas, 2da etapa, Adicional, Parte 2)');
+        if (parte === null) return;
+        const parteT = parte.trim();
+        if (!parteT) { alert('Escribe el nombre de la parte.'); return; }
+        const base = obra.split(' — ')[0].trim() || obra; // nombre base, sin una parte previa
+        const nuevoNombre = base + ' — ' + parteT;
+        if (!confirm(`Se abrirá una HOJA NUEVA para:\n\n• Cliente: ${cliente}\n• Proyecto: ${nuevoNombre}\n\nSe conservan el cliente, material, color y ubicación; se vacían los ítems para que agregues los de esta parte. La parte anterior queda guardada aparte (no se pisa).\n\n¿Continuar?`)) return;
+        // Vacía solo los ítems, conserva el encabezado.
+        document.getElementById('item-list').innerHTML = '';
+        cardsState = {};
+        itemId = 0;
+        document.getElementById('header-obra').value = nuevoNombre;
+        const displayDate = document.getElementById('header-fecha');
+        displayDate.dataset.created = '';
+        displayDate.innerText = 'Nueva parte del proyecto';
+        openedProjectKey = null; // es un proyecto nuevo → "Guardar" crea una entrada aparte
+        fillHeaderObraSel();
+        updateSavedStatusBadge();
+        saveProgress();
+        alert(`Listo. Agrega los ítems de "${parteT}" y dale "Guardar proyecto". Se guardará como "${nuevoNombre}" sin tocar la parte anterior.`);
+    };
 
     document.addEventListener('input', () => { saveProgress(); updateSavedStatusBadge(); });
     document.addEventListener('change', () => { saveProgress(); updateSavedStatusBadge(); });
