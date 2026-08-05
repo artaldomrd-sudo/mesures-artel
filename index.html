@@ -485,13 +485,12 @@
                 <label>CLIENTE</label>
                 <input type="text" id="header-cliente" placeholder="ej: Dupont" list="cliente-datalist" autocomplete="off">
                 <datalist id="cliente-datalist"></datalist>
-                <select id="header-cliente-sel" onchange="pickHeaderCliente(this.value)" title="Elegir un cliente ya registrado" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Elegir cliente registrado…</option></select>
             </div>
             <div class="header-field hf-obra">
                 <label>NOMBRE DEL PROYECTO</label>
                 <input type="text" id="header-obra" placeholder="ej: Altea Villa 11" list="obra-datalist" autocomplete="off">
                 <datalist id="obra-datalist"></datalist>
-                <select id="header-obra-sel" onchange="pickHeaderObra(this.value)" title="Elegir un proyecto ya registrado de este cliente" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Elegir proyecto registrado…</option></select>
+                <select id="header-obra-sel" onchange="abrirProyectoDeCliente(this.value)" title="Abrir otro proyecto guardado de este mismo cliente" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Abrir otro proyecto de este cliente…</option></select>
             </div>
             <div class="header-field hf-ubicacion">
                 <label>UBICACIÓN</label>
@@ -1224,22 +1223,27 @@
         alert('Proyectos fusionados.');
     };
 
-    // Desplegables del encabezado para ELEGIR un cliente/proyecto ya registrado (evita escribirlo
-    // mal y crear un duplicado). Al elegir, rellenan el campo de texto y disparan su lógica normal.
-    window.pickHeaderCliente = function (v) {
-        if (!v) return;
-        const inp = document.getElementById('header-cliente');
-        inp.value = v;
-        inp.dispatchEvent(new Event('input', { bubbles: true })); // refresca badge + datalist de obra (Firestore)
+    // Desde la página de un proyecto solo tiene sentido cambiar a OTRO PROYECTO del mismo cliente
+    // (no cambiar de cliente). Este desplegable abre el proyecto elegido de este cliente.
+    window.abrirProyectoDeCliente = function (obra) {
+        const sel = document.getElementById('header-obra-sel');
+        if (!obra) return;
+        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const projects = getProjects();
+        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+        if (!cliKey || projects[cliKey][obra] === undefined) { alert('No se encontró ese proyecto de este cliente.'); if (sel) sel.value = ''; return; }
+        // Aviso si la hoja actual tiene ítems y NO está guardada, para no perderlos sin querer.
+        const badge = document.getElementById('saved-status-badge');
+        const hayContenido = Object.keys(cardsState || {}).length > 0;
+        if (hayContenido && badge && badge.classList.contains('unsaved')) {
+            if (!confirm('La hoja actual no está guardada. Si abres otro proyecto se reemplazará lo que hay en pantalla.\n\n¿Abrir de todos modos?')) { if (sel) sel.value = ''; return; }
+        }
+        restoreData(projects[cliKey][obra]);
+        openedProjectKey = (cliKey + '|' + obra).toLowerCase();
+        saveProgress();
+        updateSavedStatusBadge();
         fillHeaderObraSel();
-        const s = document.getElementById('header-cliente-sel'); if (s) s.value = '';
-    };
-    window.pickHeaderObra = function (v) {
-        if (!v) return;
-        const inp = document.getElementById('header-obra');
-        inp.value = v;
-        inp.dispatchEvent(new Event('input', { bubbles: true }));
-        const s = document.getElementById('header-obra-sel'); if (s) s.value = '';
+        if (sel) sel.value = '';
     };
     // Llena el desplegable de proyecto con las obras guardadas del cliente escrito en el encabezado.
     function fillHeaderObraSel() {
@@ -1248,7 +1252,7 @@
         const projects = getProjects();
         const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
         const obras = cliKey ? Object.keys(projects[cliKey]).sort((a, b) => a.localeCompare(b)) : [];
-        sel.innerHTML = '<option value="">▾ Elegir proyecto registrado…</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
     }
 
     function updateClientList() {
@@ -1260,9 +1264,7 @@
         const dl = document.getElementById('cliente-datalist');
         if (dl) dl.innerHTML = clientes.map(c => `<option value="${escAttr(c)}"></option>`).join('');
 
-        // Desplegable del encabezado para ELEGIR un cliente ya registrado (evita escribirlo mal).
-        const hsel = document.getElementById('header-cliente-sel');
-        if (hsel) hsel.innerHTML = '<option value="">▾ Elegir cliente registrado…</option>' + clientes.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('');
+        // El desplegable de proyecto del encabezado (para abrir otro proyecto del mismo cliente).
         fillHeaderObraSel();
 
         const sel = document.getElementById('select-cliente');
@@ -1329,18 +1331,23 @@
         if (!badge) return;
         const cliente = document.getElementById('header-cliente').value.trim();
         const obra = document.getElementById('header-obra').value.trim();
-        let isSaved = false;
-        if (cliente && obra && openedProjectKey) {
-            const targetKey = (cliente + '|' + obra).toLowerCase();
-            if (targetKey === openedProjectKey) {
-                const projects = getProjects();
-                const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
-                isSaved = !!(cliKey && Object.keys(projects[cliKey]).some(o => normNombreKey(o) === normNombreKey(obra)));
-            }
+        // ¿Existe ya un proyecto guardado con este cliente+obra? (aunque no se haya "abierto" en esta
+        // sesión — ej. se llegó por el autosave). Antes solo se ponía verde si openedProjectKey
+        // coincidía, y asustaba con "Sin guardar" un proyecto que SÍ estaba registrado.
+        let existe = false, abiertoAqui = false;
+        if (cliente && obra) {
+            const projects = getProjects();
+            const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+            existe = !!(cliKey && Object.keys(projects[cliKey]).some(o => normNombreKey(o) === normNombreKey(obra)));
+            abiertoAqui = existe && openedProjectKey === (cliente + '|' + obra).toLowerCase();
         }
-        badge.textContent = isSaved ? '✓ Proyecto guardado' : '○ Sin guardar';
-        badge.classList.toggle('saved', isSaved);
-        badge.classList.toggle('unsaved', !isSaved);
+        let txt, saved;
+        if (existe && abiertoAqui) { txt = '✓ Proyecto guardado'; saved = true; }
+        else if (existe) { txt = '✓ Proyecto registrado'; saved = true; }   // ya guardado antes (aunque no lo abriste ahora)
+        else { txt = '○ Sin guardar'; saved = false; }
+        badge.textContent = txt;
+        badge.classList.toggle('saved', saved);
+        badge.classList.toggle('unsaved', !saved);
     }
     document.getElementById('header-cliente').addEventListener('input', updateSavedStatusBadge);
     document.getElementById('header-cliente').addEventListener('input', fillHeaderObraSel);
