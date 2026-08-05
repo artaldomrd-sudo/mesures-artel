@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Producción (Costeo de obra)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 920px; }
+    .intro { color: #667; font-size: 13.5px; margin: 0 0 10px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 11px 15px; flex: 1; min-width: 130px; }
+    .kpi .n { font-size: 18px; font-weight: bold; line-height: 1; } .kpi .n.ven { color: #1f9d61; } .kpi .n.cos { color: #d9483b; } .kpi .n.mar { color: var(--artal-blue); }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar input.buscar, .bar select { padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .bar input.buscar { flex: 1; min-width: 140px; }
+    .btn-new { background: #7d3ac1; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .ob-card { border-left: 4px solid #7d3ac1; cursor: pointer; }
+    .ob-card.cotizada { border-left-color: #f39c12; } .ob-card.en_proceso { border-left-color: #3498db; } .ob-card.terminada { border-left-color: #1f9d61; }
+    .ob-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .ob-head b { color: var(--artal-blue); font-size: 15px; }
+    .est-badge { font-size: 10px; font-weight: bold; padding: 2px 9px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em; }
+    .est-badge.cotizada { background: #fef5e7; color: #b9770e; } .est-badge.en_proceso { background: #eaf2fb; color: #2471a3; } .est-badge.terminada { background: #e7f7ee; color: #1f9d61; }
+    .ob-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+    .ob-metrics .m { font-size: 12px; color: #667; } .ob-metrics .m b { font-size: 14px; }
+    .m .ven { color: #1f9d61; } .m .cos { color: #d9483b; } .m .mar-ok { color: #1f9d61; } .m .mar-bad { color: #d9483b; }
+    .alerta-sobre { font-size: 11.5px; color: #d9483b; font-weight: bold; margin-top: 6px; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 12px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 720px; max-height: 94vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 10px 0 4px; }
+    .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; background: #fff; }
+    .modal-box textarea { min-height: 46px; }
+    .grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 560px) { .grid3 { grid-template-columns: 1fr; } }
+
+    .costos-tabla { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .costos-tabla th { background: #f6f8fa; font-size: 10.5px; text-transform: uppercase; color: #778; padding: 7px 6px; text-align: left; }
+    .costos-tabla th.r, .costos-tabla td.r { text-align: right; }
+    .costos-tabla td { padding: 5px 6px; border-bottom: 1px solid #eef1f4; vertical-align: middle; }
+    .costos-tabla input, .costos-tabla select { min-height: 38px; padding: 7px 8px; font-size: 13px; margin: 0; }
+    .costos-tabla input.num { text-align: right; }
+    .costos-tabla .del { background: transparent; border: none; color: #e74c3c; font-size: 16px; cursor: pointer; }
+    .btn-addrow { margin-top: 8px; background: #eef1f4; color: #445; border: none; border-radius: 8px; padding: 9px 12px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; }
+    .tot-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding: 12px; background: #f7f9fc; border-radius: 10px; }
+    .tot-row .t { font-size: 12px; color: #667; } .tot-row .t b { font-size: 16px; display: block; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .btn-del-obra { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; flex: 0 0 auto; padding: 12px 16px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="erp.html" title="Volver al ERP">← ERP</a>
+        <a class="btn-back" href="index.html" title="Ir al Panel">🏠 Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Producción</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="intro">Costeo y control de obra: compara el costo <b>estimado</b> vs. el <b>real</b> (materiales, mano de obra, etc.) contra el precio de venta, y controla el margen de cada obra.</p>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+        <button class="btn-new" onclick="abrir()">+ Nueva obra</button>
+        <select id="f-estado" onchange="render()"><option value="">Todos los estados</option><option value="cotizada">Cotizadas</option><option value="en_proceso">En proceso</option><option value="terminada">Terminadas</option></select>
+        <input class="buscar" id="buscar" placeholder="Buscar obra o cliente…" oninput="render()">
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<datalist id="clientes-list"></datalist>
+
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva obra</h2>
+        <div class="grid3">
+            <div><label>Obra / Proyecto *</label><input type="text" id="o-obra" placeholder="Ej. Residencia Pérez"></div>
+            <div><label>Cliente</label><input type="text" id="o-cliente" list="clientes-list" placeholder="Nombre"></div>
+            <div><label>Estado</label><select id="o-estado"><option value="cotizada">Cotizada</option><option value="en_proceso">En proceso</option><option value="terminada">Terminada</option></select></div>
+        </div>
+        <label>Precio de venta (RD$)</label>
+        <input type="number" id="o-venta" min="0" step="0.01" oninput="recalc()">
+
+        <label style="margin-top:16px;">Costos de la obra</label>
+        <div style="overflow-x:auto">
+        <table class="costos-tabla">
+            <thead><tr><th>Categoría</th><th>Descripción</th><th class="r" style="width:120px;">Estimado</th><th class="r" style="width:120px;">Real</th><th style="width:34px;"></th></tr></thead>
+            <tbody id="costos-body"></tbody>
+        </table>
+        </div>
+        <button class="btn-addrow" onclick="addRow()">+ Agregar línea de costo</button>
+
+        <div class="tot-row" id="tot-row"></div>
+
+        <label>Notas <span style="font-weight:normal;color:#8a93a0;">— opcional</span></label>
+        <textarea id="o-notas"></textarea>
+
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-del-obra" id="btn-del" onclick="borrarActual()" style="display:none;">🗑</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]); // gerencia/admin
+    wireBackButton(usuario.roles);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const CATS = ['Perfiles de aluminio', 'Vidrios', 'Herrajes', 'Materiales / insumos', 'Mano de obra', 'Transporte / instalación', 'Otros'];
+    const EST_LABEL = { cotizada: 'Cotizada', en_proceso: 'En proceso', terminada: 'Terminada' };
+
+    let obras = [], editId = null;
+
+    onSnapshot(collection(db, 'produccionObras'), (s) => { obras = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + esc(err.message) + '</p>'; });
+    onSnapshot(collection(db, 'clientes'), (s) => {
+        const nombres = s.docs.map(d => (d.data().nombre || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
+        document.getElementById('clientes-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
+    }, () => {});
+
+    const sumEst = (o) => (o.costos || []).reduce((a, c) => a + n2(c.estimado), 0);
+    const sumReal = (o) => (o.costos || []).reduce((a, c) => a + n2(c.real), 0);
+
+    function render() {
+        const fe = document.getElementById('f-estado').value;
+        const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
+        let lista = obras.slice();
+        if (fe) lista = lista.filter(o => (o.estado || 'cotizada') === fe);
+        if (term) lista = lista.filter(o => [o.obra, o.cliente].some(v => String(v || '').toLowerCase().includes(term)));
+        lista.sort((a, b) => String(b.fechaCreacion && b.fechaCreacion.seconds || 0) - String(a.fechaCreacion && a.fechaCreacion.seconds || 0) || String(a.obra || '').localeCompare(String(b.obra || ''), 'es'));
+
+        // KPIs globales (sobre lo filtrado)
+        const ventaT = lista.reduce((a, o) => a + n2(o.precioVenta), 0);
+        const costoT = lista.reduce((a, o) => a + (sumReal(o) || sumEst(o)), 0);
+        const marT = ventaT - costoT;
+        document.getElementById('kpis').innerHTML = [
+            ['n ven', fmt0(ventaT), 'Venta total'], ['n cos', fmt0(costoT), 'Costo (real o estimado)'],
+            ['n mar', fmt0(marT) + (ventaT > 0 ? ' · ' + Math.round(marT / ventaT * 100) + '%' : ''), 'Margen']
+        ].map(([c, n, l]) => `<div class="kpi"><div class="${c}">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        const cont = document.getElementById('lista');
+        if (!obras.length) { cont.innerHTML = '<p class="empty">Aún no hay obras. Crea la primera con “+ Nueva obra”.</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin obras para el filtro.</p>'; return; }
+        cont.innerHTML = lista.map(cardHTML).join('');
+    }
+
+    function cardHTML(o) {
+        const est = o.estado || 'cotizada';
+        const venta = n2(o.precioVenta), cEst = sumEst(o), cReal = sumReal(o);
+        const costo = cReal || cEst;
+        const margen = venta - costo;
+        const margenPct = venta > 0 ? Math.round(margen / venta * 100) : null;
+        const sobre = cReal > 0 && cEst > 0 && cReal > cEst;
+        return `<div class="order-card ob-card ${est}" onclick="editar('${o.id}')">
+            <div class="ob-head">
+                <b>${esc(o.obra) || 'Sin nombre'}${o.cliente ? ' — <span style="color:#667;font-weight:normal">' + esc(o.cliente) + '</span>' : ''}</b>
+                <span class="est-badge ${est}">${esc(EST_LABEL[est] || est)}</span>
+            </div>
+            <div class="ob-metrics">
+                <span class="m">Venta<br><b class="ven">${fmt0(venta)}</b></span>
+                <span class="m">Costo estimado<br><b>${fmt0(cEst)}</b></span>
+                <span class="m">Costo real<br><b class="cos">${cReal ? fmt0(cReal) : '—'}</b></span>
+                <span class="m">Margen<br><b class="${margen >= 0 ? 'mar-ok' : 'mar-bad'}">${fmt0(margen)}${margenPct != null ? ' · ' + margenPct + '%' : ''}</b></span>
+            </div>
+            ${sobre ? `<div class="alerta-sobre">⚠ El costo real supera el estimado por ${fmt0(cReal - cEst)}.</div>` : ''}
+        </div>`;
+    }
+
+    // ---------- Modal / edición ----------
+    function filaCostoHTML(c = {}) {
+        return `<tr>
+            <td><select class="c-cat">${CATS.map(x => `<option ${x === c.cat ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
+            <td><input type="text" class="c-desc" value="${esc(c.desc || '')}" placeholder="Detalle"></td>
+            <td class="r"><input type="number" class="c-est num" min="0" step="0.01" value="${c.estimado != null ? c.estimado : ''}" oninput="recalc()"></td>
+            <td class="r"><input type="number" class="c-real num" min="0" step="0.01" value="${c.real != null ? c.real : ''}" oninput="recalc()"></td>
+            <td><button type="button" class="del" onclick="this.closest('tr').remove(); recalc();">✕</button></td>
+        </tr>`;
+    }
+    window.addRow = function () { document.getElementById('costos-body').insertAdjacentHTML('beforeend', filaCostoHTML()); };
+    function leerCostos() {
+        return Array.from(document.querySelectorAll('#costos-body tr')).map(tr => ({
+            cat: tr.querySelector('.c-cat').value,
+            desc: tr.querySelector('.c-desc').value.trim(),
+            estimado: n2(tr.querySelector('.c-est').value),
+            real: n2(tr.querySelector('.c-real').value)
+        })).filter(c => c.desc || c.estimado || c.real);
+    }
+    window.recalc = function () {
+        const costos = leerCostos();
+        const cEst = costos.reduce((a, c) => a + c.estimado, 0);
+        const cReal = costos.reduce((a, c) => a + c.real, 0);
+        const venta = n2(document.getElementById('o-venta').value);
+        const mEst = venta - cEst, mReal = venta - cReal;
+        document.getElementById('tot-row').innerHTML = `
+            <span class="t">Costo estimado<b>${fmt0(cEst)}</b></span>
+            <span class="t">Costo real<b style="color:#d9483b">${fmt0(cReal)}</b></span>
+            <span class="t">Margen estimado<b style="color:${mEst >= 0 ? '#1f9d61' : '#d9483b'}">${fmt0(mEst)}${venta > 0 ? ' · ' + Math.round(mEst / venta * 100) + '%' : ''}</b></span>
+            <span class="t">Margen real<b style="color:${mReal >= 0 ? '#1f9d61' : '#d9483b'}">${fmt0(mReal)}${venta > 0 ? ' · ' + Math.round(mReal / venta * 100) + '%' : ''}</b></span>`;
+    };
+
+    window.abrir = function () {
+        editId = null; document.getElementById('modal-title').textContent = 'Nueva obra';
+        document.getElementById('o-obra').value = ''; document.getElementById('o-cliente').value = '';
+        document.getElementById('o-estado').value = 'cotizada'; document.getElementById('o-venta').value = '';
+        document.getElementById('o-notas').value = '';
+        document.getElementById('costos-body').innerHTML = filaCostoHTML();
+        document.getElementById('btn-del').style.display = 'none';
+        recalc(); document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const o = obras.find(x => x.id === id); if (!o) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar obra';
+        document.getElementById('o-obra').value = o.obra || '';
+        document.getElementById('o-cliente').value = o.cliente || '';
+        document.getElementById('o-estado').value = o.estado || 'cotizada';
+        document.getElementById('o-venta').value = o.precioVenta != null ? o.precioVenta : '';
+        document.getElementById('o-notas').value = o.notas || '';
+        const costos = (o.costos && o.costos.length) ? o.costos : [{}];
+        document.getElementById('costos-body').innerHTML = costos.map(filaCostoHTML).join('');
+        document.getElementById('btn-del').style.display = '';
+        recalc(); document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const obra = document.getElementById('o-obra').value.trim();
+        if (!obra) { alert('Escribe el nombre de la obra.'); return; }
+        const datos = {
+            obra, cliente: document.getElementById('o-cliente').value.trim(),
+            estado: document.getElementById('o-estado').value,
+            precioVenta: n2(document.getElementById('o-venta').value),
+            costos: leerCostos(),
+            notas: document.getElementById('o-notas').value.trim(),
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        const btn = document.querySelector('#modal .btn-guardar'); if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+        try {
+            if (editId) await updateDoc(doc(db, 'produccionObras', editId), datos);
+            else await addDoc(collection(db, 'produccionObras'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
+    };
+    window.borrarActual = async function () {
+        if (!editId) return;
+        const o = obras.find(x => x.id === editId);
+        if (!confirm('¿Eliminar la obra "' + (o ? o.obra : '') + '"? Esta acción no se puede deshacer.')) return;
+        try { await deleteDoc(doc(db, 'produccionObras', editId)); cerrar(); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    render();
+</script>
+
+</body>
+</html>
