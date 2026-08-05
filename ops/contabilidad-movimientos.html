@@ -81,6 +81,7 @@
         <select id="f-tipo" onchange="render()"><option value="">Ingresos y gastos</option><option value="ingreso">Solo ingresos</option><option value="gasto">Solo gastos</option></select>
         <input class="buscar" id="buscar" placeholder="Buscar concepto, categoría, tercero…" oninput="render()">
         <button class="btn-606" onclick="exportar606()" title="Exporta las compras con NCF del período — base para el 606 de la DGII">📥 606</button>
+        <button class="btn-606" onclick="exportar607()" title="Exporta las ventas con NCF del período — base para el 607 de la DGII" style="background:#1f9d61;">📤 607</button>
     </div>
     <div id="lista"><p class="empty">Cargando…</p></div>
 </main>
@@ -253,6 +254,32 @@
         const url = URL.createObjectURL(blob);
         const etq = periodo === 'mes' ? hoyISO().slice(0, 7) : (periodo === 'anio' ? String(new Date().getFullYear()) : 'todo');
         const a = document.createElement('a'); a.href = url; a.download = '606-compras-' + etq + '.csv';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+
+    // ---------- Export 607 (ventas del período con NCF, para la DGII) ----------
+    // Espejo del 606 pero para ingresos: RNC/cédula del CLIENTE + NCF emitido. Nota: el 607 formal
+    // de ventas lo genera Citrus (que emite el e-CF); esto es la base operativa de lo registrado a
+    // mano en el panel, para cotejar con la contable.
+    window.exportar607 = function () {
+        const periodo = document.getElementById('f-periodo').value;
+        const ventas = movimientos.filter(m => m.tipo === 'ingreso' && enPeriodo(m.fecha, periodo) && (m.ncf || '').trim());
+        if (!ventas.length) { alert('No hay ventas con NCF en el período seleccionado.\n\nEl 607 solo incluye ingresos con Número de Comprobante Fiscal (NCF) emitido. Registra el NCF en los ingresos para que aparezcan aquí.\n\nNota: las ventas facturadas formalmente viven en Citrus (que emite el e-CF).'); return; }
+        ventas.sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+        const q = (s) => { s = String(s == null ? '' : s); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const cab = ['RNC/Cédula', 'Tipo Id (1=RNC,2=Céd)', 'NCF', 'Fecha (AAAAMMDD)', 'Monto facturado', 'ITBIS facturado', 'Total', 'Cliente', 'Concepto'];
+        const filas = ventas.map(m => {
+            const rnc = (m.rnc || '').replace(/\D/g, '');
+            const tipoId = rnc.length === 9 ? '1' : (rnc.length === 11 ? '2' : ''); // 9 díg. = RNC, 11 = cédula
+            const total = n2(m.monto), itbis = n2(m.itbis), subtotal = +(total - itbis).toFixed(2);
+            return [rnc, tipoId, (m.ncf || '').toUpperCase(), (m.fecha || '').replace(/-/g, ''), subtotal.toFixed(2), itbis.toFixed(2), total.toFixed(2), m.tercero || '', m.concepto || ''];
+        });
+        const csv = '﻿' + [cab, ...filas].map(f => f.map(q).join(',')).join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const etq = periodo === 'mes' ? hoyISO().slice(0, 7) : (periodo === 'anio' ? String(new Date().getFullYear()) : 'todo');
+        const a = document.createElement('a'); a.href = url; a.download = '607-ventas-' + etq + '.csv';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     };
