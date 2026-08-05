@@ -401,6 +401,15 @@
               <select id="dd-proj-b" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
               <button onclick="dedupMergeProyectosManual()" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Fusionar</button>
             </div>
+            <h3 style="font-size:14px;color:#0A3D62;margin:18px 0 8px;">🗂️ Mover un proyecto al cliente correcto</h3>
+            <p style="font-size:12px;color:#667;margin:0 0 8px;">Si un proyecto quedó guardado bajo el cliente equivocado, muévelo aquí.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <select id="dd-mov-cli" onchange="dedupFillMoverProyectos()" style="flex:1;min-width:130px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <select id="dd-mov-proj" style="flex:1;min-width:130px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <span style="color:#889;font-weight:bold;">→ al cliente</span>
+              <select id="dd-mov-dest" style="flex:1;min-width:130px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <button onclick="dedupMoverProyecto()" style="background:#16a085;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Mover</button>
+            </div>
             <div style="text-align:right;margin-top:20px;">
               <button onclick="closeDedup()" style="background:#eef1f4;color:#445;border:none;border-radius:8px;padding:11px 18px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">Cerrar</button>
             </div>
@@ -1153,6 +1162,22 @@
         if (window.syncClienteObra) window.syncClienteObra(cliente, keep);
         updateClientList();
     }
+    // Mueve un proyecto de un cliente a otro (cuando quedó bajo el cliente equivocado).
+    function moverProyecto(cliOrig, obra, cliDest) {
+        if (!cliOrig || !obra || !cliDest || normNombreKey(cliOrig) === normNombreKey(cliDest)) return;
+        const projects = getProjects();
+        const src = projects[cliOrig]; if (!src || src[obra] === undefined) { updateClientList(); return; }
+        if (!projects[cliDest]) projects[cliDest] = {};
+        const obraKey = Object.keys(projects[cliDest]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
+        projects[cliDest][obraKey] = src[obra];
+        delete src[obra];
+        if (Object.keys(src).length === 0) delete projects[cliOrig]; // cliente sin proyectos → se quita
+        localStorage.setItem('artal_projects', JSON.stringify(projects));
+        if (window.syncProjectToCloud) window.syncProjectToCloud(cliDest, obraKey, projects[cliDest][obraKey]);
+        if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(cliOrig, obra);
+        if (window.syncClienteObra) window.syncClienteObra(cliDest, obraKey);
+        updateClientList();
+    }
 
     let dedupActions = [];
     function renderDedupSug() {
@@ -1191,10 +1216,30 @@
     window.openDedup = function () {
         const projects = getProjects(); const cls = Object.keys(projects).sort((a, b) => a.localeCompare(b));
         const opts = '<option value="">-- Cliente --</option>' + cls.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('');
-        ['dd-cli-a', 'dd-cli-b', 'dd-proj-cli'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
+        ['dd-cli-a', 'dd-cli-b', 'dd-proj-cli', 'dd-mov-cli', 'dd-mov-dest'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
         dedupFillProyectos();
+        dedupFillMoverProyectos();
         renderDedupSug();
         document.getElementById('dedup-modal').style.display = 'flex';
+    };
+    window.dedupFillMoverProyectos = function () {
+        const cli = document.getElementById('dd-mov-cli').value;
+        const projects = getProjects();
+        const obras = (cli && projects[cli]) ? Object.keys(projects[cli]).sort((a, b) => a.localeCompare(b)) : [];
+        const el = document.getElementById('dd-mov-proj');
+        if (el) el.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+    };
+    window.dedupMoverProyecto = function () {
+        const cli = document.getElementById('dd-mov-cli').value;
+        const obra = document.getElementById('dd-mov-proj').value;
+        const dest = document.getElementById('dd-mov-dest').value;
+        if (!cli || !obra) { alert('Elige el cliente y el proyecto a mover.'); return; }
+        if (!dest) { alert('Elige el cliente destino.'); return; }
+        if (normNombreKey(cli) === normNombreKey(dest)) { alert('El cliente destino es el mismo.'); return; }
+        if (!confirm(`¿Mover el proyecto "${obra}" del cliente "${cli}" al cliente "${dest}"?`)) return;
+        moverProyecto(cli, obra, dest);
+        openDedup();
+        alert(`Proyecto "${obra}" movido a "${dest}".`);
     };
     window.closeDedup = function () { document.getElementById('dedup-modal').style.display = 'none'; };
     window.dedupFillProyectos = function () {
@@ -1249,9 +1294,11 @@
     function fillHeaderObraSel() {
         const sel = document.getElementById('header-obra-sel'); if (!sel) return;
         const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const obraActual = (document.getElementById('header-obra').value || '').trim();
         const projects = getProjects();
         const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
-        const obras = cliKey ? Object.keys(projects[cliKey]).sort((a, b) => a.localeCompare(b)) : [];
+        // Solo OTROS proyectos del mismo cliente (excluye el que ya está abierto).
+        const obras = cliKey ? Object.keys(projects[cliKey]).filter(o => normNombreKey(o) !== normNombreKey(obraActual)).sort((a, b) => a.localeCompare(b)) : [];
         sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
     }
 
