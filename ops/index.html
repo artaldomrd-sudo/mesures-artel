@@ -120,7 +120,13 @@
         // reubica al final solo si no estaba en `ord` — al no moverlo, conserva su sitio actual.
     }
     (async () => {
-        try { const s = await getDoc(doc(db, 'usuarios', usuario.email)); if (s.exists() && Array.isArray(s.data().panelOrden)) aplicarOrden(s.data().panelOrden); } catch (_) { }
+        try {
+            const s = await getDoc(doc(db, 'usuarios', usuario.email));
+            if (s.exists()) {
+                if (Array.isArray(s.data().panelOrden)) aplicarOrden(s.data().panelOrden);
+                if (Array.isArray(s.data().notifOcultas)) { notifOcultas = s.data().notifOcultas; renderNotifs(); }
+            }
+        } catch (_) { }
     })();
     async function guardarOrden() {
         try { await setDoc(doc(db, 'usuarios', usuario.email), { panelOrden: ordenActual() }, { merge: true }); } catch (e) { /* best-effort */ }
@@ -190,6 +196,22 @@
 
     // ---------------- Centro de notificaciones ----------------
     let ordersCache = [], solicitudesCache = [], citasCache = [];
+    // Recordatorios/citas que ESTE usuario ocultó de SU panel (personal, no afecta a los demás).
+    let notifOcultas = [];
+
+    // Un recordatorio/cita solo le aparece a la persona a la que está asignado (mixto): las de
+    // Anny no le salen a Andrea, etc. Las del equipo de campo (asignadoA:'instalador') no salen
+    // en el panel de gerencia. 'Gerente' genérico viejo se trata como Dylan (igual que el calendario).
+    const nombreNorm = (n) => { n = (n || '').trim().toLowerCase(); return (n === '' || n === 'gerente') ? 'dylan' : n; };
+    function citaEsMia(c) {
+        if (c.asignadoA === 'instalador') return false;
+        const asigns = (Array.isArray(c.asignados) && c.asignados.length)
+            ? c.asignados
+            : ((c.asignadoNombre || c.asignadoEmail) ? [{ nombre: c.asignadoNombre, email: c.asignadoEmail }] : []);
+        if (!asigns.length) return false; // sin persona asignada → no molestamos a nadie en particular
+        const miNombre = nombreNorm(usuario.nombre);
+        return asigns.some(a => a && ((a.email && a.email === usuario.email) || nombreNorm(a.nombre) === miNombre));
+    }
 
     function buildNotifs() {
         const N = [];
@@ -222,10 +244,13 @@
             N.push({ tipo: 'tarea', ic: '📥', titulo: 'Solicitud web: ' + (s.nombre || 'sin nombre'), sub: s.tipo || '', txt: [s.telefono, s.email, s.mensaje].filter(Boolean).join(' · '),
                 acciones: `<a class="n-ver" href="solicitudes.html">Ver solicitudes</a>` });
         });
-        // 5) Citas / recordatorios pendientes (vencidos o dentro de las próximas 24 h) → se descartan con la ✕.
+        // 5) Citas / recordatorios pendientes (vencidos o dentro de las próximas 24 h) — SOLO los
+        //    asignados a MÍ, y sin los que yo mismo oculté. La ✕ oculta solo de MI panel.
         const limite = Date.now() + 24 * 3600 * 1000;
         citasCache.forEach(({ id, c }) => {
             if (c.completada === true) return;
+            if (!citaEsMia(c)) return;
+            if (notifOcultas.includes(id)) return;
             const f = (c.fecha && c.fecha.toDate) ? c.fecha.toDate().getTime() : null;
             if (f != null && f > limite) return; // futuras lejanas todavía no molestan
             N.push({ tipo: 'recordatorio', ic: c.tipo === 'recordatorio' ? '🔔' : '📅', titulo: c.titulo || 'Recordatorio', sub: fFecha(c.fecha), txt: [c.cliente, c.obra, c.descripcion].filter(Boolean).join(' · '),
@@ -253,7 +278,13 @@
     window.notifVer = (id) => openOrderPreview(id);
     window.notifAtenderComentario = async (id) => { try { await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
     window.notifAtenderItem = async (id, field, iid) => { try { await updateDoc(doc(db, 'orders', id), { [`${field}.${iid}.atendido`]: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
-    window.notifDismissCita = async (id) => { try { await updateDoc(doc(db, 'citas', id), { completada: true, fechaCompletada: serverTimestamp(), recordatoriosPendientes: false }); } catch (e) { alert('No se pudo: ' + e.message); } };
+    // ✕ en un recordatorio = ocultarlo de MI panel (personal). No lo completa ni afecta a Anny/
+    // Andrea — cada quien lo quita de su vista cuando quiera. Se guarda en usuarios/{email}.notifOcultas.
+    window.notifDismissCita = async (id) => {
+        if (!notifOcultas.includes(id)) notifOcultas.push(id);
+        renderNotifs();
+        try { await setDoc(doc(db, 'usuarios', usuario.email), { notifOcultas }, { merge: true }); } catch (e) { /* best-effort */ }
+    };
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, o: d.data() }));
