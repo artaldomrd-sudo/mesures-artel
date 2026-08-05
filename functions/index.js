@@ -1,4 +1,4 @@
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
@@ -21,6 +21,28 @@ async function tokenDe(email) {
     if (!email) return null;
     const s = await db.collection('usuarios').doc(email).get();
     return s.exists ? (s.data().fcmToken || null) : null;
+}
+
+// Tokens FCM de TODOS los usuarios que tengan alguno de los roles indicados (rol puede ser string
+// o array). Solo devuelve los que ya activaron notificaciones (tienen fcmToken). `admin` NO se
+// incluye automáticamente — se pasa explícito si se quiere avisar también a gerencia.
+async function tokensPorRol(...roles) {
+    const snap = await db.collection('usuarios').get();
+    const tokens = [];
+    snap.docs.forEach((d) => {
+        const data = d.data();
+        const rol = data.rol;
+        const rolesU = Array.isArray(rol) ? rol : [rol];
+        if (roles.some((r) => rolesU.includes(r)) && data.fcmToken) tokens.push(data.fcmToken);
+    });
+    return [...new Set(tokens)];
+}
+
+async function pushATokens(tokens, title, body, url) {
+    for (const token of tokens) {
+        try { await getMessaging().send({ token, data: { title, body, url } }); }
+        catch (e) { console.error('pushATokens', e); }
+    }
 }
 
 // Una cita/recordatorio puede tener VARIAS personas asignadas (`asignados: [{email,nombre}]`,
@@ -97,6 +119,44 @@ exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', a
         } catch (e) {
             console.error('No se pudo enviar la notificación de solicitud web', event.params.id, u.id, e);
         }
+    }
+});
+
+// Avisa por push a cada ROL cuando un pedido entra a su cola — SOLO al rol que le corresponde:
+//   status 'solicitada' (destino ALUCUFEL) → contratista (cotización de costo)
+//   status 'pendiente_fabrica' (ALUCUFEL) → fabrica ; (interno) → admin (fábrica interna)
+//   status 'listo_para_cargar'/'parcialmente_listo' → chofer + instalador (listo para cargar/instalar)
+//   comentarioParaFabrica nuevo (instrucción de oficina) → fabrica (+ admin si es interno)
+// Se dispara con cualquier escritura, pero solo notifica cuando el disparador REALMENTE cambió
+// (status distinto al anterior, o instrucción recién puesta) — así no repite en ediciones sueltas.
+exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return; // borrado
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const interno = after.destino === 'interno';
+    const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ') || 'Pedido';
+
+    // 1) Cambio de estado que estrena una cola de trabajo.
+    if (after.status && after.status !== before.status) {
+        if (after.status === 'solicitada' && !interno) {
+            await pushATokens(await tokensPorRol('contratista'), 'Nueva cotización de costo', lugar, 'ops/alucufel/cotizaciones.html');
+        } else if (after.status === 'pendiente_fabrica') {
+            if (interno) await pushATokens(await tokensPorRol('admin'), 'Nuevo pedido para fábrica interna', lugar, 'ops/fabrica-interna.html');
+            else await pushATokens(await tokensPorRol('fabrica'), 'Nuevo pedido de fabricación', lugar, 'ops/alucufel/fabrica.html');
+        } else if (after.status === 'listo_para_cargar' || after.status === 'parcialmente_listo') {
+            await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+            if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalador.html');
+        }
+    }
+
+    // 2) Instrucción de la oficina para fábrica (recién puesta o reabierta, sin atender).
+    const instrCambio = after.comentarioParaFabrica && after.comentarioParaFabricaAtendido !== true &&
+        (after.comentarioParaFabrica !== before.comentarioParaFabrica || (before.comentarioParaFabricaAtendido === true));
+    if (instrCambio) {
+        const titulo = '📌 Instrucción de la oficina';
+        const cuerpo = lugar + ': ' + String(after.comentarioParaFabrica).slice(0, 120);
+        if (interno) await pushATokens(await tokensPorRol('admin'), titulo, cuerpo, 'ops/fabrica-interna.html');
+        else await pushATokens(await tokensPorRol('fabrica'), titulo, cuerpo, 'ops/alucufel/fabrica.html');
     }
 });
 
