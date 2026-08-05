@@ -2172,18 +2172,35 @@
     window.nuevaParteProyecto = function () {
         const cliente = (document.getElementById('header-cliente').value || '').trim();
         const obra = (document.getElementById('header-obra').value || '').trim();
-        if (!cliente || !obra) { alert('Primero abre (o nombra arriba) el proyecto base — Cliente y Nombre del proyecto — para crear una nueva parte a partir de él.'); return; }
+        if (!cliente || !obra) { alert('Primero elige (o escribe arriba) el proyecto base — Cliente y Nombre del proyecto — para crear una nueva parte a partir de él.\n\nPuedes elegirlos en los desplegables del encabezado sin abrirlo, o abrir el proyecto.'); return; }
+        // Busca el proyecto base guardado para HEREDAR su material/color/ubicación aunque no se haya
+        // abierto (atajo: se elige en el desplegable y se arranca la parte directo).
+        const projects = getProjects();
+        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+        const obraKey = cliKey ? Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) : null;
+        const baseData = (cliKey && obraKey) ? projects[cliKey][obraKey] : null;
+
         const parte = prompt('¿Qué parte o etapa vas a trabajar ahora?\n(ej. Barandas, 2da etapa, Adicional, Parte 2)');
         if (parte === null) return;
         const parteT = parte.trim();
         if (!parteT) { alert('Escribe el nombre de la parte.'); return; }
-        const base = obra.split(' — ')[0].trim() || obra; // nombre base, sin una parte previa
+        const nombreRef = obraKey || obra;
+        const base = nombreRef.split(' — ')[0].trim() || nombreRef; // nombre base, sin una parte previa
         const nuevoNombre = base + ' — ' + parteT;
         if (!confirm(`Se abrirá una HOJA NUEVA para:\n\n• Cliente: ${cliente}\n• Proyecto: ${nuevoNombre}\n\nSe conservan el cliente, material, color y ubicación; se vacían los ítems para que agregues los de esta parte. La parte anterior queda guardada aparte (no se pisa).\n\n¿Continuar?`)) return;
-        // Vacía solo los ítems, conserva el encabezado.
+        // Vacía solo los ítems.
         document.getElementById('item-list').innerHTML = '';
         cardsState = {};
         itemId = 0;
+        // Encabezado: hereda del proyecto base guardado si existe (atajo sin abrir); si no, deja lo
+        // que ya haya escrito en pantalla.
+        const h = baseData && baseData.header ? baseData.header : null;
+        if (h) {
+            document.getElementById('header-cliente').value = h.cliente || cliente;
+            if (h.material) document.getElementById('header-material').value = h.material;
+            if (h.color) document.getElementById('header-color').value = h.color;
+            if (h.ubicacion) document.getElementById('header-ubicacion').value = h.ubicacion;
+        }
         document.getElementById('header-obra').value = nuevoNombre;
         const displayDate = document.getElementById('header-fecha');
         displayDate.dataset.created = '';
