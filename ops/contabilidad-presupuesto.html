@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Presupuesto vs Real</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 900px; }
+    .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 14px; line-height: 1.5; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 11px 15px; flex: 1; min-width: 130px; }
+    .kpi .n { font-size: 18px; font-weight: bold; line-height: 1; } .kpi .n.pre { color: var(--artal-blue); } .kpi .n.rea { color: #d9483b; } .kpi .n.res { color: #1f9d61; }
+    .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+    th { background: var(--artal-blue); color: #fff; font-size: 10.5px; text-transform: uppercase; padding: 9px 8px; text-align: right; }
+    th.l { text-align: left; }
+    td { padding: 8px; border-bottom: 1px solid #eef1f4; text-align: right; font-variant-numeric: tabular-nums; }
+    td.l { text-align: left; font-weight: bold; color: #445; }
+    td .cod { font-family: monospace; color: #99a; font-weight: normal; font-size: 11.5px; margin-right: 5px; }
+    td input { width: 110px; padding: 7px 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; text-align: right; }
+    .track { background: #eef1f4; border-radius: 5px; height: 8px; overflow: hidden; margin-top: 4px; }
+    .fill { height: 100%; border-radius: 5px; }
+    .pct { font-size: 11px; font-weight: bold; }
+    tfoot td { font-weight: bold; border-top: 2px solid var(--artal-blue); background: #f7f9fc; }
+    .over { color: #d9483b; } .ok { color: #1f9d61; }
+    .empty-mini { color: #8a93a0; font-size: 13px; padding: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Presupuesto vs Real</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">ℹ️ Fija un <b>presupuesto mensual</b> por categoría de gasto y compáralo con lo realmente gastado en el mes elegido. El presupuesto se guarda por año y aplica a todos sus meses. Se marca en rojo lo que se pasa del presupuesto.</div>
+    <div class="bar">
+        <label style="font-size:13px;color:#556;font-weight:bold">Año:</label><select id="f-anio" onchange="render()"></select>
+        <label style="font-size:13px;color:#556;font-weight:bold">Mes:</label><select id="f-mes" onchange="render()"></select>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div style="overflow-x:auto"><table id="tabla"></table></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const slug = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'sin';
+
+    let movs = [], cats = [], presup = {}; // presup: { 'anio__slug': {categoria, montoMensual} }
+
+    onSnapshot(collection(db, 'contaMovimientos'), (s) => { movs = s.docs.map(d => d.data()); llenarAnios(); render(); }, () => {});
+    onSnapshot(collection(db, 'contaCategorias'), (s) => { cats = s.docs.map(d => d.data()); render(); }, () => {});
+    onSnapshot(collection(db, 'contaPresupuestos'), (s) => { presup = {}; s.docs.forEach(d => presup[d.id] = d.data()); render(); }, () => {});
+
+    const anioDe = (m) => String(m.fecha || '').slice(0, 4);
+    const mesDe = (m) => parseInt(String(m.fecha || '').slice(5, 7), 10) - 1;
+
+    function llenarAnios() {
+        const sel = document.getElementById('f-anio');
+        const cur = new Date().getFullYear();
+        const anios = new Set([String(cur)]);
+        movs.forEach(m => { const a = anioDe(m); if (/^\d{4}$/.test(a)) anios.add(a); });
+        const lista = Array.from(anios).sort((a, b) => b.localeCompare(a));
+        const prev = sel.value;
+        sel.innerHTML = lista.map(a => `<option value="${a}">${a}</option>`).join('');
+        sel.value = prev && lista.includes(prev) ? prev : String(cur);
+        const ms = document.getElementById('f-mes');
+        if (!ms.options.length) { ms.innerHTML = MESES.map((m, i) => `<option value="${i}">${m}</option>`).join(''); ms.value = String(new Date().getMonth()); }
+    }
+
+    // Categorías de gasto: unión del catálogo + las que aparezcan en los movimientos.
+    function categoriasGasto() {
+        const map = new Map(); // nombre → codigo
+        cats.filter(c => (c.tipo || 'gasto') === 'gasto' && (c.nombre || '').trim()).forEach(c => map.set(c.nombre.trim(), c.codigo || ''));
+        movs.filter(m => m.tipo === 'gasto' && (m.categoria || '').trim()).forEach(m => { const k = m.categoria.trim(); if (!map.has(k)) map.set(k, ''); });
+        return Array.from(map.entries()).map(([nombre, codigo]) => ({ nombre, codigo }))
+            .sort((a, b) => String(a.codigo || 'zzz').localeCompare(String(b.codigo || 'zzz'), 'es', { numeric: true }) || a.nombre.localeCompare(b.nombre, 'es'));
+    }
+
+    window.setPresup = async function (anio, categoria, valor) {
+        const id = anio + '__' + slug(categoria);
+        const monto = n2(valor);
+        try {
+            if (monto > 0) await setDoc(doc(db, 'contaPresupuestos', id), { anio, categoria, montoMensual: monto, actualizado: serverTimestamp(), actualizadoPor: usuario.nombre });
+            else await deleteDoc(doc(db, 'contaPresupuestos', id)).catch(() => {});
+        } catch (e) { alert('No se pudo guardar el presupuesto: ' + e.message); }
+    };
+
+    function render() {
+        const anio = document.getElementById('f-anio').value || String(new Date().getFullYear());
+        const mes = parseInt(document.getElementById('f-mes').value, 10) || 0;
+        const cats = categoriasGasto();
+
+        // Real del mes por categoría
+        const realPorCat = {};
+        movs.filter(m => m.tipo === 'gasto' && anioDe(m) === anio && mesDe(m) === mes).forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; realPorCat[k] = (realPorCat[k] || 0) + n2(m.monto); });
+
+        let sumPre = 0, sumReal = 0, filas = '';
+        cats.forEach(c => {
+            const id = anio + '__' + slug(c.nombre);
+            const pre = presup[id] ? n2(presup[id].montoMensual) : 0;
+            const real = n2(realPorCat[c.nombre]);
+            sumPre += pre; sumReal += real;
+            const rest = pre - real;
+            const pct = pre > 0 ? Math.round(real / pre * 100) : (real > 0 ? 999 : 0);
+            const col = pre > 0 && real > pre ? '#d9483b' : '#1f9d61';
+            const barra = pre > 0 ? `<div class="track"><div class="fill" style="width:${Math.min(100, pct)}%;background:${col}"></div></div>` : '';
+            filas += `<tr>
+                <td class="l">${c.codigo ? `<span class="cod">${esc(c.codigo)}</span>` : ''}${esc(c.nombre)}</td>
+                <td><input type="number" min="0" step="100" value="${pre || ''}" placeholder="0" onchange="setPresup('${anio}', ${JSON.stringify(c.nombre).replace(/"/g, '&quot;')}, this.value)"></td>
+                <td>${real ? fmt0(real) : '—'}</td>
+                <td class="${rest < 0 ? 'over' : 'ok'}">${pre > 0 ? fmt0(rest) : '—'}</td>
+                <td class="${pre > 0 && real > pre ? 'over' : ''}"><span class="pct">${pre > 0 ? Math.min(pct, 999) + '%' : '—'}</span>${barra}</td>
+            </tr>`;
+        });
+
+        document.getElementById('kpis').innerHTML = [
+            ['n pre', fmt0(sumPre), 'Presupuesto del mes'], ['n rea', fmt0(sumReal), 'Gastado real'],
+            ['n res', fmt0(sumPre - sumReal), 'Diferencia']
+        ].map(([c, n, l]) => `<div class="kpi"><div class="${c}">${n}</div><div class="l">${l}</div></div>`).join('');
+
+        document.getElementById('tabla').innerHTML = cats.length
+            ? `<thead><tr><th class="l">Categoría</th><th>Presupuesto/mes</th><th>Real ${MESES[mes]}</th><th>Restante</th><th>% usado</th></tr></thead>
+               <tbody>${filas}</tbody>
+               <tfoot><tr><td class="l">Total</td><td>${fmt0(sumPre)}</td><td>${fmt0(sumReal)}</td><td class="${(sumPre - sumReal) < 0 ? 'over' : 'ok'}">${fmt0(sumPre - sumReal)}</td><td></td></tr></tfoot>`
+            : `<tbody><tr><td class="empty-mini">No hay categorías de gasto todavía. Créalas en “Categorías / Cuentas” o registra algún gasto.</td></tr></tbody>`;
+    }
+
+    render();
+</script>
+
+</body>
+</html>

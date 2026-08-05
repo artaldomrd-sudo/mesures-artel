@@ -64,6 +64,11 @@
     <div class="kpis" id="kpis"></div>
 
     <div class="sec"><h3>📅 Flujo de caja mensual (ingresos, gastos y balance)</h3><div style="overflow-x:auto"><table class="flujo" id="t-flujo"></table></div></div>
+    <div class="sec">
+        <h3>🧾 ITBIS a pagar (cobrado en ventas − pagado en compras)</h3>
+        <div class="nota-citrus" style="margin:0 0 12px;">Es un estimado <b>operativo</b> con el ITBIS que registraste en ingresos y gastos. La declaración oficial (IT-1) se hace en <b>Citrus</b>/DGII. Un total negativo = saldo a favor.</div>
+        <div style="overflow-x:auto"><table class="flujo" id="t-itbis"></table></div>
+    </div>
     <div class="sec"><h3>⬇️ Gastos por categoría</h3><div id="c-gastos"></div></div>
     <div class="sec"><h3>⬆️ Ingresos por categoría</h3><div id="c-ingresos"></div></div>
     <div class="sec"><h3>🎯 Rentabilidad por centro de costo</h3><div id="c-centros"></div></div>
@@ -94,10 +99,18 @@
         </div>`).join('') + '</div>';
     }
 
-    let movs = [], centros = [];
+    let movs = [], centros = [], catMap = {};
     onSnapshot(collection(db, 'contaMovimientos'), (s) => { movs = s.docs.map(d => d.data()); llenarAnios(); render(); },
         (err) => { document.getElementById('t-flujo').innerHTML = '<tr><td>Error: ' + esc(err.message) + '</td></tr>'; });
     onSnapshot(collection(db, 'contaCentros'), (s) => { centros = s.docs.map(d => d.data()); render(); }, () => {});
+    // Mapa nombre-de-categoría → código de cuenta (del catálogo contaCategorias) para etiquetar.
+    onSnapshot(collection(db, 'contaCategorias'), (s) => {
+        catMap = {};
+        s.docs.forEach(d => { const c = d.data(); if (c.nombre) catMap[c.nombre.trim().toLowerCase()] = c.codigo || ''; });
+        render();
+    }, () => {});
+    // Etiqueta de categoría con su código de cuenta delante, si existe en el catálogo.
+    const etiquetaCat = (nombre) => { const cod = catMap[(nombre || '').trim().toLowerCase()]; return cod ? cod + ' · ' + nombre : nombre; };
 
     const anioDe = (m) => String(m.fecha || '').slice(0, 4);
     const mesDe = (m) => parseInt(String(m.fecha || '').slice(5, 7), 10) - 1;
@@ -147,13 +160,28 @@
              <tbody>${filas || '<tr><td class="l" colspan="4"><span class="empty-mini">Sin movimientos en ' + anio + '.</span></td></tr>'}</tbody>
              ${filas ? `<tfoot><tr><td class="l">Total ${anio}</td><td class="ing">${fmt0(ingTot)}</td><td class="gas">${fmt0(gasTot)}</td><td class="${util >= 0 ? 'pos' : 'neg'}">${fmt0(util)}</td></tr></tfoot>` : ''}`;
 
-        // Gastos por categoría
+        // ITBIS mensual: cobrado (ingresos) − pagado (gastos) = a pagar.
+        const itbCob = new Array(12).fill(0), itbPag = new Array(12).fill(0);
+        delAnio.forEach(m => { const mi = mesDe(m); if (mi < 0 || mi > 11) return; if (m.tipo === 'ingreso') itbCob[mi] += n2(m.itbis); else if (m.tipo === 'gasto') itbPag[mi] += n2(m.itbis); });
+        const itbCobTot = itbCob.reduce((a, v) => a + v, 0), itbPagTot = itbPag.reduce((a, v) => a + v, 0);
+        let filasIt = '';
+        for (let i = 0; i < 12; i++) {
+            if (itbCob[i] === 0 && itbPag[i] === 0) continue;
+            const ap = itbCob[i] - itbPag[i];
+            filasIt += `<tr><td class="l">${MESES[i]}</td><td class="ing">${itbCob[i] ? fmt0(itbCob[i]) : '—'}</td><td class="gas">${itbPag[i] ? fmt0(itbPag[i]) : '—'}</td><td class="${ap >= 0 ? 'pos' : 'neg'}">${fmt0(ap)}</td></tr>`;
+        }
+        document.getElementById('t-itbis').innerHTML =
+            `<thead><tr><th class="l">Mes</th><th>ITBIS cobrado</th><th>ITBIS pagado</th><th>A pagar</th></tr></thead>
+             <tbody>${filasIt || '<tr><td class="l" colspan="4"><span class="empty-mini">Sin ITBIS registrado en ' + anio + '. Anota el ITBIS en ingresos y gastos para verlo aquí.</span></td></tr>'}</tbody>
+             ${filasIt ? `<tfoot><tr><td class="l">Total ${anio}</td><td class="ing">${fmt0(itbCobTot)}</td><td class="gas">${fmt0(itbPagTot)}</td><td class="${(itbCobTot - itbPagTot) >= 0 ? 'pos' : 'neg'}">${fmt0(itbCobTot - itbPagTot)}</td></tr></tfoot>` : ''}`;
+
+        // Gastos por categoría (con código de cuenta si existe en el catálogo)
         const porCatG = {}; delAnio.filter(m => m.tipo === 'gasto').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatG[k] = (porCatG[k] || 0) + n2(m.monto); });
-        document.getElementById('c-gastos').innerHTML = barsH(Object.entries(porCatG).map(([l, v]) => ({ label: l, value: v, color: '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
+        document.getElementById('c-gastos').innerHTML = barsH(Object.entries(porCatG).map(([l, v]) => ({ label: etiquetaCat(l), value: v, color: '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
 
         // Ingresos por categoría
         const porCatI = {}; delAnio.filter(m => m.tipo === 'ingreso').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatI[k] = (porCatI[k] || 0) + n2(m.monto); });
-        document.getElementById('c-ingresos').innerHTML = barsH(Object.entries(porCatI).map(([l, v]) => ({ label: l, value: v, color: '#2ecc71' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
+        document.getElementById('c-ingresos').innerHTML = barsH(Object.entries(porCatI).map(([l, v]) => ({ label: etiquetaCat(l), value: v, color: '#2ecc71' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
 
         // Rentabilidad por centro de costo (balance = ingresos − gastos por centro)
         const porCentro = {};

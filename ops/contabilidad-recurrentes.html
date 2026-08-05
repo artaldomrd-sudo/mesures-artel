@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Gastos Fijos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 820px; }
+    .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 14px; line-height: 1.5; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .btn-add { background: #e74c3c; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-todos { background: var(--artal-blue); color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .rec-card { display: flex; align-items: center; gap: 12px; border-left: 4px solid #e67e22; }
+    .rec-info { flex: 1; min-width: 0; }
+    .rec-info b { color: var(--artal-blue); font-size: 14.5px; }
+    .rec-info .l { font-size: 12.5px; color: #667; margin-top: 3px; }
+    .monto { font-weight: bold; font-size: 15px; color: #d9483b; white-space: nowrap; }
+    .badge-pend { display: inline-block; background: #fdecea; color: #d9483b; font-size: 10.5px; font-weight: bold; padding: 2px 8px; border-radius: 20px; }
+    .badge-ok { display: inline-block; background: #e7f7ee; color: #1f9d61; font-size: 10.5px; font-weight: bold; padding: 2px 8px; border-radius: 20px; }
+    .badge-off { display: inline-block; background: #eef1f4; color: #8a93a0; font-size: 10.5px; font-weight: bold; padding: 2px 8px; border-radius: 20px; }
+    .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+    .acts button { border: none; border-radius: 8px; padding: 7px 10px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; min-height: 34px; }
+    .b-reg { background: #2ecc71; color: #fff; } .b-ed { background: var(--artal-blue); color: #fff; } .b-del { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c !important; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 11px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    @media (max-width: 480px) { .grid2 { grid-template-columns: 1fr; } }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Gastos Fijos</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">ℹ️ Gastos que se repiten cada mes (alquiler, internet, nómina…). Regístralos una vez aquí y cada mes los pasas a Ingresos y Gastos con un toque en <b>“Registrar este mes”</b> — así no se te olvida ninguno. No se registran solos, tú confirmas.</div>
+    <div class="bar">
+        <button class="btn-add" onclick="abrir()">+ Gasto fijo</button>
+        <button class="btn-todos" onclick="registrarTodos()" id="btn-todos">✅ Registrar todos los pendientes del mes</button>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<datalist id="cat-gas"></datalist>
+
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nuevo gasto fijo</h2>
+        <label>Concepto *</label>
+        <input type="text" id="r-concepto" placeholder="Ej. Alquiler del local">
+        <div class="grid2">
+            <div><label>Categoría</label><input type="text" id="r-categoria" list="cat-gas" placeholder="Categoría"></div>
+            <div><label>Día del mes</label><input type="number" id="r-dia" min="1" max="28" value="1"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Monto (RD$) *</label><input type="number" id="r-monto" min="0" step="0.01"></div>
+            <div><label>ITBIS incluido <span class="lbl-opt">— opcional</span></label><input type="number" id="r-itbis" min="0" step="0.01"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Método</label><select id="r-metodo"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select></div>
+            <div><label>Cuenta bancaria <span class="lbl-opt">— opcional</span></label><select id="r-cuenta"><option value="">—</option></select></div>
+        </div>
+        <label>Proveedor <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="r-tercero" placeholder="Nombre">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;"><input type="checkbox" id="r-activo" checked style="width:auto;min-height:0;"> Activo (aparece para registrar cada mes)</label>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pad = (n) => String(n).padStart(2, '0');
+    const mesActual = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+
+    let recs = [], cuentas = [], editId = null;
+
+    onSnapshot(collection(db, 'contaRecurrentes'), (s) => { recs = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
+        (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + esc(err.message) + '</p>'; });
+    onSnapshot(collection(db, 'bancosCuentas'), (s) => {
+        cuentas = s.docs.map(d => ({ id: d.id, ...d.data() }));
+        const sel = document.getElementById('r-cuenta'); const cur = sel.value;
+        sel.innerHTML = '<option value="">—</option>' + cuentas.map(c => `<option value="${esc(c.id)}">${esc(c.alias)}</option>`).join(''); sel.value = cur;
+    }, () => {});
+    onSnapshot(collection(db, 'contaCategorias'), (s) => {
+        const g = s.docs.map(d => d.data()).filter(c => (c.tipo || 'gasto') === 'gasto' && (c.nombre || '').trim())
+            .sort((a, b) => String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', { numeric: true }));
+        if (g.length) document.getElementById('cat-gas').innerHTML = g.map(c => `<option value="${esc(c.nombre)}"></option>`).join('');
+    }, () => {});
+
+    const pendiente = (r) => r.activo !== false && r.ultimoRegistro !== mesActual();
+
+    function render() {
+        const cont = document.getElementById('lista');
+        if (!recs.length) { cont.innerHTML = '<p class="empty">Sin gastos fijos. Agrega el primero (alquiler, internet…).</p>'; document.getElementById('btn-todos').style.display = 'none'; return; }
+        const nPend = recs.filter(pendiente).length;
+        document.getElementById('btn-todos').style.display = nPend ? '' : 'none';
+        const ord = recs.slice().sort((a, b) => (b.activo !== false) - (a.activo !== false) || n2(a.dia) - n2(b.dia) || String(a.concepto || '').localeCompare(String(b.concepto || ''), 'es'));
+        cont.innerHTML = ord.map(cardHTML).join('');
+    }
+
+    function cardHTML(r) {
+        const badge = r.activo === false ? '<span class="badge-off">Inactivo</span>'
+            : (pendiente(r) ? '<span class="badge-pend">⏳ Pendiente este mes</span>' : '<span class="badge-ok">✓ Registrado este mes</span>');
+        const sub = [r.categoria ? esc(r.categoria) : '', 'Día ' + (r.dia || 1), r.metodo ? esc(r.metodo) : '', r.tercero ? esc(r.tercero) : '', r.cuentaBancoNombre ? '🏦 ' + esc(r.cuentaBancoNombre) : ''].filter(Boolean).join('  ·  ');
+        const puedeReg = pendiente(r);
+        return `<div class="order-card rec-card">
+            <div class="rec-info">
+                <b>${esc(r.concepto)}</b> ${badge}
+                <div class="monto">${fmt(r.monto)}${r.itbis ? ` <span style="font-size:11px;color:#778;font-weight:normal">ITBIS ${fmt(r.itbis)}</span>` : ''}</div>
+                ${sub ? `<div class="l">${sub}</div>` : ''}
+            </div>
+            <div class="acts">
+                ${puedeReg ? `<button class="b-reg" onclick="registrar('${r.id}')">Registrar este mes</button>` : ''}
+                <button class="b-ed" onclick="editar('${r.id}')">✏</button>
+                <button class="b-del" onclick="borrar('${r.id}')">🗑</button>
+            </div>
+        </div>`;
+    }
+
+    window.abrir = function () {
+        editId = null; document.getElementById('modal-title').textContent = 'Nuevo gasto fijo';
+        ['r-concepto', 'r-categoria', 'r-monto', 'r-itbis', 'r-tercero'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('r-dia').value = '1'; document.getElementById('r-metodo').value = 'Transferencia';
+        document.getElementById('r-cuenta').value = ''; document.getElementById('r-activo').checked = true;
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (id) {
+        const r = recs.find(x => x.id === id); if (!r) return;
+        editId = id; document.getElementById('modal-title').textContent = 'Editar gasto fijo';
+        document.getElementById('r-concepto').value = r.concepto || '';
+        document.getElementById('r-categoria').value = r.categoria || '';
+        document.getElementById('r-dia').value = r.dia || 1;
+        document.getElementById('r-monto').value = r.monto != null ? r.monto : '';
+        document.getElementById('r-itbis').value = r.itbis != null ? r.itbis : '';
+        document.getElementById('r-metodo').value = r.metodo || 'Transferencia';
+        document.getElementById('r-cuenta').value = r.cuentaBancoId || '';
+        document.getElementById('r-tercero').value = r.tercero || '';
+        document.getElementById('r-activo').checked = r.activo !== false;
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const concepto = document.getElementById('r-concepto').value.trim();
+        if (!concepto) { alert('Escribe el concepto.'); return; }
+        const c = cuentas.find(x => x.id === document.getElementById('r-cuenta').value);
+        const datos = {
+            concepto, categoria: document.getElementById('r-categoria').value.trim(),
+            dia: Math.min(28, Math.max(1, parseInt(document.getElementById('r-dia').value, 10) || 1)),
+            monto: n2(document.getElementById('r-monto').value), itbis: n2(document.getElementById('r-itbis').value),
+            metodo: document.getElementById('r-metodo').value,
+            cuentaBancoId: document.getElementById('r-cuenta').value, cuentaBancoNombre: c ? c.alias : '',
+            tercero: document.getElementById('r-tercero').value.trim(),
+            activo: document.getElementById('r-activo').checked,
+            actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+        };
+        try {
+            if (editId) await updateDoc(doc(db, 'contaRecurrentes', editId), datos);
+            else await addDoc(collection(db, 'contaRecurrentes'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+    };
+    window.borrar = async function (id) {
+        const r = recs.find(x => x.id === id);
+        if (!confirm('¿Eliminar el gasto fijo "' + (r ? r.concepto : '') + '"? (No borra los movimientos ya registrados.)')) return;
+        try { await deleteDoc(doc(db, 'contaRecurrentes', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // Crea un movimiento de gasto en contaMovimientos para el mes actual a partir de la plantilla,
+    // y marca ultimoRegistro para no duplicar. La fecha usa el día configurado del mes en curso.
+    async function crearMovimiento(r) {
+        const d = new Date();
+        const dia = Math.min(28, Math.max(1, n2(r.dia) || 1));
+        const fecha = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(dia);
+        await addDoc(collection(db, 'contaMovimientos'), {
+            tipo: 'gasto', fecha, concepto: r.concepto, categoria: r.categoria || '',
+            monto: n2(r.monto), itbis: n2(r.itbis), metodo: r.metodo || 'Transferencia',
+            cuentaBancoId: r.cuentaBancoId || '', cuentaBancoNombre: r.cuentaBancoNombre || '',
+            centroCosto: '', tercero: r.tercero || '', rnc: '', ncf: '',
+            notas: 'Gasto fijo recurrente', recurrenteId: r.id,
+            creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+        });
+        await updateDoc(doc(db, 'contaRecurrentes', r.id), { ultimoRegistro: mesActual() });
+    }
+
+    window.registrar = async function (id) {
+        const r = recs.find(x => x.id === id); if (!r) return;
+        if (!pendiente(r)) { alert('Este gasto ya se registró este mes.'); return; }
+        if (!confirm('¿Registrar "' + r.concepto + '" (' + fmt(r.monto) + ') como gasto de este mes?')) return;
+        try { await crearMovimiento(r); } catch (e) { alert('No se pudo registrar: ' + e.message); }
+    };
+    window.registrarTodos = async function () {
+        const pend = recs.filter(pendiente);
+        if (!pend.length) { alert('No hay gastos fijos pendientes este mes.'); return; }
+        if (!confirm('Se registrarán ' + pend.length + ' gasto(s) fijo(s) de este mes. ¿Continuar?')) return;
+        const btn = document.getElementById('btn-todos'); btn.disabled = true;
+        try { for (const r of pend) await crearMovimiento(r); }
+        catch (e) { alert('No se pudieron registrar todos: ' + e.message); }
+        finally { btn.disabled = false; }
+    };
+</script>
+
+</body>
+</html>
