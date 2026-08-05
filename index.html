@@ -373,6 +373,37 @@
             <select id="select-proyecto"><option value="">-- Proyecto --</option></select>
             <button class="side-btn primary" style="margin-top:4px;" onclick="loadProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z"/><path d="M3 9h18l-1.5 8a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/></svg> Abrir proyecto</button>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
+            <button class="side-btn" style="margin-top:6px;" onclick="openDedup()">🔗 Fusionar duplicados</button>
+        </div>
+
+        <!-- Modal: Fusionar clientes/proyectos duplicados -->
+        <div id="dedup-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:none;align-items:center;justify-content:center;padding:16px;">
+          <div style="background:#fff;color:#222;border-radius:14px;max-width:600px;width:100%;max-height:92vh;overflow-y:auto;padding:22px;font-family:'Arimo',sans-serif;text-align:left;">
+            <h2 style="margin:0 0 4px;color:#0A3D62;font-size:19px;">🔗 Fusionar duplicados</h2>
+            <p style="font-size:13px;color:#556;margin:0 0 8px;line-height:1.5;">Une clientes o proyectos que son el mismo pero se escribieron distinto (ej. "Arnaud" y "Arnaud Peltier"). Elige cuál nombre conservar — el otro se fusiona y desaparece, sin perder proyectos.</p>
+            <div id="dedup-sug"></div>
+            <hr style="border:none;border-top:1px solid #eef1f4;margin:16px 0;">
+            <h3 style="font-size:14px;color:#0A3D62;margin:0 0 8px;">👤 Fusionar dos clientes a mano</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <select id="dd-cli-a" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <span style="color:#889;font-weight:bold;">se une a →</span>
+              <select id="dd-cli-b" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <button onclick="dedupMergeClientesManual()" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Fusionar</button>
+            </div>
+            <h3 style="font-size:14px;color:#0A3D62;margin:18px 0 8px;">📁 Fusionar dos proyectos de un cliente</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <select id="dd-proj-cli" onchange="dedupFillProyectos()" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+              <select id="dd-proj-a" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <span style="color:#889;font-weight:bold;">se une a →</span>
+              <select id="dd-proj-b" style="flex:1;min-width:150px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;"></select>
+              <button onclick="dedupMergeProyectosManual()" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Fusionar</button>
+            </div>
+            <div style="text-align:right;margin-top:20px;">
+              <button onclick="closeDedup()" style="background:#eef1f4;color:#445;border:none;border-radius:8px;padding:11px 18px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">Cerrar</button>
+            </div>
+          </div>
         </div>
 
         <h3>Correderas</h3>
@@ -919,6 +950,23 @@
         // Igual con el nombre del proyecto dentro del cliente
         let obraKey = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
 
+        // Aviso preventivo de posible duplicado: si el cliente es NUEVO (no calzó exacto) pero se
+        // PARECE mucho a uno existente (prefijo/typo, ej. "Arnaud" vs "Arnaud Peltier"), avisar para
+        // que el usuario verifique antes de crear un duplicado sin darse cuenta.
+        if (cliKey === cliente) {
+            const similar = Object.keys(projects).find(c => c !== cliente && sonSospechosos(c, cliente));
+            if (similar) {
+                if (!confirm(`⚠ OJO: el cliente "${cliente}" se parece mucho a "${similar}", que YA existe.\n\n¿Es el mismo cliente? Si es así, cancela y escríbelo igual que "${similar}" (o usa "🔗 Fusionar duplicados").\n\nPulsa Aceptar SOLO si de verdad es un cliente distinto.`)) return;
+            }
+        }
+        // Igual para la obra dentro de un cliente ya existente.
+        if (obraKey === obra) {
+            const similarO = Object.keys(projects[cliKey]).find(o => o !== obra && sonSospechosos(o, obra));
+            if (similarO) {
+                if (!confirm(`⚠ OJO: el proyecto "${obra}" se parece mucho a "${similarO}", que este cliente YA tiene.\n\n¿Es el mismo? Si es así, cancela y usa el nombre "${similarO}".\n\nPulsa Aceptar SOLO si es un proyecto distinto.`)) return;
+            }
+        }
+
         // Si ya existe un proyecto guardado con ese cliente+nombre Y esta hoja no es la que se
         // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en
         // silencio — pasó en la práctica: dos hojas distintas (ej. una para barandas) guardadas
@@ -1041,6 +1089,137 @@
         if (changed) localStorage.setItem('artal_projects', JSON.stringify(p));
         return p;
     }
+
+    // ---------- Fusionar duplicados a mano (clientes/proyectos que son el mismo escrito distinto:
+    // "Arnaud"/"Arnaud Peltier", "X"/"X (algo)", typos "Cacillo"/"Castillo"). Estos NO se pueden
+    // unir solos sin riesgo de juntar dos distintos — se detectan como sospechosos y el usuario
+    // confirma cuál conservar. Opera sobre el guardado local y propaga a la nube. ----------
+    function normForSug(s) { return normNombreKey(String(s || '').replace(/\([^)]*\)/g, ' ')); } // además ignora paréntesis
+    function levDist(a, b) {
+        a = String(a); b = String(b); const m = a.length, n = b.length;
+        if (!m) return n; if (!n) return m;
+        let prev = Array.from({ length: n + 1 }, (_, i) => i), cur = new Array(n + 1);
+        for (let i = 1; i <= m; i++) {
+            cur[0] = i;
+            for (let j = 1; j <= n; j++) { const cost = a[i - 1] === b[j - 1] ? 0 : 1; cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost); }
+            const t = prev; prev = cur; cur = t;
+        }
+        return prev[n];
+    }
+    function palabrasPrefijo(na, nb) {
+        const wa = na.split(' ').filter(Boolean), wb = nb.split(' ').filter(Boolean);
+        const corta = wa.length <= wb.length ? wa : wb, larga = wa.length <= wb.length ? wb : wa;
+        if (!corta.length || corta.length === larga.length) return false;
+        return corta.every((w, i) => larga[i] === w); // la corta es prefijo (por palabras) de la larga
+    }
+    function sonSospechosos(a, b) {
+        const na = normForSug(a), nb = normForSug(b);
+        if (!na || !nb || na === nb) return false;
+        if (palabrasPrefijo(na, nb)) return true;
+        if (Math.min(na.length, nb.length) >= 4 && levDist(na, nb) <= 2) return true; // typos
+        return false;
+    }
+    // Une el cliente `drop` dentro de `keep` (local + nube).
+    function mergeClientes(keep, drop) {
+        if (!keep || !drop || keep === drop) return;
+        const projects = getProjects();
+        const src = projects[drop]; if (!src) { updateClientList(); return; }
+        if (!projects[keep]) projects[keep] = {};
+        const dst = projects[keep];
+        Object.keys(src).forEach(obra => {
+            const obraKey = Object.keys(dst).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
+            const cur = dst[obraKey];
+            if (cur === undefined || modMillis(src[obra]) >= modMillis(cur)) dst[obraKey] = src[obra];
+            if (window.syncProjectToCloud) window.syncProjectToCloud(keep, obraKey, dst[obraKey]);
+            if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(drop, obra);
+            if (window.syncClienteObra) window.syncClienteObra(keep, obraKey);
+        });
+        delete projects[drop];
+        localStorage.setItem('artal_projects', JSON.stringify(projects));
+        if (window.deleteClienteFromCloud) window.deleteClienteFromCloud(drop);
+        updateClientList();
+    }
+    // Une el proyecto `drop` dentro de `keep` (mismo cliente), conservando la versión más reciente.
+    function mergeProyectos(cliente, keep, drop) {
+        if (!cliente || !keep || !drop || keep === drop) return;
+        const projects = getProjects(); const c = projects[cliente]; if (!c || c[drop] === undefined) { updateClientList(); return; }
+        if (c[keep] === undefined || modMillis(c[drop]) > modMillis(c[keep])) c[keep] = c[drop];
+        delete c[drop];
+        localStorage.setItem('artal_projects', JSON.stringify(projects));
+        if (window.syncProjectToCloud) window.syncProjectToCloud(cliente, keep, c[keep]);
+        if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(cliente, drop);
+        if (window.syncClienteObra) window.syncClienteObra(cliente, keep);
+        updateClientList();
+    }
+
+    let dedupActions = [];
+    function renderDedupSug() {
+        const projects = getProjects(); const clientes = Object.keys(projects);
+        dedupActions = []; const rows = [];
+        const btn = (txt, idx, bg) => `<button onclick="dedupDoAction(${idx})" style="background:${bg};color:#fff;border:none;border-radius:7px;padding:7px 10px;font-weight:bold;font-family:'Arimo';font-size:12px;cursor:pointer;margin-right:6px;margin-top:4px;">${txt}</button>`;
+        for (let i = 0; i < clientes.length; i++) for (let j = i + 1; j < clientes.length; j++) {
+            const a = clientes[i], b = clientes[j]; if (!sonSospechosos(a, b)) continue;
+            const iA = dedupActions.push({ kind: 'cli', keep: a, drop: b }) - 1;
+            const iB = dedupActions.push({ kind: 'cli', keep: b, drop: a }) - 1;
+            rows.push(`<div style="border:1px solid #eef1f4;border-radius:9px;padding:9px 11px;margin:6px 0;">
+                <div style="margin-bottom:5px;font-size:13px;">👤 <b>${escHtml(a)}</b> <span style="color:#889">⟷</span> <b>${escHtml(b)}</b></div>
+                ${btn('Conservar «' + escHtml(a) + '»', iA, '#0A3D62')}${btn('Conservar «' + escHtml(b) + '»', iB, '#16a085')}</div>`);
+        }
+        clientes.forEach(cli => {
+            const obras = Object.keys(projects[cli] || {});
+            for (let i = 0; i < obras.length; i++) for (let j = i + 1; j < obras.length; j++) {
+                const a = obras[i], b = obras[j]; if (!sonSospechosos(a, b)) continue;
+                const iA = dedupActions.push({ kind: 'proj', cliente: cli, keep: a, drop: b }) - 1;
+                const iB = dedupActions.push({ kind: 'proj', cliente: cli, keep: b, drop: a }) - 1;
+                rows.push(`<div style="border:1px solid #eef1f4;border-radius:9px;padding:9px 11px;margin:6px 0;">
+                    <div style="margin-bottom:5px;font-size:13px;">📁 <span style="color:#667">${escHtml(cli)}:</span> <b>${escHtml(a)}</b> <span style="color:#889">⟷</span> <b>${escHtml(b)}</b></div>
+                    ${btn('Conservar «' + escHtml(a) + '»', iA, '#0A3D62')}${btn('Conservar «' + escHtml(b) + '»', iB, '#16a085')}</div>`);
+            }
+        });
+        document.getElementById('dedup-sug').innerHTML = rows.length
+            ? `<div style="font-size:12.5px;color:#556;font-weight:bold;margin:4px 0;">🔎 Posibles duplicados detectados (${rows.length}):</div>` + rows.join('')
+            : `<div style="font-size:13px;color:#16a085;">✓ No se detectaron duplicados evidentes. Igual puedes fusionar a mano abajo.</div>`;
+    }
+    window.dedupDoAction = function (idx) {
+        const a = dedupActions[idx]; if (!a) return;
+        if (a.kind === 'cli') { if (!confirm(`¿Unir "${a.drop}" dentro de "${a.keep}"? "${a.drop}" desaparecerá y sus proyectos pasan a "${a.keep}".`)) return; mergeClientes(a.keep, a.drop); }
+        else { if (!confirm(`¿Unir el proyecto "${a.drop}" dentro de "${a.keep}" (cliente ${a.cliente})?`)) return; mergeProyectos(a.cliente, a.keep, a.drop); }
+        openDedup(); // refresca la lista y las sugerencias
+    };
+    window.openDedup = function () {
+        const projects = getProjects(); const cls = Object.keys(projects).sort((a, b) => a.localeCompare(b));
+        const opts = '<option value="">-- Cliente --</option>' + cls.map(c => `<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('');
+        ['dd-cli-a', 'dd-cli-b', 'dd-proj-cli'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
+        dedupFillProyectos();
+        renderDedupSug();
+        document.getElementById('dedup-modal').style.display = 'flex';
+    };
+    window.closeDedup = function () { document.getElementById('dedup-modal').style.display = 'none'; };
+    window.dedupFillProyectos = function () {
+        const cli = document.getElementById('dd-proj-cli').value;
+        const projects = getProjects();
+        const obras = (cli && projects[cli]) ? Object.keys(projects[cli]).sort((a, b) => a.localeCompare(b)) : [];
+        const opts = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        ['dd-proj-a', 'dd-proj-b'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
+    };
+    window.dedupMergeClientesManual = function () {
+        const a = document.getElementById('dd-cli-a').value, b = document.getElementById('dd-cli-b').value;
+        if (!a || !b) { alert('Elige los dos clientes.'); return; }
+        if (a === b) { alert('Son el mismo cliente.'); return; }
+        if (!confirm(`¿Unir "${a}" dentro de "${b}"? "${a}" desaparecerá y sus proyectos pasan a "${b}".`)) return;
+        mergeClientes(b, a); renderDedupSug(); openDedup();
+        alert('Clientes fusionados.');
+    };
+    window.dedupMergeProyectosManual = function () {
+        const cli = document.getElementById('dd-proj-cli').value;
+        const a = document.getElementById('dd-proj-a').value, b = document.getElementById('dd-proj-b').value;
+        if (!cli) { alert('Elige el cliente.'); return; }
+        if (!a || !b) { alert('Elige los dos proyectos.'); return; }
+        if (a === b) { alert('Son el mismo proyecto.'); return; }
+        if (!confirm(`¿Unir el proyecto "${a}" dentro de "${b}"?`)) return;
+        mergeProyectos(cli, b, a); openDedup();
+        alert('Proyectos fusionados.');
+    };
 
     function updateClientList() {
         const projects = getProjects();
@@ -5360,6 +5539,16 @@
         catch (e) { console.error('deleteProjectFromCloud falló (queda huérfano en la nube):', e); }
     }
     window.deleteProjectFromCloud = deleteProjectFromCloud;
+
+    // Borra el doc del cliente en la colección `clientes` de la nube (usado al fusionar clientes
+    // duplicados desde el cuaderno). Best-effort: si el nombre tiene caracteres inválidos para un
+    // id (ej. "/"), simplemente no hace nada — el doc probablemente nunca se creó.
+    async function deleteClienteFromCloud(cliente) {
+        if (!auth.currentUser || !cliente) return;
+        try { await deleteDoc(doc(db, 'clientes', normClienteKey(cliente))); }
+        catch (e) { console.error('deleteClienteFromCloud falló (queda huérfano en la nube):', e); }
+    }
+    window.deleteClienteFromCloud = deleteClienteFromCloud;
 
     // Sube (una sola vez por dispositivo, mismo patrón que bulkSyncClientesUnaVez) todos los
     // proyectos que ya existían localmente ANTES de este cambio, para que no dependan de un

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Mantenimiento</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css">
+<style>
+    main { max-width: 820px; }
+    .aviso { background: #fff8e8; border: 1.5px solid var(--artal-yellow); color: #7a5c10; border-radius: 10px; padding: 12px 15px; font-size: 13px; margin: 0 0 16px; line-height: 1.5; }
+    .box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 16px; }
+    .box h2 { font-size: 15px; color: var(--artal-blue); margin: 0 0 6px; }
+    .box p.sub { font-size: 13px; color: #667; margin: 0 0 12px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; }
+    button.act { border: none; border-radius: 9px; padding: 12px 16px; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; min-height: 46px; }
+    button.analizar { background: var(--artal-blue); color: #fff; }
+    button.limpiar { background: #c0392b; color: #fff; }
+    button.act:disabled { opacity: .5; cursor: default; }
+    .estado { font-size: 13.5px; font-weight: bold; margin: 12px 0 6px; }
+    .estado.ok { color: #16a085; } .estado.work { color: var(--artal-blue); } .estado.err { color: #c0392b; }
+    .grupo { border: 1px solid #eef1f4; border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 13px; }
+    .grupo b { color: var(--artal-blue); }
+    .keep { color: #16a085; font-weight: bold; } .drop { color: #c0392b; }
+    .empty-mini { color: #8a93a0; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="erp.html" title="Volver">← ERP</a>
+        <a class="btn-back" href="index.html" title="Panel">🏠 Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Mantenimiento</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="aviso">🧹 Herramienta de limpieza de <b>clientes y proyectos duplicados</b> en la nube (Firestore). Primero <b>Analiza</b> para ver qué se fusionaría/borraría; solo se borra cuando pulsas <b>Limpiar</b> y confirmas. Fusiona antes de borrar (no se pierden proyectos). Solo administración.</div>
+
+    <div class="box">
+        <div class="row">
+            <button class="act analizar" id="btn-analizar" onclick="analizar()">🔍 Analizar duplicados</button>
+            <button class="act limpiar" id="btn-limpiar" onclick="limpiar()" disabled>🧹 Limpiar (borrar duplicados)</button>
+        </div>
+        <div class="estado" id="estado" style="display:none;"></div>
+        <div id="preview"></div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, getDocs, doc, setDoc, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]); // solo admin/gerencia (o lector, que no podrá borrar por reglas)
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // Misma clave fuerte que el cuaderno: ignora mayúsculas/tildes/separadores/conectores.
+    const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[\/\\&+,._-]/g, ' ').replace(/\b(y|e|and)\b/g, ' ').replace(/\s+/g, ' ').trim();
+
+    function setEstado(txt, cls) { const el = document.getElementById('estado'); el.textContent = txt; el.className = 'estado ' + (cls || ''); el.style.display = 'block'; }
+
+    let plan = null; // { clientes:[{keepId, keepNombre, dropIds:[], obras:{}}], proyectos:[{label, keepId, dropIds:[]}] }
+
+    window.analizar = async function () {
+        const btn = document.getElementById('btn-analizar'); btn.disabled = true;
+        document.getElementById('btn-limpiar').disabled = true;
+        document.getElementById('preview').innerHTML = '';
+        setEstado('Analizando la nube…', 'work');
+        try {
+            const [cliSnap, proySnap] = await Promise.all([getDocs(collection(db, 'clientes')), getDocs(collection(db, 'proyectosGuardados'))]);
+
+            // ----- Clientes duplicados -----
+            const cliGroups = new Map();
+            cliSnap.docs.forEach(d => {
+                const data = d.data(); const nombre = data.nombre || d.id;
+                const k = norm(nombre);
+                if (!cliGroups.has(k)) cliGroups.set(k, []);
+                cliGroups.get(k).push({ id: d.id, nombre, obras: data.obras || {} });
+            });
+            const clientesPlan = [];
+            cliGroups.forEach(grp => {
+                if (grp.length < 2) return;
+                grp.sort((a, b) => Object.keys(b.obras).length - Object.keys(a.obras).length);
+                const keep = grp[0];
+                const obras = {};
+                grp.forEach(g => Object.values(g.obras || {}).forEach(v => { const nk = norm(v); if (v && !obras[nk]) obras[nk] = String(v).trim(); }));
+                clientesPlan.push({ keepId: keep.id, keepNombre: keep.nombre, dropIds: grp.slice(1).map(g => g.id), dropNombres: grp.slice(1).map(g => g.nombre), obras });
+            });
+
+            // ----- Proyectos duplicados -----
+            const proyGroups = new Map();
+            proySnap.docs.forEach(d => {
+                const data = d.data();
+                const k = norm(data.cliente) + '|||' + norm(data.obra);
+                if (!proyGroups.has(k)) proyGroups.set(k, []);
+                proyGroups.get(k).push({ id: d.id, cliente: data.cliente || '', obra: data.obra || '', updatedAt: Number(data.updatedAt) || 0 });
+            });
+            const proyectosPlan = [];
+            proyGroups.forEach(grp => {
+                if (grp.length < 2) return;
+                grp.sort((a, b) => b.updatedAt - a.updatedAt); // más reciente primero
+                const keep = grp[0];
+                proyectosPlan.push({ label: (keep.cliente || '?') + ' — ' + (keep.obra || '?'), keepId: keep.id, dropIds: grp.slice(1).map(g => g.id), versiones: grp.length });
+            });
+
+            plan = { clientes: clientesPlan, proyectos: proyectosPlan };
+
+            const nCliDrop = clientesPlan.reduce((a, c) => a + c.dropIds.length, 0);
+            const nProyDrop = proyectosPlan.reduce((a, p) => a + p.dropIds.length, 0);
+
+            let html = '';
+            html += `<h2 style="margin-top:16px;color:var(--artal-blue);font-size:14px;">👤 Clientes (${cliSnap.size} docs)</h2>`;
+            html += clientesPlan.length
+                ? clientesPlan.map(c => `<div class="grupo"><span class="keep">✓ Se conserva:</span> <b>${esc(c.keepNombre)}</b> — <span class="drop">se fusionan y borran:</span> ${c.dropNombres.map(esc).join(', ')} <span style="color:#888">(${Object.keys(c.obras).length} obra(s) en total)</span></div>`).join('')
+                : '<p class="empty-mini">No hay clientes duplicados. 👍</p>';
+            html += `<h2 style="margin-top:18px;color:var(--artal-blue);font-size:14px;">📁 Proyectos (${proySnap.size} docs)</h2>`;
+            html += proyectosPlan.length
+                ? proyectosPlan.map(p => `<div class="grupo"><span class="keep">✓ Se conserva la versión más reciente de:</span> <b>${esc(p.label)}</b> — <span class="drop">se borran ${p.dropIds.length} versión(es) duplicada(s)</span></div>`).join('')
+                : '<p class="empty-mini">No hay proyectos duplicados. 👍</p>';
+            document.getElementById('preview').innerHTML = html;
+
+            if (nCliDrop + nProyDrop === 0) { setEstado('✅ No hay duplicados que limpiar. Todo está en orden.', 'ok'); }
+            else {
+                setEstado(`Se borrarían ${nCliDrop} cliente(s) y ${nProyDrop} proyecto(s) duplicado(s). Revisa arriba y pulsa “Limpiar”.`, 'ok');
+                document.getElementById('btn-limpiar').disabled = false;
+            }
+        } catch (e) {
+            setEstado('Error al analizar: ' + (e && e.message ? e.message : e), 'err');
+        } finally { btn.disabled = false; }
+    };
+
+    window.limpiar = async function () {
+        if (!plan) return;
+        const nCli = plan.clientes.reduce((a, c) => a + c.dropIds.length, 0);
+        const nProy = plan.proyectos.reduce((a, p) => a + p.dropIds.length, 0);
+        if (!confirm(`Se van a fusionar y BORRAR ${nCli} cliente(s) y ${nProy} proyecto(s) duplicado(s) en la nube. Esta acción no se puede deshacer.\n\n¿Continuar?`)) return;
+        const btn = document.getElementById('btn-limpiar'); btn.disabled = true;
+        document.getElementById('btn-analizar').disabled = true;
+        setEstado('Limpiando…', 'work');
+        let okCli = 0, okProy = 0, errores = 0;
+        try {
+            // Clientes: primero fusiona las obras en el que se conserva, luego borra los otros.
+            for (const c of plan.clientes) {
+                try {
+                    await setDoc(doc(db, 'clientes', c.keepId), { nombre: c.keepNombre, obras: c.obras }, { merge: true });
+                    for (const id of c.dropIds) { try { await deleteDoc(doc(db, 'clientes', id)); okCli++; } catch (e) { errores++; console.error('borrar cliente', id, e); } }
+                } catch (e) { errores++; console.error('fusionar cliente', c.keepId, e); }
+            }
+            // Proyectos: borra las versiones duplicadas (se conserva la más reciente).
+            for (const p of plan.proyectos) {
+                for (const id of p.dropIds) { try { await deleteDoc(doc(db, 'proyectosGuardados', id)); okProy++; } catch (e) { errores++; console.error('borrar proyecto', id, e); } }
+            }
+            setEstado(`✅ Listo. Se limpiaron ${okCli} cliente(s) y ${okProy} proyecto(s) duplicado(s).` + (errores ? ` (${errores} con error — ver consola)` : ''), errores ? 'err' : 'ok');
+            plan = null;
+            document.getElementById('preview').innerHTML = '<p class="empty-mini">Vuelve a “Analizar” para confirmar que quedó limpio.</p>';
+        } catch (e) {
+            setEstado('Error al limpiar: ' + (e && e.message ? e.message : e), 'err');
+        } finally { document.getElementById('btn-analizar').disabled = false; }
+    };
+</script>
+
+</body>
+</html>
