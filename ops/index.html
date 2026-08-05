@@ -11,6 +11,24 @@
 <style>
     main { max-width: 860px; padding-top: 28px; }
     .welcome { color: var(--artal-blue); font-size: 15px; margin: 0 0 4px; font-weight: bold; }
+
+    #notif-center { margin: 8px 0 22px; }
+    .notif-title { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; font-weight: bold; }
+    .notif-title #notif-count { color: #c0392b; }
+    .notif-card { display: flex; gap: 10px; align-items: flex-start; background: #fff; border-radius: 12px; box-shadow: var(--shadow); border-left: 4px solid #f39c12; padding: 11px 13px; margin-bottom: 9px; }
+    .notif-card.tarea { border-left-color: #e74c3c; }
+    .notif-card.recordatorio { border-left-color: #3498db; }
+    .notif-ic { font-size: 20px; flex: 0 0 auto; line-height: 1.2; }
+    .notif-body { flex: 1; min-width: 0; }
+    .notif-body b { color: var(--artal-blue); font-size: 14px; }
+    .notif-body .txt { font-size: 12.5px; color: #556; margin-top: 3px; line-height: 1.45; word-break: break-word; }
+    .notif-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .notif-actions button, .notif-actions a { border: none; border-radius: 7px; padding: 7px 12px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; text-decoration: none; display: inline-block; }
+    .n-ver { background: var(--artal-blue); color: #fff; }
+    .n-done { background: #2ecc71; color: #fff; }
+    .notif-x { background: transparent; border: none; color: #c0392b; font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; flex: 0 0 auto; font-weight: bold; }
+    .notif-x:hover { color: #e74c3c; }
+    .notif-empty { color: #16a085; font-size: 13px; padding: 8px 2px; font-weight: bold; }
 </style>
 </head>
 <body>
@@ -29,6 +47,12 @@
 
 <main>
     <p class="welcome" id="welcome-msg"></p>
+
+    <section id="notif-center">
+        <h2 class="notif-title">🔔 Notificaciones <span id="notif-count"></span></h2>
+        <div id="notif-list"><div class="notif-empty">Cargando…</div></div>
+    </section>
+
     <div class="grid">
         <a class="card-link" href="../index.html" target="_blank"><div class="emoji">📝</div><div class="title">Cuaderno de Relevo</div><div class="desc">Tomar medidas y armar cotización/fabricación</div></a>
         <a class="card-link" href="calendario.html"><div class="emoji">📅</div><div class="title">Calendario</div><div class="desc">Agendar citas y avisar al equipo con notificación</div></a>
@@ -49,7 +73,8 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { openOrderPreview } from './order-preview.js';
 
     // Solo admin: es el panel central con acceso a todas las pantallas.
     const usuario = await requireAuth([]);
@@ -64,23 +89,87 @@
         el.textContent = count > 99 ? '99+' : String(count);
         el.classList.toggle('show', count > 0);
     }
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fFecha = (ts) => (ts && ts.toDate) ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
 
     function tieneProblemaSinAtender(map) {
         return Object.values(map || {}).some(s => s && s.estado === 'problema' && s.atendido !== true);
     }
 
+    // ---------------- Centro de notificaciones ----------------
+    let ordersCache = [], solicitudesCache = [], citasCache = [];
+
+    function buildNotifs() {
+        const N = [];
+        ordersCache.forEach(({ id, o }) => {
+            const lugar = (o.cliente || 'Sin cliente') + (o.obra ? ' — ' + o.obra : '');
+            // 1) Comentario de fábrica → oficina, sin atender.
+            if (o.comentarioFabrica && o.comentarioFabricaAtendido !== true) {
+                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Comentario de fábrica', sub: lugar, txt: o.comentarioFabrica,
+                    acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifAtenderComentario('${id}')">Marcar atendido</button>` });
+            }
+            // 2) Problemas reportados por chofer / instalador (por ítem), sin atender.
+            [['itemStatus', '🚚', 'Problema reportado por el chofer'], ['itemStatusInstalador', '🔧', 'Problema reportado por el instalador']].forEach(([field, ic, titulo]) => {
+                const map = o[field] || {};
+                Object.keys(map).forEach(iid => {
+                    const s = map[iid];
+                    if (s && s.estado === 'problema' && s.atendido !== true) {
+                        N.push({ tipo: 'tarea', ic, titulo, sub: lugar, txt: s.comentario || '',
+                            acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifAtenderItem('${id}','${field}','${iid}')">Marcar atendido</button>` });
+                    }
+                });
+            });
+            // 3) Cotización costeada por el contratista → falta armar/enviar el precio al cliente.
+            if (o.status === 'costeada') {
+                N.push({ tipo: 'tarea', ic: '💵', titulo: 'Cotización costeada — falta enviar al cliente', sub: lugar, txt: '',
+                    acciones: `<a class="n-ver" href="cotizaciones.html">Ir a Cotizaciones</a>` });
+            }
+        });
+        // 4) Solicitudes web nuevas (leads del sitio).
+        solicitudesCache.forEach(({ id, s }) => {
+            N.push({ tipo: 'tarea', ic: '📥', titulo: 'Solicitud web: ' + (s.nombre || 'sin nombre'), sub: s.tipo || '', txt: [s.telefono, s.email, s.mensaje].filter(Boolean).join(' · '),
+                acciones: `<a class="n-ver" href="solicitudes.html">Ver solicitudes</a>` });
+        });
+        // 5) Citas / recordatorios pendientes (vencidos o dentro de las próximas 24 h) → se descartan con la ✕.
+        const limite = Date.now() + 24 * 3600 * 1000;
+        citasCache.forEach(({ id, c }) => {
+            if (c.completada === true) return;
+            const f = (c.fecha && c.fecha.toDate) ? c.fecha.toDate().getTime() : null;
+            if (f != null && f > limite) return; // futuras lejanas todavía no molestan
+            N.push({ tipo: 'recordatorio', ic: c.tipo === 'recordatorio' ? '🔔' : '📅', titulo: c.titulo || 'Recordatorio', sub: fFecha(c.fecha), txt: [c.cliente, c.obra, c.descripcion].filter(Boolean).join(' · '),
+                dismiss: `notifDismissCita('${id}')` });
+        });
+        return N;
+    }
+
+    function renderNotifs() {
+        const list = document.getElementById('notif-list'); if (!list) return;
+        const N = buildNotifs();
+        document.getElementById('notif-count').textContent = N.length ? '(' + N.length + ')' : '';
+        if (!N.length) { list.innerHTML = '<div class="notif-empty">✓ No hay notificaciones pendientes.</div>'; return; }
+        list.innerHTML = N.map(n => `<div class="notif-card ${n.tipo}">
+            <span class="notif-ic">${n.ic}</span>
+            <div class="notif-body">
+                <b>${esc(n.titulo)}</b>${n.sub ? ` <span style="color:#889;font-size:12px;">· ${esc(n.sub)}</span>` : ''}
+                ${n.txt ? `<div class="txt">${esc(n.txt)}</div>` : ''}
+                ${n.acciones ? `<div class="notif-actions">${n.acciones}</div>` : ''}
+            </div>
+            ${n.dismiss ? `<button class="notif-x" title="Descartar" onclick="${n.dismiss}">✕</button>` : ''}
+        </div>`).join('');
+    }
+
+    window.notifVer = (id) => openOrderPreview(id);
+    window.notifAtenderComentario = async (id) => { try { await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
+    window.notifAtenderItem = async (id, field, iid) => { try { await updateDoc(doc(db, 'orders', id), { [`${field}.${iid}.atendido`]: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
+    window.notifDismissCita = async (id) => { try { await updateDoc(doc(db, 'citas', id), { completada: true, fechaCompletada: serverTimestamp(), recordatoriosPendientes: false }); } catch (e) { alert('No se pudo: ' + e.message); } };
+
     onSnapshot(collection(db, 'orders'), (snap) => {
+        ordersCache = snap.docs.map(d => ({ id: d.id, o: d.data() }));
         let alucufel = 0, fabricaInterna = 0, cotizaciones = 0, chofer = 0, instalador = 0;
-        snap.docs.forEach(d => {
-            const o = d.data();
+        ordersCache.forEach(({ o }) => {
             const esInterno = o.destino === 'interno';
-            // ALUCUFEL: comentario de fábrica sin atender, o una cotización de costo recién
-            // subida (status 'costeada') — cualquiera de las dos es "novedad" de su lado.
-            // (Los pedidos de destino "interno" no le corresponden a ALUCUFEL.)
             if (!esInterno && o.comentarioFabrica && o.comentarioFabricaAtendido !== true) alucufel++;
             if (!esInterno && o.status === 'costeada') { alucufel++; cotizaciones++; }
-            // Fábrica Interna: mismo criterio que ALUCUFEL (comentario sin atender o pedido
-            // recién llegado a pendiente_fabrica), pero solo para lo que fabrica ARTAL.
             if (esInterno && o.comentarioFabrica && o.comentarioFabricaAtendido !== true) fabricaInterna++;
             if (esInterno && o.status === 'pendiente_fabrica') fabricaInterna++;
             if (tieneProblemaSinAtender(o.itemStatus)) chofer++;
@@ -91,12 +180,21 @@
         setBadge('badge-cotizaciones', cotizaciones);
         setBadge('badge-chofer', chofer);
         setBadge('badge-instalador', instalador);
+        renderNotifs();
     });
 
-    // Solicitudes web sin atender (leads que llegan del sitio): badge propio.
+    // Solicitudes web sin atender (leads que llegan del sitio): badge propio + notificación.
     onSnapshot(query(collection(db, 'solicitudesWeb'), where('estado', '==', 'nueva')), (snap) => {
         setBadge('badge-solicitudes', snap.size);
+        solicitudesCache = snap.docs.map(d => ({ id: d.id, s: d.data() }));
+        renderNotifs();
     }, () => { /* colección aún vacía o reglas sin publicar: sin badge, no romper el panel */ });
+
+    // Citas/recordatorios (calendario): para las notificaciones descartables.
+    onSnapshot(collection(db, 'citas'), (snap) => {
+        citasCache = snap.docs.map(d => ({ id: d.id, c: d.data() }));
+        renderNotifs();
+    }, () => { /* sin permisos o vacío: no romper */ });
 </script>
 
 </body>
