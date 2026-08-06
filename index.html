@@ -1877,7 +1877,30 @@
     window.czSetItbisModo = function (v) { cotizCli.itbisModo = v; czRecalcUI(); };
     window.czAddLinea = function () { cotizCli.lineas.push({ desc: '', cant: 1, precio: 0 }); czRender(); };
     window.czDelLinea = function (i) { cotizCli.lineas.splice(i, 1); czRender(); };
-    window.czSetLinea = function (i, k, v) { if (cotizCli.lineas[i]) { cotizCli.lineas[i][k] = (k === 'desc') ? v : (Number(v) || 0); czRecalcUI(); } };
+    window.czSetLinea = function (i, k, v) { if (cotizCli.lineas[i]) { cotizCli.lineas[i][k] = (k === 'desc' || k === 'unidad') ? v : (Number(v) || 0); if (k === 'unidad') czRender(); else czRecalcUI(); } };
+    // Unidades de medida: usa el catálogo de ops (window.artalUnidades, cargado por el módulo de
+    // Firestore) si hay; si no, cae a una lista estándar de respaldo (mismas comunes que siembra
+    // ops/productos-unidades.html) para que funcione offline.
+    const CZ_UNIDADES_FALLBACK = [
+        { nombre: 'Unidad', abreviatura: 'und' }, { nombre: 'Metro cuadrado', abreviatura: 'm²' },
+        { nombre: 'Metro lineal', abreviatura: 'ml' }, { nombre: 'Metro', abreviatura: 'm' },
+        { nombre: 'Pie cuadrado', abreviatura: 'pie²' }, { nombre: 'Juego', abreviatura: 'jgo' },
+        { nombre: 'Par', abreviatura: 'par' }, { nombre: 'Servicio', abreviatura: 'serv' }
+    ];
+    function czUnidades() {
+        const fs = Array.isArray(window.artalUnidades) ? window.artalUnidades.filter(u => u && u.abreviatura) : [];
+        return fs.length ? fs : CZ_UNIDADES_FALLBACK;
+    }
+    function czUnidadOptions(sel) {
+        const cur = sel || 'und';
+        let list = czUnidades();
+        // Si el valor guardado no está en el catálogo (ej. una unidad borrada), agregarlo igual para no perderlo.
+        if (cur && !list.some(u => u.abreviatura === cur)) list = list.concat([{ nombre: cur, abreviatura: cur }]);
+        return list.map(u => `<option value="${escAttr(u.abreviatura)}"${u.abreviatura === cur ? ' selected' : ''}>${czEsc(u.nombre)} (${czEsc(u.abreviatura)})</option>`).join('');
+    }
+    window.czSetUnidad = function (id, v) { if (cardsState[id]) cardsState[id].unidadCliente = v; };
+    // Llamado por el módulo cuando llegan/actualizan las unidades de Firestore: redibuja el overlay si está abierto.
+    window.czRefreshUnidades = function () { const ov = document.getElementById('cotiz-cli-ov'); if (ov && ov.style.display === 'flex') czRender(); };
     function czRecalcUI() {
         const t = czTotales();
         czIds().forEach(id => { const s = cardsState[id] || {}; const c = document.getElementById('cz-imp-' + id); if (c) c.textContent = czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0)); });
@@ -1899,14 +1922,14 @@
             return `<tr>
                 <td class="cz-dib">${dib}</td>
                 <td class="cz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}</div></td>
-                <td><input type="number" min="0" step="0.01" value="${s.precioCliente != null ? s.precioCliente : ''}" placeholder="Precio" oninput="czSetPrecio('${id}', this.value)"></td>
+                <td><input type="number" min="0" step="0.01" value="${s.precioCliente != null ? s.precioCliente : ''}" placeholder="Precio" oninput="czSetPrecio('${id}', this.value)"><select class="cz-unid" onchange="czSetUnidad('${id}', this.value)">${czUnidadOptions(s.unidadCliente)}</select></td>
                 <td class="cz-imp" id="cz-imp-${id}">${czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0))}</td>
             </tr>`;
         }).join('');
         const manuales = (cotizCli.lineas || []).map((l, i) => `<tr>
             <td class="cz-dib" style="color:#c9ced6;font-size:11px">manual</td>
             <td class="cz-d"><input type="text" value="${czEsc(l.desc)}" placeholder="Descripción (algo que no está en el cuaderno)" oninput="czSetLinea(${i},'desc',this.value)" style="width:100%"><div class="cz-med"><input type="number" min="0" step="1" value="${l.cant}" oninput="czSetLinea(${i},'cant',this.value)" style="width:70px"> unidades</div></td>
-            <td><input type="number" min="0" step="0.01" value="${l.precio || ''}" placeholder="Precio" oninput="czSetLinea(${i},'precio',this.value)"></td>
+            <td><input type="number" min="0" step="0.01" value="${l.precio || ''}" placeholder="Precio" oninput="czSetLinea(${i},'precio',this.value)"><select class="cz-unid" onchange="czSetLinea(${i},'unidad',this.value)">${czUnidadOptions(l.unidad)}</select></td>
             <td class="cz-imp" id="cz-mimp-${i}">${czFmt((Number(l.cant) || 1) * (Number(l.precio) || 0))}</td>
         </tr><tr><td colspan="4" style="text-align:right;padding:0 6px 8px"><button class="cz-del" onclick="czDelLinea(${i})">✕ quitar línea manual</button></td></tr>`).join('');
         document.getElementById('cz-body').innerHTML = `
@@ -1945,10 +1968,11 @@
         let filas = ids.map(id => {
             const s = cardsState[id] || {}, d = czDesc(id);
             const cant = Number(s.cantidad) || 1, pu = Number(s.precioCliente) || 0;
+            const uni = s.unidadCliente && s.unidadCliente !== 'und' ? `<span class="pz-un">/${czEsc(s.unidadCliente)}</span>` : '';
             const dib = s.type === 'draw' ? '<div class="pz-nod">Fachada compuesta</div>' : renderSVG(id);
-            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}</td><td>${czFmt(cant * pu)}</td></tr>`;
+            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`;
         }).join('');
-        (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}</td><td>${czFmt(cant * pu)}</td></tr>`; });
+        (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; const uni = l.unidad && l.unidad !== 'und' ? `<span class="pz-un">/${czEsc(l.unidad)}</span>` : ''; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`; });
         if (t.transporte) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte</b></td><td>—</td><td>—</td><td>${czFmt(t.transporte)}</td><td>${czFmt(t.transporte)}</td></tr>`;
         if (t.instalacion) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Instalación</b></td><td>—</td><td>—</td><td>${czFmt(t.instalacion)}</td><td>${czFmt(t.instalacion)}</td></tr>`;
         const html = `<style>
@@ -1969,6 +1993,7 @@
             table.pz-t tbody tr:last-child td{border-bottom:none;}
             table.pz-t td.pz-d{text-align:left;white-space:normal;} table.pz-t td.pz-d b{color:#12314B;font-size:12.5px;}
             table.pz-t td.pz-c{text-align:center;} .pz-sp{font-size:10px;color:#667;margin-top:1px;}
+            .pz-un{color:#8a93a0;font-size:10px;font-weight:normal;}
             td.pz-dib{width:104px;text-align:center;} td.pz-dib svg{width:92px;height:auto;display:block;margin:auto;}
             .pz-nod{color:#8a93a0;font-size:10px;} table.pz-t tbody tr:nth-child(even) td{background:#f6faff;}
             .pz-tot{max-width:320px;margin:16px 24px 0 auto;background:#f4f8fc;border:1px solid #e0eaf4;border-radius:16px;padding:14px 18px;box-shadow:0 8px 22px -14px rgba(28,78,122,.4);}
@@ -5778,6 +5803,15 @@
         fsListenersStarted = true;
         onSnapshot(collection(db, 'orders'), (snap) => { fsOrdersCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
         onSnapshot(collection(db, 'clientes'), (snap) => { fsClientesCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
+        // Unidades de medida del catálogo de ops (Productos → Unidades). Se exponen en
+        // window.artalUnidades para que el selector de la Cotización cliente (script clásico) las
+        // use; si no hay sesión/señal, el overlay cae a una lista estándar de respaldo.
+        onSnapshot(collection(db, 'productosUnidades'), (snap) => {
+            window.artalUnidades = snap.docs.map(d => d.data()).filter(u => u.activo !== false)
+                .map(u => ({ nombre: u.nombre || '', abreviatura: u.abreviatura || '' }))
+                .filter(u => u.abreviatura);
+            if (typeof window.czRefreshUnidades === 'function') window.czRefreshUnidades();
+        }, () => {});
     }
     document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
@@ -6153,6 +6187,7 @@
     table.cz-tbl input { padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; width: 100px; text-align: right; box-sizing: border-box; }
     table.cz-tbl td.cz-d input[type=text] { text-align: left; width: 100%; } table.cz-tbl .cz-med input { width: 70px; text-align: center; }
     table.cz-tbl td.cz-imp { font-weight: bold; color: var(--artal-blue); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    select.cz-unid { width: 100px; margin-top: 5px; padding: 6px 7px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 12px; box-sizing: border-box; background: #fff; color: #445; }
     .cz-add { margin: 8px 0 4px; background: transparent; color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 8px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; }
     .cz-del { background: transparent; border: none; color: #e74c3c; font-size: 11.5px; cursor: pointer; font-family: 'Arimo'; font-weight: bold; }
     .cz-cfg { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px 12px; margin: 14px 0 4px; }
