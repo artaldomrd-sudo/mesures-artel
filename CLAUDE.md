@@ -1042,6 +1042,27 @@ dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
 - La asignación de chofer/instalador a un pedido (`ops/historial.html`) es **informativa**, no
   restringe acceso — cualquier chofer/instalador ve todos los pedidos por si hay que cubrirse.
 
+### Instalación (`ops/instalacion.html`) — pantalla única con pestañas
+
+Antes eran DOS pantallas separadas que confundían (`ops/instalaciones.html` "Agenda de Instalación"
+= planificar, calendario+GPS+agendar; `ops/instalador.html` "Trabajo en Obra" = ejecutar,
+recordatorios+obras+firma), más un hub `ops/instalacion.html` que solo linkeaba a ambas. A pedido
+del usuario ("se me hace difícil entender entre las dos... todo en una sola pantalla"), se fusionó
+en **`ops/instalacion.html`** con **3 pestañas** (`setTab`): **📋 Mi día** (recordatorios `citas`
+con etapas/completado-por-persona + trabajos agendados `instalaciones` próximos), **📅 Calendario**
+(rejilla mensual + "por programar" + modal completo de agendar/editar con GPS/instaladores/rango/
+recordatorios), **🏗️ Por instalar** (obras `orders` listas → tarjeta unificada con firma del
+cliente + avance parcial + "📅 Agendar" + "📦 Solo recoger" + "↩ No está listo"). Combina TODO lo
+de las dos viejas: `jobCardHTML` (instalaciones, con estado/GPS/reprogramar/editar/fotos),
+`recCardHTML` (recordatorios con etapas), `orderCardHTML` (firma, de la vieja instalador.html),
+`cambiarEstado`+`movimientosInstalaciones` (auditoría), `marcarSinInstalacion`, etc. Un solo juego
+de listeners (`instalaciones`, `orders` x2, `citas`, `usuarios`, `clientes`). Tarjeta ÚNICA por
+trabajo con todas sus acciones → nunca hay que saltar de pantalla. `requireAuth(['instalador',
+'ayudante'])`, admin gestiona todo. El tile del Panel ("Instalación") ya apunta aquí.
+**`ops/instalaciones.html` e `ops/instalador.html` siguen existiendo como respaldo** (accesibles por
+URL directa) hasta confirmar en producción; el hub que las enlazaba se reemplazó por esta pantalla.
+Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).
+
 ### Transportes (`ops/chofer.html`) — pestañas En espera / En ruta / Entregado
 
 - La pantalla se ve como **"Transportes"** (título, tile del Panel de Control), pero el rol
