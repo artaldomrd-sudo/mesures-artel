@@ -209,9 +209,33 @@
         if (!f) return '';
         return `${fD(f)} · ${fHora(f)}`;
     }
+    // Una fila del checklist (etapa o persona) — mismo criterio que el Calendario: al marcar una,
+    // el recordatorio NO desaparece para las demás; solo cierra cuando todas están hechas.
+    function recEtapaRow(hecha, titulo, nombre, fnCall) {
+        const sub = nombre ? ` <span style="color:#889;font-size:12px">· ${esc(nombre)}</span>` : '';
+        const btn = hecha
+            ? `<button class="mini-btn" style="border-color:var(--artal-blue);color:var(--artal-blue)" onclick="${fnCall}">↩ Reabrir</button>`
+            : `<button class="mini-btn" onclick="${fnCall}">✓ Hecho</button>`;
+        return `<div style="display:flex;align-items:center;gap:8px;background:${hecha ? '#eafaf0' : '#f6f8fb'};border:1px solid ${hecha ? '#bfe8cd' : '#e6ecf3'};border-radius:8px;padding:6px 9px;margin-top:5px;font-size:13px">
+            <span style="${hecha ? 'text-decoration:line-through;color:#7a8a99' : ''}">${esc(titulo)}</span>${sub}
+            <span style="margin-left:auto">${btn}</span></div>`;
+    }
     function recCardHTML(c) {
         const icono = c.tipo === 'cita' ? '📅' : '🔔';
         const lugar = [c.cliente, c.obra].filter(Boolean).join(' — ');
+        const et = Array.isArray(c.etapas) ? c.etapas : [];
+        const asg = Array.isArray(c.asignados) ? c.asignados : [];
+        const cp = Array.isArray(c.completadoPor) ? c.completadoPor : [];
+        let checklist = '';
+        if (et.length) {
+            checklist = et.map((e, i) => recEtapaRow(!!e.hecha, e.titulo || 'Tarea', e.nombre || '', `completarEtapaRec('${c.id}',${i})`)).join('');
+        } else if (asg.length > 1) {
+            checklist = asg.map(p => recEtapaRow(cp.includes(p.email), p.nombre || p.email, '', `asistioRecPersona('${c.id}','${p.email}')`)).join('');
+        }
+        const acciones = checklist
+            ? `<button class="mini-btn" onclick="borrarRec('${c.id}')">🗑</button>`
+            : `<button class="mini-btn" onclick="marcarRecHecho('${c.id}')">✓ Hecho</button>
+               <button class="mini-btn" onclick="borrarRec('${c.id}')">🗑</button>`;
         return `
         <div class="rec-card">
             <div class="rec-head">
@@ -223,15 +247,17 @@
                 ${lugar ? '<br>📍 ' + esc(lugar) : ''}
                 ${c.descripcion ? '<br>' + esc(c.descripcion) : ''}
             </div>
+            ${checklist}
             <div class="card-actions">
-                <button class="mini-btn" onclick="marcarRecHecho('${c.id}')">✓ Hecho</button>
-                <button class="mini-btn" onclick="borrarRec('${c.id}')">🗑</button>
+                ${acciones}
             </div>
         </div>`;
     }
+    let recsCache = [];
     onSnapshot(query(collection(db, 'citas'), where('asignadoA', '==', 'instalador')), (snap) => {
         const list = document.getElementById('rec-list');
         const recs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.completada !== true);
+        recsCache = recs;
         recs.sort((a, b) => {
             const fa = (a.fecha && a.fecha.toDate) ? a.fecha.toDate() : null;
             const fb = (b.fecha && b.fecha.toDate) ? b.fecha.toDate() : null;
@@ -498,6 +524,32 @@
         if (!confirm('¿Marcar como hecho?\n\nSi lo marcas por error, puedes reabrirlo desde el Calendario.')) return;
         try { await updateDoc(doc(db, 'citas', id), { completada: true, fechaCompletada: serverTimestamp(), recordatoriosPendientes: false }); }
         catch (e) { alert('No se pudo marcar: ' + e.message); }
+    };
+    // Marcar UNA etapa hecha (o reabrirla). Solo cierra el recordatorio cuando todas están hechas.
+    window.completarEtapaRec = async function (id, idx) {
+        const c = recsCache.find(x => x.id === id); if (!c) return;
+        const et = (Array.isArray(c.etapas) ? c.etapas : []).map(e => ({ ...e }));
+        if (!et[idx]) return;
+        const marcando = !et[idx].hecha;
+        if (marcando && !confirm(`¿Marcar la etapa «${et[idx].titulo || 'Tarea'}» como hecha?`)) return;
+        et[idx].hecha = marcando;
+        et[idx].fechaHecha = marcando ? new Date().toISOString() : null;
+        const completa = et.every(e => e.hecha);
+        try { await updateDoc(doc(db, 'citas', id), { etapas: et, completada: completa, recordatoriosPendientes: completa ? false : (Array.isArray(c.recordatorios) && c.recordatorios.length > 0) }); }
+        catch (e) { alert('No se pudo actualizar: ' + e.message); }
+    };
+    // Marcar hecho lo de UNA persona (recordatorio de varias sin etapas). Sigue pendiente para quien falte.
+    window.asistioRecPersona = async function (id, email) {
+        const c = recsCache.find(x => x.id === id); if (!c) return;
+        const asg = Array.isArray(c.asignados) ? c.asignados : [];
+        let cp = Array.isArray(c.completadoPor) ? c.completadoPor.slice() : [];
+        const ya = cp.includes(email);
+        const p = asg.find(x => x.email === email);
+        if (!ya && !confirm(`¿Marcar como hecho lo de ${p ? p.nombre : email}?`)) return;
+        cp = ya ? cp.filter(e => e !== email) : cp.concat([email]);
+        const completa = asg.length > 0 && asg.every(x => cp.includes(x.email));
+        try { await updateDoc(doc(db, 'citas', id), { completadoPor: cp, completada: completa, recordatoriosPendientes: completa ? false : (Array.isArray(c.recordatorios) && c.recordatorios.length > 0) }); }
+        catch (e) { alert('No se pudo actualizar: ' + e.message); }
     };
     window.borrarRec = async function (id) {
         if (!confirm('¿Borrar este recordatorio?')) return;

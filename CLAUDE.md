@@ -1223,6 +1223,24 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
 
 ### Calendario (`ops/calendario.html`) — secciones por persona de gerencia
 
+- **Etapas y completado por persona (`etapas` / `completadoPor` en `citas/{id}`).** Un recordatorio
+  puede tener **varias etapas**, cada una asignada a una persona distinta (ej. «Verificar pago» →
+  Andrea, «Poner orden de fabricación» → Anny) — `etapas: [{titulo, nombre, email, hecha,
+  fechaHecha}]`. Cada persona marca SU etapa (`completarEtapa(id, idx)`); el recordatorio solo
+  queda `completada:true` cuando TODAS las etapas están hechas. Si NO hay etapas pero el
+  recordatorio va a **varias personas** (`asignados.length > 1`), se completa **por persona** vía
+  `completadoPor: [email…]` (`asistioCitaPersona(id, email)`) — así, si una marca hecho, **no
+  desaparece para las demás** (sigue `completada:false` hasta que todas marquen). Un recordatorio
+  de una sola persona sin etapas sigue con el botón "✓ Hecho" clásico (`asistioCita`, flag
+  `completada`). `citaCompletadaCalc(c)` centraliza el "¿está todo hecho?" y `reabrirCita` resetea
+  etapas + `completadoPor`. `fechaHecha` de cada etapa es un **ISO string, NO `serverTimestamp()`**
+  (Firestore rechaza `serverTimestamp()` dentro de arrays). El modal tiene una sección "Etapas /
+  tareas (opcional)" (`window.etapasDraft`, `agregarEtapa`/`quitarEtapa`/`etapaSetPersona`,
+  `personasParaEtapas()` según gerencia vs instalación); las personas de las etapas se unen a
+  `asignados` al guardar (para filtros/notificaciones). **Mismo modelo espejado en
+  `ops/instalador.html`** (recordatorios `asignadoA:'instalador'`): `recCardHTML` renderiza el
+  checklist, `completarEtapaRec`/`asistioRecPersona` + `recsCache`. La Cloud Function de push no
+  cambió (notifica a todos los `asignados` al crear).
 - El botón/modal para crear un evento dice **"Nuevo evento"** (antes "Nueva cita") porque
   siempre pudo crear una Cita O un Recordatorio (toggle `tipoEvento`) — "cita" era impreciso.
   Nombres internos (`window.abrirNuevaCita`, `guardarCita`, ids `cita-*`, colección Firestore

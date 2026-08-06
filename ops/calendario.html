@@ -76,6 +76,22 @@
     .personas-group { display: flex; flex-direction: column; gap: 6px; }
     .personas-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
     .personas-group input { width: auto; min-height: 0; }
+    /* Etapas / tareas del recordatorio */
+    .etapas-list { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+    .etapa-row { display: flex; gap: 6px; align-items: center; }
+    .etapa-row input.et-titulo { flex: 1.4; min-height: 40px; }
+    .etapa-row select.et-persona { flex: 1; min-height: 40px; }
+    .etapa-row button.et-del { flex: 0 0 auto; width: 36px; min-height: 40px; background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .btn-add-etapa { margin-top: 8px; background: transparent; color: var(--artal-blue); border: 1.5px dashed var(--artal-blue); border-radius: 8px; padding: 9px 12px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; width: 100%; }
+    /* Checklist de etapas / personas en la tarjeta del evento */
+    .cita-etapas { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+    .cita-etapa { display: flex; align-items: center; gap: 8px; font-size: 13px; background: #f6f8fb; border: 1px solid #e6ecf3; border-radius: 8px; padding: 7px 10px; }
+    .cita-etapa .et-nom { color: #667; font-size: 12px; }
+    .cita-etapa.et-hecha { background: #eafaf0; border-color: #bfe8cd; }
+    .cita-etapa.et-hecha .et-tit { text-decoration: line-through; color: #7a8a99; }
+    .cita-etapa .et-chk { margin-left: auto; border: none; border-radius: 100px; padding: 5px 11px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; }
+    .cita-etapa .et-chk.pend { background: #2ecc71; color: #fff; }
+    .cita-etapa .et-chk.done { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
 </style>
 </head>
 <body>
@@ -198,6 +214,13 @@
             </p>
         </div>
 
+        <div id="etapas-wrap">
+            <label>Etapas / tareas (opcional — una por persona)</label>
+            <div id="cita-etapas-list" class="etapas-list"></div>
+            <button type="button" class="btn-add-etapa" onclick="agregarEtapa()">+ Agregar etapa</button>
+            <p style="font-size:12px;color:#666;margin:6px 0 0;">Ej: «Verificar pago» → Andrea · «Poner orden de fabricación» → Anny. Cada persona marca su etapa por separado y el recordatorio solo queda hecho cuando todas se completan.</p>
+        </div>
+
         <label>¿Quién está agendando esto?</label>
         <select id="cita-creador"></select>
 
@@ -271,6 +294,22 @@
         return filtroPersona === 'todos' ? arr : arr.filter(c => esDePersona(c, filtroPersona));
     }
 
+    // ===== Etapas y completado por persona =====
+    const emailActual = () => (auth.currentUser && auth.currentUser.email) || '';
+    const etapasDe = (c) => Array.isArray(c.etapas) ? c.etapas : [];
+    // ¿Está TODO el recordatorio hecho? Con etapas: todas hechas. Con varias personas (sin etapas):
+    // todas marcaron. Si no, cae al flag clásico `completada` (recordatorio de una sola persona).
+    function citaCompletadaCalc(c) {
+        const et = etapasDe(c);
+        if (et.length) return et.every(e => e.hecha);
+        const asg = asignadosDe(c);
+        if (asg.length > 1) {
+            const cp = Array.isArray(c.completadoPor) ? c.completadoPor : [];
+            return asg.every(p => cp.includes(p.email));
+        }
+        return !!c.completada;
+    }
+
     window.setFiltroPersona = function (persona) {
         filtroPersona = persona;
         document.querySelectorAll('#persona-tabs button').forEach(btn => {
@@ -335,15 +374,32 @@
         const dur = Number(c.duracionMin || 0);
         let horaTxt = fmtHora(fecha);
         if (!esRec && dur > 0) horaTxt = fmtHora(fecha) + '–' + fmtHora(new Date(fecha.getTime() + dur * 60000));
-        const hecha = !!c.completada;
-        const nombresAsignados = asignadosDe(c).map(p => p.nombre).filter(Boolean).join(', ') || 'Gerencia';
+        const hecha = citaCompletadaCalc(c);
+        const asg = asignadosDe(c);
+        const et = etapasDe(c);
+        const nombresAsignados = asg.map(p => p.nombre).filter(Boolean).join(', ') || 'Gerencia';
         const borde = esRec ? '' : `style="border-left-color:${colorCreador(c.creadoPorNombre)};"`;
-        const acciones = hecha
-            ? `<button class="btn-reabrir" onclick="reabrirCita('${c.id}')">↩ Reabrir</button>
+        // Checklist: con etapas explícitas, o con varias personas (cada una marca lo suyo). Así al
+        // marcar uno no desaparece para el otro; el evento solo cierra cuando todas terminan.
+        const cp = Array.isArray(c.completadoPor) ? c.completadoPor : [];
+        let checklistHTML = '';
+        if (et.length) {
+            checklistHTML = '<div class="cita-etapas">' + et.map((e, i) =>
+                etapaRowHTML(!!e.hecha, e.titulo || 'Tarea', e.nombre || '', `completarEtapa('${c.id}',${i})`)).join('') + '</div>';
+        } else if (esRec && asg.length > 1) {
+            checklistHTML = '<div class="cita-etapas">' + asg.map(p =>
+                etapaRowHTML(cp.includes(p.email), p.nombre || p.email, '', `asistioCitaPersona('${c.id}','${p.email}')`)).join('') + '</div>';
+        }
+        const usaChecklist = !!checklistHTML;
+        const acciones = usaChecklist
+            ? `<button class="btn-modificar" onclick="modificarCita('${c.id}')">✏ Modificar</button>
                <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`
-            : `<button class="btn-asistio" onclick="asistioCita('${c.id}')">✓ ${esRec ? 'Hecho' : 'Asistió'}</button>
-               <button class="btn-modificar" onclick="modificarCita('${c.id}')">✏ Modificar</button>
-               <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`;
+            : hecha
+                ? `<button class="btn-reabrir" onclick="reabrirCita('${c.id}')">↩ Reabrir</button>
+                   <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`
+                : `<button class="btn-asistio" onclick="asistioCita('${c.id}')">✓ ${esRec ? 'Hecho' : 'Asistió'}</button>
+                   <button class="btn-modificar" onclick="modificarCita('${c.id}')">✏ Modificar</button>
+                   <button class="btn-borrar" onclick="borrarCita('${c.id}')">🗑 Borrar</button>`;
         return `
         <div class="cita-card ${esRec ? 'recordatorio' : ''} ${hecha ? 'completada' : ''}" ${borde}>
             <div class="cita-head">
@@ -356,12 +412,21 @@
                 ${c.descripcion ? '<br>' + esc(c.descripcion) : ''}
                 <br>Agendado por ${esc(c.creadoPorNombre)}
             </div>
+            ${checklistHTML}
             ${fotosThumbsHTML(c.fotos, { coleccion: 'citas', id: c.id, puedeBorrar: true })}
             ${fotoAddBtnHTML({ coleccion: 'citas', id: c.id })}
             <div class="cita-actions">
                 ${acciones}
             </div>
         </div>`;
+    }
+    // Una fila del checklist (etapa o persona). fnCall es el onclick literal ya armado.
+    function etapaRowHTML(hecha, titulo, nombre, fnCall) {
+        const sub = nombre ? `<span class="et-nom">· ${esc(nombre)}</span>` : '';
+        const btn = hecha
+            ? `<button class="et-chk done" onclick="${fnCall}">↩ Reabrir</button>`
+            : `<button class="et-chk pend" onclick="${fnCall}">✓ Hecho</button>`;
+        return `<div class="cita-etapa ${hecha ? 'et-hecha' : ''}"><span class="et-tit">${esc(titulo)}</span>${sub}${btn}</div>`;
     }
 
     function render() {
@@ -476,6 +541,7 @@
         document.getElementById('cita-duracion').value = '60';
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
         document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
+        window.etapasDraft = [];
         setTipoEvento('cita');
         setTipoCita('libre');
         setAsignadoA('gerente');
@@ -514,6 +580,43 @@
         document.getElementById('para-instalador-btn').classList.toggle('active', val === 'instalador');
         document.getElementById('instalador-select-wrap').style.display = val === 'instalador' ? 'block' : 'none';
         document.getElementById('gerencia-select-wrap').style.display = val === 'gerente' ? 'block' : 'none';
+        renderEtapasDraft();   // las personas de las etapas dependen de gerencia vs instalación
+    };
+
+    // ===== Borrador de etapas del modal =====
+    window.etapasDraft = [];
+    // Personas disponibles para asignar una etapa, según a quién va el recordatorio.
+    function personasParaEtapas() {
+        if (asignadoA === 'gerente') {
+            return ['Andrea', 'Anny', 'Dylan'].map(nombre => {
+                const p = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+                return { nombre, email: p ? p.email : '' };
+            });
+        }
+        return (instaladoresCache || []).map(x => ({ nombre: x.nombre || x.email, email: x.email }));
+    }
+    function renderEtapasDraft() {
+        const cont = document.getElementById('cita-etapas-list');
+        if (!cont) return;
+        const personas = personasParaEtapas();
+        cont.innerHTML = window.etapasDraft.map((e, i) => `
+            <div class="etapa-row">
+                <input class="et-titulo" type="text" placeholder="Tarea (ej: Verificar pago)" value="${esc(e.titulo || '')}" oninput="etapaSetTitulo(${i}, this.value)">
+                <select class="et-persona" onchange="etapaSetPersona(${i}, this.value)">
+                    <option value="">— Persona —</option>
+                    ${personas.map(p => `<option value="${esc(p.nombre)}" ${p.nombre === e.nombre ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('')}
+                </select>
+                <button type="button" class="et-del" onclick="quitarEtapa(${i})">✕</button>
+            </div>`).join('');
+    }
+    window.agregarEtapa = function () { window.etapasDraft.push({ titulo: '', nombre: '', email: '' }); renderEtapasDraft(); };
+    window.quitarEtapa = function (i) { window.etapasDraft.splice(i, 1); renderEtapasDraft(); };
+    window.etapaSetTitulo = function (i, v) { if (window.etapasDraft[i]) window.etapasDraft[i].titulo = v; };
+    window.etapaSetPersona = function (i, nombre) {
+        if (!window.etapasDraft[i]) return;
+        const p = personasParaEtapas().find(x => x.nombre === nombre);
+        window.etapasDraft[i].nombre = nombre;
+        window.etapasDraft[i].email = p ? p.email : '';
     };
 
     window.guardarCita = async function () {
@@ -562,6 +665,13 @@
         const recordatorios = Array.from(document.querySelectorAll('#cita-recordar input:checked')).map(c => Number(c.value));
         const duracionMin = tipoEvento === 'cita' ? Number(document.getElementById('cita-duracion').value) || 0 : 0;
 
+        // Etapas (opcional): cada una {titulo, nombre, email, hecha}. Las personas de las etapas se
+        // agregan a `asignados` (para filtros/notificaciones) aunque no estén marcadas arriba.
+        const etapas = (window.etapasDraft || [])
+            .filter(e => (e.titulo || '').trim() || e.nombre)
+            .map(e => ({ titulo: (e.titulo || '').trim(), nombre: e.nombre || '', email: e.email || '', hecha: false, fechaHecha: null }));
+        etapas.forEach(e => { if (e.email && !asignados.some(a => a.email === e.email)) asignados.push({ email: e.email, nombre: e.nombre }); });
+
         const datos = {
             tipo: tipoEvento,
             titulo, descripcion,
@@ -569,6 +679,8 @@
             duracionMin,
             orderId, cliente, obra,
             asignadoA, asignados,
+            etapas,
+            completadoPor: [],
             creadoPorNombre,
             recordatorios,
             recordatoriosEnviados: [],
@@ -604,13 +716,58 @@
         } catch (e) { alert('No se pudo completar: ' + e.message); }
     };
 
-    // Reabrir: vuelve a pendiente (por si se marcó por error o hay que reprogramar).
+    // Marcar UNA etapa como hecha (o reabrirla). El recordatorio solo queda completo cuando TODAS
+    // las etapas están hechas — así no desaparece para las demás personas al marcar una.
+    window.completarEtapa = async function (id, idx) {
+        const c = allCitas.find(x => x.id === id); if (!c) return;
+        const et = etapasDe(c).map(e => ({ ...e }));
+        if (!et[idx]) return;
+        const marcando = !et[idx].hecha;
+        if (marcando && !confirm(`¿Marcar la etapa «${et[idx].titulo || 'Tarea'}» como hecha?`)) return;
+        et[idx].hecha = marcando;
+        et[idx].fechaHecha = marcando ? new Date().toISOString() : null;   // serverTimestamp() no va dentro de arrays
+        const completa = et.every(e => e.hecha);
+        try {
+            await updateDoc(doc(db, 'citas', id), {
+                etapas: et,
+                completada: completa,
+                recordatoriosPendientes: completa ? false : (Array.isArray(c.recordatorios) && c.recordatorios.length > 0)
+            });
+        } catch (e) { alert('No se pudo actualizar: ' + e.message); }
+    };
+
+    // Marcar hecho lo de UNA persona (recordatorio de varias personas sin etapas). Solo cierra el
+    // recordatorio cuando todas marcaron — sigue visible/pendiente para quien falte.
+    window.asistioCitaPersona = async function (id, email) {
+        const c = allCitas.find(x => x.id === id); if (!c) return;
+        const asg = asignadosDe(c);
+        let cp = Array.isArray(c.completadoPor) ? c.completadoPor.slice() : [];
+        const ya = cp.includes(email);
+        const persona = asg.find(p => p.email === email);
+        const nom = persona ? persona.nombre : email;
+        if (!ya && !confirm(`¿Marcar como hecho lo de ${nom}?`)) return;
+        cp = ya ? cp.filter(e => e !== email) : cp.concat([email]);
+        const completa = asg.length > 0 && asg.every(p => cp.includes(p.email));
+        try {
+            await updateDoc(doc(db, 'citas', id), {
+                completadoPor: cp,
+                completada: completa,
+                recordatoriosPendientes: completa ? false : (Array.isArray(c.recordatorios) && c.recordatorios.length > 0)
+            });
+        } catch (e) { alert('No se pudo actualizar: ' + e.message); }
+    };
+
+    // Reabrir: vuelve a pendiente TODO (por si se marcó por error o hay que reprogramar) — resetea
+    // también etapas y el completado por persona.
     window.reabrirCita = async function (id) {
         const c = allCitas.find(x => x.id === id);
         const recs = c && Array.isArray(c.recordatorios) ? c.recordatorios : [];
+        const et = etapasDe(c).map(e => ({ ...e, hecha: false, fechaHecha: null }));
         try {
             await updateDoc(doc(db, 'citas', id), {
                 completada: false,
+                completadoPor: [],
+                ...(et.length ? { etapas: et } : {}),
                 recordatoriosEnviados: [],
                 recordatoriosPendientes: recs.length > 0
             });
@@ -672,6 +829,9 @@
                 if (chk) chk.checked = true;
             });
         }
+        // Etapas guardadas → borrador editable
+        window.etapasDraft = (Array.isArray(c.etapas) ? c.etapas : []).map(e => ({ titulo: e.titulo || '', nombre: e.nombre || '', email: e.email || '' }));
+        renderEtapasDraft();
         // Quién agenda
         if (c.creadoPorNombre) {
             const sel = document.getElementById('cita-creador');
