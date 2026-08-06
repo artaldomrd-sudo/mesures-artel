@@ -1871,6 +1871,24 @@
     const czEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const czFmt = (x) => 'RD$ ' + (Number(x) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const czIds = () => Array.from(document.querySelectorAll('#item-list .item-card')).map(el => el.id.replace('card-', ''));
+    // Referencia (B1, B2…) y Ubicación (Habitación master, Piscina…) que el usuario escribió en la
+    // tarjeta. Viven en el DOM de la tarjeta (inputs), no en cardsState — y las tarjetas siempre
+    // están en pantalla al armar la cotización, así que se leen de ahí. Ayuda al cliente a ubicar
+    // a qué corresponde cada ítem.
+    function czRefUbi(id) {
+        const card = document.getElementById('card-' + id);
+        if (!card) return { ref: '', ubi: '' };
+        const r = card.querySelector('.card-ref-row input');
+        const u = card.querySelector('input[placeholder*="Ubicación"]');
+        return { ref: (r && r.value || '').trim(), ubi: (u && u.value || '').trim() };
+    }
+    function czRefUbiTxt(id) {
+        const { ref, ubi } = czRefUbi(id);
+        const parts = [];
+        if (ref) parts.push('Ref. ' + ref);
+        if (ubi) parts.push(ubi);
+        return parts.join(' · ');
+    }
     function czDesc(id) {
         const s = cardsState[id] || {};
         const titulo = s.label || s.type || 'Ítem';
@@ -1970,7 +1988,7 @@
             const dib = s.type === 'draw' ? '<span style="color:#8a93a0;font-size:11px">Fachada</span>' : renderSVG(id);
             return `<tr>
                 <td class="cz-dib">${dib}</td>
-                <td class="cz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}${czMedida(s).esMedida ? ` · <b style="color:var(--artal-blue)">${czFmtQty(czMedida(s).qty)} ${czEsc(s.unidadCliente)}</b>` : ''}</div></td>
+                <td class="cz-d"><b>${czEsc(d.titulo)}</b>${czRefUbiTxt(id) ? `<div class="cz-ref">${czEsc(czRefUbiTxt(id))}</div>` : ''}${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}${czMedida(s).esMedida ? ` · <b style="color:var(--artal-blue)">${czFmtQty(czMedida(s).qty)} ${czEsc(s.unidadCliente)}</b>` : ''}</div></td>
                 <td><input type="number" min="0" step="0.01" value="${s.precioCliente != null ? s.precioCliente : ''}" placeholder="Precio" oninput="czSetPrecio('${id}', this.value)"><select class="cz-unid" onchange="czSetUnidad('${id}', this.value)">${czUnidadOptions(s.unidadCliente)}</select></td>
                 <td class="cz-imp" id="cz-imp-${id}">${czFmt(czImporte(s))}</td>
             </tr>`;
@@ -2020,7 +2038,8 @@
             const uni = s.unidadCliente && s.unidadCliente !== 'und' ? `<span class="pz-un">/${czEsc(s.unidadCliente)}</span>` : '';
             const medLine = med.esMedida ? `<div class="pz-sp">Cantidad: ${czFmtQty(med.qty)} ${czEsc(s.unidadCliente)}</div>` : '';
             const dib = s.type === 'draw' ? '<div class="pz-nod">Fachada compuesta</div>' : renderSVG(id);
-            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}${medLine}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(czImporte(s))}</td></tr>`;
+            const refLine = czRefUbiTxt(id) ? `<div class="pz-ref">${czEsc(czRefUbiTxt(id))}</div>` : '';
+            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${refLine}${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}${medLine}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(czImporte(s))}</td></tr>`;
         }).join('');
         (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; const uni = l.unidad && l.unidad !== 'und' ? `<span class="pz-un">/${czEsc(l.unidad)}</span>` : ''; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`; });
         if (t.servicios) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte e instalación</b></td><td>—</td><td>—</td><td>${czFmt(t.servicios)}</td><td>${czFmt(t.servicios)}</td></tr>`;
@@ -2043,6 +2062,7 @@
             table.pz-t td.pz-d{text-align:left;white-space:normal;} table.pz-t td.pz-d b{color:#12314B;font-size:12.5px;}
             table.pz-t td.pz-c{text-align:center;} .pz-sp{font-size:10px;color:#667;margin-top:1px;}
             .pz-un{color:#8a93a0;font-size:10px;font-weight:normal;}
+            .pz-ref{color:#1C4E7A;font-size:10.5px;font-weight:bold;margin-top:1px;}
             td.pz-dib{width:104px;text-align:center;} td.pz-dib svg{width:92px;height:auto;display:block;margin:auto;}
             .pz-nod{color:#8a93a0;font-size:10px;} table.pz-t tbody tr:nth-child(even) td{background:#f6faff;}
             .pz-tot{max-width:320px;margin:16px 24px 0 auto;background:#f4f8fc;border:1px solid #e0eaf4;border-radius:16px;padding:14px 18px;box-shadow:0 8px 22px -14px rgba(28,78,122,.4);}
@@ -6233,6 +6253,7 @@
     table.cz-tbl td { padding: 7px 5px; border-bottom: 1px solid #eef1f4; text-align: right; vertical-align: middle; }
     table.cz-tbl td.cz-dib { width: 76px; text-align: center; } table.cz-tbl td.cz-dib svg { width: 64px; height: auto; display: block; margin: auto; }
     table.cz-tbl td.cz-d { text-align: left; } table.cz-tbl td.cz-d b { color: var(--artal-blue); } .cz-sp { font-size: 11px; color: #667; } .cz-med { font-size: 11px; color: #8a93a0; margin-top: 2px; }
+    .cz-ref { font-size: 11.5px; color: #556; font-weight: bold; margin-top: 1px; }
     table.cz-tbl input { padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; width: 100px; text-align: right; box-sizing: border-box; }
     table.cz-tbl td.cz-d input[type=text] { text-align: left; width: 100%; } table.cz-tbl .cz-med input { width: 70px; text-align: center; }
     table.cz-tbl td.cz-imp { font-weight: bold; color: var(--artal-blue); white-space: nowrap; font-variant-numeric: tabular-nums; }
