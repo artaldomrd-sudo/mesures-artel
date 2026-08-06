@@ -46,17 +46,28 @@ function comprimir(file) {
     });
 }
 
-// Sube una lista de archivos y devuelve [{ url, nombre }]. Ignora los que no sean imágenes.
+// Sube una lista de archivos y devuelve [{ url, nombre, tipo }]. Acepta imágenes (se comprimen a
+// JPEG) y PDFs (se suben tal cual). Ignora cualquier otro tipo.
 export async function subirFotos(fileList, pathPrefix) {
     const out = [];
     for (const file of Array.from(fileList || [])) {
-        if (!/^image\//.test(file.type)) continue;
-        const blob = await comprimir(file).catch(() => file);
-        const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.jpg';
-        const r = ref(storage, `${pathPrefix}/${nombre}`);
-        await uploadBytes(r, blob, { contentType: 'image/jpeg' });
-        const url = await getDownloadURL(r);
-        out.push({ url, nombre: file.name || 'foto.jpg' });
+        const esImg = /^image\//.test(file.type);
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        if (!esImg && !esPdf) continue;
+        if (esPdf) {
+            const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.pdf';
+            const r = ref(storage, `${pathPrefix}/${nombre}`);
+            await uploadBytes(r, file, { contentType: 'application/pdf' });
+            const url = await getDownloadURL(r);
+            out.push({ url, nombre: file.name || 'documento.pdf', tipo: 'pdf' });
+        } else {
+            const blob = await comprimir(file).catch(() => file);
+            const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.jpg';
+            const r = ref(storage, `${pathPrefix}/${nombre}`);
+            await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+            const url = await getDownloadURL(r);
+            out.push({ url, nombre: file.name || 'foto.jpg', tipo: 'img' });
+        }
     }
     return out;
 }
@@ -85,8 +96,13 @@ export function fotosThumbsHTML(fotos, { coleccion, id, campo = 'fotos', puedeBo
     if (!Array.isArray(fotos) || !fotos.length) return '';
     const items = fotos.map(f => {
         const del = puedeBorrar
-            ? `<button class="foto-del" title="Quitar foto" onclick="event.preventDefault();event.stopPropagation();__borrarFoto('${esc(coleccion)}','${esc(id)}','${esc(f.url)}','${esc(campo)}')">×</button>`
+            ? `<button class="foto-del" title="Quitar" onclick="event.preventDefault();event.stopPropagation();__borrarFoto('${esc(coleccion)}','${esc(id)}','${esc(f.url)}','${esc(campo)}')">×</button>`
             : '';
+        const esPdf = f.tipo === 'pdf' || /\.pdf(\?|$)/i.test(f.url || '') || /\.pdf$/i.test(f.nombre || '');
+        if (esPdf) {
+            const nom = (f.nombre || 'PDF').replace(/\.pdf$/i, '');
+            return `<span class="foto-thumb foto-pdf"><a href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.nombre || 'PDF')}"><span class="pdf-ico">📄</span><span class="pdf-nom">${esc(nom.slice(0, 16))}</span></a>${del}</span>`;
+        }
         return `<span class="foto-thumb"><a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" loading="lazy" alt="foto"></a>${del}</span>`;
     }).join('');
     return `<div class="fotos-thumbs">${items}</div>`;
@@ -94,8 +110,10 @@ export function fotosThumbsHTML(fotos, { coleccion, id, campo = 'fotos', puedeBo
 
 // Botón "Agregar fotos": un <label> con un <input file> oculto (accept image/* + capture para
 // que en el celular ofrezca cámara o galería).
-export function fotoAddBtnHTML({ coleccion, id, campo = 'fotos', label = '📷 Agregar fotos' } = {}) {
-    return `<label class="foto-add-btn">${esc(label)}<input type="file" accept="image/*" multiple style="display:none" onchange="__subirFotos('${esc(coleccion)}','${esc(id)}','${esc(campo)}',this)"></label>`;
+export function fotoAddBtnHTML({ coleccion, id, campo = 'fotos', label, pdf = false } = {}) {
+    const accept = pdf ? 'image/*,application/pdf' : 'image/*';
+    const lbl = label || (pdf ? '📎 Agregar foto/PDF' : '📷 Agregar fotos');
+    return `<label class="foto-add-btn">${esc(lbl)}<input type="file" accept="${accept}" multiple style="display:none" onchange="__subirFotos('${esc(coleccion)}','${esc(id)}','${esc(campo)}',this)"></label>`;
 }
 
 // Handlers globales (una sola vez por página).
@@ -137,6 +155,9 @@ if (!document.getElementById('foto-styles')) {
     .foto-del { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: none; background: #e74c3c; color: #fff; font-weight: bold; font-size: 13px; line-height: 1; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; }
     .foto-add-btn { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 14px; border: 1.5px dashed var(--artal-blue); border-radius: 8px; background: #fff; color: var(--artal-blue); font-weight: bold; font-size: 12.5px; font-family: 'Arimo'; cursor: pointer; min-height: 38px; }
     .foto-add-btn:hover { background: var(--artal-light); }
+    .foto-pdf a { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 8px; border: 1.5px solid #d9c2c2; background: #fdf3f3; text-decoration: none; color: #b3413a; gap: 2px; padding: 4px; box-sizing: border-box; }
+    .foto-pdf .pdf-ico { font-size: 22px; line-height: 1; }
+    .foto-pdf .pdf-nom { font-size: 8.5px; font-weight: bold; color: #8a4b47; text-align: center; word-break: break-all; line-height: 1.1; max-height: 20px; overflow: hidden; }
     `;
     document.head.appendChild(st);
 }
