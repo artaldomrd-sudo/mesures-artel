@@ -209,6 +209,34 @@ un **PDF de Cotización o Fabricación** para el cliente.
   `updateCADItemImage()` por cada item para regenerar `.img` desde cero — nunca se leía de
   vuelta desde el guardado.
 
+## Calculador de medida de vidrio (Paño Fijo, primer paso)
+
+Primer paso hacia una herramienta de producción más completa (pedido explícito del usuario: por
+ahora solo Paño Fijo, más adelante — sección "Producción" del panel de operaciones, ops/ — un
+"cuadro de cálculos de vidrio" editable que se irá ajustando según series/perfilerías nuevas,
+hasta llegar a un desglose completo de todos los elementos de cada tipo de ítem — ventanas,
+puertas, etc. — no solo el vidrio. Esa parte del panel **todavía no existe**, es trabajo futuro;
+por ahora la fórmula vive embebida en el cuaderno).
+
+- **`calcVidrioPanoFijo(state)`** (junto a `generateSummary`): calcula el tamaño real de vidrio a
+  cortar según `state.fijacion`, deduciendo del `ancho`/`alto` del marco. Solo aplica a
+  `type === 'fachada_din'` y solo si `ancho`/`alto` > 0. Fórmulas confirmadas explícitamente con
+  el usuario (con un ejemplo que originalmente no cuadraba — "P40: 35mm de cada lado" pero el
+  ejemplo daba un resultado que solo cuadraba con 135mm/lado — se le preguntó y confirmó 35mm):
+  - `p40` (Perfiles Aluminio): 35mm por lado → vidrio = marco − 70mm (ancho y alto por igual).
+  - `p40_puerta` (P40 de puerta): 55mm por lado → vidrio = marco − 110mm (ancho y alto).
+  - `moldura` (Con Moldura Perimetral / "Moldura U"): 7mm **total** (no por lado, a diferencia de
+    los P40 — confirmado explícitamente) → vidrio = marco − 7mm (ancho y alto).
+  - `conectores` / `sin_marco` / sin fijación elegida: sin fórmula todavía → `null`, no se
+    muestra nada. Pendiente para cuando el usuario confirme esos casos.
+  - No distingue `panos > 1` (Fachada Multipañó): usa siempre el `ancho`/`alto` totales del
+    ítem, no un desglose por paño individual — coincide con los ejemplos que dio el usuario
+    (un solo marco). Si hace falta el cálculo por paño individual, pedirlo explícitamente.
+- **Dónde se muestra**: solo en el resumen/PDF (rama genérica de `generateSummary`, junto a la
+  línea "Fijación: ..."), como `Vidrio a cortar: {w} x {h} mm` — **no** se muestra mientras se
+  edita la tarjeta (antes de fijarla), a pedido explícito del usuario ("por ahora" solo en
+  resumen/PDF).
+
 ## Paño Fijo adosado (arriba/abajo) en ventanas/puertas
 
 Alternativa ligera al CAD para el caso más común: pegarle un paño fijo de vidrio arriba y/o

@@ -1476,6 +1476,25 @@
         alert(`Copia de seguridad creada con ${n} proyecto(s): "${filename}".\n\nEn iPad/iPhone normalmente queda en la app Archivos, dentro de "Descargas". Si actualizas la app o cambias de dispositivo, podrás restaurarlo con "Importar archivo".`);
     }
 
+    // Calculador de medida de vidrio — Paño Fijo (fachada_din), primer paso hacia un desglose de
+    // producción completo (ver CLAUDE.md "Calculador de vidrio"). Deducción por sistema de
+    // fijación, confirmada explícitamente con el usuario:
+    //   - P40 (perfiles aluminio): 35mm por lado → vidrio = marco - 70mm (ancho y alto).
+    //   - P40 de puerta: 55mm por lado → vidrio = marco - 110mm (ancho y alto).
+    //   - Con Moldura Perimetral (Moldura U): 7mm TOTAL (no por lado) → vidrio = marco - 7mm.
+    // Conectores/Sin Marco/sin fijación elegida: sin fórmula todavía (devuelve null, no se
+    // muestra nada) — "para iniciar", el resto se agrega cuando el usuario confirme esos casos.
+    const VIDRIO_DEDUCCION_POR_LADO = { p40: 35, p40_puerta: 55 };
+    function calcVidrioPanoFijo(state) {
+        if (state.type !== 'fachada_din') return null;
+        const ancho = parseInt(state.ancho) || 0, alto = parseInt(state.alto) || 0;
+        if (!ancho || !alto) return null;
+        if (state.fijacion === 'moldura') return { w: ancho - 7, h: alto - 7 };
+        const perLado = VIDRIO_DEDUCCION_POR_LADO[state.fijacion];
+        if (perLado === undefined) return null;
+        return { w: ancho - perLado * 2, h: alto - perLado * 2 };
+    }
+
     function generateSummary(id) {
         const summaryBox = document.getElementById('summary-' + id);
         if(!summaryBox) return;
@@ -1680,6 +1699,10 @@
             
             if(state.fijacion) specs.push(`Fijación: ${state.fijacion === 'p40_puerta' ? 'P40 de puerta' : state.fijacion === 'sin_marco' ? 'Sin Marco' : state.fijacion}`);
             if (state.union && (parseInt(state.panos) || 1) > 1) specs.push(`Unión: ${state.union}`);
+            {
+                const vidrioCalc = calcVidrioPanoFijo(state);
+                if (vidrioCalc) specs.push(`Vidrio a cortar: ${vidrioCalc.w} x ${vidrioCalc.h} mm`);
+            }
             
             if(specs.length > 0) {
                 html += `<div style="color:#555; font-size:12px; line-height:1.8;"> ${specs.join('<br> ')}</div>`;
