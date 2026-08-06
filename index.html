@@ -1856,9 +1856,30 @@
         if (s.color_perfil) specs.push('Acabado ' + (s.color_ral || s.color_perfil));
         return { titulo, specs: specs.join(' · ') };
     }
+    // Unidades cuyo "precio unit." se multiplica por una MEDIDA derivada del ítem (no por pieza).
+    const CZ_UNID_MEDIDA = ['m²', 'm2', 'pie²', 'pie2', 'ml', 'm', 'pie', 'pulg'];
+    // Cantidad facturable de un ítem según su unidad de medida:
+    //  - m²/pie²  → área (ancho × alto)        - ml/m/pie/pulg → longitud (ancho)
+    //  - und y demás → por pieza (= 1)
+    // Siempre × cantidad (varias piezas iguales). Deriva de las MISMAS medidas (ancho/alto en mm)
+    // que se muestran en la descripción — ej. una baranda de 10500 mm de ancho = 10.5 ml.
+    function czMedida(s) {
+        const cant = Number(s.cantidad) || 1, a = Number(s.ancho) || 0, al = Number(s.alto) || 0;
+        const u = s.unidadCliente || 'und';
+        let per = 1;
+        if (u === 'm²' || u === 'm2') per = (a * al) / 1e6;
+        else if (u === 'pie²' || u === 'pie2') per = (a * al) / 1e6 * 10.7639;
+        else if (u === 'ml' || u === 'm') per = a / 1000;
+        else if (u === 'pie') per = a / 1000 * 3.28084;
+        else if (u === 'pulg') per = a / 25.4;
+        return { qty: cant * per, per, esMedida: CZ_UNID_MEDIDA.includes(u), u };
+    }
+    // Formatea una cantidad de medida con hasta 2 decimales, sin ceros de más (10.5, 3, 2.75).
+    function czFmtQty(n) { return (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { maximumFractionDigits: 2 }); }
+    function czImporte(s) { return czMedida(s).qty * (Number(s.precioCliente) || 0); }
     function czTotales() {
         let subtotal = 0;
-        czIds().forEach(id => { const s = cardsState[id] || {}; subtotal += (Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0); });
+        czIds().forEach(id => { const s = cardsState[id] || {}; subtotal += czImporte(s); });
         const manual = (cotizCli.lineas || []).reduce((a, l) => a + (Number(l.cant) || 1) * (Number(l.precio) || 0), 0);
         const transporte = Number(cotizCli.transporte) || 0, instalacion = Number(cotizCli.instalacion) || 0;
         const base = subtotal + manual + transporte + instalacion;
@@ -1898,12 +1919,12 @@
         if (cur && !list.some(u => u.abreviatura === cur)) list = list.concat([{ nombre: cur, abreviatura: cur }]);
         return list.map(u => `<option value="${escAttr(u.abreviatura)}"${u.abreviatura === cur ? ' selected' : ''}>${czEsc(u.nombre)} (${czEsc(u.abreviatura)})</option>`).join('');
     }
-    window.czSetUnidad = function (id, v) { if (cardsState[id]) cardsState[id].unidadCliente = v; };
+    window.czSetUnidad = function (id, v) { if (cardsState[id]) cardsState[id].unidadCliente = v; czRender(); };
     // Llamado por el módulo cuando llegan/actualizan las unidades de Firestore: redibuja el overlay si está abierto.
     window.czRefreshUnidades = function () { const ov = document.getElementById('cotiz-cli-ov'); if (ov && ov.style.display === 'flex') czRender(); };
     function czRecalcUI() {
         const t = czTotales();
-        czIds().forEach(id => { const s = cardsState[id] || {}; const c = document.getElementById('cz-imp-' + id); if (c) c.textContent = czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0)); });
+        czIds().forEach(id => { const s = cardsState[id] || {}; const c = document.getElementById('cz-imp-' + id); if (c) c.textContent = czFmt(czImporte(s)); });
         (cotizCli.lineas || []).forEach((l, i) => { const c = document.getElementById('cz-mimp-' + i); if (c) c.textContent = czFmt((Number(l.cant) || 1) * (Number(l.precio) || 0)); });
         const box = document.getElementById('cz-tot'); if (!box) return;
         box.innerHTML =
@@ -1921,9 +1942,9 @@
             const dib = s.type === 'draw' ? '<span style="color:#8a93a0;font-size:11px">Fachada</span>' : renderSVG(id);
             return `<tr>
                 <td class="cz-dib">${dib}</td>
-                <td class="cz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}</div></td>
+                <td class="cz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="cz-sp">${czEsc(d.specs)}</div>` : ''}<div class="cz-med">${s.ancho || '—'} × ${s.alto || '—'} mm · cant ${Number(s.cantidad) || 1}${czMedida(s).esMedida ? ` · <b style="color:var(--artal-blue)">${czFmtQty(czMedida(s).qty)} ${czEsc(s.unidadCliente)}</b>` : ''}</div></td>
                 <td><input type="number" min="0" step="0.01" value="${s.precioCliente != null ? s.precioCliente : ''}" placeholder="Precio" oninput="czSetPrecio('${id}', this.value)"><select class="cz-unid" onchange="czSetUnidad('${id}', this.value)">${czUnidadOptions(s.unidadCliente)}</select></td>
-                <td class="cz-imp" id="cz-imp-${id}">${czFmt((Number(s.cantidad) || 1) * (Number(s.precioCliente) || 0))}</td>
+                <td class="cz-imp" id="cz-imp-${id}">${czFmt(czImporte(s))}</td>
             </tr>`;
         }).join('');
         const manuales = (cotizCli.lineas || []).map((l, i) => `<tr>
@@ -1968,9 +1989,11 @@
         let filas = ids.map(id => {
             const s = cardsState[id] || {}, d = czDesc(id);
             const cant = Number(s.cantidad) || 1, pu = Number(s.precioCliente) || 0;
+            const med = czMedida(s);
             const uni = s.unidadCliente && s.unidadCliente !== 'und' ? `<span class="pz-un">/${czEsc(s.unidadCliente)}</span>` : '';
+            const medLine = med.esMedida ? `<div class="pz-sp">Cantidad: ${czFmtQty(med.qty)} ${czEsc(s.unidadCliente)}</div>` : '';
             const dib = s.type === 'draw' ? '<div class="pz-nod">Fachada compuesta</div>' : renderSVG(id);
-            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`;
+            return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}${medLine}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(czImporte(s))}</td></tr>`;
         }).join('');
         (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; const uni = l.unidad && l.unidad !== 'und' ? `<span class="pz-un">/${czEsc(l.unidad)}</span>` : ''; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`; });
         if (t.transporte) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte</b></td><td>—</td><td>—</td><td>${czFmt(t.transporte)}</td><td>${czFmt(t.transporte)}</td></tr>`;
