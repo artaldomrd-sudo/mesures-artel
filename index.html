@@ -1881,11 +1881,14 @@
         let subtotal = 0;
         czIds().forEach(id => { const s = cardsState[id] || {}; subtotal += czImporte(s); });
         const manual = (cotizCli.lineas || []).reduce((a, l) => a + (Number(l.cant) || 1) * (Number(l.precio) || 0), 0);
+        // Transporte e instalación ahora es UN solo concepto. Se suman los dos campos por si un
+        // proyecto guardado antes tenía ambos por separado (compatibilidad).
         const transporte = Number(cotizCli.transporte) || 0, instalacion = Number(cotizCli.instalacion) || 0;
-        const base = subtotal + manual + transporte + instalacion;
+        const servicios = transporte + instalacion;
+        const base = subtotal + manual + servicios;
         let itbis = 0, total = base;
         if (cotizCli.itbisModo === 'agregar') { itbis = base * (Number(cotizCli.itbisPct) || 18) / 100; total = base + itbis; }
-        return { subtotal, manual, transporte, instalacion, base, itbis, total };
+        return { subtotal, manual, transporte, instalacion, servicios, base, itbis, total };
     }
     window.openCotizCliente = function () {
         if (!czIds().length) { alert('Agrega al menos un ítem al cuaderno antes de hacer la cotización.'); return; }
@@ -1920,6 +1923,9 @@
         return list.map(u => `<option value="${escAttr(u.abreviatura)}"${u.abreviatura === cur ? ' selected' : ''}>${czEsc(u.nombre)} (${czEsc(u.abreviatura)})</option>`).join('');
     }
     window.czSetUnidad = function (id, v) { if (cardsState[id]) cardsState[id].unidadCliente = v; czRender(); };
+    // Transporte e instalación combinados en un solo campo: se guarda todo en 'transporte' y se
+    // limpia 'instalacion' (que solo sobrevive en proyectos viejos por compatibilidad).
+    window.czSetServicios = function (v) { cotizCli.transporte = Number(v) || 0; cotizCli.instalacion = 0; czRecalcUI(); };
     // Llamado por el módulo cuando llegan/actualizan las unidades de Firestore: redibuja el overlay si está abierto.
     window.czRefreshUnidades = function () { const ov = document.getElementById('cotiz-cli-ov'); if (ov && ov.style.display === 'flex') czRender(); };
     function czRecalcUI() {
@@ -1929,8 +1935,7 @@
         const box = document.getElementById('cz-tot'); if (!box) return;
         box.innerHTML =
             `<div class="row"><span>Subtotal ítems</span><span>${czFmt(t.subtotal + t.manual)}</span></div>` +
-            (t.transporte ? `<div class="row"><span>Transporte</span><span>${czFmt(t.transporte)}</span></div>` : '') +
-            (t.instalacion ? `<div class="row"><span>Instalación</span><span>${czFmt(t.instalacion)}</span></div>` : '') +
+            (t.servicios ? `<div class="row"><span>Transporte e instalación</span><span>${czFmt(t.servicios)}</span></div>` : '') +
             (cotizCli.itbisModo === 'agregar' ? `<div class="row"><span>ITBIS (${Number(cotizCli.itbisPct) || 18}%)</span><span>${czFmt(t.itbis)}</span></div>` : '') +
             (cotizCli.itbisModo === 'incluido' ? `<div class="row" style="color:#8a93a0;font-size:11px"><span>ITBIS incluido en los precios</span><span></span></div>` : '') +
             `<div class="row grand"><span>TOTAL</span><span>${czFmt(t.total)}</span></div>`;
@@ -1960,8 +1965,7 @@
             </table>
             <button class="cz-add" onclick="czAddLinea()">+ Agregar línea manual</button>
             <div class="cz-cfg">
-                <div><label>Transporte (RD$)</label><input type="number" min="0" step="0.01" value="${cotizCli.transporte || ''}" oninput="czSetCfg('transporte',this.value)"></div>
-                <div><label>Instalación (RD$)</label><input type="number" min="0" step="0.01" value="${cotizCli.instalacion || ''}" oninput="czSetCfg('instalacion',this.value)"></div>
+                <div><label>Transporte e instalación (RD$)</label><input type="number" min="0" step="0.01" value="${((Number(cotizCli.transporte) || 0) + (Number(cotizCli.instalacion) || 0)) || ''}" oninput="czSetServicios(this.value)"></div>
                 <div><label>ITBIS</label><select onchange="czSetItbisModo(this.value)">
                     <option value="incluido"${cotizCli.itbisModo === 'incluido' ? ' selected' : ''}>Ya incluido en los precios</option>
                     <option value="agregar"${cotizCli.itbisModo === 'agregar' ? ' selected' : ''}>Agregar al final (18%)</option>
@@ -1996,8 +2000,7 @@
             return `<tr><td class="pz-dib">${dib}</td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(d.titulo)}</b>${d.specs ? `<div class="pz-sp">${czEsc(d.specs)}</div>` : ''}${medLine}</td><td>${s.ancho || '—'}</td><td>${s.alto || '—'}</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(czImporte(s))}</td></tr>`;
         }).join('');
         (cotizCli.lineas || []).forEach(l => { const cant = Number(l.cant) || 1, pu = Number(l.precio) || 0; if (!l.desc && !pu) return; const uni = l.unidad && l.unidad !== 'und' ? `<span class="pz-un">/${czEsc(l.unidad)}</span>` : ''; filas += `<tr><td class="pz-dib"></td><td class="pz-c">${cant}</td><td class="pz-d"><b>${czEsc(l.desc || '')}</b></td><td>—</td><td>—</td><td>${czFmt(pu)}${uni}</td><td>${czFmt(cant * pu)}</td></tr>`; });
-        if (t.transporte) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte</b></td><td>—</td><td>—</td><td>${czFmt(t.transporte)}</td><td>${czFmt(t.transporte)}</td></tr>`;
-        if (t.instalacion) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Instalación</b></td><td>—</td><td>—</td><td>${czFmt(t.instalacion)}</td><td>${czFmt(t.instalacion)}</td></tr>`;
+        if (t.servicios) filas += `<tr><td class="pz-dib"></td><td class="pz-c">1</td><td class="pz-d"><b>Transporte e instalación</b></td><td>—</td><td>—</td><td>${czFmt(t.servicios)}</td><td>${czFmt(t.servicios)}</td></tr>`;
         const html = `<style>
             .pz{font-family:'Arimo',sans-serif;color:#1e2a35;font-size:12px;line-height:1.5;background:#fff;width:100%;padding-bottom:6px;}
             .pz-top{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,#12314B 0%,#1C4E7A 55%,#2C6BA4 130%);color:#fff;padding:20px 24px;border-bottom:3px solid #F2C200;}
