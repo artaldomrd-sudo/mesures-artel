@@ -95,6 +95,38 @@
         <input type="number" id="c-monto" min="0" step="0.01">
         <label>Notas <span class="lbl-opt">— opcional</span></label>
         <textarea id="c-notas" style="min-height:46px"></textarea>
+
+        <!-- Enviar a Citrus (solo cuentas por pagar = factura de suplidor) -->
+        <div id="citrus-box" style="display:none;margin-top:12px;padding:12px;border:1.5px dashed var(--artal-blue);border-radius:10px;background:#f2f7fc;">
+            <label style="display:flex;align-items:center;gap:8px;margin:0 0 6px;"><input type="checkbox" id="c-citrus" onchange="toggleCitrus()" style="width:auto"> <b>Enviar también a Citrus</b> (crea la factura de suplidor fiscal)</label>
+            <div id="citrus-fields" style="display:none">
+                <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+                    <div style="flex:1;min-width:160px"><label>Proveedor en Citrus *</label>
+                        <select id="c-citrus-suplidor" onchange="citrusSuplidorElegido()"><option value="">— Cargar proveedores —</option></select></div>
+                    <button type="button" class="btn-cancelar" style="min-height:40px" onclick="cargarSuplidoresCitrus()">🔄 Cargar</button>
+                </div>
+                <div class="grid2" style="margin-top:8px">
+                    <div><label>NCF del proveedor</label><input type="text" id="c-ncf" placeholder="B11..."></div>
+                    <div><label>ITBIS incluido (RD$)</label><input type="number" id="c-itbis" min="0" step="0.01" value="0"></div>
+                </div>
+                <label>Tipo de gasto (DGII)</label>
+                <select id="c-tipogasto">
+                    <option value="01">01 — Gastos de personal</option>
+                    <option value="02" selected>02 — Trabajos, suministros y servicios</option>
+                    <option value="03">03 — Arrendamientos</option>
+                    <option value="04">04 — Gastos de activos fijos</option>
+                    <option value="05">05 — Gastos de representación</option>
+                    <option value="06">06 — Otras deducciones admitidas</option>
+                    <option value="07">07 — Gastos financieros</option>
+                    <option value="08">08 — Gastos extraordinarios</option>
+                    <option value="09">09 — Compras y gastos del costo de venta</option>
+                    <option value="10">10 — Adquisiciones de activos</option>
+                    <option value="11">11 — Gastos de seguros</option>
+                </select>
+                <p class="lbl-opt" style="font-size:12px;margin:6px 0 0">Se guarda en ARTAL siempre. Si marcas esto, además se crea en Citrus. El monto sin ITBIS se calcula como Total − ITBIS.</p>
+            </div>
+        </div>
+
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
             <button class="btn-guardar" onclick="guardar()">Guardar</button>
@@ -138,6 +170,39 @@
     const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
     function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
+    // ---------- Puente con Citrus (crear en ARTAL → empujar a Citrus) ----------
+    const FN_READ = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusRead';
+    const FN_WRITE = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusWrite';
+    const CITRUS_MONEDA_RD = 28965;   // MonedaId de RD$ en el Citrus de ARTAL (visto en la factura de prueba)
+    let citrusSuplidores = [];
+    async function citrusFetch(url, payload) {
+        const token = await auth.currentUser.getIdToken();
+        const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify(payload) });
+        return { httpStatus: r.status, cuerpo: await r.json().catch(() => null) };
+    }
+    window.toggleCitrus = function () {
+        document.getElementById('citrus-fields').style.display = document.getElementById('c-citrus').checked ? 'block' : 'none';
+    };
+    window.cargarSuplidoresCitrus = async function () {
+        const sel = document.getElementById('c-citrus-suplidor');
+        sel.innerHTML = '<option value="">Cargando…</option>';
+        try {
+            const { httpStatus, cuerpo } = await citrusFetch(FN_READ, { entidad: 'suplidor' });
+            if (httpStatus === 403) { sel.innerHTML = '<option value="">No autorizado (¿admin?)</option>'; return; }
+            const arr = Array.isArray(cuerpo && cuerpo.data) ? cuerpo.data : (cuerpo && cuerpo.data && Array.isArray(cuerpo.data.data) ? cuerpo.data.data : []);
+            citrusSuplidores = arr;
+            sel.innerHTML = '<option value="">— Elegir proveedor de Citrus —</option>' +
+                arr.map(s => `<option value="${s.Id != null ? s.Id : (s.SuplidorId != null ? s.SuplidorId : '')}">${esc(s.Nombre || s.NombreSuplidor || s.RazonSocial || ('Suplidor ' + (s.Id != null ? s.Id : '')))}</option>`).join('');
+            if (!arr.length) sel.innerHTML = '<option value="">(Citrus no devolvió proveedores)</option>';
+        } catch (e) { sel.innerHTML = '<option value="">Error: ' + esc(e.message || e) + '</option>'; }
+    };
+    window.citrusSuplidorElegido = function () {
+        const sel = document.getElementById('c-citrus-suplidor');
+        const txt = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+        const inp = document.getElementById('c-tercero');
+        if (sel.value && txt && !inp.value.trim()) inp.value = txt;   // autocompleta el nombre si está vacío
+    };
+
     let cuentas = [], tab = 'cobrar', editId = null, abonoId = null;
     const params = new URLSearchParams(location.search); if (params.get('tab') === 'pagar') tab = 'pagar';
 
@@ -177,8 +242,17 @@
         ['c-tercero', 'c-ref', 'c-monto', 'c-notas'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('c-emision').value = hoyISO();
         document.getElementById('c-venc').value = '';
+        resetCitrusBox(tab === 'pagar');
         document.getElementById('modal').classList.add('show');
     };
+    // El bloque Citrus solo aplica a cuentas por pagar nuevas (factura de suplidor).
+    function resetCitrusBox(mostrar) {
+        document.getElementById('citrus-box').style.display = mostrar ? 'block' : 'none';
+        document.getElementById('c-citrus').checked = false;
+        document.getElementById('citrus-fields').style.display = 'none';
+        document.getElementById('c-ncf').value = '';
+        document.getElementById('c-itbis').value = '0';
+    }
     window.editar = function (id) {
         const c = cuentas.find(x => x.id === id); if (!c) return;
         editId = id;
@@ -191,6 +265,7 @@
         document.getElementById('c-venc').value = c.vencimiento || '';
         document.getElementById('c-monto').value = c.monto != null ? c.monto : '';
         document.getElementById('c-notas').value = c.notas || '';
+        resetCitrusBox(false);
         document.getElementById('modal').classList.add('show');
     };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
@@ -205,9 +280,40 @@
             monto, notas: document.getElementById('c-notas').value.trim(),
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
+        // ¿Empujar a Citrus? (solo cuenta por pagar nueva con la casilla marcada)
+        const enviarCitrus = tab === 'pagar' && !editId && document.getElementById('c-citrus').checked;
+        let citrusExtra = {};
+        if (enviarCitrus) {
+            const suplidorId = Number(document.getElementById('c-citrus-suplidor').value);
+            if (!suplidorId) { alert('Elige el proveedor de Citrus (o desmarca "Enviar a Citrus").'); return; }
+            const itbis = n2(document.getElementById('c-itbis').value);
+            const base = Math.max(0, monto - itbis);
+            const fechaISO = (document.getElementById('c-emision').value || hoyISO()) + 'T00:00:00';
+            const body = {
+                SuplidorId: suplidorId, Fecha: fechaISO, Monto: base, Impuesto: itbis,
+                NCF: document.getElementById('c-ncf').value.trim(),
+                TipoGasto: document.getElementById('c-tipogasto').value,
+                Tasa: 1, MonedaId: CITRUS_MONEDA_RD, Estatus: 'Facturada'
+            };
+            const btn = document.querySelector('#modal .btn-guardar'); if (btn) { btn.disabled = true; btn.textContent = 'Enviando a Citrus…'; }
+            try {
+                const { httpStatus, cuerpo } = await citrusFetch(FN_WRITE, { entidad: 'factura-suplidor', body });
+                if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+                const okCitrus = cuerpo && cuerpo.ok && cuerpo.status >= 200 && cuerpo.status < 300;
+                if (httpStatus === 403) { alert('Citrus: no autorizado (¿tu usuario es admin?). Se guardará solo en ARTAL.'); }
+                else if (!okCitrus) {
+                    // Mostramos la respuesta de Citrus para afinar los campos (igual que el flujo de cliente).
+                    alert('Citrus no aceptó la factura (se guardará igual en ARTAL).\n\nRespuesta de Citrus:\n' + JSON.stringify((cuerpo && (cuerpo.data || cuerpo)) || {}, null, 2).slice(0, 800));
+                } else {
+                    const cid = cuerpo.data && (cuerpo.data.Id || cuerpo.data.id || (cuerpo.data.data && cuerpo.data.data.Id));
+                    citrusExtra = { citrusId: cid || null, citrusSync: true, citrusNCF: body.NCF, citrusSyncAt: serverTimestamp() };
+                    alert('✅ Enviado a Citrus' + (cid ? ' (Id ' + cid + ')' : '') + ' y guardado en ARTAL.');
+                }
+            } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } alert('No se pudo llamar a Citrus (se guarda solo en ARTAL): ' + (e.message || e)); }
+        }
         try {
             if (editId) await updateDoc(doc(db, 'contaCuentas', editId), datos);
-            else await addDoc(collection(db, 'contaCuentas'), { ...datos, tipo: tab, abonos: [], creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            else await addDoc(collection(db, 'contaCuentas'), { ...datos, ...citrusExtra, tipo: tab, abonos: [], creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
             cerrar();
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
     };

@@ -553,10 +553,10 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
     }
 });
 
-// Entidades que se permite CREAR (POST /v5/{entidad}) desde el panel. Empezamos solo con cliente
-// (prueba de escritura F1b); se irá ampliando (item, suplidor, factura-cliente...) a medida que
-// se conecten flujos reales.
-const CITRUS_WRITE_ENTIDADES = new Set(['cliente']);
+// Entidades que se permite CREAR (POST /v5/{entidad}) desde el panel. Se amplía a medida que se
+// conectan flujos reales. `suplidor` + `factura-suplidor` habilitan crear una cuenta por pagar en
+// ARTAL y empujarla a Citrus (el ERP fiscal).
+const CITRUS_WRITE_ENTIDADES = new Set(['cliente', 'suplidor', 'factura-suplidor']);
 
 // Crea un registro en Citrus (POST). Solo admin. Recibe { entidad, body } y devuelve la respuesta
 // de Citrus tal cual (status + JSON) para inspeccionarla.
