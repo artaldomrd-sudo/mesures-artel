@@ -119,6 +119,10 @@
             <div><label>Método</label><select id="m-metodo"><option>Efectivo</option><option>Transferencia</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select></div>
         </div>
         <div class="grid2">
+            <div><label>Monto real pagado (RD$) <span class="lbl-opt">— si difiere</span></label><input type="number" id="m-pagado" min="0" step="0.01" placeholder="Ej. con 3% de descuento por pronto pago"></div>
+            <div><label>Fecha de pago <span class="lbl-opt">— opcional</span></label><input type="date" id="m-fechapago"></div>
+        </div>
+        <div class="grid2">
             <div><label>Cuenta bancaria <span class="lbl-opt">— opcional</span></label><select id="m-cuenta"><option value="">—</option></select></div>
             <div><label>Centro de costo / obra <span class="lbl-opt">— opcional</span></label><input type="text" id="m-centro" list="centros-list" placeholder="Obra o área"></div>
         </div>
@@ -231,6 +235,8 @@
         if (f.rnc) document.getElementById('m-rnc').value = String(f.rnc).replace(/\D/g, '');
         if (f.ncf) document.getElementById('m-ncf').value = String(f.ncf).trim().toUpperCase();
         if (f.fecha && /^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) document.getElementById('m-fecha').value = f.fecha;
+        if (Number(f.montoPagado)) document.getElementById('m-pagado').value = Number(f.montoPagado);
+        if (f.fechaPago && /^\d{4}-\d{2}-\d{2}$/.test(f.fechaPago)) document.getElementById('m-fechapago').value = f.fechaPago;
         scannedFile = file; // se sube como comprobante al guardar
     }
     document.getElementById('scan-file').addEventListener('change', async (ev) => {
@@ -313,7 +319,7 @@
     window.abrir = function (tipo) {
         editId = null; document.getElementById('modal-title').textContent = tipo === 'ingreso' ? 'Nuevo ingreso' : 'Nuevo gasto';
         document.getElementById('m-tipo').value = tipo;
-        ['m-concepto', 'm-categoria', 'm-monto', 'm-itbis', 'm-centro', 'm-tercero', 'm-rnc', 'm-ncf', 'm-notas', 'm-foto'].forEach(id => document.getElementById(id).value = '');
+        ['m-concepto', 'm-categoria', 'm-monto', 'm-itbis', 'm-pagado', 'm-fechapago', 'm-centro', 'm-tercero', 'm-rnc', 'm-ncf', 'm-notas', 'm-foto'].forEach(id => document.getElementById(id).value = '');
         setStatus('', ''); scannedFile = null;
         document.getElementById('m-fecha').value = hoyISO();
         document.getElementById('m-metodo').value = 'Transferencia';
@@ -329,6 +335,8 @@
         document.getElementById('m-categoria').value = m.categoria || '';
         document.getElementById('m-monto').value = m.monto != null ? m.monto : '';
         document.getElementById('m-itbis').value = m.itbis != null ? m.itbis : '';
+        document.getElementById('m-pagado').value = m.montoPagado != null ? m.montoPagado : '';
+        document.getElementById('m-fechapago').value = m.fechaPago || '';
         document.getElementById('m-metodo').value = m.metodo || 'Transferencia';
         document.getElementById('m-cuenta').value = m.cuentaBancoId || '';
         document.getElementById('m-centro').value = m.centroCosto || '';
@@ -351,6 +359,8 @@
             concepto, categoria: document.getElementById('m-categoria').value.trim(),
             monto: n2(document.getElementById('m-monto').value),
             itbis: n2(document.getElementById('m-itbis').value),
+            montoPagado: n2(document.getElementById('m-pagado').value),
+            fechaPago: document.getElementById('m-fechapago').value || '',
             metodo: document.getElementById('m-metodo').value,
             cuentaBancoId: document.getElementById('m-cuenta').value, cuentaBancoNombre: c ? c.alias : '',
             centroCosto: document.getElementById('m-centro').value.trim(),
@@ -430,6 +440,9 @@
                 ${m.categoria ? `<span class="b cat">${esc(m.categoria)}</span>` : ''}
                 <span class="b met">${esc(m.metodo || '')}</span>
                 <div class="mv-monto ${t}">${t === 'ingreso' ? '+ ' : '− '}${fmt(m.monto)}${m.itbis ? ` <span class="b cat" style="font-weight:normal">ITBIS ${fmt0(m.itbis)}</span>` : ''}</div>
+                ${(m.montoPagado && m.montoPagado !== m.monto)
+                    ? `<div class="l" style="color:#1e8f4e;font-weight:bold">Pagado: ${fmt(m.montoPagado)}${m.fechaPago ? ' el ' + fmtFecha(m.fechaPago) : ''}${m.monto > m.montoPagado ? ` · Descuento ${fmt0(m.monto - m.montoPagado)} (${(((m.monto - m.montoPagado) / m.monto) * 100).toFixed(1)}%)` : ''}</div>`
+                    : (m.fechaPago ? `<div class="l">Pagado el ${fmtFecha(m.fechaPago)}</div>` : '')}
                 ${sub ? `<div class="l">${sub}</div>` : ''}
                 ${comp}
                 ${m.notas ? `<div class="l">“${esc(m.notas)}”</div>` : ''}

@@ -394,6 +394,8 @@ Reglas:
 - subtotal: total menos itbis. Si no hay itbis desglosado, subtotal = total.
 - concepto: descripción corta (3 a 6 palabras) de qué se compró, en español.
 - categoria: elige la que mejor aplique de esta lista EXACTA, o "Otro gasto": ${CATEGORIAS_GASTO}.
+- montoPagado: SOLO si el documento es un RECIBO / COMPROBANTE DE PAGO o muestra el monto que se pagó REALMENTE (puede ser menor al total por un descuento por pronto pago, ej. 3% si se paga en 15 días). Solo el número. 0 si es una factura sin evidencia de pago.
+- fechaPago: la fecha en que se realizó el pago (AAAA-MM-DD), si el documento la muestra (recibo/comprobante). Vacío si no aparece.
 
 Si un campo no aparece o no estás seguro, deja el string vacío o 0. NUNCA inventes un RNC, un NCF ni un monto. Devuelve SOLO el JSON, sin texto adicional.`;
 
@@ -434,9 +436,10 @@ exports.extraerFactura = onRequest({ secrets: [anthropicKey], cors: true }, asyn
                             properties: {
                                 proveedor: { type: 'string' }, rnc: { type: 'string' }, ncf: { type: 'string' },
                                 fecha: { type: 'string' }, subtotal: { type: 'number' }, itbis: { type: 'number' },
-                                total: { type: 'number' }, concepto: { type: 'string' }, categoria: { type: 'string' }
+                                total: { type: 'number' }, concepto: { type: 'string' }, categoria: { type: 'string' },
+                                montoPagado: { type: 'number' }, fechaPago: { type: 'string' }
                             },
-                            required: ['proveedor', 'rnc', 'ncf', 'fecha', 'subtotal', 'itbis', 'total', 'concepto', 'categoria'],
+                            required: ['proveedor', 'rnc', 'ncf', 'fecha', 'subtotal', 'itbis', 'total', 'concepto', 'categoria', 'montoPagado', 'fechaPago'],
                             additionalProperties: false
                         }
                     }
@@ -589,3 +592,5 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (r
         res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
     }
 });
+
+// redeploy 1786033133
