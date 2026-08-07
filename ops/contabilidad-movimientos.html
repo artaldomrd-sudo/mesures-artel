@@ -362,7 +362,18 @@
             let id = editId;
             if (editId) await updateDoc(doc(db, 'contaMovimientos', editId), datos);
             else { const r = await addDoc(collection(db, 'contaMovimientos'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); id = r.id; }
-            if (file) { const comprobante = await subirComprobante(file, id); await updateDoc(doc(db, 'contaMovimientos', id), { comprobante }); }
+            // El comprobante (foto/PDF) se sube DESPUÉS y es BEST-EFFORT: si falla (ej. reglas de
+            // Storage), el movimiento YA quedó guardado — no se debe reportar "no se pudo guardar"
+            // ni perder el registro. Solo se avisa que el comprobante no subió.
+            if (file) {
+                try {
+                    const comprobante = await subirComprobante(file, id);
+                    await updateDoc(doc(db, 'contaMovimientos', id), { comprobante });
+                } catch (e2) {
+                    console.error('comprobante', e2);
+                    alert('El movimiento se guardó ✅, pero el comprobante (foto/PDF) no se pudo subir: ' + (e2 && e2.message ? e2.message : e2) + '\n\nPuedes adjuntarlo luego editando el movimiento.');
+                }
+            }
             cerrar();
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
         finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }

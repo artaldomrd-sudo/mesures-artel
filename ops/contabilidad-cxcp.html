@@ -83,6 +83,11 @@
 <div class="modal-overlay" id="modal">
     <div class="modal-box">
         <h2 id="modal-title">Nueva cuenta</h2>
+        <div id="scan-wrap" style="margin:0 0 12px">
+            <button type="button" class="btn-cancelar" style="width:100%;min-height:44px;border-color:var(--artal-blue) !important;color:var(--artal-blue)" onclick="document.getElementById('scan-file').click()">📷 Capturar factura con IA (foto o PDF)</button>
+            <input type="file" id="scan-file" accept="image/*,application/pdf" style="display:none">
+            <div id="scan-status" class="lbl-opt" style="font-size:12.5px;margin-top:6px;display:none"></div>
+        </div>
         <label id="lbl-tercero">Cliente *</label>
         <input type="text" id="c-tercero" placeholder="Nombre">
         <label>Referencia / factura <span class="lbl-opt">— opcional</span></label>
@@ -206,6 +211,67 @@
         const inp = document.getElementById('c-tercero');
         if (sel.value && txt && !inp.value.trim()) inp.value = txt;   // autocompleta el nombre si está vacío
     };
+
+    // ---------- Captura de factura con IA (misma Cloud Function que Gastos) ----------
+    const FN_EXTRAER = 'https://us-central1-artal-operaciones.cloudfunctions.net/extraerFactura';
+    function scanStatus(cls, txt) {
+        const st = document.getElementById('scan-status');
+        st.style.display = txt ? 'block' : 'none';
+        st.style.color = cls === 'err' ? '#c0392b' : (cls === 'ok' ? '#1e8f4e' : '#667');
+        st.textContent = txt;
+    }
+    function fileABase64(file) {
+        return new Promise((resolve, reject) => {
+            const rd = new FileReader();
+            rd.onload = () => { const s = String(rd.result); resolve(s.slice(s.indexOf(',') + 1)); };
+            rd.onerror = () => reject(new Error('No se pudo leer el archivo')); rd.readAsDataURL(file);
+        });
+    }
+    function comprimirImg(file) {
+        return new Promise((resolve) => {
+            if (!file || !/^image\//.test(file.type)) { resolve(file); return; }
+            const url = URL.createObjectURL(file); const img = new Image();
+            img.onload = () => {
+                const max = 1600; let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+                if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
+                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h); URL.revokeObjectURL(url);
+                c.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+            img.src = url;
+        });
+    }
+    function aplicarFacturaCxP(f) {
+        if (f.proveedor) document.getElementById('c-tercero').value = f.proveedor;
+        const total = Number(f.total) || Number(f.subtotal) || 0;
+        if (total) document.getElementById('c-monto').value = total;
+        if (f.fecha && /^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) document.getElementById('c-emision').value = f.fecha;
+        const refEl = document.getElementById('c-ref');
+        if (!refEl.value.trim() && f.concepto) refEl.value = f.concepto;
+        // Datos fiscales → si hay NCF, es factura formal: se activa el bloque de Citrus y se llena.
+        if (document.getElementById('citrus-box').style.display !== 'none') {
+            if (f.ncf) { document.getElementById('c-citrus').checked = true; window.toggleCitrus(); document.getElementById('c-ncf').value = String(f.ncf).trim().toUpperCase(); }
+            if (Number(f.itbis)) document.getElementById('c-itbis').value = Number(f.itbis);
+        }
+    }
+    document.getElementById('scan-file').addEventListener('change', async (ev) => {
+        const file = (ev.target.files || [])[0]; ev.target.value = '';
+        if (!file) return;
+        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+        scanStatus('work', '🔍 Leyendo la factura…');
+        try {
+            const blob = esPdf ? file : await comprimirImg(file).catch(() => file);
+            const data = await fileABase64(blob);
+            const attachment = esPdf ? { tipo: 'pdf', data } : { tipo: 'image', media_type: (blob === file ? (file.type || 'image/jpeg') : 'image/jpeg'), data };
+            const r = await fetch(FN_EXTRAER, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ attachment }) });
+            if (!r.ok) throw new Error('El lector no respondió (' + r.status + ')');
+            const resp = await r.json();
+            if (!resp || !resp.factura) throw new Error('No se pudieron leer los datos');
+            aplicarFacturaCxP(resp.factura);
+            scanStatus('ok', '✅ Datos leídos. Revísalos y corrige lo que haga falta antes de guardar.');
+        } catch (e) { scanStatus('err', '⚠️ ' + (e && e.message ? e.message : 'No se pudo escanear') + '. Escribe los datos a mano.'); }
+    });
 
     let cuentas = [], tab = 'cobrar', editId = null, abonoId = null;
     const params = new URLSearchParams(location.search); if (params.get('tab') === 'pagar') tab = 'pagar';
