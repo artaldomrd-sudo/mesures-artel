@@ -135,9 +135,24 @@
     const EST_LABEL = { cotizada: 'Cotizada', en_proceso: 'En proceso', terminada: 'Terminada' };
 
     let obras = [], editId = null;
+    let obrasReales = [];   // obras derivadas de los pedidos reales (orders), agrupadas por cliente+obra
+    const normKey = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const claveObra = (cliente, obra) => normKey(cliente) + '|' + normKey(obra);
 
     onSnapshot(collection(db, 'produccionObras'), (s) => { obras = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
         (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + esc(err.message) + '</p>'; });
+    // Los pedidos ya registrados (orders) se listan solos como obras a costear — sin re-escribirlos.
+    onSnapshot(collection(db, 'orders'), (s) => {
+        const map = new Map();
+        s.docs.forEach(d => {
+            const o = d.data(); const cli = (o.cliente || '').trim(), ob = (o.obra || '').trim();
+            if (!cli && !ob) return;
+            const key = claveObra(cli, ob);
+            if (!map.has(key)) map.set(key, { cliente: cli, obra: ob, key });
+        });
+        obrasReales = [...map.values()];
+        render();
+    }, () => {});
     onSnapshot(collection(db, 'clientes'), (s) => {
         const nombres = s.docs.map(d => (d.data().nombre || '')).filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'));
         document.getElementById('clientes-list').innerHTML = nombres.map(n => `<option value="${esc(n)}"></option>`).join('');
@@ -146,10 +161,21 @@
     const sumEst = (o) => (o.costos || []).reduce((a, c) => a + n2(c.estimado), 0);
     const sumReal = (o) => (o.costos || []).reduce((a, c) => a + n2(c.real), 0);
 
+    // Une las obras ya costeadas (produccionObras) con las obras reales de los pedidos que aún no
+    // tienen costeo (aparecen "vacías" para llenar). La clave cliente|obra evita duplicar.
+    function obrasMerged() {
+        const byKey = new Map();
+        obras.forEach(o => byKey.set(o.key || claveObra(o.cliente, o.obra), o));
+        const virtuales = obrasReales
+            .filter(x => !byKey.has(x.key))
+            .map(x => ({ _virtual: true, key: x.key, cliente: x.cliente, obra: x.obra, estado: 'cotizada', precioVenta: 0, costos: [] }));
+        return obras.concat(virtuales);
+    }
+
     function render() {
         const fe = document.getElementById('f-estado').value;
         const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
-        let lista = obras.slice();
+        let lista = obrasMerged();
         if (fe) lista = lista.filter(o => (o.estado || 'cotizada') === fe);
         if (term) lista = lista.filter(o => [o.obra, o.cliente].some(v => String(v || '').toLowerCase().includes(term)));
         lista.sort((a, b) => String(b.fechaCreacion && b.fechaCreacion.seconds || 0) - String(a.fechaCreacion && a.fechaCreacion.seconds || 0) || String(a.obra || '').localeCompare(String(b.obra || ''), 'es'));
@@ -164,7 +190,7 @@
         ].map(([c, n, l]) => `<div class="kpi"><div class="${c}">${n}</div><div class="l">${l}</div></div>`).join('');
 
         const cont = document.getElementById('lista');
-        if (!obras.length) { cont.innerHTML = '<p class="empty">Aún no hay obras. Crea la primera con “+ Nueva obra”.</p>'; return; }
+        if (!obras.length && !obrasReales.length) { cont.innerHTML = '<p class="empty">Aún no hay obras. Aparecerán solas al llegar pedidos, o crea una con “+ Nueva obra”.</p>'; return; }
         if (!lista.length) { cont.innerHTML = '<p class="empty">Sin obras para el filtro.</p>'; return; }
         cont.innerHTML = lista.map(cardHTML).join('');
     }
@@ -176,10 +202,10 @@
         const margen = venta - costo;
         const margenPct = venta > 0 ? Math.round(margen / venta * 100) : null;
         const sobre = cReal > 0 && cEst > 0 && cReal > cEst;
-        return `<div class="order-card ob-card ${est}" onclick="editar('${o.id}')">
+        return `<div class="order-card ob-card ${est}" onclick="${o._virtual ? `abrirVirtual('${esc(o.key)}')` : `editar('${o.id}')`}">
             <div class="ob-head">
                 <b>${esc(o.obra) || 'Sin nombre'}${o.cliente ? ' — <span style="color:#667;font-weight:normal">' + esc(o.cliente) + '</span>' : ''}</b>
-                <span class="est-badge ${est}">${esc(EST_LABEL[est] || est)}</span>
+                <span class="est-badge ${est}">${o._virtual ? 'Sin costear' : esc(EST_LABEL[est] || est)}</span>
             </div>
             <div class="ob-metrics">
                 <span class="m">Venta<br><b class="ven">${fmt0(venta)}</b></span>
@@ -232,6 +258,20 @@
         document.getElementById('btn-del').style.display = 'none';
         recalc(); document.getElementById('modal').classList.add('show');
     };
+    // Abre el modal para costear una obra REAL (de un pedido) que aún no tiene costeo: pre-llena
+    // cliente/obra, deja los costos vacíos. Al guardar se crea su doc de costeo.
+    window.abrirVirtual = function (key) {
+        const x = obrasReales.find(o => o.key === key); if (!x) return;
+        editId = null; document.getElementById('modal-title').textContent = 'Costear obra';
+        document.getElementById('o-obra').value = x.obra || '';
+        document.getElementById('o-cliente').value = x.cliente || '';
+        document.getElementById('o-estado').value = 'cotizada';
+        document.getElementById('o-venta').value = '';
+        document.getElementById('o-notas').value = '';
+        document.getElementById('costos-body').innerHTML = filaCostoHTML();
+        document.getElementById('btn-del').style.display = 'none';
+        recalc(); document.getElementById('modal').classList.add('show');
+    };
     window.editar = function (id) {
         const o = obras.find(x => x.id === id); if (!o) return;
         editId = id; document.getElementById('modal-title').textContent = 'Editar obra';
@@ -249,8 +289,10 @@
     window.guardar = async function () {
         const obra = document.getElementById('o-obra').value.trim();
         if (!obra) { alert('Escribe el nombre de la obra.'); return; }
+        const cliente = document.getElementById('o-cliente').value.trim();
         const datos = {
-            obra, cliente: document.getElementById('o-cliente').value.trim(),
+            obra, cliente,
+            key: claveObra(cliente, obra),   // clave estable para no duplicar con la obra real del pedido
             estado: document.getElementById('o-estado').value,
             precioVenta: n2(document.getElementById('o-venta').value),
             costos: leerCostos(),
