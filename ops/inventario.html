@@ -33,6 +33,18 @@
     .item-precios .margen { color: #999; }
     .inline-form { display: none; margin-top: 10px; padding: 10px; background: var(--artal-light); border-radius: 8px; }
     .inline-form.show { display: block; }
+    /* Secciones colapsables */
+    .cat-block { margin-bottom: 10px; }
+    .cat-card { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; background: #fff; border: none; border-left: 5px solid var(--artal-blue); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; cursor: pointer; font-family: 'Arimo'; text-align: left; min-height: 54px; }
+    .cat-card:hover { background: #f7fafd; }
+    .cat-card .cat-name { font-weight: bold; color: var(--artal-blue); font-size: 16px; }
+    .cat-card .cat-meta { font-size: 12.5px; color: #8a93a0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+    .cat-low { color: #e74c3c; font-weight: bold; }
+    .cat-arrow { font-size: 13px; color: var(--artal-blue); }
+    .cat-body { display: none; padding: 8px 0 2px; }
+    .cat-block.open .cat-body { display: block; }
+    .btn-editar { background: var(--artal-blue); color: #fff; }
+    .grid2-inv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -210,6 +222,7 @@
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
                 ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
+                ${esAdmin ? `<button class="btn-editar" onclick="abrirEditar('${item.id}')">✏ Editar</button>` : ''}
                 ${esAdmin ? `<button class="btn-eliminar" onclick="abrirEliminar('${item.id}')">🗑 Eliminar</button>` : ''}
             </div>
             <div class="inline-form" id="tomar-${item.id}">
@@ -229,6 +242,20 @@
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('agregar-${item.id}')">Cancelar</button>
                     <button class="btn-agregar" onclick="confirmarAgregar('${item.id}')">Confirmar</button>
+                </div>
+            </div>
+            <div class="inline-form" id="editar-${item.id}">
+                <label>Nombre del ítem</label>
+                <input type="text" id="editar-tipo-${item.id}" value="${esc(item.tipo || '')}">
+                <label>Color / variante <span style="font-weight:normal;color:#999">(opcional)</span></label>
+                <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
+                <div class="grid2-inv" style="margin-top:8px">
+                    <div><label>Unidad</label><input type="text" id="editar-unidad-${item.id}" value="${esc(item.unidad || '')}"></div>
+                    <div><label>Categoría</label><select id="editar-cat-${item.id}">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
+                </div>
+                <div class="row-actions">
+                    <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
+                    <button class="btn-editar" onclick="confirmarEditar('${item.id}')">Guardar cambios</button>
                 </div>
             </div>
             <div class="inline-form" id="precio-${item.id}">
@@ -252,20 +279,36 @@
         </div>`;
     }
 
+    let catAbiertas = new Set();   // secciones desplegadas (se mantienen al refrescar datos)
+    window.toggleCat = function (key) {
+        if (catAbiertas.has(key)) catAbiertas.delete(key); else catAbiertas.add(key);
+        render();
+    };
+
     function render() {
         const term = document.getElementById('search-input').value.trim().toLowerCase();
+        const buscando = !!term;
         const filtered = allItems.filter(it => {
             if (!term) return true;
             return ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term);
         });
 
         const container = document.getElementById('categorias-container');
+        // Cada categoría es un cuadro colapsable: clic para desplegar su lista. Al buscar, las que
+        // tienen resultados se abren solas.
         container.innerHTML = todasLasCategorias().map(cat => {
             const items = filtered.filter(it => it.categoria === cat.key);
+            const abierta = buscando ? items.length > 0 : catAbiertas.has(cat.key);
+            const sinStock = items.filter(it => (Number(it.cantidad) || 0) <= 0).length;
             return `
-            <h2 class="section-title">${esc(cat.label)}</h2>
-            <div id="cat-list-${esc(cat.key)}">
-                ${items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>'}
+            <div class="cat-block ${abierta ? 'open' : ''}">
+                <button class="cat-card" onclick="toggleCat('${esc(cat.key)}')">
+                    <span class="cat-name">${esc(cat.label)}</span>
+                    <span class="cat-meta">${items.length} ítem(s)${sinStock ? ` · <span class="cat-low">${sinStock} sin stock</span>` : ''} <span class="cat-arrow">${abierta ? '▾' : '▸'}</span></span>
+                </button>
+                <div class="cat-body">
+                    ${items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>'}
+                </div>
             </div>`;
         }).join('');
 
@@ -399,6 +442,22 @@
         cerrarTodosLosForms();
         const el = document.getElementById('precio-' + id);
         if (el) el.classList.add('show');
+    };
+    window.abrirEditar = function (id) {
+        cerrarTodosLosForms();
+        const el = document.getElementById('editar-' + id);
+        if (el) el.classList.add('show');
+    };
+    window.confirmarEditar = async function (id) {
+        const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
+        if (!tipo) { alert('El nombre no puede quedar vacío.'); return; }
+        const color = (document.getElementById('editar-color-' + id).value || '').trim();
+        const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
+        const categoria = document.getElementById('editar-cat-' + id).value;
+        try {
+            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria });
+            cerrarForm('editar-' + id);
+        } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.abrirEliminar = function (id) {
         cerrarTodosLosForms();
