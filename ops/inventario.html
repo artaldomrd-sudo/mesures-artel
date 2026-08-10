@@ -149,6 +149,8 @@
         <input type="text" id="nuevo-tipo" placeholder="Ej: Riel superior 2 vías">
         <label>Referencia de producto <span style="font-weight:normal;color:#999">(opcional)</span></label>
         <input type="text" id="nuevo-referencia" placeholder="Ej: código / SKU del proveedor">
+        <label>🏭 Proveedor <span style="font-weight:normal;color:#999">(confidencial · de dónde viene el material)</span></label>
+        <input type="text" id="nuevo-proveedor" placeholder="Ej: Alucufel, Vidriera X…">
         <label id="nuevo-color-label">Color</label>
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
         <label>Unidad</label>
@@ -355,6 +357,7 @@
                 <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
             </div>
             ${item.referencia ? `<div class="item-ref">Ref: ${esc(item.referencia)}</div>` : ''}
+            ${esAdmin && item.proveedor ? `<div class="item-ref">🏭 Proveedor: ${esc(item.proveedor)}</div>` : ''}
             ${sinStock ? `<div class="stock-warn out">⛔ Sin stock${min ? ` · mínimo ${min} ${esc(item.unidad)}` : ''}</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo · mínimo ${min} ${esc(item.unidad)}</div>` : '')}
             ${esAdmin ? `
             <div class="item-precios">
@@ -363,10 +366,10 @@
                 ${margenPct !== null ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
             </div>` : ''}
             ${fotosThumbsHTML(item.fotos, { coleccion: 'inventario', id: item.id, puedeBorrar: esAdmin })}
-            ${fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' })}
+            ${esAdmin ? fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' }) : ''}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
-                <button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>
+                ${esAdmin ? `<button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>` : ''}
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
                 ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
                 ${esAdmin ? `<button class="btn-editar" onclick="abrirEditar('${item.id}')">✏ Editar</button>` : ''}
@@ -403,6 +406,8 @@
                 <input type="text" id="editar-tipo-${item.id}" value="${esc(item.tipo || '')}">
                 <label>Referencia de producto <span style="font-weight:normal;color:#999">(opcional)</span></label>
                 <input type="text" id="editar-ref-${item.id}" value="${esc(item.referencia || '')}" placeholder="Ej: código / SKU del proveedor">
+                <label>🏭 Proveedor <span style="font-weight:normal;color:#999">(confidencial)</span></label>
+                <input type="text" id="editar-prov-${item.id}" value="${esc(item.proveedor || '')}" placeholder="Ej: Alucufel, Vidriera X…">
                 <label>Color / variante <span style="font-weight:normal;color:#999">(opcional)</span></label>
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
                 <div class="grid2-inv" style="margin-top:8px">
@@ -805,6 +810,7 @@
         const categoria = document.getElementById('nuevo-categoria').value;
         const tipo = document.getElementById('nuevo-tipo').value.trim();
         const referencia = document.getElementById('nuevo-referencia').value.trim();
+        const proveedor = document.getElementById('nuevo-proveedor').value.trim();
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
         const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
@@ -818,12 +824,13 @@
         const subgrupo2 = hijosNuevo ? (document.getElementById('nuevo-subgrupo2').value || null) : null;
         try {
             await addDoc(collection(db, 'inventario'), {
-                tipo, referencia: referencia || null, color: color || null,
+                tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null,
                 categoria, subgrupo, subgrupo2, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
             document.getElementById('nuevo-referencia').value = '';
+            document.getElementById('nuevo-proveedor').value = '';
             document.getElementById('nuevo-color').value = '';
             document.getElementById('nuevo-cantidad').value = '0';
             document.getElementById('nuevo-minimo').value = '0';
@@ -878,6 +885,7 @@
         const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
         if (!tipo) { alert('El nombre no puede quedar vacío.'); return; }
         const referencia = (document.getElementById('editar-ref-' + id).value || '').trim();
+        const proveedor = (document.getElementById('editar-prov-' + id).value || '').trim();
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
         const categoria = document.getElementById('editar-cat-' + id).value;
@@ -889,7 +897,7 @@
         const sg2El = document.getElementById('editar-sg2-' + id);
         const subgrupo2 = hijosEd ? ((sg2El && sg2El.value) || null) : null;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
