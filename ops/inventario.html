@@ -178,15 +178,15 @@
     // Sub-secciones DENTRO de una categoría (dividen sus ítems por el campo `subgrupo`).
     // Herramientas → por equipo; Accesorios puertas/ventanas/vidrios → por tipo de elemento.
     const SUBGRUPOS_HERR = [
-        { key: 'equipo1', label: '👷 Equipo 1 de instalación' },
-        { key: 'equipo2', label: '👷 Equipo 2 de instalación' },
-        { key: 'comunes', label: '🔧 Comunes (compartidas)' }
+        { key: 'equipo1', emoji: '👷', label: 'Equipo 1 de instalación' },
+        { key: 'equipo2', emoji: '👷', label: 'Equipo 2 de instalación' },
+        { key: 'comunes', emoji: '🔧', label: 'Comunes (compartidas)' }
     ];
     const SUBGRUPOS_ACC = [
-        { key: 'puertas_alu', label: '🚪 Puertas de aluminio' },
-        { key: 'ventanas_alu', label: '🪟 Ventanas de aluminio' },
-        { key: 'puertas_vidrio', label: '🚪 Puertas de vidrio' },
-        { key: 'mamparas_vidrio', label: '🪞 Mamparas de vidrio' }
+        { key: 'puertas_alu', emoji: '🚪', label: 'Puertas de aluminio' },
+        { key: 'ventanas_alu', emoji: '🪟', label: 'Ventanas de aluminio' },
+        { key: 'puertas_vidrio', emoji: '🚪', label: 'Puertas de vidrio' },
+        { key: 'mamparas_vidrio', emoji: '🪞', label: 'Mamparas de vidrio' }
     ];
     // Qué categorías se dividen en sub-secciones (por coincidencia de nombre, así funciona aunque
     // la categoría se renombre luego mientras conserve la palabra clave).
@@ -213,7 +213,7 @@
     const catByKey = (key) => todasLasCategorias().find(c => c.key === key) || null;
     const subgruposDeKey = (key) => subgruposDeCat(catByKey(key));
     const esCategoriaCustom = (key) => categoriasCustom.some(c => c.id === key);
-    const sgOptionsHTML = (subs, sel) => subs.map(s => `<option value="${s.key}" ${sel === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
+    const sgOptionsHTML = (subs, sel) => subs.map(s => `<option value="${s.key}" ${sel === s.key ? 'selected' : ''}>${s.emoji ? s.emoji + ' ' : ''}${esc(s.label)}</option>`).join('');
     function poblarSelectCategoria() {
         const sel = document.getElementById('nuevo-categoria');
         if (!sel) return;
@@ -392,10 +392,13 @@
         </div>`;
     }
 
-    // Vista: null = cuadros de categoría (grid); una key = detalle de esa categoría.
-    let catSel = null;
-    window.abrirCat = function (key) { catSel = key; render(); window.scrollTo(0, 0); };
-    window.cerrarCat = function () { catSel = null; render(); };
+    // Navegación por niveles (siempre cuadros): null = grid de categorías; catSel = dentro de una
+    // categoría/grupo; subSel = dentro de una sub-sección de esa categoría.
+    let catSel = null, subSel = null;
+    window.abrirCat = function (key) { catSel = key; subSel = null; render(); window.scrollTo(0, 0); };
+    window.abrirSub = function (key) { subSel = key; render(); window.scrollTo(0, 0); };
+    window.cerrarCat = function () { catSel = null; subSel = null; render(); window.scrollTo(0, 0); };
+    window.cerrarSub = function () { subSel = null; render(); window.scrollTo(0, 0); };
     window.renombrarCategoria = async function (key) {
         const cat = catByKey(key);
         if (!cat || !esCategoriaCustom(key)) return;
@@ -416,11 +419,28 @@
         if (/silic|uretan|masilla|sellad|sellante/.test(l)) return '🧴';
         return '📦';
     }
-    // Bloque de una sub-sección (título + lista de ítems o aviso de vacío), reutilizado por
-    // Herramientas (por equipo) y por Selladores (por categoría real).
-    const subsecHTML = (titulo, its, vacio) =>
-        `<div class="subsec"><div class="subsec-title">${esc(titulo)} <span class="l">· ${its.length} ítem(s)</span></div>` +
-        (its.length ? its.map(itemCardHTML).join('') : `<p class="empty" style="margin:2px 0 12px">${esc(vacio)}</p>`) + `</div>`;
+    // Devuelve las sub-secciones de un catSel (o null si esa categoría no se divide). Unifica los
+    // dos casos: grupo sintético (Selladores → sub = categorías reales) y categoría con subgrupos
+    // (Herramientas / Accesorios → sub = SUBGRUPOS por el campo `subgrupo`). Cada def trae ya sus
+    // ítems, para reusarse en el grid de sub-cuadros y en el detalle de una sub-sección.
+    function subdefsDe(catSelKey) {
+        const g = grupoDe(catSelKey);
+        if (g) {
+            return {
+                titulo: g.label, emoji: g.emoji, esCustom: false,
+                defs: g.sub.map(k => { const c = catByKey(k); return c ? { key: k, emoji: emojiCat(c), label: c.label, items: allItems.filter(it => it.categoria === k) } : null; }).filter(Boolean)
+            };
+        }
+        const c = catByKey(catSelKey);
+        if (!c) return null;
+        const subs = subgruposDeCat(c);
+        if (!subs) return null;
+        const catItems = allItems.filter(it => it.categoria === c.key);
+        return {
+            titulo: c.label, emoji: emojiCat(c), esCustom: esCategoriaCustom(c.key),
+            defs: subs.map(sg => ({ key: sg.key, emoji: sg.emoji, label: sg.label, items: catItems.filter(it => (it.subgrupo || subs[0].key) === sg.key) }))
+        };
+    }
     function actualizarSeedBtns() {
         if (!esAdmin) return;
         const perfiles = allItems.filter(it => it.categoria === 'perfil');
@@ -450,58 +470,56 @@
             actualizarSeedBtns(); return;
         }
 
-        const volverBtn = '<button class="btn-back-cat" onclick="cerrarCat()">← Volver al inventario</button>';
-
-        // Detalle de un grupo sintético (ej. Selladores): una sub-sección por categoría real.
-        const grupo = catSel ? grupoDe(catSel) : null;
-        if (grupo) {
-            const cuerpo = grupo.sub.map(subKey => {
-                const c = catByKey(subKey);
-                if (!c) return '';
-                const its = allItems.filter(it => it.categoria === subKey);
-                return subsecHTML(c.label, its, 'Vacío — sin ítems en esta categoría.');
-            }).join('') || '<p class="empty">Sin categorías en este grupo.</p>';
-            container.innerHTML = `${volverBtn}<h2 class="section-title" style="margin:12px 0 10px">${grupo.emoji} ${esc(grupo.label)}</h2>${cuerpo}`;
-            actualizarSeedBtns(); return;
-        }
-
-        // Detalle de una categoría.
-        const cat = catSel ? todasLasCategorias().find(c => c.key === catSel) : null;
-        if (catSel && cat) {
-            const items = allItems.filter(it => it.categoria === cat.key);
-            const subs = subgruposDeCat(cat);
-            let cuerpo;
-            if (subs) {
-                // Sub-secciones dentro de la categoría (por el campo `subgrupo`).
-                cuerpo = subs.map(sg => {
-                    const its = items.filter(it => (it.subgrupo || subs[0].key) === sg.key);
-                    return subsecHTML(sg.label, its, vacioDeCat(cat));
-                }).join('');
-            } else {
-                cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
-            }
-            const renombrar = (esAdmin && esCategoriaCustom(cat.key)) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(cat.key)}')">✏ Renombrar</button>` : '';
-            container.innerHTML = `${volverBtn}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
-            actualizarSeedBtns(); return;
-        }
-        catSel = null;
-
-        // Vista principal: cuadros en 3 columnas (tipo Panel de Control). Primero las categorías
-        // reales (las absorbidas por un grupo sintético se omiten), luego los grupos sintéticos.
-        const absorb = catsAbsorbidas();
-        const tileHTML = (key, label, emoji, items) => {
+        // Un cuadro (mismo estilo en todos los niveles). `onclick` cambia según el nivel.
+        const tileHTML = (onclick, label, emoji, items) => {
             const sin = items.filter(sinStockDe).length, bajo = items.filter(bajoMinimoDe).length;
             const alertas = [sin ? `${sin} sin stock` : '', bajo ? `${bajo} bajo mínimo` : ''].filter(Boolean).join(' · ');
-            return `<div class="card-link inv-cat-tile" onclick="abrirCat('${esc(key)}')">
+            return `<div class="card-link inv-cat-tile" onclick="${onclick}">
                 <div class="emoji">${emoji}</div>
                 <div class="title">${esc(label)}</div>
                 <div class="desc">${items.length} ítem(s)${alertas ? ` · <span style="color:#c0392b;font-weight:bold">${alertas}</span>` : ''}</div>
             </div>`;
         };
+        const volverInv = '<button class="btn-back-cat" onclick="cerrarCat()">← Volver al inventario</button>';
+
+        if (catSel) {
+            const sd = subdefsDe(catSel);
+            // Categoría/grupo CON sub-secciones.
+            if (sd) {
+                if (!subSel) {
+                    // Nivel 2: cuadros de sub-sección (mismo grid de 3 columnas).
+                    const renombrar = (esAdmin && sd.esCustom) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(catSel)}')">✏ Renombrar</button>` : '';
+                    const tiles = sd.defs.map(d => tileHTML(`abrirSub('${esc(d.key)}')`, d.label, d.emoji, d.items));
+                    container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${sd.emoji} ${esc(sd.titulo)}</h2><div class="inv-grid">${tiles.join('')}</div>`;
+                    actualizarSeedBtns(); return;
+                }
+                // Nivel 3: ítems de una sub-sección.
+                const d = sd.defs.find(x => x.key === subSel);
+                const items = d ? d.items : [];
+                const volverSub = `<button class="btn-back-cat" onclick="cerrarSub()">← ${esc(sd.titulo)}</button>`;
+                const cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">Sin ítems en esta sección todavía.</p>';
+                container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d ? d.emoji + ' ' + esc(d.label) : ''}</h2>${cuerpo}`;
+                actualizarSeedBtns(); return;
+            }
+            // Categoría SIN sub-secciones: ítems directos.
+            const cat = catByKey(catSel);
+            if (cat) {
+                const items = allItems.filter(it => it.categoria === cat.key);
+                const renombrar = (esAdmin && esCategoriaCustom(cat.key)) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(cat.key)}')">✏ Renombrar</button>` : '';
+                const cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
+                container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
+                actualizarSeedBtns(); return;
+            }
+            catSel = null;
+        }
+
+        // Nivel 1: cuadros de categoría en 3 columnas. Primero las categorías reales (las
+        // absorbidas por un grupo sintético se omiten), luego los grupos sintéticos.
+        const absorb = catsAbsorbidas();
         const tiles = todasLasCategorias().filter(c => !absorb.has(c.key))
-            .map(c => tileHTML(c.key, c.label, emojiCat(c), allItems.filter(it => it.categoria === c.key)));
+            .map(c => tileHTML(`abrirCat('${esc(c.key)}')`, c.label, emojiCat(c), allItems.filter(it => it.categoria === c.key)));
         GRUPOS_SINTETICOS.forEach(g => {
-            tiles.push(tileHTML(g.key, g.label, g.emoji, allItems.filter(it => g.sub.includes(it.categoria))));
+            tiles.push(tileHTML(`abrirCat('${esc(g.key)}')`, g.label, g.emoji, allItems.filter(it => g.sub.includes(it.categoria))));
         });
         container.innerHTML = '<div class="inv-grid">' + tiles.join('') + '</div>';
         actualizarSeedBtns();
