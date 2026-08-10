@@ -45,6 +45,16 @@
     .cat-block.open .cat-body { display: block; }
     .btn-editar { background: var(--artal-blue); color: #fff; }
     .grid2-inv { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stock-warn { font-size: 12px; font-weight: bold; border-radius: 7px; padding: 4px 9px; margin-top: 6px; display: inline-block; }
+    .stock-warn.low { background: #fff3e0; color: #b9770e; }
+    .stock-warn.out { background: #fdecea; color: #c0392b; }
+    /* Resumen superior */
+    .inv-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .inv-kpi { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 16px; flex: 1; min-width: 130px; }
+    .inv-kpi .n { font-size: 20px; font-weight: bold; color: var(--artal-blue); }
+    .inv-kpi .n.warn { color: #b9770e; } .inv-kpi .n.out { color: #c0392b; }
+    .inv-kpi .l { font-size: 11px; color: #8a93a0; text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
+    .btn-hist { background: #f0f3f7; color: var(--artal-blue); }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -85,6 +95,7 @@
         <button class="seed-btn" id="seed-btn-sellantes" onclick="sembrarSellantes()" style="display:none;">🧪 Crear categorías Silicón/Urethano/Masilla</button>
         <button class="new-item-btn" onclick="abrirNuevoItem()">+ Agregar ítem nuevo al catálogo</button>
     </div>
+    <div class="inv-kpis" id="inv-kpis"></div>
     <input type="text" id="search-input" placeholder="🔎 Buscar en el inventario…">
 
     <div id="categorias-container"><p class="empty">Cargando…</p></div>
@@ -106,6 +117,8 @@
         <input type="text" id="nuevo-unidad" placeholder="Ej: barras, unidades, galones">
         <label>Cantidad inicial</label>
         <input type="number" id="nuevo-cantidad" value="0" min="0">
+        <label>Cantidad mínima <span style="font-weight:normal;color:#999">(avisa cuando baje de aquí; 0 = sin aviso)</span></label>
+        <input type="number" id="nuevo-minimo" value="0" min="0">
         <label>Costo (por unidad)</label>
         <input type="number" id="nuevo-costo" value="0" min="0" step="0.01">
         <label>Precio de venta (por unidad)</label>
@@ -199,8 +212,11 @@
         return 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    const minimoDe = (it) => Number(it.minimo) || 0;
+    const sinStockDe = (it) => (Number(it.cantidad) || 0) <= 0;
+    const bajoMinimoDe = (it) => minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
     function itemCardHTML(item) {
-        const low = item.cantidad <= 0;
+        const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
         const label = item.color ? `${esc(item.tipo)} — ${esc(item.color)}` : esc(item.tipo);
         const costo = Number(item.costo || 0);
         const venta = Number(item.venta || 0);
@@ -212,6 +228,7 @@
                 <b>${label}</b>
                 <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
             </div>
+            ${sinStock ? `<div class="stock-warn out">⛔ Sin stock${min ? ` · mínimo ${min} ${esc(item.unidad)}` : ''}</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo · mínimo ${min} ${esc(item.unidad)}</div>` : '')}
             ${esAdmin ? `
             <div class="item-precios">
                 <span class="costo">Costo: ${money(costo)}</span>
@@ -237,8 +254,15 @@
             </div>
             ${esAdmin ? `
             <div class="inline-form" id="agregar-${item.id}">
-                <label>Cantidad a agregar</label>
-                <input type="number" id="agregar-cant-${item.id}" min="1" value="1">
+                <div class="grid2-inv">
+                    <div><label>Cantidad a agregar</label><input type="number" id="agregar-cant-${item.id}" min="1" value="1"></div>
+                    <div><label>Costo por ${esc(item.unidad)} <span style="font-weight:normal;color:#999">(de esta compra)</span></label><input type="number" id="agregar-costo-${item.id}" min="0" step="0.01" value="${costo || ''}" placeholder="RD$"></div>
+                </div>
+                <div class="grid2-inv" style="margin-top:6px">
+                    <div><label>Proveedor <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-prov-${item.id}" placeholder="Nombre"></div>
+                    <div><label>NCF <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-ncf-${item.id}" placeholder="B01…"></div>
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:normal;font-size:13px;"><input type="checkbox" id="agregar-gasto-${item.id}" style="width:auto"> Registrar la compra como <b>gasto</b> en Contabilidad</label>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('agregar-${item.id}')">Cancelar</button>
                     <button class="btn-agregar" onclick="confirmarAgregar('${item.id}')">Confirmar</button>
@@ -252,6 +276,10 @@
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Unidad</label><input type="text" id="editar-unidad-${item.id}" value="${esc(item.unidad || '')}"></div>
                     <div><label>Categoría</label><select id="editar-cat-${item.id}">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
+                </div>
+                <div class="grid2-inv" style="margin-top:8px">
+                    <div><label>Cantidad mínima <span style="font-weight:normal;color:#999">(0 = sin aviso)</span></label><input type="number" id="editar-min-${item.id}" min="0" value="${Number(item.minimo) || 0}"></div>
+                    <div></div>
                 </div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
@@ -293,18 +321,31 @@
             return ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term);
         });
 
+        // Resumen superior (sobre TODO el inventario, no lo filtrado).
+        if (esAdmin) {
+            const valorTotal = allItems.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.costo) || 0), 0);
+            const nBajo = allItems.filter(bajoMinimoDe).length;
+            const nOut = allItems.filter(sinStockDe).length;
+            document.getElementById('inv-kpis').innerHTML =
+                `<div class="inv-kpi"><div class="n">${money(valorTotal)}</div><div class="l">Valor del inventario</div></div>` +
+                `<div class="inv-kpi"><div class="n warn">${nBajo}</div><div class="l">Bajo mínimo</div></div>` +
+                `<div class="inv-kpi"><div class="n out">${nOut}</div><div class="l">Sin stock</div></div>`;
+        }
+
         const container = document.getElementById('categorias-container');
         // Cada categoría es un cuadro colapsable: clic para desplegar su lista. Al buscar, las que
         // tienen resultados se abren solas.
         container.innerHTML = todasLasCategorias().map(cat => {
             const items = filtered.filter(it => it.categoria === cat.key);
             const abierta = buscando ? items.length > 0 : catAbiertas.has(cat.key);
-            const sinStock = items.filter(it => (Number(it.cantidad) || 0) <= 0).length;
+            const sinStock = items.filter(sinStockDe).length;
+            const bajo = items.filter(bajoMinimoDe).length;
+            const alertas = [sinStock ? `${sinStock} sin stock` : '', bajo ? `${bajo} bajo mínimo` : ''].filter(Boolean).join(' · ');
             return `
             <div class="cat-block ${abierta ? 'open' : ''}">
                 <button class="cat-card" onclick="toggleCat('${esc(cat.key)}')">
                     <span class="cat-name">${esc(cat.label)}</span>
-                    <span class="cat-meta">${items.length} ítem(s)${sinStock ? ` · <span class="cat-low">${sinStock} sin stock</span>` : ''} <span class="cat-arrow">${abierta ? '▾' : '▸'}</span></span>
+                    <span class="cat-meta">${items.length} ítem(s)${alertas ? ` · <span class="cat-low">${alertas}</span>` : ''} <span class="cat-arrow">${abierta ? '▾' : '▸'}</span></span>
                 </button>
                 <div class="cat-body">
                     ${items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>'}
@@ -409,18 +450,20 @@
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
         const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
+        const minimo = Number(document.getElementById('nuevo-minimo').value) || 0;
         const costo = Number(document.getElementById('nuevo-costo').value) || 0;
         const venta = Number(document.getElementById('nuevo-venta').value) || 0;
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, color: categoria === 'perfil' ? (color || null) : null,
-                categoria, unidad, cantidad, costo, venta, creadoFecha: serverTimestamp()
+                categoria, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
             document.getElementById('nuevo-color').value = '';
             document.getElementById('nuevo-cantidad').value = '0';
+            document.getElementById('nuevo-minimo').value = '0';
             document.getElementById('nuevo-costo').value = '0';
             document.getElementById('nuevo-venta').value = '0';
         } catch (e) {
@@ -454,8 +497,9 @@
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
         const categoria = document.getElementById('editar-cat-' + id).value;
+        const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria });
+            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria, minimo });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
@@ -499,14 +543,33 @@
         const item = allItems.find(it => it.id === id);
         const cantidad = Number(document.getElementById('agregar-cant-' + id).value);
         if (!cantidad || cantidad <= 0) { alert('Escribe una cantidad válida.'); return; }
+        const costoU = Number(document.getElementById('agregar-costo-' + id).value) || 0;
+        const proveedor = (document.getElementById('agregar-prov-' + id).value || '').trim();
+        const ncf = (document.getElementById('agregar-ncf-' + id).value || '').trim().toUpperCase();
+        const crearGasto = document.getElementById('agregar-gasto-' + id).checked;
         try {
-            await updateDoc(doc(db, 'inventario', id), { cantidad: increment(cantidad) });
+            const cambios = { cantidad: increment(cantidad) };
+            if (costoU > 0) cambios.costo = costoU;   // el costo del ítem se actualiza con el de esta última compra
+            await updateDoc(doc(db, 'inventario', id), cambios);
             await addDoc(collection(db, 'movimientosInventario'), {
                 itemId: id, itemTipo: item.tipo, itemColor: item.color || null,
-                tipo: 'restock', cantidad, nota: 'Reabastecimiento',
-                usuarioNombre: usuario.nombre, usuarioEmail: usuario.email,
-                fecha: serverTimestamp()
+                tipo: 'restock', cantidad, nota: 'Reabastecimiento' + (proveedor ? ' · ' + proveedor : ''),
+                costoUnitario: costoU || null, proveedor: proveedor || null, ncf: ncf || null,
+                usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
             });
+            // Crear el gasto en Contabilidad (best-effort): aparece en Gastos y desde ahí puede ir a Citrus.
+            if (crearGasto && costoU > 0) {
+                try {
+                    await addDoc(collection(db, 'contaMovimientos'), {
+                        tipo: 'gasto', fecha: new Date().toISOString().slice(0, 10),
+                        concepto: 'Compra inventario: ' + item.tipo + (item.color ? ' — ' + item.color : ''),
+                        categoria: 'Materiales / insumos', monto: costoU * cantidad, itbis: 0,
+                        metodo: 'Transferencia', tercero: proveedor, rnc: '', ncf,
+                        notas: cantidad + ' ' + (item.unidad || '') + ' × ' + money(costoU),
+                        creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                    });
+                } catch (e2) { alert('El stock se agregó, pero no se pudo crear el gasto: ' + (e2 && e2.message ? e2.message : e2)); }
+            }
             cerrarForm('agregar-' + id);
         } catch (e) {
             alert('No se pudo registrar: ' + e.message);
