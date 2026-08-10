@@ -79,6 +79,9 @@
     .item-ref { font-size: 12px; color: #8a93a0; margin-top: -2px; }
     .color-group-title { font-size: 13px; font-weight: bold; color: var(--artal-blue); background: #eef4fb; border-radius: 8px; padding: 6px 12px; margin: 12px 0 6px; }
     .color-group-title span { font-weight: normal; color: #8a93a0; }
+    .color-fbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+    .color-fbtn { background: #fff; border: 1.5px solid #d7dee6; color: var(--artal-blue); border-radius: 100px; padding: 8px 16px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    .color-fbtn.active { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -188,7 +191,8 @@
         { key: 'puertas_alu', emoji: '🚪', label: 'Puertas de aluminio' },
         { key: 'ventanas_alu', emoji: '🪟', label: 'Ventanas de aluminio' },
         { key: 'puertas_vidrio', emoji: '🚪', label: 'Puertas de vidrio' },
-        { key: 'mamparas_vidrio', emoji: '🪞', label: 'Mamparas/Barandas de vidrio' }
+        { key: 'mamparas_vidrio', emoji: '🚿', label: 'Mamparas de vidrio' },
+        { key: 'barandas', emoji: '🛡️', label: 'Barandas de vidrio' }
     ];
     // Qué categorías se dividen en sub-secciones (por coincidencia de nombre, así funciona aunque
     // la categoría se renombre luego mientras conserve la palabra clave).
@@ -396,11 +400,12 @@
 
     // Navegación por niveles (siempre cuadros): null = grid de categorías; catSel = dentro de una
     // categoría/grupo; subSel = dentro de una sub-sección de esa categoría.
-    let catSel = null, subSel = null;
-    window.abrirCat = function (key) { catSel = key; subSel = null; render(); window.scrollTo(0, 0); };
-    window.abrirSub = function (key) { subSel = key; render(); window.scrollTo(0, 0); };
-    window.cerrarCat = function () { catSel = null; subSel = null; render(); window.scrollTo(0, 0); };
-    window.cerrarSub = function () { subSel = null; render(); window.scrollTo(0, 0); };
+    let catSel = null, subSel = null, colorFiltro = null;
+    window.abrirCat = function (key) { catSel = key; subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.abrirSub = function (key) { subSel = key; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.cerrarCat = function () { catSel = null; subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.cerrarSub = function () { subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.setColorFiltro = function (k) { colorFiltro = k || null; render(); };
     window.renombrarCategoria = async function (key) {
         const cat = catByKey(key);
         if (!cat || !esCategoriaCustom(key)) return;
@@ -452,12 +457,26 @@
         if (/cromad|cromo|chrome|inox|niquel|níquel|satin|satín/.test(c)) return { key: 'b_cromado', label: 'Cromado' };
         return { key: 'c_' + c, label: item.color };
     }
+    // Botones de filtro rápido por color (Negro / Cromado). Solo aparecen si hay ítems de ese
+    // color en la lista. "Todos" quita el filtro.
+    function colorFiltroBarHTML(items) {
+        const nNegro = items.filter(it => colorGrupo(it).key === 'a_negro').length;
+        const nCromo = items.filter(it => colorGrupo(it).key === 'b_cromado').length;
+        if (!nNegro && !nCromo) return '';
+        const btn = (k, label) => `<button class="color-fbtn ${(colorFiltro || '') === k ? 'active' : ''}" onclick="setColorFiltro('${k}')">${label}</button>`;
+        return `<div class="color-fbar">${btn('', 'Todos')}${nNegro ? btn('a_negro', `⚫ Negro (${nNegro})`) : ''}${nCromo ? btn('b_cromado', `⚪ Cromado (${nCromo})`) : ''}</div>`;
+    }
     function itemsListHTML(items) {
+        const lista = colorFiltro ? items.filter(it => colorGrupo(it).key === colorFiltro) : items;
+        const bar = colorFiltroBarHTML(items);
+        if (colorFiltro) {   // ya filtrado a un color: lista simple, sin encabezados de grupo
+            return bar + (lista.length ? lista.map(itemCardHTML).join('') : '<p class="empty">Sin ítems de ese color en esta sección.</p>');
+        }
         const grupos = {};
-        items.forEach(it => { const g = colorGrupo(it); (grupos[g.key] = grupos[g.key] || { label: g.label, items: [] }).items.push(it); });
+        lista.forEach(it => { const g = colorGrupo(it); (grupos[g.key] = grupos[g.key] || { label: g.label, items: [] }).items.push(it); });
         const keys = Object.keys(grupos).sort();
-        if (keys.length <= 1) return items.map(itemCardHTML).join('');   // un solo color: sin encabezados
-        return keys.map(k => {
+        if (keys.length <= 1) return bar + lista.map(itemCardHTML).join('');   // un solo color: sin encabezados
+        return bar + keys.map(k => {
             const g = grupos[k];
             return `<div class="color-group-title">${esc(g.label)} <span>· ${g.items.length}</span></div>${g.items.map(itemCardHTML).join('')}`;
         }).join('');
