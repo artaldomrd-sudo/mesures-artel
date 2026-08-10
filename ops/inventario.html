@@ -77,6 +77,8 @@
     .subsec-title { font-size: 14px; font-weight: bold; color: var(--artal-blue); border-bottom: 2px solid #eef1f5; padding-bottom: 6px; margin: 16px 0 8px; }
     .subsec-title .l { font-weight: normal; color: #8a93a0; font-size: 12px; }
     .item-ref { font-size: 12px; color: #8a93a0; margin-top: -2px; }
+    .color-group-title { font-size: 13px; font-weight: bold; color: var(--artal-blue); background: #eef4fb; border-radius: 8px; padding: 6px 12px; margin: 12px 0 6px; }
+    .color-group-title span { font-weight: normal; color: #8a93a0; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -441,6 +443,25 @@
             defs: subs.map(sg => ({ key: sg.key, emoji: sg.emoji, label: sg.label, items: catItems.filter(it => (it.subgrupo || subs[0].key) === sg.key) }))
         };
     }
+    // Agrupa una lista de ítems por color: Negro/Negro mate juntos, Cromado juntos, el resto por
+    // su propio color, y "Sin color" al final. Así quedan ordenados dentro de cada sección.
+    function colorGrupo(item) {
+        const c = (item.color || '').toLowerCase().trim();
+        if (!c) return { key: 'z_sincolor', label: 'Sin color' };
+        if (/negro|mate|black/.test(c)) return { key: 'a_negro', label: 'Negro / Negro mate' };
+        if (/cromad|cromo|chrome|inox|niquel|níquel|satin|satín/.test(c)) return { key: 'b_cromado', label: 'Cromado' };
+        return { key: 'c_' + c, label: item.color };
+    }
+    function itemsListHTML(items) {
+        const grupos = {};
+        items.forEach(it => { const g = colorGrupo(it); (grupos[g.key] = grupos[g.key] || { label: g.label, items: [] }).items.push(it); });
+        const keys = Object.keys(grupos).sort();
+        if (keys.length <= 1) return items.map(itemCardHTML).join('');   // un solo color: sin encabezados
+        return keys.map(k => {
+            const g = grupos[k];
+            return `<div class="color-group-title">${esc(g.label)} <span>· ${g.items.length}</span></div>${g.items.map(itemCardHTML).join('')}`;
+        }).join('');
+    }
     function actualizarSeedBtns() {
         if (!esAdmin) return;
         const perfiles = allItems.filter(it => it.categoria === 'perfil');
@@ -497,7 +518,7 @@
                 const d = sd.defs.find(x => x.key === subSel);
                 const items = d ? d.items : [];
                 const volverSub = `<button class="btn-back-cat" onclick="cerrarSub()">← ${esc(sd.titulo)}</button>`;
-                const cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">Sin ítems en esta sección todavía.</p>';
+                const cuerpo = items.length ? itemsListHTML(items) : '<p class="empty">Sin ítems en esta sección todavía.</p>';
                 container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d ? d.emoji + ' ' + esc(d.label) : ''}</h2>${cuerpo}`;
                 actualizarSeedBtns(); return;
             }
@@ -506,7 +527,7 @@
             if (cat) {
                 const items = allItems.filter(it => it.categoria === cat.key);
                 const renombrar = (esAdmin && esCategoriaCustom(cat.key)) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(cat.key)}')">✏ Renombrar</button>` : '';
-                const cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
+                const cuerpo = items.length ? itemsListHTML(items) : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
                 container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
                 actualizarSeedBtns(); return;
             }
