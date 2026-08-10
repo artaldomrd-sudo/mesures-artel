@@ -98,6 +98,13 @@
     .btn-deshacer { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c; border-radius: 8px; padding: 10px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
     .btn-agendar { background: var(--artal-blue); color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
     .btn-recoger { background: #16a085; color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    .coment-box { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e6ea; }
+    .coment-title { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin-bottom: 6px; }
+    .coment-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .coment-item { background: #f6f8fa; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #333; white-space: pre-wrap; }
+    .coment-item .coment-meta { font-size: 11px; color: #8a93a0; font-weight: bold; margin-bottom: 2px; }
+    .coment-ta { width: 100%; box-sizing: border-box; min-height: 58px; resize: vertical; border: 1.5px solid #d7dee6; border-radius: 8px; padding: 8px 10px; font-family: 'Arimo'; font-size: 13px; }
+    .btn-coment { margin-top: 6px; background: #6c5ce7; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
     .aprobacion-form { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ddd; }
     .aprobacion-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .aprobacion-form input { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; box-sizing: border-box; min-height: 42px; }
@@ -393,6 +400,7 @@
     const jobDate = (j) => (j.fecha && j.fecha.toDate ? j.fecha.toDate() : null);
     const jobFin = (j) => (j.fechaFin && j.fechaFin.toDate ? j.fechaFin.toDate() : null);
     const fmtFechaHora = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+    const fmtIso = (s) => { try { return s ? new Date(s).toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }) : ''; } catch (e) { return ''; } };
     const fD = (d) => d.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' });
     const fHora = (d) => d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
 
@@ -554,6 +562,12 @@
                 ${esAdmin && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
                 ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
                 ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
+            </div>
+            <div class="coment-box">
+                <div class="coment-title">💬 Comentarios del instalador</div>
+                ${(Array.isArray(o.comentariosInstalador) && o.comentariosInstalador.length) ? `<div class="coment-list">${o.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
+                <textarea id="coment-${id}" class="coment-ta" placeholder="Anota cualquier cosa del proceso: por qué no se pudo terminar, faltantes, cliente ausente, daños, etc."></textarea>
+                <button class="btn-coment" onclick="guardarComentarioInstalador('${id}')">Guardar comentario</button>
             </div>
             <div class="aprobacion-form" id="aprobacion-${id}">
                 <label>Nombre del cliente</label>
@@ -923,6 +937,21 @@
         const lugar = j ? [j.cliente, j.obra].filter(Boolean).join(' — ') : '';
         if (!confirm(`¿Eliminar la instalación "${lugar}"? Esta acción no se puede deshacer.`)) return;
         try { await deleteDoc(doc(db, 'instalaciones', id)); } catch (e) { alert('No se pudo eliminar: ' + e.message); }
+    };
+    // Comentario del instalador sobre una obra (se acumulan como historial con nombre + fecha).
+    // Sirve para justificar por qué no se pudo terminar, faltantes, cliente ausente, etc.
+    window.guardarComentarioInstalador = async function (orderId) {
+        const ta = document.getElementById('coment-' + orderId);
+        const texto = (ta && ta.value || '').trim();
+        if (!texto) { alert('Escribe un comentario antes de guardar.'); return; }
+        try {
+            const snap = await getDoc(doc(db, 'orders', orderId));
+            const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
+            await updateDoc(doc(db, 'orders', orderId), {
+                comentariosInstalador: prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString() }])
+            });
+            if (ta) ta.value = '';
+        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
     };
     window.marcarSinInstalacion = async function (orderId) {
         const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
