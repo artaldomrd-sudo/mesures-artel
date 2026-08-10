@@ -48,37 +48,46 @@ function canvasAJpeg(file) {
 }
 
 // Los iPhone/iPad guardan las fotos en HEIC, que Chrome/Firefox NO saben mostrar (Safari sí). Se
-// carga heic2any (wasm) solo cuando aparece un HEIC — las subidas JPEG normales no pagan ese costo.
+// convierte a JPEG en el navegador. Se prueban DOS librerías en cadena, porque ninguna decodifica
+// todos los HEIC: heic-to (libheif moderno, maneja HEIC de 10-bit/HDR del iPhone nuevo) y, si
+// falla, heic2any (libheif viejo). Solo se cargan cuando aparece un HEIC (la mayoría son JPEG).
 const esHeic = (file) => /heic|heif/i.test(file.type || '') || /\.(heic|heif)$/i.test(file.name || '');
-let heicLibPromise = null;
-async function heicAJpeg(file) {
+let heic2anyLibPromise = null;
+async function conHeic2any(file) {
     if (!window.heic2any) {
-        if (!heicLibPromise) {
-            heicLibPromise = new Promise((resolve, reject) => {
+        if (!heic2anyLibPromise) {
+            heic2anyLibPromise = new Promise((resolve, reject) => {
                 const s = document.createElement('script');
                 s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
                 s.onload = resolve;
-                s.onerror = () => { heicLibPromise = null; reject(new Error('No se pudo cargar el conversor HEIC (¿sin internet?)')); };
+                s.onerror = () => { heic2anyLibPromise = null; reject(new Error('No se pudo cargar el conversor HEIC (¿sin internet?)')); };
                 document.head.appendChild(s);
             });
         }
-        await heicLibPromise;
+        await heic2anyLibPromise;
     }
-    const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+    const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
     return Array.isArray(out) ? out[0] : out;
 }
+async function conHeicTo(file) {
+    const mod = await import('https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/heic-to.js');
+    return await mod.heicTo({ blob: file, type: 'image/jpeg', quality: 0.9 });
+}
 
-// Devuelve un blob JPEG listo para subir, o LANZA un error claro si no se pudo. Para HEIC intenta
-// primero heic2any (Chrome/Firefox) y, si falla, el canvas nativo (Safari decodifica HEIC).
+// Devuelve un blob JPEG listo para subir, o LANZA un error claro si no se pudo. Para HEIC prueba
+// heic-to → heic2any → canvas nativo (Safari) en cadena, hasta que uno funcione.
 async function prepararImagenJpeg(file) {
     if (esHeic(file)) {
-        try {
-            const jpg = await heicAJpeg(file);
-            try { return await canvasAJpeg(jpg); } catch (e) { return jpg; }  // reescalar; si no, el jpeg de heic2any ya sirve
-        } catch (e1) {
-            try { return await canvasAJpeg(file); }  // Safari: canvas decodifica HEIC directo
-            catch (e2) { throw new Error('No se pudo convertir la foto HEIC en este navegador. Súbela como JPG o activa "Más compatible" en la cámara del iPhone.'); }
+        let jpg = null;
+        for (const conversor of [conHeicTo, conHeic2any]) {
+            try { jpg = await conversor(file); break; } catch (e) { /* prueba el siguiente */ }
         }
+        if (!jpg) {
+            try { jpg = await canvasAJpeg(file); }  // Safari decodifica HEIC en canvas directo
+            catch (e) { throw new Error('No se pudo convertir la foto HEIC en este navegador. Súbela como JPG o activa "Más compatible" en Ajustes › Cámara › Formatos del iPhone.'); }
+        }
+        // Reescalar/recomprimir el JPEG resultante (las fotos vienen a 12MP). Si no se puede, se sube igual.
+        try { return await canvasAJpeg(jpg); } catch (e) { return jpg; }
     }
     // Imagen normal (JPG/PNG…). Si el canvas no la puede decodificar, se sube tal cual.
     try { return await canvasAJpeg(file); } catch (e) { return file; }
