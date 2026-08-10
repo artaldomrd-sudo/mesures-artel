@@ -76,6 +76,7 @@
     .btn-back-cat { background: #eef4fb; color: var(--artal-blue); border: none; border-radius: 100px; padding: 9px 16px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13.5px; min-height: 40px; }
     .subsec-title { font-size: 14px; font-weight: bold; color: var(--artal-blue); border-bottom: 2px solid #eef1f5; padding-bottom: 6px; margin: 16px 0 8px; }
     .subsec-title .l { font-weight: normal; color: #8a93a0; font-size: 12px; }
+    .item-ref { font-size: 12px; color: #8a93a0; margin-top: -2px; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -137,6 +138,8 @@
         </div>
         <label>Nombre del ítem</label>
         <input type="text" id="nuevo-tipo" placeholder="Ej: Riel superior 2 vías">
+        <label>Referencia de producto <span style="font-weight:normal;color:#999">(opcional)</span></label>
+        <input type="text" id="nuevo-referencia" placeholder="Ej: código / SKU del proveedor">
         <label id="nuevo-color-label">Color</label>
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
         <label>Unidad</label>
@@ -282,6 +285,7 @@
                 <b>${label}</b>
                 <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
             </div>
+            ${item.referencia ? `<div class="item-ref">Ref: ${esc(item.referencia)}</div>` : ''}
             ${sinStock ? `<div class="stock-warn out">⛔ Sin stock${min ? ` · mínimo ${min} ${esc(item.unidad)}` : ''}</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo · mínimo ${min} ${esc(item.unidad)}</div>` : '')}
             ${esAdmin ? `
             <div class="item-precios">
@@ -328,6 +332,8 @@
             <div class="inline-form" id="editar-${item.id}">
                 <label>Nombre del ítem</label>
                 <input type="text" id="editar-tipo-${item.id}" value="${esc(item.tipo || '')}">
+                <label>Referencia de producto <span style="font-weight:normal;color:#999">(opcional)</span></label>
+                <input type="text" id="editar-ref-${item.id}" value="${esc(item.referencia || '')}" placeholder="Ej: código / SKU del proveedor">
                 <label>Color / variante <span style="font-weight:normal;color:#999">(opcional)</span></label>
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
                 <div class="grid2-inv" style="margin-top:8px">
@@ -394,7 +400,7 @@
 
     function render() {
         const term = document.getElementById('search-input').value.trim().toLowerCase();
-        const filtered = allItems.filter(it => !term || ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term));
+        const filtered = allItems.filter(it => !term || ((it.tipo || '') + ' ' + (it.color || '') + ' ' + (it.referencia || '')).toLowerCase().includes(term));
 
         // Resumen superior (sobre TODO el inventario).
         if (esAdmin) {
@@ -621,6 +627,7 @@
     window.guardarNuevoItem = async function () {
         const categoria = document.getElementById('nuevo-categoria').value;
         const tipo = document.getElementById('nuevo-tipo').value.trim();
+        const referencia = document.getElementById('nuevo-referencia').value.trim();
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
         const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
@@ -631,11 +638,12 @@
         const subgrupo = esHerramientasKey(categoria) ? (document.getElementById('nuevo-subgrupo').value || 'comunes') : null;
         try {
             await addDoc(collection(db, 'inventario'), {
-                tipo, color: categoria === 'perfil' ? (color || null) : null,
+                tipo, referencia: referencia || null, color: categoria === 'perfil' ? (color || null) : null,
                 categoria, subgrupo, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
+            document.getElementById('nuevo-referencia').value = '';
             document.getElementById('nuevo-color').value = '';
             document.getElementById('nuevo-cantidad').value = '0';
             document.getElementById('nuevo-minimo').value = '0';
@@ -674,6 +682,7 @@
     window.confirmarEditar = async function (id) {
         const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
         if (!tipo) { alert('El nombre no puede quedar vacío.'); return; }
+        const referencia = (document.getElementById('editar-ref-' + id).value || '').trim();
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
         const categoria = document.getElementById('editar-cat-' + id).value;
@@ -681,7 +690,7 @@
         const sgEl = document.getElementById('editar-sg-' + id);
         const subgrupo = esHerramientasKey(categoria) ? ((sgEl && sgEl.value) || 'comunes') : null;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria, subgrupo, minimo });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, minimo });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
