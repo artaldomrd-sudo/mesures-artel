@@ -24,31 +24,31 @@ function esc(s) {
     }[c]));
 }
 
-// Reduce la foto del celular a JPEG (máx. 1600px de lado, calidad 0.82) antes de subirla, para
-// no mandar archivos de varios MB. Si algo falla, sube el archivo original tal cual.
-function comprimir(file) {
-    return new Promise((resolve) => {
-        if (!file || !/^image\//.test(file.type)) { resolve(file); return; }
+// Redibuja una imagen decodificable a JPEG (máx. 1600px de lado). RECHAZA si el navegador no
+// puede decodificar el archivo (p. ej. HEIC en Chrome) — así el llamador sabe que hay que
+// convertir por otra vía en vez de subir un archivo que no se verá.
+function canvasAJpeg(file) {
+    return new Promise((resolve, reject) => {
         const url = URL.createObjectURL(file);
         const img = new Image();
         img.onload = () => {
             const max = 1600;
             let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            if (!w || !h) { URL.revokeObjectURL(url); reject(new Error('imagen vacía')); return; }
             if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
             const c = document.createElement('canvas');
             c.width = w; c.height = h;
             c.getContext('2d').drawImage(img, 0, 0, w, h);
             URL.revokeObjectURL(url);
-            c.toBlob(b => resolve(b || file), 'image/jpeg', 0.82);
+            c.toBlob(b => b ? resolve(b) : reject(new Error('toBlob falló')), 'image/jpeg', 0.82);
         };
-        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('el navegador no pudo decodificar la imagen')); };
         img.src = url;
     });
 }
 
-// Los iPhone/iPad guardan las fotos en HEIC, que los navegadores NO saben mostrar (la miniatura
-// sale rota). Se detecta y se convierte a JPEG antes de subir, cargando heic2any solo cuando hace
-// falta (la mayoría de las subidas son JPEG normales y no pagan ese costo).
+// Los iPhone/iPad guardan las fotos en HEIC, que Chrome/Firefox NO saben mostrar (Safari sí). Se
+// carga heic2any (wasm) solo cuando aparece un HEIC — las subidas JPEG normales no pagan ese costo.
 const esHeic = (file) => /heic|heif/i.test(file.type || '') || /\.(heic|heif)$/i.test(file.name || '');
 let heicLibPromise = null;
 async function heicAJpeg(file) {
@@ -58,7 +58,7 @@ async function heicAJpeg(file) {
                 const s = document.createElement('script');
                 s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
                 s.onload = resolve;
-                s.onerror = () => reject(new Error('No se pudo cargar el conversor HEIC'));
+                s.onerror = () => { heicLibPromise = null; reject(new Error('No se pudo cargar el conversor HEIC (¿sin internet?)')); };
                 document.head.appendChild(s);
             });
         }
@@ -68,31 +68,43 @@ async function heicAJpeg(file) {
     return Array.isArray(out) ? out[0] : out;
 }
 
+// Devuelve un blob JPEG listo para subir, o LANZA un error claro si no se pudo. Para HEIC intenta
+// primero heic2any (Chrome/Firefox) y, si falla, el canvas nativo (Safari decodifica HEIC).
+async function prepararImagenJpeg(file) {
+    if (esHeic(file)) {
+        try {
+            const jpg = await heicAJpeg(file);
+            try { return await canvasAJpeg(jpg); } catch (e) { return jpg; }  // reescalar; si no, el jpeg de heic2any ya sirve
+        } catch (e1) {
+            try { return await canvasAJpeg(file); }  // Safari: canvas decodifica HEIC directo
+            catch (e2) { throw new Error('No se pudo convertir la foto HEIC en este navegador. Súbela como JPG o activa "Más compatible" en la cámara del iPhone.'); }
+        }
+    }
+    // Imagen normal (JPG/PNG…). Si el canvas no la puede decodificar, se sube tal cual.
+    try { return await canvasAJpeg(file); } catch (e) { return file; }
+}
+
 // Sube una lista de archivos y devuelve [{ url, nombre, tipo }]. Acepta imágenes (se comprimen a
 // JPEG; HEIC del iPhone se convierte primero) y PDFs (se suben tal cual). Ignora cualquier otro tipo.
 export async function subirFotos(fileList, pathPrefix) {
     const out = [];
     for (const original of Array.from(fileList || [])) {
         const esPdf = original.type === 'application/pdf' || /\.pdf$/i.test(original.name || '');
-        let file = original;
-        if (!esPdf && esHeic(original)) {
-            try { file = await heicAJpeg(original); } catch (e) { file = original; }  // si falla, sube el original
-        }
-        const esImg = /^image\//.test(file.type) || esHeic(original);
+        const esImg = /^image\//.test(original.type) || esHeic(original);
         if (!esImg && !esPdf) continue;
         if (esPdf) {
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.pdf';
             const r = ref(storage, `${pathPrefix}/${nombre}`);
-            await uploadBytes(r, file, { contentType: 'application/pdf' });
+            await uploadBytes(r, original, { contentType: 'application/pdf' });
             const url = await getDownloadURL(r);
-            out.push({ url, nombre: file.name || 'documento.pdf', tipo: 'pdf' });
+            out.push({ url, nombre: original.name || 'documento.pdf', tipo: 'pdf' });
         } else {
-            const blob = await comprimir(file).catch(() => file);
+            const blob = await prepararImagenJpeg(original);   // lanza si un HEIC no se pudo convertir
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.jpg';
             const r = ref(storage, `${pathPrefix}/${nombre}`);
             await uploadBytes(r, blob, { contentType: 'image/jpeg' });
             const url = await getDownloadURL(r);
-            out.push({ url, nombre: file.name || 'foto.jpg', tipo: 'img' });
+            out.push({ url, nombre: original.name || 'foto.jpg', tipo: 'img' });
         }
     }
     return out;
