@@ -119,7 +119,7 @@
 <main>
     <div id="admin-tools" style="display:none; gap:10px;">
         <button class="seed-btn" id="seed-btn" onclick="sembrarCatalogo()" style="display:none;">📦 Crear catálogo inicial de perfiles</button>
-        <button class="seed-btn" id="seed-btn-sellantes" onclick="sembrarSellantes()" style="display:none;">🧪 Crear categorías Silicón/Urethano/Masilla</button>
+        <button class="seed-btn" id="seed-btn-migrar" onclick="migrarSelladores()" style="display:none;">🧴 Mover selladores viejos a Consumibles</button>
         <button class="seed-btn" onclick="abrirConteo()">📋 Conteo físico</button>
         <button class="new-item-btn" onclick="abrirNuevoItem()">+ Agregar ítem nuevo al catálogo</button>
     </div>
@@ -249,11 +249,13 @@
     // (a diferencia de Herramientas, que es UNA categoría dividida por el campo `subgrupo`).
     // "Selladores" junta las categorías Silicón / Masilla / Urethano sin mover ningún dato:
     // los ítems siguen guardados en su categoría real, solo se muestran agrupados.
-    const GRUPOS_SINTETICOS = [
-        { key: '__selladores', label: 'Selladores', emoji: '🧴', sub: ['silicon', 'masilla', 'urethano'] }
-    ];
+    // Selladores ya NO es un grupo de nivel principal: vive dentro de Consumibles → Selladores.
+    const GRUPOS_SINTETICOS = [];
+    // Las categorías viejas Silicón/Masilla/Urethano se ocultan del grid principal; sus ítems se
+    // mueven a Consumibles con el botón "Mover selladores" y luego se borran las categorías.
+    const CATS_OCULTAS = ['silicon', 'masilla', 'urethano'];
     const grupoDe = (key) => GRUPOS_SINTETICOS.find(g => g.key === key) || null;
-    const catsAbsorbidas = () => new Set(GRUPOS_SINTETICOS.flatMap(g => g.sub));
+    const catsAbsorbidas = () => new Set([...GRUPOS_SINTETICOS.flatMap(g => g.sub), ...CATS_OCULTAS]);
     let categoriasCustom = [];
     function todasLasCategorias() {
         return [...CATEGORIAS_BASE, ...categoriasCustom.map(c => ({ key: c.id, label: c.nombre }))];
@@ -560,8 +562,8 @@
         if (!esAdmin) return;
         const perfiles = allItems.filter(it => it.categoria === 'perfil');
         const seedBtn = document.getElementById('seed-btn'); if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
-        const yaSell = ['silicon', 'urethano', 'masilla'].some(k => categoriasCustom.some(c => c.id === k));
-        const seedSell = document.getElementById('seed-btn-sellantes'); if (seedSell) seedSell.style.display = yaSell ? 'none' : 'block';
+        const hayViejos = allItems.some(it => CATS_OCULTAS.includes(it.categoria)) || CATS_OCULTAS.some(k => categoriasCustom.some(c => c.id === k));
+        const btnMig = document.getElementById('seed-btn-migrar'); if (btnMig) btnMig.style.display = hayViejos ? 'block' : 'none';
     }
 
     function render() {
@@ -741,21 +743,23 @@
         }
     };
 
-    window.sembrarSellantes = async function () {
-        if (!confirm('¿Crear las categorías Silicón, Urethano y Masilla con sus variantes? Solo hace falta una vez.')) return;
+    // Mueve los ítems de las categorías viejas Silicón/Masilla/Urethano a Consumibles → Selladores
+    // (subgrupo2 = el tipo) y borra esas categorías. Un solo clic, reemplaza al Selladores viejo.
+    window.migrarSelladores = async function () {
+        const pend = allItems.filter(it => CATS_OCULTAS.includes(it.categoria));
+        const catsPend = CATS_OCULTAS.filter(k => categoriasCustom.some(c => c.id === k));
+        if (!pend.length && !catsPend.length) { alert('No hay selladores viejos que mover.'); return; }
+        if (!confirm(`Se moverán ${pend.length} ítem(s) a Consumibles → Selladores y se quitarán las categorías viejas (Silicón/Masilla/Urethano). ¿Continuar?`)) return;
         try {
-            for (const grupo of SELLANTES_SEED) {
-                await setDoc(doc(db, 'categoriasInventario', grupo.categoria), { nombre: grupo.nombreCategoria, creadoFecha: serverTimestamp() }, { merge: true });
-                for (const it of grupo.items) {
-                    await addDoc(collection(db, 'inventario'), {
-                        tipo: it.tipo, color: null, categoria: grupo.categoria, unidad: it.unidad, cantidad: 0,
-                        costo: 0, venta: 0, creadoFecha: serverTimestamp()
-                    });
-                }
+            for (const it of pend) {
+                await updateDoc(doc(db, 'inventario', it.id), { categoria: 'consumible', subgrupo: 'selladores', subgrupo2: it.categoria });
             }
-            alert('Categorías creadas. Ahora usa "Agregar stock" en cada ítem para poner las cantidades reales.');
+            for (const k of catsPend) {
+                try { await deleteDoc(doc(db, 'categoriasInventario', k)); } catch (e) { /* si no se puede borrar, no bloquea */ }
+            }
+            alert(`Listo: ${pend.length} sellador(es) movido(s) a Consumibles → Selladores.`);
         } catch (e) {
-            alert('No se pudo crear: ' + e.message);
+            alert('No se pudo migrar: ' + e.message);
         }
     };
 
