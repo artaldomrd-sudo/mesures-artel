@@ -139,7 +139,11 @@
         </div>
         <div id="nuevo-subgrupo-row" style="display:none">
             <label>Sección / grupo</label>
-            <select id="nuevo-subgrupo"></select>
+            <select id="nuevo-subgrupo" onchange="onNuevoSubChange()"></select>
+        </div>
+        <div id="nuevo-subgrupo2-row" style="display:none">
+            <label>Sub-sección / tipo</label>
+            <select id="nuevo-subgrupo2"></select>
         </div>
         <label>Nombre del ítem</label>
         <input type="text" id="nuevo-tipo" placeholder="Ej: Riel superior 2 vías">
@@ -187,9 +191,20 @@
         { key: 'equipo2', emoji: '👷', label: 'Equipo 2 de instalación' },
         { key: 'comunes', emoji: '🔧', label: 'Comunes (compartidas)' }
     ];
+    // Tercer nivel dentro de "Ventanas de aluminio": series de perfil + tipos de apertura.
+    const SUBGRUPOS_VENT = [
+        { key: 'e70', emoji: '🔹', label: 'E70' },
+        { key: 'e100', emoji: '🔷', label: 'E100' },
+        { key: 'e200', emoji: '🔶', label: 'E200' },
+        { key: 'p92', emoji: '🔸', label: 'P92' },
+        { key: 'batiente', emoji: '🚪', label: 'Batiente' },
+        { key: 'oscilo', emoji: '🔄', label: 'Oscilo-batiente' },
+        { key: 'soufflet', emoji: '🔼', label: 'Soufflet' },
+        { key: 'proyectada', emoji: '📐', label: 'Proyectada' }
+    ];
     const SUBGRUPOS_ACC = [
         { key: 'puertas_alu', emoji: '🚪', label: 'Puertas de aluminio' },
-        { key: 'ventanas_alu', emoji: '🪟', label: 'Ventanas de aluminio' },
+        { key: 'ventanas_alu', emoji: '🪟', label: 'Ventanas de aluminio', hijos: SUBGRUPOS_VENT },
         { key: 'puertas_vidrio', emoji: '🔳', label: 'Puertas de vidrio' },
         { key: 'mamparas_vidrio', emoji: '🚿', label: 'Mamparas de vidrio' },
         { key: 'barandas', emoji: '🚧', label: 'Barandas de vidrio' }
@@ -233,6 +248,9 @@
     const defectoDeKey = (key) => defectoDeCat(catByKey(key));
     const esCategoriaCustom = (key) => categoriasCustom.some(c => c.id === key);
     const sgOptionsHTML = (subs, sel) => subs.map(s => `<option value="${s.key}" ${sel === s.key ? 'selected' : ''}>${s.emoji ? s.emoji + ' ' : ''}${esc(s.label)}</option>`).join('');
+    // Sub-sub-secciones (nivel 3): hijos de un sub-grupo, si los tiene (ej. Ventanas → E70/E100…).
+    const hijosDeSub = (catKey, subKey) => { const subs = subgruposDeKey(catKey); const sg = subs && subs.find(s => s.key === subKey); return (sg && sg.hijos) || null; };
+    const sg2OptionsHTML = (hijos, sel) => `<option value="" ${!sel ? 'selected' : ''}>— Sin clasificar —</option>` + hijos.map(h => `<option value="${h.key}" ${sel === h.key ? 'selected' : ''}>${h.emoji ? h.emoji + ' ' : ''}${esc(h.label)}</option>`).join('');
     function poblarSelectCategoria() {
         const sel = document.getElementById('nuevo-categoria');
         if (!sel) return;
@@ -251,6 +269,18 @@
         const subs = subgruposDeKey(sel.value);
         if (subs && sg) { sg.innerHTML = sgOptionsHTML(subs, sg.value); row.style.display = 'block'; }
         else { row.style.display = 'none'; }
+        onNuevoSubChange();
+    };
+    // Muestra y puebla el selector de sub-tipo (nivel 3) si la sub-sección elegida tiene hijos.
+    window.onNuevoSubChange = function () {
+        const cat = document.getElementById('nuevo-categoria');
+        const sg = document.getElementById('nuevo-subgrupo');
+        const row2 = document.getElementById('nuevo-subgrupo2-row');
+        const sg2 = document.getElementById('nuevo-subgrupo2');
+        if (!row2) return;
+        const hijos = (cat && sg) ? hijosDeSub(cat.value, sg.value) : null;
+        if (hijos && sg2) { sg2.innerHTML = sg2OptionsHTML(hijos, sg2.value); row2.style.display = 'block'; }
+        else { row2.style.display = 'none'; }
     };
 
     // Gerencia (admin) + chofer + instalador + ayudante consumen del inventario. Fábrica/
@@ -315,6 +345,7 @@
     function itemCardHTML(item) {
         const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
         const subsEdit = subgruposDeKey(item.categoria);
+        const hijosEdit = subsEdit ? hijosDeSub(item.categoria, item.subgrupo || defectoDeKey(item.categoria)) : null;
         const label = item.color ? `${esc(item.tipo)} — ${esc(item.color)}` : esc(item.tipo);
         const costo = Number(item.costo || 0);
         const venta = Number(item.venta || 0);
@@ -383,8 +414,9 @@
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Cantidad mínima <span style="font-weight:normal;color:#999">(0 = sin aviso)</span></label><input type="number" id="editar-min-${item.id}" min="0" value="${Number(item.minimo) || 0}"></div>
-                    <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || defectoDeKey(item.categoria)) : ''}</select></div>
+                    <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}" onchange="onEditarSubChange('${item.id}')">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || defectoDeKey(item.categoria)) : ''}</select></div>
                 </div>
+                <div id="editar-sg2-row-${item.id}" style="margin-top:8px;${hijosEdit ? '' : 'display:none'}"><label>Sub-sección / tipo</label><select id="editar-sg2-${item.id}">${hijosEdit ? sg2OptionsHTML(hijosEdit, item.subgrupo2 || '') : ''}</select></div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
                     <button class="btn-editar" onclick="confirmarEditar('${item.id}')">Guardar cambios</button>
@@ -413,11 +445,13 @@
 
     // Navegación por niveles (siempre cuadros): null = grid de categorías; catSel = dentro de una
     // categoría/grupo; subSel = dentro de una sub-sección de esa categoría.
-    let catSel = null, subSel = null, colorFiltro = null;
-    window.abrirCat = function (key) { catSel = key; subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
-    window.abrirSub = function (key) { subSel = key; colorFiltro = null; render(); window.scrollTo(0, 0); };
-    window.cerrarCat = function () { catSel = null; subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
-    window.cerrarSub = function () { subSel = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    let catSel = null, subSel = null, subSel2 = null, colorFiltro = null;
+    window.abrirCat = function (key) { catSel = key; subSel = null; subSel2 = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.abrirSub = function (key) { subSel = key; subSel2 = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.abrirSub2 = function (key) { subSel2 = key; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.cerrarCat = function () { catSel = null; subSel = null; subSel2 = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.cerrarSub = function () { subSel = null; subSel2 = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
+    window.cerrarSub2 = function () { subSel2 = null; colorFiltro = null; render(); window.scrollTo(0, 0); };
     window.setColorFiltro = function (k) { colorFiltro = k || null; render(); };
     window.renombrarCategoria = async function (key) {
         const cat = catByKey(key);
@@ -459,7 +493,16 @@
         const def = defectoDeCat(c);
         return {
             titulo: c.label, emoji: emojiCat(c), esCustom: esCategoriaCustom(c.key),
-            defs: subs.map(sg => ({ key: sg.key, emoji: sg.emoji, label: sg.label, items: catItems.filter(it => (it.subgrupo || def) === sg.key) }))
+            defs: subs.map(sg => {
+                const sgItems = catItems.filter(it => (it.subgrupo || def) === sg.key);
+                let hijos = null;
+                if (sg.hijos) {
+                    hijos = sg.hijos.map(h => ({ key: h.key, emoji: h.emoji, label: h.label, items: sgItems.filter(it => (it.subgrupo2 || '') === h.key) }));
+                    const sinClasif = sgItems.filter(it => !sg.hijos.some(h => h.key === (it.subgrupo2 || '')));
+                    if (sinClasif.length) hijos.push({ key: '_sc', emoji: '📦', label: 'Sin clasificar', items: sinClasif });
+                }
+                return { key: sg.key, emoji: sg.emoji, label: sg.label, items: sgItems, hijos };
+            })
         };
     }
     // Agrupa una lista de ítems por color: Negro/Negro mate juntos, Cromado juntos, el resto por
@@ -547,10 +590,25 @@
                     container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${sd.emoji} ${esc(sd.titulo)}</h2><div class="inv-grid">${tiles.join('')}</div>`;
                     actualizarSeedBtns(); return;
                 }
-                // Nivel 3: ítems de una sub-sección.
                 const d = sd.defs.find(x => x.key === subSel);
-                const items = d ? d.items : [];
                 const volverSub = `<button class="btn-back-cat" onclick="cerrarSub()">← ${esc(sd.titulo)}</button>`;
+                // Sub-sección CON sus propios cuadros (nivel 3, ej. Ventanas → E70/E100…).
+                if (d && d.hijos) {
+                    if (!subSel2) {
+                        const tiles = d.hijos.map(h => tileHTML(`abrirSub2('${esc(h.key)}')`, h.label, h.emoji, h.items));
+                        container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d.emoji} ${esc(d.label)}</h2><div class="inv-grid">${tiles.join('')}</div>`;
+                        actualizarSeedBtns(); return;
+                    }
+                    // Nivel 4: ítems de un sub-tipo.
+                    const h = d.hijos.find(x => x.key === subSel2);
+                    const itemsH = h ? h.items : [];
+                    const volverSub2 = `<button class="btn-back-cat" onclick="cerrarSub2()">← ${esc(d.label)}</button>`;
+                    const cuerpoH = itemsH.length ? itemsListHTML(itemsH) : '<p class="empty">Sin ítems en esta sección todavía.</p>';
+                    container.innerHTML = `${volverSub2}<h2 class="section-title" style="margin:12px 0 10px">${h ? h.emoji + ' ' + esc(h.label) : ''}</h2>${cuerpoH}`;
+                    actualizarSeedBtns(); return;
+                }
+                // Sub-sección sin hijos: ítems directos (nivel 3).
+                const items = d ? d.items : [];
                 const cuerpo = items.length ? itemsListHTML(items) : '<p class="empty">Sin ítems en esta sección todavía.</p>';
                 container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d ? d.emoji + ' ' + esc(d.label) : ''}</h2>${cuerpo}`;
                 actualizarSeedBtns(); return;
@@ -737,7 +795,9 @@
             }
             onNuevoCatChange();  // muestra/puebla el selector de sub-sección según la categoría
             const sg = document.getElementById('nuevo-subgrupo');
-            if (sg && subSel && !g && [...sg.options].some(o => o.value === subSel)) sg.value = subSel;
+            if (sg && subSel && !g && [...sg.options].some(o => o.value === subSel)) { sg.value = subSel; onNuevoSubChange(); }
+            const sg2 = document.getElementById('nuevo-subgrupo2');
+            if (sg2 && subSel2 && subSel2 !== '_sc' && [...sg2.options].some(o => o.value === subSel2)) sg2.value = subSel2;
         }
         document.getElementById('nuevo-item-overlay').classList.add('show');
     };
@@ -757,10 +817,12 @@
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
         const subsNuevo = subgruposDeKey(categoria);
         const subgrupo = subsNuevo ? (document.getElementById('nuevo-subgrupo').value || defectoDeKey(categoria)) : null;
+        const hijosNuevo = subgrupo ? hijosDeSub(categoria, subgrupo) : null;
+        const subgrupo2 = hijosNuevo ? (document.getElementById('nuevo-subgrupo2').value || null) : null;
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, color: color || null,
-                categoria, subgrupo, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
+                categoria, subgrupo, subgrupo2, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
@@ -803,6 +865,17 @@
         const subs = subgruposDeKey(sel.value);
         if (subs && sg) { sg.innerHTML = sgOptionsHTML(subs, sg.value); row.style.display = 'block'; }
         else { row.style.display = 'none'; }
+        onEditarSubChange(id);
+    };
+    window.onEditarSubChange = function (id) {
+        const cat = document.getElementById('editar-cat-' + id);
+        const sg = document.getElementById('editar-sg-' + id);
+        const row2 = document.getElementById('editar-sg2-row-' + id);
+        const sg2 = document.getElementById('editar-sg2-' + id);
+        if (!row2) return;
+        const hijos = (cat && sg) ? hijosDeSub(cat.value, sg.value) : null;
+        if (hijos && sg2) { sg2.innerHTML = sg2OptionsHTML(hijos, sg2.value); row2.style.display = 'block'; }
+        else { row2.style.display = 'none'; }
     };
     window.confirmarEditar = async function (id) {
         const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
@@ -815,8 +888,11 @@
         const sgEl = document.getElementById('editar-sg-' + id);
         const subsEd = subgruposDeKey(categoria);
         const subgrupo = subsEd ? ((sgEl && sgEl.value) || defectoDeKey(categoria)) : null;
+        const hijosEd = subgrupo ? hijosDeSub(categoria, subgrupo) : null;
+        const sg2El = document.getElementById('editar-sg2-' + id);
+        const subgrupo2 = hijosEd ? ((sg2El && sg2El.value) || null) : null;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, minimo });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
