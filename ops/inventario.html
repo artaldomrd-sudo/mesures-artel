@@ -64,6 +64,18 @@
     .conteo-tabla input { width: 90px; padding: 7px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; text-align: right; }
     .conteo-tabla tr.dif input { border-color: #f39c12; background: #fff8e8; }
     .conteo-cat { font-weight: bold; color: var(--artal-blue); background: #f6f8fa; }
+    /* Cuadros de categoría (3 columnas, tipo Panel de Control) */
+    .inv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 900px) { .inv-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .inv-grid { grid-template-columns: 1fr; } }
+    .inv-cat-tile { background: #fff; border-radius: 16px; box-shadow: var(--shadow); padding: 20px 18px; cursor: pointer; border: 1px solid #eef1f5; transition: transform .12s, box-shadow .12s; }
+    .inv-cat-tile:hover { transform: translateY(-2px); box-shadow: 0 12px 28px -12px rgba(28,78,122,.45); }
+    .inv-cat-tile .emoji { font-size: 30px; line-height: 1; }
+    .inv-cat-tile .title { font-size: 17px; font-weight: bold; color: var(--artal-blue); margin-top: 10px; }
+    .inv-cat-tile .desc { font-size: 13px; color: #8a93a0; margin-top: 4px; }
+    .btn-back-cat { background: #eef4fb; color: var(--artal-blue); border: none; border-radius: 100px; padding: 9px 16px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13.5px; min-height: 40px; }
+    .subsec-title { font-size: 14px; font-weight: bold; color: var(--artal-blue); border-bottom: 2px solid #eef1f5; padding-bottom: 6px; margin: 16px 0 8px; }
+    .subsec-title .l { font-weight: normal; color: #8a93a0; font-size: 12px; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -116,8 +128,12 @@
         <h2>Agregar ítem nuevo</h2>
         <label>Categoría</label>
         <div class="categoria-row">
-            <select id="nuevo-categoria"></select>
+            <select id="nuevo-categoria" onchange="onNuevoCatChange()"></select>
             <button type="button" onclick="crearCategoria()">+ Nueva categoría</button>
+        </div>
+        <div id="nuevo-subgrupo-row" style="display:none">
+            <label>Equipo / grupo</label>
+            <select id="nuevo-subgrupo"></select>
         </div>
         <label>Nombre del ítem</label>
         <input type="text" id="nuevo-tipo" placeholder="Ej: Riel superior 2 vías">
@@ -143,6 +159,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
+    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { db } from './firebase-config.js';
     import {
         collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp
@@ -152,22 +169,36 @@
     // (colección `categoriasInventario`, un doc por categoría con { nombre }).
     const CATEGORIAS_BASE = [
         { key: 'perfil', label: 'Perfiles de aluminio' },
-        { key: 'consumible', label: 'Herrajes y consumibles' },
-        { key: 'herr_equipo1', label: '🧰 Herramientas · Equipo 1 de instalación' },
-        { key: 'herr_equipo2', label: '🧰 Herramientas · Equipo 2 de instalación' },
-        { key: 'herr_comunes', label: '🧰 Herramientas · Comunes (compartidas)' }
+        { key: 'consumible', label: 'Herrajes y consumibles' }
+    ];
+    // Sub-secciones DENTRO de la categoría "Herramientas" (equipos de instalación + comunes).
+    const SUBGRUPOS_HERR = [
+        { key: 'equipo1', label: '👷 Equipo 1 de instalación' },
+        { key: 'equipo2', label: '👷 Equipo 2 de instalación' },
+        { key: 'comunes', label: '🔧 Comunes (compartidas)' }
     ];
     let categoriasCustom = [];
     function todasLasCategorias() {
         return [...CATEGORIAS_BASE, ...categoriasCustom.map(c => ({ key: c.id, label: c.nombre }))];
     }
+    const catByKey = (key) => todasLasCategorias().find(c => c.key === key) || null;
+    const esHerramientasKey = (key) => { const c = catByKey(key); return !!c && /herramient/i.test(c.label || ''); };
     function poblarSelectCategoria() {
         const sel = document.getElementById('nuevo-categoria');
         if (!sel) return;
         const prev = sel.value;
         sel.innerHTML = todasLasCategorias().map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+        const sg = document.getElementById('nuevo-subgrupo');
+        if (sg && !sg.options.length) sg.innerHTML = SUBGRUPOS_HERR.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('');
+        onNuevoCatChange();
     }
+    // Muestra el selector de equipo solo cuando la categoría elegida es "Herramientas".
+    window.onNuevoCatChange = function () {
+        const sel = document.getElementById('nuevo-categoria');
+        const row = document.getElementById('nuevo-subgrupo-row');
+        if (sel && row) row.style.display = esHerramientasKey(sel.value) ? 'block' : 'none';
+    };
 
     // Gerencia (admin) + chofer + instalador + ayudante consumen del inventario. Fábrica/
     // contratista (Alucufel) queda fuera a propósito. Solo admin agrega stock/precio/elimina;
@@ -248,6 +279,8 @@
                 <span class="venta">Venta: ${money(venta)}</span>
                 ${margenPct !== null ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
             </div>` : ''}
+            ${fotosThumbsHTML(item.fotos, { coleccion: 'inventario', id: item.id, puedeBorrar: esAdmin })}
+            ${fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' })}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
                 <button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>
@@ -289,11 +322,11 @@
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Unidad</label><input type="text" id="editar-unidad-${item.id}" value="${esc(item.unidad || '')}"></div>
-                    <div><label>Categoría</label><select id="editar-cat-${item.id}">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
+                    <div><label>Categoría</label><select id="editar-cat-${item.id}" onchange="onEditarCatChange('${item.id}')">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Cantidad mínima <span style="font-weight:normal;color:#999">(0 = sin aviso)</span></label><input type="number" id="editar-min-${item.id}" min="0" value="${Number(item.minimo) || 0}"></div>
-                    <div></div>
+                    <div id="editar-sg-row-${item.id}" style="${esHerramientasKey(item.categoria) ? '' : 'display:none'}"><label>Equipo / grupo</label><select id="editar-sg-${item.id}">${SUBGRUPOS_HERR.map(s => `<option value="${s.key}" ${(item.subgrupo || 'comunes') === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select></div>
                 </div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
@@ -321,61 +354,81 @@
         </div>`;
     }
 
-    let catAbiertas = new Set();   // secciones desplegadas (se mantienen al refrescar datos)
-    window.toggleCat = function (key) {
-        if (catAbiertas.has(key)) catAbiertas.delete(key); else catAbiertas.add(key);
-        render();
-    };
+    // Vista: null = cuadros de categoría (grid); una key = detalle de esa categoría.
+    let catSel = null;
+    window.abrirCat = function (key) { catSel = key; render(); window.scrollTo(0, 0); };
+    window.cerrarCat = function () { catSel = null; render(); };
+    const esHerramientas = (cat) => !!cat && /herramient/i.test(cat.label || '');
+    function emojiCat(cat) {
+        const l = (cat.label || '').toLowerCase();
+        if (/perfil/.test(l)) return '🪟';
+        if (/herraje|consumible/.test(l)) return '🔩';
+        if (/herramient/.test(l)) return '🧰';
+        if (/vidrio/.test(l)) return '🪞';
+        if (/silic|uretan|masilla|sellante/.test(l)) return '🧪';
+        return '📦';
+    }
+    function actualizarSeedBtns() {
+        if (!esAdmin) return;
+        const perfiles = allItems.filter(it => it.categoria === 'perfil');
+        const seedBtn = document.getElementById('seed-btn'); if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
+        const yaSell = ['silicon', 'urethano', 'masilla'].some(k => categoriasCustom.some(c => c.id === k));
+        const seedSell = document.getElementById('seed-btn-sellantes'); if (seedSell) seedSell.style.display = yaSell ? 'none' : 'block';
+    }
 
     function render() {
         const term = document.getElementById('search-input').value.trim().toLowerCase();
-        const buscando = !!term;
-        const filtered = allItems.filter(it => {
-            if (!term) return true;
-            return ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term);
-        });
+        const filtered = allItems.filter(it => !term || ((it.tipo || '') + ' ' + (it.color || '')).toLowerCase().includes(term));
 
-        // Resumen superior (sobre TODO el inventario, no lo filtrado).
+        // Resumen superior (sobre TODO el inventario).
         if (esAdmin) {
             const valorTotal = allItems.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.costo) || 0), 0);
-            const nBajo = allItems.filter(bajoMinimoDe).length;
-            const nOut = allItems.filter(sinStockDe).length;
             document.getElementById('inv-kpis').innerHTML =
                 `<div class="inv-kpi"><div class="n">${money(valorTotal)}</div><div class="l">Valor del inventario</div></div>` +
-                `<div class="inv-kpi"><div class="n warn">${nBajo}</div><div class="l">Bajo mínimo</div></div>` +
-                `<div class="inv-kpi"><div class="n out">${nOut}</div><div class="l">Sin stock</div></div>`;
+                `<div class="inv-kpi"><div class="n warn">${allItems.filter(bajoMinimoDe).length}</div><div class="l">Bajo mínimo</div></div>` +
+                `<div class="inv-kpi"><div class="n out">${allItems.filter(sinStockDe).length}</div><div class="l">Sin stock</div></div>`;
         }
 
         const container = document.getElementById('categorias-container');
-        // Cada categoría es un cuadro colapsable: clic para desplegar su lista. Al buscar, las que
-        // tienen resultados se abren solas.
-        container.innerHTML = todasLasCategorias().map(cat => {
-            const items = filtered.filter(it => it.categoria === cat.key);
-            const abierta = buscando ? items.length > 0 : catAbiertas.has(cat.key);
-            const sinStock = items.filter(sinStockDe).length;
-            const bajo = items.filter(bajoMinimoDe).length;
-            const alertas = [sinStock ? `${sinStock} sin stock` : '', bajo ? `${bajo} bajo mínimo` : ''].filter(Boolean).join(' · ');
-            return `
-            <div class="cat-block ${abierta ? 'open' : ''}">
-                <button class="cat-card" onclick="toggleCat('${esc(cat.key)}')">
-                    <span class="cat-name">${esc(cat.label)}</span>
-                    <span class="cat-meta">${items.length} ítem(s)${alertas ? ` · <span class="cat-low">${alertas}</span>` : ''} <span class="cat-arrow">${abierta ? '▾' : '▸'}</span></span>
-                </button>
-                <div class="cat-body">
-                    ${items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>'}
-                </div>
-            </div>`;
-        }).join('');
 
-        if (esAdmin) {
-            const perfiles = filtered.filter(it => it.categoria === 'perfil');
-            const seedBtn = document.getElementById('seed-btn');
-            if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
-
-            const yaTieneSellantes = ['silicon', 'urethano', 'masilla'].some(k => categoriasCustom.some(c => c.id === k));
-            const seedBtnSellantes = document.getElementById('seed-btn-sellantes');
-            if (seedBtnSellantes) seedBtnSellantes.style.display = yaTieneSellantes ? 'none' : 'block';
+        // Buscando: lista plana de resultados a través de todas las categorías.
+        if (term) {
+            container.innerHTML = filtered.length ? filtered.map(itemCardHTML).join('') : '<p class="empty">Sin resultados para la búsqueda.</p>';
+            actualizarSeedBtns(); return;
         }
+
+        // Detalle de una categoría.
+        const cat = catSel ? todasLasCategorias().find(c => c.key === catSel) : null;
+        if (catSel && cat) {
+            const items = allItems.filter(it => it.categoria === cat.key);
+            let cuerpo;
+            if (esHerramientas(cat)) {
+                // Sub-secciones por equipo dentro de Herramientas.
+                cuerpo = SUBGRUPOS_HERR.map(sg => {
+                    const its = items.filter(it => (it.subgrupo || 'comunes') === sg.key);
+                    return `<div class="subsec"><div class="subsec-title">${esc(sg.label)} <span class="l">· ${its.length} ítem(s)</span></div>${its.length ? its.map(itemCardHTML).join('') : '<p class="empty" style="margin:2px 0 12px">Vacío — agrega herramientas a este equipo.</p>'}</div>`;
+                }).join('');
+            } else {
+                cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
+            }
+            container.innerHTML = `<button class="btn-back-cat" onclick="cerrarCat()">← Todas las categorías</button>
+                <h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
+            actualizarSeedBtns(); return;
+        }
+        catSel = null;
+
+        // Vista principal: cuadros de categoría en 3 columnas (tipo Panel de Control).
+        container.innerHTML = '<div class="inv-grid">' + todasLasCategorias().map(c => {
+            const items = allItems.filter(it => it.categoria === c.key);
+            const sin = items.filter(sinStockDe).length, bajo = items.filter(bajoMinimoDe).length;
+            const alertas = [sin ? `${sin} sin stock` : '', bajo ? `${bajo} bajo mínimo` : ''].filter(Boolean).join(' · ');
+            return `<div class="card-link inv-cat-tile" onclick="abrirCat('${esc(c.key)}')">
+                <div class="emoji">${emojiCat(c)}</div>
+                <div class="title">${esc(c.label)}</div>
+                <div class="desc">${items.length} ítem(s)${alertas ? ` · <span style="color:#c0392b;font-weight:bold">${alertas}</span>` : ''}</div>
+            </div>`;
+        }).join('') + '</div>';
+        actualizarSeedBtns();
     }
 
     document.getElementById('search-input').addEventListener('input', render);
@@ -538,10 +591,11 @@
         const costo = Number(document.getElementById('nuevo-costo').value) || 0;
         const venta = Number(document.getElementById('nuevo-venta').value) || 0;
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
+        const subgrupo = esHerramientasKey(categoria) ? (document.getElementById('nuevo-subgrupo').value || 'comunes') : null;
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, color: categoria === 'perfil' ? (color || null) : null,
-                categoria, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
+                categoria, subgrupo, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
@@ -575,6 +629,11 @@
         const el = document.getElementById('editar-' + id);
         if (el) el.classList.add('show');
     };
+    window.onEditarCatChange = function (id) {
+        const sel = document.getElementById('editar-cat-' + id);
+        const row = document.getElementById('editar-sg-row-' + id);
+        if (sel && row) row.style.display = esHerramientasKey(sel.value) ? 'block' : 'none';
+    };
     window.confirmarEditar = async function (id) {
         const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
         if (!tipo) { alert('El nombre no puede quedar vacío.'); return; }
@@ -582,8 +641,10 @@
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
         const categoria = document.getElementById('editar-cat-' + id).value;
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
+        const sgEl = document.getElementById('editar-sg-' + id);
+        const subgrupo = esHerramientasKey(categoria) ? ((sgEl && sgEl.value) || 'comunes') : null;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria, minimo });
+            await updateDoc(doc(db, 'inventario', id), { tipo, color: color || null, unidad, categoria, subgrupo, minimo });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
