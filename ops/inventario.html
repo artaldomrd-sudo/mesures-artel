@@ -55,6 +55,15 @@
     .inv-kpi .n.warn { color: #b9770e; } .inv-kpi .n.out { color: #c0392b; }
     .inv-kpi .l { font-size: 11px; color: #8a93a0; text-transform: uppercase; letter-spacing: .4px; margin-top: 2px; }
     .btn-hist { background: #f0f3f7; color: var(--artal-blue); }
+    .hist-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #eef1f4; font-size: 13.5px; }
+    .hist-cant { font-weight: bold; } .hist-cant.pos { color: #1e8f4e; } .hist-cant.neg { color: #c0392b; }
+    .hist-meta { font-size: 11.5px; color: #8a93a0; text-align: right; white-space: nowrap; }
+    .conteo-tabla { width: 100%; border-collapse: collapse; }
+    .conteo-tabla th { font-size: 10.5px; text-transform: uppercase; color: #778; text-align: left; padding: 6px; border-bottom: 1.5px solid #eef1f4; }
+    .conteo-tabla td { padding: 6px; border-bottom: 1px solid #f2f4f7; font-size: 13px; }
+    .conteo-tabla input { width: 90px; padding: 7px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; text-align: right; }
+    .conteo-tabla tr.dif input { border-color: #f39c12; background: #fff8e8; }
+    .conteo-cat { font-weight: bold; color: var(--artal-blue); background: #f6f8fa; }
     .inline-form label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 8px 0 4px; }
     .inline-form input { width: 100%; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; }
     .inline-form .row-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -93,6 +102,7 @@
     <div id="admin-tools" style="display:none; gap:10px;">
         <button class="seed-btn" id="seed-btn" onclick="sembrarCatalogo()" style="display:none;">📦 Crear catálogo inicial de perfiles</button>
         <button class="seed-btn" id="seed-btn-sellantes" onclick="sembrarSellantes()" style="display:none;">🧪 Crear categorías Silicón/Urethano/Masilla</button>
+        <button class="seed-btn" onclick="abrirConteo()">📋 Conteo físico</button>
         <button class="new-item-btn" onclick="abrirNuevoItem()">+ Agregar ítem nuevo al catálogo</button>
     </div>
     <div class="inv-kpis" id="inv-kpis"></div>
@@ -237,6 +247,7 @@
             </div>` : ''}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
+                <button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
                 ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
                 ${esAdmin ? `<button class="btn-editar" onclick="abrirEditar('${item.id}')">✏ Editar</button>` : ''}
@@ -382,6 +393,36 @@
 
     poblarSelectCategoria();
 
+    // Movimientos (consumo / restock / ajuste) para el historial por ítem.
+    let movs = [];
+    onSnapshot(collection(db, 'movimientosInventario'), (snap) => {
+        movs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (histItemId && document.getElementById('hist-overlay').classList.contains('show')) pintarHistorial();
+    }, () => {});
+
+    let histItemId = null;
+    const fmtFechaHora = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+    window.abrirHistorial = function (id) { histItemId = id; pintarHistorial(); document.getElementById('hist-overlay').classList.add('show'); };
+    window.cerrarHistorial = function () { document.getElementById('hist-overlay').classList.remove('show'); histItemId = null; };
+    function pintarHistorial() {
+        const item = allItems.find(it => it.id === histItemId) || {};
+        document.getElementById('hist-titulo').textContent = 'Historial · ' + (item.tipo || '') + (item.color ? ' — ' + item.color : '');
+        const lista = movs.filter(m => m.itemId === histItemId)
+            .sort((a, b) => ((b.fecha && b.fecha.seconds) || 0) - ((a.fecha && a.fecha.seconds) || 0));
+        const cont = document.getElementById('hist-body');
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin movimientos registrados para este ítem.</p>'; return; }
+        const TIPO = { consumo: '📤 Tomado', restock: '📥 Reabastecido', ajuste: '📋 Ajuste de conteo' };
+        cont.innerHTML = lista.map(m => {
+            const signo = (Number(m.cantidad) || 0) >= 0 ? '+' : '';
+            const extra = [m.proveedor ? 'Prov: ' + esc(m.proveedor) : '', m.ncf ? 'NCF: ' + esc(m.ncf) : '', m.costoUnitario ? money(m.costoUnitario) + '/u' : ''].filter(Boolean).join(' · ');
+            return `<div class="hist-row">
+                <div><b>${TIPO[m.tipo] || esc(m.tipo || '')}</b> <span class="hist-cant ${(Number(m.cantidad) || 0) >= 0 ? 'pos' : 'neg'}">${signo}${m.cantidad} ${esc(item.unidad || '')}</span>
+                    ${m.nota ? `<div class="l">${esc(m.nota)}</div>` : ''}${extra ? `<div class="l">${extra}</div>` : ''}</div>
+                <div class="hist-meta">${esc(m.usuarioNombre || '')}<br>${esc(fmtFechaHora(m.fecha))}</div>
+            </div>`;
+        }).join('');
+    }
+
     window.crearCategoria = async function () {
         const nombre = (prompt('Nombre de la nueva categoría (ej: Vidrios, Sellantes…):') || '').trim();
         if (!nombre) return;
@@ -436,6 +477,46 @@
         } catch (e) {
             alert('No se pudo crear: ' + e.message);
         }
+    };
+
+    // ---------- Conteo físico ----------
+    window.abrirConteo = function () {
+        let html = '<table class="conteo-tabla"><thead><tr><th>Ítem</th><th style="text-align:right">Sistema</th><th style="text-align:right">Real contado</th></tr></thead><tbody>';
+        todasLasCategorias().forEach(cat => {
+            const items = allItems.filter(it => it.categoria === cat.key);
+            if (!items.length) return;
+            html += `<tr><td colspan="3" class="conteo-cat">${esc(cat.label)}</td></tr>`;
+            items.forEach(it => {
+                const label = it.color ? esc(it.tipo) + ' — ' + esc(it.color) : esc(it.tipo);
+                const q = Number(it.cantidad) || 0;
+                html += `<tr><td>${label} <span style="color:#999">${esc(it.unidad || '')}</span></td><td style="text-align:right;color:#888">${q}</td><td style="text-align:right"><input type="number" data-id="${esc(it.id)}" data-actual="${q}" value="${q}" oninput="marcarDif(this)"></td></tr>`;
+            });
+        });
+        html += '</tbody></table>';
+        document.getElementById('conteo-body').innerHTML = html;
+        document.getElementById('conteo-overlay').classList.add('show');
+    };
+    window.marcarDif = function (inp) { const tr = inp.closest('tr'); if (tr) tr.classList.toggle('dif', Number(inp.value) !== Number(inp.dataset.actual)); };
+    window.cerrarConteo = function () { document.getElementById('conteo-overlay').classList.remove('show'); };
+    window.guardarConteo = async function () {
+        const cambios = Array.from(document.querySelectorAll('#conteo-body input[data-id]'))
+            .map(i => ({ id: i.dataset.id, actual: Number(i.dataset.actual), nuevo: Number(i.value) }))
+            .filter(c => !isNaN(c.nuevo) && c.nuevo !== c.actual);
+        if (!cambios.length) { alert('No hay cambios en el conteo.'); return; }
+        if (!confirm(`Se ajustarán ${cambios.length} ítem(s) a la cantidad real contada. ¿Continuar?`)) return;
+        try {
+            for (const c of cambios) {
+                const item = allItems.find(it => it.id === c.id) || {};
+                await updateDoc(doc(db, 'inventario', c.id), { cantidad: c.nuevo });
+                await addDoc(collection(db, 'movimientosInventario'), {
+                    itemId: c.id, itemTipo: item.tipo, itemColor: item.color || null,
+                    tipo: 'ajuste', cantidad: c.nuevo - c.actual, nota: 'Ajuste por conteo físico (de ' + c.actual + ' a ' + c.nuevo + ')',
+                    usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
+                });
+            }
+            cerrarConteo();
+            alert('Conteo aplicado: ' + cambios.length + ' ajuste(s).');
+        } catch (e) { alert('No se pudo aplicar el conteo: ' + e.message); }
     };
 
     window.abrirNuevoItem = function () {
@@ -607,6 +688,26 @@
         }
     };
 </script>
+
+<div class="modal-overlay" id="hist-overlay">
+    <div class="modal-box" style="max-width:520px">
+        <h2 id="hist-titulo">Historial</h2>
+        <div id="hist-body" style="max-height:60vh;overflow:auto;margin-top:6px"></div>
+        <div class="modal-actions"><button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarHistorial()">Cerrar</button></div>
+    </div>
+</div>
+
+<div class="modal-overlay" id="conteo-overlay">
+    <div class="modal-box" style="max-width:560px">
+        <h2>📋 Conteo físico</h2>
+        <p style="font-size:13px;color:#667;margin:0 0 10px;">Escribe la cantidad <b>real contada</b> de cada ítem. Al guardar, solo se ajustan los que cambien (queda registrado en el historial como “ajuste de conteo”).</p>
+        <div id="conteo-body" style="max-height:62vh;overflow:auto"></div>
+        <div class="modal-actions">
+            <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarConteo()">Cancelar</button>
+            <button class="btn-agregar" onclick="guardarConteo()">Guardar conteo</button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>
