@@ -133,7 +133,7 @@
             <button type="button" onclick="crearCategoria()">+ Nueva categoría</button>
         </div>
         <div id="nuevo-subgrupo-row" style="display:none">
-            <label>Equipo / grupo</label>
+            <label>Sección / grupo</label>
             <select id="nuevo-subgrupo"></select>
         </div>
         <label>Nombre del ítem</label>
@@ -175,12 +175,28 @@
         { key: 'herraje', label: 'Herrajes' },
         { key: 'consumible', label: 'Consumibles' }
     ];
-    // Sub-secciones DENTRO de la categoría "Herramientas" (equipos de instalación + comunes).
+    // Sub-secciones DENTRO de una categoría (dividen sus ítems por el campo `subgrupo`).
+    // Herramientas → por equipo; Accesorios puertas/ventanas/vidrios → por tipo de elemento.
     const SUBGRUPOS_HERR = [
         { key: 'equipo1', label: '👷 Equipo 1 de instalación' },
         { key: 'equipo2', label: '👷 Equipo 2 de instalación' },
         { key: 'comunes', label: '🔧 Comunes (compartidas)' }
     ];
+    const SUBGRUPOS_ACC = [
+        { key: 'puertas_alu', label: '🚪 Puertas de aluminio' },
+        { key: 'ventanas_alu', label: '🪟 Ventanas de aluminio' },
+        { key: 'puertas_vidrio', label: '🚪 Puertas de vidrio' },
+        { key: 'mamparas_vidrio', label: '🪞 Mamparas de vidrio' }
+    ];
+    // Qué categorías se dividen en sub-secciones (por coincidencia de nombre, así funciona aunque
+    // la categoría se renombre luego mientras conserve la palabra clave).
+    const SUBGRUPOS_POR_CAT = [
+        { match: /herramient/i, subs: SUBGRUPOS_HERR, vacio: 'Vacío — agrega herramientas a este equipo.' },
+        { match: /accesorio/i, subs: SUBGRUPOS_ACC, vacio: 'Vacío — sin ítems en esta sección.' }
+    ];
+    const cfgSubgrupos = (cat) => (cat ? (SUBGRUPOS_POR_CAT.find(s => s.match.test(cat.label || '')) || null) : null);
+    const subgruposDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.subs : null; };
+    const vacioDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.vacio : 'Vacío.'; };
     // Grupos "sintéticos": un cuadro que agrupa VARIAS categorías reales como sub-secciones
     // (a diferencia de Herramientas, que es UNA categoría dividida por el campo `subgrupo`).
     // "Selladores" junta las categorías Silicón / Masilla / Urethano sin mover ningún dato:
@@ -195,22 +211,27 @@
         return [...CATEGORIAS_BASE, ...categoriasCustom.map(c => ({ key: c.id, label: c.nombre }))];
     }
     const catByKey = (key) => todasLasCategorias().find(c => c.key === key) || null;
-    const esHerramientasKey = (key) => { const c = catByKey(key); return !!c && /herramient/i.test(c.label || ''); };
+    const subgruposDeKey = (key) => subgruposDeCat(catByKey(key));
+    const esCategoriaCustom = (key) => categoriasCustom.some(c => c.id === key);
+    const sgOptionsHTML = (subs, sel) => subs.map(s => `<option value="${s.key}" ${sel === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
     function poblarSelectCategoria() {
         const sel = document.getElementById('nuevo-categoria');
         if (!sel) return;
         const prev = sel.value;
         sel.innerHTML = todasLasCategorias().map(c => `<option value="${esc(c.key)}">${esc(c.label)}</option>`).join('');
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
-        const sg = document.getElementById('nuevo-subgrupo');
-        if (sg && !sg.options.length) sg.innerHTML = SUBGRUPOS_HERR.map(s => `<option value="${s.key}">${esc(s.label)}</option>`).join('');
         onNuevoCatChange();
     }
-    // Muestra el selector de equipo solo cuando la categoría elegida es "Herramientas".
+    // Muestra y puebla el selector de sub-sección según la categoría elegida (Herramientas,
+    // Accesorios…). Si la categoría no tiene sub-secciones, se oculta.
     window.onNuevoCatChange = function () {
         const sel = document.getElementById('nuevo-categoria');
         const row = document.getElementById('nuevo-subgrupo-row');
-        if (sel && row) row.style.display = esHerramientasKey(sel.value) ? 'block' : 'none';
+        const sg = document.getElementById('nuevo-subgrupo');
+        if (!sel || !row) return;
+        const subs = subgruposDeKey(sel.value);
+        if (subs && sg) { sg.innerHTML = sgOptionsHTML(subs, sg.value); row.style.display = 'block'; }
+        else { row.style.display = 'none'; }
     };
 
     // Gerencia (admin) + chofer + instalador + ayudante consumen del inventario. Fábrica/
@@ -274,6 +295,7 @@
     const bajoMinimoDe = (it) => minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
     function itemCardHTML(item) {
         const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
+        const subsEdit = subgruposDeKey(item.categoria);
         const label = item.color ? `${esc(item.tipo)} — ${esc(item.color)}` : esc(item.tipo);
         const costo = Number(item.costo || 0);
         const venta = Number(item.venta || 0);
@@ -342,7 +364,7 @@
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Cantidad mínima <span style="font-weight:normal;color:#999">(0 = sin aviso)</span></label><input type="number" id="editar-min-${item.id}" min="0" value="${Number(item.minimo) || 0}"></div>
-                    <div id="editar-sg-row-${item.id}" style="${esHerramientasKey(item.categoria) ? '' : 'display:none'}"><label>Equipo / grupo</label><select id="editar-sg-${item.id}">${SUBGRUPOS_HERR.map(s => `<option value="${s.key}" ${(item.subgrupo || 'comunes') === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select></div>
+                    <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || subsEdit[0].key) : ''}</select></div>
                 </div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
@@ -374,7 +396,16 @@
     let catSel = null;
     window.abrirCat = function (key) { catSel = key; render(); window.scrollTo(0, 0); };
     window.cerrarCat = function () { catSel = null; render(); };
-    const esHerramientas = (cat) => !!cat && /herramient/i.test(cat.label || '');
+    window.renombrarCategoria = async function (key) {
+        const cat = catByKey(key);
+        if (!cat || !esCategoriaCustom(key)) return;
+        const nuevo = prompt('Nuevo nombre de la categoría:', cat.label);
+        if (nuevo == null) return;
+        const n = nuevo.trim();
+        if (!n) { alert('El nombre no puede quedar vacío.'); return; }
+        try { await updateDoc(doc(db, 'categoriasInventario', key), { nombre: n }); }
+        catch (e) { alert('No se pudo renombrar: ' + e.message); }
+    };
     function emojiCat(cat) {
         const l = (cat.label || '').toLowerCase();
         if (/perfil/.test(l)) return '🪟';
@@ -438,17 +469,19 @@
         const cat = catSel ? todasLasCategorias().find(c => c.key === catSel) : null;
         if (catSel && cat) {
             const items = allItems.filter(it => it.categoria === cat.key);
+            const subs = subgruposDeCat(cat);
             let cuerpo;
-            if (esHerramientas(cat)) {
-                // Sub-secciones por equipo dentro de Herramientas.
-                cuerpo = SUBGRUPOS_HERR.map(sg => {
-                    const its = items.filter(it => (it.subgrupo || 'comunes') === sg.key);
-                    return subsecHTML(sg.label, its, 'Vacío — agrega herramientas a este equipo.');
+            if (subs) {
+                // Sub-secciones dentro de la categoría (por el campo `subgrupo`).
+                cuerpo = subs.map(sg => {
+                    const its = items.filter(it => (it.subgrupo || subs[0].key) === sg.key);
+                    return subsecHTML(sg.label, its, vacioDeCat(cat));
                 }).join('');
             } else {
                 cuerpo = items.length ? items.map(itemCardHTML).join('') : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
             }
-            container.innerHTML = `${volverBtn}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
+            const renombrar = (esAdmin && esCategoriaCustom(cat.key)) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(cat.key)}')">✏ Renombrar</button>` : '';
+            container.innerHTML = `${volverBtn}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
             actualizarSeedBtns(); return;
         }
         catSel = null;
@@ -635,7 +668,8 @@
         const costo = Number(document.getElementById('nuevo-costo').value) || 0;
         const venta = Number(document.getElementById('nuevo-venta').value) || 0;
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
-        const subgrupo = esHerramientasKey(categoria) ? (document.getElementById('nuevo-subgrupo').value || 'comunes') : null;
+        const subsNuevo = subgruposDeKey(categoria);
+        const subgrupo = subsNuevo ? (document.getElementById('nuevo-subgrupo').value || subsNuevo[0].key) : null;
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, color: categoria === 'perfil' ? (color || null) : null,
@@ -677,7 +711,11 @@
     window.onEditarCatChange = function (id) {
         const sel = document.getElementById('editar-cat-' + id);
         const row = document.getElementById('editar-sg-row-' + id);
-        if (sel && row) row.style.display = esHerramientasKey(sel.value) ? 'block' : 'none';
+        const sg = document.getElementById('editar-sg-' + id);
+        if (!sel || !row) return;
+        const subs = subgruposDeKey(sel.value);
+        if (subs && sg) { sg.innerHTML = sgOptionsHTML(subs, sg.value); row.style.display = 'block'; }
+        else { row.style.display = 'none'; }
     };
     window.confirmarEditar = async function (id) {
         const tipo = (document.getElementById('editar-tipo-' + id).value || '').trim();
@@ -688,7 +726,8 @@
         const categoria = document.getElementById('editar-cat-' + id).value;
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         const sgEl = document.getElementById('editar-sg-' + id);
-        const subgrupo = esHerramientasKey(categoria) ? ((sgEl && sgEl.value) || 'comunes') : null;
+        const subsEd = subgruposDeKey(categoria);
+        const subgrupo = subsEd ? ((sgEl && sgEl.value) || subsEd[0].key) : null;
         try {
             await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, minimo });
             cerrarForm('editar-' + id);
