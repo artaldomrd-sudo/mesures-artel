@@ -46,13 +46,39 @@ function comprimir(file) {
     });
 }
 
+// Los iPhone/iPad guardan las fotos en HEIC, que los navegadores NO saben mostrar (la miniatura
+// sale rota). Se detecta y se convierte a JPEG antes de subir, cargando heic2any solo cuando hace
+// falta (la mayoría de las subidas son JPEG normales y no pagan ese costo).
+const esHeic = (file) => /heic|heif/i.test(file.type || '') || /\.(heic|heif)$/i.test(file.name || '');
+let heicLibPromise = null;
+async function heicAJpeg(file) {
+    if (!window.heic2any) {
+        if (!heicLibPromise) {
+            heicLibPromise = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+                s.onload = resolve;
+                s.onerror = () => reject(new Error('No se pudo cargar el conversor HEIC'));
+                document.head.appendChild(s);
+            });
+        }
+        await heicLibPromise;
+    }
+    const out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+    return Array.isArray(out) ? out[0] : out;
+}
+
 // Sube una lista de archivos y devuelve [{ url, nombre, tipo }]. Acepta imágenes (se comprimen a
-// JPEG) y PDFs (se suben tal cual). Ignora cualquier otro tipo.
+// JPEG; HEIC del iPhone se convierte primero) y PDFs (se suben tal cual). Ignora cualquier otro tipo.
 export async function subirFotos(fileList, pathPrefix) {
     const out = [];
-    for (const file of Array.from(fileList || [])) {
-        const esImg = /^image\//.test(file.type);
-        const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    for (const original of Array.from(fileList || [])) {
+        const esPdf = original.type === 'application/pdf' || /\.pdf$/i.test(original.name || '');
+        let file = original;
+        if (!esPdf && esHeic(original)) {
+            try { file = await heicAJpeg(original); } catch (e) { file = original; }  // si falla, sube el original
+        }
+        const esImg = /^image\//.test(file.type) || esHeic(original);
         if (!esImg && !esPdf) continue;
         if (esPdf) {
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.pdf';
