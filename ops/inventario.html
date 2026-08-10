@@ -73,6 +73,9 @@
     .inv-cat-tile .emoji { font-size: 30px; line-height: 1; }
     .inv-cat-tile .title { font-size: 17px; font-weight: bold; color: var(--artal-blue); margin-top: 10px; }
     .inv-cat-tile .desc { font-size: 13px; color: #8a93a0; margin-top: 4px; }
+    .inv-cat-tile.add-tile { border: 2px dashed #b8cbe0; box-shadow: none; background: #f7fafd; }
+    .inv-cat-tile.add-tile .title { color: #5a7391; }
+    .inv-cat-tile.add-tile .emoji { opacity: .8; }
     .btn-back-cat { background: #eef4fb; color: var(--artal-blue); border: none; border-radius: 100px; padding: 9px 16px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13.5px; min-height: 40px; }
     .subsec-title { font-size: 14px; font-weight: bold; color: var(--artal-blue); border-bottom: 2px solid #eef1f5; padding-bottom: 6px; margin: 16px 0 8px; }
     .subsec-title .l { font-weight: normal; color: #8a93a0; font-size: 12px; }
@@ -119,7 +122,6 @@
 <main>
     <div id="admin-tools" style="display:none; gap:10px;">
         <button class="seed-btn" id="seed-btn" onclick="sembrarCatalogo()" style="display:none;">📦 Crear catálogo inicial de perfiles</button>
-        <button class="seed-btn" id="seed-btn-migrar" onclick="migrarSelladores()" style="display:none;">🧴 Mover selladores viejos a Consumibles</button>
         <button class="seed-btn" onclick="abrirConteo()">📋 Conteo físico</button>
         <button class="new-item-btn" onclick="abrirNuevoItem()">+ Agregar ítem nuevo al catálogo</button>
     </div>
@@ -233,18 +235,40 @@
         { key: 'abrasivos', emoji: '🧽', label: 'Lijas / abrasivos / toallas' },
         { key: 'otros', emoji: '📦', label: 'Otros consumibles' }
     ];
+    // Perfiles de aluminio: por tipología (iconos SVG). Se le pueden agregar más cuadros desde la
+    // app (se guardan en Firestore `subgruposInventario`, ver subgruposCustom más abajo).
+    const ICON_ANGULAR = SVG('<path d="M13 6 L13 28 L31 28" stroke-width="3"/>');
+    const ICON_TUBO = SVG('<rect x="7" y="12" width="24" height="14" rx="1.5"/><rect x="11" y="16" width="16" height="6" rx="1" fill="#e8f2fb"/>');
+    const ICON_MURO = SVG('<rect x="7" y="6" width="24" height="26" rx="1.5"/><line x1="19" y1="6" x2="19" y2="32"/><line x1="7" y1="15" x2="31" y2="15"/><line x1="7" y1="23" x2="31" y2="23"/>');
+    const ICON_P40 = SVG('<rect x="9" y="5" width="20" height="28" rx="1.5"/><line x1="19" y1="5" x2="19" y2="33"/><circle cx="15" cy="19" r="1.3" fill="#1f6aa5" stroke="none"/><circle cx="23" cy="19" r="1.3" fill="#1f6aa5" stroke="none"/>');
+    const SUBGRUPOS_PERF = [
+        { key: 'angulares', emoji: '📐', icon: ICON_ANGULAR, label: 'Angulares' },
+        { key: 'tubos', emoji: '🟦', icon: ICON_TUBO, label: 'Tubos' },
+        { key: 'muro_cortina', emoji: '🏢', icon: ICON_MURO, label: 'Perfiles de muro cortina' },
+        { key: 'p40', emoji: '🚪', icon: ICON_P40, label: 'Perfiles P40' }
+    ];
     // Qué categorías se dividen en sub-secciones (por coincidencia de nombre, así funciona aunque
     // la categoría se renombre luego mientras conserve la palabra clave). `defecto` = a dónde caen
-    // los ítems sin sub-sección asignada (si no, caen a la primera).
+    // los ítems sin sub-sección asignada; si no hay, los sin asignar van a "Sin clasificar".
     const SUBGRUPOS_POR_CAT = [
+        { match: /perfil/i, subs: SUBGRUPOS_PERF, vacio: 'Vacío — sin ítems en esta sección.' },
         { match: /herramient/i, subs: SUBGRUPOS_HERR, defecto: 'comunes', vacio: 'Vacío — agrega herramientas a este equipo.' },
         { match: /accesorio/i, subs: SUBGRUPOS_ACC, vacio: 'Vacío — sin ítems en esta sección.' },
         { match: /consumible/i, subs: SUBGRUPOS_CONS, defecto: 'otros', vacio: 'Vacío — sin ítems en esta sección.' }
     ];
+    // Sub-secciones creadas por el usuario desde la app (Firestore). Se fusionan con las fijas.
+    let subgruposCustom = [];
     const cfgSubgrupos = (cat) => (cat ? (SUBGRUPOS_POR_CAT.find(s => s.match.test(cat.label || '')) || null) : null);
-    const subgruposDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.subs : null; };
-    const vacioDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.vacio : 'Vacío.'; };
-    const defectoDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? (c.defecto || c.subs[0].key) : null; };
+    const subgruposDeCat = (cat) => {
+        if (!cat) return null;
+        const c = cfgSubgrupos(cat);
+        const fijos = c ? c.subs : [];
+        const custom = subgruposCustom.filter(s => s.categoria === cat.key).map(s => ({ key: s.id, emoji: s.emoji || '📦', label: s.label }));
+        const todos = [...fijos, ...custom];
+        return todos.length ? todos : null;
+    };
+    const vacioDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.vacio : 'Vacío — sin ítems en esta sección.'; };
+    const defectoDeCat = (cat) => { const c = cfgSubgrupos(cat); return (c && c.defecto) || null; };
     // Grupos "sintéticos": un cuadro que agrupa VARIAS categorías reales como sub-secciones
     // (a diferencia de Herramientas, que es UNA categoría dividida por el campo `subgrupo`).
     // "Selladores" junta las categorías Silicón / Masilla / Urethano sin mover ningún dato:
@@ -254,6 +278,9 @@
     // Las categorías viejas Silicón/Masilla/Urethano se ocultan del grid principal; sus ítems se
     // mueven a Consumibles con el botón "Mover selladores" y luego se borran las categorías.
     const CATS_OCULTAS = ['silicon', 'masilla', 'urethano'];
+    // Categorías de nivel principal ocultas por nombre (su contenido vive ahora dentro de otra):
+    // "Pintura(s)" se movió a Consumibles → Pintura.
+    const CATS_OCULTAS_LABEL = /^\s*pinturas?\s*$/i;
     const grupoDe = (key) => GRUPOS_SINTETICOS.find(g => g.key === key) || null;
     const catsAbsorbidas = () => new Set([...GRUPOS_SINTETICOS.flatMap(g => g.sub), ...CATS_OCULTAS]);
     let categoriasCustom = [];
@@ -384,7 +411,7 @@
                 ${margenPct !== null ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
             </div>` : ''}
             ${fotosThumbsHTML(item.fotos, { coleccion: 'inventario', id: item.id, puedeBorrar: esAdmin })}
-            ${esAdmin ? fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' }) : ''}
+            ${fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' })}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
                 ${esAdmin ? `<button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>` : ''}
@@ -483,6 +510,23 @@
         try { await updateDoc(doc(db, 'categoriasInventario', key), { nombre: n }); }
         catch (e) { alert('No se pudo renombrar: ' + e.message); }
     };
+    // Crear una sub-sección (cuadro) propia dentro de una categoría. Se guarda en Firestore y
+    // aparece junto a las fijas. `categoria` = la clave de la categoría (perfil, herraje, o un id).
+    window.agregarSubseccion = async function (catKey) {
+        const label = (prompt('Nombre de la nueva sección (ej: Perfiles curvos):') || '').trim();
+        if (!label) return;
+        const emoji = (prompt('Un emoji para el cuadro (opcional, ej: 📐):') || '').trim() || '📦';
+        try { await addDoc(collection(db, 'subgruposInventario'), { categoria: catKey, label, emoji, creadoFecha: serverTimestamp() }); }
+        catch (e) { alert('No se pudo crear la sección: ' + e.message); }
+    };
+    // Eliminar una sub-sección propia (solo las creadas por el usuario). Los ítems que tuviera
+    // quedan en "Sin clasificar" (no se borran).
+    window.eliminarSubseccion = async function (subId) {
+        if (!subgruposCustom.some(s => s.id === subId)) return;
+        if (!confirm('¿Quitar esta sección? Los ítems que tenga quedarán en "Sin clasificar" (no se borran).')) return;
+        try { await deleteDoc(doc(db, 'subgruposInventario', subId)); subSel = null; render(); }
+        catch (e) { alert('No se pudo quitar: ' + e.message); }
+    };
     function emojiCat(cat) {
         const l = (cat.label || '').toLowerCase();
         if (/perfil/.test(l)) return '🪟';
@@ -510,20 +554,24 @@
         const subs = subgruposDeCat(c);
         if (!subs) return null;
         const catItems = allItems.filter(it => it.categoria === c.key);
-        const def = defectoDeCat(c);
-        return {
-            titulo: c.label, emoji: emojiCat(c), esCustom: esCategoriaCustom(c.key),
-            defs: subs.map(sg => {
-                const sgItems = catItems.filter(it => (it.subgrupo || def) === sg.key);
-                let hijos = null;
-                if (sg.hijos) {
-                    hijos = sg.hijos.map(h => ({ key: h.key, emoji: h.emoji, label: h.label, items: sgItems.filter(it => (it.subgrupo2 || '') === h.key) }));
-                    const sinClasif = sgItems.filter(it => !sg.hijos.some(h => h.key === (it.subgrupo2 || '')));
-                    if (sinClasif.length) hijos.push({ key: '_sc', emoji: '📦', label: 'Sin clasificar', items: sinClasif });
-                }
-                return { key: sg.key, emoji: sg.emoji, icon: sg.icon || null, label: sg.label, items: sgItems, hijos };
-            })
-        };
+        const def = defectoDeCat(c);   // solo si la categoría define un "defecto" fijo (ej. Otros)
+        const defs = subs.map(sg => {
+            const sgItems = catItems.filter(it => (it.subgrupo || def) === sg.key);
+            let hijos = null;
+            if (sg.hijos) {
+                hijos = sg.hijos.map(h => ({ key: h.key, emoji: h.emoji, label: h.label, items: sgItems.filter(it => (it.subgrupo2 || '') === h.key) }));
+                const sinClasif = sgItems.filter(it => !sg.hijos.some(h => h.key === (it.subgrupo2 || '')));
+                if (sinClasif.length) hijos.push({ key: '_sc', emoji: '📦', label: 'Sin clasificar', items: sinClasif });
+            }
+            return { key: sg.key, emoji: sg.emoji, icon: sg.icon || null, label: sg.label, items: sgItems, hijos };
+        });
+        // Si no hay un "defecto" fijo, los ítems sin sub-sección (o con una que ya no existe) van a
+        // un cuadro "Sin clasificar" en vez de perderse.
+        if (!def) {
+            const sinClasif = catItems.filter(it => !subs.some(sg => sg.key === (it.subgrupo || '')));
+            if (sinClasif.length) defs.push({ key: '_sc', emoji: '📦', icon: null, label: 'Sin clasificar', items: sinClasif, hijos: null });
+        }
+        return { titulo: c.label, emoji: emojiCat(c), esCustom: esCategoriaCustom(c.key), defs };
     }
     // Agrupa una lista de ítems por color: Negro/Negro mate juntos, Cromado juntos, el resto por
     // su propio color, y "Sin color" al final. Así quedan ordenados dentro de cada sección.
@@ -562,8 +610,6 @@
         if (!esAdmin) return;
         const perfiles = allItems.filter(it => it.categoria === 'perfil');
         const seedBtn = document.getElementById('seed-btn'); if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
-        const hayViejos = allItems.some(it => CATS_OCULTAS.includes(it.categoria)) || CATS_OCULTAS.some(k => categoriasCustom.some(c => c.id === k));
-        const btnMig = document.getElementById('seed-btn-migrar'); if (btnMig) btnMig.style.display = hayViejos ? 'block' : 'none';
     }
 
     function render() {
@@ -607,6 +653,7 @@
                     // Nivel 2: cuadros de sub-sección (mismo grid de 3 columnas).
                     const renombrar = (esAdmin && sd.esCustom) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(catSel)}')">✏ Renombrar</button>` : '';
                     const tiles = sd.defs.map(d => tileHTML(`abrirSub('${esc(d.key)}')`, d.label, d.icon || d.emoji, d.items));
+                    if (esAdmin) tiles.push(`<div class="card-link inv-cat-tile add-tile" onclick="agregarSubseccion('${esc(catSel)}')"><div class="emoji">➕</div><div class="title">Nueva sección</div><div class="desc">Agregar un cuadro aquí</div></div>`);
                     container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${sd.emoji} ${esc(sd.titulo)}</h2><div class="inv-grid">${tiles.join('')}</div>`;
                     actualizarSeedBtns(); return;
                 }
@@ -629,8 +676,9 @@
                 }
                 // Sub-sección sin hijos: ítems directos (nivel 3).
                 const items = d ? d.items : [];
+                const quitar = (esAdmin && subgruposCustom.some(s => s.id === subSel)) ? ` <button class="btn-back-cat" onclick="eliminarSubseccion('${esc(subSel)}')">🗑 Quitar sección</button>` : '';
                 const cuerpo = items.length ? itemsListHTML(items) : '<p class="empty">Sin ítems en esta sección todavía.</p>';
-                container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d ? d.emoji + ' ' + esc(d.label) : ''}</h2>${cuerpo}`;
+                container.innerHTML = `${volverSub}${quitar}<h2 class="section-title" style="margin:12px 0 10px">${d ? d.emoji + ' ' + esc(d.label) : ''}</h2>${cuerpo}`;
                 actualizarSeedBtns(); return;
             }
             // Categoría SIN sub-secciones: ítems directos.
@@ -638,8 +686,9 @@
             if (cat) {
                 const items = allItems.filter(it => it.categoria === cat.key);
                 const renombrar = (esAdmin && esCategoriaCustom(cat.key)) ? ` <button class="btn-back-cat" onclick="renombrarCategoria('${esc(cat.key)}')">✏ Renombrar</button>` : '';
+                const nuevaSec = esAdmin ? ` <button class="btn-back-cat" onclick="agregarSubseccion('${esc(cat.key)}')">➕ Dividir en secciones</button>` : '';
                 const cuerpo = items.length ? itemsListHTML(items) : '<p class="empty">No hay ítems en esta categoría todavía.</p>';
-                container.innerHTML = `${volverInv}${renombrar}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
+                container.innerHTML = `${volverInv}${renombrar}${nuevaSec}<h2 class="section-title" style="margin:12px 0 10px">${emojiCat(cat)} ${esc(cat.label)}</h2>${cuerpo}`;
                 actualizarSeedBtns(); return;
             }
             catSel = null;
@@ -648,7 +697,7 @@
         // Nivel 1: cuadros de categoría en 3 columnas. Primero las categorías reales (las
         // absorbidas por un grupo sintético se omiten), luego los grupos sintéticos.
         const absorb = catsAbsorbidas();
-        const tiles = todasLasCategorias().filter(c => !absorb.has(c.key))
+        const tiles = todasLasCategorias().filter(c => !absorb.has(c.key) && !CATS_OCULTAS_LABEL.test(c.label || ''))
             .map(c => tileHTML(`abrirCat('${esc(c.key)}')`, c.label, emojiCat(c), allItems.filter(it => it.categoria === c.key)));
         GRUPOS_SINTETICOS.forEach(g => {
             tiles.push(tileHTML(`abrirCat('${esc(g.key)}')`, g.label, g.emoji, allItems.filter(it => g.sub.includes(it.categoria))));
@@ -664,6 +713,12 @@
         poblarSelectCategoria();
         render();
     });
+
+    // Sub-secciones (cuadros) creadas por el usuario, por categoría.
+    onSnapshot(collection(db, 'subgruposInventario'), (snap) => {
+        subgruposCustom = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, () => {});
 
     onSnapshot(collection(db, 'inventario'), (snap) => {
         allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
