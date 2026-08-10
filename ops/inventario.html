@@ -194,15 +194,27 @@
         { key: 'mamparas_vidrio', emoji: '🚿', label: 'Mamparas de vidrio' },
         { key: 'barandas', emoji: '🛡️', label: 'Barandas de vidrio' }
     ];
+    const SUBGRUPOS_CONS = [
+        { key: 'pintura', emoji: '🎨', label: 'Pintura' },
+        { key: 'discos', emoji: '🪚', label: 'Discos de corte' },
+        { key: 'mechas', emoji: '🌀', label: 'Mechas / brocas' },
+        { key: 'tornilleria', emoji: '🔩', label: 'Tornillos y fijaciones' },
+        { key: 'quimicos', emoji: '🧴', label: 'Alcohol / químicos' },
+        { key: 'abrasivos', emoji: '🧽', label: 'Lijas / abrasivos' },
+        { key: 'otros', emoji: '📦', label: 'Otros consumibles' }
+    ];
     // Qué categorías se dividen en sub-secciones (por coincidencia de nombre, así funciona aunque
-    // la categoría se renombre luego mientras conserve la palabra clave).
+    // la categoría se renombre luego mientras conserve la palabra clave). `defecto` = a dónde caen
+    // los ítems sin sub-sección asignada (si no, caen a la primera).
     const SUBGRUPOS_POR_CAT = [
-        { match: /herramient/i, subs: SUBGRUPOS_HERR, vacio: 'Vacío — agrega herramientas a este equipo.' },
-        { match: /accesorio/i, subs: SUBGRUPOS_ACC, vacio: 'Vacío — sin ítems en esta sección.' }
+        { match: /herramient/i, subs: SUBGRUPOS_HERR, defecto: 'comunes', vacio: 'Vacío — agrega herramientas a este equipo.' },
+        { match: /accesorio/i, subs: SUBGRUPOS_ACC, vacio: 'Vacío — sin ítems en esta sección.' },
+        { match: /consumible/i, subs: SUBGRUPOS_CONS, defecto: 'otros', vacio: 'Vacío — sin ítems en esta sección.' }
     ];
     const cfgSubgrupos = (cat) => (cat ? (SUBGRUPOS_POR_CAT.find(s => s.match.test(cat.label || '')) || null) : null);
     const subgruposDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.subs : null; };
     const vacioDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? c.vacio : 'Vacío.'; };
+    const defectoDeCat = (cat) => { const c = cfgSubgrupos(cat); return c ? (c.defecto || c.subs[0].key) : null; };
     // Grupos "sintéticos": un cuadro que agrupa VARIAS categorías reales como sub-secciones
     // (a diferencia de Herramientas, que es UNA categoría dividida por el campo `subgrupo`).
     // "Selladores" junta las categorías Silicón / Masilla / Urethano sin mover ningún dato:
@@ -218,6 +230,7 @@
     }
     const catByKey = (key) => todasLasCategorias().find(c => c.key === key) || null;
     const subgruposDeKey = (key) => subgruposDeCat(catByKey(key));
+    const defectoDeKey = (key) => defectoDeCat(catByKey(key));
     const esCategoriaCustom = (key) => categoriasCustom.some(c => c.id === key);
     const sgOptionsHTML = (subs, sel) => subs.map(s => `<option value="${s.key}" ${sel === s.key ? 'selected' : ''}>${s.emoji ? s.emoji + ' ' : ''}${esc(s.label)}</option>`).join('');
     function poblarSelectCategoria() {
@@ -370,7 +383,7 @@
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Cantidad mínima <span style="font-weight:normal;color:#999">(0 = sin aviso)</span></label><input type="number" id="editar-min-${item.id}" min="0" value="${Number(item.minimo) || 0}"></div>
-                    <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || subsEdit[0].key) : ''}</select></div>
+                    <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || defectoDeKey(item.categoria)) : ''}</select></div>
                 </div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
@@ -443,9 +456,10 @@
         const subs = subgruposDeCat(c);
         if (!subs) return null;
         const catItems = allItems.filter(it => it.categoria === c.key);
+        const def = defectoDeCat(c);
         return {
             titulo: c.label, emoji: emojiCat(c), esCustom: esCategoriaCustom(c.key),
-            defs: subs.map(sg => ({ key: sg.key, emoji: sg.emoji, label: sg.label, items: catItems.filter(it => (it.subgrupo || subs[0].key) === sg.key) }))
+            defs: subs.map(sg => ({ key: sg.key, emoji: sg.emoji, label: sg.label, items: catItems.filter(it => (it.subgrupo || def) === sg.key) }))
         };
     }
     // Agrupa una lista de ítems por color: Negro/Negro mate juntos, Cromado juntos, el resto por
@@ -742,7 +756,7 @@
         const venta = Number(document.getElementById('nuevo-venta').value) || 0;
         if (!tipo) { alert('Escribe el nombre del ítem.'); return; }
         const subsNuevo = subgruposDeKey(categoria);
-        const subgrupo = subsNuevo ? (document.getElementById('nuevo-subgrupo').value || subsNuevo[0].key) : null;
+        const subgrupo = subsNuevo ? (document.getElementById('nuevo-subgrupo').value || defectoDeKey(categoria)) : null;
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, color: color || null,
@@ -800,7 +814,7 @@
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         const sgEl = document.getElementById('editar-sg-' + id);
         const subsEd = subgruposDeKey(categoria);
-        const subgrupo = subsEd ? ((sgEl && sgEl.value) || subsEd[0].key) : null;
+        const subgrupo = subsEd ? ((sgEl && sgEl.value) || defectoDeKey(categoria)) : null;
         try {
             await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, color: color || null, unidad, categoria, subgrupo, minimo });
             cerrarForm('editar-' + id);
