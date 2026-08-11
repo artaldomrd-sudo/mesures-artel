@@ -246,6 +246,32 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
     }
 }
 
+// ---------- Recordatorio de arqueo de caja chica (mañana 8:00 / tarde 4:55, hora RD) ----------
+// A la hora del turno, avisa por push a la encargada (rol `contable`) + gerencia (`admin`) de las
+// cajas que TODAVÍA no tienen registrado el arqueo de ese turno hoy, para que no se le escape.
+async function recordarArqueo(turno, titulo) {
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }); // AAAA-MM-DD local
+    const cajasSnap = await db.collection('bancosCajaChica').get();
+    const activas = cajasSnap.docs.filter((d) => d.data().activo !== false);
+    if (!activas.length) return;
+    const movsSnap = await db.collection('bancosCajaMovimientos')
+        .where('tipo', '==', 'arqueo').where('fecha', '==', hoy).where('turno', '==', turno).get();
+    const hechas = new Set(movsSnap.docs.map((d) => d.data().cajaId));
+    const pendientes = activas.filter((d) => !hechas.has(d.id));
+    if (!pendientes.length) return; // ya hizo todos los arqueos de este turno
+    const tokens = await tokensPorRol('contable', 'admin');
+    if (!tokens.length) return;
+    const nombres = pendientes.map((d) => d.data().nombre || 'caja').join(', ');
+    await pushATokens(tokens, titulo, 'Cuenta el efectivo y registra el arqueo: ' + nombres, 'ops/bancos-caja.html');
+}
+
+exports.arqueoManana = onSchedule({ schedule: '0 8 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
+    await recordarArqueo('am', '🧮 Arqueo de la MAÑANA (8:00)');
+});
+exports.arqueoTarde = onSchedule({ schedule: '55 16 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
+    await recordarArqueo('pm', '🧮 Arqueo de la TARDE (4:55)');
+});
+
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     // Nuevo esquema (varios avisos por evento)
     await procesarRecordatoriosMulti('citas', emailsAsignados, (d) => d.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html', 'Recordatorio: ');
@@ -593,4 +619,4 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (r
     }
 });
 
-// redeploy 1786033133
+// redeploy 1786120000 (arqueo caja chica: push 8:00 / 4:55)
