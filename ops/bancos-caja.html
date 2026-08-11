@@ -16,6 +16,15 @@
     .btn-g { background: #e74c3c; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .btn-r { background: #2ecc71; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-a { background: #6c5ce7; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .arq-alert { display: flex; align-items: center; gap: 10px; background: #fdecea; border: 1.5px solid #f5b7b1; color: #a5281b; border-radius: 12px; padding: 12px 16px; margin: 0 0 12px; font-weight: bold; font-size: 14px; }
+    .arq-ok { display: flex; flex-wrap: wrap; gap: 8px 18px; background: #ecf9f1; border: 1.5px solid #b7e4c7; color: #1e7a48; border-radius: 12px; padding: 10px 16px; margin: 0 0 12px; font-size: 13px; }
+    .arq-ok b { color: #1e7a48; }
+    .arq-ok .dif { color: #c0392b; font-weight: bold; }
+    .mv-card.arqueo { border-left-color: #6c5ce7; } .mv-ic.arqueo { background: #eee9fb; }
+    .mv-monto.arqueo { color: #6c5ce7; }
+    .mv-fotos-wrap { margin-top: 8px; }
 
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
     .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 10px 16px; flex: 1; min-width: 130px; }
@@ -68,7 +77,9 @@
         <button class="btn-o" onclick="abrirCaja()">+ Nueva caja</button>
         <button class="btn-g" onclick="abrirGasto()">− Gasto</button>
         <button class="btn-r" onclick="abrirRepo()">+ Reponer fondo</button>
+        <button class="btn-a" onclick="abrirArqueo()">🧮 Arqueo</button>
     </div>
+    <div id="arqueo-banner"></div>
     <div class="kpis" id="kpis"></div>
     <div class="caja-meta" id="caja-meta"></div>
     <div id="lista"><p class="empty">Cargando…</p></div>
@@ -136,9 +147,31 @@
     </div>
 </div>
 
+<!-- Modal: arqueo (conteo de efectivo real) -->
+<div class="modal-overlay" id="modal-arqueo">
+    <div class="modal-box">
+        <h2>🧮 Arqueo de caja</h2>
+        <div class="caja-meta" id="arq-esperado" style="margin:0 0 10px"></div>
+        <div class="grid2">
+            <div><label>Turno</label><select id="a-turno"><option value="am">Mañana (8:00 am)</option><option value="pm">Tarde (4:55 pm)</option></select></div>
+            <div><label>Fecha</label><input type="date" id="a-fecha"></div>
+        </div>
+        <label>Efectivo REAL contado (RD$) *</label>
+        <input type="number" id="a-monto" min="0" step="0.01" oninput="calcDifArqueo()" placeholder="Cuenta el efectivo físico y ponlo aquí">
+        <div class="caja-meta" id="a-dif" style="margin:8px 0 0"></div>
+        <label>Nota <span class="lbl-opt">— obligatoria si hay diferencia</span></label>
+        <input type="text" id="a-nota" placeholder="Ej: falta RD$200, se prestó a…">
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar('modal-arqueo')">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarArqueo()">Guardar arqueo</button>
+        </div>
+    </div>
+</div>
+
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
+    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
     import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['contable']);
@@ -176,7 +209,9 @@
     }
     const cajaSel = () => cajas.find(c => c.id === document.getElementById('sel-caja').value) || null;
     const movsCaja = (id) => movs.filter(m => m.cajaId === id);
-    const saldoCaja = (id) => movsCaja(id).reduce((a, m) => a + (m.tipo === 'gasto' ? -n2(m.monto) : n2(m.monto)), 0);
+    // El saldo solo lo mueven apertura/reposición (+) y gasto (−). El arqueo es un conteo, no mueve.
+    const saldoCaja = (id) => movsCaja(id).reduce((a, m) => a + (m.tipo === 'gasto' ? -n2(m.monto) : (m.tipo === 'arqueo' ? 0 : n2(m.monto))), 0);
+    const arqueoHoy = (id, turno) => movsCaja(id).find(m => m.tipo === 'arqueo' && m.fecha === hoyISO() && m.turno === turno) || null;
 
     // ---------- Modales ----------
     window.cerrar = function (id) { document.getElementById(id).classList.remove('show'); };
@@ -265,6 +300,52 @@
         } catch (e) { alert('No se pudo reponer: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Reponer'; }
     };
+    // ---------- Arqueo (conteo de efectivo real vs. sistema) ----------
+    window.abrirArqueo = function () {
+        const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
+        document.getElementById('a-fecha').value = hoyISO();
+        // Turno automático según la hora: antes de la 1 pm = mañana; después = tarde.
+        document.getElementById('a-turno').value = (new Date().getHours() < 13) ? 'am' : 'pm';
+        document.getElementById('a-monto').value = '';
+        document.getElementById('a-nota').value = '';
+        const esperado = saldoCaja(c.id);
+        document.getElementById('arq-esperado').innerHTML = `Según el sistema debe haber <b>${fmt(esperado)}</b> en efectivo. Cuenta el dinero físico y regístralo.`;
+        calcDifArqueo();
+        document.getElementById('modal-arqueo').classList.add('show');
+    };
+    window.calcDifArqueo = function () {
+        const c = cajaSel(); if (!c) return;
+        const el = document.getElementById('a-dif');
+        const val = document.getElementById('a-monto').value;
+        if (val === '') { el.innerHTML = ''; return; }
+        const dif = n2(val) - saldoCaja(c.id);
+        if (Math.abs(dif) < 0.005) el.innerHTML = '<b style="color:#1e7a48">✓ Cuadra perfecto.</b>';
+        else el.innerHTML = `<b style="color:#c0392b">${dif > 0 ? 'Sobrante' : 'Faltante'} de ${fmt(Math.abs(dif))}</b> — explica el motivo en la nota.`;
+    };
+    window.guardarArqueo = async function () {
+        const c = cajaSel(); if (!c) return;
+        const val = document.getElementById('a-monto').value;
+        if (val === '' || n2(val) < 0) { alert('Escribe el efectivo real contado.'); return; }
+        const esperado = saldoCaja(c.id);
+        const contado = n2(val);
+        const dif = contado - esperado;
+        const nota = document.getElementById('a-nota').value.trim();
+        if (Math.abs(dif) >= 0.005 && !nota) { alert('Hay una diferencia. Escribe una nota explicando el sobrante/faltante.'); return; }
+        const turno = document.getElementById('a-turno').value;
+        const fecha = document.getElementById('a-fecha').value || hoyISO();
+        if (arqueoHoy(c.id, turno) && fecha === hoyISO() && !confirm('Ya hay un arqueo de ese turno hoy. ¿Registrar otro igual?')) return;
+        const btn = document.querySelector('#modal-arqueo .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+            await addDoc(collection(db, 'bancosCajaMovimientos'), {
+                cajaId: c.id, tipo: 'arqueo', turno, fecha,
+                concepto: 'Arqueo ' + (turno === 'am' ? 'mañana' : 'tarde'),
+                montoContado: contado, montoEsperado: esperado, diferencia: dif, monto: contado, nota,
+                creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+            cerrar('modal-arqueo');
+        } catch (e) { alert('No se pudo guardar el arqueo: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Guardar arqueo'; }
+    };
     window.borrarMov = async function (id) {
         const m = movs.find(x => x.id === id); if (!m) return;
         if (m.tipo === 'apertura') { alert('No se puede borrar la apertura del fondo. Si quieres cerrar la caja, es mejor dejarla inactiva (próximamente).'); return; }
@@ -274,8 +355,8 @@
 
     function render() {
         const cont = document.getElementById('lista');
-        if (!cajas.length) { cont.innerHTML = '<p class="empty">No hay cajas chicas. Crea una con «+ Nueva caja».</p>'; document.getElementById('kpis').innerHTML = ''; document.getElementById('caja-meta').textContent = ''; return; }
-        const c = cajaSel(); if (!c) { cont.innerHTML = '<p class="empty">Elige una caja.</p>'; return; }
+        if (!cajas.length) { cont.innerHTML = '<p class="empty">No hay cajas chicas. Crea una con «+ Nueva caja».</p>'; document.getElementById('kpis').innerHTML = ''; document.getElementById('caja-meta').textContent = ''; document.getElementById('arqueo-banner').innerHTML = ''; return; }
+        const c = cajaSel(); if (!c) { cont.innerHTML = '<p class="empty">Elige una caja.</p>'; document.getElementById('arqueo-banner').innerHTML = ''; return; }
         const saldo = saldoCaja(c.id);
         const porReponer = Math.max(0, n2(c.fondoFijo) - saldo);
         document.getElementById('kpis').innerHTML =
@@ -284,20 +365,45 @@
             `<div class="kpi"><div class="n rep">${fmt0(porReponer)}</div><div class="l">Por reponer</div></div>`;
         document.getElementById('caja-meta').textContent = [c.responsable ? 'Responsable: ' + c.responsable : '', c.sucursal ? 'Sucursal: ' + c.sucursal : ''].filter(Boolean).join('   ·   ');
 
+        // Arqueo del día: aviso si falta el de la mañana (8:00) o el de la tarde (4:55), y estado.
+        const am = arqueoHoy(c.id, 'am'), pm = arqueoHoy(c.id, 'pm');
+        const mins = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
+        const pend = [];
+        if (mins >= 8 * 60 && !am) pend.push('☀️ el de la MAÑANA (8:00 am)');
+        if (mins >= 16 * 60 + 55 && !pm) pend.push('🌙 el de la TARDE (4:55 pm)');
+        let ban = '';
+        if (pend.length) ban += `<div class="arq-alert"><span>⚠ Falta el arqueo: ${pend.join(' y ')}.</span><button class="btn-a" style="margin-left:auto" onclick="abrirArqueo()">🧮 Hacer arqueo</button></div>`;
+        const okItems = [];
+        [['am', '☀️ Mañana', am], ['pm', '🌙 Tarde', pm]].forEach(([k, lbl, a]) => {
+            if (!a) return;
+            const d = n2(a.diferencia);
+            okItems.push(`<span><b>${lbl}:</b> ${fmt0(a.montoContado)} ${Math.abs(d) < 0.005 ? '· cuadra ✓' : `· <span class="dif">${d > 0 ? 'sobrante' : 'faltante'} ${fmt0(Math.abs(d))}</span>`}</span>`);
+        });
+        if (okItems.length) ban += `<div class="arq-ok">${okItems.join('')}</div>`;
+        document.getElementById('arqueo-banner').innerHTML = ban;
+
         const lista = movsCaja(c.id).slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || String((b.fechaCreacion && b.fechaCreacion.seconds) || '').localeCompare(String((a.fechaCreacion && a.fechaCreacion.seconds) || '')));
         if (!lista.length) { cont.innerHTML = '<p class="empty">Sin movimientos en esta caja.</p>'; return; }
-        const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢' };
+        const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢', arqueo: '🧮' };
         const SIGNO = { gasto: '− ', reposicion: '+ ', apertura: '+ ' };
-        const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura' };
+        const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura', arqueo: 'Arqueo' };
         cont.innerHTML = lista.map(m => {
             const t = m.tipo || 'gasto';
-            const sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+            let sub, fotos = '';
+            if (t === 'arqueo') {
+                const d = n2(m.diferencia);
+                sub = [fmtFecha(m.fecha), m.turno === 'am' ? 'mañana' : 'tarde', 'esperado ' + fmt0(m.montoEsperado), Math.abs(d) < 0.005 ? 'cuadra ✓' : `${d > 0 ? 'sobrante' : 'faltante'} ${fmt0(Math.abs(d))}`, m.nota ? '“' + esc(m.nota) + '”' : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+            } else {
+                sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+            }
+            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}</div>`;
             return `<div class="order-card mv-card ${t}">
                 <div class="mv-ic ${t}">${ICO[t] || '•'}</div>
                 <div class="mv-info">
                     <b>${esc(m.concepto || NOM[t])}</b> <span class="b">${NOM[t] || t}</span>
-                    <div class="mv-monto ${t}">${SIGNO[t] || ''}${fmt(m.monto)}</div>
+                    <div class="mv-monto ${t}">${SIGNO[t] || ''}${fmt(t === 'arqueo' ? m.montoContado : m.monto)}</div>
                     ${sub ? `<div class="l">${sub}</div>` : ''}
+                    ${fotos}
                 </div>
                 ${t === 'apertura' ? '' : `<button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>`}
             </div>`;
