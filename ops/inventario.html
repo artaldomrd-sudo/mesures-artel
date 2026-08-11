@@ -80,6 +80,10 @@
     .subsec-title { font-size: 14px; font-weight: bold; color: var(--artal-blue); border-bottom: 2px solid #eef1f5; padding-bottom: 6px; margin: 16px 0 8px; }
     .subsec-title .l { font-weight: normal; color: #8a93a0; font-size: 12px; }
     .item-ref { font-size: 12px; color: #8a93a0; margin-top: -2px; }
+    .set-details { margin-top: 5px; }
+    .set-details summary { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); cursor: pointer; list-style: none; }
+    .set-details summary::-webkit-details-marker { display: none; }
+    .set-details ul li { margin: 1px 0; }
     .color-group-title { font-size: 13px; font-weight: bold; color: var(--artal-blue); background: #eef4fb; border-radius: 8px; padding: 6px 12px; margin: 12px 0 6px; }
     .color-group-title span { font-weight: normal; color: #8a93a0; }
     .color-fbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
@@ -157,6 +161,12 @@
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
         <label>Unidad</label>
         <input type="text" id="nuevo-unidad" placeholder="Ej: barras, unidades, galones">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-esset" onchange="toggleSetNuevo()" style="width:auto"> 🧩 Es un <b>juego/set</b> (varias piezas: brocas, llaves Allen, puntas…)</label>
+        <div id="nuevo-set-box" style="display:none;background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
+            <div style="font-size:12px;font-weight:bold;color:var(--artal-blue);margin-bottom:6px;">Piezas que componen el juego</div>
+            <div id="nuevo-piezas"></div>
+            <button type="button" onclick="agregarPiezaNuevo()" style="background:var(--artal-light);color:var(--artal-blue);border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;cursor:pointer;font-family:'Arimo';margin-top:4px;">+ Agregar pieza</button>
+        </div>
         <label>Cantidad inicial</label>
         <input type="number" id="nuevo-cantidad" value="0" min="0">
         <label>Cantidad mínima <span style="font-weight:normal;color:#999">(avisa cuando baje de aquí; 0 = sin aviso)</span></label>
@@ -349,6 +359,34 @@
         }[c]));
     }
 
+    // ---------- Juego/set: piezas que lo componen ----------
+    // Editor reutilizable (modal de crear y formulario de editar). Cada fila = nombre + cantidad.
+    function piezaRowHTML(nombre, cantidad) {
+        return `<div class="pieza-row" style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input type="text" class="pz-nombre" value="${esc(nombre || '')}" placeholder="Ej: Broca 3/16&quot;" style="flex:1;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+            <input type="number" class="pz-cant" value="${cantidad || 1}" min="1" style="width:70px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+            <button type="button" onclick="this.parentElement.remove()" style="background:transparent;border:none;color:#c9ced6;font-size:18px;cursor:pointer;line-height:1;">×</button>
+        </div>`;
+    }
+    function leerPiezas(containerId) {
+        return Array.from(document.querySelectorAll('#' + containerId + ' .pieza-row')).map(r => ({
+            nombre: (r.querySelector('.pz-nombre').value || '').trim(),
+            cantidad: Number(r.querySelector('.pz-cant').value) || 1
+        })).filter(p => p.nombre);
+    }
+    window.toggleSetNuevo = function () {
+        const on = document.getElementById('nuevo-esset').checked;
+        document.getElementById('nuevo-set-box').style.display = on ? 'block' : 'none';
+        if (on && !document.querySelectorAll('#nuevo-piezas .pieza-row').length) agregarPiezaNuevo();
+    };
+    window.agregarPiezaNuevo = function () { document.getElementById('nuevo-piezas').insertAdjacentHTML('beforeend', piezaRowHTML('', 1)); };
+    window.toggleSetEditar = function (id) {
+        const on = document.getElementById('editar-esset-' + id).checked;
+        document.getElementById('editar-set-box-' + id).style.display = on ? 'block' : 'none';
+        if (on && !document.querySelectorAll('#editar-piezas-' + id + ' .pieza-row').length) agregarPiezaEditar(id);
+    };
+    window.agregarPiezaEditar = function (id) { document.getElementById('editar-piezas-' + id).insertAdjacentHTML('beforeend', piezaRowHTML('', 1)); };
+
     const PERFILES_SEED = [
         { tipo: 'Tubo 100x45 (1 3/4"x4")', unidad: 'barras' },
         { tipo: 'Tubo 100x100 (4"x4")', unidad: 'barras' },
@@ -411,6 +449,7 @@
                 <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
             </div>
             ${item.referencia ? `<div class="item-ref">Ref: ${esc(item.referencia)}</div>` : ''}
+            ${(item.esSet && Array.isArray(item.piezas) && item.piezas.length) ? `<details class="set-details"><summary>🧩 Juego de ${item.piezas.length} pieza(s)</summary><ul style="margin:4px 0 0 4px;padding-left:16px;font-size:12.5px;color:#555;">${item.piezas.map(p => `<li>${esc(p.nombre)}${(Number(p.cantidad) || 1) > 1 ? ' ×' + p.cantidad : ''}</li>`).join('')}</ul></details>` : ''}
             ${esAdmin && item.proveedor ? `<div class="item-ref">🏭 Proveedor: ${esc(item.proveedor)}</div>` : ''}
             ${sinStock ? `<div class="stock-warn out">⛔ Sin stock${min ? ` · mínimo ${min} ${esc(item.unidad)}` : ''}</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo · mínimo ${min} ${esc(item.unidad)}</div>` : '')}
             ${esAdmin ? `
@@ -473,6 +512,11 @@
                     <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}" onchange="onEditarSubChange('${item.id}')">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || defectoDeKey(item.categoria)) : ''}</select></div>
                 </div>
                 <div id="editar-sg2-row-${item.id}" style="margin-top:8px;${hijosEdit ? '' : 'display:none'}"><label>Sub-sección / tipo</label><select id="editar-sg2-${item.id}">${hijosEdit ? sg2OptionsHTML(hijosEdit, item.subgrupo2 || '') : ''}</select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:12.5px;color:#333;margin-top:10px;"><input type="checkbox" id="editar-esset-${item.id}" onchange="toggleSetEditar('${item.id}')" ${item.esSet ? 'checked' : ''} style="width:auto"> 🧩 Es un juego/set (varias piezas)</label>
+                <div id="editar-set-box-${item.id}" style="${item.esSet ? '' : 'display:none;'}background:#f6f8fa;border-radius:8px;padding:8px 10px;margin-top:4px;">
+                    <div id="editar-piezas-${item.id}">${(Array.isArray(item.piezas) ? item.piezas : []).map(p => piezaRowHTML(p.nombre, p.cantidad)).join('')}</div>
+                    <button type="button" onclick="agregarPiezaEditar('${item.id}')" style="background:var(--artal-light);color:var(--artal-blue);border:none;border-radius:8px;padding:7px 11px;font-weight:bold;font-size:12px;cursor:pointer;font-family:'Arimo';margin-top:2px;">+ Agregar pieza</button>
+                </div>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('editar-${item.id}')">Cancelar</button>
                     <button class="btn-editar" onclick="confirmarEditar('${item.id}')">Guardar cambios</button>
@@ -926,10 +970,13 @@
         const subgrupo = subsNuevo ? (document.getElementById('nuevo-subgrupo').value || defectoDeKey(categoria)) : null;
         const hijosNuevo = subgrupo ? hijosDeSub(categoria, subgrupo) : null;
         const subgrupo2 = hijosNuevo ? (document.getElementById('nuevo-subgrupo2').value || null) : null;
+        const esSet = document.getElementById('nuevo-esset').checked;
+        const piezas = esSet ? leerPiezas('nuevo-piezas') : [];
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null,
-                categoria, subgrupo, subgrupo2, unidad, cantidad, minimo, costo, venta, creadoFecha: serverTimestamp()
+                categoria, subgrupo, subgrupo2, unidad, cantidad, minimo, costo, venta,
+                esSet, piezas, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
@@ -940,6 +987,9 @@
             document.getElementById('nuevo-minimo').value = '0';
             document.getElementById('nuevo-costo').value = '0';
             document.getElementById('nuevo-venta').value = '0';
+            document.getElementById('nuevo-esset').checked = false;
+            document.getElementById('nuevo-piezas').innerHTML = '';
+            document.getElementById('nuevo-set-box').style.display = 'none';
         } catch (e) {
             alert('No se pudo guardar: ' + e.message);
         }
@@ -1000,8 +1050,10 @@
         const hijosEd = subgrupo ? hijosDeSub(categoria, subgrupo) : null;
         const sg2El = document.getElementById('editar-sg2-' + id);
         const subgrupo2 = hijosEd ? ((sg2El && sg2El.value) || null) : null;
+        const esSet = (document.getElementById('editar-esset-' + id) || {}).checked || false;
+        const piezas = esSet ? leerPiezas('editar-piezas-' + id) : [];
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
