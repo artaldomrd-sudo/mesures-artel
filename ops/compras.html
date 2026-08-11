@@ -20,6 +20,8 @@
     .form-box .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .form-box button.submit { margin-top: 16px; width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; font-size: 15px; cursor: pointer; min-height: 46px; }
     h2.section-title { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; }
+    .cf-btn { background: #fff; border: 1.5px solid #d7dee6; color: var(--artal-blue); border-radius: 100px; padding: 8px 15px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    .cf-btn.active { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
     .order-card { border-left-color: #16a085; }
     .aviso-existe { font-size: 12px; color: #b9770e; background: #fff8e8; border: 1.5px solid var(--artal-yellow); border-radius: 7px; padding: 7px 9px; margin-top: 6px; }
 </style>
@@ -76,6 +78,12 @@
     </div>
 
     <h2 class="section-title">Compras registradas recientemente</h2>
+    <div id="compras-filtro" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;">
+        <button class="cf-btn active" data-f="todas" onclick="setFiltroCompras('todas')">Todas</button>
+        <button class="cf-btn" data-f="pendiente_proveedor" onclick="setFiltroCompras('pendiente_proveedor')">Pendiente proveedor</button>
+        <button class="cf-btn" data-f="listo_para_cargar" onclick="setFiltroCompras('listo_para_cargar')">Listo para recoger</button>
+        <button class="cf-btn" data-f="completado" onclick="setFiltroCompras('completado')">Completado</button>
+    </div>
     <div id="compras-list"><p class="empty">Cargando…</p></div>
 </main>
 
@@ -419,17 +427,27 @@
         </div>`;
     }
 
+    let comprasDocs = [], filtroCompras = 'todas';
+    window.setFiltroCompras = function (f) {
+        filtroCompras = f;
+        document.querySelectorAll('#compras-filtro .cf-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+        pintarCompras();
+    };
+    function pintarCompras() {
+        const list = document.getElementById('compras-list');
+        if (!comprasDocs.length) { list.innerHTML = '<p class="empty">No hay compras registradas todavía.</p>'; return; }
+        const vis = filtroCompras === 'todas' ? comprasDocs : comprasDocs.filter(d => (d.data().status || '') === filtroCompras);
+        list.innerHTML = vis.length ? vis.map(d => orderCardHTML(d.id, d.data())).join('') : '<p class="empty">Ninguna compra en este estado.</p>';
+    }
     const q = query(collection(db, 'orders'), where('docType', '==', 'COMPRA_DIRECTA'));
     onSnapshot(q, (snap) => {
-        const list = document.getElementById('compras-list');
         comprasCache = {};
         snap.docs.forEach(d => { comprasCache[d.id] = d.data(); });
-        if (!snap.size) { list.innerHTML = '<p class="empty">No hay compras registradas todavía.</p>'; return; }
-        const docs = snap.docs.slice().sort((a, b) => {
+        comprasDocs = snap.docs.slice().sort((a, b) => {
             const fa = a.data().fechaCompra, fb = b.data().fechaCompra;
             return (fb && fb.toMillis ? fb.toMillis() : 0) - (fa && fa.toMillis ? fa.toMillis() : 0);
         });
-        list.innerHTML = docs.map(d => orderCardHTML(d.id, d.data())).join('');
+        pintarCompras();
     }, (err) => {
         document.getElementById('compras-list').innerHTML = '<p class="empty">Error cargando compras: ' + err.message + '</p>';
     });

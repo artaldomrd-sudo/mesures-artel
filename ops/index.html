@@ -85,7 +85,7 @@
         <a class="card-link" data-tile="chofer" href="chofer.html"><span class="tile-badge" id="badge-chofer"></span><div class="emoji">🚚</div><div class="title">Transportes</div><div class="desc">En espera, en ruta y entregados</div></a>
         <a class="card-link" data-tile="instalacion" href="instalacion.html"><span class="tile-badge" id="badge-instalador"></span><div class="emoji">🔧</div><div class="title">Instalación</div><div class="desc">Agenda de instalación y trabajo en obra</div></a>
         <a class="card-link" data-tile="inventario" href="inventario.html"><span class="tile-badge" id="badge-inventario"></span><div class="emoji">📦</div><div class="title">Inventario</div><div class="desc">Perfiles, herrajes y consumibles</div></a>
-        <a class="card-link" data-tile="erp" href="erp.html"><div class="emoji">🏢</div><div class="title">ERP ARTAL</div><div class="desc">Recursos Humanos y demás módulos internos</div></a>
+        <a class="card-link" data-tile="erp" href="erp.html"><span class="tile-badge" id="badge-erp"></span><div class="emoji">🏢</div><div class="title">ERP ARTAL</div><div class="desc">Recursos Humanos y demás módulos internos</div></a>
     </div>
     <aside id="notif-center">
         <h2 class="notif-title">🔔 Notificaciones <span id="notif-count"></span></h2>
@@ -324,6 +324,25 @@
         herramCatIds = new Set(snap.docs.filter(d => /herramient/i.test((d.data().nombre) || '')).map(d => d.id));
         recomputeInvBadge();
     }, () => {});
+
+    // Caja chica: avisa en el tile ERP cuántas cajas tienen el arqueo del turno PENDIENTE
+    // (mañana 8:00 / tarde 4:55) para que no se le escape a la encargada. Se recuenta cada 5 min.
+    let cajasCC = [], movsCC = [];
+    function hoyISOcc() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    function recomputeArqueoBadge() {
+        const hoy = hoyISOcc();
+        const now = new Date(); const mins = now.getHours() * 60 + now.getMinutes();
+        let n = 0;
+        cajasCC.filter(c => c.activo !== false).forEach(c => {
+            const arq = (t) => movsCC.some(m => m.cajaId === c.id && m.tipo === 'arqueo' && m.fecha === hoy && m.turno === t);
+            if (mins >= 8 * 60 && !arq('am')) n++;
+            if (mins >= 16 * 60 + 55 && !arq('pm')) n++;
+        });
+        setBadge('badge-erp', n);
+    }
+    onSnapshot(collection(db, 'bancosCajaChica'), (s) => { cajasCC = s.docs.map(d => ({ id: d.id, ...d.data() })); recomputeArqueoBadge(); }, () => {});
+    onSnapshot(collection(db, 'bancosCajaMovimientos'), (s) => { movsCC = s.docs.map(d => d.data()); recomputeArqueoBadge(); }, () => {});
+    setInterval(recomputeArqueoBadge, 5 * 60 * 1000);   // recalcula al cruzar las 8:00 / 4:55 aunque no cambien datos
 
     onSnapshot(query(collection(db, 'solicitudesWeb'), where('estado', '==', 'nueva')), (snap) => {
         setBadge('badge-solicitudes', snap.size);

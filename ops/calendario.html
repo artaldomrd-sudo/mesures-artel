@@ -178,6 +178,12 @@
             </select>
         </div>
 
+        <label>Repetir</label>
+        <select id="cita-repetir">
+            <option value="no">No se repite</option>
+            <option value="mensual">Cada mes (al marcarlo hecho, se crea el del mes siguiente)</option>
+        </select>
+
         <label>Recordatorios (puedes marcar varios)</label>
         <div id="cita-recordar" class="recordar-group">
             <label><input type="checkbox" value="0"> A la hora</label>
@@ -484,9 +490,40 @@
         render();
     };
 
+    // Recordatorios mensuales: cuando uno con repetir='mensual' queda COMPLETADO, se genera solo
+    // el del mes siguiente (misma info, sin completar). El original se marca `repetirGenerado` para
+    // no duplicar. Se usa un Set local para evitar dobles mientras la escritura se propaga.
+    const rolling = new Set();
+    async function rollMensual(c) {
+        try {
+            await updateDoc(doc(db, 'citas', c.id), { repetirGenerado: true });
+            const base = (c.fecha && c.fecha.toDate) ? c.fecha.toDate() : new Date();
+            const next = new Date(base); next.setMonth(next.getMonth() + 1);
+            await addDoc(collection(db, 'citas'), {
+                tipo: c.tipo || 'recordatorio', titulo: c.titulo || '', descripcion: c.descripcion || '',
+                fecha: Timestamp.fromDate(next), duracionMin: c.duracionMin || 0,
+                orderId: c.orderId || null, cliente: c.cliente || '', obra: c.obra || '',
+                asignadoA: c.asignadoA || 'gerente', asignados: c.asignados || [],
+                etapas: (c.etapas || []).map(e => ({ titulo: e.titulo || '', nombre: e.nombre || '', email: e.email || '', hecha: false, fechaHecha: null })),
+                completadoPor: [], completada: false, creadoPorNombre: c.creadoPorNombre || '',
+                recordatorios: c.recordatorios || [], recordatoriosEnviados: [],
+                recordatoriosPendientes: (c.recordatorios || []).length > 0,
+                repetir: 'mensual', repetirGenerado: false, fechaCreacion: serverTimestamp()
+            });
+        } catch (e) { /* si falla, se reintenta en el próximo snapshot */ rolling.delete(c.id); }
+    }
+    async function rollMensualSiToca() {
+        for (const c of allCitas) {
+            if (c.repetir === 'mensual' && !c.repetirGenerado && !rolling.has(c.id) && citaCompletadaCalc(c)) {
+                rolling.add(c.id);
+                await rollMensual(c);
+            }
+        }
+    }
     onSnapshot(collection(db, 'citas'), (snap) => {
         allCitas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
+        rollMensualSiToca();
     }, (err) => {
         document.getElementById('citas-list').innerHTML = '<p class="empty">Error cargando citas: ' + err.message + '</p>';
     });
@@ -539,6 +576,7 @@
         document.getElementById('cita-descripcion').value = '';
         document.getElementById('cita-fecha').value = '';
         document.getElementById('cita-duracion').value = '60';
+        document.getElementById('cita-repetir').value = 'no';
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
         document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
         window.etapasDraft = [];
@@ -684,7 +722,9 @@
             creadoPorNombre,
             recordatorios,
             recordatoriosEnviados: [],
-            recordatoriosPendientes: recordatorios.length > 0
+            recordatoriosPendientes: recordatorios.length > 0,
+            repetir: document.getElementById('cita-repetir').value || 'no',
+            repetirGenerado: false
         };
 
         try {
@@ -797,6 +837,7 @@
         document.getElementById('cita-fecha').value =
             `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`;
         if (c.duracionMin != null) document.getElementById('cita-duracion').value = String(c.duracionMin);
+        document.getElementById('cita-repetir').value = c.repetir === 'mensual' ? 'mensual' : 'no';
         // Ligada a pedido o libre
         setTipoCita(c.orderId ? 'pedido' : 'libre');
         if (c.orderId) document.getElementById('cita-pedido').value = c.orderId;

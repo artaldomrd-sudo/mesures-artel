@@ -73,7 +73,7 @@
 <!-- Modal Nueva vacación -->
 <div class="modal-overlay" id="modal">
     <div class="modal-box">
-        <h2>Nueva vacación</h2>
+        <h2 id="v-modal-title">Nueva vacación</h2>
         <label>Empleado *</label>
         <select id="v-empleado"></select>
         <div class="grid2">
@@ -88,7 +88,7 @@
         <textarea id="v-notas" placeholder="Opcional"></textarea>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
-            <button class="btn-guardar" onclick="guardar()">Crear carpeta</button>
+            <button class="btn-guardar" id="v-btn-guardar" onclick="guardar()">Crear carpeta</button>
         </div>
     </div>
 </div>
@@ -109,7 +109,7 @@
     const docIcon = (t) => t === 'pdf' ? '📄' : (t === 'img' ? '🖼️' : '📃');
     const ESTADOS = [['programada', 'Programada'], ['en_curso', 'En curso'], ['completada', 'Completada'], ['cancelada', 'Cancelada']];
 
-    let empleados = [], vacaciones = [];
+    let empleados = [], vacaciones = [], editingId = null;
     const params = new URLSearchParams(location.search);
     let filtroEmp = params.get('emp') || '';
 
@@ -188,12 +188,29 @@
 
     // ---------- Modal ----------
     window.abrirNueva = function () {
+        editingId = null;
+        document.getElementById('v-modal-title').textContent = 'Nueva vacación';
+        document.getElementById('v-btn-guardar').textContent = 'Crear carpeta';
         document.getElementById('v-empleado').value = filtroEmp || '';
         document.getElementById('v-anio').value = new Date().getFullYear();
         document.getElementById('v-estado').value = 'programada';
         document.getElementById('v-inicio').value = '';
         document.getElementById('v-fin').value = '';
         document.getElementById('v-notas').value = '';
+        document.getElementById('modal').classList.add('show');
+    };
+    // Editar una vacación ya registrada (por si hubo un cambio u olvido) sin borrar y rehacer.
+    window.abrirEditar = function (id) {
+        const v = vacaciones.find(x => x.id === id); if (!v) return;
+        editingId = id;
+        document.getElementById('v-modal-title').textContent = 'Editar vacación';
+        document.getElementById('v-btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('v-empleado').value = v.empleadoId || '';
+        document.getElementById('v-anio').value = v.anio || new Date().getFullYear();
+        document.getElementById('v-estado').value = v.estado || 'programada';
+        document.getElementById('v-inicio').value = v.fechaInicio || '';
+        document.getElementById('v-fin').value = v.fechaFin || '';
+        document.getElementById('v-notas').value = v.notas || '';
         document.getElementById('modal').classList.add('show');
     };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
@@ -203,18 +220,22 @@
         const anio = Number(document.getElementById('v-anio').value);
         if (!empId) { alert('Elige el empleado.'); return; }
         if (!anio) { alert('Indica el año.'); return; }
+        const campos = {
+            empleadoId: empId, empleadoNombre: emp ? emp.nombre : '', anio,
+            titulo: 'Vacaciones ' + (emp ? emp.nombre : '') + ' ' + anio,
+            fechaInicio: document.getElementById('v-inicio').value || '',
+            fechaFin: document.getElementById('v-fin').value || '',
+            estado: document.getElementById('v-estado').value,
+            notas: document.getElementById('v-notas').value.trim()
+        };
         try {
-            await addDoc(collection(db, 'rrhhVacaciones'), {
-                empleadoId: empId, empleadoNombre: emp ? emp.nombre : '', anio,
-                titulo: 'Vacaciones ' + (emp ? emp.nombre : '') + ' ' + anio,
-                fechaInicio: document.getElementById('v-inicio').value || '',
-                fechaFin: document.getElementById('v-fin').value || '',
-                estado: document.getElementById('v-estado').value,
-                notas: document.getElementById('v-notas').value.trim(),
-                documentos: [], origen: 'manual', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
-            });
+            if (editingId) {
+                await updateDoc(doc(db, 'rrhhVacaciones', editingId), campos);
+            } else {
+                await addDoc(collection(db, 'rrhhVacaciones'), { ...campos, documentos: [], origen: 'manual', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            }
             cerrar();
-        } catch (e) { alert('No se pudo crear: ' + (e && e.message ? e.message : e)); }
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
     };
 
     // ---------- Render ----------
@@ -259,6 +280,7 @@
             <div class="docs">${docsHTML || '<p class="l" style="color:#8a93a0">Aún no hay documentos en esta carpeta.</p>'}</div>
             <div class="card-actions">
                 <label class="doc-add-btn">＋ Documento<input type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" style="display:none" onchange="subirDocVac('${v.id}',this)"></label>
+                <button class="b-editar" onclick="abrirEditar('${v.id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:bold;font-size:13px;cursor:pointer;font-family:'Arimo';">✏ Editar</button>
                 <button class="b-borrar" onclick="borrarVac('${v.id}')">🗑 Eliminar carpeta</button>
             </div>
         </div>`;
