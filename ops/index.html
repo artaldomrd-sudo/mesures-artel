@@ -307,14 +307,22 @@
     });
 
     // Solicitudes web sin atender (leads que llegan del sitio): badge propio + notificación.
-    // Inventario: avisa cuántos ítems están sin stock o bajo su mínimo.
-    onSnapshot(collection(db, 'inventario'), (snap) => {
+    // Inventario: avisa cuántos ítems están sin stock o bajo su mínimo. Las herramientas NO cuentan
+    // por "bajo mínimo" (una herramienta está o no está), solo cuando llegan a 0 (agotada).
+    let invItems = [], herramCatIds = new Set();
+    function recomputeInvBadge() {
         let n = 0;
-        snap.docs.forEach(d => {
-            const it = d.data(); const cant = Number(it.cantidad) || 0, min = Number(it.minimo) || 0;
-            if (cant <= 0 || (min > 0 && cant <= min)) n++;
+        invItems.forEach(it => {
+            const cant = Number(it.cantidad) || 0, min = Number(it.minimo) || 0;
+            if (cant <= 0) n++;
+            else if (!herramCatIds.has(it.categoria) && min > 0 && cant <= min) n++;
         });
         setBadge('badge-inventario', n);
+    }
+    onSnapshot(collection(db, 'inventario'), (snap) => { invItems = snap.docs.map(d => d.data()); recomputeInvBadge(); }, () => {});
+    onSnapshot(collection(db, 'categoriasInventario'), (snap) => {
+        herramCatIds = new Set(snap.docs.filter(d => /herramient/i.test((d.data().nombre) || '')).map(d => d.id));
+        recomputeInvBadge();
     }, () => {});
 
     onSnapshot(query(collection(db, 'solicitudesWeb'), where('estado', '==', 'nueva')), (snap) => {

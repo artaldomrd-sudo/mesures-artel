@@ -163,8 +163,8 @@
         <input type="number" id="nuevo-minimo" value="0" min="0">
         <label>Costo (por unidad)</label>
         <input type="number" id="nuevo-costo" value="0" min="0" step="0.01">
-        <label>Precio de venta (por unidad)</label>
-        <input type="number" id="nuevo-venta" value="0" min="0" step="0.01">
+        <label>Precio de venta (por unidad) <span style="font-weight:normal;color:#999">(opcional · solo si se revende)</span></label>
+        <input type="number" id="nuevo-venta" value="0" min="0" step="0.01" placeholder="Déjalo en 0 si no se vende">
         <div class="modal-actions">
             <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarNuevoItem()">Cancelar</button>
             <button class="btn-agregar" onclick="guardarNuevoItem()">Guardar</button>
@@ -389,9 +389,12 @@
         return 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    // Las herramientas no manejan "stock bajo": una herramienta está (>=1) o no está (0=agotado).
+    // Los consumibles/accesorios/perfiles sí avisan cuando bajan del mínimo.
+    const esCatHerramientas = (catKey) => { const c = catByKey(catKey); return !!c && /herramient/i.test(c.label || ''); };
     const minimoDe = (it) => Number(it.minimo) || 0;
     const sinStockDe = (it) => (Number(it.cantidad) || 0) <= 0;
-    const bajoMinimoDe = (it) => minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
+    const bajoMinimoDe = (it) => !esCatHerramientas(it.categoria) && minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
     function itemCardHTML(item) {
         const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
         const subsEdit = subgruposDeKey(item.categoria);
@@ -413,8 +416,8 @@
             ${esAdmin ? `
             <div class="item-precios">
                 <span class="costo">Costo: ${money(costo)}</span>
-                <span class="venta">Venta: ${money(venta)}</span>
-                ${margenPct !== null ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
+                ${venta > 0 ? `<span class="venta">Venta: ${money(venta)}</span>` : ''}
+                ${(venta > 0 && margenPct !== null) ? `<span class="margen">Margen: ${money(margen)} (${margenPct}%)</span>` : ''}
             </div>` : ''}
             ${fotosThumbsHTML(item.fotos, { coleccion: 'inventario', id: item.id, puedeBorrar: esAdmin })}
             ${fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' })}
