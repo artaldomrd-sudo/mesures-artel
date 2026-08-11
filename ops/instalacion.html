@@ -248,8 +248,9 @@
 <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box">
         <h2 id="modal-title">Nuevo trabajo de instalación</h2>
-        <label>Vincular a pedido / orden existente <span class="hint">(opcional · conecta el trabajo con esa orden y quedan juntos en el historial)</span></label>
-        <select id="job-vincular" onchange="onVincularOrden()"></select>
+        <label>Vincular a pedido / orden existente <span class="hint">(opcional · elige cliente y luego el proyecto; quedan juntos en el historial)</span></label>
+        <select id="vinc-cliente" onchange="onVincCliente()"></select>
+        <select id="vinc-obra" onchange="onVincObra()" style="margin-top:8px"></select>
         <label>Cliente</label>
         <input type="text" id="job-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
         <datalist id="clientes-datalist"></datalist>
@@ -824,21 +825,42 @@
         document.getElementById('recordar-wrap').style.display = modo === 'sin_fecha' ? 'none' : 'block';
     }
     window.setModoFecha = setModoFecha;
-    // Llena el desplegable "Vincular a pedido/orden" con todos los pedidos (cliente — obra · tipo),
-    // más reciente primero. `selId` deja preseleccionado ese pedido.
-    function poblarVincularOrden(selId) {
-        const sel = document.getElementById('job-vincular');
+    // Vincular a un pedido en DOS pasos (para no buscar en una lista enorme): 1) Cliente, 2) su
+    // Proyecto/obra. Se agrupan los clientes iguales sin importar mayúsculas/tildes.
+    const normCli = (s) => (s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const tipoOrden = (d) => d.docType === 'COMPRA_DIRECTA' ? 'Compra directa' : (String(d.docType || '').startsWith('FAB') ? 'Fabricación' : 'Cotización');
+    function poblarVincClientes(selKey) {
+        const sel = document.getElementById('vinc-cliente');
         if (!sel) return;
-        const tipo = (d) => d.docType === 'COMPRA_DIRECTA' ? 'Compra directa' : (String(d.docType || '').startsWith('FAB') ? 'Fabricación' : 'Cotización');
-        const ops = ordersCache.slice()
-            .sort((a, b) => ((b.data.fechaCreacion && b.data.fechaCreacion.seconds) || 0) - ((a.data.fechaCreacion && a.data.fechaCreacion.seconds) || 0))
-            .map(o => `<option value="${esc(o.id)}">${esc((o.data.cliente || '?') + ' — ' + (o.data.obra || '?'))} · ${tipo(o.data)}</option>`).join('');
-        sel.innerHTML = `<option value="">— Trabajo suelto (sin vincular) —</option>` + ops;
-        sel.value = selId || '';
+        const map = new Map();
+        ordersCache.forEach(o => { const k = normCli(o.data.cliente); if (k && !map.has(k)) map.set(k, o.data.cliente || '?'); });
+        const arr = [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+        sel.innerHTML = `<option value="">— Cliente del pedido —</option>` + arr.map(([k, lbl]) => `<option value="${esc(k)}">${esc(lbl)}</option>`).join('');
+        sel.value = selKey || '';
     }
-    // Al elegir un pedido: rellena cliente/obra/dirección/GPS y guarda la conexión (orderId).
-    window.onVincularOrden = function () {
-        const id = document.getElementById('job-vincular').value;
+    function poblarVincObras(cliKey, selId) {
+        const sel = document.getElementById('vinc-obra');
+        if (!sel) return;
+        const list = ordersCache.filter(o => cliKey && normCli(o.data.cliente) === cliKey)
+            .sort((a, b) => ((b.data.fechaCreacion && b.data.fechaCreacion.seconds) || 0) - ((a.data.fechaCreacion && a.data.fechaCreacion.seconds) || 0));
+        sel.innerHTML = `<option value="">${cliKey ? '— Proyecto / obra —' : '— Primero elige el cliente —'}</option>` +
+            list.map(o => `<option value="${esc(o.id)}">${esc(o.data.obra || '?')} · ${tipoOrden(o.data)}</option>`).join('');
+        sel.value = selId || '';
+        sel.disabled = !cliKey;
+    }
+    // Prepara ambos selects. Si se pasa un orderId, deja preseleccionado ese cliente + proyecto.
+    function poblarVincular(orderId) {
+        const o = orderId ? ordersCache.find(x => x.id === orderId) : null;
+        const cliKey = o ? normCli(o.data.cliente) : '';
+        poblarVincClientes(cliKey);
+        poblarVincObras(cliKey, orderId || '');
+    }
+    window.onVincCliente = function () {
+        window._orderIdParaGuardar = null;   // al cambiar cliente se suelta el proyecto anterior
+        poblarVincObras(document.getElementById('vinc-cliente').value, '');
+    };
+    window.onVincObra = function () {
+        const id = document.getElementById('vinc-obra').value;
         if (!id) { window._orderIdParaGuardar = null; return; }
         const o = ordersCache.find(x => x.id === id); if (!o) return;
         window._orderIdParaGuardar = id;
@@ -858,7 +880,7 @@
     }
     window.abrirNuevo = function () {
         limpiarForm();
-        poblarVincularOrden('');
+        poblarVincular('');
         document.getElementById('modal-title').textContent = 'Nuevo trabajo de instalación';
         if (selectedDay) { const pad = (n) => String(n).padStart(2, '0'), d = selectedDay; document.getElementById('job-fecha').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T09:00`; }
         document.getElementById('modal-overlay').classList.add('show');
@@ -866,7 +888,7 @@
     window.agendarPedido = function (orderId) {
         const o = ordersCache.find(x => x.id === orderId); if (!o) return;
         limpiarForm(); editingId = null; window._orderIdParaGuardar = orderId;
-        poblarVincularOrden(orderId);
+        poblarVincular(orderId);
         document.getElementById('modal-title').textContent = 'Agendar instalación (desde pedido)';
         document.getElementById('job-cliente').value = o.data.cliente || '';
         document.getElementById('job-obra').value = o.data.obra || '';
@@ -875,7 +897,7 @@
     window.abrirEditar = function (id) {
         const j = allJobs.find(x => x.id === id); if (!j) return;
         limpiarForm(); editingId = id; window._orderIdParaGuardar = j.orderId || null;
-        poblarVincularOrden(j.orderId || '');
+        poblarVincular(j.orderId || '');
         document.getElementById('modal-title').textContent = 'Editar instalación';
         document.getElementById('job-cliente').value = j.cliente || '';
         document.getElementById('job-obra').value = j.obra || '';
