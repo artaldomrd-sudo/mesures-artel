@@ -248,6 +248,8 @@
 <div class="modal-overlay" id="modal-overlay">
     <div class="modal-box">
         <h2 id="modal-title">Nuevo trabajo de instalación</h2>
+        <label>Vincular a pedido / orden existente <span class="hint">(opcional · conecta el trabajo con esa orden y quedan juntos en el historial)</span></label>
+        <select id="job-vincular" onchange="onVincularOrden()"></select>
         <label>Cliente</label>
         <input type="text" id="job-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
         <datalist id="clientes-datalist"></datalist>
@@ -822,8 +824,32 @@
         document.getElementById('recordar-wrap').style.display = modo === 'sin_fecha' ? 'none' : 'block';
     }
     window.setModoFecha = setModoFecha;
+    // Llena el desplegable "Vincular a pedido/orden" con todos los pedidos (cliente — obra · tipo),
+    // más reciente primero. `selId` deja preseleccionado ese pedido.
+    function poblarVincularOrden(selId) {
+        const sel = document.getElementById('job-vincular');
+        if (!sel) return;
+        const tipo = (d) => d.docType === 'COMPRA_DIRECTA' ? 'Compra directa' : (String(d.docType || '').startsWith('FAB') ? 'Fabricación' : 'Cotización');
+        const ops = ordersCache.slice()
+            .sort((a, b) => ((b.data.fechaCreacion && b.data.fechaCreacion.seconds) || 0) - ((a.data.fechaCreacion && a.data.fechaCreacion.seconds) || 0))
+            .map(o => `<option value="${esc(o.id)}">${esc((o.data.cliente || '?') + ' — ' + (o.data.obra || '?'))} · ${tipo(o.data)}</option>`).join('');
+        sel.innerHTML = `<option value="">— Trabajo suelto (sin vincular) —</option>` + ops;
+        sel.value = selId || '';
+    }
+    // Al elegir un pedido: rellena cliente/obra/dirección/GPS y guarda la conexión (orderId).
+    window.onVincularOrden = function () {
+        const id = document.getElementById('job-vincular').value;
+        if (!id) { window._orderIdParaGuardar = null; return; }
+        const o = ordersCache.find(x => x.id === id); if (!o) return;
+        window._orderIdParaGuardar = id;
+        document.getElementById('job-cliente').value = o.data.cliente || '';
+        document.getElementById('job-obra').value = o.data.obra || '';
+        if (o.data.direccion) document.getElementById('job-direccion').value = o.data.direccion;
+        if (o.data.gps) document.getElementById('job-gps').value = o.data.gps;
+    };
     function limpiarForm() {
         editingId = null;
+        window._orderIdParaGuardar = null;
         ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-fecha-inicio','job-fecha-fin','job-notas'].forEach(id => document.getElementById(id).value = '');
         document.querySelectorAll('#job-instaladores input').forEach(c => c.checked = false);
         document.getElementById('job-estado').value = 'pendiente';
@@ -832,6 +858,7 @@
     }
     window.abrirNuevo = function () {
         limpiarForm();
+        poblarVincularOrden('');
         document.getElementById('modal-title').textContent = 'Nuevo trabajo de instalación';
         if (selectedDay) { const pad = (n) => String(n).padStart(2, '0'), d = selectedDay; document.getElementById('job-fecha').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T09:00`; }
         document.getElementById('modal-overlay').classList.add('show');
@@ -839,6 +866,7 @@
     window.agendarPedido = function (orderId) {
         const o = ordersCache.find(x => x.id === orderId); if (!o) return;
         limpiarForm(); editingId = null; window._orderIdParaGuardar = orderId;
+        poblarVincularOrden(orderId);
         document.getElementById('modal-title').textContent = 'Agendar instalación (desde pedido)';
         document.getElementById('job-cliente').value = o.data.cliente || '';
         document.getElementById('job-obra').value = o.data.obra || '';
@@ -847,6 +875,7 @@
     window.abrirEditar = function (id) {
         const j = allJobs.find(x => x.id === id); if (!j) return;
         limpiarForm(); editingId = id; window._orderIdParaGuardar = j.orderId || null;
+        poblarVincularOrden(j.orderId || '');
         document.getElementById('modal-title').textContent = 'Editar instalación';
         document.getElementById('job-cliente').value = j.cliente || '';
         document.getElementById('job-obra').value = j.obra || '';
