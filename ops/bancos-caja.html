@@ -78,6 +78,7 @@
         <button class="btn-g" onclick="abrirGasto()">− Gasto</button>
         <button class="btn-r" onclick="abrirRepo()">+ Reponer fondo</button>
         <button class="btn-a" onclick="abrirArqueo()">🧮 Arqueo</button>
+        <button class="btn-o" onclick="abrirReporte()">📊 Reporte</button>
     </div>
     <div id="arqueo-banner"></div>
     <div class="kpis" id="kpis"></div>
@@ -121,6 +122,7 @@
             <div><label>Categoría</label><input type="text" id="g-categoria" list="cat-caja" placeholder="Categoría"></div>
             <div><label>Referencia <span class="lbl-opt">— opcional</span></label><input type="text" id="g-ref" placeholder="Nº recibo"></div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="g-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Gastos)</b></label>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-gasto')">Cancelar</button>
             <button class="btn-guardar" onclick="guardarGasto()">Registrar gasto</button>
@@ -165,6 +167,22 @@
             <button class="btn-cancelar" onclick="cerrar('modal-arqueo')">Cancelar</button>
             <button class="btn-guardar" onclick="guardarArqueo()">Guardar arqueo</button>
         </div>
+    </div>
+</div>
+
+<!-- Modal: reporte por período -->
+<div class="modal-overlay" id="modal-reporte">
+    <div class="modal-box" style="max-width:640px">
+        <h2>📊 Reporte por período</h2>
+        <div class="grid2">
+            <div><label>Desde</label><input type="date" id="rep-desde"></div>
+            <div><label>Hasta</label><input type="date" id="rep-hasta"></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;">
+            <button class="btn-cancelar" style="flex:1" onclick="cerrar('modal-reporte')">Cerrar</button>
+            <button class="btn-guardar" style="flex:1" onclick="generarReporte()">Generar</button>
+        </div>
+        <div id="rep-out" style="margin-top:16px"></div>
     </div>
 </div>
 
@@ -244,6 +262,7 @@
         if (!cajaSel()) { alert('Primero elige (o crea) una caja.'); return; }
         ['g-monto', 'g-concepto', 'g-categoria', 'g-ref'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('g-fecha').value = hoyISO();
+        document.getElementById('g-conta').checked = true;
         document.getElementById('modal-gasto').classList.add('show');
     };
     window.guardarGasto = async function () {
@@ -254,12 +273,29 @@
         if (monto <= 0) { alert('Escribe el monto.'); return; }
         const saldo = saldoCaja(c.id);
         if (monto > saldo && !confirm('El gasto (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) return;
+        const fecha = document.getElementById('g-fecha').value || hoyISO();
+        const categoria = document.getElementById('g-categoria').value.trim();
+        const referencia = document.getElementById('g-ref').value.trim();
+        const aConta = document.getElementById('g-conta').checked;
         const btn = document.querySelector('#modal-gasto .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
         try {
+            // Si va a Contabilidad, se crea primero el gasto ahí para guardar su id en el movimiento
+            // de caja (así al borrar el gasto de caja se puede quitar también de Contabilidad).
+            let contaMovId = null;
+            if (aConta) {
+                try {
+                    const cref = await addDoc(collection(db, 'contaMovimientos'), {
+                        tipo: 'gasto', fecha, concepto, categoria: categoria || 'Caja chica', monto, itbis: 0,
+                        metodo: 'Efectivo (caja chica)', tercero: '', rnc: '', ncf: '',
+                        notas: 'Caja chica: ' + (c.nombre || '') + (referencia ? ' · ' + referencia : ''),
+                        origen: 'caja_chica', cajaId: c.id, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                    });
+                    contaMovId = cref.id;
+                } catch (e2) { alert('El gasto se guardará en la caja, pero no se pudo pasar a Contabilidad: ' + (e2 && e2.message ? e2.message : e2)); }
+            }
             await addDoc(collection(db, 'bancosCajaMovimientos'), {
-                cajaId: c.id, tipo: 'gasto', fecha: document.getElementById('g-fecha').value || hoyISO(), concepto,
-                categoria: document.getElementById('g-categoria').value.trim(), monto,
-                referencia: document.getElementById('g-ref').value.trim(), creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                cajaId: c.id, tipo: 'gasto', fecha, concepto, categoria, monto, referencia,
+                contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             cerrar('modal-gasto');
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
@@ -349,8 +385,57 @@
     window.borrarMov = async function (id) {
         const m = movs.find(x => x.id === id); if (!m) return;
         if (m.tipo === 'apertura') { alert('No se puede borrar la apertura del fondo. Si quieres cerrar la caja, es mejor dejarla inactiva (próximamente).'); return; }
-        if (!confirm('¿Eliminar este movimiento de caja?')) return;
-        try { await deleteDoc(doc(db, 'bancosCajaMovimientos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+        if (!confirm('¿Eliminar este movimiento de caja?' + (m.contaMovId ? ' (también se quitará de Contabilidad)' : ''))) return;
+        try {
+            await deleteDoc(doc(db, 'bancosCajaMovimientos', id));
+            if (m.contaMovId) { try { await deleteDoc(doc(db, 'contaMovimientos', m.contaMovId)); } catch (e2) { /* si ya no existe, no pasa nada */ } }
+        } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Reporte por período + exportar ----------
+    const primerDiaMes = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-01'; };
+    let repData = null;
+    window.abrirReporte = function () {
+        if (!cajaSel()) { alert('Primero elige una caja.'); return; }
+        document.getElementById('rep-desde').value = primerDiaMes();
+        document.getElementById('rep-hasta').value = hoyISO();
+        document.getElementById('rep-out').innerHTML = '';
+        document.getElementById('modal-reporte').classList.add('show');
+    };
+    window.generarReporte = function () {
+        const c = cajaSel(); if (!c) return;
+        const desde = document.getElementById('rep-desde').value, hasta = document.getElementById('rep-hasta').value;
+        const lista = movsCaja(c.id).filter(m => m.tipo !== 'arqueo' && (!desde || (m.fecha || '') >= desde) && (!hasta || (m.fecha || '') <= hasta))
+            .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+        const gastos = lista.filter(m => m.tipo === 'gasto'), repos = lista.filter(m => m.tipo === 'reposicion');
+        const totGasto = gastos.reduce((a, m) => a + n2(m.monto), 0), totRepo = repos.reduce((a, m) => a + n2(m.monto), 0);
+        const cat = {};
+        gastos.forEach(m => { const k = (m.categoria || '').trim() || 'Sin categoría'; cat[k] = (cat[k] || 0) + n2(m.monto); });
+        const catRows = Object.entries(cat).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td style="padding:6px;border-bottom:1px solid #f0f0f0">${esc(k)}</td><td style="padding:6px;border-bottom:1px solid #f0f0f0;text-align:right">${fmt(v)}</td></tr>`).join('');
+        repData = { caja: c.nombre || '', desde, hasta, lista };
+        document.getElementById('rep-out').innerHTML =
+            `<div class="kpis"><div class="kpi"><div class="n" style="color:#d9483b">${fmt0(totGasto)}</div><div class="l">Gastado (${gastos.length})</div></div>` +
+            `<div class="kpi"><div class="n" style="color:#1f9d61">${fmt0(totRepo)}</div><div class="l">Repuesto (${repos.length})</div></div></div>` +
+            `<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:13px"><thead><tr><th style="text-align:left;border-bottom:1.5px solid #e5e9ee;padding:6px">Categoría</th><th style="text-align:right;border-bottom:1.5px solid #e5e9ee;padding:6px">Gastado</th></tr></thead><tbody>${catRows || '<tr><td colspan="2" style="padding:8px;color:#999">Sin gastos en el período.</td></tr>'}</tbody></table>` +
+            `<div style="display:flex;gap:10px;margin-top:14px"><button class="btn-r" style="flex:1" onclick="descargarCSV()">⬇️ Descargar CSV</button><button class="btn-o" style="flex:1" onclick="imprimirReporte()">🖨 Imprimir</button></div>`;
+    };
+    window.descargarCSV = function () {
+        if (!repData) return;
+        const filas = [['Fecha', 'Tipo', 'Concepto', 'Categoría', 'Referencia', 'Monto', 'Registrado por']];
+        repData.lista.forEach(m => filas.push([m.fecha || '', m.tipo || '', m.concepto || '', m.categoria || '', m.referencia || '', n2(m.monto).toFixed(2), m.creadoPor || '']));
+        const csv = filas.map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+        a.download = `caja_${(repData.caja || '').replace(/[^a-z0-9]/gi, '_')}_${repData.desde}_a_${repData.hasta}.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+    };
+    window.imprimirReporte = function () {
+        if (!repData) return;
+        const rows = repData.lista.map(m => `<tr><td>${esc(fmtFecha(m.fecha))}</td><td>${esc(m.tipo || '')}</td><td>${esc(m.concepto || '')}</td><td>${esc(m.categoria || '')}</td><td style="text-align:right">${fmt(m.monto)}</td></tr>`).join('');
+        const w = window.open('', '_blank');
+        if (!w) { alert('El navegador bloqueó la ventana de impresión. Usa "Descargar CSV".'); return; }
+        w.document.write(`<html><head><title>Reporte caja chica</title><style>body{font-family:Arial,sans-serif;padding:22px;color:#222}h1{color:#1c4e7a;font-size:18px;margin:0 0 4px}p{color:#555;margin:0 0 10px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid #ddd;padding:6px;text-align:left}</style></head><body><h1>Caja chica: ${esc(repData.caja)}</h1><p>Período: ${esc(repData.desde)} a ${esc(repData.hasta)}</p><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Categoría</th><th style="text-align:right">Monto</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+        w.document.close(); w.focus(); w.print();
     };
 
     function render() {
