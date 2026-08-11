@@ -15,7 +15,7 @@
 // que la tarjeta puede re-renderizarse cuantas veces haga falta sin re-enganchar eventos.
 
 import { db, storage } from './firebase-config.js';
-import { doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { doc, getDoc, updateDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
 function esc(s) {
@@ -126,7 +126,9 @@ export async function agregarFotos(coleccion, id, fileList, campo = 'fotos') {
     if (!nuevas.length) return [];
     const snap = await getDoc(doc(db, coleccion, id));
     const prev = (snap.exists() && Array.isArray(snap.data()[campo])) ? snap.data()[campo] : [];
-    await updateDoc(doc(db, coleccion, id), { [campo]: prev.concat(nuevas) });
+    // setDoc con merge en vez de updateDoc: crea el documento si aún no existe (ej. el bulto de
+    // herramientas de un equipo, cuya primera acción es justo subirle una foto).
+    await setDoc(doc(db, coleccion, id), { [campo]: prev.concat(nuevas) }, { merge: true });
     return nuevas;
 }
 
@@ -134,7 +136,7 @@ export async function agregarFotos(coleccion, id, fileList, campo = 'fotos') {
 export async function quitarFotoPorUrl(coleccion, id, url, campo = 'fotos') {
     const snap = await getDoc(doc(db, coleccion, id));
     const prev = (snap.exists() && Array.isArray(snap.data()[campo])) ? snap.data()[campo] : [];
-    await updateDoc(doc(db, coleccion, id), { [campo]: prev.filter(f => f && f.url !== url) });
+    await setDoc(doc(db, coleccion, id), { [campo]: prev.filter(f => f && f.url !== url) }, { merge: true });
 }
 
 // Miniaturas: cada una abre la foto a tamaño completo (URL https de Storage, se abre en pestaña

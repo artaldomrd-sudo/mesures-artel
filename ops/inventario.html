@@ -175,7 +175,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
-    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260810c';
+    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
     import { db } from './firebase-config.js';
     import {
         collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp
@@ -190,9 +190,12 @@
     ];
     // Sub-secciones DENTRO de una categoría (dividen sus ítems por el campo `subgrupo`).
     // Herramientas → por equipo; Accesorios puertas/ventanas/vidrios → por tipo de elemento.
+    // Cada equipo tiene un "Bulto de herramientas" (nivel 3): una foto del bulto + las herramientas
+    // que lo componen. La foto se guarda en Firestore `bultosHerramientas`, un doc por equipo.
+    const SUBGRUPOS_BULTO = [{ key: 'bulto', emoji: '🎒', label: 'Bulto de herramientas' }];
     const SUBGRUPOS_HERR = [
-        { key: 'equipo1', emoji: '👷', label: 'Equipo 1 (Miki)' },
-        { key: 'equipo2', emoji: '👷', label: 'Equipo 2 (Wilson)' },
+        { key: 'equipo1', emoji: '👷', label: 'Equipo 1 (Miki)', hijos: SUBGRUPOS_BULTO },
+        { key: 'equipo2', emoji: '👷', label: 'Equipo 2 (Wilson)', hijos: SUBGRUPOS_BULTO },
         { key: 'comunes', emoji: '🔧', label: 'Comunes (compartidas)' }
     ];
     // Tercer nivel dentro de "Ventanas de aluminio": tipos de apertura (sin series).
@@ -380,6 +383,7 @@
     ];
 
     let allItems = [];
+    let bultos = {};   // { equipo1: {fotos:[...]}, equipo2: {...} } — foto del bulto de cada equipo
 
     function money(n) {
         return 'RD$ ' + Number(n || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -664,16 +668,29 @@
                 // Sub-sección CON sus propios cuadros (nivel 3, ej. Ventanas → E70/E100…).
                 if (d && d.hijos) {
                     if (!subSel2) {
-                        const tiles = d.hijos.map(h => tileHTML(`abrirSub2('${esc(h.key)}')`, h.label, h.emoji, h.items));
+                        const tiles = d.hijos.map(h => {
+                            let visual = h.emoji;
+                            if (h.key === 'bulto') {   // el cuadro del bulto muestra su foto si ya tiene una
+                                const f = bultos[subSel] && bultos[subSel].fotos && bultos[subSel].fotos[0];
+                                visual = f ? `<img src="${esc(f.url)}" style="width:50px;height:50px;object-fit:cover;border-radius:10px;display:block">` : (h.emoji || '🎒');
+                            }
+                            return tileHTML(`abrirSub2('${esc(h.key)}')`, h.label, visual, h.items);
+                        });
                         container.innerHTML = `${volverSub}<h2 class="section-title" style="margin:12px 0 10px">${d.emoji} ${esc(d.label)}</h2><div class="inv-grid">${tiles.join('')}</div>`;
                         actualizarSeedBtns(); return;
                     }
-                    // Nivel 4: ítems de un sub-tipo.
+                    // Nivel 4: ítems de un sub-tipo. El bulto muestra arriba su foto (todos ven/agregan).
                     const h = d.hijos.find(x => x.key === subSel2);
                     const itemsH = h ? h.items : [];
                     const volverSub2 = `<button class="btn-back-cat" onclick="cerrarSub2()">← ${esc(d.label)}</button>`;
-                    const cuerpoH = itemsH.length ? itemsListHTML(itemsH) : '<p class="empty">Sin ítems en esta sección todavía.</p>';
-                    container.innerHTML = `${volverSub2}<h2 class="section-title" style="margin:12px 0 10px">${h ? h.emoji + ' ' + esc(h.label) : ''}</h2>${cuerpoH}`;
+                    let fotoBulto = '';
+                    if (subSel2 === 'bulto') {
+                        const b = bultos[subSel] || {};
+                        fotoBulto = `<div style="margin:0 0 14px">${fotosThumbsHTML(b.fotos, { coleccion: 'bultosHerramientas', id: subSel, puedeBorrar: esAdmin })}${fotoAddBtnHTML({ coleccion: 'bultosHerramientas', id: subSel, label: '📷 Foto del bulto' })}</div>`;
+                    }
+                    const vacioTxt = subSel2 === 'bulto' ? 'Sin herramientas en el bulto todavía.' : 'Sin ítems en esta sección todavía.';
+                    const cuerpoH = itemsH.length ? itemsListHTML(itemsH) : `<p class="empty">${vacioTxt}</p>`;
+                    container.innerHTML = `${volverSub2}<h2 class="section-title" style="margin:12px 0 10px">${h ? h.emoji + ' ' + esc(h.label) : ''}</h2>${fotoBulto}${cuerpoH}`;
                     actualizarSeedBtns(); return;
                 }
                 // Sub-sección sin hijos: ítems directos (nivel 3).
@@ -719,6 +736,13 @@
     // Sub-secciones (cuadros) creadas por el usuario, por categoría.
     onSnapshot(collection(db, 'subgruposInventario'), (snap) => {
         subgruposCustom = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, () => {});
+
+    // Foto(s) del bulto de herramientas de cada equipo (doc por equipo: equipo1, equipo2).
+    onSnapshot(collection(db, 'bultosHerramientas'), (snap) => {
+        bultos = {};
+        snap.docs.forEach(d => { bultos[d.id] = d.data(); });
         render();
     }, () => {});
 
