@@ -566,6 +566,14 @@
                 ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
                 ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
             </div>
+            ${esAdmin ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">
+                <span style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">👷 Instalador:</span>
+                <select id="asig-inst-${id}" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;min-height:40px;background:#fff">
+                    <option value="">(sin asignar — cualquiera)</option>
+                    ${instaladores.map(u => `<option value="${esc(u.email)}" ${o.asignadoInstaladorEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+                </select>
+                <button onclick="asignarInstalador('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:bold;font-size:13px;cursor:pointer;font-family:'Arimo';min-height:40px">Guardar</button>
+            </div>` : ''}
             <div class="coment-box">
                 <div class="coment-title">💬 Comentarios del instalador</div>
                 ${(Array.isArray(o.comentariosInstalador) && o.comentariosInstalador.length) ? `<div class="coment-list">${o.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
@@ -1003,6 +1011,15 @@
             });
             if (ta) ta.value = '';
         } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
+    };
+    // Asignar (o cambiar) el instalador de una obra desde "Por instalar". Es informativo: no
+    // restringe acceso, pero deja claro quién la tiene. Mismos campos que usa Historial.
+    window.asignarInstalador = async function (id) {
+        const email = (document.getElementById('asig-inst-' + id) || {}).value || '';
+        const u = instaladores.find(x => x.email === email);
+        try {
+            await updateDoc(doc(db, 'orders', id), { asignadoInstaladorEmail: email || null, asignadoInstaladorNombre: u ? u.nombre : null });
+        } catch (e) { alert('No se pudo asignar el instalador: ' + (e && e.message ? e.message : e)); }
     };
     window.marcarSinInstalacion = async function (orderId) {
         const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
