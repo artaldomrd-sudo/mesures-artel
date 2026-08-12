@@ -17,6 +17,11 @@
     .btn-r { background: #2ecc71; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .btn-a { background: #6c5ce7; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-d { background: #16739e; color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .firma-canvas { width: 100%; height: 150px; border: 1.5px dashed #cdd5de; border-radius: 8px; background: #fcfdfe; touch-action: none; display: block; }
+    .firma-row { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .firma-row button { background: transparent; border: none; color: #8a93a0; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; }
+    .btn-comp { background: #16739e; color: #fff; border: none; border-radius: 7px; padding: 6px 10px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; margin-top: 6px; }
 
     .arq-alert { display: flex; align-items: center; gap: 10px; background: #fdecea; border: 1.5px solid #f5b7b1; color: #a5281b; border-radius: 12px; padding: 12px 16px; margin: 0 0 12px; font-weight: bold; font-size: 14px; }
     .arq-ok { display: flex; flex-wrap: wrap; gap: 8px 18px; background: #ecf9f1; border: 1.5px solid #b7e4c7; color: #1e7a48; border-radius: 12px; padding: 10px 16px; margin: 0 0 12px; font-size: 13px; }
@@ -76,6 +81,7 @@
         <select id="sel-caja" onchange="render()"></select>
         <button class="btn-o" onclick="abrirCaja()">+ Nueva caja</button>
         <button class="btn-g" onclick="abrirGasto()">− Gasto</button>
+        <button class="btn-d" onclick="abrirDesembolso()">🧾 Desembolso (con firma)</button>
         <button class="btn-r" onclick="abrirRepo()">+ Reponer fondo</button>
         <button class="btn-a" onclick="abrirArqueo()">🧮 Arqueo</button>
         <button class="btn-o" onclick="abrirReporte()">📊 Reporte</button>
@@ -183,6 +189,34 @@
             <button class="btn-guardar" style="flex:1" onclick="generarReporte()">Generar</button>
         </div>
         <div id="rep-out" style="margin-top:16px"></div>
+    </div>
+</div>
+
+<!-- Modal: desembolso con firma (pago a un beneficiario / servicio) -->
+<div class="modal-overlay" id="modal-desemb">
+    <div class="modal-box">
+        <h2>🧾 Desembolso de caja (con firma)</h2>
+        <div class="grid2">
+            <div><label>Beneficiario (quién recibe) *</label><input type="text" id="d-benef" placeholder="Ej: María — limpieza"></div>
+            <div><label>Cédula <span class="lbl-opt">— opcional</span></label><input type="text" id="d-cedula" placeholder="000-0000000-0"></div>
+        </div>
+        <div class="grid2">
+            <div><label>Fecha</label><input type="date" id="d-fecha"></div>
+            <div><label>Monto (RD$) *</label><input type="number" id="d-monto" min="0" step="0.01" oninput="calcLetrasDesemb()"></div>
+        </div>
+        <div class="caja-meta" id="d-letras" style="margin:4px 0 0"></div>
+        <label>Concepto *</label>
+        <input type="text" id="d-concepto" placeholder="Ej: Pago servicio de limpieza semana 12">
+        <label>Categoría</label>
+        <input type="text" id="d-categoria" list="cat-caja" placeholder="Categoría">
+        <label>Firma de quien recibe * <span class="lbl-opt">— firma con el dedo (celular) o el mouse (computadora)</span></label>
+        <canvas class="firma-canvas" id="d-firma" width="600" height="150"></canvas>
+        <div class="firma-row"><span class="lbl-opt">El beneficiario firma aquí ↑</span><button type="button" onclick="limpiarFirmaDesemb()">Borrar firma</button></div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="d-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Gastos)</b></label>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar('modal-desemb')">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarDesembolso()">Registrar y guardar firma</button>
+        </div>
     </div>
 </div>
 
@@ -300,6 +334,138 @@
             cerrar('modal-gasto');
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Registrar gasto'; }
+    };
+
+    // ---------- Desembolso con firma (pago a un beneficiario / servicio) ----------
+    // Número → letras en español (para el comprobante de egreso, como los vales de caja).
+    function numeroALetras(num) {
+        num = Math.floor(Number(num) || 0);
+        if (num === 0) return 'CERO';
+        const UNI = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE', 'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE'];
+        const DEC = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA'];
+        const CEN = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS', 'OCHOCIENTOS', 'NOVECIENTOS'];
+        const seccion = (n) => {
+            let out = ''; const c = Math.floor(n / 100), dd = n % 100, u = n % 10, d = Math.floor(dd / 10);
+            if (c) out += (n === 100 ? 'CIEN' : CEN[c]) + (dd ? ' ' : '');
+            if (dd <= 20) out += UNI[dd];
+            else if (dd < 30) out += (u ? 'VEINTI' + UNI[u] : 'VEINTE');
+            else { out += DEC[d]; if (u) out += ' Y ' + UNI[u]; }
+            return out.trim();
+        };
+        let out = '';
+        const millones = Math.floor(num / 1000000), miles = Math.floor((num % 1000000) / 1000), resto = num % 1000;
+        if (millones) out += (millones === 1 ? 'UN MILLÓN' : seccion(millones) + ' MILLONES') + ' ';
+        if (miles) out += (miles === 1 ? 'MIL' : seccion(miles) + ' MIL') + ' ';
+        if (resto) out += seccion(resto);
+        return out.trim();
+    }
+    const montoEnLetras = (x) => { const ent = Math.floor(x), cent = Math.round((x - ent) * 100); return numeroALetras(ent) + ' PESOS CON ' + String(cent).padStart(2, '0') + '/100'; };
+
+    // Pad de firma: funciona con dedo (celular) y con mouse (computadora). No requiere iPad.
+    let firmaPad = null;
+    function setupFirmaPad(canvas) {
+        const ctx = canvas.getContext('2d'); let drawing = false, vacio = true;
+        ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1c2b3a';
+        const pos = (e) => { const r = canvas.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return { x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height) }; };
+        const down = (e) => { drawing = true; vacio = false; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); };
+        const move = (e) => { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); };
+        const up = () => { drawing = false; };
+        canvas.addEventListener('mousedown', down); canvas.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+        canvas.addEventListener('touchstart', down, { passive: false }); canvas.addEventListener('touchmove', move, { passive: false }); canvas.addEventListener('touchend', up);
+        return { isEmpty: () => vacio, clear: () => { ctx.clearRect(0, 0, canvas.width, canvas.height); vacio = true; }, dataUrl: () => canvas.toDataURL('image/png') };
+    }
+    window.limpiarFirmaDesemb = function () { if (firmaPad) firmaPad.clear(); };
+    window.calcLetrasDesemb = function () {
+        const v = document.getElementById('d-monto').value;
+        document.getElementById('d-letras').innerHTML = v === '' ? '' : '<b>' + montoEnLetras(n2(v)) + '</b>';
+    };
+    window.abrirDesembolso = function () {
+        if (!cajaSel()) { alert('Primero elige (o crea) una caja.'); return; }
+        ['d-benef', 'd-cedula', 'd-monto', 'd-concepto', 'd-categoria'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('d-fecha').value = hoyISO();
+        document.getElementById('d-conta').checked = true;
+        document.getElementById('d-letras').innerHTML = '';
+        document.getElementById('modal-desemb').classList.add('show');
+        const canvas = document.getElementById('d-firma');
+        firmaPad = setupFirmaPad(canvas); firmaPad.clear();
+    };
+    window.guardarDesembolso = async function () {
+        const c = cajaSel(); if (!c) return;
+        const benef = document.getElementById('d-benef').value.trim();
+        const concepto = document.getElementById('d-concepto').value.trim();
+        const monto = n2(document.getElementById('d-monto').value);
+        if (!benef) { alert('Escribe el beneficiario (quién recibe).'); return; }
+        if (!concepto) { alert('Escribe el concepto.'); return; }
+        if (monto <= 0) { alert('Escribe el monto.'); return; }
+        if (!firmaPad || firmaPad.isEmpty()) { alert('Falta la firma de quien recibe.'); return; }
+        const saldo = saldoCaja(c.id);
+        if (monto > saldo && !confirm('El desembolso (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) return;
+        const fecha = document.getElementById('d-fecha').value || hoyISO();
+        const cedula = document.getElementById('d-cedula').value.trim();
+        const categoria = document.getElementById('d-categoria').value.trim();
+        const firma = firmaPad.dataUrl();
+        const aConta = document.getElementById('d-conta').checked;
+        const btn = document.querySelector('#modal-desemb .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+            let contaMovId = null;
+            if (aConta) {
+                try {
+                    const cref = await addDoc(collection(db, 'contaMovimientos'), {
+                        tipo: 'gasto', fecha, concepto, categoria: categoria || 'Servicios / desembolso', monto, itbis: 0,
+                        metodo: 'Efectivo (caja chica)', tercero: benef, rnc: cedula, ncf: '',
+                        notas: 'Desembolso caja chica: ' + (c.nombre || '') + ' · a ' + benef,
+                        origen: 'caja_chica', cajaId: c.id, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                    });
+                    contaMovId = cref.id;
+                } catch (e2) { alert('El desembolso se guardará en la caja, pero no se pudo pasar a Contabilidad: ' + (e2 && e2.message ? e2.message : e2)); }
+            }
+            await addDoc(collection(db, 'bancosCajaMovimientos'), {
+                cajaId: c.id, tipo: 'gasto', subtipo: 'desembolso', fecha, concepto, categoria, monto,
+                beneficiario: benef, cedula, firma, contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+            cerrar('modal-desemb');
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Registrar y guardar firma'; }
+    };
+    // Comprobante de egreso imprimible (formato ticket angosto: sirve en impresora normal y térmica 80mm).
+    window.imprimirComprobante = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        const c = cajas.find(x => x.id === m.cajaId) || {};
+        const w = window.open('', '_blank', 'width=420,height=640');
+        if (!w) { alert('El navegador bloqueó la ventana de impresión.'); return; }
+        w.document.write(`<html><head><title>Comprobante de egreso</title><style>
+            @page { margin: 6mm }
+            body { font-family: Arial, sans-serif; color: #111; width: 80mm; margin: 0 auto; padding: 6px; font-size: 12px; }
+            .ttl { text-align: center; font-weight: bold; color: #1c4e7a; font-size: 15px; }
+            .sub { text-align: center; font-size: 11px; color: #555; margin-bottom: 6px; }
+            .row { margin: 3px 0; } .row b { display: inline-block; min-width: 74px; }
+            .monto { font-size: 16px; font-weight: bold; text-align: center; margin: 8px 0 2px; }
+            .letras { font-size: 10.5px; text-align: center; color: #444; font-style: italic; }
+            .firma { text-align: center; margin-top: 12px; }
+            .firma img { max-width: 60mm; max-height: 26mm; }
+            .firma .l { border-top: 1px solid #333; margin: 2px 20px 0; font-size: 10px; color: #555; padding-top: 2px; }
+            hr { border: none; border-top: 1px dashed #bbb; margin: 8px 0; }
+        </style></head><body>
+            <div class="ttl">ARTAL DOMINICANA</div>
+            <div class="sub">Comprobante de egreso de caja chica</div>
+            <hr>
+            <div class="row"><b>Caja:</b> ${esc(c.nombre || '')}</div>
+            <div class="row"><b>Fecha:</b> ${esc(fmtFecha(m.fecha))}</div>
+            <div class="row"><b>Recibí de:</b> ${esc(c.nombre || 'ARTAL')}</div>
+            <div class="row"><b>Beneficiario:</b> ${esc(m.beneficiario || '')}</div>
+            ${m.cedula ? `<div class="row"><b>Cédula:</b> ${esc(m.cedula)}</div>` : ''}
+            <div class="row"><b>Concepto:</b> ${esc(m.concepto || '')}</div>
+            ${m.categoria ? `<div class="row"><b>Categoría:</b> ${esc(m.categoria)}</div>` : ''}
+            <div class="monto">RD$ ${n2(m.monto).toLocaleString('es-DO', { minimumFractionDigits: 2 })}</div>
+            <div class="letras">${esc(montoEnLetras(n2(m.monto)))}</div>
+            <hr>
+            <div class="firma">
+                ${m.firma ? `<img src="${m.firma}" alt="firma">` : ''}
+                <div class="l">Firma de quien recibe</div>
+            </div>
+            <div class="sub" style="margin-top:10px">Entregado por: ${esc(m.creadoPor || '')}</div>
+        </body></html>`);
+        w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
     };
     window.abrirRepo = function () {
         const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
@@ -478,14 +644,16 @@
             if (t === 'arqueo') {
                 const d = n2(m.diferencia);
                 sub = [fmtFecha(m.fecha), m.turno === 'am' ? 'mañana' : 'tarde', 'esperado ' + fmt0(m.montoEsperado), Math.abs(d) < 0.005 ? 'cuadra ✓' : `${d > 0 ? 'sobrante' : 'faltante'} ${fmt0(Math.abs(d))}`, m.nota ? '“' + esc(m.nota) + '”' : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+            } else if (m.subtipo === 'desembolso') {
+                sub = [fmtFecha(m.fecha), '🧾 a ' + esc(m.beneficiario || ''), m.cedula ? 'céd. ' + esc(m.cedula) : '', m.categoria ? esc(m.categoria) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
             } else {
                 sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
             }
-            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}</div>`;
+            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}${m.subtipo === 'desembolso' ? `<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button>` : ''}</div>`;
             return `<div class="order-card mv-card ${t}">
-                <div class="mv-ic ${t}">${ICO[t] || '•'}</div>
+                <div class="mv-ic ${t}">${m.subtipo === 'desembolso' ? '🧾' : (ICO[t] || '•')}</div>
                 <div class="mv-info">
-                    <b>${esc(m.concepto || NOM[t])}</b> <span class="b">${NOM[t] || t}</span>
+                    <b>${esc(m.concepto || NOM[t])}</b> <span class="b">${m.subtipo === 'desembolso' ? 'Desembolso' : (NOM[t] || t)}</span>
                     <div class="mv-monto ${t}">${SIGNO[t] || ''}${fmt(t === 'arqueo' ? m.montoContado : m.monto)}</div>
                     ${sub ? `<div class="l">${sub}</div>` : ''}
                     ${fotos}
