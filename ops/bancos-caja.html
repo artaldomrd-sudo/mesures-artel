@@ -209,6 +209,8 @@
         <input type="text" id="d-concepto" placeholder="Ej: Pago servicio de limpieza semana 12">
         <label>Categoría</label>
         <input type="text" id="d-categoria" list="cat-caja" placeholder="Categoría">
+        <label>Entregado / pagado por *</label>
+        <select id="d-pagadopor"><option value="Dylan">Dylan</option><option value="Andrea">Andrea</option><option value="Anny">Anny</option></select>
         <label>Firma de quien recibe * <span class="lbl-opt">— firma con el dedo (celular) o el mouse (computadora)</span></label>
         <canvas class="firma-canvas" id="d-firma" width="600" height="150"></canvas>
         <div class="firma-row"><span class="lbl-opt">El beneficiario firma aquí ↑</span><button type="button" onclick="limpiarFirmaDesemb()">Borrar firma</button></div>
@@ -224,9 +226,10 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
-    import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['contable']);
+    const esAdmin = (usuario.roles || []).includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -260,10 +263,11 @@
         if (cur && cajas.some(c => c.id === cur)) sel.value = cur;
     }
     const cajaSel = () => cajas.find(c => c.id === document.getElementById('sel-caja').value) || null;
-    const movsCaja = (id) => movs.filter(m => m.cajaId === id);
-    // El saldo solo lo mueven apertura/reposición (+) y gasto (−). El arqueo es un conteo, no mueve.
-    const saldoCaja = (id) => movsCaja(id).reduce((a, m) => a + (m.tipo === 'gasto' ? -n2(m.monto) : (m.tipo === 'arqueo' ? 0 : n2(m.monto))), 0);
-    const arqueoHoy = (id, turno) => movsCaja(id).find(m => m.tipo === 'arqueo' && m.fecha === hoyISO() && m.turno === turno) || null;
+    const movsCaja = (id) => movs.filter(m => m.cajaId === id);   // TODOS (incluye eliminados, para el historial)
+    const movsVivos = (id) => movsCaja(id).filter(m => !m.eliminado);
+    // El saldo solo lo mueven apertura/reposición (+) y gasto (−), y solo los NO eliminados.
+    const saldoCaja = (id) => movsVivos(id).reduce((a, m) => a + (m.tipo === 'gasto' ? -n2(m.monto) : (m.tipo === 'arqueo' ? 0 : n2(m.monto))), 0);
+    const arqueoHoy = (id, turno) => movsVivos(id).find(m => m.tipo === 'arqueo' && m.fecha === hoyISO() && m.turno === turno) || null;
 
     // ---------- Modales ----------
     window.cerrar = function (id) { document.getElementById(id).classList.remove('show'); };
@@ -384,6 +388,7 @@
         ['d-benef', 'd-cedula', 'd-monto', 'd-concepto', 'd-categoria'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('d-fecha').value = hoyISO();
         document.getElementById('d-conta').checked = true;
+        if (['Dylan', 'Andrea', 'Anny'].includes(usuario.nombre)) document.getElementById('d-pagadopor').value = usuario.nombre;
         document.getElementById('d-letras').innerHTML = '';
         document.getElementById('modal-desemb').classList.add('show');
         const canvas = document.getElementById('d-firma');
@@ -404,6 +409,7 @@
         const cedula = document.getElementById('d-cedula').value.trim();
         const categoria = document.getElementById('d-categoria').value.trim();
         const firma = firmaPad.dataUrl();
+        const pagadoPor = document.getElementById('d-pagadopor').value;
         const aConta = document.getElementById('d-conta').checked;
         const btn = document.querySelector('#modal-desemb .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
         try {
@@ -421,7 +427,7 @@
             }
             await addDoc(collection(db, 'bancosCajaMovimientos'), {
                 cajaId: c.id, tipo: 'gasto', subtipo: 'desembolso', fecha, concepto, categoria, monto,
-                beneficiario: benef, cedula, firma, contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                beneficiario: benef, cedula, firma, pagadoPor, contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             cerrar('modal-desemb');
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
@@ -451,7 +457,6 @@
             <hr>
             <div class="row"><b>Caja:</b> ${esc(c.nombre || '')}</div>
             <div class="row"><b>Fecha:</b> ${esc(fmtFecha(m.fecha))}</div>
-            <div class="row"><b>Recibí de:</b> ${esc(c.nombre || 'ARTAL')}</div>
             <div class="row"><b>Beneficiario:</b> ${esc(m.beneficiario || '')}</div>
             ${m.cedula ? `<div class="row"><b>Cédula:</b> ${esc(m.cedula)}</div>` : ''}
             <div class="row"><b>Concepto:</b> ${esc(m.concepto || '')}</div>
@@ -463,7 +468,7 @@
                 ${m.firma ? `<img src="${m.firma}" alt="firma">` : ''}
                 <div class="l">Firma de quien recibe</div>
             </div>
-            <div class="sub" style="margin-top:10px">Entregado por: ${esc(m.creadoPor || '')}</div>
+            <div class="sub" style="margin-top:10px">Entregado por: ${esc(m.pagadoPor || m.creadoPor || '')}</div>
         </body></html>`);
         w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
     };
@@ -550,10 +555,16 @@
     };
     window.borrarMov = async function (id) {
         const m = movs.find(x => x.id === id); if (!m) return;
-        if (m.tipo === 'apertura') { alert('No se puede borrar la apertura del fondo. Si quieres cerrar la caja, es mejor dejarla inactiva (próximamente).'); return; }
-        if (!confirm('¿Eliminar este movimiento de caja?' + (m.contaMovId ? ' (también se quitará de Contabilidad)' : ''))) return;
+        if (m.tipo === 'apertura') { alert('No se puede borrar la apertura del fondo.'); return; }
+        // Anti-fraude: solo un administrador puede eliminar, y NO se borra de verdad — se marca como
+        // eliminado y queda en el historial (quién lo borró y cuándo), sin afectar el saldo.
+        if (!esAdmin) { alert('Solo un administrador puede eliminar movimientos de caja. Pídelo a gerencia; el gasto/desembolso queda registrado mientras tanto.'); return; }
+        const motivo = prompt('¿Por qué se elimina este movimiento? (queda en el historial junto con tu nombre)');
+        if (motivo == null) return;
         try {
-            await deleteDoc(doc(db, 'bancosCajaMovimientos', id));
+            await updateDoc(doc(db, 'bancosCajaMovimientos', id), {
+                eliminado: true, eliminadoPor: usuario.nombre, eliminadoMotivo: (motivo || '').trim(), eliminadoFecha: serverTimestamp()
+            });
             if (m.contaMovId) { try { await deleteDoc(doc(db, 'contaMovimientos', m.contaMovId)); } catch (e2) { /* si ya no existe, no pasa nada */ } }
         } catch (e) { alert('No se pudo: ' + e.message); }
     };
@@ -633,8 +644,10 @@
         if (okItems.length) ban += `<div class="arq-ok">${okItems.join('')}</div>`;
         document.getElementById('arqueo-banner').innerHTML = ban;
 
-        const lista = movsCaja(c.id).slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || String((b.fechaCreacion && b.fechaCreacion.seconds) || '').localeCompare(String((a.fechaCreacion && a.fechaCreacion.seconds) || '')));
-        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin movimientos en esta caja.</p>'; return; }
+        const ordena = (arr) => arr.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || String((b.fechaCreacion && b.fechaCreacion.seconds) || '').localeCompare(String((a.fechaCreacion && a.fechaCreacion.seconds) || '')));
+        const lista = ordena(movsVivos(c.id));
+        const eliminados = ordena(movsCaja(c.id).filter(m => m.eliminado));
+        if (!lista.length && !eliminados.length) { cont.innerHTML = '<p class="empty">Sin movimientos en esta caja.</p>'; return; }
         const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢', arqueo: '🧮' };
         const SIGNO = { gasto: '− ', reposicion: '+ ', apertura: '+ ' };
         const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura', arqueo: 'Arqueo' };
@@ -661,7 +674,24 @@
                 ${t === 'apertura' ? '' : `<button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>`}
             </div>`;
         }).join('');
+        // Constancia de eliminados (no se borran de verdad): quién los eliminó, cuándo y por qué.
+        if (eliminados.length) {
+            cont.innerHTML += `<div style="margin:18px 0 6px;font-size:12px;font-weight:bold;color:#8a93a0;text-transform:uppercase;letter-spacing:.04em;">🗑 Eliminados (${eliminados.length}) — constancia</div>` +
+                eliminados.map(m => {
+                    const quien = [m.eliminadoPor ? 'eliminó ' + esc(m.eliminadoPor) : '', fmtFechaHoraTs(m.eliminadoFecha), m.eliminadoMotivo ? '“' + esc(m.eliminadoMotivo) + '”' : ''].filter(Boolean).join('  ·  ');
+                    return `<div class="order-card mv-card" style="opacity:.7;border-left-color:#c9ced6;">
+                        <div class="mv-ic" style="background:#f0f1f3;">🗑</div>
+                        <div class="mv-info">
+                            <b style="text-decoration:line-through;">${esc(m.concepto || m.tipo)}</b> <span class="b">${m.subtipo === 'desembolso' ? 'Desembolso' : (m.tipo || '')}</span>
+                            <div class="mv-monto">${fmt(m.tipo === 'arqueo' ? m.montoContado : m.monto)}</div>
+                            <div class="l">${esc(fmtFecha(m.fecha))}${m.beneficiario ? ' · a ' + esc(m.beneficiario) : ''}${m.creadoPor ? ' · reg. por ' + esc(m.creadoPor) : ''}</div>
+                            <div class="l" style="color:#c0392b;">${quien}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+        }
     }
+    const fmtFechaHoraTs = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
     render();
 </script>
