@@ -196,7 +196,8 @@
 <!-- Modal: desembolso con firma (pago a un beneficiario / servicio) -->
 <div class="modal-overlay" id="modal-desemb">
     <div class="modal-box">
-        <h2>🧾 Desembolso de caja (con firma)</h2>
+        <h2 id="d-modal-title">🧾 Desembolso de caja (con firma)</h2>
+        <div id="d-edit-note" style="display:none;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#8a5a12;margin-bottom:10px;">✏ Estás <b>modificando</b> un desembolso. El cambio queda registrado (quién y cuándo, con los valores anteriores). Si no vuelves a firmar, se conserva la firma original.</div>
         <div class="grid2">
             <div><label>Beneficiario (quién recibe) *</label><input type="text" id="d-benef" placeholder="Ej: María — limpieza"></div>
             <div><label>Cédula <span class="lbl-opt">— opcional</span></label><input type="text" id="d-cedula" placeholder="000-0000000-0"></div>
@@ -218,7 +219,7 @@
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="d-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Gastos)</b></label>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-desemb')">Cancelar</button>
-            <button class="btn-guardar" onclick="guardarDesembolso()">Registrar y guardar firma</button>
+            <button class="btn-guardar" id="d-btn-guardar" onclick="guardarDesembolso()">Registrar y guardar firma</button>
         </div>
     </div>
 </div>
@@ -241,6 +242,7 @@
     const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
     const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    const fmtIso = (s) => { try { return s ? new Date(s).toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }) : ''; } catch (e) { return ''; } };
     function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
     let cajas = [], movs = [], cuentas = [];
@@ -386,8 +388,13 @@
         const v = document.getElementById('d-monto').value;
         document.getElementById('d-letras').innerHTML = v === '' ? '' : '<b>' + montoEnLetras(n2(v)) + '</b>';
     };
+    let editandoDesembId = null;
     window.abrirDesembolso = function () {
         if (!cajaSel()) { alert('Primero elige (o crea) una caja.'); return; }
+        editandoDesembId = null;
+        document.getElementById('d-modal-title').textContent = '🧾 Desembolso de caja (con firma)';
+        document.getElementById('d-btn-guardar').textContent = 'Registrar y guardar firma';
+        document.getElementById('d-edit-note').style.display = 'none';
         ['d-benef', 'd-cedula', 'd-monto', 'd-concepto', 'd-categoria'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('d-fecha').value = hoyISO();
         document.getElementById('d-conta').checked = true;
@@ -397,6 +404,36 @@
         const canvas = document.getElementById('d-firma');
         firmaPad = setupFirmaPad(canvas); firmaPad.clear();
     };
+    // Modificar un desembolso ya hecho. Queda constancia del cambio (quién, cuándo y los valores
+    // anteriores) en `historialCambios`; la firma original se conserva si no se vuelve a firmar.
+    window.abrirEditarDesemb = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoDesembId = id;
+        document.getElementById('d-modal-title').textContent = '✏ Modificar desembolso';
+        document.getElementById('d-btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('d-edit-note').style.display = 'block';
+        document.getElementById('d-benef').value = m.beneficiario || '';
+        document.getElementById('d-cedula').value = m.cedula || '';
+        document.getElementById('d-fecha').value = m.fecha || hoyISO();
+        document.getElementById('d-monto').value = m.monto != null ? m.monto : '';
+        document.getElementById('d-concepto').value = m.concepto || '';
+        document.getElementById('d-categoria').value = m.categoria || '';
+        document.getElementById('d-conta').checked = !!m.contaMovId;
+        if (['Dylan', 'Andrea', 'Anny'].includes(m.pagadoPor)) document.getElementById('d-pagadopor').value = m.pagadoPor;
+        calcLetrasDesemb();
+        document.getElementById('modal-desemb').classList.add('show');
+        const canvas = document.getElementById('d-firma');
+        firmaPad = setupFirmaPad(canvas); firmaPad.clear();   // vacío: si no firma de nuevo, se conserva la anterior
+    };
+    // Muestra la constancia de los cambios de un desembolso (qué se modificó, quién y cuándo).
+    window.verCambiosDesemb = function (id) {
+        const m = movs.find(x => x.id === id); if (!m || !Array.isArray(m.historialCambios) || !m.historialCambios.length) { alert('Sin cambios registrados.'); return; }
+        const lineas = m.historialCambios.map((h, i) => {
+            const a = h.antes || {};
+            return `${i + 1}. ${fmtIso(h.fechaCambio)} — por ${h.por || '?'}\n   Antes: ${a.beneficiario || ''} · ${fmt(a.monto)} · ${a.concepto || ''}${a.categoria ? ' · ' + a.categoria : ''}${a.fecha ? ' · ' + a.fecha : ''}`;
+        }).join('\n\n');
+        alert('🕘 Historial de cambios de este desembolso:\n\n' + lineas + '\n\n(Valores actuales: ' + (m.beneficiario || '') + ' · ' + fmt(m.monto) + ' · ' + (m.concepto || '') + ')');
+    };
     window.guardarDesembolso = async function () {
         const c = cajaSel(); if (!c) return;
         const benef = document.getElementById('d-benef').value.trim();
@@ -405,17 +442,36 @@
         if (!benef) { alert('Escribe el beneficiario (quién recibe).'); return; }
         if (!concepto) { alert('Escribe el concepto.'); return; }
         if (monto <= 0) { alert('Escribe el monto.'); return; }
-        if (!firmaPad || firmaPad.isEmpty()) { alert('Falta la firma de quien recibe.'); return; }
-        const saldo = saldoCaja(c.id);
-        if (monto > saldo && !confirm('El desembolso (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) return;
+        const editando = editandoDesembId ? (movs.find(x => x.id === editandoDesembId) || null) : null;
+        // En un desembolso NUEVO la firma es obligatoria. Al MODIFICAR es opcional (se conserva la anterior).
+        if (!editando && (!firmaPad || firmaPad.isEmpty())) { alert('Falta la firma de quien recibe.'); return; }
         const fecha = document.getElementById('d-fecha').value || hoyISO();
         const cedula = document.getElementById('d-cedula').value.trim();
         const categoria = document.getElementById('d-categoria').value.trim();
-        const firma = firmaPad.dataUrl();
         const pagadoPor = document.getElementById('d-pagadopor').value;
         const aConta = document.getElementById('d-conta').checked;
         const btn = document.querySelector('#modal-desemb .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
         try {
+            if (editando) {
+                // Constancia del cambio: se guardan los valores ANTERIORES + quién y cuándo.
+                const antes = { beneficiario: editando.beneficiario || '', cedula: editando.cedula || '', fecha: editando.fecha || '', monto: n2(editando.monto), concepto: editando.concepto || '', categoria: editando.categoria || '', pagadoPor: editando.pagadoPor || '' };
+                const historial = (Array.isArray(editando.historialCambios) ? editando.historialCambios : []).concat([{ fechaCambio: new Date().toISOString(), por: usuario.nombre, antes }]);
+                const firma = (firmaPad && !firmaPad.isEmpty()) ? firmaPad.dataUrl() : (editando.firma || null);
+                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoDesembId), {
+                    fecha, concepto, categoria, monto, beneficiario: benef, cedula, pagadoPor, firma,
+                    modificado: true, historialCambios: historial
+                });
+                // Reflejar el cambio en el gasto de Contabilidad, si tiene uno enlazado.
+                if (editando.contaMovId) {
+                    try { await updateDoc(doc(db, 'contaMovimientos', editando.contaMovId), { fecha, concepto, categoria: categoria || 'Servicios / desembolso', monto, tercero: benef, rnc: cedula }); } catch (e3) { /* si ya no existe, no bloquea */ }
+                }
+                cerrar('modal-desemb');
+                btn.disabled = false; btn.textContent = 'Guardar cambios'; editandoDesembId = null;
+                return;
+            }
+            const firma = firmaPad.dataUrl();
+            const saldo = saldoCaja(c.id);
+            if (monto > saldo && !confirm('El desembolso (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) { btn.disabled = false; btn.textContent = 'Registrar y guardar firma'; return; }
             let contaMovId = null;
             if (aConta) {
                 try {
@@ -434,7 +490,7 @@
             });
             cerrar('modal-desemb');
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
-        finally { btn.disabled = false; btn.textContent = 'Registrar y guardar firma'; }
+        finally { btn.disabled = false; btn.textContent = editandoDesembId ? 'Guardar cambios' : 'Registrar y guardar firma'; }
     };
     // Comprobante de egreso imprimible (formato ticket angosto: sirve en impresora normal y térmica 80mm).
     window.imprimirComprobante = function (id) {
@@ -472,6 +528,7 @@
                 <div class="l">Firma de quien recibe</div>
             </div>
             <div class="sub" style="margin-top:10px">Entregado por: ${esc(m.pagadoPor || m.creadoPor || '')}</div>
+            ${m.modificado ? `<div class="sub" style="color:#b9770e;font-size:9.5px;margin-top:4px">✏ Este comprobante fue modificado (última: ${esc((m.historialCambios && m.historialCambios.length) ? (m.historialCambios[m.historialCambios.length - 1].por + ' · ' + fmtIso(m.historialCambios[m.historialCambios.length - 1].fechaCambio)) : '')})</div>` : ''}
         </body></html>`);
         w.document.close(); w.focus(); setTimeout(() => w.print(), 250);
     };
@@ -661,11 +718,12 @@
                 const d = n2(m.diferencia);
                 sub = [fmtFecha(m.fecha), m.turno === 'am' ? 'mañana' : 'tarde', 'esperado ' + fmt0(m.montoEsperado), Math.abs(d) < 0.005 ? 'cuadra ✓' : `${d > 0 ? 'sobrante' : 'faltante'} ${fmt0(Math.abs(d))}`, m.nota ? '“' + esc(m.nota) + '”' : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
             } else if (m.subtipo === 'desembolso') {
-                sub = [fmtFecha(m.fecha), '🧾 a ' + esc(m.beneficiario || ''), m.cedula ? 'céd. ' + esc(m.cedula) : '', m.categoria ? esc(m.categoria) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+                const nCambios = Array.isArray(m.historialCambios) ? m.historialCambios.length : 0;
+                sub = [fmtFecha(m.fecha), '🧾 a ' + esc(m.beneficiario || ''), m.cedula ? 'céd. ' + esc(m.cedula) : '', m.categoria ? esc(m.categoria) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : '', nCambios ? '<span style="color:#c07a12;font-weight:bold">✏ modificado ×' + nCambios + '</span>' : ''].filter(Boolean).join('  ·  ');
             } else {
                 sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
             }
-            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}${m.subtipo === 'desembolso' ? `<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button>` : ''}</div>`;
+            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}${m.subtipo === 'desembolso' ? `<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button> <button class="btn-comp" style="background:var(--artal-blue)" onclick="abrirEditarDesemb('${m.id}')">✏ Modificar</button>${(Array.isArray(m.historialCambios) && m.historialCambios.length) ? ` <button class="btn-comp" style="background:#c07a12" onclick="verCambiosDesemb('${m.id}')">🕘 Cambios</button>` : ''}` : ''}</div>`;
             return `<div class="order-card mv-card ${t}">
                 <div class="mv-ic ${t}">${m.subtipo === 'desembolso' ? '🧾' : (ICO[t] || '•')}</div>
                 <div class="mv-info">
