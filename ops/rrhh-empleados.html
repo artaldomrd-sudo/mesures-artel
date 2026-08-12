@@ -11,6 +11,10 @@
 <style>
     main { max-width: 820px; }
     .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .nomina-total { background: var(--artal-blue); color: #fff; border-radius: 12px; padding: 12px 18px; margin-bottom: 12px; }
+    .nomina-total .nt-lbl { font-size: 12px; opacity: .85; text-transform: uppercase; letter-spacing: .5px; }
+    .nomina-total .nt-big { font-size: 22px; font-weight: bold; margin-top: 2px; }
+    .nomina-total .nt-sub { font-size: 12.5px; opacity: .9; margin-top: 3px; }
     .toolbar input.search { flex: 1; min-width: 180px; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; }
     .btn-nuevo { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .emp-card { display: flex; align-items: center; gap: 14px; }
@@ -72,6 +76,7 @@
 </header>
 
 <main>
+    <div id="nomina-total" class="nomina-total" style="display:none"></div>
     <div class="tabs">
         <button class="tab-btn active" id="tab-activos" onclick="setTab('activo')">Activos</button>
         <button class="tab-btn" id="tab-inactivos" onclick="setTab('inactivo')">Inactivos</button>
@@ -120,6 +125,9 @@
             <div>
                 <label>Sueldo base mensual (opcional)</label>
                 <input type="number" id="f-sueldo" min="0" step="0.01" placeholder="RD$" oninput="actualizarCostoPreview()">
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin-top:6px;font-size:12.5px;cursor:pointer">
+                    <input type="checkbox" id="f-entss" checked onchange="actualizarCostoPreview()" style="width:auto;margin:0"> En nómina / seguridad social (TSS)
+                </label>
                 <div id="f-costo-preview" class="hint" style="margin-top:4px"></div>
             </div>
         </div>
@@ -180,10 +188,13 @@
     let costoCfg = Object.assign({}, COSTO_DEFAULTS);
     let costoCfgLoaded = false;
     getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => { if (s.exists()) costoCfg = Object.assign({}, COSTO_DEFAULTS, s.data()); costoCfgLoaded = true; render(); backfillCostos(); }).catch(() => { costoCfgLoaded = true; backfillCostos(); });
-    function costoLaboral(sueldoMes) {
+    // enTSS = false → empleado sin nómina/seguridad social (ej. salario no declarado): el salario es el
+    // costo TOTAL, sin cargas patronales ni provisiones. Solo se prorratea por día.
+    function costoLaboral(sueldoMes, enTSS) {
         const s = Number(sueldoMes) || 0;
-        if (s <= 0) return { mes: 0, dia: 0, cargas: 0, afp: 0, sfs: 0, srl: 0, infotep: 0, regalia: 0, cesantia: 0, vac: 0 };
         const c = costoCfg, div = c.diaDivisor > 0 ? c.diaDivisor : 23.83;
+        if (s <= 0) return { mes: 0, dia: 0, cargas: 0, afp: 0, sfs: 0, srl: 0, infotep: 0, regalia: 0, cesantia: 0, vac: 0 };
+        if (enTSS === false) return { mes: s, dia: s / div, cargas: 0, afp: 0, sfs: 0, srl: 0, infotep: 0, regalia: 0, cesantia: 0, vac: 0 };
         const baseAfp = c.topeAfp > 0 ? Math.min(s, c.topeAfp) : s;
         const baseSfs = c.topeSfs > 0 ? Math.min(s, c.topeSfs) : s;
         const afp = baseAfp * c.afpPat / 100, sfs = baseSfs * c.sfsPat / 100, srl = baseSfs * c.srlPat / 100;
@@ -219,7 +230,7 @@
         try {
             for (const e of empleados) {
                 if (!e.sueldoBase) continue;
-                const k = costoLaboral(e.sueldoBase);
+                const k = costoLaboral(e.sueldoBase, e.enTSS !== false);
                 const dia = Math.round(k.dia * 100) / 100, mes = Math.round(k.mes * 100) / 100;
                 if (e.costoDiaReal !== dia || e.costoMesReal !== mes) {
                     try { await updateDoc(doc(db, 'rrhhEmpleados', e.id), { costoDiaReal: dia, costoMesReal: mes }); } catch (_) { }
@@ -323,6 +334,7 @@
     };
 
     window.render = function () {
+        renderNominaTotal();
         const term = document.getElementById('search').value.trim().toLowerCase();
         const lista = empleados
             .filter(e => (e.estado || 'activo') === currentTab)
@@ -333,12 +345,27 @@
         cont.innerHTML = lista.map(cardHTML).join('');
     };
 
+    // Total mensual de la nómina de ARTAL (empleados activos con sueldo): sueldos brutos y costo real
+    // con cargas. Los que están fuera de nómina (enTSS=false) suman su salario tal cual al costo real.
+    function renderNominaTotal() {
+        const box = document.getElementById('nomina-total'); if (!box) return;
+        const activos = empleados.filter(e => (e.estado || 'activo') === 'activo' && Number(e.sueldoBase) > 0);
+        if (!activos.length) { box.style.display = 'none'; return; }
+        let bruto = 0, real = 0;
+        activos.forEach(e => { bruto += Number(e.sueldoBase) || 0; real += costoLaboral(e.sueldoBase, e.enTSS !== false).mes; });
+        box.style.display = 'block';
+        box.innerHTML =
+            `<div class="nt-lbl">Nómina mensual de ARTAL · ${activos.length} empleado${activos.length === 1 ? '' : 's'}</div>` +
+            `<div class="nt-big">${fmtRD(real)}/mes <span style="font-size:13px;font-weight:normal;opacity:.85">costo real con cargas</span></div>` +
+            `<div class="nt-sub">Sueldos brutos: ${fmtRD(bruto)}/mes · Cargas y provisiones: ${fmtRD(real - bruto)}/mes</div>`;
+    }
+
     function cardHTML(e) {
         const estado = e.estado || 'activo';
         const meta = [cargosTexto(e), e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
         const nDocs = Array.isArray(e.documentos) ? e.documentos.length : 0;
         const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : '', nDocs ? '📎 ' + nDocs + ' doc' + (nDocs === 1 ? '' : 's') : ''].filter(Boolean).join('  ·  ');
-        const costo = e.sueldoBase ? costoLaboral(e.sueldoBase) : null;
+        const costo = e.sueldoBase ? costoLaboral(e.sueldoBase, e.enTSS !== false) : null;
         return `
         <div class="order-card emp-card">
             <span class="avatar">${esc(iniciales(e.nombre))}</span>
@@ -346,7 +373,7 @@
                 <b>${esc(e.nombre) || 'Sin nombre'}</b> <span class="estado ${estado}">${estado}</span>
                 ${meta ? `<div class="meta">${esc(meta)}</div>` : ''}
                 ${extra ? `<div class="meta">${extra}</div>` : ''}
-                ${costo ? `<div class="meta">💵 Sueldo <b>${fmtRD(e.sueldoBase)}/mes</b> · Costo real <b>${fmtRD(costo.dia)}/día</b> (${fmtRD(costo.mes)}/mes con cargas)</div>` : ''}
+                ${costo ? `<div class="meta">💵 Sueldo <b>${fmtRD(e.sueldoBase)}/mes</b> · Costo real <b>${fmtRD(costo.dia)}/día</b> ${e.enTSS !== false ? '(' + fmtRD(costo.mes) + '/mes con cargas)' : '(salario total, fuera de nómina)'}</div>` : ''}
             </div>
             <div class="row-actions">
                 <button class="b-editar" onclick="editar('${e.id}')">✏ Editar</button>
@@ -361,14 +388,18 @@
         const box = document.getElementById('f-costo-preview');
         const s = Number(document.getElementById('f-sueldo').value) || 0;
         if (s <= 0) { box.textContent = ''; return; }
-        const k = costoLaboral(s);
-        box.innerHTML = `Costo real ≈ <b>${fmtRD(k.mes)}/mes</b> · <b>${fmtRD(k.dia)}/día</b> <span style="color:#8a93a0">(sueldo + ${((k.cargas / s) * 100).toFixed(0)}% cargas)</span>`;
+        const enTSS = document.getElementById('f-entss').checked;
+        const k = costoLaboral(s, enTSS);
+        box.innerHTML = enTSS
+            ? `Costo real ≈ <b>${fmtRD(k.mes)}/mes</b> · <b>${fmtRD(k.dia)}/día</b> <span style="color:#8a93a0">(sueldo + ${((k.cargas / s) * 100).toFixed(0)}% cargas)</span>`
+            : `Costo ≈ <b>${fmtRD(k.mes)}/mes</b> · <b>${fmtRD(k.dia)}/día</b> <span style="color:#8a93a0">(salario total, sin cargas — fuera de nómina)</span>`;
     };
 
     function limpiar() {
         editingId = null;
         ['f-nombre', 'f-cedula', 'f-telefono', 'f-correo', 'f-ingreso', 'f-sueldo', 'f-direccion', 'f-notas'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
+        document.getElementById('f-entss').checked = true;
         actualizarCostoPreview();
         refreshSelects();
         renderCargos([]);
@@ -385,6 +416,7 @@
         document.getElementById('f-correo').value = e.correo || '';
         document.getElementById('f-ingreso').value = e.fechaIngreso || '';
         document.getElementById('f-sueldo').value = e.sueldoBase != null ? e.sueldoBase : '';
+        document.getElementById('f-entss').checked = e.enTSS !== false;
         actualizarCostoPreview();
         document.getElementById('f-direccion').value = e.direccion || '';
         document.getElementById('f-notas').value = e.notas || '';
@@ -406,7 +438,8 @@
         const nombreDe = (arr, id) => (arr.find(x => x.id === id) || {}).nombre || '';
         const sueldoRaw = document.getElementById('f-sueldo').value;
         const sueldoNum = sueldoRaw ? Number(sueldoRaw) : null;
-        const kCosto = costoLaboral(sueldoNum || 0);
+        const enTSS = document.getElementById('f-entss').checked;
+        const kCosto = costoLaboral(sueldoNum || 0, enTSS);
         const datos = {
             nombre,
             cedula: document.getElementById('f-cedula').value.trim(),
@@ -415,6 +448,7 @@
             direccion: document.getElementById('f-direccion').value.trim(),
             fechaIngreso: document.getElementById('f-ingreso').value || '',
             sueldoBase: sueldoNum,
+            enTSS,
             costoMesReal: sueldoNum ? Math.round(kCosto.mes * 100) / 100 : null,
             costoDiaReal: sueldoNum ? Math.round(kCosto.dia * 100) / 100 : null,
             notas: document.getElementById('f-notas').value.trim(),
