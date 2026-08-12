@@ -1995,7 +1995,7 @@
     ];
     const calcVehById = (id) => CALC_VEHICULOS.find(x => x.id === id) || null;
     // costoNoche = hotel por persona/noche; costoComida = alimentación (desayuno+comida+cena) por persona/día.
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, margenPct: 0 });
     const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
     function calcLlenarSelects(vehSel, rutaSel) {
         const sv = document.getElementById('cs-veh');
@@ -2009,6 +2009,7 @@
     window.openCalcServ = function () {
         const c = calcVals();
         calcLlenarSelects(c.vehiculoId, c.rutaId);
+        calcRenderEquipo(c.empleadoIds || []);
         document.getElementById('cs-km').value = c.kmIda || '';
         document.getElementById('cs-rend').value = c.rendKmGal || '';
         document.getElementById('cs-precio').value = c.precioGal || '';
@@ -2038,10 +2039,39 @@
         if (r) { document.getElementById('cs-km').value = r.km; document.getElementById('cs-peajes').value = r.peaje; document.getElementById('cs-iv').checked = true; }
         calcRecalc();
     };
+    // Equipo de la obra: casillas con los empleados (RRHH) y su costo real por día. Al marcar, se suma el
+    // costo por día de instalación y se autocompletan las Personas (para hotel/comida). Todo editable.
+    function calcRenderEquipo(selIds) {
+        const box = document.getElementById('cs-equipo');
+        if (!box) return;
+        const emps = window.calcEmpleados || [];
+        if (!emps.length) { box.innerHTML = '<span class="cs-equipo-vacio">No hay empleados con costo cargado. Regístralos en RRHH → Empleados (con sueldo) o escribe el costo por día a mano abajo.</span>'; return; }
+        const sel = new Set(selIds || []);
+        box.innerHTML = emps.map(e =>
+            `<label class="cs-emp"><input type="checkbox" value="${e.id}" ${sel.has(e.id) ? 'checked' : ''} onchange="calcEquipoChange()"><span>${e.nombre}${e.cargo ? ' · ' + e.cargo : ''}</span><b>RD$${Math.round(e.costoDia).toLocaleString('es-DO')}/día</b></label>`
+        ).join('');
+    }
+    function calcEquipoSeleccion() {
+        return Array.from(document.querySelectorAll('#cs-equipo input:checked')).map(c => c.value);
+    }
+    window.calcEquipoChange = function () {
+        const emps = window.calcEmpleados || [], ids = calcEquipoSeleccion();
+        if (ids.length) {
+            const total = ids.reduce((a, id) => a + ((emps.find(e => e.id === id) || {}).costoDia || 0), 0);
+            document.getElementById('cs-costodia').value = Math.round(total * 100) / 100;
+            document.getElementById('cs-personas').value = ids.length;
+        }
+        calcRecalc();
+    };
+    // Llamado por el listener de Firestore cuando llegan/actualizan los empleados: redibuja las casillas.
+    window.calcRefreshEmpleados = function () {
+        const ov = document.getElementById('calc-serv-ov');
+        if (ov && ov.style.display === 'flex') calcRenderEquipo(calcEquipoSeleccion());
+    };
     function calcLeer() {
         const num = (id) => Number(document.getElementById(id).value) || 0;
         return {
-            vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value,
+            vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value, empleadoIds: calcEquipoSeleccion(),
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
             peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
             diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'),
@@ -5993,6 +6023,15 @@
                 .filter(u => u.abreviatura);
             if (typeof window.czRefreshUnidades === 'function') window.czRefreshUnidades();
         }, () => {});
+        // Empleados (RRHH) con su costo laboral real por día — para armar el equipo de una obra en el
+        // calculador de transporte + instalación. Solo activos con costo calculado (ver rrhh-empleados.html).
+        onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
+            window.calcEmpleados = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .filter(e => (e.estado || 'activo') === 'activo' && Number(e.costoDiaReal) > 0)
+                .map(e => ({ id: e.id, nombre: e.nombre || '', cargo: Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || ''), departamento: e.departamentoNombre || '', costoDia: Number(e.costoDiaReal) || 0 }))
+                .sort((a, b) => a.nombre.localeCompare(b.nombre));
+            if (typeof window.calcRefreshEmpleados === 'function') window.calcRefreshEmpleados();
+        }, () => {});
     }
     document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
@@ -6363,6 +6402,13 @@
     #calc-serv-ov .calc-grid input, #calc-serv-ov .calc-grid select { padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; background: #fff; width: 100%; }
     #calc-serv-ov .calc-chk { flex-direction: row; align-items: center; gap: 8px; font-weight: normal; color: #333; font-size: 12.5px; margin-top: 8px; }
     #calc-serv-ov .calc-chk input { width: auto; min-height: auto; }
+    #calc-serv-ov .cs-equipo { display: flex; flex-direction: column; gap: 4px; max-height: 148px; overflow-y: auto; border: 1.5px solid #e2e6ea; border-radius: 8px; padding: 6px; }
+    #calc-serv-ov .cs-emp { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #334; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+    #calc-serv-ov .cs-emp:hover { background: #f2f6f9; }
+    #calc-serv-ov .cs-emp input { width: auto; min-height: auto; margin: 0; }
+    #calc-serv-ov .cs-emp span { flex: 1; }
+    #calc-serv-ov .cs-emp b { color: var(--artal-blue); white-space: nowrap; }
+    #calc-serv-ov .cs-equipo-vacio { font-size: 12px; color: #8a93a0; padding: 4px; line-height: 1.4; }
     #calc-serv-ov .calc-desglose { margin-top: 14px; background: #f6f8fa; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
     #calc-serv-ov .cs-row { display: flex; justify-content: space-between; padding: 3px 0; color: #445; }
     #calc-serv-ov .cs-total { display: flex; justify-content: space-between; font-weight: bold; color: var(--artal-blue); font-size: 16px; margin-top: 6px; padding-top: 6px; border-top: 1.5px solid #e2e6ea; }
@@ -6436,7 +6482,9 @@
                 <label>Comida por día c/u (RD$)<input type="number" id="cs-costocomida" min="0" step="0.01" oninput="calcRecalc()"></label>
             </div>
             <div class="calc-sec">🔧 Instalación</div>
-            <div class="calc-grid">
+            <label style="font-size:11.5px;font-weight:bold;color:#556;display:block;margin-bottom:4px">Equipo de la obra (marca los instaladores)</label>
+            <div id="cs-equipo" class="cs-equipo"></div>
+            <div class="calc-grid" style="margin-top:8px">
                 <label>Días de instalación<input type="number" id="cs-dias" min="0" step="0.5" oninput="calcRecalc()"></label>
                 <label>Costo por día (RD$)<input type="number" id="cs-costodia" min="0" step="0.01" oninput="calcRecalc()"></label>
             </div>
