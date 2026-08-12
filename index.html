@@ -2009,6 +2009,7 @@
     window.openCalcServ = function () {
         const c = calcVals();
         calcLlenarSelects(c.vehiculoId, c.rutaId);
+        calcRenderEquiposGuardados();
         calcRenderEquipo(c.empleadoIds || []);
         document.getElementById('cs-km').value = c.kmIda || '';
         document.getElementById('cs-rend').value = c.rendKmGal || '';
@@ -2067,6 +2068,45 @@
     window.calcRefreshEmpleados = function () {
         const ov = document.getElementById('calc-serv-ov');
         if (ov && ov.style.display === 'flex') calcRenderEquipo(calcEquipoSeleccion());
+    };
+    // ---- Equipos guardados (grupos con nombre) ----
+    function calcRenderEquiposGuardados() {
+        const sel = document.getElementById('cs-equipo-guardado');
+        if (!sel) return;
+        const eq = window.calcEquipos || [];
+        sel.innerHTML = '<option value="">— Equipo guardado —</option>' +
+            eq.map(e => `<option value="${e.id}">${e.nombre} (${(e.empleadoIds || []).length})</option>`).join('');
+    }
+    // Aplica un equipo guardado: marca a sus integrantes que aún existen con costo.
+    window.calcAplicarEquipoGuardado = function () {
+        const id = document.getElementById('cs-equipo-guardado').value;
+        const eq = (window.calcEquipos || []).find(e => e.id === id);
+        if (!eq) return;
+        calcRenderEquipo(eq.empleadoIds || []);
+        calcEquipoChange();
+    };
+    // Guarda la selección actual como un equipo con nombre (en la nube, requiere sesión).
+    window.calcGuardarEquipoActual = async function () {
+        const ids = calcEquipoSeleccion();
+        if (!ids.length) { alert('Marca primero los integrantes del equipo.'); return; }
+        const nombre = (prompt('Nombre del equipo (ej. Equipo Miki):') || '').trim();
+        if (!nombre) return;
+        if (typeof window.calcGuardarEquipo !== 'function') { alert('Inicia sesión para guardar equipos.'); return; }
+        const ok = await window.calcGuardarEquipo(nombre, ids);
+        if (!ok) alert('No se pudo guardar el equipo (¿sesión iniciada?).');
+    };
+    // Borra el equipo guardado seleccionado en el desplegable.
+    window.calcBorrarEquipoActual = async function () {
+        const sel = document.getElementById('cs-equipo-guardado');
+        const eq = (window.calcEquipos || []).find(e => e.id === sel.value);
+        if (!eq) { alert('Elige un equipo guardado para borrarlo.'); return; }
+        if (!confirm('¿Borrar el equipo "' + eq.nombre + '"? (no borra a los empleados, solo el grupo)')) return;
+        if (typeof window.calcBorrarEquipo === 'function') await window.calcBorrarEquipo(eq.id);
+    };
+    // Llamado por el listener de Firestore cuando cambian los equipos guardados: refresca el desplegable.
+    window.calcRefreshEquipos = function () {
+        const ov = document.getElementById('calc-serv-ov');
+        if (ov && ov.style.display === 'flex') calcRenderEquiposGuardados();
     };
     function calcLeer() {
         const num = (id) => Number(document.getElementById(id).value) || 0;
@@ -6032,7 +6072,22 @@
                 .sort((a, b) => a.nombre.localeCompare(b.nombre));
             if (typeof window.calcRefreshEmpleados === 'function') window.calcRefreshEmpleados();
         }, () => {});
+        // Equipos guardados de instalación (grupos de empleados con nombre) para el calculador de obra.
+        onSnapshot(collection(db, 'equiposInstalacion'), (snap) => {
+            window.calcEquipos = snap.docs.map(d => ({ id: d.id, nombre: d.data().nombre || '', empleadoIds: Array.isArray(d.data().empleadoIds) ? d.data().empleadoIds : [] }))
+                .sort((a, b) => a.nombre.localeCompare(b.nombre));
+            if (typeof window.calcRefreshEquipos === 'function') window.calcRefreshEquipos();
+        }, () => {});
     }
+    // Guardar/borrar equipos de instalación (llamados por el calculador, script clásico). Requieren sesión.
+    window.calcGuardarEquipo = async function (nombre, empleadoIds) {
+        try { await addDoc(collection(db, 'equiposInstalacion'), { nombre: nombre, empleadoIds: empleadoIds, creadoEn: serverTimestamp() }); return true; }
+        catch (e) { console.error('guardar equipo', e); return false; }
+    };
+    window.calcBorrarEquipo = async function (id) {
+        try { await deleteDoc(doc(db, 'equiposInstalacion', id)); return true; }
+        catch (e) { console.error('borrar equipo', e); return false; }
+    };
     document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
     window.enviarOrden = async function (destino, btnEl) {
@@ -6402,6 +6457,10 @@
     #calc-serv-ov .calc-grid input, #calc-serv-ov .calc-grid select { padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; background: #fff; width: 100%; }
     #calc-serv-ov .calc-chk { flex-direction: row; align-items: center; gap: 8px; font-weight: normal; color: #333; font-size: 12.5px; margin-top: 8px; }
     #calc-serv-ov .calc-chk input { width: auto; min-height: auto; }
+    #calc-serv-ov .cs-eq-guardado { display: flex; gap: 6px; margin-bottom: 8px; }
+    #calc-serv-ov .cs-eq-guardado select { flex: 1; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13px; min-height: 40px; background: #fff; }
+    #calc-serv-ov .cs-eq-btn { border: none; border-radius: 8px; padding: 8px 10px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; background: var(--artal-blue); color: #fff; white-space: nowrap; }
+    #calc-serv-ov .cs-eq-btn.del { background: #e2e6ea; color: #555; }
     #calc-serv-ov .cs-equipo { display: flex; flex-direction: column; gap: 4px; max-height: 148px; overflow-y: auto; border: 1.5px solid #e2e6ea; border-radius: 8px; padding: 6px; }
     #calc-serv-ov .cs-emp { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #334; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
     #calc-serv-ov .cs-emp:hover { background: #f2f6f9; }
@@ -6482,6 +6541,11 @@
                 <label>Comida por día c/u (RD$)<input type="number" id="cs-costocomida" min="0" step="0.01" oninput="calcRecalc()"></label>
             </div>
             <div class="calc-sec">🔧 Instalación</div>
+            <div class="cs-eq-guardado">
+                <select id="cs-equipo-guardado" onchange="calcAplicarEquipoGuardado()"></select>
+                <button type="button" class="cs-eq-btn" onclick="calcGuardarEquipoActual()" title="Guardar la selección actual como equipo">💾 Guardar</button>
+                <button type="button" class="cs-eq-btn del" onclick="calcBorrarEquipoActual()" title="Borrar el equipo elegido">🗑</button>
+            </div>
             <label style="font-size:11.5px;font-weight:bold;color:#556;display:block;margin-bottom:4px">Equipo de la obra (marca los instaladores)</label>
             <div id="cs-equipo" class="cs-equipo"></div>
             <div class="calc-grid" style="margin-top:8px">
