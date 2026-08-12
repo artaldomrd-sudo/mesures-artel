@@ -118,7 +118,8 @@
 <!-- Modal: gasto -->
 <div class="modal-overlay" id="modal-gasto">
     <div class="modal-box">
-        <h2>Gasto de caja chica</h2>
+        <h2 id="g-modal-title">Gasto de caja chica</h2>
+        <div id="g-edit-note" style="display:none;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#8a5a12;margin-bottom:10px;">✏ Estás <b>modificando</b> este gasto. El cambio queda registrado (quién, cuándo y los valores anteriores).</div>
         <div class="grid2">
             <div><label>Fecha</label><input type="date" id="g-fecha"></div>
             <div><label>Monto (RD$) *</label><input type="number" id="g-monto" min="0" step="0.01"></div>
@@ -132,7 +133,7 @@
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="g-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Gastos)</b></label>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-gasto')">Cancelar</button>
-            <button class="btn-guardar" onclick="guardarGasto()">Registrar gasto</button>
+            <button class="btn-guardar" id="g-btn-guardar" onclick="guardarGasto()">Registrar gasto</button>
         </div>
     </div>
 </div>
@@ -301,11 +302,31 @@
         } catch (e) { alert('No se pudo crear: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Crear caja'; }
     };
+    let editandoGastoId = null;
     window.abrirGasto = function () {
         if (!cajaSel()) { alert('Primero elige (o crea) una caja.'); return; }
+        editandoGastoId = null;
+        document.getElementById('g-modal-title').textContent = 'Gasto de caja chica';
+        document.getElementById('g-btn-guardar').textContent = 'Registrar gasto';
+        document.getElementById('g-edit-note').style.display = 'none';
         ['g-monto', 'g-concepto', 'g-categoria', 'g-ref'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('g-fecha').value = hoyISO();
         document.getElementById('g-conta').checked = true;
+        document.getElementById('modal-gasto').classList.add('show');
+    };
+    // Modificar un gasto ya hecho, guardando constancia del cambio (igual que el desembolso).
+    window.abrirEditarGasto = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoGastoId = id;
+        document.getElementById('g-modal-title').textContent = '✏ Modificar gasto';
+        document.getElementById('g-btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('g-edit-note').style.display = 'block';
+        document.getElementById('g-fecha').value = m.fecha || hoyISO();
+        document.getElementById('g-monto').value = m.monto != null ? m.monto : '';
+        document.getElementById('g-concepto').value = m.concepto || '';
+        document.getElementById('g-categoria').value = m.categoria || '';
+        document.getElementById('g-ref').value = m.referencia || '';
+        document.getElementById('g-conta').checked = !!m.contaMovId;
         document.getElementById('modal-gasto').classList.add('show');
     };
     window.guardarGasto = async function () {
@@ -314,13 +335,25 @@
         const monto = n2(document.getElementById('g-monto').value);
         if (!concepto) { alert('Escribe el concepto.'); return; }
         if (monto <= 0) { alert('Escribe el monto.'); return; }
-        const saldo = saldoCaja(c.id);
-        if (monto > saldo && !confirm('El gasto (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) return;
         const fecha = document.getElementById('g-fecha').value || hoyISO();
         const categoria = document.getElementById('g-categoria').value.trim();
         const referencia = document.getElementById('g-ref').value.trim();
         const aConta = document.getElementById('g-conta').checked;
+        const editando = editandoGastoId ? (movs.find(x => x.id === editandoGastoId) || null) : null;
         const btn = document.querySelector('#modal-gasto .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        if (editando) {
+            try {
+                const antes = { fecha: editando.fecha || '', monto: n2(editando.monto), concepto: editando.concepto || '', categoria: editando.categoria || '', referencia: editando.referencia || '' };
+                const historial = (Array.isArray(editando.historialCambios) ? editando.historialCambios : []).concat([{ fechaCambio: new Date().toISOString(), por: usuario.nombre, antes }]);
+                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoGastoId), { fecha, monto, concepto, categoria, referencia, modificado: true, historialCambios: historial });
+                if (editando.contaMovId) { try { await updateDoc(doc(db, 'contaMovimientos', editando.contaMovId), { fecha, monto, concepto, categoria: categoria || 'Caja chica' }); } catch (e3) { /* ok */ } }
+                cerrar('modal-gasto'); editandoGastoId = null;
+            } catch (e) { alert('No se pudo guardar el cambio: ' + (e && e.message ? e.message : e)); }
+            finally { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+            return;
+        }
+        const saldo = saldoCaja(c.id);
+        if (monto > saldo && !confirm('El gasto (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) { btn.disabled = false; btn.textContent = 'Registrar gasto'; return; }
         try {
             // Si va a Contabilidad, se crea primero el gasto ahí para guardar su id en el movimiento
             // de caja (así al borrar el gasto de caja se puede quitar también de Contabilidad).
@@ -721,9 +754,16 @@
                 const nCambios = Array.isArray(m.historialCambios) ? m.historialCambios.length : 0;
                 sub = [fmtFecha(m.fecha), '🧾 a ' + esc(m.beneficiario || ''), m.cedula ? 'céd. ' + esc(m.cedula) : '', m.categoria ? esc(m.categoria) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : '', nCambios ? '<span style="color:#c07a12;font-weight:bold">✏ modificado ×' + nCambios + '</span>' : ''].filter(Boolean).join('  ·  ');
             } else {
-                sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : ''].filter(Boolean).join('  ·  ');
+                const nc = Array.isArray(m.historialCambios) ? m.historialCambios.length : 0;
+                sub = [fmtFecha(m.fecha), m.categoria ? esc(m.categoria) : '', m.referencia ? '# ' + esc(m.referencia) : '', m.creadoPor ? 'por ' + esc(m.creadoPor) : '', nc ? '<span style="color:#c07a12;font-weight:bold">✏ modificado ×' + nc + '</span>' : ''].filter(Boolean).join('  ·  ');
             }
-            if (t === 'gasto') fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}${m.subtipo === 'desembolso' ? `<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button> <button class="btn-comp" style="background:var(--artal-blue)" onclick="abrirEditarDesemb('${m.id}')">✏ Modificar</button>${(Array.isArray(m.historialCambios) && m.historialCambios.length) ? ` <button class="btn-comp" style="background:#c07a12" onclick="verCambiosDesemb('${m.id}')">🕘 Cambios</button>` : ''}` : ''}</div>`;
+            if (t === 'gasto') {
+                const btnCambios = (Array.isArray(m.historialCambios) && m.historialCambios.length) ? ` <button class="btn-comp" style="background:#c07a12" onclick="verCambiosDesemb('${m.id}')">🕘 Cambios</button>` : '';
+                const btnsDesemb = m.subtipo === 'desembolso'
+                    ? `<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button> <button class="btn-comp" style="background:var(--artal-blue)" onclick="abrirEditarDesemb('${m.id}')">✏ Modificar</button>${btnCambios}`
+                    : `<br><button class="btn-comp" style="background:var(--artal-blue)" onclick="abrirEditarGasto('${m.id}')">✏ Modificar</button>${btnCambios}`;
+                fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}${btnsDesemb}</div>`;
+            }
             return `<div class="order-card mv-card ${t}">
                 <div class="mv-ic ${t}">${m.subtipo === 'desembolso' ? '🧾' : (ICO[t] || '•')}</div>
                 <div class="mv-info">
