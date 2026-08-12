@@ -178,7 +178,8 @@
     // Divisor de días fijo (23.83, estándar de ley) → costo por día estable para cotizar.
     const COSTO_DEFAULTS = { afpPat: 7.10, sfsPat: 7.09, srlPat: 1.15, topeAfp: 0, topeSfs: 0, infotepPat: 1.00, regaliaOn: true, cesantiaDiasAnio: 21, vacacionesDiasAnio: 0, diaDivisor: 23.83 };
     let costoCfg = Object.assign({}, COSTO_DEFAULTS);
-    getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => { if (s.exists()) costoCfg = Object.assign({}, COSTO_DEFAULTS, s.data()); render(); }).catch(() => { });
+    let costoCfgLoaded = false;
+    getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => { if (s.exists()) costoCfg = Object.assign({}, COSTO_DEFAULTS, s.data()); costoCfgLoaded = true; render(); backfillCostos(); }).catch(() => { costoCfgLoaded = true; backfillCostos(); });
     function costoLaboral(sueldoMes) {
         const s = Number(sueldoMes) || 0;
         if (s <= 0) return { mes: 0, dia: 0, cargas: 0, afp: 0, sfs: 0, srl: 0, infotep: 0, regalia: 0, cesantia: 0, vac: 0 };
@@ -204,8 +205,28 @@
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
+        backfillCostos();
         if (editingId && document.getElementById('modal').classList.contains('show')) renderDocsEmpleado();
     }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    // Graba costoDiaReal/costoMesReal en las fichas que aún no lo tienen (empleados de antes de esta
+    // función) o cuyo valor quedó desfasado si cambió una tasa. Solo escribe cuando el número cambia
+    // de verdad (comparación redondeada) para no entrar en bucle con el propio onSnapshot.
+    let backfillEnCurso = false;
+    async function backfillCostos() {
+        if (!costoCfgLoaded || backfillEnCurso) return;
+        backfillEnCurso = true;
+        try {
+            for (const e of empleados) {
+                if (!e.sueldoBase) continue;
+                const k = costoLaboral(e.sueldoBase);
+                const dia = Math.round(k.dia * 100) / 100, mes = Math.round(k.mes * 100) / 100;
+                if (e.costoDiaReal !== dia || e.costoMesReal !== mes) {
+                    try { await updateDoc(doc(db, 'rrhhEmpleados', e.id), { costoDiaReal: dia, costoMesReal: mes }); } catch (_) { }
+                }
+            }
+        } finally { backfillEnCurso = false; }
+    }
 
     // ---------- Subida de archivos (imagen se comprime a JPEG; PDF y documentos se suben tal cual) ----------
     function comprimirImg(file) {
