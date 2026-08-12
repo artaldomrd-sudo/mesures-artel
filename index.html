@@ -1994,7 +1994,8 @@
         { id: 'terrenas-santiago', nombre: 'Las Terrenas ↔ Santiago', km: 176, peaje: 800 },
     ];
     const calcVehById = (id) => CALC_VEHICULOS.find(x => x.id === id) || null;
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 0, dias: 0, costoDia: 0, margenPct: 0 });
+    // costoNoche = hotel por persona/noche; costoComida = alimentación (desayuno+comida+cena) por persona/día.
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 1500, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, margenPct: 0 });
     const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
     function calcLlenarSelects(vehSel, rutaSel) {
         const sv = document.getElementById('cs-veh');
@@ -2016,6 +2017,8 @@
         document.getElementById('cs-noches').value = c.noches || '';
         document.getElementById('cs-personas').value = c.personas || 1;
         document.getElementById('cs-costonoche').value = c.costoNoche || '';
+        document.getElementById('cs-diascomida').value = c.diasComida || '';
+        document.getElementById('cs-costocomida').value = c.costoComida || '';
         document.getElementById('cs-dias').value = c.dias || '';
         document.getElementById('cs-costodia').value = c.costoDia || '';
         document.getElementById('cs-margen').value = c.margenPct || '';
@@ -2041,6 +2044,7 @@
             vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value,
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
             peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
+            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'),
             dias: num('cs-dias'), costoDia: num('cs-costodia'), margenPct: num('cs-margen')
         };
     }
@@ -2050,11 +2054,12 @@
         const veh = calcVehById(v.vehiculoId);
         const mantPorKm = (veh && veh.mantCadaKm > 0) ? veh.mantCosto / veh.mantCadaKm : 0;
         const mantenimiento = kmTot * mantPorKm;
-        const hospedaje = v.noches * (v.personas || 1) * v.costoNoche;
+        const hotel = v.noches * (v.personas || 1) * v.costoNoche;
+        const alimentacion = v.diasComida * (v.personas || 1) * v.costoComida;
         const instalacion = v.dias * v.costoDia;
-        const costo = combustible + mantenimiento + v.peajes + hospedaje + instalacion;
+        const costo = combustible + mantenimiento + v.peajes + hotel + alimentacion + instalacion;
         const total = costo * (1 + (v.margenPct || 0) / 100);
-        return { kmTot, combustible, mantenimiento, mantPorKm, peajes: v.peajes, hospedaje, instalacion, costo, total };
+        return { kmTot, combustible, mantenimiento, mantPorKm, peajes: v.peajes, hotel, alimentacion, instalacion, costo, total };
     }
     window.calcRecalc = function () {
         const v = calcLeer(), t = calcTotales(v);
@@ -2062,7 +2067,7 @@
         document.getElementById('cs-desglose').innerHTML =
             row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km)', t.combustible) +
             (t.mantenimiento ? row('🛠️ Desgaste/mant. (RD$' + Math.round(t.mantPorKm) + '/km)', t.mantenimiento) : '') +
-            row('🛣️ Peajes', t.peajes) + row('🏨 Hospedaje', t.hospedaje) + row('🔧 Instalación', t.instalacion) +
+            row('🛣️ Peajes', t.peajes) + row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
             (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
             `<div class="cs-total"><span>Total transporte + instalación</span><span>${czFmt(t.total)}</span></div>`;
     };
@@ -6422,11 +6427,13 @@
                 <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
             </div>
             <label class="calc-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
-            <div class="calc-sec">🏨 Hospedaje (si se queda a dormir)</div>
+            <div class="calc-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
             <div class="calc-grid">
-                <label>Noches<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
                 <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
-                <label>Costo por noche (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
+                <label>Noches de hotel<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
+                <label>Hotel por noche c/u (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
+                <label>Días con comida<input type="number" id="cs-diascomida" min="0" step="1" oninput="calcRecalc()"></label>
+                <label>Comida por día c/u (RD$)<input type="number" id="cs-costocomida" min="0" step="0.01" oninput="calcRecalc()"></label>
             </div>
             <div class="calc-sec">🔧 Instalación</div>
             <div class="calc-grid">
