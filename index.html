@@ -1984,18 +1984,19 @@
     // Recorridos frecuentes. km = distancia de IDA (el ×2 lo aplica "ida y vuelta"). peaje = total ida y vuelta.
     // Peaje de la autopista de Samaná ~850 por tramo (ida y vuelta 1700); las rutas desde Las Terrenas suman
     // ese peaje + el del destino. Santiago va por El Catey (RD$400 por tramo → 800 ida y vuelta).
+    // hotel/comida = default por zona del destino (turístico más caro; hotel piso RD$2,000). Editables.
     const CALC_RUTAS = [
-        { id: 'sd-terrenas', nombre: 'Santo Domingo ↔ Las Terrenas', km: 163, peaje: 1700 },
-        { id: 'sd-romana', nombre: 'Santo Domingo ↔ La Romana', km: 123, peaje: 400 },
-        { id: 'sd-puntacana', nombre: 'Santo Domingo ↔ Punta Cana', km: 200, peaje: 600 },
-        { id: 'sd-santiago', nombre: 'Santo Domingo ↔ Santiago', km: 155, peaje: 400 },
-        { id: 'terrenas-romana', nombre: 'Las Terrenas ↔ La Romana', km: 214, peaje: 2100 },
-        { id: 'terrenas-puntacana', nombre: 'Las Terrenas ↔ Punta Cana', km: 287, peaje: 2300 },
-        { id: 'terrenas-santiago', nombre: 'Las Terrenas ↔ Santiago', km: 176, peaje: 800 },
+        { id: 'sd-terrenas', nombre: 'Santo Domingo ↔ Las Terrenas', km: 163, peaje: 1700, hotel: 2000, comida: 900 },
+        { id: 'sd-romana', nombre: 'Santo Domingo ↔ La Romana', km: 123, peaje: 400, hotel: 2200, comida: 1000 },
+        { id: 'sd-puntacana', nombre: 'Santo Domingo ↔ Punta Cana', km: 200, peaje: 600, hotel: 2500, comida: 1100 },
+        { id: 'sd-santiago', nombre: 'Santo Domingo ↔ Santiago', km: 155, peaje: 400, hotel: 2000, comida: 900 },
+        { id: 'terrenas-romana', nombre: 'Las Terrenas ↔ La Romana', km: 214, peaje: 2100, hotel: 2200, comida: 1000 },
+        { id: 'terrenas-puntacana', nombre: 'Las Terrenas ↔ Punta Cana', km: 287, peaje: 2300, hotel: 2500, comida: 1100 },
+        { id: 'terrenas-santiago', nombre: 'Las Terrenas ↔ Santiago', km: 176, peaje: 800, hotel: 2000, comida: 900 },
     ];
     const calcVehById = (id) => CALC_VEHICULOS.find(x => x.id === id) || null;
     // costoNoche = hotel por persona/noche; costoComida = alimentación (desayuno+comida+cena) por persona/día.
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, materiales: 0, elemPorDia: 5, margenPct: 0 });
     const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
     function calcLlenarSelects(vehSel, rutaSel) {
         const sv = document.getElementById('cs-veh');
@@ -2011,6 +2012,9 @@
         calcLlenarSelects(c.vehiculoId, c.rutaId);
         calcRenderEquiposGuardados();
         calcRenderEquipo(c.empleadoIds || []);
+        calcJornaleros = (c.jornaleros || []).map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 }));
+        calcRenderJornaleros();
+        document.getElementById('cs-viajes').value = c.viajes || 1;
         document.getElementById('cs-km').value = c.kmIda || '';
         document.getElementById('cs-rend').value = c.rendKmGal || '';
         document.getElementById('cs-precio').value = c.precioGal || '';
@@ -2021,9 +2025,12 @@
         document.getElementById('cs-costonoche').value = c.costoNoche || '';
         document.getElementById('cs-diascomida').value = c.diasComida || '';
         document.getElementById('cs-costocomida').value = c.costoComida || '';
+        document.getElementById('cs-elemdia').value = c.elemPorDia || 5;
         document.getElementById('cs-dias').value = c.dias || '';
         document.getElementById('cs-costodia').value = c.costoDia || '';
+        document.getElementById('cs-materiales').value = c.materiales || '';
         document.getElementById('cs-margen').value = c.margenPct || '';
+        calcRefreshSugerencia();
         document.getElementById('calc-serv-ov').style.display = 'flex';
         calcRecalc();
     };
@@ -2037,7 +2044,11 @@
     // Al elegir recorrido: rellena km de ida y peajes ida/vuelta (editables). "Otro recorrido" no toca nada.
     window.calcRutaChange = function () {
         const r = CALC_RUTAS.find(x => x.id === document.getElementById('cs-ruta').value);
-        if (r) { document.getElementById('cs-km').value = r.km; document.getElementById('cs-peajes').value = r.peaje; document.getElementById('cs-iv').checked = true; }
+        if (r) {
+            document.getElementById('cs-km').value = r.km; document.getElementById('cs-peajes').value = r.peaje; document.getElementById('cs-iv').checked = true;
+            if (r.hotel) document.getElementById('cs-costonoche').value = r.hotel;
+            if (r.comida) document.getElementById('cs-costocomida').value = r.comida;
+        }
         calcRecalc();
     };
     // Equipo de la obra: casillas con los empleados (RRHH) y su costo real por día. Al marcar, se suma el
@@ -2055,15 +2066,48 @@
     function calcEquipoSeleccion() {
         return Array.from(document.querySelectorAll('#cs-equipo input:checked')).map(c => c.value);
     }
-    window.calcEquipoChange = function () {
+    // Jornaleros / ayudantes sueltos (no están en RRHH): nombre opcional + costo por día a mano.
+    let calcJornaleros = [];
+    function calcRenderJornaleros() {
+        const box = document.getElementById('cs-jornaleros'); if (!box) return;
+        box.innerHTML = calcJornaleros.map((j, i) =>
+            `<div class="cs-jorn-row"><input type="text" placeholder="Jornalero (opcional)" value="${(j.nombre || '').replace(/"/g, '&quot;')}" oninput="calcJornSet(${i},'nombre',this.value)"><input type="number" min="0" step="0.01" placeholder="RD$/día" value="${j.costoDia || ''}" oninput="calcJornSet(${i},'costoDia',this.value)"><button type="button" class="cs-jorn-del" onclick="calcJornDel(${i})" title="Quitar">×</button></div>`
+        ).join('');
+    }
+    window.calcJornAdd = function () { calcJornaleros.push({ nombre: '', costoDia: 0 }); calcRenderJornaleros(); };
+    window.calcJornSet = function (i, k, v) { if (calcJornaleros[i]) { calcJornaleros[i][k] = k === 'costoDia' ? (Number(v) || 0) : v; calcRecalcEquipo(); } };
+    window.calcJornDel = function (i) { calcJornaleros.splice(i, 1); calcRenderJornaleros(); calcRecalcEquipo(); };
+    // Suma empleados marcados + jornaleros → costo por día de instalación y cantidad de personas.
+    function calcRecalcEquipo() {
         const emps = window.calcEmpleados || [], ids = calcEquipoSeleccion();
-        if (ids.length) {
-            const total = ids.reduce((a, id) => a + ((emps.find(e => e.id === id) || {}).costoDia || 0), 0);
-            document.getElementById('cs-costodia').value = Math.round(total * 100) / 100;
-            document.getElementById('cs-personas').value = ids.length;
+        const empTotal = ids.reduce((a, id) => a + ((emps.find(e => e.id === id) || {}).costoDia || 0), 0);
+        const jornTotal = calcJornaleros.reduce((a, j) => a + (Number(j.costoDia) || 0), 0);
+        const nPersonas = ids.length + calcJornaleros.length;
+        if (nPersonas > 0) {
+            document.getElementById('cs-costodia').value = Math.round((empTotal + jornTotal) * 100) / 100;
+            document.getElementById('cs-personas').value = nPersonas;
         }
         calcRecalc();
+    }
+    window.calcEquipoChange = calcRecalcEquipo;
+    // Sugerir días de instalación según la cantidad de elementos del proyecto (suma de cantidades del
+    // cuaderno) ÷ elementos por día (editable). Es solo una sugerencia: el día final se puede ajustar.
+    function calcTotalElementos() {
+        try { return (typeof czIds === 'function' ? czIds() : []).reduce((a, id) => a + (Number((cardsState[id] || {}).cantidad) || 1), 0); }
+        catch (_) { return 0; }
+    }
+    window.calcSugerirDias = function () {
+        const n = calcTotalElementos();
+        const rate = Number(document.getElementById('cs-elemdia').value) || 5;
+        if (n <= 0) { alert('No hay ítems en el proyecto para estimar los días.'); return; }
+        document.getElementById('cs-dias').value = Math.max(1, Math.ceil(n / rate));
+        calcRecalc();
     };
+    function calcRefreshSugerencia() {
+        const el = document.getElementById('cs-sugerir-info'); if (!el) return;
+        const n = calcTotalElementos();
+        el.textContent = n > 0 ? n + ' elemento' + (n === 1 ? '' : 's') + ' en el proyecto' : 'proyecto sin ítems';
+    }
     // Llamado por el listener de Firestore cuando llegan/actualizan los empleados: redibuja las casillas.
     window.calcRefreshEmpleados = function () {
         const ov = document.getElementById('calc-serv-ov');
@@ -2112,32 +2156,37 @@
         const num = (id) => Number(document.getElementById(id).value) || 0;
         return {
             vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value, empleadoIds: calcEquipoSeleccion(),
+            jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })), viajes: num('cs-viajes') || 1,
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
             peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
-            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'),
-            dias: num('cs-dias'), costoDia: num('cs-costodia'), margenPct: num('cs-margen')
+            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'), elemPorDia: num('cs-elemdia') || 5,
+            dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), margenPct: num('cs-margen')
         };
     }
     function calcTotales(v) {
-        const kmTot = v.kmIda * (v.idaVuelta ? 2 : 1);
+        const viajes = v.viajes > 0 ? v.viajes : 1;
+        const kmTot = v.kmIda * (v.idaVuelta ? 2 : 1) * viajes;
         const combustible = v.rendKmGal > 0 ? (kmTot / v.rendKmGal) * v.precioGal : 0;
         const veh = calcVehById(v.vehiculoId);
         const mantPorKm = (veh && veh.mantCadaKm > 0) ? veh.mantCosto / veh.mantCadaKm : 0;
         const mantenimiento = kmTot * mantPorKm;
+        const peajes = (v.peajes || 0) * viajes;
         const hotel = v.noches * (v.personas || 1) * v.costoNoche;
         const alimentacion = v.diasComida * (v.personas || 1) * v.costoComida;
         const instalacion = v.dias * v.costoDia;
-        const costo = combustible + mantenimiento + v.peajes + hotel + alimentacion + instalacion;
+        const materiales = v.materiales || 0;
+        const costo = combustible + mantenimiento + peajes + hotel + alimentacion + instalacion + materiales;
         const total = costo * (1 + (v.margenPct || 0) / 100);
-        return { kmTot, combustible, mantenimiento, mantPorKm, peajes: v.peajes, hotel, alimentacion, instalacion, costo, total };
+        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, hotel, alimentacion, instalacion, materiales, costo, total };
     }
     window.calcRecalc = function () {
         const v = calcLeer(), t = calcTotales(v);
         const row = (l, val) => `<div class="cs-row"><span>${l}</span><span>${czFmt(val)}</span></div>`;
         document.getElementById('cs-desglose').innerHTML =
-            row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km)', t.combustible) +
+            row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km' + (t.viajes > 1 ? ' · ' + t.viajes + ' viajes' : '') + ')', t.combustible) +
             (t.mantenimiento ? row('🛠️ Desgaste/mant. (RD$' + Math.round(t.mantPorKm) + '/km)', t.mantenimiento) : '') +
-            row('🛣️ Peajes', t.peajes) + row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
+            row('🛣️ Peajes' + (t.viajes > 1 ? ' (×' + t.viajes + ')' : ''), t.peajes) + row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
+            (t.materiales ? row('🧰 Materiales/consumibles', t.materiales) : '') +
             (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
             `<div class="cs-total"><span>Total transporte + instalación</span><span>${czFmt(t.total)}</span></div>`;
     };
@@ -6468,6 +6517,15 @@
     #calc-serv-ov .cs-emp span { flex: 1; }
     #calc-serv-ov .cs-emp b { color: var(--artal-blue); white-space: nowrap; }
     #calc-serv-ov .cs-equipo-vacio { font-size: 12px; color: #8a93a0; padding: 4px; line-height: 1.4; }
+    #calc-serv-ov .cs-jorn-row { display: flex; gap: 6px; margin-top: 6px; }
+    #calc-serv-ov .cs-jorn-row input { padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13px; min-height: 38px; box-sizing: border-box; }
+    #calc-serv-ov .cs-jorn-row input[type="text"] { flex: 1; }
+    #calc-serv-ov .cs-jorn-row input[type="number"] { width: 110px; }
+    #calc-serv-ov .cs-jorn-del { border: none; background: #e2e6ea; color: #555; border-radius: 8px; width: 38px; font-size: 16px; cursor: pointer; }
+    #calc-serv-ov .cs-sugerir { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    #calc-serv-ov .cs-sug-info { font-size: 12px; color: #667; flex: 1; min-width: 120px; }
+    #calc-serv-ov .cs-sug-rate { display: flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: bold; color: #556; }
+    #calc-serv-ov .cs-sug-rate input { width: 52px; padding: 6px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
     #calc-serv-ov .calc-desglose { margin-top: 14px; background: #f6f8fa; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
     #calc-serv-ov .cs-row { display: flex; justify-content: space-between; padding: 3px 0; color: #445; }
     #calc-serv-ov .cs-total { display: flex; justify-content: space-between; font-weight: bold; color: var(--artal-blue); font-size: 16px; margin-top: 6px; padding-top: 6px; border-top: 1.5px solid #e2e6ea; }
@@ -6530,6 +6588,7 @@
                 <label>Rendimiento (km por galón)<input type="number" id="cs-rend" min="0" step="0.1" oninput="calcRecalc()"></label>
                 <label>Precio del galón (RD$)<input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()"></label>
                 <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
+                <label>Viajes a la obra<input type="number" id="cs-viajes" min="1" step="1" value="1" oninput="calcRecalc()" title="Medición + instalación + retoques, o viajes extra por volumen de carga"></label>
             </div>
             <label class="calc-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
             <div class="calc-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
@@ -6548,9 +6607,17 @@
             </div>
             <label style="font-size:11.5px;font-weight:bold;color:#556;display:block;margin-bottom:4px">Equipo de la obra (marca los instaladores)</label>
             <div id="cs-equipo" class="cs-equipo"></div>
+            <div id="cs-jornaleros"></div>
+            <button type="button" class="cs-eq-btn" style="margin:6px 0 2px" onclick="calcJornAdd()">+ Jornalero / ayudante suelto</button>
+            <div class="cs-sugerir">
+                <span id="cs-sugerir-info" class="cs-sug-info"></span>
+                <label class="cs-sug-rate">elem/día<input type="number" id="cs-elemdia" min="1" step="1" value="5"></label>
+                <button type="button" class="cs-eq-btn" onclick="calcSugerirDias()">📐 Sugerir días</button>
+            </div>
             <div class="calc-grid" style="margin-top:8px">
                 <label>Días de instalación<input type="number" id="cs-dias" min="0" step="0.5" oninput="calcRecalc()"></label>
                 <label>Costo por día (RD$)<input type="number" id="cs-costodia" min="0" step="0.01" oninput="calcRecalc()"></label>
+                <label>Materiales/consumibles (RD$)<input type="number" id="cs-materiales" min="0" step="0.01" oninput="calcRecalc()" title="Silicona, tornillería, discos, tacos… costo estimado por obra"></label>
             </div>
             <div class="calc-sec">Ajuste</div>
             <div class="calc-grid">
