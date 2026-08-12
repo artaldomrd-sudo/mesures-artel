@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Historial de Caja Chica</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 920px; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar select, .bar input { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .bar label { font-size: 12px; font-weight: bold; color: var(--artal-blue); }
+    .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #333; }
+    .mv-card { display: flex; align-items: flex-start; gap: 12px; border-left: 4px solid #ccc; }
+    .mv-card.gasto { border-left-color: #e74c3c; } .mv-card.reposicion { border-left-color: #2ecc71; } .mv-card.apertura { border-left-color: #2f6fd0; } .mv-card.arqueo { border-left-color: #6c5ce7; } .mv-card.del { border-left-color: #c9ced6; opacity: .72; }
+    .mv-ic { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex: 0 0 auto; background: #f0f1f3; }
+    .mv-info { flex: 1; min-width: 0; } .mv-info b { color: var(--artal-blue); font-size: 14px; }
+    .mv-info .l { font-size: 12.5px; color: #667; margin-top: 3px; } .mv-info .l.rojo { color: #c0392b; }
+    .mv-monto { font-weight: bold; font-size: 15px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .b { font-size: 10px; font-weight: bold; padding: 2px 8px; border-radius: 20px; background: #eef1f4; color: #556; }
+    .tachado { text-decoration: line-through; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="bancos-caja.html" title="Volver">← Caja Chica</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Historial de Caja Chica</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p style="font-size:13px;color:#667;margin:0 0 12px;">Vista de <b>solo lectura</b> con todos los movimientos (incluye los eliminados, con constancia de quién y por qué). Área protegida con PIN.</p>
+    <div class="bar">
+        <select id="sel-caja" onchange="render()"></select>
+        <label>Desde <input type="date" id="f-desde" onchange="render()"></label>
+        <label>Hasta <input type="date" id="f-hasta" onchange="render()"></label>
+        <select id="f-tipo" onchange="render()">
+            <option value="">Todos los tipos</option>
+            <option value="gasto">Gastos / desembolsos</option>
+            <option value="reposicion">Reposiciones</option>
+            <option value="arqueo">Arqueos</option>
+        </select>
+        <label class="chk"><input type="checkbox" id="f-elim" onchange="render()"> Solo eliminados</label>
+    </div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { requirePin } from './pin-gate.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    await requirePin(usuario);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => (Number(x) || 0);
+    const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
+    const fmtTs = (ts) => (ts && ts.toDate ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }) : '');
+
+    let cajas = [], movs = [];
+    onSnapshot(collection(db, 'bancosCajaChica'), (s) => { cajas = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')); llenar(); render(); }, () => {});
+    onSnapshot(collection(db, 'bancosCajaMovimientos'), (s) => { movs = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => {});
+
+    function llenar() {
+        const sel = document.getElementById('sel-caja'); const cur = sel.value;
+        sel.innerHTML = cajas.length ? cajas.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}</option>`).join('') : '<option value="">— Sin cajas —</option>';
+        if (cur && cajas.some(c => c.id === cur)) sel.value = cur;
+    }
+
+    const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura', arqueo: 'Arqueo' };
+    const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢', arqueo: '🧮' };
+
+    window.render = function () {
+        const cont = document.getElementById('lista');
+        if (!cajas.length) { cont.innerHTML = '<p class="empty">No hay cajas.</p>'; return; }
+        const cajaId = document.getElementById('sel-caja').value;
+        const desde = document.getElementById('f-desde').value, hasta = document.getElementById('f-hasta').value;
+        const tipo = document.getElementById('f-tipo').value, soloElim = document.getElementById('f-elim').checked;
+        let lista = movs.filter(m => m.cajaId === cajaId);
+        if (desde) lista = lista.filter(m => (m.fecha || '') >= desde);
+        if (hasta) lista = lista.filter(m => (m.fecha || '') <= hasta);
+        if (tipo) lista = lista.filter(m => (m.tipo || '') === tipo);
+        if (soloElim) lista = lista.filter(m => m.eliminado);
+        lista.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')) || ((b.fechaCreacion && b.fechaCreacion.seconds) || 0) - ((a.fechaCreacion && a.fechaCreacion.seconds) || 0));
+        if (!lista.length) { cont.innerHTML = '<p class="empty">Sin movimientos con esos filtros.</p>'; return; }
+        cont.innerHTML = lista.map(m => {
+            const t = m.tipo || 'gasto', del = !!m.eliminado;
+            const esDes = m.subtipo === 'desembolso';
+            const monto = t === 'arqueo' ? m.montoContado : m.monto;
+            const sub = [fmtFecha(m.fecha), esDes ? '🧾 a ' + esc(m.beneficiario || '') : '', m.categoria ? esc(m.categoria) : '', m.creadoPor ? 'reg. ' + esc(m.creadoPor) : '', (esDes && m.pagadoPor) ? 'pagó ' + esc(m.pagadoPor) : ''].filter(Boolean).join('  ·  ');
+            const elimLinea = del ? `<div class="l rojo">🗑 eliminó ${esc(m.eliminadoPor || '')} · ${esc(fmtTs(m.eliminadoFecha))}${m.eliminadoMotivo ? ' · “' + esc(m.eliminadoMotivo) + '”' : ''}</div>` : '';
+            return `<div class="order-card mv-card ${del ? 'del' : t}">
+                <div class="mv-ic">${del ? '🗑' : (esDes ? '🧾' : (ICO[t] || '•'))}</div>
+                <div class="mv-info">
+                    <b class="${del ? 'tachado' : ''}">${esc(m.concepto || NOM[t])}</b> <span class="b">${esDes ? 'Desembolso' : (NOM[t] || t)}</span>
+                    <div class="mv-monto">${fmt(monto)}</div>
+                    <div class="l">${sub}</div>
+                    ${elimLinea}
+                </div>
+            </div>`;
+        }).join('');
+    };
+
+    render();
+</script>
+
+</body>
+</html>
