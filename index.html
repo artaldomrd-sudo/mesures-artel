@@ -548,7 +548,7 @@
     // Config de la "Cotización para cliente" (precios por ítem viven en cardsState[id].precioCliente;
     // esto es lo global: cargos, modo de ITBIS y líneas manuales). Se guarda con el proyecto y viaja
     // a `orders` (getAppJSON) — preparado para mapear a /v5/cotizacion de Citrus cuando se conecte.
-    let cotizCli = { transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [] };
+    let cotizCli = { transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [], calc: {} };
     let handleClicked = false; // SEGURO DE ARRASTRE EXCLUSIVO POR MANECILLA
     // Cliente+proyecto del notebook actualmente abierto (vía "Abrir proyecto" o un "Guardar"
     // exitoso previo en esta misma sesión) — para saber si un "Guardar" es continuar ESTE
@@ -1972,6 +1972,61 @@
     // Transporte e instalación combinados en un solo campo: se guarda todo en 'transporte' y se
     // limpia 'instalacion' (que solo sobrevive en proyectos viejos por compatibilidad).
     window.czSetServicios = function (v) { cotizCli.transporte = Number(v) || 0; cotizCli.instalacion = 0; czRecalcUI(); };
+
+    // ---- Calculadora de transporte + instalación (costo real: combustible/peajes/hospedaje/días) ----
+    const calcDef = () => ({ kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 0, dias: 0, costoDia: 0, margenPct: 0 });
+    const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
+    window.openCalcServ = function () {
+        const c = calcVals();
+        document.getElementById('cs-km').value = c.kmIda || '';
+        document.getElementById('cs-rend').value = c.rendKmGal || '';
+        document.getElementById('cs-precio').value = c.precioGal || '';
+        document.getElementById('cs-peajes').value = c.peajes || '';
+        document.getElementById('cs-iv').checked = c.idaVuelta !== false;
+        document.getElementById('cs-noches').value = c.noches || '';
+        document.getElementById('cs-personas').value = c.personas || 1;
+        document.getElementById('cs-costonoche').value = c.costoNoche || '';
+        document.getElementById('cs-dias').value = c.dias || '';
+        document.getElementById('cs-costodia').value = c.costoDia || '';
+        document.getElementById('cs-margen').value = c.margenPct || '';
+        document.getElementById('calc-serv-ov').style.display = 'flex';
+        calcRecalc();
+    };
+    window.closeCalcServ = function () { document.getElementById('calc-serv-ov').style.display = 'none'; };
+    function calcLeer() {
+        const num = (id) => Number(document.getElementById(id).value) || 0;
+        return {
+            kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
+            peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
+            dias: num('cs-dias'), costoDia: num('cs-costodia'), margenPct: num('cs-margen')
+        };
+    }
+    function calcTotales(v) {
+        const kmTot = v.kmIda * (v.idaVuelta ? 2 : 1);
+        const combustible = v.rendKmGal > 0 ? (kmTot / v.rendKmGal) * v.precioGal : 0;
+        const hospedaje = v.noches * (v.personas || 1) * v.costoNoche;
+        const instalacion = v.dias * v.costoDia;
+        const costo = combustible + v.peajes + hospedaje + instalacion;
+        const total = costo * (1 + (v.margenPct || 0) / 100);
+        return { kmTot, combustible, peajes: v.peajes, hospedaje, instalacion, costo, total };
+    }
+    window.calcRecalc = function () {
+        const v = calcLeer(), t = calcTotales(v);
+        const row = (l, val) => `<div class="cs-row"><span>${l}</span><span>${czFmt(val)}</span></div>`;
+        document.getElementById('cs-desglose').innerHTML =
+            row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km)', t.combustible) +
+            row('🛣️ Peajes', t.peajes) + row('🏨 Hospedaje', t.hospedaje) + row('🔧 Instalación', t.instalacion) +
+            (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
+            `<div class="cs-total"><span>Total transporte + instalación</span><span>${czFmt(t.total)}</span></div>`;
+    };
+    window.calcUsar = function () {
+        const v = calcLeer(), t = calcTotales(v);
+        cotizCli.calc = v;   // guarda datos y tarifas para la próxima
+        cotizCli.transporte = Math.round(t.total * 100) / 100;
+        cotizCli.instalacion = 0;
+        closeCalcServ();
+        czRender();
+    };
     // Llamado por el módulo cuando llegan/actualizan las unidades de Firestore: redibuja el overlay si está abierto.
     window.czRefreshUnidades = function () { const ov = document.getElementById('cotiz-cli-ov'); if (ov && ov.style.display === 'flex') czRender(); };
     function czRecalcUI() {
@@ -2011,7 +2066,7 @@
             </table>
             <button class="cz-add" onclick="czAddLinea()">+ Agregar línea manual</button>
             <div class="cz-cfg">
-                <div><label>Transporte e instalación (RD$)</label><input type="number" min="0" step="0.01" value="${((Number(cotizCli.transporte) || 0) + (Number(cotizCli.instalacion) || 0)) || ''}" oninput="czSetServicios(this.value)"></div>
+                <div><label>Transporte e instalación (RD$)</label><div style="display:flex;gap:6px;align-items:center"><input type="number" min="0" step="0.01" style="flex:1" value="${((Number(cotizCli.transporte) || 0) + (Number(cotizCli.instalacion) || 0)) || ''}" oninput="czSetServicios(this.value)"><button type="button" onclick="openCalcServ()" title="Calcular desde combustible, peajes, hospedaje y días" style="background:var(--artal-blue);color:#fff;border:none;border-radius:8px;padding:9px 11px;font-weight:bold;cursor:pointer;font-family:'Arimo';white-space:nowrap">🧮 Calcular</button></div></div>
                 <div><label>ITBIS</label><select onchange="czSetItbisModo(this.value)">
                     <option value="incluido"${cotizCli.itbisModo === 'incluido' ? ' selected' : ''}>Ya incluido en los precios</option>
                     <option value="agregar"${cotizCli.itbisModo === 'agregar' ? ' selected' : ''}>Agregar al final (18%)</option>
@@ -6244,6 +6299,25 @@
 </script>
 
 <style>
+    #calc-serv-ov { position: fixed; inset: 0; background: rgba(12,49,75,.55); z-index: 4200; display: none; align-items: center; justify-content: center; padding: 14px; }
+    #calc-serv-ov .calc-box { background: #fff; border-radius: 18px; width: 100%; max-width: 480px; max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 30px 70px -18px rgba(12,49,75,.6); }
+    #calc-serv-ov .calc-head { background: var(--artal-blue); color: #fff; padding: 13px 18px; display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+    #calc-serv-ov .calc-head .x { background: transparent; border: none; color: #fff; font-size: 22px; cursor: pointer; line-height: 1; }
+    #calc-serv-ov .calc-body { padding: 16px 18px; overflow-y: auto; }
+    #calc-serv-ov .calc-hint { font-size: 12.5px; color: #667; margin: 0 0 12px; line-height: 1.45; }
+    #calc-serv-ov .calc-sec { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin: 14px 0 6px; }
+    #calc-serv-ov .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    #calc-serv-ov .calc-grid label, #calc-serv-ov .calc-chk { font-size: 11.5px; font-weight: bold; color: #556; display: flex; flex-direction: column; gap: 3px; }
+    #calc-serv-ov .calc-grid input { padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; }
+    #calc-serv-ov .calc-chk { flex-direction: row; align-items: center; gap: 8px; font-weight: normal; color: #333; font-size: 12.5px; margin-top: 8px; }
+    #calc-serv-ov .calc-chk input { width: auto; min-height: auto; }
+    #calc-serv-ov .calc-desglose { margin-top: 14px; background: #f6f8fa; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+    #calc-serv-ov .cs-row { display: flex; justify-content: space-between; padding: 3px 0; color: #445; }
+    #calc-serv-ov .cs-total { display: flex; justify-content: space-between; font-weight: bold; color: var(--artal-blue); font-size: 16px; margin-top: 6px; padding-top: 6px; border-top: 1.5px solid #e2e6ea; }
+    #calc-serv-ov .calc-foot { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid #eef1f4; }
+    #calc-serv-ov .calc-foot button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    #calc-serv-ov .calc-foot .cancel { background: transparent; color: #888; border: 1.5px solid #ddd; }
+    #calc-serv-ov .calc-foot .usar { background: #2ecc71; color: #fff; }
     #cotiz-cli-ov { position: fixed; inset: 0; background: rgba(12,49,75,.5); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); z-index: 4000; display: none; align-items: center; justify-content: center; padding: 14px; }
     #cotiz-cli-ov .cz-box { background: rgba(255,255,255,.94); backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); border: 1px solid rgba(255,255,255,.6); border-radius: 24px; width: 100%; max-width: 760px; max-height: 94vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 32px 74px -20px rgba(12,49,75,.55); }
     #cotiz-cli-ov .cz-head { background: linear-gradient(135deg, var(--artal-blue-dark) 0%, var(--artal-blue) 58%, var(--artal-blue-bright) 130%); color: #fff; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: inset 0 -1px 0 rgba(255,255,255,.12); }
@@ -6279,6 +6353,43 @@
         <div class="cz-foot">
             <button class="cancel" onclick="closeCotizCliente()">Cerrar</button>
             <button class="pdf" onclick="czGenerarPDF(this)">📄 Generar PDF</button>
+        </div>
+    </div>
+</div>
+
+<div id="calc-serv-ov">
+    <div class="calc-box">
+        <div class="calc-head"><b>🧮 Calcular transporte + instalación</b><button class="x" onclick="closeCalcServ()">×</button></div>
+        <div class="calc-body">
+            <p class="calc-hint">Pon los datos de la obra y las tarifas. El sistema calcula el costo real para que el transporte y la instalación queden justos. Las tarifas quedan guardadas para la próxima.</p>
+            <div class="calc-sec">🚗 Transporte (combustible + peajes)</div>
+            <div class="calc-grid">
+                <label>Distancia ida (km)<input type="number" id="cs-km" min="0" step="0.1" oninput="calcRecalc()"></label>
+                <label>Rendimiento (km por galón)<input type="number" id="cs-rend" min="0" step="0.1" oninput="calcRecalc()"></label>
+                <label>Precio del galón (RD$)<input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()"></label>
+                <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
+            </div>
+            <label class="calc-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
+            <div class="calc-sec">🏨 Hospedaje (si se queda a dormir)</div>
+            <div class="calc-grid">
+                <label>Noches<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
+                <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
+                <label>Costo por noche (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
+            </div>
+            <div class="calc-sec">🔧 Instalación</div>
+            <div class="calc-grid">
+                <label>Días de instalación<input type="number" id="cs-dias" min="0" step="0.5" oninput="calcRecalc()"></label>
+                <label>Costo por día (RD$)<input type="number" id="cs-costodia" min="0" step="0.01" oninput="calcRecalc()"></label>
+            </div>
+            <div class="calc-sec">Ajuste</div>
+            <div class="calc-grid">
+                <label>Margen / imprevistos (%)<input type="number" id="cs-margen" min="0" step="1" oninput="calcRecalc()"></label>
+            </div>
+            <div class="calc-desglose" id="cs-desglose"></div>
+        </div>
+        <div class="calc-foot">
+            <button class="cancel" onclick="closeCalcServ()">Cancelar</button>
+            <button class="usar" onclick="calcUsar()">Usar este monto</button>
         </div>
     </div>
 </div>
