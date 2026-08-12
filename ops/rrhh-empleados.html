@@ -118,8 +118,9 @@
                 <input type="date" id="f-ingreso">
             </div>
             <div>
-                <label>Sueldo base (opcional)</label>
-                <input type="number" id="f-sueldo" min="0" step="0.01" placeholder="RD$">
+                <label>Sueldo base mensual (opcional)</label>
+                <input type="number" id="f-sueldo" min="0" step="0.01" placeholder="RD$" oninput="actualizarCostoPreview()">
+                <div id="f-costo-preview" class="hint" style="margin-top:4px"></div>
             </div>
         </div>
         <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <a href="rrhh-catalogos.html" target="_blank" style="color:var(--artal-blue);font-weight:bold;">Catálogos</a> (se abre en otra pestaña) y vuelve aquí.</p>
@@ -153,7 +154,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { requirePin } from './pin-gate.js';
     import { db, storage } from './firebase-config.js';
-    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
     const usuario = await requireAuth([]);
@@ -169,6 +170,31 @@
     // Un empleado puede tener varios cargos (cargoNombres); compat. con el campo viejo cargoNombre.
     const cargosTexto = (e) => Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || '');
     const cargosIdsDe = (e) => Array.isArray(e.cargoIds) ? e.cargoIds : (e.cargoId ? [e.cargoId] : []);
+
+    // ---- Costo laboral real (para costear obras) ----------------------------------------------
+    // Reusa las tasas de Nómina (rrhhConfig/nomina). Sobre el sueldo bruto la empresa paga ENCIMA:
+    // aportes patronales (AFP+SFS+SRL) + INFOTEP + regalía (doble sueldo, 1/12) + provisión de cesantía.
+    // El ISR y la TSS del empleado NO se suman: salen de adentro del sueldo, no son costo extra.
+    // Divisor de días fijo (23.83, estándar de ley) → costo por día estable para cotizar.
+    const COSTO_DEFAULTS = { afpPat: 7.10, sfsPat: 7.09, srlPat: 1.15, topeAfp: 0, topeSfs: 0, infotepPat: 1.00, regaliaOn: true, cesantiaDiasAnio: 21, vacacionesDiasAnio: 0, diaDivisor: 23.83 };
+    let costoCfg = Object.assign({}, COSTO_DEFAULTS);
+    getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => { if (s.exists()) costoCfg = Object.assign({}, COSTO_DEFAULTS, s.data()); render(); }).catch(() => { });
+    function costoLaboral(sueldoMes) {
+        const s = Number(sueldoMes) || 0;
+        if (s <= 0) return { mes: 0, dia: 0, cargas: 0, afp: 0, sfs: 0, srl: 0, infotep: 0, regalia: 0, cesantia: 0, vac: 0 };
+        const c = costoCfg, div = c.diaDivisor > 0 ? c.diaDivisor : 23.83;
+        const baseAfp = c.topeAfp > 0 ? Math.min(s, c.topeAfp) : s;
+        const baseSfs = c.topeSfs > 0 ? Math.min(s, c.topeSfs) : s;
+        const afp = baseAfp * c.afpPat / 100, sfs = baseSfs * c.sfsPat / 100, srl = baseSfs * c.srlPat / 100;
+        const infotep = s * (c.infotepPat || 0) / 100;
+        const regalia = c.regaliaOn ? s / 12 : 0;
+        const cesantia = c.cesantiaDiasAnio > 0 ? (c.cesantiaDiasAnio * (s / div)) / 12 : 0;
+        const vac = c.vacacionesDiasAnio > 0 ? (c.vacacionesDiasAnio * (s / div)) / 12 : 0;
+        const cargas = afp + sfs + srl + infotep + regalia + cesantia + vac;
+        const mes = s + cargas;
+        return { mes, dia: mes / div, cargas, afp, sfs, srl, infotep, regalia, cesantia, vac };
+    }
+    const fmtRD = (n) => 'RD$' + (Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
     let empleados = [];
     let cargos = [], departamentos = [], sucursales = [];
@@ -291,6 +317,7 @@
         const meta = [cargosTexto(e), e.departamentoNombre, e.sucursalNombre].filter(Boolean).join(' · ');
         const nDocs = Array.isArray(e.documentos) ? e.documentos.length : 0;
         const extra = [e.cedula ? '🪪 ' + esc(e.cedula) : '', e.telefono ? '📞 ' + esc(e.telefono) : '', e.fechaIngreso ? 'Ingreso: ' + esc(fmtFecha(e.fechaIngreso)) : '', nDocs ? '📎 ' + nDocs + ' doc' + (nDocs === 1 ? '' : 's') : ''].filter(Boolean).join('  ·  ');
+        const costo = e.sueldoBase ? costoLaboral(e.sueldoBase) : null;
         return `
         <div class="order-card emp-card">
             <span class="avatar">${esc(iniciales(e.nombre))}</span>
@@ -298,6 +325,7 @@
                 <b>${esc(e.nombre) || 'Sin nombre'}</b> <span class="estado ${estado}">${estado}</span>
                 ${meta ? `<div class="meta">${esc(meta)}</div>` : ''}
                 ${extra ? `<div class="meta">${extra}</div>` : ''}
+                ${costo ? `<div class="meta">💵 Sueldo <b>${fmtRD(e.sueldoBase)}/mes</b> · Costo real <b>${fmtRD(costo.dia)}/día</b> (${fmtRD(costo.mes)}/mes con cargas)</div>` : ''}
             </div>
             <div class="row-actions">
                 <button class="b-editar" onclick="editar('${e.id}')">✏ Editar</button>
@@ -308,10 +336,19 @@
         </div>`;
     }
 
+    window.actualizarCostoPreview = function () {
+        const box = document.getElementById('f-costo-preview');
+        const s = Number(document.getElementById('f-sueldo').value) || 0;
+        if (s <= 0) { box.textContent = ''; return; }
+        const k = costoLaboral(s);
+        box.innerHTML = `Costo real ≈ <b>${fmtRD(k.mes)}/mes</b> · <b>${fmtRD(k.dia)}/día</b> <span style="color:#8a93a0">(sueldo + ${((k.cargas / s) * 100).toFixed(0)}% cargas)</span>`;
+    };
+
     function limpiar() {
         editingId = null;
         ['f-nombre', 'f-cedula', 'f-telefono', 'f-correo', 'f-ingreso', 'f-sueldo', 'f-direccion', 'f-notas'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
+        actualizarCostoPreview();
         refreshSelects();
         renderCargos([]);
     }
@@ -327,6 +364,7 @@
         document.getElementById('f-correo').value = e.correo || '';
         document.getElementById('f-ingreso').value = e.fechaIngreso || '';
         document.getElementById('f-sueldo').value = e.sueldoBase != null ? e.sueldoBase : '';
+        actualizarCostoPreview();
         document.getElementById('f-direccion').value = e.direccion || '';
         document.getElementById('f-notas').value = e.notas || '';
         document.getElementById('f-departamento').value = e.departamentoId || '';
@@ -346,6 +384,8 @@
         const sucursalId = document.getElementById('f-sucursal').value;
         const nombreDe = (arr, id) => (arr.find(x => x.id === id) || {}).nombre || '';
         const sueldoRaw = document.getElementById('f-sueldo').value;
+        const sueldoNum = sueldoRaw ? Number(sueldoRaw) : null;
+        const kCosto = costoLaboral(sueldoNum || 0);
         const datos = {
             nombre,
             cedula: document.getElementById('f-cedula').value.trim(),
@@ -353,7 +393,9 @@
             correo: document.getElementById('f-correo').value.trim(),
             direccion: document.getElementById('f-direccion').value.trim(),
             fechaIngreso: document.getElementById('f-ingreso').value || '',
-            sueldoBase: sueldoRaw ? Number(sueldoRaw) : null,
+            sueldoBase: sueldoNum,
+            costoMesReal: sueldoNum ? Math.round(kCosto.mes * 100) / 100 : null,
+            costoDiaReal: sueldoNum ? Math.round(kCosto.dia * 100) / 100 : null,
             notas: document.getElementById('f-notas').value.trim(),
             cargoIds, cargoNombres,
             departamentoId, departamentoNombre: nombreDe(departamentos, departamentoId),
