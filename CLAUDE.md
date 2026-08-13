@@ -282,14 +282,25 @@ estilo simplificado del CAD.
     tipos), y el de **abajo** al borde real del panel de vidrio (`getPanelRects(state)[1]+[3]`)
     — en ambos casos con el mismo margen `gap=4` que separa el resto de los elementos del
     dibujo, para que el paño quede pegado a la ventana/puerta.
-  - **Bug real: el texto de la medida "ancho" quedaba casi pegado al paño de arriba.**
-    `dimLineH` dibuja el TEXTO por ENCIMA de su línea principal (`textY = y - textGap`, con
-    `textGap=2.6` — el texto queda más cerca del paño que la línea de cota en sí), pero el paño
-    de arriba se separaba usando el mismo `gap=4` chico que el resto — el texto terminaba a solo
-    ~1.4 unidades del borde del paño, prácticamente tocándolo (reportado por el usuario: "el
-    ancho se marca por encima del dibujo"). Se usa un `topGap=9` propio (más generoso, pensado
-    para el texto y no solo la línea) solo para separar el paño de arriba — el `gap=4` del resto
-    (paño de abajo, vista de planta) no cambia, no tenía el mismo problema.
+  - **Medida de ancho reubicada AL FINAL del compuesto (no arriba, entre la ventana y el paño de
+    arriba).** Iteración real con el usuario: un primer intento dejó la medida de ancho en su
+    lugar de siempre (arriba) pero con más aire respecto al paño de arriba (`topGap=9`, ya que
+    `dimLineH` dibuja el TEXTO por encima de su línea principal — `textY = y - textGap`, más
+    cerca del paño que la línea en sí — y el `gap=4` normal dejaba el texto casi tocando el
+    borde del paño). El usuario pidió ir más lejos: la medida de ancho **no** va arriba en
+    absoluto cuando hay paños — va **al final**, entre el contenido de abajo (paño abajo, o la
+    ventana si no hay) y la vista de planta reubicada (o el borde inferior si el tipo no tiene
+    vista de planta). Implementación: `renderSVG` deja de dibujar la medida de ancho cuando
+    `state.panoArriba || state.panoAbajo` (condición agregada al `if (state.ancho > 0)` de la
+    cola de `renderSVG`) — `composePanos` la dibuja de cero, una sola vez, con `dimLineH` en la
+    posición nueva (`anchoEdgeY = elevBottom + botH`, línea en `anchoEdgeY + ANCHO_GAP` con
+    `ANCHO_GAP=9` igual criterio que antes). `ANCHO_RESERVED_H=18` reserva el espacio de
+    línea+texto y empuja la vista de planta hacia abajo esa misma cantidad (sumado al `botH` que
+    ya la corría por el paño de abajo) — antes solo se corría por `botH`. Como consecuencia, el
+    paño de **arriba** ya no necesita el `topGap` especial (no hay medida de ancho ahí con la que
+    chocar): vuelve a anclarse con el `gap=4` normal, pero contra `panelRect[1]` (el `by` real
+    del panel base) en vez del viejo punto de referencia `y=4` — más directo y ya no depende de
+    dónde estaba la medida de ancho antes de moverse.
   - **Vista de planta reubicada al final**: en `win_abat`/`win_ob`/`door_abat` la vista de
     planta (`drawPlanView`, marcada con `<g class="plan-view-layer">` en sus 3 sitios de
     llamado) se dibuja de fábrica pegada al borde inferior del viewBox — si el paño de abajo se

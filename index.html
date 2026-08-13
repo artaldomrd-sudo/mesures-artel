@@ -3858,27 +3858,36 @@
 
         // El viewBox original deja un margen superior amplio (pensado para el espacio en blanco
         // antes de la ventana, sin paño). Si se ancla el paño de arriba a ese margen (vbY) queda
-        // "flotando" separado de la ventana. En vez de eso se ancla al mismo punto de referencia
-        // que ya usa la medida "ancho" (texto fijo en y=4 para todos los tipos): el paño queda
-        // arriba de esa medida, con `topGap` de aire. Ojo: el TEXTO de `dimLineH` sobresale por
-        // ENCIMA de su línea principal (queda en `y - textGap`, más cerca del paño que la línea
-        // en sí) — usar el mismo `gap` chico (4) que separa el paño de abajo dejaba el texto casi
-        // pegado al borde del paño (reportado por el usuario: "el ancho se marca por encima del
-        // dibujo"). `topGap` es más generoso, calculado para el TEXTO, no solo la línea.
-        const ANCHO_LABEL_Y = 4;
-        const topGap = 9;
-        const topBoundary = state.panoArriba ? (ANCHO_LABEL_Y - topGap - PANO_BAND_H) : vbY;
+        // "flotando" separado de la ventana. En vez de eso se ancla al borde real del panel base
+        // (`panelRect[1]`, el mismo `by` que ya usa `getPanelRects`), con el mismo `gap` chico
+        // que separa el resto de los elementos — snug contra la ventana.
+        const topBoundary = state.panoArriba ? (panelRect[1] - gap - PANO_BAND_H) : vbY;
         const botH = state.panoAbajo ? PANO_BAND_H + gap : 0;
         const elevBottom = vbY + elevH;
+        // Medida de ancho: reubicada AL FINAL (entre el contenido de abajo — paño abajo, o la
+        // propia ventana si no hay — y la vista de planta) en vez de arriba, entre la ventana y
+        // el paño de arriba, donde antes quedaba apretada contra el paño (pedido explícito del
+        // usuario: "debe aparecer debajo entre la parte de abajo y la vista superior"). Por eso
+        // `renderSVG` ya NO dibuja la medida de ancho cuando hay paños — se dibuja acá, una sola
+        // vez, en la posición nueva. `ANCHO_GAP` (igual que el `topGap` que se usaba antes para
+        // el paño de arriba) le da aire al TEXTO de `dimLineH`, que sobresale más allá de su
+        // línea principal. `ANCHO_RESERVED_H` es el espacio total que ocupa línea+texto, para
+        // correr la vista de planta hacia abajo y que no se superpongan.
+        const ANCHO_GAP = 9;
+        const ANCHO_RESERVED_H = state.ancho > 0 ? 18 : 0;
         const planReservedH = planViewFrag ? (vbH - elevH) + gap : 0;
         const newVbY = topBoundary;
-        const newVbH = (elevBottom + botH + planReservedH) - newVbY;
+        const newVbH = (elevBottom + botH + ANCHO_RESERVED_H + planReservedH) - newVbY;
         const newAttrs = attrs.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${newVbY.toFixed(1)} ${vbW} ${newVbH.toFixed(1)}"`);
 
         let out = `<svg${newAttrs}>`;
-        if (state.panoArriba) out += `<g transform="translate(0, ${(ANCHO_LABEL_Y - topGap - PANO_BAND_H).toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect, isFlipped)}</g>`;
+        if (state.panoArriba) out += `<g transform="translate(0, ${(panelRect[1] - gap - PANO_BAND_H).toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect, isFlipped)}</g>`;
         out += inner;
         if (state.panoAbajo) out += `<g transform="translate(0, ${(elevBottom + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect, isFlipped)}</g>`;
+        if (state.ancho > 0) {
+            const anchoEdgeY = elevBottom + botH;
+            out += dimLineH(panelRect[0], panelRect[0] + panelRect[2], anchoEdgeY + ANCHO_GAP, anchoEdgeY, `${state.ancho} mm`, 7);
+        }
         // Medida total (ventana + paños) del lado izquierdo, con su propia línea de un extremo
         // (tope del paño de arriba, o de la ventana si no hay) al otro (tope del paño de abajo,
         // o de la ventana si no hay) — para no confundirla con la medida individual de cada
@@ -3891,7 +3900,7 @@
             out += dimLineV(totalTop, totalBottom, panelRect[0] - 10, panelRect[0], `${totalAlto} mm`, 7);
         }
         if (planViewFrag) {
-            const planDelta = state.panoAbajo ? botH : 0;
+            const planDelta = botH + ANCHO_RESERVED_H;
             out += planDelta ? `<g transform="translate(0, ${planDelta.toFixed(1)})">${planViewFrag}</g>` : planViewFrag;
         }
         out += '</svg>';
@@ -5529,7 +5538,9 @@
 
         if (!isCAD) {
             const dimPr = getPanelRects(state)[0];
-            if (state.ancho > 0) {
+            // Con paño(s) adosado(s), la medida de ancho se dibuja en `composePanos` (reubicada
+            // al final, no acá arriba) — nunca las dos a la vez.
+            if (state.ancho > 0 && !(state.panoArriba || state.panoAbajo)) {
                 if (dimPr) svg += dimLineH(dimPr[0], dimPr[0] + dimPr[2], 4, dimPr[1], `${state.ancho} mm`, 7);
                 else svg += `<text x="50" y="4" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
             }
