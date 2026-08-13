@@ -1982,9 +1982,9 @@
         // (F-03) sin dato aún. Depreciación estimada = 25% (DGII cat. 2) del valor en libros actual del
         // módulo de Activos (F-01: 791,989 → ~197,997/año; F-02: 744,900 → ~186,225/año). Revisar cada año.
         // Marbete/GPS se sumarán a fijoAnual cuando lleguen.
-        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997, cargaKg: 1500, nota: 'Carga 1.5 t' },
-        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225, cargaKg: 800, nota: '' },
-        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 0, depreAnual: 0, cargaKg: 1000, nota: 'Gerencia · medidas/supervisión' },
+        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997, nota: 'Carga 1.5 t' },
+        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225, nota: '' },
+        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 0, depreAnual: 0, nota: 'Gerencia · medidas/supervisión' },
     ];
     // Recorridos frecuentes. km = distancia de IDA (el ×2 lo aplica "ida y vuelta"). peaje = total ida y vuelta.
     // Peaje de la autopista de Samaná ~850 por tramo (ida y vuelta 1700); las rutas desde Las Terrenas suman
@@ -2001,7 +2001,7 @@
     ];
     const calcVehById = (id) => CALC_VEHICULOS.find(x => x.id === id) || null;
     // costoNoche = hotel por persona/noche; costoComida = alimentación (desayuno+comida+cena) por persona/día.
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, materiales: 0, elemPorDia: 5, aluFactor: 6, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, materiales: 0, elemPorDia: 5, margenPct: 0 });
     const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
     function calcLlenarSelects(vehSel, rutaSel) {
         const sv = document.getElementById('cs-veh');
@@ -2031,7 +2031,6 @@
         document.getElementById('cs-diascomida').value = c.diasComida || '';
         document.getElementById('cs-costocomida').value = c.costoComida || '';
         document.getElementById('cs-elemdia').value = c.elemPorDia || 5;
-        document.getElementById('cs-alufactor').value = c.aluFactor || 6;
         document.getElementById('cs-dias').value = c.dias || '';
         document.getElementById('cs-costodia').value = c.costoDia || '';
         document.getElementById('cs-materiales').value = c.materiales || '';
@@ -2165,47 +2164,10 @@
             jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })), viajes: num('cs-viajes') || 1,
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
             peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
-            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'), elemPorDia: num('cs-elemdia') || 5, aluFactor: num('cs-alufactor') || 6,
+            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'), elemPorDia: num('cs-elemdia') || 5,
             dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), margenPct: num('cs-margen')
         };
     }
-    // ---- Estimador de peso de materiales → viajes ----
-    // Vidrio: 2.5 kg por m² por cada mm de espesor (densidad del vidrio). Aluminio: factor por m² (editable,
-    // aprox. hasta tener el peso lineal real de cada perfilería). Espesores: "10mm"→10, "3+3"→6, etc.
-    const calcEspesorMm = (e) => {
-        const s = String(e || '').toLowerCase();
-        if (s.includes('+')) return s.split('+').reduce((a, x) => a + (parseFloat(x) || 0), 0);
-        const m = s.match(/([\d.]+)\s*mm/); if (m) return parseFloat(m[1]) || 0;
-        const n = parseFloat(s); return isNaN(n) ? 0 : n;
-    };
-    function calcPesoMateriales(aluFactor) {
-        const ids = (typeof czIds === 'function') ? czIds() : [];
-        let vidrioKg = 0, m2 = 0, n = 0;
-        ids.forEach(id => {
-            const s = cardsState[id] || {};
-            if (s.categoria === 'cortina') return;   // tela/PVC, sin vidrio ni aluminio
-            const w = (Number(s.ancho) || 0) / 1000, h = (Number(s.alto) || 0) / 1000, cant = Number(s.cantidad) || 1;
-            if (w <= 0 || h <= 0) return;
-            const area = w * h * cant;
-            const mm = calcEspesorMm(s.espesor) || 6;
-            vidrioKg += area * mm * 2.5;
-            m2 += area; n += cant;
-        });
-        const aluKg = m2 * (aluFactor > 0 ? aluFactor : 6);
-        return { vidrioKg, aluKg, totalKg: vidrioKg + aluKg, m2, n };
-    }
-    window.calcEstimarViajes = function () {
-        const aluFactor = Number(document.getElementById('cs-alufactor').value) || 6;
-        const p = calcPesoMateriales(aluFactor);
-        const info = document.getElementById('cs-peso-info');
-        if (p.totalKg <= 0) { info.textContent = 'No hay ítems con medidas para estimar el peso.'; return; }
-        const veh = calcVehById(document.getElementById('cs-veh').value);
-        const carga = (veh && veh.cargaKg > 0) ? veh.cargaKg : 1500;
-        const viajes = Math.max(1, Math.ceil(p.totalKg / carga));
-        document.getElementById('cs-viajes').value = viajes;
-        info.innerHTML = '≈ <b>' + Math.round(p.totalKg).toLocaleString('es-DO') + ' kg</b> (vidrio ' + Math.round(p.vidrioKg).toLocaleString('es-DO') + ' + aluminio ' + Math.round(p.aluKg).toLocaleString('es-DO') + ') · ' + p.m2.toFixed(1) + ' m² → <b>' + viajes + ' viaje(s)</b> de ' + carga.toLocaleString('es-DO') + ' kg';
-        calcRecalc();
-    };
     function calcTotales(v) {
         const viajes = v.viajes > 0 ? v.viajes : 1;
         const kmTot = v.kmIda * (v.idaVuelta ? 2 : 1) * viajes;
@@ -6639,14 +6601,9 @@
                 <label>Rendimiento (km por galón)<input type="number" id="cs-rend" min="0" step="0.1" oninput="calcRecalc()"></label>
                 <label>Precio del galón (RD$)<input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()"></label>
                 <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
-                <label>Viajes a la obra<input type="number" id="cs-viajes" min="1" step="1" value="1" oninput="calcRecalc()" title="Medición + instalación + retoques, o viajes extra por volumen de carga"></label>
+                <label>Viajes a la obra<select id="cs-viajes" onchange="calcRecalc()" title="Cantidad de viajes que estimas por experiencia (medición, instalación, retoques o por volumen de carga)"><option value="1">1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option><option value="4">4 viajes</option><option value="5">5 viajes</option><option value="6">6 viajes</option><option value="7">7 viajes</option><option value="8">8 viajes</option><option value="9">9 viajes</option><option value="10">10 viajes</option></select></label>
             </div>
             <label class="calc-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
-            <div class="cs-sugerir" style="margin-top:8px">
-                <label class="cs-sug-rate">kg alum/m²<input type="number" id="cs-alufactor" min="0" step="0.5" value="6"></label>
-                <button type="button" class="cs-eq-btn" onclick="calcEstimarViajes()">⚖️ Estimar peso → viajes</button>
-                <span id="cs-peso-info" class="cs-sug-info"></span>
-            </div>
             <div class="calc-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
             <div class="calc-grid">
                 <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
