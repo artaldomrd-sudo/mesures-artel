@@ -269,11 +269,26 @@ estilo simplificado del CAD.
   envuelve con `composePanos(id, state, finished, viewBox)`, que:
   - Extrae `viewBox`/contenido del `<svg>` base con una regex simple (todos los tipos target
     comparten el mismo rango horizontal de coordenadas, así que no hace falta reescalar nada).
-  - Agrega una banda de alto fijo (`PANO_BAND_H = 34`) por cada paño activo, generada por
-    `buildPanoFragment(uid, side, pano, panelRect)` — su propio `glassDefs`/gradiente con un uid
-    distinto (`${uid}arriba`/`${uid}abajo`) y su propio `applyFinish(frag, pano.color_perfil,
+  - Agrega una banda por cada paño activo, generada por `buildPanoFragment(uid, side, pano,
+    panelRect, isFlipped, bandH)` — su propio `glassDefs`/gradiente con un uid distinto
+    (`${uid}arriba`/`${uid}abajo`) y su propio `applyFinish(frag, pano.color_perfil,
     pano.color_ral)` **antes** de pegarse (nunca aplicar `applyFinish` una sola vez sobre el
     conjunto ya unido — mezclaría el acabado del paño con el del ítem base).
+    **Alto de la banda PROPORCIONAL, no fijo** (`panoBandH(pano, panelRect, state)`, bug real
+    reportado con fotos reales): desde que el panel base pasa a dibujarse a proporción real
+    (`PROP_BOX`/`fitPropRect`, ver más arriba), un paño con alto SIEMPRE fijo (`PANO_BAND_H=34`
+    de antes) quedaba desproporcionado frente al panel base — ej. un paño de 400mm se veía casi
+    tan alto como un panel base de 1600mm (proporción real 4:1, mostrada como ~1.8:1). La banda
+    ahora usa la MISMA escala (unidades de viewBox por mm) que ya usó `fitPropRect` para el
+    panel base — derivada de `panelRect[2]` (el ancho ya ajustado) contra el `ancho` real, ya
+    que el paño siempre comparte ese mismo ancho — multiplicada por el `alto` real del paño.
+    Piso de 12 unidades (mismo criterio que el piso del 25% de `fitPropRect`) para que un paño
+    muy bajo en relación al panel base no colapse a una línea ilegible. `bandHArriba`/
+    `bandHAbajo` se calculan una vez en `composePanos` (arriba y abajo pueden tener alturas de
+    banda distintas, según su propio `alto`) y reemplazan la constante fija en TODOS los cálculos
+    de posición (`topBoundary`, `botH`, el `translate` de cada paño, la medida total a la
+    izquierda) — la etiqueta "F" también reduce su `font-size` proporcionalmente
+    (`Math.min(9, bandH*0.35)`) para no desbordar una banda muy baja.
   - Traslada el contenido con `<g transform="translate(0, Y)">` (nunca
     `preserveAspectRatio="none"` con un viewBox reescalado): así no se distorsiona el dibujo
     base, ni siquiera en los tipos que ya combinan elevación + vista de planta en el mismo

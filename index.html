@@ -3808,9 +3808,24 @@
     // Se compone DESPUÉS de que renderSVG ya terminó el dibujo del ítem base (mismo ancho,
     // trasladado verticalmente, sin reescalar nada) para no distorsionar tipos que ya
     // combinan elevación + vista de planta en un mismo viewBox (win_abat/win_ob/door_abat).
-    const PANO_BAND_H = 34;
+    // Alto de la banda del paño: PROPORCIONAL a su `alto` real (bug real, reportado con fotos
+    // reales por el usuario: desde que el panel base pasó a dibujarse a proporción real —
+    // PROP_BOX/fitPropRect — un paño con alto FIJO de 34 unidades sin importar su medida real
+    // quedaba visualmente desproporcionado frente al panel base, ej. un paño de 400mm se veía
+    // casi tan alto como un panel base de 1600mm). `panoBandH(pano, panelRect, state)` usa la
+    // MISMA escala (unidades del viewBox por mm) que ya usó `fitPropRect` para el panel base —
+    // derivada de `panelRect[2]` (el ancho ya ajustado) contra el `ancho` real, ya que el paño
+    // siempre comparte ese mismo ancho — así el paño escala en la misma proporción que el
+    // panel base, no un tamaño fijo. Piso de 12 unidades para que un paño muy bajo en relación
+    // al panel base no colapse a una línea ilegible (mismo criterio que el piso del 25% de
+    // `fitPropRect`).
+    function panoBandH(pano, panelRect, state) {
+        const anchoReal = parseInt(state.ancho) || 0;
+        const scale = anchoReal > 0 ? panelRect[2] / anchoReal : 1;
+        return Math.max((parseInt(pano.alto) || 0) * scale, 12);
+    }
 
-    function buildPanoFragment(uid, side, pano, panelRect, isFlipped) {
+    function buildPanoFragment(uid, side, pano, panelRect, isFlipped, bandH) {
         const [bx, , bw] = panelRect;
         const puid = `${uid}${side}`;
         const glassOnly = pano.fijacion === 'sin_marco';
@@ -3821,14 +3836,15 @@
         // cuando la apertura está "A la derecha" — si no, el paño se ve desde una perspectiva
         // distinta a la ventana (el borde de espesor queda del lado contrario). El texto ("F" y
         // la medida) NUNCA se voltea, para que siga siendo legible.
-        const panelSvg = panelFn(puid, bx, 0, bw, PANO_BAND_H);
+        const panelSvg = panelFn(puid, bx, 0, bw, bandH);
         frag += isFlipped ? `<g transform="scale(-1, 1) translate(-100, 0)">${panelSvg}</g>` : panelSvg;
-        frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(PANO_BAND_H / 2 + 3).toFixed(1)}" font-family="Arimo" font-size="9" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
+        const fFontSize = Math.min(9, bandH * 0.35);
+        frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(bandH / 2 + fFontSize * 0.35).toFixed(1)}" font-family="Arimo" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
         if (pano.alto > 0) {
             // Misma fórmula (borde real del panel + margen) que usa la medida "alto" del ítem
             // base — al compartir el mismo panelRect, ambas líneas quedan alineadas en la misma
             // columna sin importar el tipo.
-            frag += dimLineV(0, PANO_BAND_H, bx + bw + 4, bx + bw, `${pano.alto} mm`, 7);
+            frag += dimLineV(0, bandH, bx + bw + 4, bx + bw, `${pano.alto} mm`, 7);
         }
         return applyFinish(frag, pano.color_perfil, pano.color_ral);
     }
@@ -3868,8 +3884,10 @@
         // "flotando" separado de la ventana. En vez de eso se ancla al borde real del panel base
         // (`panelRect[1]`, el mismo `by` que ya usa `getPanelRects`), con el mismo `gap` chico
         // que separa el resto de los elementos — snug contra la ventana.
-        const topBoundary = state.panoArriba ? (panelRect[1] - gap - PANO_BAND_H) : vbY;
-        const botH = state.panoAbajo ? PANO_BAND_H + gap : 0;
+        const bandHArriba = state.panoArriba ? panoBandH(state.panoArriba, panelRect, state) : 0;
+        const bandHAbajo = state.panoAbajo ? panoBandH(state.panoAbajo, panelRect, state) : 0;
+        const topBoundary = state.panoArriba ? (panelRect[1] - gap - bandHArriba) : vbY;
+        const botH = state.panoAbajo ? bandHAbajo + gap : 0;
         const elevBottom = vbY + elevH;
         // Medida de ancho: reubicada AL FINAL (entre el contenido de abajo — paño abajo, o la
         // propia ventana si no hay — y la vista de planta) en vez de arriba, entre la ventana y
@@ -3891,9 +3909,9 @@
         const newAttrs = attrs.replace(/viewBox="[^"]*"/, `viewBox="${vbX} ${newVbY.toFixed(1)} ${vbW} ${newVbH.toFixed(1)}"`);
 
         let out = `<svg${newAttrs}>`;
-        if (state.panoArriba) out += `<g transform="translate(0, ${(panelRect[1] - gap - PANO_BAND_H).toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect, isFlipped)}</g>`;
+        if (state.panoArriba) out += `<g transform="translate(0, ${(panelRect[1] - gap - bandHArriba).toFixed(1)})">${buildPanoFragment(id, 'arriba', state.panoArriba, panelRect, isFlipped, bandHArriba)}</g>`;
         out += inner;
-        if (state.panoAbajo) out += `<g transform="translate(0, ${(elevBottom + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect, isFlipped)}</g>`;
+        if (state.panoAbajo) out += `<g transform="translate(0, ${(elevBottom + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect, isFlipped, bandHAbajo)}</g>`;
         if (state.ancho > 0) {
             const anchoEdgeY = elevBottom + botH;
             out += dimLineH(panelRect[0], panelRect[0] + panelRect[2], anchoEdgeY + ANCHO_GAP, anchoEdgeY, `${state.ancho} mm`, 7, ANCHO_TEXT_GAP);
@@ -3906,7 +3924,7 @@
         const totalAlto = (parseInt(state.alto) || 0) + (state.panoArriba ? (parseInt(state.panoArriba.alto) || 0) : 0) + (state.panoAbajo ? (parseInt(state.panoAbajo.alto) || 0) : 0);
         if (totalAlto > 0) {
             const totalTop = state.panoArriba ? newVbY : panelRect[1];
-            const totalBottom = state.panoAbajo ? (elevBottom + gap + PANO_BAND_H) : elevBottom;
+            const totalBottom = state.panoAbajo ? (elevBottom + gap + bandHAbajo) : elevBottom;
             out += dimLineV(totalTop, totalBottom, panelRect[0] - 10, panelRect[0], `${totalAlto} mm`, 7);
         }
         if (planViewFrag) {
