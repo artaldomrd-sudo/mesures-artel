@@ -282,6 +282,14 @@ estilo simplificado del CAD.
     tipos), y el de **abajo** al borde real del panel de vidrio (`getPanelRects(state)[1]+[3]`)
     — en ambos casos con el mismo margen `gap=4` que separa el resto de los elementos del
     dibujo, para que el paño quede pegado a la ventana/puerta.
+  - **Bug real: el texto de la medida "ancho" quedaba casi pegado al paño de arriba.**
+    `dimLineH` dibuja el TEXTO por ENCIMA de su línea principal (`textY = y - textGap`, con
+    `textGap=2.6` — el texto queda más cerca del paño que la línea de cota en sí), pero el paño
+    de arriba se separaba usando el mismo `gap=4` chico que el resto — el texto terminaba a solo
+    ~1.4 unidades del borde del paño, prácticamente tocándolo (reportado por el usuario: "el
+    ancho se marca por encima del dibujo"). Se usa un `topGap=9` propio (más generoso, pensado
+    para el texto y no solo la línea) solo para separar el paño de arriba — el `gap=4` del resto
+    (paño de abajo, vista de planta) no cambia, no tenía el mismo problema.
   - **Vista de planta reubicada al final**: en `win_abat`/`win_ob`/`door_abat` la vista de
     planta (`drawPlanView`, marcada con `<g class="plan-view-layer">` en sus 3 sitios de
     llamado) se dibuja de fábrica pegada al borde inferior del viewBox — si el paño de abajo se
