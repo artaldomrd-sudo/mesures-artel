@@ -1977,9 +1977,14 @@
     // Flota de ARTAL. rendKmGal = km por galón aproximado (real, editable). precioGal = precio del combustible
     // que usa (gasoil/gasolina, editable). mantCadaKm/mantCosto = costo de desgaste/mantenimiento por tramo.
     const CALC_VEHICULOS = [
-        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, nota: 'Carga 1.5 t' },
-        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, nota: '' },
-        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, nota: 'Gerencia · medidas/supervisión' },
+        // Costos fijos anuales (seguro + depreciación) → se prorratean sobre 365 días = costo fijo por día
+        // que el vehículo está en la obra. Póliza general RD$139,000 cubre F-01 + F-02 (69,500 c/u); Hilux
+        // (F-03) sin dato aún. Depreciación estimada = 25% (DGII cat. 2) del valor en libros actual del
+        // módulo de Activos (F-01: 791,989 → ~197,997/año; F-02: 744,900 → ~186,225/año). Revisar cada año.
+        // Marbete/GPS se sumarán a fijoAnual cuando lleguen.
+        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997, nota: 'Carga 1.5 t' },
+        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225, nota: '' },
+        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 0, depreAnual: 0, nota: 'Gerencia · medidas/supervisión' },
     ];
     // Recorridos frecuentes. km = distancia de IDA (el ×2 lo aplica "ida y vuelta"). peaje = total ida y vuelta.
     // Peaje de la autopista de Samaná ~850 por tramo (ida y vuelta 1700); las rutas desde Las Terrenas suman
@@ -2175,9 +2180,15 @@
         const alimentacion = v.diasComida * (v.personas || 1) * v.costoComida;
         const instalacion = v.dias * v.costoDia;
         const materiales = v.materiales || 0;
-        const costo = combustible + mantenimiento + peajes + hotel + alimentacion + instalacion + materiales;
+        // Costos fijos del vehículo (seguro + depreciación) prorrateados sobre 365 días, por cada día que el
+        // vehículo está en la obra (mínimo 1 día si hay vehículo elegido, para no ignorar viajes de un día).
+        const fijoAnual = veh ? ((veh.seguroAnual || 0) + (veh.depreAnual || 0)) : 0;
+        const fijoDia = fijoAnual / 365;
+        const diasUso = v.dias > 0 ? v.dias : (veh ? 1 : 0);
+        const fijoVehiculo = fijoDia * diasUso;
+        const costo = combustible + mantenimiento + peajes + fijoVehiculo + hotel + alimentacion + instalacion + materiales;
         const total = costo * (1 + (v.margenPct || 0) / 100);
-        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, hotel, alimentacion, instalacion, materiales, costo, total };
+        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, hotel, alimentacion, instalacion, materiales, costo, total };
     }
     window.calcRecalc = function () {
         const v = calcLeer(), t = calcTotales(v);
@@ -2185,7 +2196,9 @@
         document.getElementById('cs-desglose').innerHTML =
             row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km' + (t.viajes > 1 ? ' · ' + t.viajes + ' viajes' : '') + ')', t.combustible) +
             (t.mantenimiento ? row('🛠️ Desgaste/mant. (RD$' + Math.round(t.mantPorKm) + '/km)', t.mantenimiento) : '') +
-            row('🛣️ Peajes' + (t.viajes > 1 ? ' (×' + t.viajes + ')' : ''), t.peajes) + row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
+            row('🛣️ Peajes' + (t.viajes > 1 ? ' (×' + t.viajes + ')' : ''), t.peajes) +
+            (t.fijoVehiculo ? row('🛡️ Fijos vehículo — seguro+depreciación (RD$' + Math.round(t.fijoDia) + '/día × ' + t.diasUso + ')', t.fijoVehiculo) : '') +
+            row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
             (t.materiales ? row('🧰 Materiales/consumibles', t.materiales) : '') +
             (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
             `<div class="cs-total"><span>Total transporte + instalación</span><span>${czFmt(t.total)}</span></div>`;
