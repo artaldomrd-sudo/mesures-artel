@@ -527,6 +527,7 @@
                     <div><label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = sin caja)</span></label><input type="number" id="editar-porcaja-${item.id}" min="0" step="1" value="${Number(item.porCaja) || 0}"></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
+                    <div><label>Existencia actual <span style="font-weight:normal;color:#999">(total de unidades)</span></label><input type="number" id="editar-cant-${item.id}" min="0" step="1" value="${Number(item.cantidad) || 0}"></div>
                     <div><label>Categoría</label><select id="editar-cat-${item.id}" onchange="onEditarCatChange('${item.id}')">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
@@ -1067,6 +1068,9 @@
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
         const porCaja = Number(document.getElementById('editar-porcaja-' + id).value) || 0;
+        const itemEd = allItems.find(it => it.id === id) || {};
+        const cantAnterior = Number(itemEd.cantidad) || 0;
+        const nuevaCant = Number(document.getElementById('editar-cant-' + id).value) || 0;
         const categoria = document.getElementById('editar-cat-' + id).value;
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         const sgEl = document.getElementById('editar-sg-' + id);
@@ -1078,7 +1082,18 @@
         const esSet = (document.getElementById('editar-esset-' + id) || {}).checked || false;
         const piezas = esSet ? leerPiezas('editar-piezas-' + id) : [];
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, porCaja, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, porCaja, cantidad: nuevaCant, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
+            // Si cambió la existencia a mano, lo dejamos registrado como ajuste (queda en el Historial).
+            if (nuevaCant !== cantAnterior) {
+                try {
+                    await addDoc(collection(db, 'movimientosInventario'), {
+                        itemId: id, itemTipo: tipo, itemColor: color || null,
+                        tipo: 'ajuste', cantidad: nuevaCant - cantAnterior,
+                        nota: 'Ajuste de existencia (' + cantAnterior + ' → ' + nuevaCant + ')',
+                        usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
+                    });
+                } catch (_) { }
+            }
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
