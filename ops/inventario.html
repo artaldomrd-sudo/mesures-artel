@@ -18,8 +18,12 @@
     .item-card.low { border-left-color: #e74c3c; }
     .item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
     .item-head b { color: var(--artal-blue); font-size: 15px; }
-    .item-qty { font-size: 20px; font-weight: bold; color: var(--artal-blue); }
+    .item-qty { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+    .item-qty .q-lbl { font-size: 10px; font-weight: 600; color: #9aa3ad; text-transform: uppercase; letter-spacing: .5px; }
+    .item-qty .q-num { font-size: 22px; font-weight: bold; color: var(--artal-blue); }
+    .item-card.low .item-qty .q-num { color: #e74c3c; }
     .item-qty .unidad { font-size: 12px; font-weight: normal; color: #888; }
+    .item-min { font-size: 12.5px; color: #5a6570; margin-top: 4px; }
     .item-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .item-actions button { padding: 9px 14px; border: none; border-radius: 7px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13px; }
     .btn-tomar { background: #e67e22; color: #fff; }
@@ -160,7 +164,9 @@
         <label id="nuevo-color-label">Color</label>
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
         <label>Unidad</label>
-        <input type="text" id="nuevo-unidad" placeholder="Ej: barras, unidades, galones">
+        <input type="text" id="nuevo-unidad" placeholder="Ej: tubos, cartuchos, barras, galones">
+        <label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = no viene en caja; ej. 12 o 24 tubos)</span></label>
+        <input type="number" id="nuevo-porcaja" value="0" min="0" step="1" placeholder="0">
         <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-esset" onchange="toggleSetNuevo()" style="width:auto"> 🧩 Es un <b>juego/set</b> (varias piezas: brocas, llaves Allen, puntas…)</label>
         <div id="nuevo-set-hint" style="display:none;font-size:12px;color:#b9770e;background:#fff8ec;border-radius:8px;padding:7px 10px;margin-top:6px;">El costo y el precio son <b>del juego completo</b>, no de una pieza suelta.</div>
         <div id="nuevo-set-box" style="display:none;background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
@@ -449,16 +455,22 @@
         const venta = Number(item.venta || 0);
         const margen = venta - costo;
         const margenPct = costo > 0 ? Math.round((margen / costo) * 100) : null;
+        const cant = Number(item.cantidad) || 0;
+        const porCaja = Number(item.porCaja) || 0;
+        const cajas = porCaja > 0 ? Math.floor(cant / porCaja) : 0;
+        const sueltos = porCaja > 0 ? cant % porCaja : 0;
         return `
         <div class="item-card ${low ? 'low' : ''}">
             <div class="item-head">
                 <b>${label}</b>
-                <span class="item-qty">${item.cantidad} <span class="unidad">${esc(item.unidad)}</span></span>
+                <span class="item-qty"><span class="q-lbl">${porCaja > 0 ? 'Cajas llenas' : 'Existencia'}</span><span><span class="q-num">${porCaja > 0 ? cajas : cant}</span>${(porCaja <= 0 && item.unidad) ? ` <span class="unidad">${esc(item.unidad)}</span>` : ''}</span></span>
             </div>
+            ${porCaja > 0 ? `<div class="item-min">${sueltos > 0 ? `🔓 Caja abierta: <b>${sueltos}</b> de ${porCaja}` : '✔ Sin caja abierta'} · Total: ${cant}${item.unidad ? ' ' + esc(item.unidad) : ''}</div>` : ''}
             ${item.referencia ? `<div class="item-ref">Ref: ${esc(item.referencia)}</div>` : ''}
             ${(item.esSet && Array.isArray(item.piezas) && item.piezas.length) ? `<details class="set-details"><summary>🧩 Juego de ${item.piezas.length} pieza(s)</summary><ul style="margin:4px 0 0 4px;padding-left:16px;font-size:12.5px;color:#555;">${item.piezas.map(p => `<li>${esc(p.nombre)}${(Number(p.cantidad) || 1) > 1 ? ' ×' + p.cantidad : ''}</li>`).join('')}</ul></details>` : ''}
             ${esAdmin && item.proveedor ? `<div class="item-ref">🏭 Proveedor: ${esc(item.proveedor)}</div>` : ''}
-            ${sinStock ? `<div class="stock-warn out">⛔ Sin stock${min ? ` · mínimo ${min} ${esc(item.unidad)}` : ''}</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo · mínimo ${min} ${esc(item.unidad)}</div>` : '')}
+            ${min ? `<div class="item-min">Mínimo: ${min}${porCaja > 0 ? ' unidades' : ''}</div>` : ''}
+            ${sinStock ? `<div class="stock-warn out">⛔ Sin stock</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo</div>` : '')}
             ${esAdmin ? `
             <div class="item-precios">
                 <span class="costo">Costo: ${money(costo)}</span>
@@ -488,7 +500,7 @@
             ${esAdmin ? `
             <div class="inline-form" id="agregar-${item.id}">
                 <div class="grid2-inv">
-                    <div><label>Cantidad a agregar</label><input type="number" id="agregar-cant-${item.id}" min="1" value="1"></div>
+                    <div><label>Cantidad a agregar</label><div style="display:flex;gap:6px">${Number(item.porCaja) > 0 ? `<select id="agregar-modo-${item.id}" style="flex:0 0 auto;min-width:96px"><option value="cajas">caja(s) ×${Number(item.porCaja)}</option><option value="unidades">unidad(es)</option></select>` : ''}<input type="number" id="agregar-cant-${item.id}" min="1" value="1" style="flex:1"></div></div>
                     <div><label>Costo por ${esc(item.unidad)} <span style="font-weight:normal;color:#999">(de esta compra)</span></label><input type="number" id="agregar-costo-${item.id}" min="0" step="0.01" value="${costo || ''}" placeholder="RD$"></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:6px">
@@ -512,6 +524,9 @@
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
                 <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Unidad</label><input type="text" id="editar-unidad-${item.id}" value="${esc(item.unidad || '')}"></div>
+                    <div><label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = sin caja)</span></label><input type="number" id="editar-porcaja-${item.id}" min="0" step="1" value="${Number(item.porCaja) || 0}"></div>
+                </div>
+                <div class="grid2-inv" style="margin-top:8px">
                     <div><label>Categoría</label><select id="editar-cat-${item.id}" onchange="onEditarCatChange('${item.id}')">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
@@ -968,6 +983,7 @@
         const proveedor = document.getElementById('nuevo-proveedor').value.trim();
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
+        const porCaja = Number(document.getElementById('nuevo-porcaja').value) || 0;
         const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
         const minimo = Number(document.getElementById('nuevo-minimo').value) || 0;
         const costo = Number(document.getElementById('nuevo-costo').value) || 0;
@@ -982,7 +998,7 @@
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null,
-                categoria, subgrupo, subgrupo2, unidad, cantidad, minimo, costo, venta,
+                categoria, subgrupo, subgrupo2, unidad, porCaja, cantidad, minimo, costo, venta,
                 esSet, piezas, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
@@ -990,6 +1006,7 @@
             document.getElementById('nuevo-referencia').value = '';
             document.getElementById('nuevo-proveedor').value = '';
             document.getElementById('nuevo-color').value = '';
+            document.getElementById('nuevo-porcaja').value = '0';
             document.getElementById('nuevo-cantidad').value = '0';
             document.getElementById('nuevo-minimo').value = '0';
             document.getElementById('nuevo-costo').value = '0';
@@ -1049,6 +1066,7 @@
         const proveedor = (document.getElementById('editar-prov-' + id).value || '').trim();
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
+        const porCaja = Number(document.getElementById('editar-porcaja-' + id).value) || 0;
         const categoria = document.getElementById('editar-cat-' + id).value;
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         const sgEl = document.getElementById('editar-sg-' + id);
@@ -1060,7 +1078,7 @@
         const esSet = (document.getElementById('editar-esset-' + id) || {}).checked || false;
         const piezas = esSet ? leerPiezas('editar-piezas-' + id) : [];
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, porCaja, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
             cerrarForm('editar-' + id);
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
@@ -1102,8 +1120,13 @@
 
     window.confirmarAgregar = async function (id) {
         const item = allItems.find(it => it.id === id);
-        const cantidad = Number(document.getElementById('agregar-cant-' + id).value);
-        if (!cantidad || cantidad <= 0) { alert('Escribe una cantidad válida.'); return; }
+        const cantIngresada = Number(document.getElementById('agregar-cant-' + id).value);
+        if (!cantIngresada || cantIngresada <= 0) { alert('Escribe una cantidad válida.'); return; }
+        const porCaja = Number(item.porCaja) || 0;
+        const modoEl = document.getElementById('agregar-modo-' + id);
+        const enCajas = porCaja > 0 && modoEl && modoEl.value === 'cajas';
+        const cantidad = enCajas ? cantIngresada * porCaja : cantIngresada;   // unidades totales que entran
+        const notaCajas = enCajas ? cantIngresada + ' caja(s) × ' + porCaja + ' = ' + cantidad + ' ' + (item.unidad || 'u') : '';
         const costoU = Number(document.getElementById('agregar-costo-' + id).value) || 0;
         const proveedor = (document.getElementById('agregar-prov-' + id).value || '').trim();
         const ncf = (document.getElementById('agregar-ncf-' + id).value || '').trim().toUpperCase();
@@ -1114,7 +1137,7 @@
             await updateDoc(doc(db, 'inventario', id), cambios);
             await addDoc(collection(db, 'movimientosInventario'), {
                 itemId: id, itemTipo: item.tipo, itemColor: item.color || null,
-                tipo: 'restock', cantidad, nota: 'Reabastecimiento' + (proveedor ? ' · ' + proveedor : ''),
+                tipo: 'restock', cantidad, nota: 'Reabastecimiento' + (notaCajas ? ' · ' + notaCajas : '') + (proveedor ? ' · ' + proveedor : ''),
                 costoUnitario: costoU || null, proveedor: proveedor || null, ncf: ncf || null,
                 usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
             });
