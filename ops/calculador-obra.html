@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Calculador de obra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 620px; }
+    .cp-hint { font-size: 12.5px; color: #667; margin: 0 0 14px; line-height: 1.45; }
+    .cp-sec { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin: 16px 0 6px; }
+    .cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+    .cp-grid label, .cp-chk { font-size: 11.5px; font-weight: bold; color: #556; display: flex; flex-direction: column; gap: 3px; }
+    .cp-grid input, .cp-grid select { padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; width: 100%; }
+    .cp-chk { flex-direction: row; align-items: center; gap: 8px; font-weight: normal; color: #333; font-size: 12.5px; margin-top: 8px; }
+    .cp-chk input { width: auto; min-height: auto; }
+    .cs-eq-guardado { display: flex; gap: 6px; margin-bottom: 8px; }
+    .cs-eq-guardado select { flex: 1; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13px; min-height: 40px; background: #fff; }
+    .cs-eq-btn { border: none; border-radius: 8px; padding: 8px 10px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; background: var(--artal-blue); color: #fff; white-space: nowrap; }
+    .cs-eq-btn.del { background: #e2e6ea; color: #555; }
+    .cs-equipo { display: flex; flex-direction: column; gap: 4px; max-height: 168px; overflow-y: auto; border: 1.5px solid #e2e6ea; border-radius: 8px; padding: 6px; }
+    .cs-emp { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #334; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+    .cs-emp:hover { background: #f2f6f9; }
+    .cs-emp input { width: auto; min-height: auto; margin: 0; }
+    .cs-emp span { flex: 1; }
+    .cs-emp b { color: var(--artal-blue); white-space: nowrap; }
+    .cs-equipo-vacio { font-size: 12px; color: #8a93a0; padding: 4px; line-height: 1.4; }
+    .cs-jorn-row { display: flex; gap: 6px; margin-top: 6px; }
+    .cs-jorn-row input { padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13px; min-height: 40px; box-sizing: border-box; }
+    .cs-jorn-row input[type="text"] { flex: 1; }
+    .cs-jorn-row input[type="number"] { width: 120px; }
+    .cs-jorn-del { border: none; background: #e2e6ea; color: #555; border-radius: 8px; width: 40px; font-size: 16px; cursor: pointer; }
+    .cp-desglose { margin-top: 18px; background: #f6f8fa; border-radius: 12px; padding: 12px 16px; font-size: 14px; }
+    .cs-row { display: flex; justify-content: space-between; padding: 4px 0; color: #445; }
+    .cs-total { display: flex; justify-content: space-between; font-weight: bold; color: var(--artal-blue); font-size: 19px; margin-top: 8px; padding-top: 8px; border-top: 1.5px solid #e2e6ea; }
+    .cp-copiar { margin-top: 12px; width: 100%; padding: 13px; border: none; border-radius: 10px; background: #2ecc71; color: #fff; font-weight: bold; font-family: 'Arimo'; font-size: 15px; cursor: pointer; min-height: 48px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Calculador de obra</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="cp-hint">Estima el costo real de <b>transporte + instalación</b> de una obra para cotizar de forma justa. Elige el vehículo y el recorrido para llenar las tarifas al instante, o escríbelas a mano. Todo queda guardado en este dispositivo para la próxima.</p>
+
+    <div class="cp-sec">🚚 Vehículo y recorrido</div>
+    <div class="cp-grid">
+        <label>Vehículo<select id="cs-veh" onchange="calcVehChange()"></select></label>
+        <label>Recorrido<select id="cs-ruta" onchange="calcRutaChange()"></select></label>
+    </div>
+
+    <div class="cp-sec">🚗 Transporte (combustible + peajes)</div>
+    <div class="cp-grid">
+        <label>Distancia ida (km)<input type="number" id="cs-km" min="0" step="0.1" oninput="calcRecalc()"></label>
+        <label>Rendimiento (km por galón)<input type="number" id="cs-rend" min="0" step="0.1" oninput="calcRecalc()"></label>
+        <label>Precio del galón (RD$)<input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()"></label>
+        <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
+        <label>Viajes a la obra<select id="cs-viajes" onchange="calcRecalc()"><option value="1">1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option><option value="4">4 viajes</option><option value="5">5 viajes</option><option value="6">6 viajes</option><option value="7">7 viajes</option><option value="8">8 viajes</option><option value="9">9 viajes</option><option value="10">10 viajes</option></select></label>
+    </div>
+    <label class="cp-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
+
+    <div class="cp-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
+    <div class="cp-grid">
+        <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
+        <label>Noches de hotel<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
+        <label>Hotel por noche c/u (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
+        <label>Días con comida<input type="number" id="cs-diascomida" min="0" step="1" oninput="calcRecalc()"></label>
+        <label>Comida por día c/u (RD$)<input type="number" id="cs-costocomida" min="0" step="0.01" oninput="calcRecalc()"></label>
+    </div>
+
+    <div class="cp-sec">🔧 Instalación</div>
+    <div class="cs-eq-guardado">
+        <select id="cs-equipo-guardado" onchange="calcAplicarEquipoGuardado()"></select>
+        <button type="button" class="cs-eq-btn" onclick="calcGuardarEquipoActual()" title="Guardar la selección actual como equipo">💾 Guardar</button>
+        <button type="button" class="cs-eq-btn del" onclick="calcBorrarEquipoActual()" title="Borrar el equipo elegido">🗑</button>
+    </div>
+    <label style="font-size:11.5px;font-weight:bold;color:#556;display:block;margin-bottom:4px">Equipo de la obra (marca los instaladores)</label>
+    <div id="cs-equipo" class="cs-equipo"></div>
+    <div id="cs-jornaleros"></div>
+    <button type="button" class="cs-eq-btn" style="margin:6px 0 2px" onclick="calcJornAdd()">+ Jornalero / ayudante suelto</button>
+    <div class="cp-grid" style="margin-top:8px">
+        <label>Días de instalación<input type="number" id="cs-dias" min="0" step="0.5" oninput="calcRecalc()"></label>
+        <label>Costo por día (RD$)<input type="number" id="cs-costodia" min="0" step="0.01" oninput="calcRecalc()"></label>
+        <label>Materiales/consumibles (RD$)<input type="number" id="cs-materiales" min="0" step="0.01" oninput="calcRecalc()" title="Silicona, tornillería, discos, tacos… costo estimado por obra"></label>
+    </div>
+
+    <div class="cp-sec">Ajuste</div>
+    <div class="cp-grid">
+        <label>Margen / imprevistos (%)<input type="number" id="cs-margen" min="0" step="1" oninput="calcRecalc()"></label>
+    </div>
+
+    <div class="cp-desglose" id="cs-desglose"></div>
+    <button class="cp-copiar" onclick="calcCopiar()">📋 Copiar total</button>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { requirePin } from './pin-gate.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['cotizaciones']);
+    await requirePin(usuario);
+    wireBackButton(usuario.roles);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    // ⚠️ Estos datos y la fórmula son un ESPEJO del calculador del cuaderno (index.html, sección
+    // "Calculadora de transporte + instalación"). Si cambias tarifas/fórmula en un lado, actualízalas
+    // también en el otro (ver memoria artal-calculador-transporte-instalacion).
+    const CALC_VEHICULOS = [
+        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997 },
+        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225 },
+        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 100000, depreAnual: 0 },
+    ];
+    const CALC_RUTAS = [
+        { id: 'sd-terrenas', nombre: 'Santo Domingo ↔ Las Terrenas', km: 163, peaje: 1700, hotel: 2000, comida: 900 },
+        { id: 'sd-romana', nombre: 'Santo Domingo ↔ La Romana', km: 123, peaje: 400, hotel: 2200, comida: 1000 },
+        { id: 'sd-puntacana', nombre: 'Santo Domingo ↔ Punta Cana', km: 200, peaje: 600, hotel: 2500, comida: 1100 },
+        { id: 'sd-santiago', nombre: 'Santo Domingo ↔ Santiago', km: 155, peaje: 400, hotel: 2000, comida: 900 },
+        { id: 'terrenas-romana', nombre: 'Las Terrenas ↔ La Romana', km: 214, peaje: 2100, hotel: 2200, comida: 1000 },
+        { id: 'terrenas-puntacana', nombre: 'Las Terrenas ↔ Punta Cana', km: 287, peaje: 2300, hotel: 2500, comida: 1100 },
+        { id: 'terrenas-santiago', nombre: 'Las Terrenas ↔ Santiago', km: 176, peaje: 800, hotel: 2000, comida: 900 },
+    ];
+    const vehById = (id) => CALC_VEHICULOS.find(x => x.id === id) || null;
+    const fmt = (n) => 'RD$ ' + (Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const LS = 'artal_calc_obra';
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, materiales: 0, margenPct: 0 });
+    function loadCfg() { try { return Object.assign(calcDef(), JSON.parse(localStorage.getItem(LS) || '{}')); } catch (_) { return calcDef(); } }
+    function saveCfg() { try { localStorage.setItem(LS, JSON.stringify(calcLeer())); } catch (_) { } }
+
+    let calcJornaleros = [];
+    window.calcEmpleados = [];
+    window.calcEquipos = [];
+
+    function llenarSelects(vehSel, rutaSel) {
+        document.getElementById('cs-veh').innerHTML = '<option value="">— Elegir vehículo —</option>' +
+            CALC_VEHICULOS.map(x => `<option value="${x.id}"${x.id === vehSel ? ' selected' : ''}>${x.id} · ${x.nombre} (${x.combustible})</option>`).join('');
+        document.getElementById('cs-ruta').innerHTML = '<option value="">— Elegir recorrido —</option>' +
+            CALC_RUTAS.map(x => `<option value="${x.id}"${x.id === rutaSel ? ' selected' : ''}>${x.nombre} — ${x.km} km ida</option>`).join('') +
+            '<option value="__manual__"' + (rutaSel === '__manual__' ? ' selected' : '') + '>Otro recorrido (a mano)</option>';
+    }
+    window.calcVehChange = function () {
+        const veh = vehById(document.getElementById('cs-veh').value);
+        if (veh) { document.getElementById('cs-rend').value = veh.rendKmGal; document.getElementById('cs-precio').value = veh.precioGal; }
+        calcRecalc();
+    };
+    window.calcRutaChange = function () {
+        const r = CALC_RUTAS.find(x => x.id === document.getElementById('cs-ruta').value);
+        if (r) {
+            document.getElementById('cs-km').value = r.km; document.getElementById('cs-peajes').value = r.peaje; document.getElementById('cs-iv').checked = true;
+            if (r.hotel) document.getElementById('cs-costonoche').value = r.hotel;
+            if (r.comida) document.getElementById('cs-costocomida').value = r.comida;
+        }
+        calcRecalc();
+    };
+    function renderEquipo(selIds) {
+        const box = document.getElementById('cs-equipo');
+        const emps = window.calcEmpleados || [];
+        if (!emps.length) { box.innerHTML = '<span class="cs-equipo-vacio">No hay empleados con costo cargado. Regístralos en RRHH → Empleados (con sueldo) o escribe el costo por día a mano abajo.</span>'; return; }
+        const sel = new Set(selIds || []);
+        box.innerHTML = emps.map(e =>
+            `<label class="cs-emp"><input type="checkbox" value="${e.id}" ${sel.has(e.id) ? 'checked' : ''} onchange="calcEquipoChange()"><span>${e.nombre}${e.cargo ? ' · ' + e.cargo : ''}</span><b>RD$${Math.round(e.costoDia).toLocaleString('es-DO')}/día</b></label>`
+        ).join('');
+    }
+    function equipoSeleccion() { return Array.from(document.querySelectorAll('#cs-equipo input:checked')).map(c => c.value); }
+    function renderJornaleros() {
+        document.getElementById('cs-jornaleros').innerHTML = calcJornaleros.map((j, i) =>
+            `<div class="cs-jorn-row"><input type="text" placeholder="Jornalero (opcional)" value="${(j.nombre || '').replace(/"/g, '&quot;')}" oninput="calcJornSet(${i},'nombre',this.value)"><input type="number" min="0" step="0.01" placeholder="RD$/día" value="${j.costoDia || ''}" oninput="calcJornSet(${i},'costoDia',this.value)"><button type="button" class="cs-jorn-del" onclick="calcJornDel(${i})" title="Quitar">×</button></div>`
+        ).join('');
+    }
+    window.calcJornAdd = function () { calcJornaleros.push({ nombre: '', costoDia: 0 }); renderJornaleros(); };
+    window.calcJornSet = function (i, k, v) { if (calcJornaleros[i]) { calcJornaleros[i][k] = k === 'costoDia' ? (Number(v) || 0) : v; recalcEquipo(); } };
+    window.calcJornDel = function (i) { calcJornaleros.splice(i, 1); renderJornaleros(); recalcEquipo(); };
+    function recalcEquipo() {
+        const emps = window.calcEmpleados || [], ids = equipoSeleccion();
+        const empTotal = ids.reduce((a, id) => a + ((emps.find(e => e.id === id) || {}).costoDia || 0), 0);
+        const jornTotal = calcJornaleros.reduce((a, j) => a + (Number(j.costoDia) || 0), 0);
+        const nPersonas = ids.length + calcJornaleros.length;
+        if (nPersonas > 0) {
+            document.getElementById('cs-costodia').value = Math.round((empTotal + jornTotal) * 100) / 100;
+            document.getElementById('cs-personas').value = nPersonas;
+        }
+        calcRecalc();
+    }
+    window.calcEquipoChange = recalcEquipo;
+    function renderEquiposGuardados() {
+        document.getElementById('cs-equipo-guardado').innerHTML = '<option value="">— Equipo guardado —</option>' +
+            (window.calcEquipos || []).map(e => `<option value="${e.id}">${e.nombre} (${(e.empleadoIds || []).length})</option>`).join('');
+    }
+    window.calcAplicarEquipoGuardado = function () {
+        const eq = (window.calcEquipos || []).find(e => e.id === document.getElementById('cs-equipo-guardado').value);
+        if (!eq) return;
+        renderEquipo(eq.empleadoIds || []);
+        recalcEquipo();
+    };
+    window.calcGuardarEquipoActual = async function () {
+        const ids = equipoSeleccion();
+        if (!ids.length) { alert('Marca primero los integrantes del equipo.'); return; }
+        const nombre = (prompt('Nombre del equipo (ej. Equipo Miki):') || '').trim();
+        if (!nombre) return;
+        try { await addDoc(collection(db, 'equiposInstalacion'), { nombre, empleadoIds: ids, creadoEn: serverTimestamp() }); }
+        catch (e) { alert('No se pudo guardar el equipo: ' + e.message); }
+    };
+    window.calcBorrarEquipoActual = async function () {
+        const eq = (window.calcEquipos || []).find(e => e.id === document.getElementById('cs-equipo-guardado').value);
+        if (!eq) { alert('Elige un equipo guardado para borrarlo.'); return; }
+        if (!confirm('¿Borrar el equipo "' + eq.nombre + '"? (no borra a los empleados, solo el grupo)')) return;
+        try { await deleteDoc(doc(db, 'equiposInstalacion', eq.id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    function calcLeer() {
+        const num = (id) => Number(document.getElementById(id).value) || 0;
+        return {
+            vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value, empleadoIds: equipoSeleccion(),
+            jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })), viajes: num('cs-viajes') || 1,
+            kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
+            peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
+            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'),
+            dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), margenPct: num('cs-margen')
+        };
+    }
+    // ESPEJO de calcTotales() de index.html — mantener idéntico.
+    function calcTotales(v) {
+        const viajes = v.viajes > 0 ? v.viajes : 1;
+        const kmTot = v.kmIda * (v.idaVuelta ? 2 : 1) * viajes;
+        const combustible = v.rendKmGal > 0 ? (kmTot / v.rendKmGal) * v.precioGal : 0;
+        const veh = vehById(v.vehiculoId);
+        const mantPorKm = (veh && veh.mantCadaKm > 0) ? veh.mantCosto / veh.mantCadaKm : 0;
+        const mantenimiento = kmTot * mantPorKm;
+        const peajes = (v.peajes || 0) * viajes;
+        const hotel = v.noches * (v.personas || 1) * v.costoNoche;
+        const alimentacion = v.diasComida * (v.personas || 1) * v.costoComida;
+        const instalacion = v.dias * v.costoDia;
+        const materiales = v.materiales || 0;
+        const fijoAnual = veh ? ((veh.seguroAnual || 0) + (veh.depreAnual || 0)) : 0;
+        const fijoDia = fijoAnual / 365;
+        const diasUso = v.dias > 0 ? v.dias : (veh ? 1 : 0);
+        const fijoVehiculo = fijoDia * diasUso;
+        const costo = combustible + mantenimiento + peajes + fijoVehiculo + hotel + alimentacion + instalacion + materiales;
+        const total = costo * (1 + (v.margenPct || 0) / 100);
+        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, hotel, alimentacion, instalacion, materiales, costo, total };
+    }
+    let ultimoTotal = 0;
+    window.calcRecalc = function () {
+        const v = calcLeer(), t = calcTotales(v);
+        ultimoTotal = t.total;
+        const row = (l, val) => `<div class="cs-row"><span>${l}</span><span>${fmt(val)}</span></div>`;
+        document.getElementById('cs-desglose').innerHTML =
+            row('⛽ Combustible (' + (Math.round(t.kmTot * 10) / 10) + ' km' + (t.viajes > 1 ? ' · ' + t.viajes + ' viajes' : '') + ')', t.combustible) +
+            (t.mantenimiento ? row('🛠️ Desgaste/mant. (RD$' + Math.round(t.mantPorKm) + '/km)', t.mantenimiento) : '') +
+            row('🛣️ Peajes' + (t.viajes > 1 ? ' (×' + t.viajes + ')' : ''), t.peajes) +
+            (t.fijoVehiculo ? row('🛡️ Fijos vehículo — seguro+depreciación (RD$' + Math.round(t.fijoDia) + '/día × ' + t.diasUso + ')', t.fijoVehiculo) : '') +
+            row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
+            (t.materiales ? row('🧰 Materiales/consumibles', t.materiales) : '') +
+            (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
+            `<div class="cs-total"><span>Total transporte + instalación</span><span>${fmt(t.total)}</span></div>`;
+        saveCfg();
+    };
+    window.calcCopiar = function () {
+        const txt = Math.round(ultimoTotal * 100) / 100;
+        if (navigator.clipboard) navigator.clipboard.writeText(String(txt)).then(() => alert('Total copiado: ' + fmt(ultimoTotal)), () => alert('Total: ' + fmt(ultimoTotal)));
+        else alert('Total: ' + fmt(ultimoTotal));
+    };
+
+    // Empleados (RRHH) con costo real por día + equipos guardados, desde Firestore.
+    onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
+        window.calcEmpleados = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(e => (e.estado || 'activo') === 'activo' && Number(e.costoDiaReal) > 0)
+            .map(e => ({ id: e.id, nombre: e.nombre || '', cargo: Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || ''), costoDia: Number(e.costoDiaReal) || 0 }))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        renderEquipo(equipoSeleccion());
+    }, () => { });
+    onSnapshot(collection(db, 'equiposInstalacion'), (snap) => {
+        window.calcEquipos = snap.docs.map(d => ({ id: d.id, nombre: d.data().nombre || '', empleadoIds: Array.isArray(d.data().empleadoIds) ? d.data().empleadoIds : [] }))
+            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+        renderEquiposGuardados();
+    }, () => { });
+
+    // Restaurar lo último usado y pintar.
+    (function init() {
+        const c = loadCfg();
+        llenarSelects(c.vehiculoId, c.rutaId);
+        renderEquiposGuardados();
+        calcJornaleros = (c.jornaleros || []).map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 }));
+        renderJornaleros();
+        renderEquipo(c.empleadoIds || []);
+        document.getElementById('cs-viajes').value = c.viajes || 1;
+        document.getElementById('cs-km').value = c.kmIda || '';
+        document.getElementById('cs-rend').value = c.rendKmGal || '';
+        document.getElementById('cs-precio').value = c.precioGal || '';
+        document.getElementById('cs-peajes').value = c.peajes || '';
+        document.getElementById('cs-iv').checked = c.idaVuelta !== false;
+        document.getElementById('cs-noches').value = c.noches || '';
+        document.getElementById('cs-personas').value = c.personas || 1;
+        document.getElementById('cs-costonoche').value = c.costoNoche || '';
+        document.getElementById('cs-diascomida').value = c.diasComida || '';
+        document.getElementById('cs-costocomida').value = c.costoComida || '';
+        document.getElementById('cs-dias').value = c.dias || '';
+        document.getElementById('cs-costodia').value = c.costoDia || '';
+        document.getElementById('cs-materiales').value = c.materiales || '';
+        document.getElementById('cs-margen').value = c.margenPct || '';
+        calcRecalc();
+    })();
+</script>
+
+</body>
+</html>
