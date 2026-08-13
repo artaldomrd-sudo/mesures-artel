@@ -237,18 +237,28 @@ por ahora la fórmula vive embebida en el cuaderno).
   edita la tarjeta (antes de fijarla), a pedido explícito del usuario ("por ahora" solo en
   resumen/PDF).
 
-## Paño Fijo adosado (arriba/abajo) en ventanas/puertas
+## Paño Fijo adosado (arriba/abajo) en ventanas/puertas/Paño Fijo
 
 Alternativa ligera al CAD para el caso más común: pegarle un paño fijo de vidrio arriba y/o
 abajo de una ventana/puerta (ej. oscilobatiente + paño de ventilación fijo encima), con la
 **misma fidelidad visual que una tarjeta normal** (degradado de vidrio, marco extruido) — no el
 estilo simplificado del CAD.
 
-- Solo disponible para `categoria === 'ventana'` (`win_abat, win_ob, win_proy, win_souf,
-  door_abat`). Campos nuevos y planos en `cardsState[id]` (nada de posición libre que guardar,
-  a diferencia del CAD): `panoArriba` / `panoAbajo`: `null` o `{ alto, vidrio, espesor,
-  color_vidrio, fijacion, color_perfil, color_ral }`. Sin campo de ancho propio: el paño
-  **siempre hereda el ancho del ítem base** vía `getPanelRects(state)[0]`.
+- Disponible para `categoria === 'ventana'` (`win_abat, win_ob, win_proy, win_souf, door_abat`)
+  **y también `categoria === 'fachada'`** (`fachada_din`, Paño Fijo/Fachada Multipañó) — pedido
+  explícito del usuario: casos reales de "paño fijo abajo + ventilación arriba" donde lo natural
+  es empezar la tarjeta desde el Paño Fijo (el elemento grande/dominante), no desde la ventana.
+  La pieza adosada sigue siendo siempre **fija** (el mismo "F", sin bisagra/apertura) en los dos
+  casos — si se necesita que la parte de arriba/abajo abra de verdad, no es este mecanismo, es
+  el CAD. Único cambio de código: el filtro de categoría en `renderPanoSection` (antes solo
+  `'ventana'`); todo lo demás (`composePanos`, `togglePano`, `buildPanoConfigHtml`,
+  `generateSummary`) ya era genérico por `state`, sin depender del tipo — funciona igual en
+  Paño Fijo simple y en Fachada Multipañó (`panos > 1`, cada paño con su propia "F" y divisor,
+  el paño adosado se agrega arriba/abajo del conjunto completo). Campos nuevos y planos en
+  `cardsState[id]` (nada de posición libre que guardar, a diferencia del CAD): `panoArriba` /
+  `panoAbajo`: `null` o `{ alto, vidrio, espesor, color_vidrio, fijacion, color_perfil,
+  color_ral }`. Sin campo de ancho propio: el paño **siempre hereda el ancho del ítem base** vía
+  `getPanelRects(state)[0]`.
 - **Persistencia gratis**: como `getAppJSON`/`restoreData`/`addItem` ya guardan/restauran
   `cardsState[id]` como objeto completo, estos campos viajan solos. Igual con la whitelist de
   re-render de `updateState` (no hace falta tocarla): los paños tienen su propia función
@@ -294,9 +304,16 @@ estilo simplificado del CAD.
     `state.panoArriba || state.panoAbajo` (condición agregada al `if (state.ancho > 0)` de la
     cola de `renderSVG`) — `composePanos` la dibuja de cero, una sola vez, con `dimLineH` en la
     posición nueva (`anchoEdgeY = elevBottom + botH`, línea en `anchoEdgeY + ANCHO_GAP` con
-    `ANCHO_GAP=9` igual criterio que antes). `ANCHO_RESERVED_H=18` reserva el espacio de
+    `ANCHO_GAP=9` igual criterio que antes). `ANCHO_RESERVED_H=22` reserva el espacio de
     línea+texto y empuja la vista de planta hacia abajo esa misma cantidad (sumado al `botH` que
-    ya la corría por el paño de abajo) — antes solo se corría por `botH`. Como consecuencia, el
+    ya la corría por el paño de abajo) — antes solo se corría por `botH`.
+    **Bug real encontrado al mover la medida abajo**: `dimLineH` dibuja el texto en su línea de
+    base sin `dominant-baseline`, así que los glifos crecen HACIA ARRIBA desde `textY` — con el
+    texto arriba de su línea (`dir=-1`, el único caso usado en el resto de la app) eso ayuda a
+    separarlo; pero con el texto ABAJO (`dir=+1`, este caso nuevo) el mismo `textGap=2.6` de
+    siempre no alcanza y el texto queda **cruzando la línea** (reportado por el usuario con una
+    foto real). Se agregó un 7º parámetro opcional `textGap` a `dimLineH` (default `2.6`, no
+    cambia ningún llamado existente) — esta llamada específica pasa `ANCHO_TEXT_GAP=8`. Como
     paño de **arriba** ya no necesita el `topGap` especial (no hay medida de ancho ahí con la que
     chocar): vuelve a anclarse con el `gap=4` normal, pero contra `panelRect[1]` (el `by` real
     del panel base) en vez del viejo punto de referencia `y=4` — más directo y ya no depende de

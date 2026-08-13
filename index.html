@@ -3533,7 +3533,7 @@
 
     function renderPanoSection(id) {
         const state = cardsState[id];
-        if (!state || state.categoria !== 'ventana') return '';
+        if (!state || (state.categoria !== 'ventana' && state.categoria !== 'fachada')) return '';
         const sideBtn = (side, label) => {
             const active = !!state[side === 'arriba' ? 'panoArriba' : 'panoAbajo'];
             return `<div class="toggle-btn ${active ? 'active' : ''}" onclick="togglePano(${id}, '${side}')">${label}</div>`;
@@ -3708,10 +3708,17 @@
     // en vez de solo un texto flotante para que quede claro a qué tramo corresponde cada medida
     // (línea de un extremo al otro), sobre todo cuando hay más de una medida junta (paños).
     const DIM_COLOR = '#5a6772';
-    function dimLineH(x1, x2, y, edgeY, label, fontSize) {
+    function dimLineH(x1, x2, y, edgeY, label, fontSize, textGap) {
         fontSize = fontSize || 6;
+        // El texto se dibuja en su línea de base (sin dominant-baseline), así que los glifos
+        // crecen HACIA ARRIBA desde `textY` — con el texto arriba de la línea (dir=-1, el uso de
+        // siempre en toda la app) eso ayuda a alejarlo de la línea; con el texto ABAJO (dir=+1,
+        // caso nuevo: medida de ancho reubicada al final del Paño Fijo adosado) el mismo
+        // `textGap` chico no alcanza y el texto queda cruzando la línea. `textGap` opcional para
+        // ese caso (no cambia ningún llamado existente, todos siguen con el valor por defecto).
         const dir = Math.sign(y - edgeY) || -1;
-        const over = 1.3, tick = 1.4, textGap = 2.6;
+        const over = 1.3, tick = 1.4;
+        textGap = textGap === undefined ? 2.6 : textGap;
         const yFar = y + dir * over;
         let s = `<g stroke="${DIM_COLOR}" stroke-width="0.4" fill="none">`;
         s += `<line x1="${x1.toFixed(1)}" y1="${edgeY.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${yFar.toFixed(1)}"/>`;
@@ -3869,12 +3876,15 @@
         // el paño de arriba, donde antes quedaba apretada contra el paño (pedido explícito del
         // usuario: "debe aparecer debajo entre la parte de abajo y la vista superior"). Por eso
         // `renderSVG` ya NO dibuja la medida de ancho cuando hay paños — se dibuja acá, una sola
-        // vez, en la posición nueva. `ANCHO_GAP` (igual que el `topGap` que se usaba antes para
-        // el paño de arriba) le da aire al TEXTO de `dimLineH`, que sobresale más allá de su
-        // línea principal. `ANCHO_RESERVED_H` es el espacio total que ocupa línea+texto, para
-        // correr la vista de planta hacia abajo y que no se superpongan.
-        const ANCHO_GAP = 9;
-        const ANCHO_RESERVED_H = state.ancho > 0 ? 18 : 0;
+        // vez, en la posición nueva. `ANCHO_GAP` separa la línea principal del borde real.
+        // `ANCHO_TEXT_GAP` (el 7º parámetro de `dimLineH`, ver esa función) es más grande que el
+        // default (2.6): con el texto ABAJO de la línea (nunca usado antes en el resto de la
+        // app, siempre está arriba) el texto crece hacia arriba desde su base y con el gap chico
+        // de siempre terminaba cruzando la línea — reportado por el usuario con una foto real.
+        // `ANCHO_RESERVED_H` es el espacio total que ocupa línea+texto con este gap más grande,
+        // para correr la vista de planta hacia abajo y que no se superponga con el texto.
+        const ANCHO_GAP = 9, ANCHO_TEXT_GAP = 8;
+        const ANCHO_RESERVED_H = state.ancho > 0 ? 22 : 0;
         const planReservedH = planViewFrag ? (vbH - elevH) + gap : 0;
         const newVbY = topBoundary;
         const newVbH = (elevBottom + botH + ANCHO_RESERVED_H + planReservedH) - newVbY;
@@ -3886,7 +3896,7 @@
         if (state.panoAbajo) out += `<g transform="translate(0, ${(elevBottom + gap).toFixed(1)})">${buildPanoFragment(id, 'abajo', state.panoAbajo, panelRect, isFlipped)}</g>`;
         if (state.ancho > 0) {
             const anchoEdgeY = elevBottom + botH;
-            out += dimLineH(panelRect[0], panelRect[0] + panelRect[2], anchoEdgeY + ANCHO_GAP, anchoEdgeY, `${state.ancho} mm`, 7);
+            out += dimLineH(panelRect[0], panelRect[0] + panelRect[2], anchoEdgeY + ANCHO_GAP, anchoEdgeY, `${state.ancho} mm`, 7, ANCHO_TEXT_GAP);
         }
         // Medida total (ventana + paños) del lado izquierdo, con su propia línea de un extremo
         // (tope del paño de arriba, o de la ventana si no hay) al otro (tope del paño de abajo,
