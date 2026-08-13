@@ -310,6 +310,16 @@ estilo simplificado del CAD.
   no interfiere con la reconciliación de selects de `.config-options`), generada por
   `renderPanoSection(id)` / `buildPanoConfigHtml(id, side, pano)` y refrescada con
   `refreshPanoUI(id)`.
+- **Mismas opciones de vidrio/fijación que un Paño Fijo normal** (pedido explícito del usuario,
+  el select de vidrio del paño adosado tenía solo Templado/Laminado): `buildPanoConfigHtml`
+  ahora ofrece las mismas 4 (Templado/Laminado/Láminas de Louver/Sin Vidrio — mismos valores que
+  `vidriosBasicos` en `getMenuOpciones`) y el de fijación agrega `p40_puerta` (antes solo tenía
+  conectores/moldura/p40/sin_marco). Con `vidrio==='louvers'` se ocultan grosor/color y se
+  muestra "Color Louvers: {color del encabezado}", igual que en el ítem base — `updatePanoState`
+  ahora dispara `refreshPanoUI(id)` también en `key === 'vidrio'` (antes solo en
+  `color_perfil`/`espesor`) para que ese cambio de layout se refleje al vuelo. `generateSummary`
+  (línea "Paño Fijo arriba/abajo: ...") formatea `vidrio==='louvers'`/`'sin'` igual que el resto
+  de la app ("Láminas de Louver (color)" / "Sin Vidrio") en vez de imprimir el value crudo.
 - **Resumen/PDF**: `generateSummary` agrega una línea por paño adosado (medidas + vidrio +
   fijación) y una línea de "Alto total (con paños)" — sin tocar `state.alto`, que sigue
   significando solo la altura de la hoja operable (no rompe ningún cálculo de área de

@@ -1710,7 +1710,9 @@
 
             if (state.panoArriba || state.panoAbajo) {
                 const panoLine = (pano, label) => {
-                    const vid = `${pano.vidrio || 'templado'} ${espesorLabel(pano.espesor)} ${pano.color_vidrio || ''}`.trim();
+                    const vid = pano.vidrio === 'louvers' ? `Láminas de Louver (${headerColor})`
+                        : pano.vidrio === 'sin' ? 'Sin Vidrio'
+                        : `${pano.vidrio || 'templado'} ${espesorLabel(pano.espesor)} ${pano.color_vidrio || ''}`.trim();
                     const fijTxt = pano.fijacion === 'sin_marco' ? 'Sin Marco' : pano.fijacion === 'p40_puerta' ? 'P40 de puerta' : (pano.fijacion || 'Conectores');
                     return `Paño Fijo ${label}: <strong>${pano.alto || 0}</strong> mm · ${vid} · Fijación: ${fijTxt}`;
                 };
@@ -3494,7 +3496,7 @@
 
         const container = document.getElementById('schematic-' + id);
         if (container) container.innerHTML = renderSVG(id);
-        if (key === 'color_perfil' || key === 'espesor') refreshPanoUI(id);
+        if (key === 'color_perfil' || key === 'espesor' || key === 'vidrio') refreshPanoUI(id);
         if (cardsState[id].locked) generateSummary(id);
         saveProgress();
     };
@@ -3508,12 +3510,23 @@
         const cp = pano.color_perfil || 'natural';
         let colorPerfilSel = `<select onchange="${fn}, 'color_perfil', this.value)" title="Acabado del perfil de aluminio"><option value="blanco" ${cp==='blanco'?'selected':''}>Acabado: Blanco</option><option value="negro" ${cp==='negro'?'selected':''}>Acabado: Negro</option><option value="natural" ${cp==='natural'?'selected':''}>Acabado: Natural/Plata</option><option value="grafito" ${cp==='grafito'?'selected':''}>Acabado: Grafito</option><option value="madera" ${cp==='madera'?'selected':''}>Acabado: Madera</option><option value="ral" ${cp==='ral'?'selected':''}>Acabado: RAL Especial</option></select>`;
         if (cp === 'ral') colorPerfilSel += `<input type="text" value="${pano.color_ral || ''}" placeholder="RAL / Hex (ej: RAL 7016)" oninput="${fn}, 'color_ral', this.value)" style="grid-column: span 2;">`;
+        // Mismas 4 opciones de vidrio (y misma lógica: Louvers oculta grosor/color y muestra el
+        // color del encabezado) que usa el Paño Fijo normal (vidriosBasicos en getMenuOpciones)
+        // — pedido explícito del usuario, el paño adosado tenía solo Templado/Laminado.
+        let espesorSel = '', vidrioColorSel = '';
+        if (vt === 'louvers') {
+            const headerColor = document.getElementById('header-color').value || 'Sin color definido';
+            vidrioColorSel = `<div style="grid-column: span 2; padding: 6px; font-size: 11px; color: var(--artal-blue); font-weight: bold; background: #e8f4f8; border-radius: 3px; border: 1px dashed var(--artal-blue); text-align: center;">Color Louvers: ${headerColor}</div>`;
+        } else {
+            espesorSel = `<select onchange="${fn}, 'espesor', this.value)"><option value="" ${ce===''?'selected':''}>-- Grosor --</option><option value="10mm" ${ce==='10mm'?'selected':''}>3/8" (10mm)</option><option value="12mm" ${ce==='12mm'?'selected':''}>1/2" (12mm)</option><option value="3+3" ${ce==='3+3'?'selected':''}>3+3</option><option value="4+4" ${ce==='4+4'?'selected':''}>4+4</option><option value="5+5" ${ce==='5+5'?'selected':''}>5+5</option><option value="6+6" ${ce==='6+6'?'selected':''}>6+6</option></select>`;
+            vidrioColorSel = `<select onchange="${fn}, 'color_vidrio', this.value)"><option value="" ${cv===''?'selected':''}>-- Color del Vidrio --</option><option value="natural" ${cv==='natural'?'selected':''}>Natural / Transparente</option><option value="negro" ${cv==='negro'?'selected':''}>Negro / Transparente</option><option value="azul" ${cv==='azul'?'selected':''}>Azul / Transparente</option><option value="esmerilado" ${cv==='esmerilado'?'selected':''}>Esmerilado / Opaco</option><option value="reflectivo" ${cv==='reflectivo'?'selected':''}>Reflectivo</option></select>`;
+        }
         return `
             <input type="text" inputmode="numeric" value="${pano.alto || ''}" placeholder="Alto del paño (mm)" oninput="${fn}, 'alto', this.value)" style="grid-column: span 2;">
-            <select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option></select>
-            <select onchange="${fn}, 'espesor', this.value)"><option value="" ${ce===''?'selected':''}>-- Grosor --</option><option value="10mm" ${ce==='10mm'?'selected':''}>3/8" (10mm)</option><option value="12mm" ${ce==='12mm'?'selected':''}>1/2" (12mm)</option><option value="3+3" ${ce==='3+3'?'selected':''}>3+3</option><option value="4+4" ${ce==='4+4'?'selected':''}>4+4</option><option value="5+5" ${ce==='5+5'?'selected':''}>5+5</option><option value="6+6" ${ce==='6+6'?'selected':''}>6+6</option></select>
-            <select onchange="${fn}, 'color_vidrio', this.value)"><option value="" ${cv===''?'selected':''}>-- Color del Vidrio --</option><option value="natural" ${cv==='natural'?'selected':''}>Natural / Transparente</option><option value="negro" ${cv==='negro'?'selected':''}>Negro / Transparente</option><option value="azul" ${cv==='azul'?'selected':''}>Azul / Transparente</option><option value="esmerilado" ${cv==='esmerilado'?'selected':''}>Esmerilado / Opaco</option><option value="reflectivo" ${cv==='reflectivo'?'selected':''}>Reflectivo</option></select>
-            <select onchange="${fn}, 'fijacion', this.value)" title="Sistema / Fijación"><option value="conectores" ${fij==='conectores'?'selected':''}>Con Conectores</option><option value="moldura" ${fij==='moldura'?'selected':''}>Con Moldura Perimetral</option><option value="p40" ${fij==='p40'?'selected':''}>Perfiles Aluminio (P40)</option><option value="sin_marco" ${fij==='sin_marco'?'selected':''}>Sin Marco</option></select>
+            <select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option><option value="louvers" ${vt==='louvers'?'selected':''}>Láminas de Louver</option><option value="sin" ${vt==='sin'?'selected':''}>Sin Vidrio</option></select>
+            ${espesorSel}
+            ${vidrioColorSel}
+            <select onchange="${fn}, 'fijacion', this.value)" title="Sistema / Fijación"><option value="conectores" ${fij==='conectores'?'selected':''}>Con Conectores</option><option value="moldura" ${fij==='moldura'?'selected':''}>Con Moldura Perimetral</option><option value="p40" ${fij==='p40'?'selected':''}>Perfiles Aluminio (P40)</option><option value="p40_puerta" ${fij==='p40_puerta'?'selected':''}>P40 de puerta</option><option value="sin_marco" ${fij==='sin_marco'?'selected':''}>Sin Marco</option></select>
             ${colorPerfilSel}
         `;
     }
