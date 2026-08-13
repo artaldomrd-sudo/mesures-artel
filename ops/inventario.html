@@ -24,6 +24,10 @@
     .item-card.low .item-qty .q-num { color: #e74c3c; }
     .item-qty .unidad { font-size: 12px; font-weight: normal; color: #888; }
     .item-min { font-size: 12.5px; color: #5a6570; margin-top: 4px; }
+    .unidad-wrap { display: flex; gap: 8px; align-items: stretch; }
+    .unidad-wrap select { flex: 1; }
+    .unidad-add { flex: 0 0 auto; width: 46px; min-height: 44px; border: 1.5px solid var(--artal-blue); background: #fff; color: var(--artal-blue); border-radius: 8px; font-size: 22px; font-weight: bold; cursor: pointer; line-height: 1; font-family: 'Arimo'; }
+    .unidad-add:hover { background: var(--artal-light); }
     .item-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
     .item-actions button { padding: 9px 14px; border: none; border-radius: 7px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13px; }
     .btn-tomar { background: #e67e22; color: #fff; }
@@ -164,7 +168,7 @@
         <label id="nuevo-color-label">Color</label>
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
         <label>Unidad</label>
-        <input type="text" id="nuevo-unidad" placeholder="Ej: tubos, cartuchos, barras, galones">
+        <div id="nuevo-unidad-wrap"></div>
         <label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = no viene en caja; ej. 12 o 24 tubos)</span></label>
         <input type="number" id="nuevo-porcaja" value="0" min="0" step="1" placeholder="0">
         <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-esset" onchange="toggleSetNuevo()" style="width:auto"> 🧩 Es un <b>juego/set</b> (varias piezas: brocas, llaves Allen, puntas…)</label>
@@ -446,6 +450,31 @@
     const minimoDe = (it) => Number(it.minimo) || 0;
     const sinStockDe = (it) => (Number(it.cantidad) || 0) <= 0;
     const bajoMinimoDe = (it) => !esCatHerramientas(it.categoria) && minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
+    // Unidades: desplegable con las que ya se usan (deriva de los ítems) + defaults, sin números sueltos
+    // (los "14/6" de datos viejos no aparecen). El botón "+" agrega una unidad nueva a mano.
+    const UNIDADES_DEFAULT = ['unidades', 'tubos', 'cartuchos', 'barras', 'galones', 'litros', 'metros', 'sacos', 'rollos', 'pares', 'juegos', 'láminas', 'pliegos'];
+    function unidadesRegistradas() {
+        const s = new Set(UNIDADES_DEFAULT);
+        allItems.forEach(it => { const u = String(it.unidad || '').trim(); if (u && !/^\d+$/.test(u)) s.add(u); });
+        return [...s].sort((a, b) => a.localeCompare(b, 'es'));
+    }
+    function unidadSelectHTML(selectId, selected) {
+        const units = unidadesRegistradas();
+        const sel = String(selected || '').trim();
+        if (sel && !/^\d+$/.test(sel) && !units.some(u => u.toLowerCase() === sel.toLowerCase())) units.unshift(sel);
+        const opts = `<option value="">— elegir unidad —</option>` + units.map(u => `<option value="${esc(u)}" ${u.toLowerCase() === sel.toLowerCase() ? 'selected' : ''}>${esc(u)}</option>`).join('');
+        return `<div class="unidad-wrap"><select id="${selectId}">${opts}</select><button type="button" class="unidad-add" onclick="agregarUnidad('${selectId}')" title="Agregar una unidad nueva">+</button></div>`;
+    }
+    window.agregarUnidad = function (selectId) {
+        const nombre = (prompt('Nueva unidad de medida (ej. cartuchos, sacos, rollos):') || '').trim();
+        if (!nombre) return;
+        if (/^\d+$/.test(nombre)) { alert('La unidad debe ser una palabra, no un número.'); return; }
+        const sel = document.getElementById(selectId); if (!sel) return;
+        if (![...sel.options].some(o => o.value.toLowerCase() === nombre.toLowerCase())) {
+            const opt = document.createElement('option'); opt.value = nombre; opt.textContent = nombre; sel.appendChild(opt);
+        }
+        sel.value = nombre;
+    };
     function itemCardHTML(item) {
         const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
         const subsEdit = subgruposDeKey(item.categoria);
@@ -523,7 +552,7 @@
                 <label>Color / variante <span style="font-weight:normal;color:#999">(opcional)</span></label>
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
                 <div class="grid2-inv" style="margin-top:8px">
-                    <div><label>Unidad</label><input type="text" id="editar-unidad-${item.id}" value="${esc(item.unidad || '')}"></div>
+                    <div><label>Unidad</label>${unidadSelectHTML('editar-unidad-' + item.id, item.unidad)}</div>
                     <div><label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = sin caja)</span></label><input type="number" id="editar-porcaja-${item.id}" min="0" step="1" value="${Number(item.porCaja) || 0}"></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
@@ -972,6 +1001,7 @@
             const sg2 = document.getElementById('nuevo-subgrupo2');
             if (sg2 && subSel2 && subSel2 !== '_sc' && [...sg2.options].some(o => o.value === subSel2)) sg2.value = subSel2;
         }
+        document.getElementById('nuevo-unidad-wrap').innerHTML = unidadSelectHTML('nuevo-unidad', document.getElementById('nuevo-unidad') ? document.getElementById('nuevo-unidad').value : '');
         document.getElementById('nuevo-item-overlay').classList.add('show');
     };
     window.cerrarNuevoItem = function () {
