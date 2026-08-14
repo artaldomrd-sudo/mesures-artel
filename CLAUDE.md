@@ -404,6 +404,23 @@ estilo simplificado del CAD.
   función arranca comprobando `state.panoArriba || state.panoAbajo`, es seguro llamarla desde
   puntos genéricos de la app (ducha/baranda/corredera/etc.) que nunca tienen paños: no hace
   nada en esos casos.
+- **Cuarto bug real: el dibujo quedaba sin centrar** (hueco vacío, no repartido parejo arriba y
+  abajo), reportado con fotos reales comparando varias tarjetas con paño una al lado de la
+  otra. Causa: el alto se calculaba **una sola vez** con el ancho de la tarjeta en ESE momento
+  (`area.clientWidth`) — pero el ancho de una tarjeta cambia después por motivos ajenos a ella
+  (se agrega/quita OTRA tarjeta y la grilla se reacomoda a 1 o 2 columnas, se cambia el tamaño
+  de la ventana, etc.), y nada volvía a llamar `updatePanoDrawingHeight` para las tarjetas con
+  paño que no se estaban editando en ese momento — quedaban con un alto ya desactualizado
+  respecto a su ancho real, y "meet" dejaba franjas vacías (repartidas por el centrado propio
+  de "meet", pero visualmente se notaban como asimétricas cuando el hueco era grande). Fix: un
+  `ResizeObserver` compartido (`panoResizeObserver`) observa el `.drawing-area` de cada tarjeta
+  con paño y vuelve a llamar `updatePanoDrawingHeight(id)` cada vez que su ancho real cambia —
+  como el cálculo de alto es una función pura del ancho (mismo ancho → mismo alto), es seguro:
+  si el ancho no cambió, el resultado es idéntico y el observer no vuelve a dispararse (sin
+  loop infinito). Se registra (`.observe`) al final de `updatePanoDrawingHeight` cuando hay
+  paños, y se desregistra (`.unobserve`) cuando se quitan. De paso, el techo de alto bajó de
+  900 a 650 (pedido explícito del usuario: un ítem angosto y muy alto, ej. 1150×2600 + paño, se
+  veía "muy grande" con el techo anterior).
 
 ## Vidrio de Ducha (constructor de paneles)
 

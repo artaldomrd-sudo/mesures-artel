@@ -3487,11 +3487,37 @@
     // tarjeta, togglePano, updatePanoState, y los cambios de ancho/alto/paños/fijación del ítem
     // base en updateState). Sin paños, no toca el `viewBox` (queda el de siempre) y restaura el
     // alto del contenedor al CSS fijo (`''`).
+    // Techo de 650 (antes 900): a pedido explícito del usuario, un ítem angosto y muy alto (ej.
+    // 1150×2600 + paño) se veía "muy grande" con el techo anterior — 650 lo acota sin volver a
+    // usar el alto fijo genérico.
+    // **Bug real, reportado con fotos reales: el dibujo quedaba sin centrar (espacio vacío
+    // abajo), no siempre a pedir de boca.** El alto se calculaba UNA sola vez con el ancho de
+    // la tarjeta en ESE momento (`area.clientWidth`) — pero el ancho de una tarjeta cambia
+    // después por motivos ajenos a ella (se agrega/quita OTRA tarjeta y la grilla se reacomoda a
+    // 1 o 2 columnas, se cambia el tamaño de la ventana, etc.), y nada volvía a llamar esta
+    // función para las tarjetas con paño que no se estaban editando en ese momento — quedaban
+    // con un alto ya desactualizado respecto a su ancho real, y "meet" dejaba franjas vacías
+    // (siempre repartidas arriba/abajo por el centrado de "meet", pero visualmente se notaba
+    // más abajo cuando el hueco era grande). Un `ResizeObserver` por tarjeta reobserva el
+    // ancho real y vuelve a llamar esta misma función cada vez que cambia — como el cálculo de
+    // alto es una función pura del ancho (mismo ancho → mismo alto), es seguro programar el
+    // reintento así: si el ancho no cambió, el resultado es idéntico y no dispara el observer
+    // de nuevo (no hay loop infinito).
+    const panoResizeObserver = (typeof ResizeObserver !== 'undefined') ? new ResizeObserver(entries => {
+        entries.forEach(entry => {
+            const areaId = entry.target.id || '';
+            if (areaId.indexOf('schematic-') === 0) updatePanoDrawingHeight(areaId.slice('schematic-'.length));
+        });
+    }) : null;
     function updatePanoDrawingHeight(id) {
         const state = cardsState[id];
         const area = document.querySelector('#card-' + id + ' .drawing-area');
         if (!area) return;
-        if (!state || (!state.panoArriba && !state.panoAbajo)) { area.style.height = ''; return; }
+        if (!state || (!state.panoArriba && !state.panoAbajo)) {
+            area.style.height = '';
+            if (panoResizeObserver) panoResizeObserver.unobserve(area);
+            return;
+        }
         const svg = area.querySelector('svg');
         if (!svg) return;
         let bbox;
@@ -3502,7 +3528,8 @@
         svg.setAttribute('viewBox', vb.map(n => n.toFixed(1)).join(' '));
         const w = area.clientWidth;
         if (!w) return;
-        area.style.height = Math.min(900, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
+        area.style.height = Math.min(650, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
+        if (panoResizeObserver) panoResizeObserver.observe(area);
     }
 
     // --- Paño Fijo adosado (arriba/abajo) en ventanas/puertas: modelo de datos + UI ---------
