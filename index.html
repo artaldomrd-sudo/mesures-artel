@@ -614,7 +614,7 @@
                 if (ha.ral) st.color_ral = ha.ral;
                 const sc = document.getElementById('schematic-' + id);
                 if (sc) sc.innerHTML = renderSVG(id);
-                updatePanoDrawingHeight(id);
+                adaptDrawingToContent(id);
             }
             if (!cardsState[id].locked) {
                 const optionsContainer = document.querySelector(`#card-${id} .config-options`);
@@ -3186,7 +3186,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         } else if (cardsState[id].categoria === 'cerramiento') {
             card.innerHTML = `
                 ${dragHandleHtml}
@@ -3216,7 +3216,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
@@ -3262,7 +3262,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         }
 
         insertarMarcaMedida(id, card);
@@ -3290,7 +3290,7 @@
             }
             const container = document.getElementById('schematic-' + id);
             if (container) container.innerHTML = renderSVG(id);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         }
         if (cardsState[id].categoria === 'ducha' || cardsState[id].categoria === 'baranda') {
             const cont = document.getElementById('options-' + id);
@@ -3353,7 +3353,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         }
 
         // Cambiar de colección de tela (roller) invalida el color y la apertura elegidos si no
@@ -3384,7 +3384,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         }
 
         // Aviso (no bloquea) si el ancho pedido supera el ancho de rollo del catálogo real de
@@ -3402,7 +3402,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
-            updatePanoDrawingHeight(id);
+            adaptDrawingToContent(id);
         }
 
         // La mosquitera suma 1 vía en correderas (ocupa un riel extra): refrescar la etiqueta.
@@ -3416,7 +3416,7 @@
             if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
-                updatePanoDrawingHeight(id);
+                adaptDrawingToContent(id);
             }
             if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina') {
                 const card = document.getElementById('card-' + id);
@@ -3506,14 +3506,15 @@
     const panoResizeObserver = (typeof ResizeObserver !== 'undefined') ? new ResizeObserver(entries => {
         entries.forEach(entry => {
             const areaId = entry.target.id || '';
-            if (areaId.indexOf('schematic-') === 0) updatePanoDrawingHeight(areaId.slice('schematic-'.length));
+            if (areaId.indexOf('schematic-') === 0) adaptDrawingToContent(areaId.slice('schematic-'.length));
         });
     }) : null;
-    function updatePanoDrawingHeight(id) {
+    function adaptDrawingToContent(id) {
         const state = cardsState[id];
         const area = document.querySelector('#card-' + id + ' .drawing-area');
         if (!area) return;
-        if (!state || (!state.panoArriba && !state.panoAbajo)) {
+        const aplica = state && (state.panoArriba || state.panoAbajo || state.categoria === 'cerramiento');
+        if (!aplica) {
             area.style.height = '';
             if (panoResizeObserver) panoResizeObserver.unobserve(area);
             return;
@@ -3547,7 +3548,7 @@
         refreshPanoUI(id);
         const sc = document.getElementById('schematic-' + id);
         if (sc) sc.innerHTML = renderSVG(id);
-        updatePanoDrawingHeight(id);
+        adaptDrawingToContent(id);
         saveProgress();
     };
 
@@ -3566,7 +3567,7 @@
 
         const container = document.getElementById('schematic-' + id);
         if (container) container.innerHTML = renderSVG(id);
-        updatePanoDrawingHeight(id);
+        adaptDrawingToContent(id);
         if (key === 'color_perfil' || key === 'espesor' || key === 'vidrio') refreshPanoUI(id);
         if (cardsState[id].locked) generateSummary(id);
         saveProgress();
@@ -5185,6 +5186,7 @@
         st.ancho = (st.paneles || []).reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
         const c = document.getElementById('schematic-' + id);
         if (c) c.innerHTML = renderSVG(id);
+        adaptDrawingToContent(id);
         if (rebuildUI) {
             const b = document.getElementById('facade-builder-' + id);
             if (b) b.innerHTML = renderFacadeBuilder(id);

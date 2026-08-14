@@ -391,7 +391,7 @@ estilo simplificado del CAD.
      (para las líneas de cota — "total alto" a la izquierda, "alto" a la derecha) sin importar
      cuánto ancho real ocupe el panel — probado ajustando SOLO el alto del contenedor (causa 1):
      no alcanzaba, el margen lateral seguía ahí y el dibujo se seguía viendo chico.
-  `updatePanoDrawingHeight(id)` ataca las dos causas a la vez, pero **solo en tarjetas CON
+  `adaptDrawingToContent(id)` ataca las dos causas a la vez, pero **solo en tarjetas CON
   paño adosado** (nunca toca el viewBox/alto de las demás, cero riesgo para el resto de la
   app): recorta el `viewBox` del SVG ya renderizado al contenido real (`svg.getBBox()` + un
   margen chico de 6 unidades, porque `getBBox()` solo mide relleno — no cuenta el trazo ni la
@@ -409,18 +409,48 @@ estilo simplificado del CAD.
   otra. Causa: el alto se calculaba **una sola vez** con el ancho de la tarjeta en ESE momento
   (`area.clientWidth`) — pero el ancho de una tarjeta cambia después por motivos ajenos a ella
   (se agrega/quita OTRA tarjeta y la grilla se reacomoda a 1 o 2 columnas, se cambia el tamaño
-  de la ventana, etc.), y nada volvía a llamar `updatePanoDrawingHeight` para las tarjetas con
+  de la ventana, etc.), y nada volvía a llamar `adaptDrawingToContent` para las tarjetas con
   paño que no se estaban editando en ese momento — quedaban con un alto ya desactualizado
   respecto a su ancho real, y "meet" dejaba franjas vacías (repartidas por el centrado propio
   de "meet", pero visualmente se notaban como asimétricas cuando el hueco era grande). Fix: un
   `ResizeObserver` compartido (`panoResizeObserver`) observa el `.drawing-area` de cada tarjeta
-  con paño y vuelve a llamar `updatePanoDrawingHeight(id)` cada vez que su ancho real cambia —
+  con paño y vuelve a llamar `adaptDrawingToContent(id)` cada vez que su ancho real cambia —
   como el cálculo de alto es una función pura del ancho (mismo ancho → mismo alto), es seguro:
   si el ancho no cambió, el resultado es idéntico y el observer no vuelve a dispararse (sin
-  loop infinito). Se registra (`.observe`) al final de `updatePanoDrawingHeight` cuando hay
+  loop infinito). Se registra (`.observe`) al final de `adaptDrawingToContent` cuando hay
   paños, y se desregistra (`.unobserve`) cuando se quitan. De paso, el techo de alto bajó de
   900 a 650 (pedido explícito del usuario: un ítem angosto y muy alto, ej. 1150×2600 + paño, se
   veía "muy grande" con el techo anterior).
+- **`adaptDrawingToContent` generalizado a Vidrio de Ducha** (mismo nombre de función desde este
+  cambio — antes se llamaba `updatePanoDrawingHeight`, renombrada porque ya no es solo para
+  paños). Reportado con fotos reales: "vidrios de ducha, en el dibujo medidas aparecen muy
+  pequeñas... el M2 ni siquiera se ve" (M1 650×1200mm 1 panel; M2 350×2200mm 1 panel, angosto y
+  muy alto). Causa: exactamente la misma familia de bug que los paños (`.drawing-area` con alto
+  FIJO de 260px), pero en `renderFacade` (Vidrio de Ducha) en vez de `composePanos` — ese
+  render tiene su propia fórmula independiente (`DW=100` ancho fijo en unidades de viewBox,
+  `scale = DW/ancho_total_mm`, `Hd = alto_mm * scale`), así que un panel angosto y alto como el
+  M2 genera un viewBox extremadamente vertical (para M2: viewBox ancho≈124, alto≈725, relación
+  ancho/alto≈0.17) que dentro de la caja fija de 260px de alto quedaba escalado a un tamaño
+  mínimo — el texto de las cotas, con `font-size` fijo en unidades de viewBox, se volvía casi
+  invisible en pantalla (mismo motivo por el que el problema de los paños afectaba el dibujo
+  entero, no solo el texto). Arreglo: la condición de guarda de `adaptDrawingToContent` pasó de
+  "solo si `panoArriba`/`panoAbajo`" a "si hay paño **o** `state.categoria === 'cerramiento'`"
+  (Vidrio de Ducha), y `refreshFacade(id, rebuildUI)` — el único punto donde
+  `renderFacade` reescribe el SVG de la tarjeta (usado por `facadeAddPanel`,
+  `facadeRemovePanel`, `facadeUpdatePanel`, `facadeSetTipo`, `facadeInvert`,
+  `facadeInvertPanel`, y el input "H Total (mm)") — ahora llama a `adaptDrawingToContent(id)`
+  justo después de `schematic-${id}.innerHTML = renderSVG(id)`, mismo patrón que ya usan los
+  paños. El `adaptDrawingToContent(id)` en la creación de la tarjeta (`addItem`, rama
+  `cerramiento`) ya estaba presente de antes (agregado sin querer por un `replace_all` amplio
+  cuando esta función todavía era solo para paños — quedaba sin efecto porque la condición de
+  guarda no dejaba pasar tarjetas de ducha; con la condición ampliada, empieza a funcionar solo).
+  Verificado en vivo: M1 (650×1200) queda con la caja ajustada casi exacto a la proporción real
+  del contenido (relación ancho/alto del `viewBox` recortado ≈ la del contenedor, sin holgura);
+  M2 (350×2200) usa el techo de 650px (no puede crecer más sin desbordar la tarjeta) pero el
+  texto de las cotas pasa de una escala ≈0.36px-por-unidad (invisible) a ≈1px-por-unidad
+  (≈2.5× más grande, legible) — las dos etiquetas ("350 mm", "2200 mm") quedan dentro de los
+  límites visibles del SVG. Tarjetas normales (sin paño, sin ser Vidrio de Ducha) no se tocan:
+  siguen con `area.style.height === ''` (el CSS fijo de 260px de siempre).
 
 ## Vidrio de Ducha (constructor de paneles)
 
