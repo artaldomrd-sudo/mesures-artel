@@ -282,13 +282,18 @@ estilo simplificado del CAD.
     ahora usa la MISMA escala (unidades de viewBox por mm) que ya usó `fitPropRect` para el
     panel base — derivada de `panelRect[2]` (el ancho ya ajustado) contra el `ancho` real, ya
     que el paño siempre comparte ese mismo ancho — multiplicada por el `alto` real del paño.
-    Piso de 12 unidades (mismo criterio que el piso del 25% de `fitPropRect`) para que un paño
-    muy bajo en relación al panel base no colapse a una línea ilegible. `bandHArriba`/
-    `bandHAbajo` se calculan una vez en `composePanos` (arriba y abajo pueden tener alturas de
-    banda distintas, según su propio `alto`) y reemplazan la constante fija en TODOS los cálculos
-    de posición (`topBoundary`, `botH`, el `translate` de cada paño, la medida total a la
-    izquierda) — la etiqueta "F" también reduce su `font-size` proporcionalmente
+    `bandHArriba`/`bandHAbajo` se calculan una vez en `composePanos` (arriba y abajo pueden tener
+    alturas de banda distintas, según su propio `alto`) y reemplazan la constante fija en TODOS
+    los cálculos de posición (`topBoundary`, `botH`, el `translate` de cada paño, la medida
+    total a la izquierda) — la etiqueta "F" también reduce su `font-size` proporcionalmente
     (`Math.min(9, bandH*0.35)`) para no desbordar una banda muy baja.
+    **Segundo bug real, también reportado con fotos reales**: el primer intento le puso un piso
+    de 12 unidades a la banda (para que un paño muy bajo no colapsara a una línea ilegible) —
+    pero ese piso se activaba también en casos NORMALES: un ítem muy ancho (ej. 5100mm) da una
+    escala chica, y un paño de 400mm caía por debajo del piso; el piso lo agrandaba de vuelta,
+    rompiendo la proporción real otra vez, esta vez al revés (el paño se veía más grande de lo
+    que le corresponde). El piso bajó a 4 — ya no interviene en proporciones reales normales,
+    solo evita un alto literalmente degenerado.
   - Traslada el contenido con `<g transform="translate(0, Y)">` (nunca
     `preserveAspectRatio="none"` con un viewBox reescalado): así no se distorsiona el dibujo
     base, ni siquiera en los tipos que ya combinan elevación + vista de planta en el mismo
@@ -376,6 +381,29 @@ estilo simplificado del CAD.
   significando solo la altura de la hoja operable (no rompe ningún cálculo de área de
   vidrio/herrajes que dependa de él). Como la sección de paños vive dentro de `.hide-on-lock`,
   se oculta sola al fijar el ítem/exportar PDF, igual que el resto de los controles de edición.
+- **Tercer bug real (con paños): el dibujo se veía chico, rodeado de espacio vacío**, reportado
+  con fotos reales — "adapta el dibujo al tamaño del cuadro". Dos causas combinadas:
+  1. `.drawing-area` tiene alto FIJO en CSS (`height: 260px`, igual para toda la app, pensado
+     para el grid 2x2 del PDF) — con paños el viewBox crece mucho en altura (bandas + medida de
+     ancho reubicada) pero el ancho se mantiene, así que "meet" dejaba franjas vacías arriba/
+     abajo dentro de esa caja fija.
+  2. El viewBox base de estos tipos reserva de fábrica bastante margen fijo a los **costados**
+     (para las líneas de cota — "total alto" a la izquierda, "alto" a la derecha) sin importar
+     cuánto ancho real ocupe el panel — probado ajustando SOLO el alto del contenedor (causa 1):
+     no alcanzaba, el margen lateral seguía ahí y el dibujo se seguía viendo chico.
+  `updatePanoDrawingHeight(id)` ataca las dos causas a la vez, pero **solo en tarjetas CON
+  paño adosado** (nunca toca el viewBox/alto de las demás, cero riesgo para el resto de la
+  app): recorta el `viewBox` del SVG ya renderizado al contenido real (`svg.getBBox()` + un
+  margen chico de 6 unidades, porque `getBBox()` solo mide relleno — no cuenta el trazo ni la
+  sombra del vidrio) y ajusta el alto del contenedor (`clientWidth * vbH/vbW`, con piso de
+  260px como antes y techo de 900px) a esa proporción real ya recortada. Sin paños, restaura
+  todo a como estaba (`viewBox` de siempre sin tocar, alto del contenedor a `''` = el CSS
+  fijo). Se llama después de cada `schematic-${id}.innerHTML = renderSVG(id)` relevante:
+  creación/restauración de la tarjeta (`addItem`), `togglePano`, `updatePanoState`, y los
+  cambios de ancho/alto/paños/fijación/acabado del ítem base en `updateState` — como la
+  función arranca comprobando `state.panoArriba || state.panoAbajo`, es seguro llamarla desde
+  puntos genéricos de la app (ducha/baranda/corredera/etc.) que nunca tienen paños: no hace
+  nada en esos casos.
 
 ## Vidrio de Ducha (constructor de paneles)
 

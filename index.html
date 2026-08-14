@@ -614,6 +614,7 @@
                 if (ha.ral) st.color_ral = ha.ral;
                 const sc = document.getElementById('schematic-' + id);
                 if (sc) sc.innerHTML = renderSVG(id);
+                updatePanoDrawingHeight(id);
             }
             if (!cardsState[id].locked) {
                 const optionsContainer = document.querySelector(`#card-${id} .config-options`);
@@ -3185,6 +3186,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
+            updatePanoDrawingHeight(id);
         } else if (cardsState[id].categoria === 'cerramiento') {
             card.innerHTML = `
                 ${dragHandleHtml}
@@ -3214,6 +3216,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
+            updatePanoDrawingHeight(id);
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
@@ -3259,6 +3262,7 @@
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
             `;
             list.appendChild(card);
+            updatePanoDrawingHeight(id);
         }
 
         insertarMarcaMedida(id, card);
@@ -3286,6 +3290,7 @@
             }
             const container = document.getElementById('schematic-' + id);
             if (container) container.innerHTML = renderSVG(id);
+            updatePanoDrawingHeight(id);
         }
         if (cardsState[id].categoria === 'ducha' || cardsState[id].categoria === 'baranda') {
             const cont = document.getElementById('options-' + id);
@@ -3348,6 +3353,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
+            updatePanoDrawingHeight(id);
         }
 
         // Cambiar de colección de tela (roller) invalida el color y la apertura elegidos si no
@@ -3378,6 +3384,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
+            updatePanoDrawingHeight(id);
         }
 
         // Aviso (no bloquea) si el ancho pedido supera el ancho de rollo del catálogo real de
@@ -3395,6 +3402,7 @@
             }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
+            updatePanoDrawingHeight(id);
         }
 
         // La mosquitera suma 1 vía en correderas (ocupa un riel extra): refrescar la etiqueta.
@@ -3408,6 +3416,7 @@
             if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
+                updatePanoDrawingHeight(id);
             }
             if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina') {
                 const card = document.getElementById('card-' + id);
@@ -3463,6 +3472,39 @@
         saveProgress();
     };
 
+    // `.drawing-area` tiene alto FIJO en CSS (260px, pensado para el grid 2x2 del PDF y el
+    // resto de la app). Además, el viewBox de estos tipos reserva de fábrica bastante margen
+    // fijo a los costados (para las líneas de cota — "total alto" a la izquierda, "alto" a la
+    // derecha), sin importar cuánto ancho real ocupe el panel — con paño(s) adosado(s) esos dos
+    // problemas se notan mucho más (dibujo chico rodeado de espacio vacío, reportado con fotos
+    // reales — "adapta el dibujo al tamaño del cuadro"). Ajustar solo el alto del contenedor NO
+    // alcanzaba (probado): el margen fijo lateral seguía ahí. En vez de tocar el viewBox base
+    // para TODOS los tipos (riesgoso, afecta tarjetas que nunca tuvieron este problema), **solo**
+    // las tarjetas CON paño adosado recortan su propio `viewBox` al contenido real ya renderizado
+    // (`svg.getBBox()`, con un margen chico de aire) y ajustan el alto del contenedor a esa
+    // proporción real — así "meet" ya no tiene margen fijo que dejar vacío. Se llama después de
+    // cada `schematic-${id}.innerHTML = renderSVG(id)` relevante (creación/restauración de la
+    // tarjeta, togglePano, updatePanoState, y los cambios de ancho/alto/paños/fijación del ítem
+    // base en updateState). Sin paños, no toca el `viewBox` (queda el de siempre) y restaura el
+    // alto del contenedor al CSS fijo (`''`).
+    function updatePanoDrawingHeight(id) {
+        const state = cardsState[id];
+        const area = document.querySelector('#card-' + id + ' .drawing-area');
+        if (!area) return;
+        if (!state || (!state.panoArriba && !state.panoAbajo)) { area.style.height = ''; return; }
+        const svg = area.querySelector('svg');
+        if (!svg) return;
+        let bbox;
+        try { bbox = svg.getBBox(); } catch (e) { return; }
+        if (!bbox || !bbox.width || !bbox.height) return;
+        const pad = 6; // aire para el trazo/sombra que getBBox() no cuenta (solo mide relleno)
+        const vb = [bbox.x - pad, bbox.y - pad, bbox.width + pad * 2, bbox.height + pad * 2];
+        svg.setAttribute('viewBox', vb.map(n => n.toFixed(1)).join(' '));
+        const w = area.clientWidth;
+        if (!w) return;
+        area.style.height = Math.min(900, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
+    }
+
     // --- Paño Fijo adosado (arriba/abajo) en ventanas/puertas: modelo de datos + UI ---------
     function getPanoDefault() {
         const state = { alto: 0, vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', fijacion: 'conectores', color_perfil: 'natural', color_ral: '' };
@@ -3478,6 +3520,7 @@
         refreshPanoUI(id);
         const sc = document.getElementById('schematic-' + id);
         if (sc) sc.innerHTML = renderSVG(id);
+        updatePanoDrawingHeight(id);
         saveProgress();
     };
 
@@ -3496,6 +3539,7 @@
 
         const container = document.getElementById('schematic-' + id);
         if (container) container.innerHTML = renderSVG(id);
+        updatePanoDrawingHeight(id);
         if (key === 'color_perfil' || key === 'espesor' || key === 'vidrio') refreshPanoUI(id);
         if (cardsState[id].locked) generateSummary(id);
         saveProgress();
@@ -3816,13 +3860,18 @@
     // MISMA escala (unidades del viewBox por mm) que ya usó `fitPropRect` para el panel base —
     // derivada de `panelRect[2]` (el ancho ya ajustado) contra el `ancho` real, ya que el paño
     // siempre comparte ese mismo ancho — así el paño escala en la misma proporción que el
-    // panel base, no un tamaño fijo. Piso de 12 unidades para que un paño muy bajo en relación
-    // al panel base no colapse a una línea ilegible (mismo criterio que el piso del 25% de
-    // `fitPropRect`).
+    // panel base, no un tamaño fijo.
+    // **Segundo bug real, reportado con fotos reales**: un piso de 12 unidades (pensado solo
+    // para evitar una banda degenerada/ilegible) se activaba también en casos normales — un
+    // ítem MUY ancho (ej. 5100mm) da una escala chica, y un paño de 400mm caía por debajo del
+    // piso; el piso lo agrandaba de vuelta, rompiendo la proporción real otra vez (esta vez al
+    // revés: el paño se veía más grande de lo que le corresponde). El piso baja a 4 — solo
+    // para evitar un alto literalmente degenerado (0 o casi 0), ya no interviene en proporciones
+    // reales normales como la de este caso.
     function panoBandH(pano, panelRect, state) {
         const anchoReal = parseInt(state.ancho) || 0;
         const scale = anchoReal > 0 ? panelRect[2] / anchoReal : 1;
-        return Math.max((parseInt(pano.alto) || 0) * scale, 12);
+        return Math.max((parseInt(pano.alto) || 0) * scale, 4);
     }
 
     function buildPanoFragment(uid, side, pano, panelRect, isFlipped, bandH) {
