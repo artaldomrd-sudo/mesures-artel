@@ -2006,7 +2006,7 @@
     // costoNoche = hotel por persona/noche; costoComida = alimentación (desayuno+comida+cena) por persona/día.
     // Alimentación por comidas: cada una se puede marcar/desmarcar (ej. trabajo de 1 día sin dormir =
     // solo desayuno + almuerzo). costo comida/día/persona = suma de las comidas marcadas.
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, hospedajeOn: false, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, desayunoOn: true, almuerzoOn: true, cenaOn: true, costoDesayuno: 200, costoAlmuerzo: 350, costoCena: 350, dias: 0, costoDia: 0, materiales: 0, elemPorDia: 5, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajesExtra: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, hospedajeOn: false, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, desayunoOn: true, almuerzoOn: true, cenaOn: true, costoDesayuno: 200, costoAlmuerzo: 350, costoCena: 350, dias: 0, costoDia: 0, materiales: 0, elemPorDia: 5, margenPct: 0 });
     const calcVals = () => Object.assign(calcDef(), cotizCli.calc || {});
     function calcLlenarSelects(vehSel, rutaSel) {
         const sv = document.getElementById('cs-veh');
@@ -2024,6 +2024,8 @@
         calcRenderEquipo(c.empleadoIds || []);
         calcJornaleros = (c.jornaleros || []).map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 }));
         calcRenderJornaleros();
+        calcViajesExtra = (c.viajesExtra || []).map(t => ({ vehiculoId: t.vehiculoId || 'F-03', rutaId: t.rutaId || '', idaVuelta: t.idaVuelta !== false }));
+        calcRenderViajesExtra();
         document.getElementById('cs-viajes').value = c.viajes || 1;
         document.getElementById('cs-km').value = c.kmIda || '';
         document.getElementById('cs-rend').value = c.rendKmGal || '';
@@ -2076,6 +2078,31 @@
         btn.textContent = on ? '🏨 Hospedaje / alimentación (quitar)' : '🏨 + Agregar hospedaje / alimentación';
         calcRecalc();
     };
+    // Viajes con OTRO vehículo (ej. medición con Hilux), aparte del vehículo principal. Cada uno usa el
+    // rendimiento/precio de su vehículo y el km/peaje de su recorrido, y suma 1 día de sus costos fijos.
+    let calcViajesExtra = [];
+    function calcRenderViajesExtra() {
+        const box = document.getElementById('cs-viajes-extra'); if (!box) return;
+        const vehOpts = (sel) => CALC_VEHICULOS.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${x.id} · ${x.nombre.split(' ').slice(0, 2).join(' ')}</option>`).join('');
+        const rutaOpts = (sel) => '<option value="">— recorrido —</option>' + CALC_RUTAS.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${x.nombre}</option>`).join('');
+        box.innerHTML = calcViajesExtra.map((t, i) =>
+            `<div class="cs-viaje-row"><select onchange="calcViajeExtraSet(${i},'vehiculoId',this.value)">${vehOpts(t.vehiculoId)}</select><select onchange="calcViajeExtraSet(${i},'rutaId',this.value)">${rutaOpts(t.rutaId)}</select><label class="cs-iv-mini"><input type="checkbox" ${t.idaVuelta !== false ? 'checked' : ''} onchange="calcViajeExtraSet(${i},'idaVuelta',this.checked)">i/v</label><button type="button" class="cs-jorn-del" onclick="calcViajeExtraDel(${i})" title="Quitar">×</button></div>`
+        ).join('');
+    }
+    window.calcViajeExtraAdd = function () { calcViajesExtra.push({ vehiculoId: 'F-03', rutaId: '', idaVuelta: true }); calcRenderViajesExtra(); calcRecalc(); };
+    window.calcViajeExtraSet = function (i, k, v) { if (calcViajesExtra[i]) { calcViajesExtra[i][k] = v; calcRecalc(); } };
+    window.calcViajeExtraDel = function (i) { calcViajesExtra.splice(i, 1); calcRenderViajesExtra(); calcRecalc(); };
+    // Costo de cada viaje extra: combustible + mantenimiento + peajes + 1 día de fijos del vehículo.
+    function calcViajeExtraCosto(t) {
+        const r = CALC_RUTAS.find(x => x.id === t.rutaId), vh = calcVehById(t.vehiculoId);
+        if (!r || !vh) return null;
+        const km = r.km * (t.idaVuelta !== false ? 2 : 1);
+        const comb = vh.rendKmGal > 0 ? (km / vh.rendKmGal) * vh.precioGal : 0;
+        const mant = km * (vh.mantCadaKm > 0 ? vh.mantCosto / vh.mantCadaKm : 0);
+        const pj = (r.peaje || 0) * (t.idaVuelta !== false ? 1 : 0.5);
+        const fij = ((vh.seguroAnual || 0) + (vh.depreAnual || 0)) / 365;
+        return { label: vh.id + ' · ' + r.nombre, sub: comb + mant + pj + fij };
+    }
     // Equipo de la obra: casillas con los empleados (RRHH) y su costo real por día. Al marcar, se suma el
     // costo por día de instalación y se autocompletan las Personas (para hotel/comida). Todo editable.
     function calcRenderEquipo(selIds) {
@@ -2181,7 +2208,9 @@
         const num = (id) => Number(document.getElementById(id).value) || 0;
         return {
             vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value, empleadoIds: calcEquipoSeleccion(),
-            jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })), viajes: num('cs-viajes') || 1,
+            jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })),
+            viajesExtra: calcViajesExtra.map(t => ({ vehiculoId: t.vehiculoId, rutaId: t.rutaId, idaVuelta: t.idaVuelta !== false })),
+            viajes: num('cs-viajes') || 1,
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
             peajes: num('cs-peajes'),
             hospedajeOn: document.getElementById('cs-hospedaje-box').style.display !== 'none',
@@ -2214,9 +2243,11 @@
         const fijoDia = fijoAnual / 365;
         const diasUso = v.dias > 0 ? v.dias : (veh ? 1 : 0);
         const fijoVehiculo = fijoDia * diasUso;
-        const costo = combustible + mantenimiento + peajes + fijoVehiculo + hotel + alimentacion + instalacion + materiales;
+        const extras = (v.viajesExtra || []).map(calcViajeExtraCosto).filter(Boolean);
+        const extrasCosto = extras.reduce((a, e) => a + e.sub, 0);
+        const costo = combustible + mantenimiento + peajes + fijoVehiculo + extrasCosto + hotel + alimentacion + instalacion + materiales;
         const total = costo * (1 + (v.margenPct || 0) / 100);
-        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, hotel, alimentacion, instalacion, materiales, costo, total };
+        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, extras, extrasCosto, hotel, alimentacion, instalacion, materiales, costo, total };
     }
     window.calcRecalc = function () {
         const v = calcLeer(), t = calcTotales(v);
@@ -2226,6 +2257,7 @@
             (t.mantenimiento ? row('🛠️ Desgaste/mant. (RD$' + Math.round(t.mantPorKm) + '/km)', t.mantenimiento) : '') +
             row('🛣️ Peajes' + (t.viajes > 1 ? ' (×' + t.viajes + ')' : ''), t.peajes) +
             (t.fijoVehiculo ? row('🛡️ Fijos vehículo — seguro+depreciación (RD$' + Math.round(t.fijoDia) + '/día × ' + t.diasUso + ')', t.fijoVehiculo) : '') +
+            (t.extras || []).map(e => row('🚗 Viaje extra (' + e.label + ')', e.sub)).join('') +
             row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
             (t.materiales ? row('🧰 Materiales/consumibles', t.materiales) : '') +
             (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
@@ -6698,6 +6730,10 @@
     #calc-serv-ov .cs-jorn-del { border: none; background: #e2e6ea; color: #555; border-radius: 8px; width: 38px; font-size: 16px; cursor: pointer; }
     #calc-serv-ov .cs-add-btn { width: 100%; border: 1.5px dashed var(--artal-blue); background: #f2f8fd; color: var(--artal-blue); border-radius: 9px; padding: 11px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; margin-top: 4px; }
     #calc-serv-ov .cs-add-btn.on { background: var(--artal-blue); color: #fff; border-style: solid; }
+    #calc-serv-ov .cs-viaje-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+    #calc-serv-ov .cs-viaje-row select { flex: 1; min-width: 0; padding: 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 12.5px; min-height: 40px; background: #fff; }
+    #calc-serv-ov .cs-iv-mini { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #556; white-space: nowrap; }
+    #calc-serv-ov .cs-iv-mini input { width: auto; min-height: auto; margin: 0; }
     #calc-serv-ov .cs-meals-lbl { font-size: 11.5px; font-weight: bold; color: #556; margin: 10px 0 6px; }
     #calc-serv-ov .cs-meals { display: flex; flex-direction: column; gap: 6px; }
     #calc-serv-ov .cs-meal { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; color: #334; }
@@ -6773,6 +6809,9 @@
                 <label>Viajes a la obra<select id="cs-viajes" onchange="calcRecalc()" title="Cantidad de viajes que estimas por experiencia (medición, instalación, retoques o por volumen de carga)"><option value="1">1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option><option value="4">4 viajes</option><option value="5">5 viajes</option><option value="6">6 viajes</option><option value="7">7 viajes</option><option value="8">8 viajes</option><option value="9">9 viajes</option><option value="10">10 viajes</option></select></label>
             </div>
             <label class="calc-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
+            <div class="cs-meals-lbl" style="margin-top:8px">Viajes con otro vehículo (ej. medición con Hilux, aparte del camión):</div>
+            <div id="cs-viajes-extra"></div>
+            <button type="button" class="cs-add-btn" onclick="calcViajeExtraAdd()">🚗 + Agregar viaje con otro vehículo</button>
             <button type="button" id="cs-hosp-btn" class="cs-add-btn" onclick="calcToggleHospedaje()">🏨 + Agregar hospedaje / alimentación</button>
             <div id="cs-hospedaje-box" style="display:none">
                 <div class="calc-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
