@@ -115,6 +115,7 @@
         <label>Días de instalación<input type="number" id="cs-dias" min="0" step="0.5" oninput="calcRecalc()"></label>
         <label>Costo por día (RD$)<input type="number" id="cs-costodia" min="0" step="0.01" oninput="calcRecalc()"></label>
         <label>Materiales/consumibles (RD$)<input type="number" id="cs-materiales" min="0" step="0.01" oninput="calcRecalc()" title="Silicona, tornillería, discos, tacos… costo estimado por obra"></label>
+        <label>⛰️ Recargo altura/riesgo (%)<input type="number" id="cs-altura" min="0" step="1" oninput="calcRecalc()" title="Recargo por trabajo expuesto/en altura, sobre la mano de obra. Sugerido: 15% bajo · 25% medio · 35% alto. No incluye alquiler de elevadora (se cotiza aparte)."></label>
     </div>
 
     <div class="cp-sec">Ajuste</div>
@@ -164,7 +165,7 @@
     const fmt = (n) => 'RD$ ' + (Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const LS = 'artal_calc_obra';
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajesExtra: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, hospedajeOn: false, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, desayunoOn: true, almuerzoOn: true, cenaOn: true, costoDesayuno: 200, costoAlmuerzo: 350, costoCena: 350, dias: 0, costoDia: 0, materiales: 0, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajesExtra: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, hospedajeOn: false, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, desayunoOn: true, almuerzoOn: true, cenaOn: true, costoDesayuno: 200, costoAlmuerzo: 350, costoCena: 350, dias: 0, costoDia: 0, materiales: 0, alturaPct: 0, margenPct: 0 });
     function loadCfg() { try { return Object.assign(calcDef(), JSON.parse(localStorage.getItem(LS) || '{}')); } catch (_) { return calcDef(); } }
     function saveCfg() { try { localStorage.setItem(LS, JSON.stringify(calcLeer())); } catch (_) { } }
 
@@ -291,7 +292,7 @@
             diasComida: num('cs-diascomida'),
             desayunoOn: document.getElementById('cs-desayuno-on').checked, almuerzoOn: document.getElementById('cs-almuerzo-on').checked, cenaOn: document.getElementById('cs-cena-on').checked,
             costoDesayuno: num('cs-costodesayuno'), costoAlmuerzo: num('cs-costoalmuerzo'), costoCena: num('cs-costocena'),
-            dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), margenPct: num('cs-margen')
+            dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), alturaPct: num('cs-altura'), margenPct: num('cs-margen')
         };
     }
     // ESPEJO de calcTotales() de index.html — mantener idéntico.
@@ -307,6 +308,7 @@
         const hotel = v.hospedajeOn ? (v.noches * (v.personas || 1) * v.costoNoche) : 0;
         const alimentacion = v.hospedajeOn ? (v.diasComida * (v.personas || 1) * comidaDia) : 0;
         const instalacion = v.dias * v.costoDia;
+        const recargoAltura = instalacion * ((v.alturaPct || 0) / 100);
         const materiales = v.materiales || 0;
         const fijoAnual = veh ? ((veh.seguroAnual || 0) + (veh.depreAnual || 0)) : 0;
         const fijoDia = fijoAnual / 365;
@@ -314,9 +316,9 @@
         const fijoVehiculo = fijoDia * diasUso;
         const extras = (v.viajesExtra || []).map(calcViajeExtraCosto).filter(Boolean);
         const extrasCosto = extras.reduce((a, e) => a + e.sub, 0);
-        const costo = combustible + mantenimiento + peajes + fijoVehiculo + extrasCosto + hotel + alimentacion + instalacion + materiales;
+        const costo = combustible + mantenimiento + peajes + fijoVehiculo + extrasCosto + hotel + alimentacion + instalacion + recargoAltura + materiales;
         const total = costo * (1 + (v.margenPct || 0) / 100);
-        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, extras, extrasCosto, hotel, alimentacion, instalacion, materiales, costo, total };
+        return { kmTot, viajes, combustible, mantenimiento, mantPorKm, peajes, fijoVehiculo, fijoDia, diasUso, extras, extrasCosto, hotel, alimentacion, instalacion, recargoAltura, alturaPct: v.alturaPct || 0, materiales, costo, total };
     }
     let ultimoTotal = 0;
     window.calcRecalc = function () {
@@ -330,6 +332,7 @@
             (t.fijoVehiculo ? row('🛡️ Fijos vehículo — seguro+depreciación (RD$' + Math.round(t.fijoDia) + '/día × ' + t.diasUso + ')', t.fijoVehiculo) : '') +
             (t.extras || []).map(e => row('🚗 Viaje extra (' + e.label + ')', e.sub)).join('') +
             row('🏨 Hotel', t.hotel) + row('🍽️ Alimentación', t.alimentacion) + row('🔧 Instalación', t.instalacion) +
+            (t.recargoAltura ? row('⛰️ Recargo altura/riesgo (' + t.alturaPct + '% de instalación)', t.recargoAltura) : '') +
             (t.materiales ? row('🧰 Materiales/consumibles', t.materiales) : '') +
             (v.margenPct ? row('Subtotal costo', t.costo) + row('+ Margen ' + v.margenPct + '%', t.total - t.costo) : '') +
             `<div class="cs-total"><span>Total transporte + instalación</span><span>${fmt(t.total)}</span></div>`;
@@ -386,6 +389,7 @@
         document.getElementById('cs-dias').value = c.dias || '';
         document.getElementById('cs-costodia').value = c.costoDia || '';
         document.getElementById('cs-materiales').value = c.materiales || '';
+        document.getElementById('cs-altura').value = c.alturaPct || '';
         document.getElementById('cs-margen').value = c.margenPct || '';
         calcRecalc();
     })();
