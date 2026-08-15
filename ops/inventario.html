@@ -849,6 +849,7 @@
         allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         allItems.sort((a, b) => (a.tipo + (a.color || '')).localeCompare(b.tipo + (b.color || '')));
         render();
+        migrarSelladoresAuto();
     }, (err) => {
         document.getElementById('categorias-container').innerHTML = '<p class="empty">Error cargando inventario: ' + err.message + '</p>';
     });
@@ -942,6 +943,24 @@
             alert('No se pudo migrar: ' + e.message);
         }
     };
+
+    // Migración AUTOMÁTICA y silenciosa: cualquier ítem que quedó en las categorías viejas ocultas
+    // (Silicón/Masilla/Urethano) se mueve solo a Consumibles → Selladores → <tipo>, para que no quede
+    // invisible en el grid (bug: un ítem con categoria='silicon' no aparecía en la sección Silicón).
+    // Solo escribe cuando hace falta → una vez migrado ya no está en CATS_OCULTAS y no vuelve a entrar
+    // (sin bucle con onSnapshot). Solo lo corre un admin (evita errores de permiso a roles de campo).
+    let migrandoSell = false;
+    async function migrarSelladoresAuto() {
+        if (!esAdmin || migrandoSell) return;
+        const pend = allItems.filter(it => CATS_OCULTAS.includes(it.categoria));
+        if (!pend.length) return;
+        migrandoSell = true;
+        try {
+            for (const it of pend) {
+                try { await updateDoc(doc(db, 'inventario', it.id), { categoria: 'consumible', subgrupo: 'selladores', subgrupo2: it.categoria }); } catch (_) { }
+            }
+        } finally { migrandoSell = false; }
+    }
 
     // ---------- Conteo físico ----------
     window.abrirConteo = function () {
