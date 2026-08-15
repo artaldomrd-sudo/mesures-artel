@@ -33,6 +33,14 @@
     .cs-jorn-row input[type="text"] { flex: 1; }
     .cs-jorn-row input[type="number"] { width: 120px; }
     .cs-jorn-del { border: none; background: #e2e6ea; color: #555; border-radius: 8px; width: 40px; font-size: 16px; cursor: pointer; }
+    .cs-add-btn { width: 100%; border: 1.5px dashed var(--artal-blue); background: #f2f8fd; color: var(--artal-blue); border-radius: 9px; padding: 12px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; margin-top: 8px; min-height: 46px; }
+    .cs-add-btn.on { background: var(--artal-blue); color: #fff; border-style: solid; }
+    .cs-meals-lbl { font-size: 11.5px; font-weight: bold; color: #556; margin: 12px 0 6px; }
+    .cs-meals { display: flex; flex-direction: column; gap: 8px; }
+    .cs-meal { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; color: #334; }
+    .cs-meal > span { display: flex; align-items: center; gap: 7px; }
+    .cs-meal input[type="checkbox"] { width: auto; min-height: auto; margin: 0; }
+    .cs-meal input[type="number"] { width: 120px; padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; }
     .cp-desglose { margin-top: 18px; background: #f6f8fa; border-radius: 12px; padding: 12px 16px; font-size: 14px; }
     .cs-row { display: flex; justify-content: space-between; padding: 4px 0; color: #445; }
     .cs-total { display: flex; justify-content: space-between; font-weight: bold; color: var(--artal-blue); font-size: 19px; margin-top: 8px; padding-top: 8px; border-top: 1.5px solid #e2e6ea; }
@@ -72,13 +80,21 @@
     </div>
     <label class="cp-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
 
-    <div class="cp-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
-    <div class="cp-grid">
-        <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
-        <label>Noches de hotel<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
-        <label>Hotel por noche c/u (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
-        <label>Días con comida<input type="number" id="cs-diascomida" min="0" step="1" oninput="calcRecalc()"></label>
-        <label>Comida por día c/u (RD$)<input type="number" id="cs-costocomida" min="0" step="0.01" oninput="calcRecalc()"></label>
+    <button type="button" id="cs-hosp-btn" class="cs-add-btn" onclick="calcToggleHospedaje()">🏨 + Agregar hospedaje / alimentación</button>
+    <div id="cs-hospedaje-box" style="display:none">
+        <div class="cp-sec">🏨 Hospedaje y alimentación (por trabajador)</div>
+        <div class="cp-grid">
+            <label>Personas<input type="number" id="cs-personas" min="0" step="1" oninput="calcRecalc()"></label>
+            <label>Noches de hotel<input type="number" id="cs-noches" min="0" step="1" oninput="calcRecalc()"></label>
+            <label>Hotel por noche c/u (RD$)<input type="number" id="cs-costonoche" min="0" step="0.01" oninput="calcRecalc()"></label>
+            <label>Días con comida<input type="number" id="cs-diascomida" min="0" step="1" oninput="calcRecalc()"></label>
+        </div>
+        <div class="cs-meals-lbl">Comidas por día (marca las que aplican, montos editables):</div>
+        <div class="cs-meals">
+            <label class="cs-meal"><span><input type="checkbox" id="cs-desayuno-on" onchange="calcRecalc()"> Desayuno</span><input type="number" id="cs-costodesayuno" min="0" step="0.01" oninput="calcRecalc()"></label>
+            <label class="cs-meal"><span><input type="checkbox" id="cs-almuerzo-on" onchange="calcRecalc()"> Almuerzo</span><input type="number" id="cs-costoalmuerzo" min="0" step="0.01" oninput="calcRecalc()"></label>
+            <label class="cs-meal"><span><input type="checkbox" id="cs-cena-on" onchange="calcRecalc()"> Cena</span><input type="number" id="cs-costocena" min="0" step="0.01" oninput="calcRecalc()"></label>
+        </div>
     </div>
 
     <div class="cp-sec">🔧 Instalación</div>
@@ -139,7 +155,7 @@
     const fmt = (n) => 'RD$ ' + (Number(n) || 0).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const LS = 'artal_calc_obra';
-    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, costoComida: 900, dias: 0, costoDia: 0, materiales: 0, margenPct: 0 });
+    const calcDef = () => ({ vehiculoId: '', rutaId: '', empleadoIds: [], jornaleros: [], viajes: 1, kmIda: 0, idaVuelta: true, rendKmGal: 0, precioGal: 0, peajes: 0, hospedajeOn: false, noches: 0, personas: 1, costoNoche: 2000, diasComida: 0, desayunoOn: true, almuerzoOn: true, cenaOn: true, costoDesayuno: 200, costoAlmuerzo: 350, costoCena: 350, dias: 0, costoDia: 0, materiales: 0, margenPct: 0 });
     function loadCfg() { try { return Object.assign(calcDef(), JSON.parse(localStorage.getItem(LS) || '{}')); } catch (_) { return calcDef(); } }
     function saveCfg() { try { localStorage.setItem(LS, JSON.stringify(calcLeer())); } catch (_) { } }
 
@@ -163,9 +179,16 @@
         const r = CALC_RUTAS.find(x => x.id === document.getElementById('cs-ruta').value);
         if (r) {
             document.getElementById('cs-km').value = r.km; document.getElementById('cs-peajes').value = r.peaje; document.getElementById('cs-iv').checked = true;
-            if (r.hotel) document.getElementById('cs-costonoche').value = r.hotel;
-            if (r.comida) document.getElementById('cs-costocomida').value = r.comida;
+            if (r.hotel) document.getElementById('cs-costonoche').value = r.hotel;  // se usa solo si abres hospedaje
         }
+        calcRecalc();
+    };
+    window.calcToggleHospedaje = function (force) {
+        const box = document.getElementById('cs-hospedaje-box'), btn = document.getElementById('cs-hosp-btn');
+        const on = (typeof force === 'boolean') ? force : (box.style.display === 'none');
+        box.style.display = on ? 'block' : 'none';
+        btn.classList.toggle('on', on);
+        btn.textContent = on ? '🏨 Hospedaje / alimentación (quitar)' : '🏨 + Agregar hospedaje / alimentación';
         calcRecalc();
     };
     function renderEquipo(selIds) {
@@ -229,8 +252,12 @@
             vehiculoId: document.getElementById('cs-veh').value, rutaId: document.getElementById('cs-ruta').value, empleadoIds: equipoSeleccion(),
             jornaleros: calcJornaleros.map(j => ({ nombre: j.nombre || '', costoDia: Number(j.costoDia) || 0 })), viajes: num('cs-viajes') || 1,
             kmIda: num('cs-km'), idaVuelta: document.getElementById('cs-iv').checked, rendKmGal: num('cs-rend'), precioGal: num('cs-precio'),
-            peajes: num('cs-peajes'), noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
-            diasComida: num('cs-diascomida'), costoComida: num('cs-costocomida'),
+            peajes: num('cs-peajes'),
+            hospedajeOn: document.getElementById('cs-hospedaje-box').style.display !== 'none',
+            noches: num('cs-noches'), personas: num('cs-personas') || 1, costoNoche: num('cs-costonoche'),
+            diasComida: num('cs-diascomida'),
+            desayunoOn: document.getElementById('cs-desayuno-on').checked, almuerzoOn: document.getElementById('cs-almuerzo-on').checked, cenaOn: document.getElementById('cs-cena-on').checked,
+            costoDesayuno: num('cs-costodesayuno'), costoAlmuerzo: num('cs-costoalmuerzo'), costoCena: num('cs-costocena'),
             dias: num('cs-dias'), costoDia: num('cs-costodia'), materiales: num('cs-materiales'), margenPct: num('cs-margen')
         };
     }
@@ -243,8 +270,9 @@
         const mantPorKm = (veh && veh.mantCadaKm > 0) ? veh.mantCosto / veh.mantCadaKm : 0;
         const mantenimiento = kmTot * mantPorKm;
         const peajes = (v.peajes || 0) * viajes;
-        const hotel = v.noches * (v.personas || 1) * v.costoNoche;
-        const alimentacion = v.diasComida * (v.personas || 1) * v.costoComida;
+        const comidaDia = (v.desayunoOn ? (v.costoDesayuno || 0) : 0) + (v.almuerzoOn ? (v.costoAlmuerzo || 0) : 0) + (v.cenaOn ? (v.costoCena || 0) : 0);
+        const hotel = v.hospedajeOn ? (v.noches * (v.personas || 1) * v.costoNoche) : 0;
+        const alimentacion = v.hospedajeOn ? (v.diasComida * (v.personas || 1) * comidaDia) : 0;
         const instalacion = v.dias * v.costoDia;
         const materiales = v.materiales || 0;
         const fijoAnual = veh ? ((veh.seguroAnual || 0) + (veh.depreAnual || 0)) : 0;
@@ -281,8 +309,9 @@
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         window.calcEmpleados = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .filter(e => (e.estado || 'activo') === 'activo' && Number(e.costoDiaReal) > 0)
-            .map(e => ({ id: e.id, nombre: e.nombre || '', cargo: Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || ''), costoDia: Number(e.costoDiaReal) || 0 }))
-            .sort((a, b) => a.nombre.localeCompare(b.nombre));
+            .map(e => ({ id: e.id, nombre: e.nombre || '', cargo: Array.isArray(e.cargoNombres) ? e.cargoNombres.join(', ') : (e.cargoNombre || ''), departamento: e.departamentoNombre || '', costoDia: Number(e.costoDiaReal) || 0 }))
+            // Instalación primero; el resto (administración: Andrea/Rolanny, que casi no van a obra) al final.
+            .sort((a, b) => { const ai = /instal/i.test(a.departamento) ? 0 : 1, bi = /instal/i.test(b.departamento) ? 0 : 1; return ai !== bi ? ai - bi : a.nombre.localeCompare(b.nombre, 'es'); });
         renderEquipo(equipoSeleccion());
     }, () => { });
     onSnapshot(collection(db, 'equiposInstalacion'), (snap) => {
@@ -309,7 +338,13 @@
         document.getElementById('cs-personas').value = c.personas || 1;
         document.getElementById('cs-costonoche').value = c.costoNoche || '';
         document.getElementById('cs-diascomida').value = c.diasComida || '';
-        document.getElementById('cs-costocomida').value = c.costoComida || '';
+        document.getElementById('cs-desayuno-on').checked = c.desayunoOn !== false;
+        document.getElementById('cs-almuerzo-on').checked = c.almuerzoOn !== false;
+        document.getElementById('cs-cena-on').checked = c.cenaOn !== false;
+        document.getElementById('cs-costodesayuno').value = c.costoDesayuno != null ? c.costoDesayuno : 200;
+        document.getElementById('cs-costoalmuerzo').value = c.costoAlmuerzo != null ? c.costoAlmuerzo : 350;
+        document.getElementById('cs-costocena').value = c.costoCena != null ? c.costoCena : 350;
+        calcToggleHospedaje((typeof c.hospedajeOn === 'boolean') ? c.hospedajeOn : ((c.noches > 0) || (c.diasComida > 0)));
         document.getElementById('cs-dias').value = c.dias || '';
         document.getElementById('cs-costodia').value = c.costoDia || '';
         document.getElementById('cs-materiales').value = c.materiales || '';
