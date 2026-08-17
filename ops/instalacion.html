@@ -463,6 +463,17 @@
             navHtml = `<div class="job-meta" style="color:#c0392b;">GPS no reconocido: ${esc(j.gps)}</div>`;
         }
         const estado = j.estado || 'pendiente';
+        // Si el trabajo viene de un pedido, aquí (Calendario) se completa con biometría — bloqueado
+        // hasta que el chofer entregue. Así el pedido vive en un solo lugar (no doble en "Por instalar").
+        const ord = j.orderId ? ((ordersCache.find(x => x.id === j.orderId) || {}).data || null) : null;
+        let completarHtml = '';
+        if (ord && !ord.instalado) {
+            completarHtml = ord.entregado === true
+                ? `<button class="btn-instalado" style="margin-top:8px" onclick="confirmarInstalacionBio('${j.orderId}')">✅ Confirmar instalación (huella / Face ID)</button>`
+                : `<div class="esperando-note">🚚 Esperando que el chofer entregue. No se puede instalar hasta confirmar la entrega.</div>`;
+        } else if (ord && ord.instalado) {
+            completarHtml = `<div class="checklist-note" style="color:#2ecc71;font-weight:bold">✅ Instalado${ord.confirmacionInstalador && ord.confirmacionInstalador.nombre ? ' por ' + esc(ord.confirmacionInstalador.nombre) + ' 🔒' : ''}</div>`;
+        }
         return `
         <div class="job-card estado-${estado}">
             <div class="job-head">
@@ -480,6 +491,7 @@
             ${navHtml}
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
             ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
+            ${completarHtml}
             ${puedeCambiarEstado ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
@@ -700,22 +712,13 @@
                 ? `<div class="sin-agendar"><h3>📦 Listos sin agendar (${listos.length})</h3><p style="font-size:12px;color:#8a7320;margin:0;">Cada uno tiene abajo su botón <b>📅 Agendar</b>. Agéndalos para verlos en el Calendario.</p></div>`
                 : '';
         } else wrap.innerHTML = '';
-        // Obras listas para instalar (firma)
+        // Obras por instalar SIN agendar. Los agendados salen de aquí y viven SOLO en el Calendario
+        // (un solo lugar, sin duplicar) — allí se completan con biometría. Un pedido sin fecha se ve
+        // aquí; al agendarlo pasa al Calendario.
         const list = document.getElementById('orders-list');
-        const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA');
-        signaturePads = {};
-        if (!pendientes.length) { list.innerHTML = '<p class="empty">No hay obras listas para instalar.</p>'; return; }
-        // Se separan los que faltan por agendar (tu pendiente real) de los que ya están en el Calendario,
-        // para que no se mezclen y no parezca que están "dos veces". Los agendados siguen accesibles aquí
-        // porque la firma de completado vive en esta tarjeta (no en la del Calendario).
-        const subhead = (txt) => `<div style="font-size:12.5px;font-weight:bold;color:#8a7320;background:#fff8e8;border-radius:8px;padding:8px 12px;margin:12px 0 6px;">${txt}</div>`;
-        const porAgendar = pendientes.filter(d => !agendadosOrderIds.has(d.id));
-        const yaAgendados = pendientes.filter(d => agendadosOrderIds.has(d.id));
-        let html = '';
-        if (porAgendar.length) html += subhead('🔧 Por agendar / instalar (' + porAgendar.length + ')') + porAgendar.map(d => orderCardHTML(d.id, d.data())).join('');
-        if (yaAgendados.length) html += subhead('📅 Ya agendados — en el Calendario (' + yaAgendados.length + ') · aquí solo para firmar al completar') + yaAgendados.map(d => orderCardHTML(d.id, d.data())).join('');
-        list.innerHTML = html;
-        pendientes.forEach(d => { const canvas = document.getElementById('firma-' + d.id); if (canvas) signaturePads[d.id] = setupSignaturePad(canvas); });
+        const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && !agendadosOrderIds.has(d.id));
+        if (!pendientes.length) { list.innerHTML = '<p class="empty">Nada por instalar sin agendar. Los trabajos agendados están en el Calendario.</p>'; return; }
+        list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
     }
 
     function renderBadges() {
@@ -1067,6 +1070,11 @@
                 instalado: true, status: 'completado', fechaInstalado: serverTimestamp(),
                 confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' }
             });
+            // Si el pedido tiene una instalación agendada (Calendario), la marca completada también.
+            const job = allJobs.find(j => j.orderId === id);
+            if (job && job.estado !== 'completado') {
+                try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoFecha: serverTimestamp() }); } catch (_) { }
+            }
         } catch (e) { alert('No se pudo registrar la instalación: ' + e.message); }
     };
     window.guardarAvanceParcial = async function (id) {
