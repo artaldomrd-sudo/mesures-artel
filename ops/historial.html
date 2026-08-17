@@ -521,6 +521,52 @@
         document.body.appendChild(ov);
     };
 
+    // Corregir cliente / nombre de obra / tipo de un documento (admin). Renombrar la obra la fusiona
+    // con otra del mismo cliente si quedan con el mismo nombre; cambiar el tipo la reubica en su grupo
+    // (ej. arreglar una compra directa que se creó como fabricación por error).
+    window.abrirCorregir = function (orderId) {
+        const o = (allOrders.find(x => x.id === orderId) || {}).data || {};
+        const tipoActual = esCompraDirecta(o) ? 'compra' : (esFabricacion(o) ? 'fab' : 'cot');
+        const inp = 'width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-family:Arimo;font-size:14px;box-sizing:border-box;margin-top:4px;background:#fff;';
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+        ov.innerHTML = `<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;padding:18px;font-family:Arimo,sans-serif;">
+            <div style="font-weight:bold;color:#0A3D62;font-size:16px;margin-bottom:12px;">✏️ Corregir documento</div>
+            <label style="font-size:12px;font-weight:bold;color:#0A3D62;">Cliente</label>
+            <input id="corr-cliente" style="${inp}" value="${esc(o.cliente || '')}">
+            <label style="font-size:12px;font-weight:bold;color:#0A3D62;display:block;margin-top:10px;">Nombre de la obra</label>
+            <input id="corr-obra" style="${inp}" value="${esc(o.obra || '')}">
+            <label style="font-size:12px;font-weight:bold;color:#0A3D62;display:block;margin-top:10px;">Tipo</label>
+            <select id="corr-tipo" style="${inp}">
+                <option value="fab" ${tipoActual === 'fab' ? 'selected' : ''}>Fabricación</option>
+                <option value="compra" ${tipoActual === 'compra' ? 'selected' : ''}>Compra Directa</option>
+                <option value="cot" ${tipoActual === 'cot' ? 'selected' : ''}>Cotización</option>
+            </select>
+            <p style="font-size:11.5px;color:#8a93a0;margin:10px 0 0;">Ponle el mismo nombre de obra que otra para que se junten en una sola carpeta. Cambiar el tipo la reubica en su grupo.</p>
+            <div style="display:flex;gap:10px;margin-top:16px;">
+                <button id="corr-cancel" style="flex:1;padding:11px;border:1.5px solid #ddd;border-radius:8px;background:#fff;color:#888;font-weight:bold;cursor:pointer;font-family:Arimo;">Cancelar</button>
+                <button id="corr-save" style="flex:1;padding:11px;border:none;border-radius:8px;background:#2ecc71;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;">Guardar</button>
+            </div>
+        </div>`;
+        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        ov.querySelector('#corr-cancel').onclick = () => ov.remove();
+        ov.querySelector('#corr-save').onclick = async () => {
+            const cliente = ov.querySelector('#corr-cliente').value.trim();
+            const obra = ov.querySelector('#corr-obra').value.trim();
+            const tipoSel = ov.querySelector('#corr-tipo').value;
+            if (!cliente || !obra) { alert('Cliente y obra no pueden quedar vacíos.'); return; }
+            let docType = o.docType;
+            if (tipoSel === 'fab' && !esFabricacion(o)) docType = 'FAB';
+            else if (tipoSel === 'compra' && !esCompraDirecta(o)) docType = 'COMPRA_DIRECTA';
+            else if (tipoSel === 'cot' && !esCotizacion(o)) docType = 'COT';
+            try {
+                await updateDoc(doc(db, 'orders', orderId), { cliente, obra, docType });
+                ov.remove();
+            } catch (e) { alert('No se pudo guardar: ' + e.message); }
+        };
+        document.body.appendChild(ov);
+    };
+
     window.setVista = function (v) {
         ['pedidos', 'carpetas', 'auditoria'].forEach(k => {
             document.getElementById('tab-' + k).classList.toggle('active', v === k);
@@ -827,6 +873,7 @@
                     if (o.compraPdfUrl) links.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
                     if (o.recepcionInstalador && o.recepcionInstalador.firma) links.push(`<a href="#" onclick="verFirma('${id}','rec'); return false;">Firma recepción</a>`);
                     if (o.clienteAprobacion && o.clienteAprobacion.firma) links.push(`<a href="#" onclick="verFirma('${id}','cli'); return false;">Firma cliente</a>`);
+                    links.push(`<a href="#" onclick="abrirCorregir('${id}'); return false;" style="color:#b9770e">✏️ Corregir</a>`);
                     return `
                     <div class="carpeta-doc">
                         <div class="doc-head">
