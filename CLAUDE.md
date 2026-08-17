@@ -1268,13 +1268,36 @@ Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).
 - `&checklist=fabrica|chofer|instalador` inyecta, por DOM, un recuadro en cada tarjeta ya
   renderizada (`injectChecklist` → `injectFabricaChecklist` / `injectChoferChecklist` /
   `injectInstaladorChecklist` en `index.html`) — **sin tocar ninguna plantilla de tarjeta**:
-  - `fabrica`: checkbox "Listo para cargar" por ítem → `itemsListosFabrica.{id}`.
-  - `chofer`: botones Cargado/Problema → `itemStatus.{id}` (además, si el pedido está
-    `parcialmente_listo`, muestra la marca de fábrica en verde/naranja).
+  - `fabrica`: **por ítem, checkboxes de PARTES** (marco/hojas/vidrios/accesorios, según el tipo)
+    — ver "Partes de fábrica" abajo. Escribe `partesFabrica.{id}` (`{marco:true, hojas:false, …}`)
+    y **deriva** `itemsListosFabrica.{id}` = true solo cuando TODAS las partes están marcadas.
+  - `chofer`: botones Cargado/Problema → `itemStatus.{id}`, **con el resumen de partes de fábrica
+    arriba** (qué recoge / qué falta).
   - `instalador`: checklist de etapas por tipo de elemento (`STAGE_SETS`/`getStageSetKey`) →
     `itemStatusInstalador.{id}`.
+  - **sin rol** (abrir la ficha desde el Panel/Cotizaciones/Historial): si el pedido ya está en
+    flujo de fábrica (`en_fabrica`/`parcialmente_listo`/`listo_para_cargar`/`completado` o hay
+    datos de partes), `injectPartesResumen` agrega una caja de SOLO LECTURA con lo que marcó fábrica.
 - Este visor se registra **después** de `loadProgress()` (dentro de su propio
   `DOMContentLoaded`) para que el autosave local nunca pise los datos del pedido de Firestore.
+
+#### Partes de fábrica (`partesFabrica`, marco/hojas/vidrios/accesorios)
+
+Pedido explícito del usuario: fábrica (ALUCUFEL) necesita marcar **qué partes** de cada ítem está
+enviando (una corredera = marco + hojas + vidrios + accesorios), no solo "listo/no listo", y que la
+oficina (Panel) y el chofer vean exactamente eso (qué recoger / qué falta). En `index.html`:
+`PARTES_SETS` (por categoría de `getCategoriaByType`, con `PARTES_DEFAULT` de respaldo) define las
+partes por tipo; `getPartesFabrica(itemState)` las resuelve. `injectFabricaChecklist` renderiza un
+checkbox por parte + "Marcar TODAS"; al cambiar, escribe `partesFabrica.{id}` (objeto con claves
+ASCII `marco/hojas/vidrios/accesorios/herrajes/perfiles/estructura/tela/mecanismo`) **y**
+`itemsListosFabrica.{id}` (booleano derivado = todas marcadas). **`itemsListosFabrica` sigue siendo
+la fuente** que leen el flujo `parcialmente_listo` (`ops/alucufel/fabrica.html`,
+`ops/fabrica-interna.html`), los badges del Panel y el flag `listo` del chofer — no se tocó nada de
+eso. `partesResumenHTML` (chips ✓/○ + "Enviando: … · Falta: …") se usa en la caja de solo lectura y
+dentro del checklist del chofer. **Compat**: órdenes viejas con solo `itemsListosFabrica[id]=true`
+(sin `partesFabrica`) se muestran con todas las partes marcadas; al tocar una casilla se migran a
+`partesFabrica`. CAD (`type:'draw'`) y tipos sin mapear caen a `PARTES_DEFAULT`. `verify.mjs` sí
+cubre esto (vive en el `<script>` clásico).
 
 ### Clientes/obras: autocompletar y normalización (`ops/clients.js`)
 
