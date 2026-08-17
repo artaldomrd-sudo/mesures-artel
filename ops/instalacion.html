@@ -693,7 +693,16 @@
         const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA');
         signaturePads = {};
         if (!pendientes.length) { list.innerHTML = '<p class="empty">No hay obras listas para instalar.</p>'; return; }
-        list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
+        // Se separan los que faltan por agendar (tu pendiente real) de los que ya están en el Calendario,
+        // para que no se mezclen y no parezca que están "dos veces". Los agendados siguen accesibles aquí
+        // porque la firma de completado vive en esta tarjeta (no en la del Calendario).
+        const subhead = (txt) => `<div style="font-size:12.5px;font-weight:bold;color:#8a7320;background:#fff8e8;border-radius:8px;padding:8px 12px;margin:12px 0 6px;">${txt}</div>`;
+        const porAgendar = pendientes.filter(d => !agendadosOrderIds.has(d.id));
+        const yaAgendados = pendientes.filter(d => agendadosOrderIds.has(d.id));
+        let html = '';
+        if (porAgendar.length) html += subhead('🔧 Por agendar / instalar (' + porAgendar.length + ')') + porAgendar.map(d => orderCardHTML(d.id, d.data())).join('');
+        if (yaAgendados.length) html += subhead('📅 Ya agendados — en el Calendario (' + yaAgendados.length + ') · aquí solo para firmar al completar') + yaAgendados.map(d => orderCardHTML(d.id, d.data())).join('');
+        list.innerHTML = html;
         pendientes.forEach(d => { const canvas = document.getElementById('firma-' + d.id); if (canvas) signaturePads[d.id] = setupSignaturePad(canvas); });
     }
 
