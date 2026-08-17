@@ -15,6 +15,9 @@
     .cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
     .cp-grid label, .cp-chk { font-size: 11.5px; font-weight: bold; color: #556; display: flex; flex-direction: column; gap: 3px; }
     .cp-grid input, .cp-grid select { padding: 9px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; width: 100%; }
+    .cp-grid input.cs-locked { background: #eef1f4; color: #445; cursor: not-allowed; border-style: dashed; }
+    .cs-lock { border: none; background: transparent; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; margin-left: 4px; }
+    .cs-note { font-weight: bold; font-size: 10.5px; color: #1e8449; margin-left: 2px; }
     .cp-chk { flex-direction: row; align-items: center; gap: 8px; font-weight: normal; color: #333; font-size: 12.5px; margin-top: 8px; }
     .cp-chk input { width: auto; min-height: auto; }
     .cs-eq-guardado { display: flex; gap: 6px; margin-bottom: 8px; }
@@ -78,8 +81,8 @@
     <div class="cp-grid">
         <label>Distancia ida (km)<input type="number" id="cs-km" min="0" step="0.1" oninput="calcRecalc()"></label>
         <label>Rendimiento (km por galón)<input type="number" id="cs-rend" min="0" step="0.1" oninput="calcRecalc()"></label>
-        <label>Precio del galón (RD$)<input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()"></label>
-        <label>Peajes ida y vuelta (RD$)<input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()"></label>
+        <label><span class="cs-lbl-row">Precio del galón (RD$) <button type="button" id="cs-precio-lock" class="cs-lock" onclick="calcToggleLock('cs-precio')" title="Protegido — clic para editar a mano">🔒</button> <span id="cs-precio-note" class="cs-note"></span></span><input type="number" id="cs-precio" min="0" step="0.01" oninput="calcRecalc()" readonly class="cs-locked"></label>
+        <label><span class="cs-lbl-row">Peajes ida y vuelta (RD$) <button type="button" id="cs-peajes-lock" class="cs-lock" onclick="calcToggleLock('cs-peajes')" title="Protegido — clic para editar a mano">🔒</button></span><input type="number" id="cs-peajes" min="0" step="0.01" oninput="calcRecalc()" readonly class="cs-locked"></label>
         <label>Viajes a la obra<select id="cs-viajes" onchange="calcRecalc()"><option value="1">1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option><option value="4">4 viajes</option><option value="5">5 viajes</option><option value="6">6 viajes</option><option value="7">7 viajes</option><option value="8">8 viajes</option><option value="9">9 viajes</option><option value="10">10 viajes</option></select></label>
     </div>
     <label class="cp-chk"><input type="checkbox" id="cs-iv" onchange="calcRecalc()"> Contar ida y vuelta (×2 la distancia)</label>
@@ -148,9 +151,9 @@
     // "Calculadora de transporte + instalación"). Si cambias tarifas/fórmula en un lado, actualízalas
     // también en el otro (ver memoria artal-calculador-transporte-instalacion).
     const CALC_VEHICULOS = [
-        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997 },
-        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225 },
-        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 100000, depreAnual: 0 },
+        { id: 'F-01', nombre: 'Camión Kia K2700 AWD 2025', combustible: 'Gasoil Premium', precioKey: 'Gasoil Óptimo', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997 },
+        { id: 'F-02', nombre: 'Minivan KYC V3 (2 pas.)', combustible: 'Gasolina Premium', precioKey: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225 },
+        { id: 'F-03', nombre: 'Camioneta Toyota Hilux SRV 2018', combustible: 'Gasoil Premium', precioKey: 'Gasoil Óptimo', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 100000, depreAnual: 0 },
     ];
     const CALC_RUTAS = [
         { id: 'sd-terrenas', nombre: 'Santo Domingo ↔ Las Terrenas', km: 163, peaje: 1700, hotel: 2000, comida: 900 },
@@ -180,11 +183,57 @@
             CALC_RUTAS.map(x => `<option value="${x.id}"${x.id === rutaSel ? ' selected' : ''}>${x.nombre} — ${x.km} km ida</option>`).join('') +
             '<option value="__manual__"' + (rutaSel === '__manual__' ? ' selected' : '') + '>Otro recorrido (a mano)</option>';
     }
+    // --- Precio del galón EN VIVO (MICM) + candado de seguridad --------------------------------
+    let PRECIOS_COMBUSTIBLE = null;   // lo llena onSnapshot(config/preciosCombustible)
+    function precioLivePara(veh) {
+        if (!veh || !PRECIOS_COMBUSTIBLE || !PRECIOS_COMBUSTIBLE.precios) return null;
+        const v = PRECIOS_COMBUSTIBLE.precios[veh.precioKey];
+        return (typeof v === 'number' && v > 0) ? v : null;
+    }
+    const precioGalonPara = (veh) => precioLivePara(veh) || (veh ? veh.precioGal : 0);
+    function actualizarNotaPrecio() {
+        const note = document.getElementById('cs-precio-note'); if (!note) return;
+        const veh = vehById(document.getElementById('cs-veh').value);
+        if (veh && precioLivePara(veh)) {
+            note.textContent = '🌐 MICM' + (PRECIOS_COMBUSTIBLE.semana ? ' · ' + PRECIOS_COMBUSTIBLE.semana.replace(/^Para la semana del /i, 'sem. ') : '') + ' (auto)';
+        } else { note.textContent = ''; }
+    }
+    const CALC_LOCK_MSG = {
+        'cs-precio': 'El precio del galón se actualiza solo con los precios oficiales del MICM.\n\n¿Seguro que quieres ponerlo a mano? (si vuelves a elegir el vehículo, se recupera el precio automático)',
+        'cs-peajes': 'Los peajes se llenan solos según el recorrido elegido.\n\n¿Seguro que quieres cambiarlos a mano?'
+    };
+    window.calcToggleLock = function (id) {
+        const inp = document.getElementById(id), btn = document.getElementById(id + '-lock');
+        if (!inp || !btn) return;
+        if (inp.hasAttribute('readonly')) {
+            if (!confirm(CALC_LOCK_MSG[id] || '¿Editar este valor a mano?')) return;
+            inp.removeAttribute('readonly'); inp.classList.remove('cs-locked');
+            btn.textContent = '🔓'; btn.title = 'Desbloqueado — clic para proteger de nuevo'; inp.focus();
+        } else {
+            inp.setAttribute('readonly', ''); inp.classList.add('cs-locked');
+            btn.textContent = '🔒'; btn.title = 'Protegido — clic para editar a mano';
+        }
+    };
     window.calcVehChange = function () {
         const veh = vehById(document.getElementById('cs-veh').value);
-        if (veh) { document.getElementById('cs-rend').value = veh.rendKmGal; document.getElementById('cs-precio').value = veh.precioGal; }
+        if (veh) {
+            document.getElementById('cs-rend').value = veh.rendKmGal;
+            const inp = document.getElementById('cs-precio');
+            if (inp.hasAttribute('readonly')) inp.value = precioGalonPara(veh);
+        }
+        actualizarNotaPrecio();
         calcRecalc();
     };
+    // Precios oficiales en vivo: los actualiza una Cloud Function semanal en config/preciosCombustible.
+    onSnapshot(doc(db, 'config', 'preciosCombustible'), (snap) => {
+        if (!snap.exists()) return;
+        const d = snap.data();
+        PRECIOS_COMBUSTIBLE = { precios: d.precios || {}, semana: d.semana || '', actualizado: d.actualizado || null };
+        const inp = document.getElementById('cs-precio');
+        const veh = vehById(document.getElementById('cs-veh').value);
+        if (inp && veh && inp.hasAttribute('readonly')) { const p = precioLivePara(veh); if (p) { inp.value = p; calcRecalc(); } }
+        actualizarNotaPrecio();
+    }, () => {});
     window.calcRutaChange = function () {
         const r = CALC_RUTAS.find(x => x.id === document.getElementById('cs-ruta').value);
         if (r) {
@@ -391,6 +440,11 @@
         document.getElementById('cs-materiales').value = c.materiales || '';
         document.getElementById('cs-altura').value = c.alturaPct || '';
         document.getElementById('cs-margen').value = c.margenPct || '';
+        // Si hay vehículo, el precio del galón arranca con el del MICM en vivo (si ya llegó) o el
+        // de respaldo; el campo queda protegido con candado.
+        const vehSel = vehById(c.vehiculoId);
+        if (vehSel) document.getElementById('cs-precio').value = precioGalonPara(vehSel);
+        actualizarNotaPrecio();
         calcRecalc();
     })();
 </script>

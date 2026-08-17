@@ -620,3 +620,54 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (r
 });
 
 // redeploy 1786120000 (arqueo caja chica: push 8:00 / 4:55)
+
+// --- Precios de combustible (MICM) ---------------------------------------------------------------
+// El MICM fija los precios de combustibles cada semana (rigen de sábado a viernes). Esta función
+// los lee de una página pública que los publica en texto plano y los guarda en
+// config/preciosCombustible, que la calculadora de transporte (cuaderno index.html + ops/
+// calculador-obra.html) lee EN VIVO para el "precio del galón" (campo protegido con candado).
+// Corre a diario por la mañana (idempotente, merge) para atrapar el cambio semanal al día siguiente.
+const COMBUSTIBLES_MICM = ['Gasolina Premium', 'Gasolina Regular', 'Gasoil Óptimo', 'Gasoil Regular', 'GLP', 'Gas Natural'];
+async function scrapePreciosCombustible() {
+    const url = 'https://www.conectate.com.do/articulo/precio-combustible-republica-dominicana/';
+    const resp = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (ARTAL-bot; precios combustible)' } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    // Quita etiquetas y entidades → texto plano para buscar "<combustible> ... RD$<precio>".
+    const texto = html.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&#?\w+;/g, ' ').replace(/\s+/g, ' ');
+    const precios = {};
+    for (const fuel of COMBUSTIBLES_MICM) {
+        // "Gasoil Óptimo" puede venir con o sin acento en la Ó.
+        const pat = fuel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace('Óptimo', '[ÓO]ptimo');
+        const re = new RegExp(pat + '[^0-9]{0,40}RD\\$\\s*([0-9]+(?:[.,][0-9]+)?)', 'i');
+        const m = texto.match(re);
+        if (m) {
+            const n = parseFloat(m[1].replace(/,/g, ''));
+            if (n > 20 && n < 1000) precios[fuel] = n;   // rango sano: descarta cifras que no son precio de galón
+        }
+    }
+    const sm = texto.match(/[Pp]ara la semana del[^.]{0,70}/);
+    const semana = sm ? sm[0].trim().replace(/\s+/g, ' ') : '';
+    return { precios, semana };
+}
+async function guardarPreciosCombustible() {
+    const { precios, semana } = await scrapePreciosCombustible();
+    // Si la página cambió de formato y se parsearon menos de 3, NO se sobrescribe (se conserva lo último bueno).
+    if (Object.keys(precios).length < 3) {
+        console.warn('Precios de combustible: solo se parsearon', Object.keys(precios).length, '— no se sobrescribe.');
+        return { ok: false, parseadas: Object.keys(precios).length, precios };
+    }
+    await db.collection('config').doc('preciosCombustible').set({
+        precios, semana, fuente: 'conectate.com.do / MICM', actualizado: new Date().toISOString()
+    }, { merge: true });
+    return { ok: true, precios, semana };
+}
+exports.actualizarPreciosCombustible = onSchedule({ schedule: '0 8 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
+    try { const r = await guardarPreciosCombustible(); console.log('actualizarPreciosCombustible:', JSON.stringify(r)); }
+    catch (e) { console.error('actualizarPreciosCombustible falló:', e); }
+});
+// Disparo manual (para probar o forzar): abrir la URL de esta función en el navegador.
+exports.actualizarPreciosCombustibleAhora = onRequest({ cors: true }, async (req, res) => {
+    try { const r = await guardarPreciosCombustible(); res.json(r); }
+    catch (e) { console.error('actualizarPreciosCombustibleAhora', e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
+});
