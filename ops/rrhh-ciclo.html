@@ -294,6 +294,15 @@
                 const adjs = [];
                 for (const file of files) adjs.push(await subirAdjunto(file, `rrhhEventos/${refDoc.id}`));
                 await updateDoc(doc(db, 'rrhhEventos', refDoc.id), { adjuntos: adjs });
+                // Los adjuntos del evento entran AUTOMÁTICO al EXPEDIENTE del empleado (documentos),
+                // etiquetados con el tipo de evento (ej. Ingreso, Promoción) — así quedan en su ficha
+                // además de en el ciclo. Se enlazan con eventoId para poder quitarlos si se borra el evento.
+                if (emp) {
+                    const cat = (TIPOS[tipo] && TIPOS[tipo].label) || (tipo === 'ingreso' ? 'Ingreso' : 'Ciclo del empleado');
+                    const prev = Array.isArray(emp.documentos) ? emp.documentos : [];
+                    const nuevosDocs = adjs.map(a => ({ ...a, categoria: cat, origen: 'ciclo', eventoId: refDoc.id, subidoPor: usuario.nombre }));
+                    await updateDoc(doc(db, 'rrhhEmpleados', empId), { documentos: prev.concat(nuevosDocs) });
+                }
             }
             // Efectos sobre el empleado.
             if (emp) {
@@ -328,7 +337,17 @@
 
     window.borrarEvento = async function (id) {
         if (!confirm('¿Eliminar este evento del expediente?')) return;
-        try { await deleteDoc(doc(db, 'rrhhEventos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+        try {
+            const ev = eventos.find(x => x.id === id);
+            await deleteDoc(doc(db, 'rrhhEventos', id));
+            // Quita del expediente los documentos que este evento había copiado (por eventoId).
+            if (ev && ev.empleadoId) {
+                const emp = empleados.find(e => e.id === ev.empleadoId);
+                if (emp && Array.isArray(emp.documentos) && emp.documentos.some(d => d && d.eventoId === id)) {
+                    await updateDoc(doc(db, 'rrhhEmpleados', ev.empleadoId), { documentos: emp.documentos.filter(d => !(d && d.eventoId === id)) });
+                }
+            }
+        } catch (e) { alert('No se pudo: ' + e.message); }
     };
 </script>
 
