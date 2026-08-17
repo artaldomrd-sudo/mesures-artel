@@ -54,17 +54,18 @@ export async function requirePin(usuario) {
     if (desbloqueado()) return;
 
     const ref = doc(db, 'usuarios', usuario.email);
-    let pinHash = null, bioReg = false;
+    let pinHash = null, tieneCred = false;
     try {
         const snap = await getDoc(ref);
         const d = snap.exists() ? snap.data() : null;
         pinHash = d ? (d.pinHash || null) : null;
-        bioReg = biometriaDisponible() && !!(d && d.biometria && d.biometria.credentialId);
+        tieneCred = !!(d && ((Array.isArray(d.biometrias) && d.biometrias.length) || (d.biometria && d.biometria.credentialId)));
     } catch (e) { /* si falla la lectura, se pide crear */ }
 
     inyectarEstilos();
     const crear = !pinHash;
-    const bioDisp = biometriaDisponible();
+    const bioDisp = await biometriaDisponible();   // ¿este equipo tiene huella/Face ID?
+    const bioReg = bioDisp && tieneCred;
     return new Promise((resolve) => {
         const ov = document.createElement('div');
         ov.className = 'pin-ov';

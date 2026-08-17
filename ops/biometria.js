@@ -1,11 +1,11 @@
-// Confirmación biométrica del personal (WebAuthn / Touch ID / Face ID / huella del propio dispositivo).
-// Cada empleado registra su biometría UNA vez en SU teléfono; queda atada a su cuenta (usuarios/{email}).
-// Al confirmar una acción, el dispositivo verifica su huella/cara LOCALMENTE (nunca sale del equipo) y
-// resuelve si pasó. Prueba de que esa persona, con su dispositivo registrado, estuvo presente.
+// Confirmación biométrica del personal (WebAuthn / Touch ID / Face ID / Windows Hello / huella del
+// propio dispositivo). Cada empleado registra su biometría en CADA dispositivo que use (celular, Mac,
+// etc.); todas se guardan como una LISTA en usuarios/{email}.biometrias, así una no pisa a la otra.
+// El dispositivo verifica la huella/cara LOCALMENTE (nunca sale del equipo) y resuelve si pasó.
 //
 // Nota: la verificación es del lado del cliente (no hay verificación de firma en servidor). Para el uso
-// real —evitar que un empleado marque en nombre de otro— es efectivo: exige la biometría registrada en
-// SU teléfono. Requiere HTTPS (el sitio en producción) y un dispositivo con biometría de plataforma.
+// real —evitar que un empleado marque en nombre de otro— es efectivo. Requiere HTTPS (producción) y un
+// dispositivo con biometría de PLATAFORMA (built-in): en un equipo sin biometría no se ofrece la opción.
 import { db } from './firebase-config.js';
 import { doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
@@ -23,22 +23,37 @@ function b64urlToBuf(b64) {
 }
 function challenge() { const a = new Uint8Array(32); crypto.getRandomValues(a); return a; }
 
-// ¿El dispositivo/navegador soporta biometría de plataforma? (síncrono, best-effort)
-export function biometriaDisponible() {
+function apiDisponible() {
   return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create && navigator.credentials.get);
 }
 
-// ¿Este usuario ya registró su biometría? (lee su doc en usuarios)
-export async function biometriaRegistrada(usuario) {
-  try {
-    const s = await getDoc(doc(db, 'usuarios', usuario.email));
-    return !!(s.exists() && s.data().biometria && s.data().biometria.credentialId);
-  } catch (_) { return false; }
+// ¿Este equipo tiene biometría de PLATAFORMA (Touch ID / Face ID / Windows Hello / huella)? — async.
+// Un desktop sin biometría devuelve false → la app no muestra el botón, se usa el PIN.
+export async function biometriaDisponible() {
+  if (!apiDisponible()) return false;
+  try { return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }
+  catch (_) { return false; }
 }
 
-// Registra la biometría de ESTE dispositivo y guarda el credentialId en la cuenta del usuario.
+// Todos los credentialId registrados del usuario (lista nueva + el campo viejo `biometria`, por compat).
+function credsDe(d) {
+  const out = [];
+  if (d) {
+    if (Array.isArray(d.biometrias)) d.biometrias.forEach((b) => { if (b && b.credentialId) out.push(b.credentialId); });
+    if (d.biometria && d.biometria.credentialId) out.push(d.biometria.credentialId);
+  }
+  return [...new Set(out)];
+}
+
+// ¿El usuario ya registró biometría en ALGÚN dispositivo?
+export async function biometriaRegistrada(usuario) {
+  try { const s = await getDoc(doc(db, 'usuarios', usuario.email)); return credsDe(s.exists() ? s.data() : null).length > 0; }
+  catch (_) { return false; }
+}
+
+// Registra la biometría de ESTE dispositivo y la AGREGA a la lista del usuario (sin pisar las otras).
 export async function registrarBiometria(usuario) {
-  if (!biometriaDisponible()) throw new Error('Este dispositivo/navegador no soporta biometría.');
+  if (!apiDisponible()) throw new Error('Este dispositivo/navegador no soporta biometría.');
   const cred = await navigator.credentials.create({
     publicKey: {
       challenge: challenge(),
@@ -51,22 +66,30 @@ export async function registrarBiometria(usuario) {
     }
   });
   if (!cred || !cred.rawId) throw new Error('No se pudo registrar la biometría.');
-  await updateDoc(doc(db, 'usuarios', usuario.email), {
-    biometria: { credentialId: bufToB64url(cred.rawId), registradoEn: new Date().toISOString(), dispositivo: (navigator.userAgent || '').slice(0, 140) }
-  });
+  const entrada = { credentialId: bufToB64url(cred.rawId), registradoEn: new Date().toISOString(), dispositivo: (navigator.userAgent || '').slice(0, 140) };
+  const ref = doc(db, 'usuarios', usuario.email);
+  let prev = [];
+  try {
+    const s = await getDoc(ref); const d = s.exists() ? s.data() : null;
+    if (d && Array.isArray(d.biometrias)) prev = d.biometrias.slice();
+    if (d && d.biometria && d.biometria.credentialId) prev = prev.concat([d.biometria]);   // migra el viejo a la lista
+  } catch (_) { }
+  const lista = prev.filter((b) => b && b.credentialId && b.credentialId !== entrada.credentialId).concat([entrada]).slice(-8);
+  await updateDoc(ref, { biometrias: lista });
   return true;
 }
 
-// Pide la biometría del usuario; resuelve (true) si pasó. Lanza Error('SIN_REGISTRO') si no ha registrado.
+// Pide la biometría del usuario en ESTE dispositivo; resuelve (true) si pasó. Lanza Error('SIN_REGISTRO')
+// si no ha registrado ninguna. allowCredentials lleva TODAS sus credenciales; el equipo usa la que tenga.
 export async function confirmarBiometria(usuario) {
-  if (!biometriaDisponible()) throw new Error('Este dispositivo/navegador no soporta biometría.');
+  if (!apiDisponible()) throw new Error('Este dispositivo/navegador no soporta biometría.');
   const s = await getDoc(doc(db, 'usuarios', usuario.email));
-  const bio = s.exists() ? s.data().biometria : null;
-  if (!bio || !bio.credentialId) throw new Error('SIN_REGISTRO');
+  const ids = credsDe(s.exists() ? s.data() : null);
+  if (!ids.length) throw new Error('SIN_REGISTRO');
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge: challenge(),
-      allowCredentials: [{ id: b64urlToBuf(bio.credentialId), type: 'public-key', transports: ['internal'] }],
+      allowCredentials: ids.map((id) => ({ id: b64urlToBuf(id), type: 'public-key', transports: ['internal'] })),
       userVerification: 'required',
       timeout: 60000
     }
