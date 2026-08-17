@@ -6453,6 +6453,63 @@
         return 'generico';
     }
 
+    // --- Partes de fábrica (Marco / Hojas / Vidrios / Accesorios, según el tipo) ----------------
+    // ALUCUFEL marca, ítem por ítem, QUÉ PARTES ya están hechas / se están enviando (una corredera
+    // = marco + hojas + vidrios + accesorios). La oficina (Panel) y el chofer ven exactamente lo
+    // marcado. itemsListosFabrica.{id} se DERIVA de esto: queda true solo cuando TODAS las partes
+    // del ítem están marcadas — así el flujo viejo ("parcialmente listo", badges, chofer) sigue igual.
+    const PARTES_SETS = {
+        corredera: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        galandaje: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        ventana: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        puerta_vidrio: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        fachada: [{ k: 'marco', l: 'Marco' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        mampara: [{ k: 'vidrios', l: 'Vidrios' }, { k: 'herrajes', l: 'Herrajes' }, { k: 'accesorios', l: 'Accesorios' }],
+        ducha: [{ k: 'perfiles', l: 'Perfiles' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'herrajes', l: 'Herrajes' }, { k: 'accesorios', l: 'Accesorios' }],
+        cerramiento: [{ k: 'vidrios', l: 'Vidrios' }, { k: 'herrajes', l: 'Herrajes' }, { k: 'accesorios', l: 'Accesorios' }],
+        baranda: [{ k: 'estructura', l: 'Estructura/Postes' }, { k: 'vidrios', l: 'Vidrios/Tableros' }, { k: 'accesorios', l: 'Accesorios' }],
+        cortina: [{ k: 'tela', l: 'Tela/Lamas' }, { k: 'mecanismo', l: 'Mecanismo' }, { k: 'accesorios', l: 'Accesorios' }]
+    };
+    const PARTES_DEFAULT = [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }];
+    function getItemStateFromOrder(orderData, itemId) {
+        return (orderData.appJSON && orderData.appJSON.cardsState && orderData.appJSON.cardsState[itemId]) || {};
+    }
+    function getPartesFabrica(itemState) {
+        const cat = getCategoriaByType((itemState && itemState.type) || '');
+        return PARTES_SETS[cat] || PARTES_DEFAULT;
+    }
+    // Resumen de SOLO LECTURA de las partes que fábrica marcó (para la oficina y el chofer).
+    function partesResumenHTML(orderData, itemId, itemState) {
+        const set = getPartesFabrica(itemState);
+        const marcadas = (orderData.partesFabrica && orderData.partesFabrica[itemId]) || null;
+        const todoListo = orderData.itemsListosFabrica && orderData.itemsListosFabrica[itemId] === true;
+        const estaLista = (k) => marcadas ? marcadas[k] === true : todoListo;   // compat modelo viejo (solo boolean)
+        const hayAlgo = marcadas ? Object.values(marcadas).some(v => v === true) : todoListo;
+        const chips = set.map(p => {
+            const ok = estaLista(p.k);
+            return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:bold;margin:2px 4px 2px 0;background:${ok ? '#d5f5e3' : '#f1f3f5'};color:${ok ? '#1e8449' : '#98a2b3'};border:1.5px solid ${ok ? '#2ecc71' : '#dfe3e8'};">${ok ? '✓' : '○'} ${escChecklist(p.l)}</span>`;
+        }).join('');
+        const faltan = set.filter(p => !estaLista(p.k)).map(p => p.l);
+        const listas = set.filter(p => estaLista(p.k)).map(p => p.l);
+        let linea;
+        if (!hayAlgo) linea = '<span style="color:#e67e22;font-weight:bold;">Aún no marcado por fábrica</span>';
+        else if (!faltan.length) linea = '<span style="color:#1e8449;font-weight:bold;">Ítem completo ✓</span>';
+        else linea = `<b>Enviando:</b> ${escChecklist(listas.join(', ') || '—')} &nbsp;·&nbsp; <span style="color:#e67e22;"><b>Falta:</b> ${escChecklist(faltan.join(', '))}</span>`;
+        return `<div style="font-size:12px;font-weight:bold;color:#0A3D62;margin-bottom:5px;">📦 Partes que envía fábrica</div>
+            <div>${chips}</div>
+            <div style="font-size:12px;color:#555;margin-top:6px;">${linea}</div>`;
+    }
+    // Caja de solo lectura en cada ítem (para quien abre la ficha desde el Panel / Cotizaciones / Historial).
+    function injectPartesResumen(orderData) {
+        document.querySelectorAll('.item-card').forEach(card => {
+            const itemId = card.id.replace('card-', '');
+            const box = document.createElement('div');
+            box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f8f9fb;border:2px solid #e3e7ec;font-family:Arimo,sans-serif;';
+            box.innerHTML = partesResumenHTML(orderData, itemId, getItemStateFromOrder(orderData, itemId));
+            card.appendChild(box);
+        });
+    }
+
     function injectChecklist(role, orderId, orderData) {
         if (role === 'chofer') { injectChoferChecklist(orderId, orderData); return; }
         if (role === 'fabrica') { injectFabricaChecklist(orderId, orderData); return; }
@@ -6464,35 +6521,60 @@
     // itemsListosFabrica.{itemId}; ops/alucufel/fabrica.html lee esto para el botón
     // "Parcialmente listo para cargar", y el chofer lo ve marcado (ver injectChoferChecklist).
     function injectFabricaChecklist(orderId, orderData) {
+        const partesMap = orderData.partesFabrica || {};
         const listosMap = orderData.itemsListosFabrica || {};
         document.querySelectorAll('.item-card').forEach(card => {
             const itemId = card.id.replace('card-', '');
-            const listo = listosMap[itemId] === true;
+            const itemState = getItemStateFromOrder(orderData, itemId);
+            const set = getPartesFabrica(itemState);
+            const guardadas = partesMap[itemId] || null;
+            // Compat: un ítem marcado "listo" con el modelo viejo (solo boolean, sin partes) se
+            // muestra con TODAS las partes ya marcadas.
+            const listoViejo = !guardadas && listosMap[itemId] === true;
+            const estaChk = (k) => guardadas ? guardadas[k] === true : listoViejo;
 
             const box = document.createElement('div');
             box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f3f4f6;border:2px solid #ddd;font-family:Arimo,sans-serif;';
             box.innerHTML = `
-                <label style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#0A3D62;cursor:pointer;">
-                    <input type="checkbox" class="cl-listo" ${listo ? 'checked' : ''} style="width:22px;height:22px;">
-                    <span>Listo para cargar</span>
+                <div style="font-size:12.5px;font-weight:bold;color:#0A3D62;margin-bottom:8px;">Marca lo que estás enviando de este ítem</div>
+                <div class="cl-partes" style="display:flex;flex-direction:column;gap:8px;">
+                    ${set.map(p => `<label style="display:flex;align-items:center;gap:10px;font-size:13px;font-weight:bold;color:#333;cursor:pointer;">
+                        <input type="checkbox" class="cl-parte" data-k="${p.k}" ${estaChk(p.k) ? 'checked' : ''} style="width:22px;height:22px;">
+                        <span>${escChecklist(p.l)}</span>
+                    </label>`).join('')}
+                </div>
+                <label style="display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:bold;color:#1e8449;cursor:pointer;margin-top:10px;padding-top:8px;border-top:1px dashed #d0d5db;">
+                    <input type="checkbox" class="cl-todas" style="width:20px;height:20px;">
+                    <span>Marcar TODAS (ítem completo)</span>
                 </label>
-                <div class="cl-msg" style="font-size:11px;color:#666;margin-top:6px;">${listo ? 'Marcado como listo' : ''}</div>
+                <div class="cl-msg" style="font-size:11px;color:#666;margin-top:6px;"></div>
             `;
             card.appendChild(box);
 
-            const checkbox = box.querySelector('.cl-listo');
+            const checks = Array.from(box.querySelectorAll('.cl-parte'));
+            const todas = box.querySelector('.cl-todas');
             const msg = box.querySelector('.cl-msg');
-            checkbox.onchange = async () => {
+            const syncTodas = () => { todas.checked = checks.length > 0 && checks.every(c => c.checked); };
+            syncTodas();
+
+            async function guardar() {
+                const partsObj = {};
+                checks.forEach(c => { partsObj[c.dataset.k] = c.checked; });
+                const allChecked = checks.length > 0 && checks.every(c => c.checked);
+                const nListas = checks.filter(c => c.checked).length;
                 msg.textContent = 'Guardando…';
                 try {
                     await updateDoc(doc(db, 'orders', orderId), {
-                        [`itemsListosFabrica.${itemId}`]: checkbox.checked
+                        [`partesFabrica.${itemId}`]: partsObj,
+                        [`itemsListosFabrica.${itemId}`]: allChecked
                     });
-                    msg.textContent = checkbox.checked ? 'Marcado como listo ✓' : 'Desmarcado';
+                    msg.textContent = allChecked ? 'Ítem completo ✓' : (nListas ? `Guardado ✓ (${nListas}/${checks.length} partes)` : 'Sin partes marcadas');
                 } catch (e) {
                     msg.textContent = 'Error al guardar: ' + e.message;
                 }
-            };
+            }
+            checks.forEach(c => c.onchange = () => { syncTodas(); guardar(); });
+            todas.onchange = () => { checks.forEach(c => { c.checked = todas.checked; }); guardar(); };
         });
     }
 
@@ -6508,7 +6590,7 @@
             const box = document.createElement('div');
             box.style.cssText = 'margin-top:12px;padding:12px;border-radius:8px;background:#f3f4f6;border:2px solid #ddd;font-family:Arimo,sans-serif;';
             box.innerHTML = `
-                ${esParcial ? `<div style="font-size:12.5px;font-weight:bold;margin-bottom:8px;color:${listo ? '#2ecc71' : '#e67e22'};">${listo ? '✅ Listo para cargar (marcado por fábrica)' : '⏳ Aún NO está listo — falta en fábrica'}</div>` : ''}
+                <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed #d0d5db;">${partesResumenHTML(orderData, itemId, getItemStateFromOrder(orderData, itemId))}</div>
                 <div style="font-size:12px;font-weight:bold;color:#0A3D62;margin-bottom:8px;">Estado de este ítem (obligatorio)</div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button type="button" class="cl-ok" style="flex:1;min-width:140px;min-height:42px;border:none;border-radius:7px;font-weight:bold;cursor:pointer;font-family:Arimo;background:${current.estado === 'cargado' ? '#2ecc71' : '#e5e7eb'};color:${current.estado === 'cargado' ? '#fff' : '#333'};">✓ Cargado en óptima condición</button>
@@ -6661,6 +6743,13 @@
                     restoreData(orderData.appJSON);
                     if (checklistRole === 'chofer' || checklistRole === 'instalador' || checklistRole === 'fabrica') {
                         injectChecklist(checklistRole, orderIdParam, orderData);
+                    } else {
+                        // Sin rol (Panel de Control / Cotizaciones / Historial): si el pedido ya está
+                        // en el flujo de fábrica, mostrar en solo lectura qué partes marcó fábrica.
+                        const enFlujoFabrica = ['en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'completado'].includes(orderData.status)
+                            || (orderData.partesFabrica && Object.keys(orderData.partesFabrica).length)
+                            || (orderData.itemsListosFabrica && Object.keys(orderData.itemsListosFabrica).length);
+                        if (enFlujoFabrica) injectPartesResumen(orderData);
                     }
                     // Avisa a la ventana que nos embebió (el modal de vista previa de ops/)
                     // que ya se puede imprimir/exportar — exportPDF() necesita cardsState listo.
