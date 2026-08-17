@@ -147,6 +147,7 @@
     <div class="who">
         <span id="user-name"></span>
         <a href="inventario.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">📦 Inventario</a>
+        <button id="bio-btn" title="Registrar tu huella/Face ID en este teléfono para confirmar instalaciones">🔒 Mi biometría</button>
         <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
         <button id="signout-btn">Cerrar sesión</button>
     </div>
@@ -319,6 +320,7 @@
     import { setupSignaturePad } from './signature.js';
     import { buildClientMap, clientList } from './clients.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
+    import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import {
         collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, Timestamp, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -332,6 +334,24 @@
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
+    // Biometría del instalador: registrar en su teléfono (una vez) y refrescar el botón según estado.
+    async function actualizarBioBtn() {
+        const btn = document.getElementById('bio-btn'); if (!btn) return;
+        if (!biometriaDisponible()) { btn.style.display = 'none'; return; }
+        const ya = await biometriaRegistrada(usuario);
+        btn.textContent = ya ? '🔒 Biometría ✓' : '🔒 Registrar biometría';
+    }
+    window.registrarMiBiometria = async function () {
+        if (!biometriaDisponible()) { alert('Este teléfono/navegador no soporta biometría. Úsalo en tu celular desde el sitio (https).'); return; }
+        try {
+            if (await biometriaRegistrada(usuario) && !confirm('Ya tienes una biometría registrada. ¿Reemplazarla con la de este dispositivo?')) return;
+            await registrarBiometria(usuario);
+            alert('✅ Biometría registrada. Ya puedes confirmar tus instalaciones con tu huella / Face ID.');
+            actualizarBioBtn();
+        } catch (e) { alert('No se pudo registrar: ' + ((e && e.message) || e)); }
+    };
+    document.getElementById('bio-btn').onclick = () => registrarMiBiometria();
+    actualizarBioBtn();
     if (esAdmin) document.getElementById('new-job-btn').style.display = 'block';
 
     function esc(s) {
@@ -560,7 +580,7 @@
             ${!entregado ? `<div class="esperando-note">🚚 Esperando que el chofer entregue. No se puede instalar hasta confirmar la entrega.</div>`
                 : (resuelto ? '' : `<div class="checklist-note">⚠ Faltan ${c.faltan} ítem(s) por marcar en el checklist ("Ver hoja").</div>`)}
             <div class="actions">
-                <button class="btn-instalado" ${puedeInstalar ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${puedeInstalar ? `abrirAprobacion('${id}')` : ''}">✅ Registrar instalación (firma)</button>
+                <button class="btn-instalado" ${puedeInstalar ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${puedeInstalar ? `confirmarInstalacionBio('${id}')` : ''}">✅ Confirmar instalación (huella / Face ID)</button>
                 ${puedeParcial ? `<button class="btn-parcial" onclick="guardarAvanceParcial('${id}')">💾 Avance parcial (${c.instalados}/${c.total})</button>` : ''}
                 ${esAdmin && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
                 ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
@@ -579,14 +599,6 @@
                 ${(Array.isArray(o.comentariosInstalador) && o.comentariosInstalador.length) ? `<div class="coment-list">${o.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
                 <textarea id="coment-${id}" class="coment-ta" placeholder="Anota cualquier cosa del proceso: por qué no se pudo terminar, faltantes, cliente ausente, daños, etc."></textarea>
                 <button class="btn-coment" onclick="guardarComentarioInstalador('${id}')">Guardar comentario</button>
-            </div>
-            <div class="aprobacion-form" id="aprobacion-${id}">
-                <label>Nombre del cliente</label>
-                <input type="text" id="aprobacion-nombre-${id}" placeholder="Nombre completo">
-                <label>Firma del cliente</label>
-                <canvas class="signature-canvas" id="firma-${id}" width="320" height="130"></canvas>
-                <div class="signature-row"><button type="button" onclick="limpiarFirma('${id}')">Borrar firma</button></div>
-                <button class="btn-instalado" style="margin-top:10px;" onclick="confirmarInstalacion('${id}')">Confirmar instalación</button>
             </div>
         </div>`;
     }
@@ -1039,16 +1051,23 @@
     };
 
     /* ===== Firma / instalación (orders) ===== */
-    window.abrirAprobacion = function (id) { const form = document.getElementById('aprobacion-' + id); if (form) form.style.display = form.style.display === 'block' ? 'none' : 'block'; };
-    window.limpiarFirma = function (id) { if (signaturePads[id]) signaturePads[id].clear(); };
-    window.confirmarInstalacion = async function (id) {
-        const nombre = document.getElementById('aprobacion-nombre-' + id).value.trim();
-        const pad = signaturePads[id];
-        if (!nombre) { alert('Escribe el nombre del cliente.'); return; }
-        if (!pad || pad.isEmpty()) { alert('Falta la firma del cliente.'); return; }
+    // Confirmar instalación con BIOMETRÍA del instalador (su huella/Face ID en su propio teléfono),
+    // en vez de firma del cliente. Sigue bloqueado hasta que el chofer marque entregado.
+    window.confirmarInstalacionBio = async function (id) {
         const snap = await getDoc(doc(db, 'orders', id));
         if (!snap.exists() || snap.data().entregado !== true) { alert('El chofer todavía no ha entregado este pedido. No puedes registrar la instalación hasta confirmar la entrega.'); return; }
-        await updateDoc(doc(db, 'orders', id), { instalado: true, fechaInstalado: serverTimestamp(), clienteAprobacion: { nombre, firma: pad.toDataUrl(), fecha: serverTimestamp() }, status: 'completado' });
+        try {
+            await confirmarBiometria(usuario);
+        } catch (e) {
+            if (e && e.message === 'SIN_REGISTRO') { alert('Primero registra tu biometría en este teléfono (botón "🔒 Registrar biometría" arriba).'); return; }
+            alert('No se pudo confirmar con biometría: ' + ((e && e.message) || e)); return;
+        }
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                instalado: true, status: 'completado', fechaInstalado: serverTimestamp(),
+                confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' }
+            });
+        } catch (e) { alert('No se pudo registrar la instalación: ' + e.message); }
     };
     window.guardarAvanceParcial = async function (id) {
         const snap = await getDoc(doc(db, 'orders', id));
