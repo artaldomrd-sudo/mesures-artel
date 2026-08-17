@@ -128,7 +128,7 @@
             </div>
             ${notaBtnHTML(id, o)}
             <div class="upload-row">
-                <input type="file" accept="application/pdf" id="file-${id}">
+                <input type="file" accept="application/pdf" id="file-${id}" multiple>
                 <button id="btn-${id}" onclick="subirCotizacionFinal('${id}')">Subir cotización final y marcar enviada</button>
             </div>
         </div>`;
@@ -137,8 +137,8 @@
     // Tarjeta para las YA enviadas al cliente: al aprobar, se envía directo a fábrica (sin volver
     // al cuaderno). Solo se muestran las que aún NO se han enviado a fábrica.
     function enviadaCardHTML(id, o) {
-        const finalLink = o.cotizacionFinalPdfUrl
-            ? `<a href="${esc(o.cotizacionFinalPdfUrl)}" target="_blank">Ver cotización final</a>` : '';
+        const pdfs = cotizPdfsDe(o);
+        const finalLinks = pdfs.map((p, i) => `<a href="${esc(p.url)}" target="_blank">Ver cotización final${pdfs.length > 1 ? ' ' + (i + 1) : ''}</a>`).join(' · ');
         return `
         <div class="order-card enviada" id="card-${id}">
             <div class="order-head">
@@ -147,7 +147,11 @@
             <div class="order-meta">
                 <span>${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems</span>
                 <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha técnica</a>
-                ${finalLink}
+                ${finalLinks}
+            </div>
+            <div class="upload-row" style="margin-top:8px;">
+                <input type="file" accept="application/pdf" id="addfile-${id}" multiple>
+                <button id="addbtn-${id}" onclick="agregarCotizPdf('${id}')">＋ Agregar otro PDF</button>
             </div>
             ${notaBtnHTML(id, o)}
             <div class="aviso-fab">⚠ Antes de enviar a fábrica, confirma que las medidas de esta ficha son de <b>FABRICACIÓN</b> (no de cotización). Revisa la marca de cada ítem en "Ver ficha técnica".</div>
@@ -206,11 +210,29 @@
         }
     };
 
+    // Lista de PDFs de la cotización final (soporta el campo viejo cotizacionFinalPdfUrl singular).
+    function cotizPdfsDe(o) {
+        const arr = Array.isArray(o.cotizacionFinalPdfs) ? o.cotizacionFinalPdfs.slice() : [];
+        if (!arr.length && o.cotizacionFinalPdfUrl) arr.push({ url: o.cotizacionFinalPdfUrl, nombre: o.cotizacionFinalPdfNombre || 'cotización final' });
+        return arr;
+    }
+    // Sube varios PDF a Storage (nombres únicos) y devuelve [{url, nombre}].
+    async function subirCotizPdfs(id, fileList) {
+        const files = Array.from(fileList || []).filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''));
+        const subidos = [];
+        for (const f of files) {
+            const rnd = Math.random().toString(36).slice(2, 8);
+            const fileRef = ref(storage, `cotizacion-final-pdfs/${id}-${rnd}.pdf`);
+            await uploadBytes(fileRef, f);
+            subidos.push({ url: await getDownloadURL(fileRef), nombre: f.name });
+        }
+        return subidos;
+    }
     window.subirCotizacionFinal = async function (id) {
         const fileInput = document.getElementById('file-' + id);
-        const file = fileInput.files[0];
-        if (!file) { alert('Selecciona el PDF de la cotización final antes de enviar.'); return; }
-        if (file.type !== 'application/pdf') { alert('El archivo debe ser un PDF.'); return; }
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) { alert('Selecciona el o los PDF de la cotización final antes de enviar.'); return; }
+        if (files.some(f => !(f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')))) { alert('Todos los archivos deben ser PDF.'); return; }
 
         const btn = document.getElementById('btn-' + id);
         const originalText = btn.textContent;
@@ -218,12 +240,13 @@
         btn.textContent = 'Subiendo…';
 
         try {
-            const fileRef = ref(storage, `cotizacion-final-pdfs/${id}.pdf`);
-            await uploadBytes(fileRef, file);
-            const url = await getDownloadURL(fileRef);
+            const subidos = await subirCotizPdfs(id, files);
+            const o = (ordersCache.find(x => x.id === id) || {}).data || {};
+            const lista = cotizPdfsDe(o).concat(subidos);
             await updateDoc(doc(db, 'orders', id), {
-                cotizacionFinalPdfUrl: url,
-                cotizacionFinalPdfNombre: file.name,
+                cotizacionFinalPdfs: lista,
+                cotizacionFinalPdfUrl: lista[0] ? lista[0].url : null,          // compat con lectores viejos
+                cotizacionFinalPdfNombre: lista[0] ? lista[0].nombre : null,
                 fechaEnviadaCliente: serverTimestamp(),
                 status: 'enviada_cliente'
             });
@@ -232,6 +255,21 @@
             btn.disabled = false;
             btn.textContent = originalText;
         }
+    };
+    // Agregar más PDF a una cotización YA enviada (sin cambiar su estado).
+    window.agregarCotizPdf = async function (id) {
+        const fileInput = document.getElementById('addfile-' + id);
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) { alert('Selecciona el o los PDF a agregar.'); return; }
+        if (files.some(f => !(f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '')))) { alert('Todos los archivos deben ser PDF.'); return; }
+        const btn = document.getElementById('addbtn-' + id);
+        const t = btn.textContent; btn.disabled = true; btn.textContent = 'Subiendo…';
+        try {
+            const subidos = await subirCotizPdfs(id, files);
+            const o = (ordersCache.find(x => x.id === id) || {}).data || {};
+            const lista = cotizPdfsDe(o).concat(subidos);
+            await updateDoc(doc(db, 'orders', id), { cotizacionFinalPdfs: lista, cotizacionFinalPdfUrl: lista[0] ? lista[0].url : null });
+        } catch (e) { alert('No se pudo agregar: ' + e.message); btn.disabled = false; btn.textContent = t; }
     };
 
     // ---------- Nota interna ----------

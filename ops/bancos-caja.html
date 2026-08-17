@@ -39,6 +39,7 @@
 
     .mv-card { display: flex; align-items: flex-start; gap: 12px; border-left: 4px solid #ccc; }
     .mv-card.gasto { border-left-color: #e74c3c; } .mv-card.reposicion { border-left-color: #2ecc71; } .mv-card.apertura { border-left-color: #2f6fd0; }
+    .mv-card.venta { border-left-color: #16a085; } .mv-ic.venta { background: #e0f5f0; } .mv-monto.venta { color: #12866f; }
     .mv-ic { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex: 0 0 auto; }
     .mv-ic.gasto { background: #fdeaea; } .mv-ic.reposicion { background: #e7f7ee; } .mv-ic.apertura { background: #e9f0fb; }
     .mv-info { flex: 1; min-width: 0; } .mv-info b { color: var(--artal-blue); font-size: 14px; }
@@ -81,6 +82,7 @@
         <select id="sel-caja" onchange="render()"></select>
         <button class="btn-o" onclick="abrirCaja()">+ Nueva caja</button>
         <button class="btn-g" onclick="abrirDesembolso()">− Desembolso de caja</button>
+        <button class="btn-r" onclick="abrirVenta()">+ Entrada por venta</button>
         <button class="btn-r" onclick="abrirRepo()">+ Reponer fondo</button>
         <button class="btn-a" onclick="abrirArqueo()">🧮 Arqueo</button>
         <button class="btn-o" onclick="abrirReporte()">📊 Reporte</button>
@@ -152,6 +154,28 @@
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-repo')">Cancelar</button>
             <button class="btn-guardar" onclick="guardarRepo()">Reponer</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: entrada de efectivo por venta a clientes -->
+<div class="modal-overlay" id="modal-venta">
+    <div class="modal-box">
+        <h2>Entrada por venta a clientes</h2>
+        <div class="grid2">
+            <div><label>Fecha</label><input type="date" id="v-fecha"></div>
+            <div><label>Monto recibido (RD$) *</label><input type="number" id="v-monto" min="0" step="0.01"></div>
+        </div>
+        <label>Cliente <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="v-cliente" placeholder="Nombre del cliente / obra">
+        <label>Concepto / detalle</label>
+        <input type="text" id="v-concepto" placeholder="Ej: Abono cotización, venta de contado…">
+        <label>Referencia <span class="lbl-opt">— opcional</span></label>
+        <input type="text" id="v-ref" placeholder="Nº factura / recibo">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="v-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Ingresos)</b></label>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar('modal-venta')">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarVenta()">Registrar entrada</button>
         </div>
     </div>
 </div>
@@ -601,6 +625,42 @@
         } catch (e) { alert('No se pudo reponer: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Reponer'; }
     };
+    // ---------- Entrada de efectivo por venta a clientes ----------
+    window.abrirVenta = function () {
+        const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
+        document.getElementById('v-fecha').value = hoyISO();
+        ['v-monto', 'v-cliente', 'v-concepto', 'v-ref'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('v-conta').checked = true;
+        document.getElementById('modal-venta').classList.add('show');
+    };
+    window.guardarVenta = async function () {
+        const c = cajaSel(); if (!c) return;
+        const monto = n2(document.getElementById('v-monto').value);
+        if (monto <= 0) { alert('Escribe el monto recibido.'); return; }
+        const fecha = document.getElementById('v-fecha').value || hoyISO();
+        const cliente = document.getElementById('v-cliente').value.trim();
+        const concepto = document.getElementById('v-concepto').value.trim() || 'Venta a cliente' + (cliente ? ' — ' + cliente : '');
+        const referencia = document.getElementById('v-ref').value.trim();
+        const aConta = document.getElementById('v-conta').checked;
+        const btn = document.querySelector('#modal-venta .btn-guardar'); btn.disabled = true; btn.textContent = 'Registrando…';
+        try {
+            // Si se pide, primero el ingreso en Contabilidad; se enlaza con contaMovId (para editar/borrar juntos).
+            let contaMovId = null;
+            if (aConta) {
+                const cref = await addDoc(collection(db, 'contaMovimientos'), {
+                    tipo: 'ingreso', fecha, concepto, categoria: 'Ventas a clientes (efectivo)', monto, itbis: 0,
+                    tercero: cliente, ncf: referencia, origen: 'caja_chica', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                });
+                contaMovId = cref.id;
+            }
+            await addDoc(collection(db, 'bancosCajaMovimientos'), {
+                cajaId: c.id, tipo: 'venta', fecha, concepto, categoria: cliente ? ('Cliente: ' + cliente) : 'Venta a clientes',
+                cliente, monto, referencia, contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+            cerrar('modal-venta');
+        } catch (e) { alert('No se pudo registrar la entrada: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Registrar entrada'; }
+    };
     // ---------- Arqueo (conteo de efectivo real vs. sistema) ----------
     window.abrirArqueo = function () {
         const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
@@ -742,9 +802,9 @@
         const lista = ordena(movsVivos(c.id));
         const eliminados = ordena(movsCaja(c.id).filter(m => m.eliminado));
         if (!lista.length && !eliminados.length) { cont.innerHTML = '<p class="empty">Sin movimientos en esta caja.</p>'; return; }
-        const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢', arqueo: '🧮' };
-        const SIGNO = { gasto: '− ', reposicion: '+ ', apertura: '+ ' };
-        const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura', arqueo: 'Arqueo' };
+        const ICO = { gasto: '⬇️', reposicion: '⬆️', apertura: '🟢', arqueo: '🧮', venta: '💵' };
+        const SIGNO = { gasto: '− ', reposicion: '+ ', apertura: '+ ', venta: '+ ' };
+        const NOM = { gasto: 'Gasto', reposicion: 'Reposición', apertura: 'Apertura', arqueo: 'Arqueo', venta: 'Entrada por venta' };
         cont.innerHTML = lista.map(m => {
             const t = m.tipo || 'gasto';
             let sub, fotos = '';
