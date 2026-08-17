@@ -140,8 +140,8 @@
         <input type="date" id="c-entrevista">
         <label>Notas</label>
         <textarea id="c-notas" placeholder="Experiencia, impresión, referencias…"></textarea>
-        <label>CV <span class="lbl-opt">— PDF o foto (opcional)</span></label>
-        <input type="file" id="c-cv" accept="image/*,application/pdf">
+        <label>CV / documentos <span class="lbl-opt">— PDF o foto, puedes elegir varios (opcional)</span></label>
+        <input type="file" id="c-cv" accept="image/*,application/pdf" multiple>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarCandidato()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarCandidato()">Guardar</button>
@@ -342,13 +342,18 @@
             fechaEntrevista: document.getElementById('c-entrevista').value || '', notas: document.getElementById('c-notas').value.trim()
         };
         const btn = document.querySelector('#modal-candidato .btn-guardar');
-        const file = (document.getElementById('c-cv').files || [])[0];
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
+        const files = Array.from(document.getElementById('c-cv').files || []);
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
         try {
             let id = editCandId;
             if (editCandId) await updateDoc(doc(db, 'rrhhCandidatos', editCandId), datos);
             else { const r = await addDoc(collection(db, 'rrhhCandidatos'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); id = r.id; }
-            if (file) { const cv = await subirArchivo(file, `rrhhCandidatos/${id}`); await updateDoc(doc(db, 'rrhhCandidatos', id), { cv }); }
+            if (files.length) {
+                const nuevos = [];
+                for (const file of files) nuevos.push(await subirArchivo(file, `rrhhCandidatos/${id}`));
+                const c = candidatos.find(x => x.id === id) || {};
+                await updateDoc(doc(db, 'rrhhCandidatos', id), { cvs: cvsDe(c).concat(nuevos) });
+            }
             cerrarCandidato();
             setTab('candidatos');
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
@@ -361,10 +366,21 @@
         if (!confirm('¿Eliminar este candidato?')) return;
         try { await deleteDoc(doc(db, 'rrhhCandidatos', id)); } catch (e) { alert('No se pudo: ' + e.message); }
     };
+    // Lista de CVs/documentos de un candidato (soporta el campo viejo `cv` singular).
+    function cvsDe(c) {
+        const arr = Array.isArray(c && c.cvs) ? c.cvs.slice() : [];
+        if (c && c.cv && c.cv.url) arr.push(c.cv);
+        return arr;
+    }
     window.subirCV = async function (id, input) {
-        const file = (input.files || [])[0]; if (!file) return;
+        const files = Array.from(input.files || []); if (!files.length) return;
         input.disabled = true;
-        try { const cv = await subirArchivo(file, `rrhhCandidatos/${id}`); await updateDoc(doc(db, 'rrhhCandidatos', id), { cv }); }
+        try {
+            const nuevos = [];
+            for (const file of files) nuevos.push(await subirArchivo(file, `rrhhCandidatos/${id}`));
+            const c = candidatos.find(x => x.id === id) || {};
+            await updateDoc(doc(db, 'rrhhCandidatos', id), { cvs: cvsDe(c).concat(nuevos) });
+        }
         catch (e) { alert('No se pudo subir: ' + (e && e.message ? e.message : e)); }
         finally { input.value = ''; input.disabled = false; }
     };
@@ -410,9 +426,9 @@
             wa ? `<a class="c-wa" href="https://wa.me/${wa}" target="_blank" rel="noopener">💬 WhatsApp</a>` : '',
             tel ? `<a class="c-tel" href="tel:${esc(tel)}">📞 Llamar</a>` : '',
             c.correo ? `<a class="c-mail" href="mailto:${esc(c.correo)}">✉ Correo</a>` : '',
-            (c.cv && c.cv.url) ? `<a class="c-cv" href="${esc(c.cv.url)}" target="_blank" rel="noopener">${c.cv.tipo === 'pdf' ? '📄' : '📎'} CV</a>` : ''
+            cvsDe(c).map((cv, i) => `<a class="c-cv" href="${esc(cv.url)}" target="_blank" rel="noopener">${cv.tipo === 'pdf' ? '📄' : '📎'} CV${cvsDe(c).length > 1 ? ' ' + (i + 1) : ''}</a>`).join('')
         ].filter(Boolean).join('');
-        const cvAdd = (c.cv && c.cv.url) ? '' : `<label class="justif-add">📎 Subir CV<input type="file" accept="image/*,application/pdf" style="display:none" onchange="subirCV('${c.id}',this)"></label>`;
+        const cvAdd = `<label class="justif-add">📎 Subir CV/documento<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="subirCV('${c.id}',this)"></label>`;
         const sel = `<select onchange="cambiarEtapa('${c.id}',this.value)">${ETAPAS.map(([v, l]) => `<option value="${v}" ${etapa === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
         const contratarBtn = (etapa === 'contratado' && !c.empleadoCreadoId) ? `<button class="b-ok" style="border:none;border-radius:8px;padding:7px 11px;font-weight:bold;font-size:12px;cursor:pointer;font-family:'Arimo';min-height:38px" onclick="contratar('${c.id}')">➕ Crear empleado</button>` : '';
         const yaEmp = c.empleadoCreadoId ? '<span class="estado-badge abierta">✓ Empleado creado</span>' : '';

@@ -158,7 +158,7 @@
         <label>Nota <span class="lbl-opt">— opcional</span></label>
         <input type="text" id="a-nota">
         <label>Voucher de pago <span class="lbl-opt">— foto o PDF (opcional)</span></label>
-        <input type="file" id="a-voucher" accept="image/*,application/pdf">
+        <input type="file" id="a-voucher" accept="image/*,application/pdf" multiple>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarAbono()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarAbono()">Registrar</button>
@@ -434,13 +434,13 @@
         const monto = n2(document.getElementById('a-monto').value);
         if (!monto) { alert('Indica el monto del abono.'); return; }
         const abono = { fecha: document.getElementById('a-fecha').value || hoyISO(), monto, metodo: document.getElementById('a-metodo').value, nota: document.getElementById('a-nota').value.trim(), por: usuario.nombre };
-        const file = (document.getElementById('a-voucher').files || [])[0];
+        const files = Array.from(document.getElementById('a-voucher').files || []);
         const btn = document.querySelector('#modal-abono .btn-guardar');
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Registrando…'; }
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Registrando…'; }
         try {
             // Voucher best-effort: si falla la subida, el cobro/pago se registra igual (sin voucher).
-            if (file) {
-                try { const subidas = await subirFotos([file], `contaCuentas/${abonoId}`); if (subidas && subidas[0]) abono.voucher = subidas[0]; }
+            if (files.length) {
+                try { const subidas = await subirFotos(files, `contaCuentas/${abonoId}`); if (subidas && subidas.length) abono.vouchers = subidas.filter(Boolean); }
                 catch (e2) { alert('El movimiento se registrará, pero el voucher no se pudo subir: ' + (e2 && e2.message ? e2.message : e2)); }
             }
             const prev = Array.isArray(c.abonos) ? c.abonos : [];
@@ -489,7 +489,8 @@
         const pct = monto > 0 ? Math.min(100, Math.round(pag / monto * 100)) : 0;
         const abonos = Array.isArray(c.abonos) ? c.abonos : [];
         const abonosHTML = abonos.length ? `<div class="abonos-list">${abonos.map((a, i) => {
-            const vch = (a.voucher && a.voucher.url) ? ` <a href="${esc(a.voucher.url)}" target="_blank" rel="noopener" title="Ver voucher" style="text-decoration:none">${a.voucher.tipo === 'pdf' ? '📄' : '📎'}</a>` : '';
+            const vlist = (Array.isArray(a.vouchers) ? a.vouchers.slice() : []).concat((a.voucher && a.voucher.url) ? [a.voucher] : []);
+            const vch = vlist.map(v => ` <a href="${esc(v.url)}" target="_blank" rel="noopener" title="Ver voucher" style="text-decoration:none">${v.tipo === 'pdf' ? '📄' : '📎'}</a>`).join('');
             return `<div class="ab"><span>${esc(fmtFecha(a.fecha))} · ${esc(a.metodo || '')}${a.nota ? ' · ' + esc(a.nota) : ''}${vch}</span><span>${fmt(a.monto)} <button onclick="quitarAbono('${c.id}',${i})" style="background:none;border:none;color:#c9ced6;cursor:pointer">×</button></span></div>`;
         }).join('')}</div>` : '';
         const esCobrar = c.tipo === 'cobrar';

@@ -62,7 +62,7 @@
         <label>Descripción</label>
         <textarea id="c-descripcion" placeholder="Ej: 20 tubos de aluminio 100x45, 3 puertas de vidrio templado…"></textarea>
         <label>Orden de compra (PDF o foto PNG/JPG)</label>
-        <input type="file" id="c-pdf" accept="application/pdf,image/png,image/jpeg">
+        <input type="file" id="c-pdf" accept="application/pdf,image/png,image/jpeg" multiple>
         <div id="c-pdf-actual" style="font-size:12px;color:#666;margin-top:4px;display:none;"></div>
         <label>Estado</label>
         <select id="c-status">
@@ -230,7 +230,7 @@
         const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
         const descripcion = document.getElementById('c-descripcion').value.trim();
         const fileInput = document.getElementById('c-pdf');
-        const file = fileInput.files[0];
+        const files = Array.from(fileInput.files || []);
 
         const status = document.getElementById('c-status').value;
 
@@ -238,12 +238,11 @@
         if (!obra) { alert('Escribe la obra o ubicación.'); return; }
         if (!proveedor) { alert('Escribe el proveedor.'); return; }
         // Al editar, el archivo es opcional: si no se sube uno nuevo, se conserva el existente.
-        if (!file && !editandoId) { alert('Sube el PDF o la foto de la orden de compra.'); return; }
-        let esPdf = false, esImg = false;
-        if (file) {
-            esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-            esImg = /^image\/(png|jpe?g)$/i.test(file.type) || /\.(png|jpe?g)$/i.test(file.name || '');
-            if (!esPdf && !esImg) { alert('El archivo debe ser un PDF o una foto PNG/JPG.'); return; }
+        if (!files.length && !editandoId) { alert('Sube el PDF o la foto de la orden de compra.'); return; }
+        for (const f of files) {
+            const okPdf = f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+            const okImg = /^image\/(png|jpe?g)$/i.test(f.type) || /\.(png|jpe?g)$/i.test(f.name || '');
+            if (!okPdf && !okImg) { alert('Cada archivo debe ser un PDF o una foto PNG/JPG.'); return; }
         }
 
         const btn = document.getElementById('c-btn');
@@ -262,14 +261,25 @@
             // imagen) para que el link abra bien en cualquier visor. El campo sigue llamándose
             // compraPdfUrl por compatibilidad con chofer/instalador/historial; compraArchivoTipo
             // distingue foto/PDF. Al editar sin subir archivo, se conservan los del doc previo.
-            if (file) {
-                const ext = esPdf ? 'pdf' : (/png/i.test(file.type + file.name) ? 'png' : 'jpg');
-                const contentType = esPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : 'image/jpeg');
-                const fileRef = ref(storage, `compras-pdfs/${ref_.id}.${ext}`);
-                await uploadBytes(fileRef, file, { contentType });
-                datos.compraPdfUrl = await getDownloadURL(fileRef);
-                datos.compraPdfNombre = file.name;
-                datos.compraArchivoTipo = esPdf ? 'pdf' : 'img';
+            if (files.length) {
+                const subidos = [];
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    const esPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+                    const ext = esPdf ? 'pdf' : (/png/i.test(file.type + file.name) ? 'png' : 'jpg');
+                    const contentType = esPdf ? 'application/pdf' : (ext === 'png' ? 'image/png' : 'image/jpeg');
+                    const sufijo = i === 0 ? '' : ('-' + (i + 1));
+                    const fileRef = ref(storage, `compras-pdfs/${ref_.id}${sufijo}.${ext}`);
+                    await uploadBytes(fileRef, file, { contentType });
+                    subidos.push({ url: await getDownloadURL(fileRef), nombre: file.name, tipo: esPdf ? 'pdf' : 'img' });
+                }
+                // El primer archivo va en los campos legacy (compat con chofer/instalador/historial);
+                // la lista completa vive en compraPdfs.
+                datos.compraPdfUrl = subidos[0].url;
+                datos.compraPdfNombre = subidos[0].nombre;
+                datos.compraArchivoTipo = subidos[0].tipo;
+                const prevPdfs = Array.isArray(previo.compraPdfs) ? previo.compraPdfs : [];
+                datos.compraPdfs = prevPdfs.concat(subidos);
             }
             // Marca de tiempo de "listo para cargar": se pone la primera vez que pasa a ese estado.
             if (status === 'listo_para_cargar' && previo.status !== 'listo_para_cargar') {
@@ -363,10 +373,11 @@
         document.getElementById('c-status').value = o.status === 'completado' ? 'listo_para_cargar' : (o.status || 'pendiente_proveedor');
         document.getElementById('c-pdf').value = '';
         const actual = document.getElementById('c-pdf-actual');
-        actual.innerHTML = o.compraPdfUrl
-            ? `Archivo actual: <a href="${esc(o.compraPdfUrl)}" target="_blank">${esc(o.compraPdfNombre || 'ver')}</a>. Sube uno solo si quieres reemplazarlo.`
+        const arch = compraArchivosDe(o);
+        actual.innerHTML = arch.length
+            ? `Archivos actuales: ${arch.map(a => `<a href="${esc(a.url)}" target="_blank">${a.tipo === 'pdf' ? '📄' : '📎'} ${esc(a.nombre || 'ver')}</a>`).join(' · ')}. Los que subas se agregarán a estos.`
             : '';
-        actual.style.display = o.compraPdfUrl ? 'block' : 'none';
+        actual.style.display = arch.length ? 'block' : 'none';
         document.getElementById('form-title').textContent = 'Editar compra';
         document.getElementById('c-btn').textContent = 'Guardar cambios';
         document.getElementById('c-cancel-btn').style.display = 'block';
@@ -401,10 +412,17 @@
         }
     };
 
+    // Archivos de una orden de compra (soporta el campo viejo compraPdfUrl singular).
+    function compraArchivosDe(o) {
+        const arr = Array.isArray(o && o.compraPdfs) ? o.compraPdfs.slice() : [];
+        if (!arr.length && o && o.compraPdfUrl) arr.push({ url: o.compraPdfUrl, nombre: o.compraPdfNombre || 'orden de compra', tipo: o.compraArchivoTipo || 'pdf' });
+        return arr;
+    }
     function orderCardHTML(id, o) {
         // El estado "completado" ya no se cambia desde aquí (lo maneja el chofer al entregar) —
         // se muestra el badge y solo se permite volver a "listo para cargar" si hiciera falta.
         const opciones = ['pendiente_proveedor', 'listo_para_cargar', 'completado'];
+        const arch = compraArchivosDe(o);
         return `
         <div class="order-card">
             <div class="order-head">
@@ -413,7 +431,7 @@
             </div>
             <div class="order-meta">
                 Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)
-                ${o.compraPdfUrl ? `<a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>` : ''}
+                ${arch.map((a, i) => `<a href="${esc(a.url)}" target="_blank">Ver orden de compra${arch.length > 1 ? ' ' + (i + 1) : ''}</a>`).join(' · ')}
             </div>
             ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
             <p style="font-size:11.5px;color:#999;margin:8px 0 0;">Registrado por ${esc(o.creadoPorNombre)}</p>

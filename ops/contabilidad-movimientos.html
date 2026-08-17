@@ -133,7 +133,7 @@
             <div><label>NCF <span class="lbl-opt">— opcional</span></label><input type="text" id="m-ncf" placeholder="B01…"></div>
         </div>
         <label>Comprobante <span class="lbl-opt">— foto o PDF (opcional)</span></label>
-        <input type="file" id="m-foto" accept="image/*,application/pdf">
+        <input type="file" id="m-foto" accept="image/*,application/pdf" multiple>
         <label>Notas <span class="lbl-opt">— opcional</span></label>
         <textarea id="m-notas"></textarea>
         <div class="modal-actions">
@@ -373,20 +373,23 @@
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
         // Si no adjuntó nada a mano pero escaneó una factura, esa foto/PDF queda como comprobante.
-        const file = (document.getElementById('m-foto').files || [])[0] || scannedFile;
+        const files = Array.from(document.getElementById('m-foto').files || []);
+        if (!files.length && scannedFile) files.push(scannedFile);
         const btn = document.querySelector('#modal .btn-guardar');
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
         try {
             let id = editId;
             if (editId) await updateDoc(doc(db, 'contaMovimientos', editId), datos);
             else { const r = await addDoc(collection(db, 'contaMovimientos'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); id = r.id; }
-            // El comprobante (foto/PDF) se sube DESPUÉS y es BEST-EFFORT: si falla (ej. reglas de
+            // Los comprobantes (foto/PDF) se suben DESPUÉS y son BEST-EFFORT: si fallan (ej. reglas de
             // Storage), el movimiento YA quedó guardado — no se debe reportar "no se pudo guardar"
             // ni perder el registro. Solo se avisa que el comprobante no subió.
-            if (file) {
+            if (files.length) {
                 try {
-                    const comprobante = await subirComprobante(file, id);
-                    await updateDoc(doc(db, 'contaMovimientos', id), { comprobante });
+                    const nuevos = [];
+                    for (const file of files) nuevos.push(await subirComprobante(file, id));
+                    const m = movimientos.find(x => x.id === id) || {};
+                    await updateDoc(doc(db, 'contaMovimientos', id), { comprobantes: comprobantesDe(m).concat(nuevos) });
                 } catch (e2) {
                     console.error('comprobante', e2);
                     alert('El movimiento se guardó ✅, pero el comprobante (foto/PDF) no se pudo subir: ' + (e2 && e2.message ? e2.message : e2) + '\n\nPuedes adjuntarlo luego editando el movimiento.');
@@ -431,10 +434,17 @@
         cont.innerHTML = lista.map(cardHTML).join('');
     }
 
+    // Comprobantes de un movimiento (soporta el campo viejo `comprobante` singular).
+    function comprobantesDe(m) {
+        const arr = Array.isArray(m && m.comprobantes) ? m.comprobantes.slice() : [];
+        if (m && m.comprobante && m.comprobante.url) arr.push(m.comprobante);
+        return arr;
+    }
     function cardHTML(m) {
         const t = m.tipo === 'ingreso' ? 'ingreso' : 'gasto';
         const sub = [m.tercero ? esc(m.tercero) : '', m.centroCosto ? '🎯 ' + esc(m.centroCosto) : '', m.cuentaBancoNombre ? '🏦 ' + esc(m.cuentaBancoNombre) : '', fmtFecha(m.fecha)].filter(Boolean).join('  ·  ');
-        const comp = (m.comprobante && m.comprobante.url) ? `<div><a class="justif-link" href="${esc(m.comprobante.url)}" target="_blank" rel="noopener">${m.comprobante.tipo === 'pdf' ? '📄' : '📎'} Comprobante</a></div>` : '';
+        const comps = comprobantesDe(m);
+        const comp = comps.length ? `<div>${comps.map((c, i) => `<a class="justif-link" href="${esc(c.url)}" target="_blank" rel="noopener">${c.tipo === 'pdf' ? '📄' : '📎'} Comprobante${comps.length > 1 ? ' ' + (i + 1) : ''}</a>`).join(' ')}</div>` : '';
         return `<div class="order-card mv-card ${t}">
             <div class="mv-ic ${t}">${t === 'ingreso' ? '⬆️' : '⬇️'}</div>
             <div class="mv-info">

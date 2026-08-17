@@ -148,7 +148,7 @@
                     <option>Seguro médico</option>
                     <option>Otro documento</option>
                 </select>
-                <label class="doc-add-btn">＋ Subir<input type="file" id="doc-file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" style="display:none" onchange="subirDocEmpleado(this)"></label>
+                <label class="doc-add-btn">＋ Subir<input type="file" id="doc-file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple style="display:none" onchange="subirDocEmpleado(this)"></label>
             </div>
             <div id="emp-docs-list"></div>
         </div>
@@ -271,14 +271,18 @@
     const docIcon = (t) => t === 'pdf' ? '📄' : (t === 'img' ? '🖼️' : '📃');
 
     window.subirDocEmpleado = async function (input) {
-        const file = (input.files || [])[0]; if (!file || !editingId) return;
+        const files = Array.from(input.files || []); if (!files.length || !editingId) return;
         const categoria = document.getElementById('doc-categoria').value;
         const label = input.parentElement; input.disabled = true; if (label) label.style.opacity = '.5';
         try {
-            const arch = await subirArchivo(file, `rrhhEmpleados/${editingId}`);
+            const nuevos = [];
+            for (const file of files) {
+                const arch = await subirArchivo(file, `rrhhEmpleados/${editingId}`);
+                nuevos.push({ ...arch, categoria, subidoPor: usuario.nombre });
+            }
             const e = empleados.find(x => x.id === editingId) || {};
             const prev = Array.isArray(e.documentos) ? e.documentos : [];
-            await updateDoc(doc(db, 'rrhhEmpleados', editingId), { documentos: prev.concat([{ ...arch, categoria, subidoPor: usuario.nombre }]) });
+            await updateDoc(doc(db, 'rrhhEmpleados', editingId), { documentos: prev.concat(nuevos) });
         } catch (err) { alert('No se pudo subir: ' + (err && err.message ? err.message : err)); }
         finally { input.value = ''; input.disabled = false; if (label) label.style.opacity = '1'; }
     };

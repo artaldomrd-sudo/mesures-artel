@@ -157,8 +157,8 @@
         </div>
         <label>Motivo / nota</label>
         <textarea id="p-motivo" placeholder="Opcional"></textarea>
-        <label>Justificativo <span class="lbl-opt">— PDF, imagen o documento (opcional)</span></label>
-        <input type="file" id="p-justificativo" accept="image/*,application/pdf,.doc,.docx,.txt,.odt">
+        <label>Justificativo <span class="lbl-opt">— PDF, imagen o documento (puedes elegir varios, opcional)</span></label>
+        <input type="file" id="p-justificativo" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarPermiso()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarPermiso()">Guardar</button>
@@ -321,8 +321,8 @@
         if (!inicio || !fin) { alert('Indica las fechas.'); return; }
         if (fin < inicio) { alert('La fecha "Hasta" no puede ser anterior a "Desde".'); return; }
         const btn = document.querySelector('#modal-permiso .btn-guardar');
-        const file = (document.getElementById('p-justificativo').files || [])[0];
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
+        const files = Array.from(document.getElementById('p-justificativo').files || []);
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
         try {
             const refDoc = await addDoc(collection(db, 'rrhhPermisos'), {
                 empleadoId: empId, empleadoNombre: emp ? emp.nombre : '',
@@ -331,9 +331,10 @@
                 motivo: document.getElementById('p-motivo').value.trim(),
                 estado: 'pendiente', solicitadoPor: usuario.nombre, fechaSolicitud: serverTimestamp()
             });
-            if (file) {
-                const just = await subirJustif(file, `rrhhPermisos/${refDoc.id}`);
-                await updateDoc(doc(db, 'rrhhPermisos', refDoc.id), { justificativo: just });
+            if (files.length) {
+                const nuevos = [];
+                for (const file of files) nuevos.push(await subirJustif(file, `rrhhPermisos/${refDoc.id}`));
+                await updateDoc(doc(db, 'rrhhPermisos', refDoc.id), { justificativos: nuevos });
             }
             cerrarPermiso();
             setTab('permisos');
@@ -341,16 +342,24 @@
         finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
     };
 
-    // Adjuntar/reemplazar justificativo después (ej. la licencia médica llega días después).
+    // Lista de justificativos de un permiso (soporta el campo viejo `justificativo` singular).
+    function justifsDe(p) {
+        const arr = Array.isArray(p && p.justificativos) ? p.justificativos.slice() : [];
+        if (p && p.justificativo && p.justificativo.url) arr.push(p.justificativo);
+        return arr;
+    }
+    // Adjuntar más justificativos después (ej. la licencia médica llega días después).
     window.subirJustifPermiso = async function (id, input) {
-        const file = (input.files || [])[0];
-        if (!file) return;
+        const files = Array.from(input.files || []);
+        if (!files.length) return;
         const label = input.parentElement;
         input.disabled = true;
         if (label) label.style.opacity = '.5';
         try {
-            const just = await subirJustif(file, `rrhhPermisos/${id}`);
-            await updateDoc(doc(db, 'rrhhPermisos', id), { justificativo: just });
+            const nuevos = [];
+            for (const file of files) nuevos.push(await subirJustif(file, `rrhhPermisos/${id}`));
+            const p = permisos.find(x => x.id === id) || {};
+            await updateDoc(doc(db, 'rrhhPermisos', id), { justificativos: justifsDe(p).concat(nuevos) });
         } catch (e) { alert('No se pudo subir: ' + (e && e.message ? e.message : e)); }
         finally { input.value = ''; input.disabled = false; if (label) label.style.opacity = '1'; }
     };
@@ -380,9 +389,8 @@
                     <div class="l">${esc(p.tipo)} · ${rango} · ${p.dias} día${p.dias === 1 ? '' : 's'}</div>
                     ${p.motivo ? `<div class="l">“${esc(p.motivo)}”</div>` : ''}
                     ${p.resueltoPor ? `<div class="l">Resuelto por ${esc(p.resueltoPor)}</div>` : ''}
-                    <div>${p.justificativo && p.justificativo.url
-                        ? `<a class="justif-link" href="${esc(p.justificativo.url)}" target="_blank" rel="noopener">${p.justificativo.tipo === 'pdf' ? '📄' : (p.justificativo.tipo === 'doc' ? '📃' : '🖼️')} Ver justificativo</a>`
-                        : `<label class="justif-add">📎 Adjuntar justificativo<input type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" style="display:none" onchange="subirJustifPermiso('${p.id}',this)"></label>`}</div>
+                    <div>${justifsDe(p).map(j => `<a class="justif-link" href="${esc(j.url)}" target="_blank" rel="noopener">${j.tipo === 'pdf' ? '📄' : (j.tipo === 'doc' ? '📃' : '🖼️')} Ver justificativo</a>`).join(' ')}
+                        <label class="justif-add">📎 Adjuntar justificativo<input type="file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple style="display:none" onchange="subirJustifPermiso('${p.id}',this)"></label></div>
                 </div>
                 <div class="perm-actions">${acciones}</div>
             </div>`;

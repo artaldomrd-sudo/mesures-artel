@@ -104,7 +104,7 @@
         <label>Descripción <span class="lbl-opt">— opcional</span></label>
         <textarea id="i-desc"></textarea>
         <label>Imagen <span class="lbl-opt">— opcional</span></label>
-        <input type="file" id="i-foto" accept="image/*">
+        <input type="file" id="i-foto" accept="image/*" multiple>
         <div class="chk-line"><input type="checkbox" id="i-activo" checked><label for="i-activo">Activo (disponible para cotizar)</label></div>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
@@ -245,14 +245,19 @@
             activo: document.getElementById('i-activo').checked,
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
-        const file = (document.getElementById('i-foto').files || [])[0];
+        const files = Array.from(document.getElementById('i-foto').files || []);
         const btn = document.querySelector('#modal .btn-guardar');
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
         try {
             let id = editId;
             if (editId) await updateDoc(doc(db, 'productos', editId), datos);
             else { const r = await addDoc(collection(db, 'productos'), { ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() }); id = r.id; }
-            if (file) { const foto = await subirFoto(file, id); await updateDoc(doc(db, 'productos', id), { foto }); }
+            if (files.length) {
+                const nuevas = [];
+                for (const file of files) nuevas.push(await subirFoto(file, id));
+                const p = productos.find(x => x.id === id) || {};
+                await updateDoc(doc(db, 'productos', id), { fotos: fotosDe(p).concat(nuevas) });
+            }
             cerrar();
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
         finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
@@ -291,9 +296,18 @@
             grupos[c].sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')).map(cardHTML).join('')).join('');
     }
 
+    // Fotos de un producto (soporta el campo viejo `foto` singular).
+    function fotosDe(p) {
+        const arr = Array.isArray(p && p.fotos) ? p.fotos.slice() : [];
+        if (p && p.foto && p.foto.url) arr.push(p.foto);
+        return arr;
+    }
     function cardHTML(p) {
         const tipo = p.tipo || 'producto';
-        const thumb = (p.foto && p.foto.url) ? `<img class="it-thumb" src="${esc(p.foto.url)}" alt="">` : `<div class="it-noimg">${tipo === 'servicio' ? '🛠️' : '📦'}</div>`;
+        const fts = fotosDe(p);
+        const thumb = fts.length
+            ? `<a href="${esc(fts[0].url)}" target="_blank" rel="noopener" style="position:relative;display:inline-block"><img class="it-thumb" src="${esc(fts[0].url)}" alt="">${fts.length > 1 ? `<span style="position:absolute;right:1px;bottom:1px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;border-radius:5px;padding:0 4px">+${fts.length - 1}</span>` : ''}</a>`
+            : `<div class="it-noimg">${tipo === 'servicio' ? '🛠️' : '📦'}</div>`;
         const margen = (n2(p.costo) > 0 && n2(p.precioVenta) > 0) ? Math.round((p.precioVenta - p.costo) / p.precioVenta * 100) : null;
         const badges = [
             `<span class="b ${tipo}">${tipo === 'servicio' ? 'Servicio' : 'Producto'}</span>`,

@@ -106,7 +106,7 @@
         </div>
 
         <label>Adjunto <span class="lbl-opt">— PDF, imagen o documento (opcional)</span></label>
-        <input type="file" id="e-adjunto" accept="image/*,application/pdf,.doc,.docx,.txt,.odt">
+        <input type="file" id="e-adjunto" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarEvento()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarEvento()">Guardar</button>
@@ -200,8 +200,9 @@
         if (ev.registradoPor) extra.push('Registró: ' + ev.registradoPor);
         const nombreTop = selEmp ? '' : `<span class="fecha" style="margin-left:0;color:#556;font-weight:bold">${esc(ev.empleadoNombre || '')}</span>`;
         const del = ev.sintetico ? '' : `<button class="tl-del" title="Eliminar" onclick="borrarEvento('${ev.id}')">🗑</button>`;
-        const adj = (ev.adjunto && ev.adjunto.url)
-            ? `<div><a class="justif-link" href="${esc(ev.adjunto.url)}" target="_blank" rel="noopener">${ev.adjunto.tipo === 'pdf' ? '📄' : (ev.adjunto.tipo === 'doc' ? '📃' : '🖼️')} Ver adjunto</a></div>` : '';
+        const adjList = (Array.isArray(ev.adjuntos) ? ev.adjuntos.slice() : []).concat((ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
+        const adj = adjList.length
+            ? `<div>${adjList.map(a => `<a class="justif-link" href="${esc(a.url)}" target="_blank" rel="noopener">${a.tipo === 'pdf' ? '📄' : (a.tipo === 'doc' ? '📃' : '🖼️')} Ver adjunto</a>`).join(' ')}</div>` : '';
         const carpeta = (ev.tipo === 'vacaciones' && !ev.sintetico)
             ? `<div><a class="justif-link" href="rrhh-vacaciones.html?emp=${esc(ev.empleadoId || '')}">📁 Ver carpeta de vacaciones</a></div>` : '';
         return `<div class="tl-item">
@@ -280,8 +281,8 @@
         if (!fecha) { alert('Indica la fecha.'); return; }
         if (!titulo && !detalle) { alert('Escribe al menos un título o un detalle.'); return; }
         const btn = document.querySelector('#modal-evento .btn-guardar');
-        const file = (document.getElementById('e-adjunto').files || [])[0];
-        if (btn) { btn.disabled = true; btn.textContent = file ? 'Subiendo…' : 'Guardando…'; }
+        const files = Array.from(document.getElementById('e-adjunto').files || []);
+        if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
         const datos = {
             empleadoId: empId, empleadoNombre: emp ? emp.nombre : '', tipo, fecha, titulo, detalle,
             registradoPor: usuario.nombre, fechaCreacion: serverTimestamp()
@@ -289,9 +290,10 @@
         if (tipo === 'salida') datos.tipoSalida = document.getElementById('e-tiposalida').value;
         try {
             const refDoc = await addDoc(collection(db, 'rrhhEventos'), datos);
-            if (file) {
-                const adj = await subirAdjunto(file, `rrhhEventos/${refDoc.id}`);
-                await updateDoc(doc(db, 'rrhhEventos', refDoc.id), { adjunto: adj });
+            if (files.length) {
+                const adjs = [];
+                for (const file of files) adjs.push(await subirAdjunto(file, `rrhhEventos/${refDoc.id}`));
+                await updateDoc(doc(db, 'rrhhEventos', refDoc.id), { adjuntos: adjs });
             }
             // Efectos sobre el empleado.
             if (emp) {
