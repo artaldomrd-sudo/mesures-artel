@@ -15,6 +15,7 @@
 
 import { db } from './firebase-config.js';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { biometriaDisponible, registrarBiometria, confirmarBiometria } from './biometria.js';
 
 const UNLOCK_MIN = 10;   // minutos que dura el desbloqueo antes de volver a pedir el PIN
 
@@ -53,11 +54,17 @@ export async function requirePin(usuario) {
     if (desbloqueado()) return;
 
     const ref = doc(db, 'usuarios', usuario.email);
-    let pinHash = null;
-    try { const snap = await getDoc(ref); pinHash = snap.exists() ? (snap.data().pinHash || null) : null; } catch (e) { /* si falla la lectura, se pide crear */ }
+    let pinHash = null, bioReg = false;
+    try {
+        const snap = await getDoc(ref);
+        const d = snap.exists() ? snap.data() : null;
+        pinHash = d ? (d.pinHash || null) : null;
+        bioReg = biometriaDisponible() && !!(d && d.biometria && d.biometria.credentialId);
+    } catch (e) { /* si falla la lectura, se pide crear */ }
 
     inyectarEstilos();
     const crear = !pinHash;
+    const bioDisp = biometriaDisponible();
     return new Promise((resolve) => {
         const ov = document.createElement('div');
         ov.className = 'pin-ov';
@@ -65,10 +72,12 @@ export async function requirePin(usuario) {
             <div class="pin-logo">ARTAL</div>
             <h2>${crear ? 'Crea tu PIN de acceso' : 'Ingresa tu PIN'}</h2>
             <p class="pin-sub">${crear ? 'Tu clave personal para el ERP (4 a 6 dígitos). No la compartas.' : 'Área protegida · ' + esc(usuario.nombre || '')}</p>
+            ${(!crear && bioReg) ? '<button class="pin-btn" id="pin-bio" style="background:#16a085;margin-bottom:10px;">🔒 Entrar con biometría</button><div style="font-size:12px;color:#8a93a0;margin-bottom:8px;">— o con tu PIN —</div>' : ''}
             <input id="pin1" type="password" inputmode="numeric" maxlength="6" placeholder="••••" autocomplete="off">
             ${crear ? '<input id="pin2" type="password" inputmode="numeric" maxlength="6" placeholder="Repite el PIN" autocomplete="off">' : ''}
             <div class="pin-err" id="pin-err"></div>
             <button class="pin-btn" id="pin-ok">${crear ? 'Guardar PIN' : 'Entrar'}</button>
+            ${(!crear && bioDisp && !bioReg) ? '<button class="pin-salir" id="pin-bio-reg" style="color:#16a085;font-weight:bold;">🔒 Activar biometría en este teléfono</button>' : ''}
             <button class="pin-salir" id="pin-salir">← Volver</button>
         </div>`;
         document.body.appendChild(ov);
@@ -93,5 +102,19 @@ export async function requirePin(usuario) {
         }
         ov.querySelector('#pin-ok').onclick = submit;
         ov.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+        // Entrar con biometría (si ya está registrada en este dispositivo).
+        const btnBio = ov.querySelector('#pin-bio');
+        if (btnBio) btnBio.onclick = async () => {
+            err('');
+            try { await confirmarBiometria(usuario); marcarDesbloqueado(); ov.remove(); resolve(); }
+            catch (e) { err(e && e.message === 'SIN_REGISTRO' ? 'No tienes biometría registrada.' : 'Biometría no confirmada. Usa tu PIN.'); }
+        };
+        // Activar biometría en este teléfono (la primera vez); al registrarla, entra.
+        const btnBioReg = ov.querySelector('#pin-bio-reg');
+        if (btnBioReg) btnBioReg.onclick = async () => {
+            err('');
+            try { await registrarBiometria(usuario); marcarDesbloqueado(); ov.remove(); resolve(); }
+            catch (e) { err('No se pudo activar la biometría: ' + ((e && e.message) || e)); }
+        };
     });
 }
