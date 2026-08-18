@@ -164,6 +164,25 @@
     </div>
 </div>
 
+<!-- Modal: editar un evento del ciclo desde la ficha del empleado -->
+<div class="modal-overlay" id="modal-evento">
+    <div class="modal-box">
+        <h2>Editar evento del ciclo</h2>
+        <div class="grid2">
+            <div><label>Tipo</label><select id="ev-tipo"></select></div>
+            <div><label>Fecha</label><input type="date" id="ev-fecha"></div>
+        </div>
+        <label>Título</label>
+        <input type="text" id="ev-titulo" placeholder="Ej: Aumento de sueldo, llegada tarde…">
+        <label>Detalle</label>
+        <textarea id="ev-detalle" placeholder="Descripción del evento"></textarea>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarEventoEdit()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardarEventoEdit()">Guardar cambios</button>
+        </div>
+    </div>
+</div>
+
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { requirePin } from './pin-gate.js';
@@ -341,11 +360,59 @@
             const adj = (Array.isArray(ev.adjuntos) ? ev.adjuntos : []).concat((ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
             const adjHTML = adj.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener" style="margin-left:8px;font-size:12px;font-weight:bold;color:#1c4e7a;">${a.tipo === 'pdf' ? '📄' : (a.tipo === 'img' ? '🖼️' : '📎')} ver</a>`).join('');
             const detalle = [ev.titulo, ev.detalle].filter(Boolean).join(' — ');
-            return `<div style="padding:7px 0;border-bottom:1px solid #eef1f4;font-size:13px;line-height:1.4;">
-                ${t.icon} <b>${esc(t.label)}</b>${detalle ? ' · ' + esc(detalle) : ''} <span style="color:#8a93a0;">${ev.fecha ? esc(fmtFecha(ev.fecha)) : ''}</span>${adjHTML}
+            // El ingreso es derivado de la fecha de ingreso (no es un evento guardado): no se edita aquí,
+            // se cambia en el campo "Fecha de ingreso" de la ficha.
+            const acciones = ev.sintetico ? '<span style="font-size:11px;color:#8a93a0;">(desde Fecha de ingreso)</span>'
+                : `<button type="button" onclick="abrirEventoEdit('${ev.id}')" style="border:none;background:transparent;cursor:pointer;color:#1c4e7a;font-weight:bold;font-size:12px;">✏</button>
+                   <button type="button" onclick="borrarEventoFicha('${ev.id}')" style="border:none;background:transparent;cursor:pointer;color:#c0392b;font-weight:bold;font-size:13px;">🗑</button>`;
+            return `<div style="padding:7px 0;border-bottom:1px solid #eef1f4;font-size:13px;line-height:1.4;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+                <span>${t.icon} <b>${esc(t.label)}</b>${detalle ? ' · ' + esc(detalle) : ''} <span style="color:#8a93a0;">${ev.fecha ? esc(fmtFecha(ev.fecha)) : ''}</span>${adjHTML}</span>
+                <span style="white-space:nowrap;">${acciones}</span>
             </div>`;
         }).join('');
     }
+    // ---- Editar / borrar un evento del ciclo desde la ficha ----
+    let editandoEventoId = null;
+    window.abrirEventoEdit = function (id) {
+        const ev = eventosCiclo.find(x => x.id === id); if (!ev) return;
+        editandoEventoId = id;
+        const sel = document.getElementById('ev-tipo');
+        sel.innerHTML = Object.entries(CICLO_TIPOS).filter(([v]) => v !== 'ingreso').map(([v, t]) => `<option value="${v}">${t.icon} ${t.label}</option>`).join('');
+        sel.value = ev.tipo || 'nota';
+        document.getElementById('ev-fecha').value = ev.fecha || '';
+        document.getElementById('ev-titulo').value = ev.titulo || '';
+        document.getElementById('ev-detalle').value = ev.detalle || '';
+        document.getElementById('modal-evento').classList.add('show');
+    };
+    window.cerrarEventoEdit = function () { document.getElementById('modal-evento').classList.remove('show'); editandoEventoId = null; };
+    window.guardarEventoEdit = async function () {
+        if (!editandoEventoId) return;
+        const fecha = document.getElementById('ev-fecha').value;
+        const titulo = document.getElementById('ev-titulo').value.trim();
+        const detalle = document.getElementById('ev-detalle').value.trim();
+        if (!fecha) { alert('Indica la fecha.'); return; }
+        if (!titulo && !detalle) { alert('Escribe al menos un título o un detalle.'); return; }
+        const btn = document.querySelector('#modal-evento .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+            await updateDoc(doc(db, 'rrhhEventos', editandoEventoId), { tipo: document.getElementById('ev-tipo').value, fecha, titulo, detalle });
+            cerrarEventoEdit();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+    };
+    window.borrarEventoFicha = async function (id) {
+        if (!confirm('¿Eliminar este evento del ciclo? También se quitarán del expediente los documentos que este evento haya adjuntado.')) return;
+        try {
+            const ev = eventosCiclo.find(x => x.id === id);
+            await deleteDoc(doc(db, 'rrhhEventos', id));
+            // Quita del expediente los documentos que este evento había copiado (por eventoId).
+            if (ev && ev.empleadoId) {
+                const emp = empleados.find(e => e.id === ev.empleadoId);
+                if (emp && Array.isArray(emp.documentos) && emp.documentos.some(d => d && d.eventoId === id)) {
+                    await updateDoc(doc(db, 'rrhhEmpleados', ev.empleadoId), { documentos: emp.documentos.filter(d => !(d && d.eventoId === id)) });
+                }
+            }
+        } catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
+    };
 
     // Catálogos para los selects.
     function opts(arr, sel) {
