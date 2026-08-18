@@ -176,6 +176,10 @@
         <input type="text" id="ev-titulo" placeholder="Ej: Aumento de sueldo, llegada tarde…">
         <label>Detalle</label>
         <textarea id="ev-detalle" placeholder="Descripción del evento"></textarea>
+        <label style="display:flex;align-items:center;gap:8px;">Adjuntos <span class="lbl-opt">— PDF, imagen o documento</span>
+            <label class="doc-add-btn" style="margin-left:auto;">＋ Subir<input type="file" id="ev-adjunto-file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple style="display:none" onchange="subirAdjuntoEvento(this)"></label>
+        </label>
+        <div id="ev-adjuntos-list"></div>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrarEventoEdit()">Cancelar</button>
             <button class="btn-guardar" onclick="guardarEventoEdit()">Guardar cambios</button>
@@ -252,6 +256,7 @@
     onSnapshot(collection(db, 'rrhhEventos'), (snap) => {
         eventosCiclo = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         if (editingId && document.getElementById('modal').classList.contains('show')) renderCicloEmpleado();
+        if (editandoEventoId && document.getElementById('modal-evento').classList.contains('show')) renderEvAdjuntos();
     }, () => {});
 
     // Graba costoDiaReal/costoMesReal en las fichas que aún no lo tienen (empleados de antes de esta
@@ -382,9 +387,57 @@
         document.getElementById('ev-fecha').value = ev.fecha || '';
         document.getElementById('ev-titulo').value = ev.titulo || '';
         document.getElementById('ev-detalle').value = ev.detalle || '';
+        renderEvAdjuntos();
         document.getElementById('modal-evento').classList.add('show');
     };
     window.cerrarEventoEdit = function () { document.getElementById('modal-evento').classList.remove('show'); editandoEventoId = null; };
+    // Adjuntos del evento en edición (compat con el campo viejo `adjunto` singular).
+    const evAdjuntosDe = (ev) => (Array.isArray(ev && ev.adjuntos) ? ev.adjuntos.slice() : []).concat((ev && ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
+    function renderEvAdjuntos() {
+        const cont = document.getElementById('ev-adjuntos-list'); if (!cont || !editandoEventoId) return;
+        const ev = eventosCiclo.find(x => x.id === editandoEventoId) || {};
+        const adj = evAdjuntosDe(ev);
+        cont.innerHTML = adj.length ? adj.map(a => `<div class="doc-item">
+            <a href="${esc(a.url)}" target="_blank" rel="noopener">${docIcon(a.tipo)} ${esc(a.nombre || 'ver')}</a>
+            <button class="doc-del" title="Quitar" onclick="borrarAdjuntoEvento('${esc(a.url)}')">×</button>
+        </div>`).join('') : '<p class="hint">Sin adjuntos.</p>';
+    }
+    // Sube adjuntos al evento Y los copia al expediente (mismo criterio que al crear el evento en Ciclo).
+    window.subirAdjuntoEvento = async function (input) {
+        const files = Array.from(input.files || []); if (!files.length || !editandoEventoId) return;
+        const ev = eventosCiclo.find(x => x.id === editandoEventoId); if (!ev) return;
+        const label = input.parentElement; input.disabled = true; if (label) label.style.opacity = '.5';
+        try {
+            const nuevos = [];
+            for (const file of files) nuevos.push(await subirArchivo(file, `rrhhEventos/${editandoEventoId}`));
+            await updateDoc(doc(db, 'rrhhEventos', editandoEventoId), { adjuntos: evAdjuntosDe(ev).concat(nuevos) });
+            // También al expediente del empleado (documentos), etiquetados con el tipo de evento.
+            if (ev.empleadoId) {
+                const emp = empleados.find(e => e.id === ev.empleadoId) || {};
+                const cat = (CICLO_TIPOS[ev.tipo] && CICLO_TIPOS[ev.tipo].label) || 'Ciclo del empleado';
+                const prev = Array.isArray(emp.documentos) ? emp.documentos : [];
+                const docsNuevos = nuevos.map(a => ({ ...a, categoria: cat, origen: 'ciclo', eventoId: editandoEventoId, subidoPor: usuario.nombre }));
+                await updateDoc(doc(db, 'rrhhEmpleados', ev.empleadoId), { documentos: prev.concat(docsNuevos) });
+            }
+        } catch (e) { alert('No se pudo subir: ' + (e && e.message ? e.message : e)); }
+        finally { input.value = ''; input.disabled = false; if (label) label.style.opacity = '1'; renderEvAdjuntos(); }
+    };
+    // Quita un adjunto del evento Y del expediente (por url + eventoId).
+    window.borrarAdjuntoEvento = async function (url) {
+        if (!editandoEventoId || !confirm('¿Quitar este adjunto?')) return;
+        const ev = eventosCiclo.find(x => x.id === editandoEventoId); if (!ev) return;
+        try {
+            await updateDoc(doc(db, 'rrhhEventos', editandoEventoId), { adjuntos: evAdjuntosDe(ev).filter(a => a && a.url !== url), adjunto: null });
+            if (ev.empleadoId) {
+                const emp = empleados.find(e => e.id === ev.empleadoId) || {};
+                const prev = Array.isArray(emp.documentos) ? emp.documentos : [];
+                if (prev.some(d => d && d.url === url)) {
+                    await updateDoc(doc(db, 'rrhhEmpleados', ev.empleadoId), { documentos: prev.filter(d => !(d && d.url === url)) });
+                }
+            }
+        } catch (e) { alert('No se pudo quitar: ' + (e && e.message ? e.message : e)); }
+        finally { renderEvAdjuntos(); }
+    };
     window.guardarEventoEdit = async function () {
         if (!editandoEventoId) return;
         const fecha = document.getElementById('ev-fecha').value;
