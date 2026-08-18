@@ -151,6 +151,10 @@
                 <label class="doc-add-btn">＋ Subir<input type="file" id="doc-file" accept="image/*,application/pdf,.doc,.docx,.txt,.odt" multiple style="display:none" onchange="subirDocEmpleado(this)"></label>
             </div>
             <div id="emp-docs-list"></div>
+
+            <label style="margin-top:14px;display:flex;align-items:center;gap:8px;">Ciclo del empleado <span class="lbl-opt">— ingreso, promociones, vacaciones, amonestaciones…</span></label>
+            <div id="emp-ciclo-list"></div>
+            <a id="emp-ciclo-link" href="#" style="display:inline-block;margin-top:6px;font-size:12.5px;font-weight:bold;color:#1c4e7a;text-decoration:none;">＋ Registrar evento en el Ciclo del empleado ↗</a>
         </div>
 
         <div class="modal-actions">
@@ -215,12 +219,21 @@
     let currentTab = 'activo';
     let editingId = null;
 
+    let eventosCiclo = [];
+
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
         backfillCostos();
-        if (editingId && document.getElementById('modal').classList.contains('show')) renderDocsEmpleado();
+        if (editingId && document.getElementById('modal').classList.contains('show')) { renderDocsEmpleado(); renderCicloEmpleado(); }
     }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+
+    // Eventos del ciclo del empleado (rrhh-ciclo.html los crea). Aquí se muestran de solo lectura
+    // en la ficha, junto al ingreso derivado de la fecha de ingreso del empleado.
+    onSnapshot(collection(db, 'rrhhEventos'), (snap) => {
+        eventosCiclo = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (editingId && document.getElementById('modal').classList.contains('show')) renderCicloEmpleado();
+    }, () => {});
 
     // Graba costoDiaReal/costoMesReal en las fichas que aún no lo tienen (empleados de antes de esta
     // función) o cuyo valor quedó desfasado si cambió una tasa. Solo escribe cuando el número cambia
@@ -302,6 +315,36 @@
             <a href="${esc(d.url)}" target="_blank" rel="noopener">${docIcon(d.tipo)} ${d.categoria ? esc(d.categoria) + ' — ' : ''}${esc(d.nombre)}</a>
             <button class="doc-del" title="Quitar" onclick="borrarDocEmpleado('${esc(d.url)}')">×</button>
         </div>`).join('');
+    }
+    // Línea de tiempo del ciclo del empleado (solo lectura) dentro de su ficha.
+    const CICLO_TIPOS = {
+        ingreso: { label: 'Ingreso', icon: '🎯' },
+        promocion: { label: 'Promoción / Cambio', icon: '⬆️' },
+        vacaciones: { label: 'Vacaciones', icon: '🏖️' },
+        amonestacion: { label: 'Amonestación', icon: '⚠️' },
+        reconocimiento: { label: 'Reconocimiento', icon: '🏆' },
+        capacitacion: { label: 'Capacitación', icon: '🎓' },
+        nota: { label: 'Nota', icon: '📝' },
+        salida: { label: 'Salida / Desvinculación', icon: '🚪' }
+    };
+    function renderCicloEmpleado() {
+        const cont = document.getElementById('emp-ciclo-list'); if (!cont || !editingId) return;
+        const e = empleados.find(x => x.id === editingId) || {};
+        const link = document.getElementById('emp-ciclo-link'); if (link) link.href = 'rrhh-ciclo.html?emp=' + encodeURIComponent(editingId);
+        const evs = eventosCiclo.filter(ev => ev.empleadoId === editingId).slice();
+        // Ingreso derivado de la fecha de ingreso del empleado (no es un evento guardado).
+        if (e.fechaIngreso) evs.push({ tipo: 'ingreso', fecha: e.fechaIngreso, titulo: 'Ingreso a la empresa', sintetico: true });
+        if (!evs.length) { cont.innerHTML = '<p class="hint">Sin eventos en el ciclo todavía.</p>'; return; }
+        evs.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        cont.innerHTML = evs.map(ev => {
+            const t = CICLO_TIPOS[ev.tipo] || { label: ev.tipo || 'Evento', icon: '•' };
+            const adj = (Array.isArray(ev.adjuntos) ? ev.adjuntos : []).concat((ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
+            const adjHTML = adj.map(a => `<a href="${esc(a.url)}" target="_blank" rel="noopener" style="margin-left:8px;font-size:12px;font-weight:bold;color:#1c4e7a;">${a.tipo === 'pdf' ? '📄' : (a.tipo === 'img' ? '🖼️' : '📎')} ver</a>`).join('');
+            const detalle = [ev.titulo, ev.detalle].filter(Boolean).join(' — ');
+            return `<div style="padding:7px 0;border-bottom:1px solid #eef1f4;font-size:13px;line-height:1.4;">
+                ${t.icon} <b>${esc(t.label)}</b>${detalle ? ' · ' + esc(detalle) : ''} <span style="color:#8a93a0;">${ev.fecha ? esc(fmtFecha(ev.fecha)) : ''}</span>${adjHTML}
+            </div>`;
+        }).join('');
     }
 
     // Catálogos para los selects.
@@ -433,6 +476,7 @@
         renderCargos(cargosIdsDe(e));
         document.getElementById('emp-docs-section').style.display = 'block';
         renderDocsEmpleado();
+        renderCicloEmpleado();
         document.getElementById('modal').classList.add('show');
     };
 
