@@ -187,7 +187,7 @@
     function diffDias(a, b) { if (!a || !b) return 0; const d1 = new Date(a + 'T00:00:00'), d2 = new Date(b + 'T00:00:00'); if (isNaN(d1) || isNaN(d2)) return 0; return Math.round((d2 - d1) / 86400000) + 1; }
     function horasEntre(e, s) { if (!e || !s) return 0; const [h1, m1] = e.split(':').map(Number), [h2, m2] = s.split(':').map(Number); let mins = (h2 * 60 + m2) - (h1 * 60 + m1); if (mins < 0) mins += 24 * 60; return Math.round(mins / 6) / 10; }
 
-    let empleados = [], asistencia = {}, permisos = [], turnos = [], feriados = [];
+    let empleados = [], asistencia = {}, permisos = [], turnos = [], feriados = [], editandoPermisoId = null;
 
     // Justificativo: imagen (se comprime a JPEG) o PDF (se sube tal cual). Devuelve {url, nombre, tipo}.
     function comprimirImg(file) {
@@ -304,7 +304,11 @@
         s.innerHTML = '<option value="">—</option>' + empleados.map(e => `<option value="${esc(e.id)}" ${e.id === cur ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('');
     }
     window.abrirPermiso = function () {
+        editandoPermisoId = null;
+        document.getElementById('perm-modal-title').textContent = 'Nueva solicitud de permiso';
+        document.querySelector('#modal-permiso .btn-guardar').textContent = 'Guardar';
         document.getElementById('p-empleado').value = '';
+        document.getElementById('p-empleado').disabled = false;
         document.getElementById('p-tipo').value = 'Vacaciones';
         document.getElementById('p-inicio').value = hoyISO();
         document.getElementById('p-fin').value = hoyISO();
@@ -312,7 +316,21 @@
         document.getElementById('p-justificativo').value = '';
         document.getElementById('modal-permiso').classList.add('show');
     };
-    window.cerrarPermiso = function () { document.getElementById('modal-permiso').classList.remove('show'); };
+    window.abrirEditarPermiso = function (id) {
+        const p = permisos.find(x => x.id === id); if (!p) return;
+        editandoPermisoId = id;
+        document.getElementById('perm-modal-title').textContent = 'Editar solicitud de permiso';
+        document.querySelector('#modal-permiso .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('p-empleado').value = p.empleadoId || '';
+        document.getElementById('p-empleado').disabled = true;
+        document.getElementById('p-tipo').value = p.tipo || 'Vacaciones';
+        document.getElementById('p-inicio').value = p.fechaInicio || hoyISO();
+        document.getElementById('p-fin').value = p.fechaFin || hoyISO();
+        document.getElementById('p-motivo').value = p.motivo || '';
+        document.getElementById('p-justificativo').value = '';
+        document.getElementById('modal-permiso').classList.add('show');
+    };
+    window.cerrarPermiso = function () { document.getElementById('modal-permiso').classList.remove('show'); document.getElementById('p-empleado').disabled = false; editandoPermisoId = null; };
     window.guardarPermiso = async function () {
         const empId = document.getElementById('p-empleado').value;
         const emp = empleados.find(x => x.id === empId);
@@ -323,13 +341,29 @@
         const btn = document.querySelector('#modal-permiso .btn-guardar');
         const files = Array.from(document.getElementById('p-justificativo').files || []);
         if (btn) { btn.disabled = true; btn.textContent = files.length ? 'Subiendo…' : 'Guardando…'; }
+        const campos = {
+            tipo: document.getElementById('p-tipo').value,
+            fechaInicio: inicio, fechaFin: fin, dias: diffDias(inicio, fin),
+            motivo: document.getElementById('p-motivo').value.trim()
+        };
         try {
+            // Modo edición: actualiza los datos (conserva estado/solicitante). Adjuntos nuevos se agregan.
+            if (editandoPermisoId) {
+                await updateDoc(doc(db, 'rrhhPermisos', editandoPermisoId), campos);
+                if (files.length) {
+                    const nuevos = [];
+                    for (const file of files) nuevos.push(await subirJustif(file, `rrhhPermisos/${editandoPermisoId}`));
+                    const p = permisos.find(x => x.id === editandoPermisoId) || {};
+                    await updateDoc(doc(db, 'rrhhPermisos', editandoPermisoId), { justificativos: justifsDe(p).concat(nuevos) });
+                }
+                cerrarPermiso();
+                setTab('permisos');
+                if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+                return;
+            }
             const refDoc = await addDoc(collection(db, 'rrhhPermisos'), {
                 empleadoId: empId, empleadoNombre: emp ? emp.nombre : '',
-                tipo: document.getElementById('p-tipo').value,
-                fechaInicio: inicio, fechaFin: fin, dias: diffDias(inicio, fin),
-                motivo: document.getElementById('p-motivo').value.trim(),
-                estado: 'pendiente', solicitadoPor: usuario.nombre, fechaSolicitud: serverTimestamp()
+                ...campos, estado: 'pendiente', solicitadoPor: usuario.nombre, fechaSolicitud: serverTimestamp()
             });
             if (files.length) {
                 const nuevos = [];
@@ -379,10 +413,11 @@
         if (!permisos.length) { cont.innerHTML = '<p class="empty">Sin solicitudes de permiso todavía.</p>'; return; }
         const card = (p) => {
             const rango = p.fechaInicio === p.fechaFin ? fmtFechaCorta(p.fechaInicio) : `${fmtFechaCorta(p.fechaInicio)} → ${fmtFechaCorta(p.fechaFin)}`;
-            const acciones = p.estado === 'pendiente'
+            const acciones = (p.estado === 'pendiente'
                 ? `<button class="b-ok" onclick="resolverPermiso('${p.id}','aprobado')">✓ Aprobar</button>
                    <button class="b-no" onclick="resolverPermiso('${p.id}','rechazado')">✕ Rechazar</button>`
-                : `<button class="b-del" onclick="borrarPermiso('${p.id}')">🗑</button>`;
+                : `<button class="b-del" onclick="borrarPermiso('${p.id}')">🗑</button>`)
+                + `<button class="b-del" title="Editar" onclick="abrirEditarPermiso('${p.id}')">✏</button>`;
             return `<div class="order-card perm-card">
                 <div class="info">
                     <b>${esc(p.empleadoNombre)}</b> <span class="estado-badge ${p.estado}">${p.estado}</span>
