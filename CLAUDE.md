@@ -1514,3 +1514,16 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
   la clase `doc-fab` en `<body>` según `type` empiece con "FAB", así que cubre los 3 casos por
   igual: click en el botón COTIZACIÓN/FABRICACIÓN de arriba, `restoreData` al abrir un proyecto
   guardado, y tarjetas agregadas después (la regla CSS no depende de cuándo se creó la tarjeta).
+- **`state.mosquitera` no es un booleano — el valor real depende del tipo de ítem.** Bug real
+  reportado con foto (oscilobatiente 590×1595mm con "Mosquitera Fija" elegida, el resumen
+  mostraba "Mosquitera: Sin" al fijar la tarjeta). Causa: `getMenuOpciones` usa DOS selects
+  distintos de mosquitera según el tipo (línea ~2827) — `mosqCon` (correderas/galandajes:
+  únicos valores `''`/`'con'`) vs `mosqFijaAmov` (`win_abat`/`win_souf`/`win_ob`: únicos valores
+  `''`/`'fija'`/`'amovible'`) — pero `generateSummary` formateaba el resumen con
+  `state.mosquitera === 'con' ? 'Integrada' : 'Sin'` en los dos lugares donde se imprime
+  (rama CAD y rama genérica), sin contemplar `'fija'`/`'amovible'`: cualquier valor que no fuera
+  exactamente `'con'` caía al `else` y mostraba "Sin", aunque el usuario sí hubiera elegido
+  mosquitera. **Arreglo**: `mosquiteraLabel(m)` (helper local de `generateSummary`, junto a
+  `espesorLabel`/`ralLabel`) mapea los 3 valores reales (`con`→Integrada, `fija`→Fija,
+  `amovible`→Amovible), usado en los dos `specs.push('Mosquitera: ...')`. Verificado en vivo con
+  los 4 casos (`fija`, `amovible`, `con` en corredera, vacío → no se muestra la línea).
