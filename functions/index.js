@@ -671,3 +671,65 @@ exports.actualizarPreciosCombustibleAhora = onRequest({ cors: true }, async (req
     try { const r = await guardarPreciosCombustible(); res.json(r); }
     catch (e) { console.error('actualizarPreciosCombustibleAhora', e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
 });
+
+// ---------- Academia: convertir conocimiento en clase real (asistente de redacción) ----------
+// Toma notas en bruto / dictado del instructor y las transforma en una LECCIÓN estructurada y
+// clara, o propone el ESQUEMA de un curso a partir de un tema. Misma clave secreta que el bot.
+// El contenido de las lecciones se muestra como texto plano (pre-wrap), así que se pide salida en
+// texto plano con encabezados en MAYÚSCULAS y viñetas "•"/pasos numerados (NADA de markdown).
+// Modelo económico y disponible (Haiku 4.5); para más pulido se puede subir a claude-sonnet-4-6 en
+// la línea `model`. El instructor SIEMPRE revisa y edita antes de publicar.
+const SISTEMA_ACADEMIA = `Eres un diseñador instruccional experto y formador veterano de ARTAL Dominicana, empresa de República Dominicana de aluminio y vidrio (ventanas, puertas, correderas, galandajes, mamparas, barandas, duchas, shutters). Ayudas a convertir el conocimiento en bruto de un técnico experto en CLASES claras para capacitar a integrantes nuevos del equipo (instaladores, ayudantes).
+
+Escribe en español neutro y trata al lector de "tú". Sé práctico y concreto, con el tono de un maestro de taller que enseña a un aprendiz: directo, cercano y seguro. Usa lo que sabes de instalación de aluminio y vidrio para completar y ordenar lo que falte, pero NO inventes datos específicos de ARTAL (medidas exactas, precios, nombres de proveedores, códigos) que no estén en las notas; si algo es un dato que el instructor debe rellenar, ponlo entre corchetes como [completar: ...].
+
+FORMATO DE SALIDA: SOLO texto plano. NADA de markdown (nada de **, ##, ni guiones de lista). Para estructurar usa:
+- Encabezados de sección en MAYÚSCULAS en su propia línea (ej. OBJETIVO, HERRAMIENTAS Y MATERIALES, PASO A PASO, ERRORES COMUNES, CONSEJOS DEL EXPERTO, PUNTOS CLAVE).
+- Pasos como lista numerada "1. ", "2. "…
+- Viñetas con "• " al inicio de la línea.
+- Líneas en blanco entre secciones.`;
+
+async function llamarClaudeAcademia(system, userText, maxTokens) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey.value(), 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: maxTokens || 1500, system, messages: [{ role: 'user', content: userText }] })
+    });
+    if (!r.ok) { const d = await r.text(); console.error('Academia IA', r.status, d); throw new Error('ia'); }
+    const data = await r.json();
+    return (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim();
+}
+
+exports.academiaRedactar = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    try {
+        const modo = (req.body && req.body.modo) || 'leccion';
+        const titulo = String((req.body && req.body.titulo) || '').slice(0, 200);
+        const notas = String((req.body && req.body.notas) || '').slice(0, 8000).trim();
+        const curso = String((req.body && req.body.curso) || '').slice(0, 200);
+        if (!notas) { res.status(400).json({ error: 'notas' }); return; }
+
+        if (modo === 'esquema') {
+            // Devuelve un esquema de curso: JSON con lista de lecciones sugeridas.
+            const sys = SISTEMA_ACADEMIA + `\n\nAHORA: propón el ESQUEMA de un curso de capacitación. Devuelve SOLO un JSON válido con esta forma: {"descripcion":"1 frase de qué trata el curso","lecciones":[{"titulo":"...","resumen":"1 frase de qué se aprende"}]}. Entre 4 y 10 lecciones, en orden lógico de aprendizaje (de lo básico a lo avanzado). Sin texto fuera del JSON.`;
+            const out = await llamarClaudeAcademia(sys, `Tema/curso: ${curso || titulo}\n\nNotas o ideas del instructor:\n${notas}`, 1200);
+            let json = null;
+            try { const m = out.match(/\{[\s\S]*\}/); json = m ? JSON.parse(m[0]) : null; } catch (_) { json = null; }
+            if (!json || !Array.isArray(json.lecciones)) { res.status(502).json({ error: 'formato' }); return; }
+            res.json({ esquema: json });
+            return;
+        }
+
+        // modo 'leccion' (por defecto): notas -> lección estructurada. También sugiere un título.
+        const sys = SISTEMA_ACADEMIA + `\n\nAHORA: convierte las notas en una LECCIÓN completa y bien organizada, lista para enseñar. Empieza la respuesta con una sola línea "TITULO: <un título claro y corto>" y luego, tras una línea en blanco, el cuerpo de la lección con las secciones que apliquen. No repitas el título dentro del cuerpo.`;
+        const ctx = (curso ? `Curso: ${curso}\n` : '') + (titulo ? `Título tentativo de la lección: ${titulo}\n` : '');
+        const out = await llamarClaudeAcademia(sys, `${ctx}\nNotas / conocimiento en bruto del instructor:\n${notas}`, 1800);
+        let tituloSug = '', cuerpo = out;
+        const mt = out.match(/^\s*TITULO:\s*(.+)\s*(\n|$)/i);
+        if (mt) { tituloSug = mt[1].trim(); cuerpo = out.slice(mt[0].length).trim(); }
+        res.json({ titulo: tituloSug, contenido: cuerpo });
+    } catch (e) {
+        console.error('academiaRedactar', e);
+        res.status(500).json({ error: 'server' });
+    }
+});

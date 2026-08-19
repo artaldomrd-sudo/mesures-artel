@@ -56,6 +56,16 @@
     .foto-add-btn { display: inline-block; margin-top: 10px; background: var(--artal-blue); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; font-weight: bold; cursor: pointer; }
     .foto-add-btn input { display: none; }
 
+    .ai-box { background: #f4f2fd; border: 1.5px dashed #c3b9ef; border-radius: 10px; padding: 12px; margin-top: 14px; }
+    .ai-box .ai-lbl { font-size: 12.5px; font-weight: bold; color: #5b3fd0; display: block; margin-bottom: 6px; }
+    .ai-box textarea { min-height: 80px; }
+    .btn-ia { background: #6a3df0; color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; margin-top: 8px; }
+    .btn-ia:disabled { opacity: .6; cursor: default; }
+    .ai-msg { font-size: 12px; color: #667; margin-top: 8px; }
+    .esq-item { display: flex; gap: 9px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #eef1f4; }
+    .esq-item input { width: auto; min-height: 0; margin-top: 3px; }
+    .esq-item .t { font-weight: bold; color: #2a3742; font-size: 13.5px; } .esq-item .r { font-size: 12px; color: #778; }
+
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
     .modal-overlay.show { display: flex; }
     .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; padding: 20px; }
@@ -121,8 +131,14 @@
             <div><label>Título *</label><input type="text" id="l-titulo" placeholder="Ej. Cómo instalar una corredera"></div>
             <div><label>Duración (min) <span class="lbl-opt">— opcional</span></label><input type="number" id="l-duracion" min="0" step="1" placeholder="10"></div>
         </div>
+        <div class="ai-box">
+            <span class="ai-lbl">✨ Asistente IA — convierte tu conocimiento en clase</span>
+            <textarea id="l-notas" placeholder="Escribe o DICTA (con el micrófono del teclado) tu conocimiento en bruto: cómo lo explicas tú, pasos, trucos, errores comunes… No importa el orden."></textarea>
+            <button type="button" class="btn-ia" onclick="iaRedactarLeccion()">✨ Convertir en lección</button>
+            <div class="ai-msg" id="l-ia-msg"></div>
+        </div>
         <label>Contenido</label>
-        <textarea id="l-contenido" placeholder="Explica el paso a paso, la mentalidad, las fórmulas…"></textarea>
+        <textarea id="l-contenido" placeholder="Aquí aparece la lección (puedes escribirla a mano o generarla con el asistente de arriba)."></textarea>
         <div id="l-adjuntos-wrap" style="display:none">
             <label>Fotos y PDF <span class="lbl-opt">— se guardan al instante</span></label>
             <div id="l-adjuntos"></div>
@@ -130,6 +146,25 @@
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-leccion')">Cancelar</button>
             <button class="btn-guardar" onclick="guardarLeccion()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: generar esquema del curso con IA -->
+<div class="modal-overlay" id="modal-esquema">
+    <div class="modal-box">
+        <h2>✨ Generar curso con IA</h2>
+        <p style="font-size:12.5px;color:#667;margin:0 0 6px;line-height:1.5;">Cuéntale a la IA de qué trata el curso y todo lo que se te ocurra. Te propone las lecciones en orden; tú eliges cuáles crear y luego las editas.</p>
+        <label>Tema del curso</label>
+        <input type="text" id="e-tema" placeholder="Ej. Instalación de ventanas correderas">
+        <label>Notas / lo que sabes <span class="lbl-opt">— mientras más, mejor</span></label>
+        <textarea id="e-notas" style="min-height:120px" placeholder="Escribe o dicta: qué debe aprender un instalador nuevo, en qué orden, trucos, pasos…"></textarea>
+        <button type="button" class="btn-ia" onclick="iaGenerarEsquema()">✨ Proponer lecciones</button>
+        <div class="ai-msg" id="e-ia-msg"></div>
+        <div id="e-resultado"></div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar('modal-esquema')">Cerrar</button>
+            <button class="btn-guardar" id="e-crear-btn" style="display:none" onclick="crearLeccionesEsquema()">Crear lecciones marcadas</button>
         </div>
     </div>
 </div>
@@ -153,6 +188,7 @@
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     const esAutor = usuario.roles.includes('admin') || usuario.roles.includes('capacitador');
+    const FN_ACADEMIA = 'https://us-central1-artal-operaciones.cloudfunctions.net/academiaRedactar';
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const n2 = (x) => (Number(x) || 0);
@@ -237,7 +273,7 @@
                 <div><h2 style="color:var(--artal-blue);font-size:20px;margin:0">${esc(c.titulo || 'Curso')}</h2>
                 ${c.descripcion ? `<div style="font-size:13.5px;color:#556;margin-top:3px">${esc(c.descripcion)}</div>` : ''}</div>
             </div>`;
-        if (esAutor) html += `<div class="bar">${admCurso}<button class="btn-y" onclick="abrirLeccion('${c.id}')">+ Lección</button></div>`;
+        if (esAutor) html += `<div class="bar">${admCurso}<button class="btn-y" onclick="abrirLeccion('${c.id}')">+ Lección</button><button class="btn-ia" onclick="abrirEsquema('${c.id}')">✨ Generar curso con IA</button></div>`;
         if (!lecs.length) { cont.innerHTML = html + '<p class="empty">Este curso todavía no tiene lecciones.</p>'; return; }
         html += '<div class="lec-list">' + lecs.map((l, i) => {
             const isDone = done.has(l.id);
@@ -345,6 +381,7 @@
         document.getElementById('l-titulo').value = '';
         document.getElementById('l-duracion').value = '';
         document.getElementById('l-contenido').value = '';
+        document.getElementById('l-notas').value = ''; document.getElementById('l-ia-msg').textContent = '';
         document.getElementById('l-adjuntos-wrap').style.display = 'none';   // se suben tras crearla
         document.getElementById('modal-leccion').classList.add('show');
     };
@@ -355,6 +392,7 @@
         document.getElementById('l-titulo').value = l.titulo || '';
         document.getElementById('l-duracion').value = l.duracion != null ? l.duracion : '';
         document.getElementById('l-contenido').value = l.contenido || '';
+        document.getElementById('l-notas').value = ''; document.getElementById('l-ia-msg').textContent = '';
         renderLecAdjuntos(id);
         document.getElementById('l-adjuntos-wrap').style.display = 'block';
         document.getElementById('modal-leccion').classList.add('show');
@@ -403,6 +441,86 @@
     window.borrarLeccion = async function (id) {
         if (!confirm('¿Eliminar esta lección?')) return;
         try { await deleteDoc(doc(db, 'academiaLecciones', id)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------------- Asistente IA ----------------
+    // Convierte las notas en bruto del modal de lección en una lección estructurada.
+    window.iaRedactarLeccion = async function () {
+        const notas = document.getElementById('l-notas').value.trim();
+        const msg = document.getElementById('l-ia-msg');
+        if (!notas) { msg.textContent = 'Escribe o dicta tus notas arriba primero.'; return; }
+        const btn = document.querySelector('#modal-leccion .btn-ia');
+        btn.disabled = true; const t0 = btn.textContent; btn.textContent = '✨ Redactando…'; msg.textContent = 'La IA está armando la lección…';
+        try {
+            const r = await fetch(FN_ACADEMIA, {
+                method: 'POST', headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ modo: 'leccion', notas, titulo: document.getElementById('l-titulo').value.trim(), curso: (cursoById(cursoSelId) || {}).titulo || '' })
+            });
+            const data = await r.json();
+            if (!r.ok || data.error) throw new Error(data.error || 'error');
+            if (data.contenido) document.getElementById('l-contenido').value = data.contenido;
+            if (data.titulo && !document.getElementById('l-titulo').value.trim()) document.getElementById('l-titulo').value = data.titulo;
+            msg.textContent = '✓ Listo. Revisa y ajusta lo que quieras antes de guardar.';
+        } catch (e) {
+            msg.textContent = 'No se pudo generar (¿está desplegada la función?). Detalle: ' + (e && e.message ? e.message : e);
+        } finally { btn.disabled = false; btn.textContent = t0; }
+    };
+
+    // Genera el esquema de un curso (lista de lecciones) desde un tema + notas.
+    let esquemaActual = null;
+    window.abrirEsquema = function (cursoId) {
+        cursoSelId = cursoId;
+        const c = cursoById(cursoId) || {};
+        document.getElementById('e-tema').value = c.titulo || '';
+        document.getElementById('e-notas').value = '';
+        document.getElementById('e-resultado').innerHTML = '';
+        document.getElementById('e-ia-msg').textContent = '';
+        document.getElementById('e-crear-btn').style.display = 'none';
+        esquemaActual = null;
+        document.getElementById('modal-esquema').classList.add('show');
+    };
+    window.iaGenerarEsquema = async function () {
+        const notas = document.getElementById('e-notas').value.trim();
+        const tema = document.getElementById('e-tema').value.trim();
+        const msg = document.getElementById('e-ia-msg');
+        if (!notas && !tema) { msg.textContent = 'Escribe al menos el tema del curso.'; return; }
+        const btn = document.querySelector('#modal-esquema .btn-ia');
+        btn.disabled = true; const t0 = btn.textContent; btn.textContent = '✨ Pensando…'; msg.textContent = 'La IA está proponiendo las lecciones…';
+        try {
+            const r = await fetch(FN_ACADEMIA, {
+                method: 'POST', headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ modo: 'esquema', curso: tema, notas: notas || tema })
+            });
+            const data = await r.json();
+            if (!r.ok || data.error || !data.esquema) throw new Error(data.error || 'error');
+            esquemaActual = data.esquema;
+            const lecs = data.esquema.lecciones || [];
+            document.getElementById('e-resultado').innerHTML = (data.esquema.descripcion ? `<p style="font-size:12.5px;color:#556;margin:10px 0 4px">${esc(data.esquema.descripcion)}</p>` : '') +
+                lecs.map((l, i) => `<label class="esq-item"><input type="checkbox" class="esq-chk" data-i="${i}" checked><span><span class="t">${i + 1}. ${esc(l.titulo || '')}</span>${l.resumen ? `<div class="r">${esc(l.resumen)}</div>` : ''}</span></label>`).join('');
+            document.getElementById('e-crear-btn').style.display = lecs.length ? 'block' : 'none';
+            msg.textContent = '✓ Marca las que quieras crear.';
+        } catch (e) {
+            msg.textContent = 'No se pudo generar (¿está desplegada la función?). Detalle: ' + (e && e.message ? e.message : e);
+        } finally { btn.disabled = false; btn.textContent = t0; }
+    };
+    window.crearLeccionesEsquema = async function () {
+        if (!esquemaActual || !Array.isArray(esquemaActual.lecciones)) return;
+        const marcadas = Array.from(document.querySelectorAll('#e-resultado .esq-chk')).filter(c => c.checked).map(c => esquemaActual.lecciones[+c.dataset.i]);
+        if (!marcadas.length) { alert('Marca al menos una lección.'); return; }
+        const btn = document.getElementById('e-crear-btn'); btn.disabled = true; btn.textContent = 'Creando…';
+        try {
+            let orden = leccionesDe(cursoSelId).length;
+            for (const l of marcadas) {
+                await addDoc(collection(db, 'academiaLecciones'), {
+                    cursoId: cursoSelId, orden: orden++, titulo: l.titulo || 'Lección',
+                    contenido: l.resumen ? ('[Borrador] ' + l.resumen + '\n\n(Abre esta lección y usa "✨ Convertir en lección" para desarrollarla.)') : '',
+                    fotos: [], creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                });
+            }
+            cerrar('modal-esquema');
+            irA('curso', cursoSelId);
+        } catch (e) { alert('No se pudieron crear: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Crear lecciones marcadas'; }
     };
 
     render();
