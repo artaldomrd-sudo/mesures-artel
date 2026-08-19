@@ -308,6 +308,7 @@
                 <div class="meta">Lección ${idx + 1} de ${lecs.length}${l.duracion ? ' · ⏱ ' + n2(l.duracion) + ' min' : ''}</div>
                 <div class="cont">${esc(l.contenido || '')}</div>
                 ${fotos}${addBtn}
+                ${esAutor ? `<div class="bar" style="margin-top:14px"><button class="btn-ghost" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="btn-ia" style="margin-top:0" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
                 <div class="nav">
                     <button class="btn-done ${done ? 'is-done' : ''}" onclick="toggleHecha('${l.cursoId}','${l.id}')">${done ? '✓ Completada' : 'Marcar como completada'}</button>
                     ${prev ? `<button class="btn-ghost" onclick="irA('leccion','${l.cursoId}','${prev.id}')">← Anterior</button>` : ''}
@@ -446,9 +447,16 @@
     // ---------------- Asistente IA ----------------
     // Convierte las notas en bruto del modal de lección en una lección estructurada.
     window.iaRedactarLeccion = async function () {
-        const notas = document.getElementById('l-notas').value.trim();
+        let notas = document.getElementById('l-notas').value.trim();
         const msg = document.getElementById('l-ia-msg');
-        if (!notas) { msg.textContent = 'Escribe o dicta tus notas arriba primero.'; return; }
+        if (!notas) {
+            // Sin notas nuevas: desarrollar a partir del borrador que ya tiene la lección (resumen del esquema).
+            notas = document.getElementById('l-contenido').value
+                .replace(/^\[Borrador\]\s*/, '')
+                .replace(/\(Abre esta lecci[oó]n[\s\S]*?\)/, '')
+                .trim();
+        }
+        if (!notas) { msg.textContent = 'Escribe o dicta tus notas arriba primero (o parte de un borrador del esquema).'; return; }
         const btn = document.querySelector('#modal-leccion .btn-ia');
         btn.disabled = true; const t0 = btn.textContent; btn.textContent = '✨ Redactando…'; msg.textContent = 'La IA está armando la lección…';
         try {
@@ -464,6 +472,12 @@
         } catch (e) {
             msg.textContent = 'No se pudo generar (¿está desplegada la función?). Detalle: ' + (e && e.message ? e.message : e);
         } finally { btn.disabled = false; btn.textContent = t0; }
+    };
+
+    // Un clic desde la vista de la lección: abre el editor con el borrador y desarrolla el contenido.
+    window.desarrollarLeccionIA = function (id) {
+        abrirEditarLeccion(id);          // llena título + contenido (borrador del esquema)
+        iaRedactarLeccion();             // sin notas nuevas → parte del borrador existente
     };
 
     // Genera el esquema de un curso (lista de lecciones) desde un tema + notas.
@@ -513,7 +527,7 @@
             for (const l of marcadas) {
                 await addDoc(collection(db, 'academiaLecciones'), {
                     cursoId: cursoSelId, orden: orden++, titulo: l.titulo || 'Lección',
-                    contenido: l.resumen ? ('[Borrador] ' + l.resumen + '\n\n(Abre esta lección y usa "✨ Convertir en lección" para desarrollarla.)') : '',
+                    contenido: l.resumen ? ('[Borrador] ' + l.resumen + '\n\n(Abre esta lección y toca "✨ Desarrollar con IA" para escribir la clase completa.)') : '',
                     fotos: [], creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
                 });
             }
