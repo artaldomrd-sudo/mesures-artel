@@ -693,7 +693,7 @@ async function llamarClaudeAcademia(system, userText, maxTokens) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey.value(), 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: maxTokens || 1500, system, messages: [{ role: 'user', content: userText }] })
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens || 1500, system, messages: [{ role: 'user', content: userText }] })
     });
     if (!r.ok) { const d = await r.text(); console.error('Academia IA', r.status, d); throw new Error('ia'); }
     const data = await r.json();
