@@ -123,7 +123,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { requirePin } from './pin-gate.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['contable']);
     await requirePin(usuario);
@@ -137,7 +137,7 @@
     const fmtFecha = (s) => { if (!s) return ''; const d = new Date(s + 'T00:00:00'); return isNaN(d) ? s : d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }); };
     function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 
-    let lineas = [], movs = [], cuentas = [], movTipo = 'disposicion';
+    let lineas = [], movs = [], cuentas = [], movTipo = 'disposicion', editandoMovId = null;
 
     onSnapshot(collection(db, 'bancosLineas'), (s) => {
         lineas = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.activo !== false).sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
@@ -184,6 +184,8 @@
     };
     window.abrirMov = function (tipo) {
         if (!lineaSel()) { alert('Primero elige (o crea) una línea.'); return; }
+        editandoMovId = null;
+        document.querySelector('#modal-mov .btn-guardar').textContent = 'Guardar';
         movTipo = tipo;
         document.getElementById('mov-title').textContent = tipo === 'disposicion' ? 'Disposición (usar la línea)' : 'Pago (abonar a la línea)';
         document.getElementById('m-cuenta-lbl').innerHTML = (tipo === 'disposicion' ? 'Entra a la cuenta bancaria' : 'Sale de la cuenta bancaria') + ' <span class="lbl-opt">— opcional (genera el movimiento)</span>';
@@ -192,17 +194,41 @@
         document.getElementById('m-cuenta').value = '';
         document.getElementById('modal-mov').classList.add('show');
     };
+    // Modificar un movimiento de la línea. No re-genera el movimiento bancario enlazado (se ajusta aparte).
+    window.abrirEditarMov = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoMovId = id;
+        movTipo = m.tipo === 'pago' ? 'pago' : 'disposicion';
+        document.getElementById('mov-title').textContent = movTipo === 'disposicion' ? 'Editar disposición' : 'Editar pago';
+        document.querySelector('#modal-mov .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('m-cuenta-lbl').innerHTML = (movTipo === 'disposicion' ? 'Entra a la cuenta bancaria' : 'Sale de la cuenta bancaria') + ' <span class="lbl-opt">— opcional</span>';
+        document.getElementById('m-fecha').value = m.fecha || hoyISO();
+        document.getElementById('m-monto').value = (m.monto != null ? m.monto : '');
+        document.getElementById('m-concepto').value = m.concepto || '';
+        document.getElementById('m-ref').value = m.referencia || '';
+        document.getElementById('m-cuenta').value = m.cuentaBancoId || '';
+        document.getElementById('modal-mov').classList.add('show');
+    };
     window.guardarMov = async function () {
         const l = lineaSel(); if (!l) return;
         const monto = n2(document.getElementById('m-monto').value);
         if (monto <= 0) { alert('Escribe el monto.'); return; }
-        if (movTipo === 'disposicion') {
+        if (movTipo === 'disposicion' && !editandoMovId) {
             const disp = dispuesto(l.id), libre = n2(l.limite) - disp;
             if (monto > libre && !confirm('La disposición (' + fmt(monto) + ') supera el disponible (' + fmt(libre) + '). ¿Registrarla igual?')) return;
         }
         const cuentaId = document.getElementById('m-cuenta').value, ref = document.getElementById('m-ref').value.trim();
         const concepto = document.getElementById('m-concepto').value.trim(), fecha = document.getElementById('m-fecha').value || hoyISO();
         const btn = document.querySelector('#modal-mov .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        if (editandoMovId) {
+            try {
+                await updateDoc(doc(db, 'bancosLineaMovimientos', editandoMovId), { tipo: movTipo, fecha, monto, concepto, referencia: ref, cuentaBancoId: cuentaId });
+                editandoMovId = null;
+                cerrar('modal-mov');
+            } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+            finally { btn.disabled = false; btn.textContent = 'Guardar'; }
+            return;
+        }
         try {
             await addDoc(collection(db, 'bancosLineaMovimientos'), {
                 lineaId: l.id, tipo: movTipo, fecha, monto, concepto, referencia: ref, cuentaBancoId: cuentaId,
@@ -251,6 +277,7 @@
                     <b>${esc(m.concepto || NOM[t])}</b>
                     <div class="mv-monto ${t}">${SIG[t]}${fmt(m.monto)}</div>
                     ${sub ? `<div class="l">${sub}</div>` : ''}
+                    <div style="margin-top:6px;"><button style="background:var(--artal-blue);border:none;border-radius:7px;color:#fff;padding:5px 10px;font-family:'Arimo';font-weight:bold;font-size:12px;cursor:pointer;" onclick="abrirEditarMov('${m.id}')">✏ Modificar</button></div>
                 </div>
                 <button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>
             </div>`;

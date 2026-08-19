@@ -130,7 +130,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { requirePin } from './pin-gate.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['contable']);
     await requirePin(usuario);
@@ -145,7 +145,7 @@
     function hoyISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
     const nombreTarjeta = (t) => (t.banco || 'Tarjeta') + (t.ultimos4 ? ' ****' + t.ultimos4 : '');
 
-    let tarjetas = [], movs = [], cuentas = [], movTipo = 'consumo';
+    let tarjetas = [], movs = [], cuentas = [], movTipo = 'consumo', editandoMovId = null;
 
     onSnapshot(collection(db, 'bancosTarjetas'), (s) => {
         tarjetas = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => t.activo !== false).sort((a, b) => nombreTarjeta(a).localeCompare(nombreTarjeta(b), 'es'));
@@ -191,6 +191,8 @@
     };
     window.abrirMov = function (tipo) {
         if (!tarjetaSel()) { alert('Primero elige (o crea) una tarjeta.'); return; }
+        editandoMovId = null;
+        document.querySelector('#modal-mov .btn-guardar').textContent = 'Guardar';
         movTipo = tipo;
         document.getElementById('mov-title').textContent = tipo === 'consumo' ? 'Consumo (cargo a la tarjeta)' : 'Pago (abono a la tarjeta)';
         // Categoría solo aplica a consumos; la cuenta bancaria (débito) solo al pago.
@@ -199,6 +201,24 @@
         document.getElementById('m-fecha').value = hoyISO();
         ['m-monto', 'm-concepto', 'm-categoria', 'm-ref'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('m-cuenta').value = '';
+        document.getElementById('modal-mov').classList.add('show');
+    };
+    // Modificar un movimiento de la tarjeta (consumo o pago). No re-genera el débito bancario del
+    // pago (si lo hubo, se ajusta aparte en Movimientos bancarios).
+    window.abrirEditarMov = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoMovId = id;
+        movTipo = m.tipo === 'pago' ? 'pago' : 'consumo';
+        document.getElementById('mov-title').textContent = movTipo === 'consumo' ? 'Editar consumo' : 'Editar pago';
+        document.querySelector('#modal-mov .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('cat-wrap').style.display = movTipo === 'consumo' ? 'grid' : 'none';
+        document.getElementById('cuenta-wrap').style.display = movTipo === 'pago' ? 'block' : 'none';
+        document.getElementById('m-fecha').value = m.fecha || hoyISO();
+        document.getElementById('m-monto').value = (m.monto != null ? m.monto : '');
+        document.getElementById('m-concepto').value = m.concepto || '';
+        document.getElementById('m-categoria').value = m.categoria || '';
+        document.getElementById('m-ref').value = m.referencia || '';
+        document.getElementById('m-cuenta').value = m.cuentaBancoId || '';
         document.getElementById('modal-mov').classList.add('show');
     };
     window.guardarMov = async function () {
@@ -213,11 +233,24 @@
         const cuentaId = movTipo === 'pago' ? document.getElementById('m-cuenta').value : '';
         const ref = document.getElementById('m-ref').value.trim(), fecha = document.getElementById('m-fecha').value || hoyISO();
         const btn = document.querySelector('#modal-mov .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        const datos = {
+            tipo: movTipo, fecha, monto, concepto,
+            categoria: movTipo === 'consumo' ? document.getElementById('m-categoria').value.trim() : '',
+            referencia: ref, cuentaBancoId: cuentaId
+        };
+        // Modo edición: solo actualiza el registro de la tarjeta.
+        if (editandoMovId) {
+            try {
+                await updateDoc(doc(db, 'bancosTarjetaMovimientos', editandoMovId), datos);
+                editandoMovId = null;
+                cerrar('modal-mov');
+            } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+            finally { btn.disabled = false; btn.textContent = 'Guardar'; }
+            return;
+        }
         try {
             await addDoc(collection(db, 'bancosTarjetaMovimientos'), {
-                tarjetaId: t.id, tipo: movTipo, fecha, monto, concepto,
-                categoria: movTipo === 'consumo' ? document.getElementById('m-categoria').value.trim() : '',
-                referencia: ref, cuentaBancoId: cuentaId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+                tarjetaId: t.id, ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             // El pago de la tarjeta puede salir de una cuenta bancaria (genera el débito allí).
             if (cuentaId) {
@@ -261,6 +294,7 @@
                     <b>${esc(m.concepto || NOM[ty])}</b> <span class="b">${NOM[ty]}</span>
                     <div class="mv-monto ${ty}">${SIG[ty]}${fmt(m.monto)}</div>
                     ${sub ? `<div class="l">${sub}</div>` : ''}
+                    <div style="margin-top:6px;"><button class="btn-comp" style="background:var(--artal-blue);border:none;border-radius:7px;color:#fff;padding:5px 10px;font-family:'Arimo';font-weight:bold;font-size:12px;cursor:pointer;" onclick="abrirEditarMov('${m.id}')">✏ Modificar</button></div>
                 </div>
                 <button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>
             </div>`;
