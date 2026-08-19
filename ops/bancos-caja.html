@@ -302,6 +302,8 @@
 
     // ---------- Modales ----------
     window.cerrar = function (id) { document.getElementById(id).classList.remove('show'); };
+    // Estados de edición (para modificar movimientos ya hechos).
+    let editandoRepoId = null, editandoVentaId = null, editandoArqueoId = null;
     window.abrirCaja = function () {
         ['c-nombre', 'c-suc', 'c-resp', 'c-fondo'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('modal-caja').classList.add('show');
@@ -592,11 +594,26 @@
     };
     window.abrirRepo = function () {
         const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
+        editandoRepoId = null;
+        document.querySelector('#modal-repo .btn-guardar').textContent = 'Reponer';
         document.getElementById('r-fecha').value = hoyISO();
         // Sugiere reponer justo lo gastado (fondo fijo − saldo actual).
         const porReponer = Math.max(0, n2(c.fondoFijo) - saldoCaja(c.id));
         document.getElementById('r-monto').value = porReponer ? porReponer.toFixed(2) : '';
         document.getElementById('r-cuenta').value = ''; document.getElementById('r-ref').value = '';
+        document.getElementById('modal-repo').classList.add('show');
+    };
+    // Modificar una reposición ya hecha (edita el registro en la caja; el débito bancario enlazado,
+    // si lo hubo, se ajusta aparte desde Movimientos bancarios).
+    window.abrirEditarRepo = function (id) {
+        const c = cajaSel(); if (!c) return;
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoRepoId = id;
+        document.querySelector('#modal-repo .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('r-fecha').value = m.fecha || hoyISO();
+        document.getElementById('r-monto').value = (m.monto != null ? m.monto : '');
+        document.getElementById('r-cuenta').value = m.cuentaBancoId || '';
+        document.getElementById('r-ref').value = m.referencia || '';
         document.getElementById('modal-repo').classList.add('show');
     };
     window.guardarRepo = async function () {
@@ -605,10 +622,21 @@
         if (monto <= 0) { alert('Escribe el monto a reponer.'); return; }
         const cuentaId = document.getElementById('r-cuenta').value;
         const ref = document.getElementById('r-ref').value.trim();
-        const btn = document.querySelector('#modal-repo .btn-guardar'); btn.disabled = true; btn.textContent = 'Reponiendo…';
+        const fecha = document.getElementById('r-fecha').value || hoyISO();
+        const btn = document.querySelector('#modal-repo .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        // Modo edición: solo actualiza el registro de la caja (no vuelve a generar débito bancario).
+        if (editandoRepoId) {
+            try {
+                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoRepoId), { fecha, monto, referencia: ref, cuentaBancoId: cuentaId });
+                editandoRepoId = null;
+                cerrar('modal-repo');
+            } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+            finally { btn.disabled = false; btn.textContent = 'Reponer'; }
+            return;
+        }
         try {
             await addDoc(collection(db, 'bancosCajaMovimientos'), {
-                cajaId: c.id, tipo: 'reposicion', fecha: document.getElementById('r-fecha').value || hoyISO(), concepto: 'Reposición de fondo',
+                cajaId: c.id, tipo: 'reposicion', fecha, concepto: 'Reposición de fondo',
                 monto, referencia: ref, cuentaBancoId: cuentaId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             // Si sale de una cuenta bancaria, genera el débito allí (el efectivo se retiró del banco).
@@ -628,9 +656,24 @@
     // ---------- Entrada de efectivo por venta a clientes ----------
     window.abrirVenta = function () {
         const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
+        editandoVentaId = null;
+        document.querySelector('#modal-venta .btn-guardar').textContent = 'Registrar entrada';
         document.getElementById('v-fecha').value = hoyISO();
         ['v-monto', 'v-cliente', 'v-concepto', 'v-ref'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('v-conta').checked = true;
+        document.getElementById('modal-venta').classList.add('show');
+    };
+    // Modificar una entrada por venta ya registrada.
+    window.abrirEditarVenta = function (id) {
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoVentaId = id;
+        document.querySelector('#modal-venta .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('v-fecha').value = m.fecha || hoyISO();
+        document.getElementById('v-monto').value = (m.monto != null ? m.monto : '');
+        document.getElementById('v-cliente').value = m.cliente || '';
+        document.getElementById('v-concepto').value = m.concepto || '';
+        document.getElementById('v-ref').value = m.referencia || '';
+        document.getElementById('v-conta').checked = !!m.contaMovId;
         document.getElementById('modal-venta').classList.add('show');
     };
     window.guardarVenta = async function () {
@@ -642,8 +685,27 @@
         const concepto = document.getElementById('v-concepto').value.trim() || 'Venta a cliente' + (cliente ? ' — ' + cliente : '');
         const referencia = document.getElementById('v-ref').value.trim();
         const aConta = document.getElementById('v-conta').checked;
-        const btn = document.querySelector('#modal-venta .btn-guardar'); btn.disabled = true; btn.textContent = 'Registrando…';
+        const btn = document.querySelector('#modal-venta .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
         try {
+            // Modo edición: actualiza el registro de la caja y su ingreso enlazado en Contabilidad.
+            if (editandoVentaId) {
+                const m = movs.find(x => x.id === editandoVentaId) || {};
+                let contaMovId = m.contaMovId || null;
+                if (aConta && contaMovId) {
+                    await updateDoc(doc(db, 'contaMovimientos', contaMovId), { fecha, concepto, monto, tercero: cliente, ncf: referencia });
+                } else if (aConta && !contaMovId) {
+                    const cref = await addDoc(collection(db, 'contaMovimientos'), { tipo: 'ingreso', fecha, concepto, categoria: 'Ventas a clientes (efectivo)', monto, itbis: 0, tercero: cliente, ncf: referencia, origen: 'caja_chica', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+                    contaMovId = cref.id;
+                } else if (!aConta && contaMovId) {
+                    try { await deleteDoc(doc(db, 'contaMovimientos', contaMovId)); } catch (e2) { /* si ya no existe, ok */ }
+                    contaMovId = null;
+                }
+                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoVentaId), { fecha, concepto, categoria: cliente ? ('Cliente: ' + cliente) : 'Venta a clientes', cliente, monto, referencia, contaMovId });
+                editandoVentaId = null;
+                cerrar('modal-venta');
+                btn.disabled = false; btn.textContent = 'Registrar entrada';
+                return;
+            }
             // Si se pide, primero el ingreso en Contabilidad; se enlaza con contaMovId (para editar/borrar juntos).
             let contaMovId = null;
             if (aConta) {
@@ -659,11 +721,13 @@
             });
             cerrar('modal-venta');
         } catch (e) { alert('No se pudo registrar la entrada: ' + (e && e.message ? e.message : e)); }
-        finally { btn.disabled = false; btn.textContent = 'Registrar entrada'; }
+        finally { btn.disabled = false; btn.textContent = editandoVentaId ? 'Guardar cambios' : 'Registrar entrada'; }
     };
     // ---------- Arqueo (conteo de efectivo real vs. sistema) ----------
     window.abrirArqueo = function () {
         const c = cajaSel(); if (!c) { alert('Primero elige (o crea) una caja.'); return; }
+        editandoArqueoId = null;
+        document.querySelector('#modal-arqueo .btn-guardar').textContent = 'Guardar arqueo';
         document.getElementById('a-fecha').value = hoyISO();
         // Turno automático según la hora: antes de la 1 pm = mañana; después = tarde.
         document.getElementById('a-turno').value = (new Date().getHours() < 13) ? 'am' : 'pm';
@@ -671,6 +735,21 @@
         document.getElementById('a-nota').value = '';
         const esperado = saldoCaja(c.id);
         document.getElementById('arq-esperado').innerHTML = `Según el sistema debe haber <b>${fmt(esperado)}</b> en efectivo. Cuenta el dinero físico y regístralo.`;
+        calcDifArqueo();
+        document.getElementById('modal-arqueo').classList.add('show');
+    };
+    // Modificar un arqueo ya hecho (ej. corregir el efectivo contado que quedó con centavos).
+    window.abrirEditarArqueo = function (id) {
+        const c = cajaSel(); if (!c) return;
+        const m = movs.find(x => x.id === id); if (!m) return;
+        editandoArqueoId = id;
+        document.querySelector('#modal-arqueo .btn-guardar').textContent = 'Guardar cambios';
+        document.getElementById('a-fecha').value = m.fecha || hoyISO();
+        document.getElementById('a-turno').value = m.turno || 'am';
+        document.getElementById('a-monto').value = (m.montoContado != null ? m.montoContado : '');
+        document.getElementById('a-nota').value = m.nota || '';
+        const esperado = saldoCaja(c.id);
+        document.getElementById('arq-esperado').innerHTML = `Según el sistema debe haber <b>${fmt(esperado)}</b> en efectivo.`;
         calcDifArqueo();
         document.getElementById('modal-arqueo').classList.add('show');
     };
@@ -694,18 +773,23 @@
         if (Math.abs(dif) >= 0.005 && !nota) { alert('Hay una diferencia. Escribe una nota explicando el sobrante/faltante.'); return; }
         const turno = document.getElementById('a-turno').value;
         const fecha = document.getElementById('a-fecha').value || hoyISO();
-        if (arqueoHoy(c.id, turno) && fecha === hoyISO() && !confirm('Ya hay un arqueo de ese turno hoy. ¿Registrar otro igual?')) return;
+        const otroArqueo = arqueoHoy(c.id, turno);
+        if (otroArqueo && otroArqueo.id !== editandoArqueoId && fecha === hoyISO() && !confirm('Ya hay un arqueo de ese turno hoy. ¿Registrar otro igual?')) return;
         const btn = document.querySelector('#modal-arqueo .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        const datos = {
+            tipo: 'arqueo', turno, fecha, concepto: 'Arqueo ' + (turno === 'am' ? 'mañana' : 'tarde'),
+            montoContado: contado, montoEsperado: esperado, diferencia: dif, monto: contado, nota
+        };
         try {
-            await addDoc(collection(db, 'bancosCajaMovimientos'), {
-                cajaId: c.id, tipo: 'arqueo', turno, fecha,
-                concepto: 'Arqueo ' + (turno === 'am' ? 'mañana' : 'tarde'),
-                montoContado: contado, montoEsperado: esperado, diferencia: dif, monto: contado, nota,
-                creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
-            });
+            if (editandoArqueoId) {
+                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoArqueoId), datos);
+                editandoArqueoId = null;
+            } else {
+                await addDoc(collection(db, 'bancosCajaMovimientos'), { cajaId: c.id, ...datos, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp() });
+            }
             cerrar('modal-arqueo');
         } catch (e) { alert('No se pudo guardar el arqueo: ' + (e && e.message ? e.message : e)); }
-        finally { btn.disabled = false; btn.textContent = 'Guardar arqueo'; }
+        finally { btn.disabled = false; btn.textContent = editandoArqueoId ? 'Guardar cambios' : 'Guardar arqueo'; }
     };
     window.borrarMov = async function (id) {
         const m = movs.find(x => x.id === id); if (!m) return;
@@ -823,13 +907,19 @@
                 const btnCambios = nc ? ` <button class="btn-comp" style="background:#c07a12" onclick="verCambiosDesemb('${m.id}')">🕘 Cambios</button>` : '';
                 fotos = `<div class="mv-fotos-wrap">${fotosThumbsHTML(m.fotos, { coleccion: 'bancosCajaMovimientos', id: m.id, puedeBorrar: true })}${fotoAddBtnHTML({ coleccion: 'bancosCajaMovimientos', id: m.id, label: '📷 Recibo' })}<br><button class="btn-comp" onclick="imprimirComprobante('${m.id}')">🖨 Comprobante</button> <button class="btn-comp" style="background:var(--artal-blue)" onclick="abrirEditarDesemb('${m.id}')">✏ Modificar</button>${btnCambios}</div>`;
             }
+            // Botón Modificar para los tipos que no lo traían (reposición, entrada por venta, arqueo).
+            let editBtnHTML = '';
+            if (t === 'reposicion' || t === 'venta' || t === 'arqueo') {
+                const fn = t === 'reposicion' ? 'abrirEditarRepo' : (t === 'venta' ? 'abrirEditarVenta' : 'abrirEditarArqueo');
+                editBtnHTML = `<div style="margin-top:6px;"><button class="btn-comp" style="background:var(--artal-blue)" onclick="${fn}('${m.id}')">✏ Modificar</button></div>`;
+            }
             return `<div class="order-card mv-card ${t}">
                 <div class="mv-ic ${t}">${t === 'gasto' ? '🧾' : (ICO[t] || '•')}</div>
                 <div class="mv-info">
                     <b>${esc(m.concepto || NOM[t])}</b> <span class="b">${t === 'gasto' ? 'Desembolso' : (NOM[t] || t)}</span>
                     <div class="mv-monto ${t}">${SIGNO[t] || ''}${fmt(t === 'arqueo' ? m.montoContado : m.monto)}</div>
                     ${sub ? `<div class="l">${sub}</div>` : ''}
-                    ${fotos}
+                    ${fotos}${editBtnHTML}
                 </div>
                 ${t === 'apertura' ? '' : `<button class="del-btn" title="Eliminar" onclick="borrarMov('${m.id}')">🗑</button>`}
             </div>`;

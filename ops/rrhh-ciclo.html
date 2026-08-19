@@ -76,7 +76,7 @@
 <!-- Modal evento -->
 <div class="modal-overlay" id="modal-evento">
     <div class="modal-box">
-        <h2>Registrar evento</h2>
+        <h2 id="ev-modal-title">Registrar evento</h2>
         <label>Empleado *</label>
         <select id="e-empleado"></select>
         <label>Tipo *</label>
@@ -142,7 +142,7 @@
         salida: { label: 'Salida / Desvinculación', icon: '🚪' }
     };
 
-    let empleados = [], eventos = [], selEmp = '';
+    let empleados = [], eventos = [], selEmp = '', editandoEventoId = null;
 
     // Preselección por ?emp=ID (desde el botón Expediente en Empleados).
     const params = new URLSearchParams(location.search);
@@ -199,7 +199,7 @@
         if (ev.tipoSalida) extra.push('Tipo: ' + ev.tipoSalida);
         if (ev.registradoPor) extra.push('Registró: ' + ev.registradoPor);
         const nombreTop = selEmp ? '' : `<span class="fecha" style="margin-left:0;color:#556;font-weight:bold">${esc(ev.empleadoNombre || '')}</span>`;
-        const del = ev.sintetico ? '' : `<button class="tl-del" title="Eliminar" onclick="borrarEvento('${ev.id}')">🗑</button>`;
+        const del = ev.sintetico ? '' : `<button class="tl-del" title="Editar" style="color:#1c4e7a" onclick="abrirEditarEvento('${ev.id}')">✏</button><button class="tl-del" title="Eliminar" onclick="borrarEvento('${ev.id}')">🗑</button>`;
         const adjList = (Array.isArray(ev.adjuntos) ? ev.adjuntos.slice() : []).concat((ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
         const adj = adjList.length
             ? `<div>${adjList.map(a => `<a class="justif-link" href="${esc(a.url)}" target="_blank" rel="noopener">${a.tipo === 'pdf' ? '📄' : (a.tipo === 'doc' ? '📃' : '🖼️')} Ver adjunto</a>`).join(' ')}</div>` : '';
@@ -255,7 +255,10 @@
         document.getElementById('extra-salida').classList.toggle('show', t === 'salida');
     };
     window.abrirEvento = function () {
+        editandoEventoId = null;
+        document.getElementById('ev-modal-title').textContent = 'Registrar evento';
         document.getElementById('e-empleado').value = selEmp || '';
+        document.getElementById('e-empleado').disabled = false;
         document.getElementById('e-tipo').value = 'promocion';
         document.getElementById('e-fecha').value = hoyISO();
         document.getElementById('e-titulo').value = '';
@@ -268,7 +271,25 @@
         onTipo();
         document.getElementById('modal-evento').classList.add('show');
     };
-    window.cerrarEvento = function () { document.getElementById('modal-evento').classList.remove('show'); };
+    // Editar un evento existente (reusa el mismo modal). No re-aplica efectos de creación
+    // (carpeta de vacaciones, cambio de sueldo, inactivar) — solo edita los datos del evento.
+    window.abrirEditarEvento = function (id) {
+        const ev = eventos.find(x => x.id === id); if (!ev) return;
+        editandoEventoId = id;
+        document.getElementById('ev-modal-title').textContent = 'Editar evento';
+        document.getElementById('e-empleado').value = ev.empleadoId || '';
+        document.getElementById('e-empleado').disabled = true;   // no se cambia de empleado al editar
+        document.getElementById('e-tipo').value = ev.tipo || 'nota';
+        document.getElementById('e-fecha').value = ev.fecha || '';
+        document.getElementById('e-titulo').value = ev.titulo || '';
+        document.getElementById('e-detalle').value = ev.detalle || '';
+        document.getElementById('e-sueldo').value = '';
+        document.getElementById('e-tiposalida').value = ev.tipoSalida || 'Renuncia';
+        document.getElementById('e-adjunto').value = '';
+        onTipo();
+        document.getElementById('modal-evento').classList.add('show');
+    };
+    window.cerrarEvento = function () { document.getElementById('modal-evento').classList.remove('show'); document.getElementById('e-empleado').disabled = false; editandoEventoId = null; };
 
     window.guardarEvento = async function () {
         const empId = document.getElementById('e-empleado').value;
@@ -288,6 +309,27 @@
             registradoPor: usuario.nombre, fechaCreacion: serverTimestamp()
         };
         if (tipo === 'salida') datos.tipoSalida = document.getElementById('e-tiposalida').value;
+        // --- Modo EDICIÓN: actualiza los datos del evento (sin re-aplicar efectos de creación) ---
+        if (editandoEventoId) {
+            try {
+                const cambios = { tipo, fecha, titulo, detalle, tipoSalida: (tipo === 'salida' ? document.getElementById('e-tiposalida').value : null) };
+                await updateDoc(doc(db, 'rrhhEventos', editandoEventoId), cambios);
+                if (files.length && emp) {
+                    const ev = eventos.find(x => x.id === editandoEventoId) || {};
+                    const prevAdj = (Array.isArray(ev.adjuntos) ? ev.adjuntos.slice() : []).concat((ev.adjunto && ev.adjunto.url) ? [ev.adjunto] : []);
+                    const adjs = [];
+                    for (const file of files) adjs.push(await subirAdjunto(file, `rrhhEventos/${editandoEventoId}`));
+                    await updateDoc(doc(db, 'rrhhEventos', editandoEventoId), { adjuntos: prevAdj.concat(adjs) });
+                    const cat = (TIPOS[tipo] && TIPOS[tipo].label) || 'Ciclo del empleado';
+                    const prevDocs = Array.isArray(emp.documentos) ? emp.documentos : [];
+                    const nuevosDocs = adjs.map(a => ({ ...a, categoria: cat, origen: 'ciclo', eventoId: editandoEventoId, subidoPor: usuario.nombre }));
+                    await updateDoc(doc(db, 'rrhhEmpleados', empId), { documentos: prevDocs.concat(nuevosDocs) });
+                }
+                cerrarEvento();
+            } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+            finally { if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } }
+            return;
+        }
         try {
             const refDoc = await addDoc(collection(db, 'rrhhEventos'), datos);
             if (files.length) {

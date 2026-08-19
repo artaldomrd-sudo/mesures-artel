@@ -153,6 +153,26 @@ un **PDF de Cotización o Fabricación** para el cliente.
   mosquitera ocupa el riel exterior). Instalación "por fuera" = espejo vertical. "Sin sheetrock"
   = solo concreto. Menús del galandaje: Instalación (dentro/fuera), Sheetrock (Sí/No),
   Mosquitera. Centrales cascadean desde el centro hacia los lados; laterales cascadean al pocket.
+  **Dos bugs reales corregidos en la rama "lateral" (`gal1/gal2_lat/gal3_3v/gal4_4v`), reportados
+  con fotos reales de un `gal2_lat`:**
+  1. La hoja más próxima al pocket y la más lejana usaban el mismo sentido de profundidad de
+     riel que su posición en X (`d` crudo) — las dos hojas quedaban "del mismo lado" (ambas
+     pegadas al muro exterior) en vez de una en cada extremo del hueco del riel. Corregido
+     usando `(maxd - d)` en vez de `d` para la profundidad de cada hoja (la posición en X y el
+     sentido de la flecha no cambian, solo a qué riel de profundidad va cada una).
+  2. La regla de arriba ("el vidrio engancha del concreto sin mosquitera y del sheetrock con
+     mosquitera") ya estaba **documentada e implementada en la rama "central"** (`glassGrabsTop`)
+     pero **nunca se implementó en "lateral"**: la mosquitera solo se dibujaba con un offset fijo
+     y chico (`mosqOff`) pegada a la MISMA agrupación que el vidrio, ambas siempre cerca del
+     concreto — el usuario aclaró con un dibujo a mano que la mosquitera debe quedar pegada al
+     concreto (engancha de esa pared) y el vidrio, un grupo aparte con un hueco de por medio,
+     pegado al sheetrock. Arreglado: `mosqYL(d)` sigue pegada a `bandTop` (concreto); `glassY(d)`
+     ahora arranca en un `glassBandTop` propio, separado por un hueco (`clusterSpan + mt + vg`)
+     cuando hay mosquitera — sin mosquitera, `glassBandTop === bandTop` (el vidrio vuelve a
+     enganchar del concreto directo, comportamiento de siempre, sin hueco, cero regresión). La
+     etiqueta "mosquitera (lado ext)" también estaba mal ubicada (pegada a `planBottom`, el lado
+     del sheetrock) — corregida al lado del concreto (cerca de `PT`), con el mismo criterio de
+     espejo que ya usan `topLabel`/`botLabel` para "Instalación: por fuera".
 - **Vista superior (planta) de correderas**: `correderaPlan(state, uid)`, config en
   `CORREDERA_CFG` (y `correderaVias(type)` para la cantidad de "vías"). A diferencia del
   galandaje (bolsillo en la pared), la corredera va en un **marco perimetral** con varios

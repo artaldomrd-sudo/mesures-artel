@@ -4997,10 +4997,19 @@
         })(X0, X1, cfg.n, pocketLeftDefault);
 
         const bandTop = PT + wbh + vg;
-        const mosqOff = mosq ? (mt + 1) : 0;
-        const glassY = d => bandTop + mosqOff + d * dz;
-        const mosqYL = d => bandTop + d * dz;
-        const bottomWallY = bandTop + mosqOff + maxd * dz + gt + vg;
+        const clusterSpan = maxd * dz;
+        // La mosquitera engancha del muro exterior (concreto): su cúmulo va pegado a `bandTop`.
+        // El vidrio, cuando hay mosquitera, ya no engancha del concreto — pasa a enganchar del
+        // sheetrock (interior) — así que su propio cúmulo se corre a un segundo grupo, separado
+        // de la mosquitera por un hueco (la profundidad real del riel/pocket). Sin mosquitera,
+        // el vidrio vuelve a enganchar del concreto (comportamiento de siempre, sin hueco).
+        // Dentro de cada cúmulo, la hoja más próxima al pocket (d=0) va en el riel más alejado
+        // del muro de ese cúmulo — no en el más cercano — así que la profundidad real de cada
+        // hoja es (maxd - d), no d.
+        const mosqYL = d => bandTop + (maxd - d) * dz;
+        const glassBandTop = mosq ? (bandTop + clusterSpan + mt + vg) : bandTop;
+        const glassY = d => glassBandTop + (maxd - d) * dz;
+        const bottomWallY = glassBandTop + clusterSpan + gt + vg;
         const planBottom = bottomWallY + wbh;
 
         let body = '';
@@ -5021,7 +5030,10 @@
         const lblX = pockets[0][0] + pockets[0][1] / 2;
         let labels = lbl(lblX, PT - 1, topLabel);
         if (botLabel) labels += lbl(lblX, planBottom + 3.4, botLabel);
-        if (mosq) labels += lbl(50, install === 'fuera' ? (PT + 2.6) : (planBottom - 1), 'mosquitera (lado ext)');
+        // La mosquitera queda pegada al concreto (bandTop, cerca de PT) dentro del cuerpo sin
+        // voltear — con install==='fuera' todo el cuerpo se espeja, así que ella termina cerca
+        // de planBottom en vez de PT.
+        if (mosq) labels += lbl(50, install === 'fuera' ? (planBottom - 1) : (PT + 2.6), 'mosquitera (lado ext)');
 
         return head + plan + labels;
     }
