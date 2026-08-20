@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Mensajería</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 860px; }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 16px; }
+    .tab { background: transparent; border: 1.5px solid #cfd6dd; color: var(--artal-blue); border-radius: 9px; padding: 9px 15px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; position: relative; }
+    .tab.active { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
+    .tab .dot { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; background: #e2211c; color: #fff; border-radius: 10px; font-size: 11px; font-weight: bold; line-height: 18px; text-align: center; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 10px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; margin-left: auto; }
+    .btn-ghost { background: transparent; border: 1.5px solid #cfd6dd; color: var(--artal-blue); border-radius: 9px; padding: 9px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; }
+    .btn-blue { background: var(--artal-blue); color: #fff; border: none; border-radius: 9px; padding: 11px 18px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-blue:disabled { opacity: .55; cursor: default; }
+    .intro { font-size: 13px; color: #667; margin: 0 0 14px; line-height: 1.5; }
+
+    .msg-list { display: flex; flex-direction: column; gap: 9px; }
+    .msg-row { display: flex; gap: 12px; align-items: flex-start; background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 13px 15px; cursor: pointer; border-left: 4px solid transparent; }
+    .msg-row.unread { border-left-color: #e2211c; background: #fffdfa; }
+    .msg-row .ic { font-size: 20px; flex: 0 0 auto; line-height: 1.1; }
+    .msg-row .body { flex: 1; min-width: 0; }
+    .msg-row .asunto { font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .msg-row.unread .asunto::before { content: '● '; color: #e2211c; font-size: 12px; vertical-align: middle; }
+    .msg-row .prev { font-size: 12.5px; color: #667; margin-top: 3px; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .msg-row .meta { font-size: 11.5px; color: #93a; color: #8a93a0; margin-top: 5px; }
+    .msg-row .chip { display: inline-block; font-size: 10.5px; font-weight: bold; border-radius: 20px; padding: 2px 9px; margin-left: 6px; }
+    .chip-firma { background: #fef0e6; color: #c76a1c; }
+    .chip-leidos { background: #eaf1f9; color: var(--artal-blue); }
+    .empty { color: #8a93a0; font-size: 13px; padding: 18px 4px; text-align: center; }
+
+    .detalle .asunto { color: var(--artal-blue); font-size: 21px; margin: 4px 0 3px; font-weight: bold; }
+    .detalle .from { font-size: 12.5px; color: #8a93a0; margin-bottom: 16px; }
+    .detalle .cuerpo { font-size: 15.5px; color: #2f3944; line-height: 1.65; white-space: pre-wrap; }
+    .detalle .adj-tit { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin: 20px 0 8px; }
+    .acuse-box { margin-top: 24px; padding: 16px; border-radius: 12px; background: #f5f8fb; border: 1.5px solid #e3e9ef; }
+    .acuse-box.done { background: #eef9f1; border-color: #c9ecd4; }
+    .acuse-msg { font-size: 13.5px; color: #3a4a3f; margin-bottom: 10px; font-weight: bold; }
+    .btn-acuse { background: #2ecc71; color: #fff; border: none; border-radius: 10px; padding: 13px 20px; font-weight: bold; font-size: 15px; cursor: pointer; font-family: 'Arimo'; min-height: 50px; }
+    .btn-acuse.firma { background: #e8890c; }
+
+    .recibos { margin-top: 22px; }
+    .recibos h3 { font-size: 13.5px; color: var(--artal-blue); margin: 0 0 10px; }
+    .recibo { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef1f4; font-size: 13px; }
+    .recibo .est { margin-left: auto; font-size: 11.5px; font-weight: bold; }
+    .recibo .est.ok { color: #1e8449; } .recibo .est.pend { color: #b0761a; }
+
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin-bottom: 5px; }
+    .field input[type=text], .field textarea { width: 100%; box-sizing: border-box; border: 1.5px solid #d4dbe2; border-radius: 9px; padding: 11px 12px; font-family: 'Arimo'; font-size: 14.5px; }
+    .field textarea { min-height: 150px; resize: vertical; line-height: 1.5; }
+    .dest-modo { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+    .dest-modo button { flex: 1; min-width: 140px; border: 1.5px solid #cfd6dd; background: #fff; color: var(--artal-blue); border-radius: 9px; padding: 11px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; }
+    .dest-modo button.on { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
+    .role-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .role-chips button { background: #eef1f4; border: none; color: #556; border-radius: 20px; padding: 6px 12px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .personas { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px; max-height: 260px; overflow-y: auto; border: 1.5px solid #e3e9ef; border-radius: 10px; padding: 10px; }
+    .persona { display: flex; align-items: center; gap: 9px; padding: 7px 6px; border-radius: 8px; cursor: pointer; font-size: 13.5px; }
+    .persona:hover { background: #f4f7fa; }
+    .persona input { width: 17px; height: 17px; }
+    .persona .r { font-size: 10.5px; color: #8a93a0; margin-left: auto; text-transform: uppercase; letter-spacing: .03em; }
+    .check-firma { display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: #445; margin: 4px 0 14px; cursor: pointer; }
+    .check-firma input { width: 18px; height: 18px; }
+    .adj-wrap { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+    .adj-tag { display: inline-flex; align-items: center; gap: 6px; background: #f4f7fa; border: 1.5px solid #e3e9ef; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #445; }
+    .adj-tag button { background: none; border: none; color: #c0392b; cursor: pointer; font-weight: bold; font-size: 14px; }
+    .attach-btn { display: inline-block; background: var(--artal-blue); color: #fff; border-radius: 8px; padding: 9px 13px; font-size: 12.5px; font-weight: bold; cursor: pointer; }
+    .attach-btn input { display: none; }
+
+    .crumbs { font-size: 12.5px; color: #8a93a0; margin-bottom: 10px; }
+    .crumbs a { color: var(--artal-blue); font-weight: bold; text-decoration: none; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Mensajería ARTAL</h1>
+    </div>
+    <div class="who">
+        <a class="btn-back" href="index.html">← Volver</a>
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main id="cont"><p class="intro">Cargando…</p></main>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { subirFotos } from './fotos.js';
+
+    // Todos los roles conocidos pueden ENTRAR (para leer lo que les toca). Enviar está restringido
+    // aparte (rol 'comunicaciones'), ver puedeEnviar más abajo.
+    const usuario = await requireAuth(['contratista', 'fabrica', 'cotizaciones', 'chofer', 'instalador', 'ayudante', 'contable', 'comunicaciones']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    wireBackButton(usuario.roles);
+
+    // Quién puede ENVIAR comunicados: por ahora solo el rol 'comunicaciones' (Anny y Dylan). Se
+    // agregan más personas dándoles ese rol en usuarios/{email}.rol — sin tocar código.
+    const puedeEnviar = usuario.roles.includes('comunicaciones');
+    const miKey = sanitKey(usuario.email);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fFecha = (v) => { const d = v && v.toDate ? v.toDate() : (typeof v === 'string' ? new Date(v) : null); return d ? d.toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : ''; };
+    function sanitKey(email) { return String(email || '').toLowerCase().replace(/[.@]/g, '_'); }
+
+    // ---------------- Estado ----------------
+    let vista = 'bandeja';         // bandeja | enviados | nuevo | detalle
+    let msgSel = null;
+    let usuariosCache = [];        // [{email,nombre,rol,activo}]
+    let mensajesCache = [];        // [{id, ...msg}] enviados
+    // Compose
+    let composeAdjuntos = [];
+    let composeModo = 'todos';     // 'todos' | 'personas'
+    let composeSel = new Set();
+    let composeFirma = false;
+
+    onSnapshot(collection(db, 'usuarios'), (snap) => {
+        usuariosCache = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false);
+        if (vista === 'nuevo' || vista === 'detalle') render();
+    }, () => {});
+
+    onSnapshot(query(collection(db, 'mensajes'), where('estado', '==', 'enviado')), (snap) => {
+        mensajesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (fTime(b.fecha) - fTime(a.fecha)));
+        render();
+    }, () => { mensajesCache = []; render(); });
+    function fTime(v) { const d = v && v.toDate ? v.toDate() : null; return d ? d.getTime() : 0; }
+
+    // ---------------- Helpers de destinatarios / acuse ----------------
+    const esParaMi = (m) => m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.includes(usuario.email));
+    const yoLoEnvie = (m) => m.remitenteEmail === usuario.email;
+    const miAcuse = (m) => (m.acuses || {})[miKey] || null;
+    // Emails que deben recibir un mensaje (para el remitente: ver quién leyó).
+    function destinatariosDe(m) {
+        if (m.paraTodos) return usuariosCache.map(u => u.email).filter(e => e !== m.remitenteEmail);
+        return Array.isArray(m.destinatarios) ? m.destinatarios : [];
+    }
+    const nombreDe = (email) => { const u = usuariosCache.find(x => x.email === email); return u ? (u.nombre || email) : email; };
+
+    function bandejaMsgs() { return mensajesCache.filter(m => esParaMi(m) && !yoLoEnvie(m)); }
+    function noLeidos() { return bandejaMsgs().filter(m => { const a = miAcuse(m); return !a || a.leido !== true; }).length; }
+
+    // ---------------- Render ----------------
+    function render() {
+        const cont = document.getElementById('cont');
+        const nl = noLeidos();
+        const enviadosTab = puedeEnviar ? `<button class="tab ${vista === 'enviados' ? 'active' : ''}" onclick="irA('enviados')">📤 Enviados</button>` : '';
+        const nuevoBtn = puedeEnviar ? `<button class="btn-y" onclick="irA('nuevo')">✏️ Nuevo mensaje</button>` : '';
+        const tabs = (vista === 'bandeja' || vista === 'enviados') ? `<div class="tabs">
+            <button class="tab ${vista === 'bandeja' ? 'active' : ''}" onclick="irA('bandeja')">📥 Recibidos${nl ? ` <span class="dot">${nl}</span>` : ''}</button>
+            ${enviadosTab}${nuevoBtn}</div>` : '';
+
+        let html = tabs;
+        if (vista === 'bandeja') html += renderBandeja();
+        else if (vista === 'enviados') html += renderEnviados();
+        else if (vista === 'nuevo') html += renderNuevo();
+        else if (vista === 'detalle') html += renderDetalle();
+        cont.innerHTML = html;
+        if (vista === 'nuevo') montarNuevo();
+    }
+
+    window.irA = function (v, id) { vista = v; if (id !== undefined) msgSel = id; if (v === 'nuevo') resetCompose(); render(); window.scrollTo(0, 0); };
+
+    function renderBandeja() {
+        const msgs = bandejaMsgs();
+        if (!msgs.length) return `<p class="intro">Aquí verás los comunicados, avisos y documentos que la empresa te envíe.</p><div class="empty">📭 No tienes mensajes por ahora.</div>`;
+        return `<p class="intro">Comunicados y documentos de ARTAL para ti. Los no leídos están marcados en rojo.</p>
+            <div class="msg-list">${msgs.map(m => {
+            const a = miAcuse(m); const unread = !a || a.leido !== true;
+            return `<div class="msg-row ${unread ? 'unread' : ''}" onclick="irA('detalle','${m.id}')">
+                <span class="ic">${m.requiereFirma ? '✍️' : '📣'}</span>
+                <div class="body">
+                    <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
+                    <div class="prev">${esc(m.cuerpo || '')}</div>
+                    <div class="meta">De ${esc(m.remitenteNombre || 'ARTAL')} · ${esc(fFecha(m.fecha))}
+                        ${m.requiereFirma ? `<span class="chip chip-firma">Requiere aceptación</span>` : ''}
+                        ${(Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<span class="chip chip-leidos">📎 ${m.adjuntos.length}</span>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+    }
+
+    function renderEnviados() {
+        const msgs = mensajesCache.filter(yoLoEnvie);
+        if (!msgs.length) return `<div class="empty">Todavía no has enviado ningún comunicado.</div>`;
+        return `<div class="msg-list">${msgs.map(m => {
+            const dests = destinatariosDe(m); const total = dests.length;
+            const leidos = dests.filter(e => ((m.acuses || {})[sanitKey(e)] || {}).leido === true).length;
+            return `<div class="msg-row" onclick="irA('detalle','${m.id}')">
+                <span class="ic">${m.requiereFirma ? '✍️' : '📣'}</span>
+                <div class="body">
+                    <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
+                    <div class="prev">${esc(m.cuerpo || '')}</div>
+                    <div class="meta">${m.paraTodos ? 'A todo el equipo' : 'A ' + total + ' persona' + (total === 1 ? '' : 's')} · ${esc(fFecha(m.fecha))}
+                        <span class="chip chip-leidos">${leidos} de ${total} leyeron</span>
+                        ${m.requiereFirma ? `<span class="chip chip-firma">Aceptación</span>` : ''}
+                    </div>
+                </div>
+            </div>`;
+        }).join('')}</div>`;
+    }
+
+    function renderDetalle() {
+        const m = mensajesCache.find(x => x.id === msgSel);
+        const volver = (vista, txt) => `<div class="crumbs"><a onclick="irA('${yoLoEnvie(m || {}) ? 'enviados' : 'bandeja'}')">← ${(m && yoLoEnvie(m)) ? 'Enviados' : 'Recibidos'}</a></div>`;
+        if (!m) return `<div class="crumbs"><a onclick="irA('bandeja')">← Recibidos</a></div><div class="empty">Este mensaje ya no está disponible.</div>`;
+        const adj = (Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<div class="adj-tit">📎 Documentos adjuntos</div>
+            <div class="adj-wrap">${m.adjuntos.map(f => {
+            const esPdf = f.tipo === 'pdf' || /\.pdf(\?|$)/i.test(f.url || '');
+            return `<a class="adj-tag" href="${esc(f.url)}" target="_blank" rel="noopener">${esPdf ? '📄' : '🖼️'} ${esc((f.nombre || 'documento').slice(0, 32))}</a>`;
+        }).join('')}</div>` : '';
+
+        let extra = '';
+        if (yoLoEnvie(m)) {
+            // Vista del remitente: recibos de lectura.
+            const dests = destinatariosDe(m);
+            const leidos = dests.filter(e => ((m.acuses || {})[sanitKey(e)] || {}).leido === true).length;
+            extra = `<div class="recibos"><h3>Lecturas: ${leidos} de ${dests.length}</h3>
+                ${dests.map(e => { const a = (m.acuses || {})[sanitKey(e)] || {}; return `<div class="recibo"><span>${esc(nombreDe(e))}</span>
+                    <span class="est ${a.leido ? 'ok' : 'pend'}">${a.leido ? ((m.requiereFirma ? '✅ Aceptó' : '✓ Leído') + ' · ' + esc(fFecha(a.fecha))) : '⏳ Pendiente'}</span></div>`; }).join('')}
+                </div>
+                <div style="margin-top:20px"><button class="btn-ghost" onclick="borrarMensaje('${m.id}')">🗑️ Eliminar comunicado</button></div>`;
+        } else if (esParaMi(m)) {
+            // Vista del receptor: acuse.
+            const a = miAcuse(m);
+            if (a && a.leido) {
+                extra = `<div class="acuse-box done"><div class="acuse-msg">${m.requiereFirma ? '✅ Aceptado' : '✓ Leído'} el ${esc(fFecha(a.fecha))}</div></div>`;
+            } else {
+                extra = `<div class="acuse-box"><div class="acuse-msg">${m.requiereFirma ? 'Confirma que leíste y aceptas este documento:' : 'Marca este mensaje como leído:'}</div>
+                    <button class="btn-acuse ${m.requiereFirma ? 'firma' : ''}" onclick="marcarLeido('${m.id}')">${m.requiereFirma ? '✍️ He leído y acepto' : '✓ Marcar como leído'}</button></div>`;
+            }
+        }
+
+        return `${volver()}<div class="detalle">
+            <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
+            <div class="from">De <b>${esc(m.remitenteNombre || 'ARTAL')}</b> · ${esc(fFecha(m.fecha))}${m.paraTodos ? ' · A todo el equipo' : ''}</div>
+            <div class="cuerpo">${esc(m.cuerpo || '')}</div>
+            ${adj}${extra}
+        </div>`;
+    }
+
+    // ---------------- Acuse de recibo (receptor) ----------------
+    window.marcarLeido = async function (id) {
+        const m = mensajesCache.find(x => x.id === id); if (!m) return;
+        try {
+            await updateDoc(doc(db, 'mensajes', id), {
+                ['acuses.' + miKey]: { leido: true, aceptado: !!m.requiereFirma, fecha: new Date().toISOString(), nombre: usuario.nombre, email: usuario.email }
+            });
+        } catch (e) { alert('No se pudo registrar: ' + (e && e.message ? e.message : e)); }
+    };
+
+    window.borrarMensaje = async function (id) {
+        if (!confirm('¿Eliminar este comunicado para todos? No se puede deshacer.')) return;
+        try { await deleteDoc(doc(db, 'mensajes', id)); irA('enviados'); }
+        catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
+    };
+
+    // ---------------- Nuevo mensaje (remitente) ----------------
+    function resetCompose() { composeAdjuntos = []; composeModo = 'todos'; composeSel = new Set(); composeFirma = false; }
+
+    function renderNuevo() {
+        const roles = [...new Set(usuariosCache.map(u => Array.isArray(u.rol) ? u.rol : [u.rol]).flat().filter(Boolean))].sort();
+        return `<div class="crumbs"><a onclick="irA('bandeja')">← Mensajes</a></div>
+        <h2 style="color:var(--artal-blue);margin:2px 0 16px;">Nuevo comunicado</h2>
+        <div class="field"><label>Asunto</label><input type="text" id="c-asunto" placeholder="Ej. Nuevo horario de entrada / Documento para firmar"></div>
+        <div class="field"><label>Mensaje</label><textarea id="c-cuerpo" placeholder="Escribe aquí el comunicado, instrucción o descripción del documento…"></textarea></div>
+
+        <div class="field"><label>¿Para quién?</label>
+            <div class="dest-modo">
+                <button id="modo-todos" class="${composeModo === 'todos' ? 'on' : ''}" onclick="setModo('todos')">👥 Todo el equipo</button>
+                <button id="modo-personas" class="${composeModo === 'personas' ? 'on' : ''}" onclick="setModo('personas')">✅ Personas específicas</button>
+            </div>
+            <div id="personas-wrap" style="display:${composeModo === 'personas' ? 'block' : 'none'}">
+                <div class="role-chips">${roles.map(r => `<button onclick="addRol('${esc(r)}')">+ todos los ${esc(r)}</button>`).join('')}
+                    <button onclick="limpiarSel()">Limpiar</button></div>
+                <div class="personas">${usuariosCache.slice().sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(u => {
+            const r = (Array.isArray(u.rol) ? u.rol : [u.rol]).filter(Boolean).join(', ');
+            return `<label class="persona"><input type="checkbox" ${composeSel.has(u.email) ? 'checked' : ''} onchange="toggleSel('${esc(u.email)}',this.checked)"><span>${esc(u.nombre || u.email)}</span><span class="r">${esc(r)}</span></label>`;
+        }).join('')}</div>
+                <div style="font-size:12px;color:#8a93a0;margin-top:6px;" id="sel-count"></div>
+            </div>
+        </div>
+
+        <label class="check-firma"><input type="checkbox" id="c-firma" ${composeFirma ? 'checked' : ''} onchange="composeFirma=this.checked"><span>📄 Requiere aceptación / firma de recibido (documento para firmar)</span></label>
+
+        <div class="field"><label>Adjuntar documento (PDF o imagen)</label>
+            <div class="adj-wrap" id="adj-wrap"></div>
+        </div>
+
+        <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+            <button class="btn-blue" id="btn-enviar" onclick="enviarMensaje()">📨 Enviar comunicado</button>
+            <button class="btn-ghost" onclick="irA('bandeja')">Cancelar</button>
+        </div>`;
+    }
+
+    function montarNuevo() { renderAdj(); actualizarSelCount(); }
+
+    window.setModo = function (m) { composeModo = m; render(); };
+    window.toggleSel = function (email, on) { if (on) composeSel.add(email); else composeSel.delete(email); actualizarSelCount(); };
+    window.addRol = function (r) { usuariosCache.forEach(u => { const rs = Array.isArray(u.rol) ? u.rol : [u.rol]; if (rs.includes(r)) composeSel.add(u.email); }); render(); };
+    window.limpiarSel = function () { composeSel.clear(); render(); };
+    function actualizarSelCount() { const el = document.getElementById('sel-count'); if (el) el.textContent = composeSel.size ? (composeSel.size + ' persona' + (composeSel.size === 1 ? '' : 's') + ' seleccionada' + (composeSel.size === 1 ? '' : 's')) : 'Ninguna persona seleccionada todavía.'; }
+
+    function renderAdj() {
+        const w = document.getElementById('adj-wrap'); if (!w) return;
+        w.innerHTML = composeAdjuntos.map((f, i) => `<span class="adj-tag">${f.tipo === 'pdf' ? '📄' : '🖼️'} ${esc((f.nombre || 'documento').slice(0, 28))} <button onclick="quitarAdj(${i})">×</button></span>`).join('')
+            + `<label class="attach-btn">📎 Adjuntar<input type="file" accept="image/*,application/pdf" multiple onchange="subirAdj(this)"></label>`;
+    }
+    window.quitarAdj = function (i) { composeAdjuntos.splice(i, 1); renderAdj(); };
+    window.subirAdj = async function (input) {
+        const files = input.files; if (!files || !files.length) return;
+        const label = input.parentElement; const prev = label.firstChild.textContent;
+        input.disabled = true; label.firstChild.textContent = '⏳ Subiendo…';
+        try {
+            const nuevos = await subirFotos(files, 'mensajes/adjuntos');
+            composeAdjuntos.push(...nuevos);
+        } catch (e) { alert('No se pudo subir: ' + (e && e.message ? e.message : e)); }
+        finally { input.value = ''; input.disabled = false; renderAdj(); }
+    };
+
+    window.enviarMensaje = async function () {
+        const asunto = document.getElementById('c-asunto').value.trim();
+        const cuerpo = document.getElementById('c-cuerpo').value.trim();
+        if (!asunto && !cuerpo) { alert('Escribe al menos un asunto o mensaje.'); return; }
+        let paraTodos = composeModo === 'todos';
+        let destinatarios = [];
+        if (!paraTodos) {
+            destinatarios = [...composeSel];
+            if (!destinatarios.length) { alert('Elige al menos una persona, o cambia a "Todo el equipo".'); return; }
+        }
+        const btn = document.getElementById('btn-enviar'); btn.disabled = true; const t0 = btn.textContent; btn.textContent = 'Enviando…';
+        try {
+            await addDoc(collection(db, 'mensajes'), {
+                estado: 'enviado', asunto, cuerpo,
+                remitenteEmail: usuario.email, remitenteNombre: usuario.nombre,
+                fecha: serverTimestamp(),
+                paraTodos, destinatarios,
+                requiereFirma: !!composeFirma,
+                adjuntos: composeAdjuntos,
+                acuses: {}
+            });
+            resetCompose();
+            irA('enviados');
+        } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); btn.disabled = false; btn.textContent = t0; }
+    };
+
+    render();
+</script>
+
+</body>
+</html>

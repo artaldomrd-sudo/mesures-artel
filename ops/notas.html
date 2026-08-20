@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Mis Notas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 1000px; }
+    .notas-layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; align-items: start; }
+    .col-list { background: transparent; }
+    .list-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .list-head .btn-new { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 9px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; }
+    #buscar { flex: 1; border: 1.5px solid #d4dbe2; border-radius: 9px; padding: 9px 11px; font-family: 'Arimo'; font-size: 13.5px; }
+    .nota-list { display: flex; flex-direction: column; gap: 7px; max-height: calc(100vh - 190px); overflow-y: auto; }
+    .nota-item { background: #fff; border-radius: 11px; box-shadow: var(--shadow); padding: 12px 13px; cursor: pointer; border-left: 4px solid transparent; }
+    .nota-item.sel { border-left-color: var(--artal-yellow); background: #fffdf4; }
+    .nota-item .t { font-weight: bold; color: var(--artal-blue); font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nota-item .p { font-size: 12.5px; color: #7a828c; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nota-item .d { font-size: 11px; color: #a3abb4; margin-top: 5px; }
+    .nota-item .pin { color: var(--artal-yellow-deep); font-size: 12px; }
+    .empty { color: #8a93a0; font-size: 13px; padding: 22px 8px; text-align: center; }
+
+    .col-edit { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); min-height: 60vh; display: flex; flex-direction: column; }
+    .edit-bar { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid #eef1f4; }
+    .edit-bar .sp { flex: 1; font-size: 11.5px; color: #a3abb4; }
+    .edit-bar button { background: transparent; border: none; cursor: pointer; font-size: 17px; color: #8a93a0; padding: 4px 7px; border-radius: 7px; }
+    .edit-bar button:hover { background: #f2f5f8; }
+    .edit-bar button.on { color: var(--artal-yellow-deep); }
+    #nota-edit { flex: 1; border: none; outline: none; resize: none; padding: 20px 22px; font-family: 'Arimo'; font-size: 16px; line-height: 1.6; color: #2a3742; border-radius: 0 0 var(--radius) var(--radius); }
+    .btn-back-mobile { display: none; }
+    .no-sel { flex: 1; display: flex; align-items: center; justify-content: center; color: #b0b8c1; font-size: 14px; padding: 30px; text-align: center; }
+
+    @media (max-width: 760px) {
+        .notas-layout { grid-template-columns: 1fr; }
+        .notas-layout.editing .col-list { display: none; }
+        .notas-layout:not(.editing) .col-edit { display: none; }
+        .btn-back-mobile { display: inline-block; background: transparent; border: none; color: var(--artal-blue); font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; }
+        .nota-list { max-height: none; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Mis Notas</h1>
+    </div>
+    <div class="who">
+        <a class="btn-back" href="index.html">← Volver</a>
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="notas-layout" id="layout">
+        <div class="col-list">
+            <div class="list-head">
+                <button class="btn-new" onclick="nuevaNota()">＋ Nueva</button>
+                <input id="buscar" type="text" placeholder="Buscar en mis notas…" oninput="renderList()">
+            </div>
+            <div class="nota-list" id="lista"><div class="empty">Cargando…</div></div>
+        </div>
+        <div class="col-edit" id="editor">
+            <div class="no-sel">Selecciona una nota o crea una nueva.<br>Solo tú ves tus notas.</div>
+        </div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // Cualquier usuario con sesión tiene sus notas personales.
+    const usuario = await requireAuth(['contratista', 'fabrica', 'cotizaciones', 'chofer', 'instalador', 'ayudante', 'contable', 'comunicaciones']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    wireBackButton(usuario.roles);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const tituloDe = (txt) => { const l = String(txt || '').split('\n').map(s => s.trim()).filter(Boolean); return l.length ? l[0].slice(0, 60) : 'Nota nueva'; };
+    const previewDe = (txt) => { const l = String(txt || '').split('\n').map(s => s.trim()).filter(Boolean); return l.slice(1).join(' ').slice(0, 80) || (l.length ? '' : 'Sin contenido'); };
+    function fCorta(v) {
+        const d = typeof v === 'number' ? new Date(v) : (v && v.toDate ? v.toDate() : null); if (!d) return '';
+        const hoy = new Date(); const ayer = new Date(Date.now() - 864e5);
+        const sm = (a, b) => a.toDateString() === b.toDateString();
+        const hm = d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+        if (sm(d, hoy)) return hm; if (sm(d, ayer)) return 'Ayer ' + hm;
+        return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    let notasCache = [];
+    let sel = null;
+    let guardarTimer = null;
+
+    onSnapshot(query(collection(db, 'notas'), where('email', '==', usuario.email)), (snap) => {
+        notasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.fijada ? 1 : 0) - (a.fijada ? 1 : 0) || (b.actualizada || 0) - (a.actualizada || 0));
+        renderList();
+        // Sincroniza el editor solo si la nota abierta cambió por fuera y no la estoy editando ahora.
+        const ta = document.getElementById('nota-edit');
+        if (sel && ta && document.activeElement !== ta) {
+            const n = notasCache.find(x => x.id === sel);
+            if (n && n.contenido !== ta.value) ta.value = n.contenido || '';
+        }
+        if (sel && !notasCache.find(x => x.id === sel)) { sel = null; renderEditor(); }
+    }, () => { notasCache = []; renderList(); });
+
+    window.renderList = function () {
+        const q = (document.getElementById('buscar').value || '').trim().toLowerCase();
+        const items = notasCache.filter(n => !q || (n.contenido || '').toLowerCase().includes(q));
+        const cont = document.getElementById('lista');
+        if (!items.length) { cont.innerHTML = `<div class="empty">${q ? 'Sin resultados.' : '📝 No tienes notas aún.<br>Toca “＋ Nueva”.'}</div>`; return; }
+        cont.innerHTML = items.map(n => `<div class="nota-item ${n.id === sel ? 'sel' : ''}" onclick="abrir('${n.id}')">
+            <div class="t">${n.fijada ? '<span class="pin">📌</span> ' : ''}${esc(tituloDe(n.contenido))}</div>
+            <div class="p">${esc(previewDe(n.contenido))}</div>
+            <div class="d">${esc(fCorta(n.actualizada))}</div>
+        </div>`).join('');
+    };
+
+    function renderEditor() {
+        const ed = document.getElementById('editor');
+        const layout = document.getElementById('layout');
+        const n = notasCache.find(x => x.id === sel);
+        if (!n) { layout.classList.remove('editing'); ed.innerHTML = `<div class="no-sel">Selecciona una nota o crea una nueva.<br>Solo tú ves tus notas.</div>`; return; }
+        layout.classList.add('editing');
+        ed.innerHTML = `<div class="edit-bar">
+                <button class="btn-back-mobile" onclick="cerrarEditor()">← Notas</button>
+                <span class="sp" id="estado-guardado">Guardado ${esc(fCorta(n.actualizada))}</span>
+                <button class="${n.fijada ? 'on' : ''}" title="Fijar arriba" onclick="fijar('${n.id}')">📌</button>
+                <button title="Eliminar nota" onclick="borrar('${n.id}')">🗑️</button>
+            </div>
+            <textarea id="nota-edit" placeholder="Escribe aquí… La primera línea es el título.">${esc(n.contenido || '')}</textarea>`;
+        const ta = document.getElementById('nota-edit');
+        ta.addEventListener('input', onEdit);
+        // Enfocar al abrir (al final del texto) salvo en móvil recién cargado.
+        ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+    }
+
+    window.abrir = function (id) { sel = id; renderList(); renderEditor(); };
+    window.cerrarEditor = function () { sel = null; document.getElementById('layout').classList.remove('editing'); renderList(); renderEditor(); };
+
+    function onEdit() {
+        const ta = document.getElementById('nota-edit'); if (!ta || !sel) return;
+        const est = document.getElementById('estado-guardado'); if (est) est.textContent = 'Escribiendo…';
+        clearTimeout(guardarTimer);
+        guardarTimer = setTimeout(() => guardar(sel, ta.value), 600);
+    }
+
+    async function guardar(id, contenido) {
+        try {
+            await updateDoc(doc(db, 'notas', id), { contenido, titulo: tituloDe(contenido), actualizada: Date.now() });
+            const est = document.getElementById('estado-guardado'); if (est && sel === id) est.textContent = 'Guardado ' + fCorta(Date.now());
+        } catch (e) { const est = document.getElementById('estado-guardado'); if (est) est.textContent = '⚠️ No se pudo guardar'; }
+    }
+
+    window.nuevaNota = async function () {
+        try {
+            const ref = await addDoc(collection(db, 'notas'), { email: usuario.email, contenido: '', titulo: '', fijada: false, actualizada: Date.now(), fecha: serverTimestamp() });
+            sel = ref.id;
+            // El snapshot llegará enseguida; abrimos el editor sin esperar.
+            notasCache.unshift({ id: ref.id, email: usuario.email, contenido: '', fijada: false, actualizada: Date.now() });
+            renderList(); renderEditor();
+        } catch (e) { alert('No se pudo crear la nota: ' + (e && e.message ? e.message : e)); }
+    };
+
+    window.fijar = async function (id) {
+        const n = notasCache.find(x => x.id === id); if (!n) return;
+        try { await updateDoc(doc(db, 'notas', id), { fijada: !n.fijada }); } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+
+    window.borrar = async function (id) {
+        if (!confirm('¿Eliminar esta nota? No se puede deshacer.')) return;
+        try { await deleteDoc(doc(db, 'notas', id)); if (sel === id) { sel = null; } cerrarEditor(); }
+        catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
+    };
+</script>
+
+</body>
+</html>

@@ -87,6 +87,8 @@
         <a class="card-link" data-tile="inventario" href="inventario.html"><span class="tile-badge" id="badge-inventario"></span><div class="emoji">📦</div><div class="title">Inventario</div><div class="desc">Perfiles, herrajes y consumibles</div></a>
         <a class="card-link" data-tile="erp" href="erp.html"><span class="tile-badge" id="badge-erp"></span><div class="emoji">🏢</div><div class="title">ERP ARTAL</div><div class="desc">Recursos Humanos y demás módulos internos</div></a>
         <a class="card-link" data-tile="academia" href="academia.html"><div class="emoji">🎓</div><div class="title">Academia</div><div class="desc">Cursos de inducción y capacitación del equipo</div></a>
+        <a class="card-link" data-tile="mensajes" href="mensajes.html"><span class="tile-badge" id="badge-mensajes"></span><div class="emoji">✉️</div><div class="title">Mensajería ARTAL</div><div class="desc">Comunicados y documentos para firmar del equipo</div></a>
+        <a class="card-link" data-tile="notas" href="notas.html"><div class="emoji">🗒️</div><div class="title">Mis Notas</div><div class="desc">Tus notas personales (privadas)</div></a>
     </div>
     <aside id="notif-center">
         <h2 class="notif-title">🔔 Notificaciones <span id="notif-count"></span></h2>
@@ -102,6 +104,7 @@
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
+    import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
     // Solo admin: es el panel central con acceso a todas las pantallas.
     const usuario = await requireAuth([]);
@@ -358,6 +361,21 @@
         citasCache = snap.docs.map(d => ({ id: d.id, c: d.data() }));
         renderNotifs();
     }, () => { /* sin permisos o vacío: no romper */ });
+
+    // Badge del tile "Mensajería ARTAL": mensajes sin leer para este usuario (mismo criterio que
+    // el botón flotante). El floating widget ya muestra su propio círculo; esto es el número en el tile.
+    const miMsgKey = usuario.email.toLowerCase().replace(/[.@]/g, '_');
+    onSnapshot(query(collection(db, 'mensajes'), where('estado', '==', 'enviado')), (snap) => {
+        let n = 0;
+        snap.forEach(d => {
+            const m = d.data();
+            const paraMi = m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.includes(usuario.email));
+            if (!paraMi || m.remitenteEmail === usuario.email) return;
+            const ac = (m.acuses || {})[miMsgKey];
+            if (!ac || ac.leido !== true) n++;
+        });
+        setBadge('badge-mensajes', n);
+    }, () => { /* colección vacía o reglas sin publicar */ });
 </script>
 
 </body>
