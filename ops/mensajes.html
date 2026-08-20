@@ -186,6 +186,7 @@
                     <div class="prev">${esc(m.cuerpo || '')}</div>
                     <div class="meta">De ${esc(m.remitenteNombre || 'ARTAL')} · ${esc(fFecha(m.fecha))}
                         ${m.requiereFirma ? `<span class="chip chip-firma">Requiere aceptación</span>` : ''}
+                        ${(m.enlace && m.enlace.url) ? `<span class="chip chip-leidos">📄 Documento</span>` : ''}
                         ${(Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<span class="chip chip-leidos">📎 ${m.adjuntos.length}</span>` : ''}
                     </div>
                 </div>
@@ -244,11 +245,13 @@
             }
         }
 
+        const enlaceBtn = (m.enlace && m.enlace.url) ? `<div style="margin-top:22px"><a class="btn-acuse" style="display:inline-block;text-decoration:none;background:var(--artal-blue)" href="${esc(m.enlace.url)}" target="_blank" rel="noopener">📄 ${esc(m.enlace.titulo || 'Abrir documento')}</a></div>` : '';
+
         return `${volver()}<div class="detalle">
             <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
             <div class="from">De <b>${esc(m.remitenteNombre || 'ARTAL')}</b> · ${esc(fFecha(m.fecha))}${m.paraTodos ? ' · A todo el equipo' : ''}</div>
             <div class="cuerpo">${esc(m.cuerpo || '')}</div>
-            ${adj}${extra}
+            ${adj}${enlaceBtn}${extra}
         </div>`;
     }
 
@@ -300,6 +303,13 @@
             <div class="adj-wrap" id="adj-wrap"></div>
         </div>
 
+        <div class="field"><label>📄 Enlace a un documento para abrir/firmar (opcional)</label>
+            <input type="text" id="c-enlace-titulo" placeholder="Nombre del documento (ej. Normas internas y firma)" style="margin-bottom:8px">
+            <input type="text" id="c-enlace-url" placeholder="https://…">
+            <div style="margin-top:8px"><button type="button" class="btn-ghost" onclick="usarDocNormas()">📋 Usar “Normas internas y firma”</button></div>
+            <p style="font-size:11.5px;color:#8a93a0;margin-top:6px;line-height:1.45">El receptor verá un botón para abrir el documento y ahí elige su nombre y firma. La firma legal se hace dentro del propio documento; aquí solo queda el acuse de recibido.</p>
+        </div>
+
         <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
             <button class="btn-blue" id="btn-enviar" onclick="enviarMensaje()">📨 Enviar comunicado</button>
             <button class="btn-ghost" onclick="irA('bandeja')">Cancelar</button>
@@ -331,10 +341,22 @@
         finally { input.value = ''; input.disabled = false; renderAdj(); }
     };
 
+    // Rellena el enlace con el documento de Normas internas y firma (firma.html en producción).
+    window.usarDocNormas = function () {
+        document.getElementById('c-enlace-titulo').value = 'Normas internas y firma';
+        document.getElementById('c-enlace-url').value = 'https://artaldomrd-sudo.github.io/mesures-artel/ops/firma.html';
+        if (!document.getElementById('c-asunto').value.trim()) document.getElementById('c-asunto').value = 'Normas internas — documento para firmar';
+        if (!document.getElementById('c-cuerpo').value.trim()) document.getElementById('c-cuerpo').value = 'Por favor abre el documento, revisa las normas que corresponden a tu puesto y fírmalo. Al terminar, marca aquí “He leído y acepto”.';
+        document.getElementById('c-firma').checked = true; composeFirma = true;
+    };
+
     window.enviarMensaje = async function () {
         const asunto = document.getElementById('c-asunto').value.trim();
         const cuerpo = document.getElementById('c-cuerpo').value.trim();
-        if (!asunto && !cuerpo) { alert('Escribe al menos un asunto o mensaje.'); return; }
+        const enlaceUrl = (document.getElementById('c-enlace-url').value || '').trim();
+        const enlaceTitulo = (document.getElementById('c-enlace-titulo').value || '').trim();
+        const enlace = enlaceUrl ? { url: enlaceUrl, titulo: enlaceTitulo || 'Abrir documento' } : null;
+        if (!asunto && !cuerpo && !enlace) { alert('Escribe al menos un asunto o mensaje.'); return; }
         let paraTodos = composeModo === 'todos';
         let destinatarios = [];
         if (!paraTodos) {
@@ -350,6 +372,7 @@
                 paraTodos, destinatarios,
                 requiereFirma: !!composeFirma,
                 adjuntos: composeAdjuntos,
+                enlace: enlace,
                 acuses: {}
             });
             resetCompose();
