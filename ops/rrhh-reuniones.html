@@ -112,6 +112,7 @@
 
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleadosCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (typeof aplicarPendienteNuevo === 'function') aplicarPendienteNuevo();
         if (vista === 'inicio') render();
     }, () => {});
 
@@ -190,7 +191,7 @@
         return `<div class="crumbs"><a onclick="irInicio()">← Empleados</a></div>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
                 <h2 style="color:var(--artal-blue);margin:0">${esc(e.nombre || '')}</h2>
-                <button class="btn-y" onclick="nuevaReunion('${e.id}')">＋ Nueva reunión</button>
+                <button class="btn-y" onclick="elegirPlantilla('${e.id}')">＋ Nueva reunión</button>
             </div>
             <div class="sub" style="color:#8a93a0;font-size:13px;margin-bottom:16px">${esc(puestoDe(e) || '')}${e.correo ? ' · ' + esc(e.correo) : ' · (sin correo — no podrá verlas al iniciar sesión)'}</div>
             ${rs.length ? `<div class="r-list">${rs.map(r => rowReunion(r)).join('')}</div>` : '<div class="empty">Aún no hay reuniones. Crea la primera con “＋ Nueva reunión”.</div>'}`;
@@ -243,29 +244,125 @@
     };
 
     // ---------------- Editor (crear / editar) ----------------
-    const plantillaVacia = (e) => ({
+    const baseHeader = (e) => ({
         empleadoId: e ? e.id : '', empleadoNombre: e ? (e.nombre || '') : '', empleadoCorreo: e ? (e.correo || '') : '',
-        puestoTexto: e ? puestoDe(e) : '', fecha: hoyISO(), horaInicio: '', horaFin: '', lugar: 'OFICINA', gerente: usuario.nombre,
+        puestoTexto: e ? puestoDe(e) : '', fecha: hoyISO(), horaInicio: '', horaFin: '', lugar: 'OFICINA', gerente: usuario.nombre
+    });
+    const plantillaVacia = (e) => ({
+        ...baseHeader(e),
         secciones: [{ titulo: 'Cómo va / cómo se siente', preguntas: [{ q: '', a: '' }] }],
         reconozco: '', necesito: [], plan: { texto: '', reaccion: '' }, meta90: '',
         acuerdos: [{ texto: '', quien: e ? (e.nombre || '') : '', paraCuando: '90 días', estado: 'pendiente' }],
-        notas: '', proximaFecha: addDias(hoyISO(), 90), seguimientoPrevio: []
+        notas: '', proximaFecha: addDias(hoyISO(), 90), seguimientoPrevio: [], cadenciaDias: 90
     });
 
-    window.nuevaReunion = (empId) => {
-        const e = empleadosCache.find(x => x.id === empId);
-        edit = plantillaVacia(e);
-        // Coherencia: arrastra preguntas de la última reunión (respuestas en blanco) y objetivos pendientes.
-        const prev = reunionesDeEmp(e)[0];
-        if (prev) {
-            if (Array.isArray(prev.secciones) && prev.secciones.length) {
-                edit.secciones = prev.secciones.map(s => ({ titulo: s.titulo || '', guia: s.guia || '', preguntas: (s.preguntas || []).map(p => ({ q: p.q || '', guia: p.guia || '', a: '' })) }));
-            }
-            if (Array.isArray(prev.necesito)) edit.necesito = prev.necesito.map(n => ({ titulo: n.titulo || '', detalle: '' }));
-            edit.seguimientoPrevio = (prev.acuerdos || []).map(a => ({ texto: a.texto || '', quien: a.quien || '', estado: a.estado === 'cumplido' ? 'cumplido' : 'pendiente' }));
+    // Plantillas de guion listas (NO llevan datos personales, viven en el código sin problema).
+    // El usuario las edita antes/durante la reunión; también sirven como base para empleados nuevos.
+    const PLANTILLAS = {
+        integracion: {
+            proximaDias: 15,
+            secciones: [
+                { titulo: 'Bienvenida', guia: 'Recíbelo con calma. Hoy no es evaluar: es que se sienta parte del equipo y sepa qué se espera de él durante el período de prueba.', preguntas: [] },
+                { titulo: 'Cómo llega', preguntas: [
+                    { q: '¿Qué te motivó a entrar a ARTAL y qué esperas de este trabajo?', a: '' },
+                    { q: '¿Qué experiencia traes que nos pueda servir?', a: '' },
+                    { q: '¿Hay algo de tu situación (horario, transporte, salud) que deba saber para ayudarte?', a: '' }
+                ] },
+                { titulo: 'Qué esperamos de ti en el período de prueba', guia: 'Decirlo claro y sencillo, que sepa exactamente cómo se mide "ir bien".', preguntas: [
+                    { q: 'Puntualidad y asistencia', a: '' },
+                    { q: 'Actitud: preguntar, aprender, cuidar herramientas y seguridad', a: '' },
+                    { q: 'Tareas concretas que debe empezar a dominar en las primeras semanas', a: '' }
+                ] },
+                { titulo: 'Lo que te ofrecemos', guia: 'Explicar cómo funciona la formación, quién lo acompaña y qué camino hay si le va bien.', preguntas: [
+                    { q: '¿Quién será su guía/mentor durante la formación?', a: '' },
+                    { q: 'Herramientas, equipo y capacitación (Academia) que recibirá', a: '' }
+                ] },
+                { titulo: 'Dudas y compromisos del día 1', preguntas: [
+                    { q: '¿Tienes alguna duda o algo que necesites para empezar bien?', a: '' }
+                ] }
+            ],
+            reconozco: '',
+            necesito: [
+                { titulo: 'Puntualidad y asistencia', detalle: 'Llegar a la hora y avisar con tiempo si no puede.' },
+                { titulo: 'Actitud de aprendiz', detalle: 'Preguntar cuando no entienda, cuidar las herramientas y seguir las normas de seguridad.' },
+                { titulo: 'Compromiso con el trabajo', detalle: 'Terminar lo que empieza y avisar cualquier problema en obra.' }
+            ],
+            plan: { texto: 'Durante el período de prueba te vamos a acompañar y evaluar cada pocas semanas. Si muestras compromiso y ganas de aprender, hay un camino de crecimiento real dentro de ARTAL.', reaccion: '' },
+            meta90: '',
+            acuerdos: [
+                { texto: 'Leer y firmar las normas internas de la empresa (documento de firma).', quien: '', paraCuando: '15 días', estado: 'pendiente' },
+                { texto: 'Completar el curso de inducción en la Academia.', quien: '', paraCuando: '15 días', estado: 'pendiente' }
+            ],
+            notas: ''
+        },
+        seguimiento: {
+            proximaDias: 90,
+            secciones: [
+                { titulo: 'Apertura', guia: '«Quiero hablar de cómo te sientes, qué necesitas y hacia dónde quieres ir. Lo hago con todo el equipo. Lo que hablemos queda entre nosotros.»', preguntas: [] },
+                { titulo: 'Cómo se siente', preguntas: [
+                    { q: '¿Qué parte del trabajo disfrutas más? ¿Cuál te pesa?', a: '' },
+                    { q: '¿Qué te hace perder tiempo o te complica el día?', a: '' },
+                    { q: '¿Hay decisiones en las que te sientes inseguro o prefieres consultarme?', a: '' }
+                ] },
+                { titulo: 'Sus metas', preguntas: [
+                    { q: '¿Dónde te gustaría estar dentro de uno o dos años?', a: '' },
+                    { q: '¿Qué te gustaría aprender o dominar mejor?', a: '' }
+                ] }
+            ],
+            reconozco: '',
+            necesito: [{ titulo: '', detalle: '' }, { titulo: '', detalle: '' }, { titulo: '', detalle: '' }],
+            plan: { texto: '', reaccion: '' }, meta90: '',
+            acuerdos: [{ texto: '', quien: '', paraCuando: '90 días', estado: 'pendiente' }],
+            notas: ''
         }
+    };
+
+    // Selector de "cómo empezar" al crear una reunión nueva.
+    window.elegirPlantilla = (empId) => {
+        const e = empleadosCache.find(x => x.id === empId);
+        const prev = reunionesDeEmp(e)[0];
+        document.getElementById('pl-opciones').innerHTML =
+            (prev ? `<button class="btn-blue" style="width:100%;margin-bottom:8px" onclick="crearReunionDesde('${empId}','anterior')">🔁 Igual que la anterior<br><small style="font-weight:normal;opacity:.85">Misma estructura + objetivos pendientes de ${esc(e ? e.nombre : '')}</small></button>` : '') +
+            `<button class="btn-y" style="width:100%;margin-bottom:8px" onclick="crearReunionDesde('${empId}','integracion')">🌱 Integración / período de prueba<br><small style="font-weight:normal;opacity:.85">Guion para un integrante nuevo (próxima en 15 días)</small></button>` +
+            `<button class="btn-ghost" style="width:100%;margin-bottom:8px" onclick="crearReunionDesde('${empId}','seguimiento')">🎯 Seguimiento (90 días)</button>` +
+            `<button class="btn-ghost" style="width:100%" onclick="crearReunionDesde('${empId}','blanco')">📄 En blanco</button>`;
+        document.getElementById('pl-modal').classList.add('show');
+    };
+    window.cerrarPlantilla = () => document.getElementById('pl-modal').classList.remove('show');
+    window.crearReunionDesde = (empId, tipo) => {
+        cerrarPlantilla();
+        const e = empleadosCache.find(x => x.id === empId);
+        if (tipo === 'blanco') { edit = plantillaVacia(e); }
+        else if (tipo === 'anterior') { edit = desdeAnterior(e); }
+        else { edit = desdePlantilla(e, tipo); }
         vista = 'editar'; render(); window.scrollTo(0, 0);
     };
+    function desdeAnterior(e) {
+        const ed = plantillaVacia(e);
+        const prev = reunionesDeEmp(e)[0];
+        if (prev) {
+            if (Array.isArray(prev.secciones) && prev.secciones.length) ed.secciones = prev.secciones.map(s => ({ titulo: s.titulo || '', guia: s.guia || '', preguntas: (s.preguntas || []).map(p => ({ q: p.q || '', guia: p.guia || '', a: '' })) }));
+            if (Array.isArray(prev.necesito)) ed.necesito = prev.necesito.map(n => ({ titulo: n.titulo || '', detalle: '' }));
+            ed.seguimientoPrevio = (prev.acuerdos || []).map(a => ({ texto: a.texto || '', quien: a.quien || '', estado: a.estado === 'cumplido' ? 'cumplido' : 'pendiente' }));
+            ed.cadenciaDias = prev.cadenciaDias || 90;
+            ed.proximaFecha = addDias(hoyISO(), ed.cadenciaDias);
+        }
+        return ed;
+    }
+    function desdePlantilla(e, key) {
+        const t = PLANTILLAS[key]; if (!t) return plantillaVacia(e);
+        const clon = (x) => JSON.parse(JSON.stringify(x));
+        const ed = {
+            ...baseHeader(e),
+            secciones: clon(t.secciones || []), reconozco: t.reconozco || '', necesito: clon(t.necesito || []),
+            plan: clon(t.plan || { texto: '', reaccion: '' }), meta90: t.meta90 || '',
+            acuerdos: clon(t.acuerdos || []).map(a => ({ ...a, quien: a.quien || (e ? e.nombre : '') })),
+            notas: t.notas || '', cadenciaDias: t.proximaDias || 90, proximaFecha: addDias(hoyISO(), t.proximaDias || 90), seguimientoPrevio: []
+        };
+        const prev = reunionesDeEmp(e)[0];
+        if (prev) ed.seguimientoPrevio = (prev.acuerdos || []).map(a => ({ texto: a.texto || '', quien: a.quien || '', estado: a.estado === 'cumplido' ? 'cumplido' : 'pendiente' }));
+        return ed;
+    }
     window.editarReunion = (rid) => {
         const r = reunionesCache.find(x => x.id === rid); if (!r) return;
         edit = JSON.parse(JSON.stringify(r)); edit._id = rid;
@@ -431,14 +528,29 @@
         if (ok === arr.length && !sinVincular.length) setTimeout(cerrarImportar, 1400);
     };
 
-    // Modal de importar (solo admin lo abre).
+    // Modales (solo admin los abre).
     document.body.insertAdjacentHTML('beforeend', `<div class="modal-bg" id="imp-modal"><div class="modal">
         <h3>Importar reuniones</h3>
         <p style="font-size:12.5px;color:#667;line-height:1.5">Pega aquí el texto (JSON) de las reuniones que te pasaron. Se guardan en la base privada; nunca en el código público. Úsalo una sola vez para sembrar las reuniones ya hechas.</p>
         <textarea id="imp-json" style="width:100%;min-height:200px;border:1.5px solid #d4dbe2;border-radius:8px;padding:10px;font-family:monospace;font-size:12px"></textarea>
         <div id="imp-msg" style="font-size:13px;color:var(--artal-blue);margin:8px 0;font-weight:bold"></div>
         <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn-ghost" onclick="cerrarImportar()">Cancelar</button><button class="btn-blue" onclick="hacerImportar()">Importar</button></div>
+    </div></div>
+    <div class="modal-bg" id="pl-modal"><div class="modal">
+        <h3>¿Cómo quieres empezar esta reunión?</h3>
+        <div id="pl-opciones" style="margin:12px 0"></div>
+        <div style="display:flex;justify-content:flex-end"><button class="btn-ghost" onclick="cerrarPlantilla()">Cancelar</button></div>
     </div></div>`);
+
+    // Enlace directo desde la ficha del empleado nuevo: ?nuevo=<empId>&plantilla=integracion
+    const _params = new URLSearchParams(location.search);
+    let pendienteNuevo = (esAdmin && _params.get('nuevo')) ? { empId: _params.get('nuevo'), plantilla: _params.get('plantilla') || 'integracion' } : null;
+    function aplicarPendienteNuevo() {
+        if (!pendienteNuevo) return;
+        if (!empleadosCache.find(x => x.id === pendienteNuevo.empId)) return; // espera a que carguen los empleados
+        const p = pendienteNuevo; pendienteNuevo = null;
+        crearReunionDesde(p.empId, p.plantilla);
+    }
 
     render();
 </script>
