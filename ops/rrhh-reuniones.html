@@ -121,8 +121,18 @@
         render();
     }, () => { reunionesCache = []; render(); });
 
-    const reunionesDe = (correo, empId) => reunionesCache.filter(r =>
-        (empId && r.empleadoId === empId) || (correo && (r.empleadoCorreo || '').toLowerCase() === (correo || '').toLowerCase()));
+    const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const mismoNombre = (a, b) => { a = norm(a); b = norm(b); return a && b && (a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')); };
+    // Reuniones de un empleado (admin): vincula por id, por correo o por nombre (para las sembradas
+    // que solo traen el nombre).
+    const reunionesDeEmp = (e) => !e ? [] : reunionesCache.filter(r =>
+        (r.empleadoId && r.empleadoId === e.id) ||
+        (e.correo && (r.empleadoCorreo || '').toLowerCase() === String(e.correo).toLowerCase()) ||
+        mismoNombre(e.nombre, r.empleadoNombre));
+    // Reuniones del usuario que entró (empleado): por su correo o por su nombre.
+    const misReuniones = () => reunionesCache.filter(r =>
+        (usuario.email && (r.empleadoCorreo || '').toLowerCase() === usuario.email.toLowerCase()) ||
+        mismoNombre(usuario.nombre, r.empleadoNombre));
     const puestoDe = (e) => [Array.isArray(e.cargoNombres) ? e.cargoNombres.join(' · ') : (e.cargoNombre || ''), e.departamentoNombre].filter(Boolean).join(' · ');
     const acuerdosPendientes = (r) => (r.acuerdos || []).filter(a => a.estado !== 'cumplido').length;
 
@@ -138,7 +148,7 @@
 
     // --- Empleado (solo lectura de las suyas) ---
     function renderEmpleado(cont) {
-        const mias = reunionesDe(usuario.email, null);
+        const mias = misReuniones();
         if (vista === 'detalle') { cont.innerHTML = renderDetalle(true); return; }
         if (!mias.length) { cont.innerHTML = `<p class="intro">Aquí verás tus reuniones de seguimiento y los objetivos acordados con la empresa.</p><div class="empty">Todavía no tienes reuniones registradas.</div>`; return; }
         cont.innerHTML = `<p class="intro">Tus reuniones de seguimiento con la empresa. Toca una para ver los acuerdos y tus objetivos.</p>
@@ -158,7 +168,7 @@
         const conReunion = empleadosCache.slice().filter(e => (e.estado || 'activo') === 'activo')
             .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
         const cards = conReunion.map(e => {
-            const rs = reunionesDe(e.correo, e.id);
+            const rs = reunionesDeEmp(e);
             const ult = rs[0];
             const pend = rs.reduce((n, r) => n + acuerdosPendientes(r), 0);
             return `<div class="emp-card" onclick="abrirEmpleado('${e.id}')">
@@ -176,7 +186,7 @@
     // --- Admin: timeline de un empleado ---
     function renderTimeline() {
         const e = empleadosCache.find(x => x.id === empSel); if (!e) { vista = 'inicio'; return renderInicio(); }
-        const rs = reunionesDe(e.correo, e.id);
+        const rs = reunionesDeEmp(e);
         return `<div class="crumbs"><a onclick="irInicio()">← Empleados</a></div>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
                 <h2 style="color:var(--artal-blue);margin:0">${esc(e.nombre || '')}</h2>
@@ -246,7 +256,7 @@
         const e = empleadosCache.find(x => x.id === empId);
         edit = plantillaVacia(e);
         // Coherencia: arrastra preguntas de la última reunión (respuestas en blanco) y objetivos pendientes.
-        const prev = reunionesDe(e ? e.correo : '', empId)[0];
+        const prev = reunionesDeEmp(e)[0];
         if (prev) {
             if (Array.isArray(prev.secciones) && prev.secciones.length) {
                 edit.secciones = prev.secciones.map(s => ({ titulo: s.titulo || '', guia: s.guia || '', preguntas: (s.preguntas || []).map(p => ({ q: p.q || '', guia: p.guia || '', a: '' })) }));
@@ -397,9 +407,15 @@
         try { arr = JSON.parse(document.getElementById('imp-json').value); } catch (e) { msg.textContent = '❌ El texto no es un JSON válido.'; return; }
         if (!Array.isArray(arr)) arr = [arr];
         msg.textContent = 'Importando ' + arr.length + '…';
-        let ok = 0;
+        let ok = 0; const sinVincular = [];
         for (const r of arr) {
             try {
+                // Auto-vincular al empleado por nombre (para que el empleado la vea por su correo).
+                if (!r.empleadoId && r.empleadoNombre) {
+                    const e = empleadosCache.find(x => mismoNombre(x.nombre, r.empleadoNombre));
+                    if (e) { r.empleadoId = e.id; if (!r.empleadoCorreo) r.empleadoCorreo = e.correo || ''; if (!r.puestoTexto) r.puestoTexto = puestoDe(e); }
+                    if (!e || !(e.correo)) sinVincular.push(r.empleadoNombre + (e && !e.correo ? ' (sin correo en su ficha)' : ' (no está en Empleados)'));
+                }
                 r.actualizada = Date.now(); r.creadoPor = r.creadoPor || usuario.nombre; r.fechaCreacion = serverTimestamp();
                 if (!Array.isArray(r.seguimientoPrevio)) r.seguimientoPrevio = [];
                 const ref = await addDoc(collection(db, 'rrhhReuniones'), r);
@@ -407,8 +423,8 @@
                 ok++;
             } catch (e) { /* sigue con las demás */ }
         }
-        msg.textContent = `✓ Importadas ${ok} de ${arr.length}.`;
-        setTimeout(cerrarImportar, 1200);
+        msg.innerHTML = `✓ Importadas ${ok} de ${arr.length}.` + (sinVincular.length ? `<br><span style="color:#c76a1c">⚠️ Revisa (para que el empleado las vea con su login): ${esc([...new Set(sinVincular)].join(', '))}</span>` : '');
+        if (!sinVincular.length) setTimeout(cerrarImportar, 1400);
     };
 
     // Modal de importar (solo admin lo abre).
