@@ -83,6 +83,33 @@
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
     .empty { color: #8a93a0; text-align: center; padding: 30px 10px; }
+
+    .examen-box { background: #f4f7fb; border: 1.5px solid #e0e8f1; border-radius: 12px; padding: 14px 16px; margin-top: 18px; }
+    .examen-box.aprobado { background: #eef9f1; border-color: #c9ecd4; }
+    .examen-box .ex-h { font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .examen-box .ex-info { font-size: 13px; color: #556; margin-top: 4px; }
+    .ex-q { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 10px; }
+    .ex-qt { font-weight: bold; color: #33404a; font-size: 14.5px; margin-bottom: 8px; }
+    .ex-opt { display: flex; align-items: center; gap: 9px; padding: 8px 6px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+    .ex-opt:hover { background: #f4f7fa; }
+    .ex-opt input { width: 17px; height: 17px; }
+    .ex-ok { background: #eef9f1; border: 1.5px solid #c9ecd4; border-radius: 10px; padding: 14px; color: #1e8449; font-weight: bold; }
+    .ex-fail { background: #fdeeee; border: 1.5px solid #f2c9c4; border-radius: 10px; padding: 14px; color: #c0392b; font-weight: bold; }
+    .ed-q { border: 1.5px solid #e3e9ef; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+    .ed-q .op-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+    .ed-q .op-row input[type=text] { flex: 1; min-height: 38px; }
+    .ed-q .op-row input[type=radio] { width: 18px; height: 18px; flex: 0 0 auto; }
+
+    .cert { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 8px; }
+    .cert-in { border: 3px double var(--artal-blue); border-radius: 8px; padding: 34px 24px; text-align: center; }
+    .cert-logo { height: 54px; width: auto; object-fit: contain; margin-bottom: 10px; }
+    .cert-t { font-size: 24px; font-weight: bold; color: var(--artal-blue); letter-spacing: .02em; }
+    .cert-sub { font-size: 13px; color: #667; margin-top: 14px; }
+    .cert-name { font-size: 30px; font-weight: bold; color: #2a3742; margin: 6px 0; }
+    .cert-curso { font-size: 18px; font-weight: bold; color: var(--artal-blue); margin: 6px 0; }
+    .cert-meta { font-size: 13px; color: #667; margin-top: 12px; }
+    .cert-firma { font-size: 12px; color: #8a93a0; margin-top: 26px; }
+    @media print { header, .crumbs, .bar { display: none !important; } }
 </style>
 </head>
 <body>
@@ -230,12 +257,19 @@
         } catch (e) { alert('No se pudo guardar tu progreso: ' + (e && e.message ? e.message : e)); }
     }
 
+    // ---------------- Examen (helpers) ----------------
+    const progresoDe = (cursoId) => progreso.find(x => x.id === miClave + '__' + cursoId) || null;
+    const tieneExamen = (c) => !!(c && c.examen && c.examen.activo && Array.isArray(c.examen.preguntas) && c.examen.preguntas.length);
+    const examenAprobado = (cursoId) => { const p = progresoDe(cursoId); return !!(p && p.examenAprobado); };
+
     window.cerrar = (id) => document.getElementById(id).classList.remove('show');
-    window.irA = function (v, cursoId, leccionId) { vista = v; if (cursoId !== undefined) cursoSelId = cursoId; if (leccionId !== undefined) leccionSelId = leccionId; render(); };
+    window.irA = function (v, cursoId, leccionId) { vista = v; if (cursoId !== undefined) cursoSelId = cursoId; if (leccionId !== undefined) leccionSelId = leccionId; render(); window.scrollTo(0, 0); };
 
     // ---------------- Render ----------------
     function render() {
         const cont = document.getElementById('vista');
+        if (vista === 'examen' && cursoById(cursoSelId)) return renderExamen(cont);
+        if (vista === 'certificado' && cursoById(cursoSelId)) return renderCertificado(cont);
         if (vista === 'leccion' && leccionById(leccionSelId)) return renderLeccion(cont);
         if (vista === 'curso' && cursoById(cursoSelId)) return renderCurso(cont);
         vista = 'cursos'; renderCursos(cont);
@@ -291,7 +325,100 @@
                 ${adm}
             </div>`;
         }).join('') + '</div>';
+        html += renderExamenBloque(c, done, lecs);
         cont.innerHTML = html;
+    }
+
+    // Bloque de examen dentro de la vista del curso (autor: crear/editar; alumno: presentar/estado).
+    function renderExamenBloque(c, done, lecs) {
+        const total = lecs.length, hechas = done.size, todasHechas = total > 0 && hechas >= total;
+        if (esAutor) {
+            const info = tieneExamen(c)
+                ? `Examen activo · ${c.examen.preguntas.length} pregunta(s) · aprueba con ${c.examen.notaMinima || 70}% · ${c.examen.puntos || 100} pts`
+                : 'Sin examen todavía. Crea uno para evaluar y dar puntos al equipo.';
+            return `<div class="examen-box"><div class="ex-h">📝 Examen del curso</div><div class="ex-info">${esc(info)}</div>
+                <div class="bar" style="margin-top:8px"><button class="btn-ghost" onclick="abrirExamen('${c.id}')">${tieneExamen(c) ? '✏ Editar examen' : '＋ Crear examen'}</button></div></div>`;
+        }
+        if (!tieneExamen(c)) return '';
+        const p = progresoDe(c.id);
+        if (p && p.examenAprobado) {
+            return `<div class="examen-box aprobado"><div class="ex-h">✅ Examen aprobado</div>
+                <div class="ex-info">Nota: ${p.examenNota || 0}% · ganaste ${c.examen.puntos || 100} puntos.</div>
+                <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="verCertificado('${c.id}')">🏅 Ver certificado</button><button class="btn-ghost" onclick="irA('examen','${c.id}')">Repetir</button></div></div>`;
+        }
+        return `<div class="examen-box"><div class="ex-h">📝 Examen del curso</div>
+            <div class="ex-info">${todasHechas ? `Aprueba con ${c.examen.notaMinima || 70}% y gana ${c.examen.puntos || 100} puntos.` : `Primero completa las ${total} lecciones (llevas ${hechas}).`}</div>
+            <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="irA('examen','${c.id}')" ${todasHechas ? '' : 'disabled style="opacity:.5;cursor:default"'}>📝 Presentar examen</button></div></div>`;
+    }
+
+    // ---------------- Examen: presentar (alumno) ----------------
+    function renderExamen(cont) {
+        const c = cursoById(cursoSelId);
+        if (!tieneExamen(c)) { irA('curso', c ? c.id : undefined); return; }
+        const preg = c.examen.preguntas;
+        cont.innerHTML = `<div class="crumbs"><a onclick="irA('curso','${c.id}')">← ${esc(c.titulo || 'Curso')}</a></div>
+            <h2 style="color:var(--artal-blue);font-size:20px;margin:2px 0 4px">Examen — ${esc(c.titulo || '')}</h2>
+            <div style="font-size:13px;color:#667;margin-bottom:16px">Responde todas las preguntas. Apruebas con ${c.examen.notaMinima || 70}%.</div>
+            <div id="ex-preguntas">${preg.map((p, i) => `<div class="ex-q"><div class="ex-qt">${i + 1}. ${esc(p.q || '')}</div>
+                ${(p.opciones || []).map((o, j) => `<label class="ex-opt"><input type="radio" name="q${i}" value="${j}"><span>${esc(o)}</span></label>`).join('')}</div>`).join('')}</div>
+            <div id="ex-result" style="margin:14px 0"></div>
+            <div class="bar"><button class="btn-y" onclick="entregarExamen('${c.id}')">Entregar examen</button><button class="btn-ghost" onclick="irA('curso','${c.id}')">Cancelar</button></div>`;
+    }
+    window.entregarExamen = async function (cursoId) {
+        const c = cursoById(cursoId); if (!c || !tieneExamen(c)) return;
+        const preg = c.examen.preguntas;
+        let aciertos = 0, respondidas = 0;
+        preg.forEach((p, i) => { const sel = document.querySelector(`input[name="q${i}"]:checked`); if (sel) { respondidas++; if (+sel.value === p.correcta) aciertos++; } });
+        const res = document.getElementById('ex-result');
+        if (respondidas < preg.length) { res.innerHTML = '<div class="ex-fail">Responde todas las preguntas antes de entregar.</div>'; return; }
+        const nota = Math.round(aciertos / preg.length * 100);
+        const minimo = c.examen.notaMinima || 70;
+        const aprob = nota >= minimo;
+        try {
+            await setDoc(doc(db, 'academiaProgreso', miClave + '__' + cursoId), {
+                email: usuario.email, nombre: usuario.nombre, cursoId,
+                examenNota: nota, examenAprobado: aprob || examenAprobado(cursoId), examenFecha: serverTimestamp()
+            }, { merge: true });
+            if (aprob) await otorgarPuntos(c);
+        } catch (e) { res.innerHTML = '<div class="ex-fail">No se pudo guardar: ' + esc(e.message || e) + '</div>'; return; }
+        res.innerHTML = aprob
+            ? `<div class="ex-ok">✅ ¡Aprobado! Nota: ${nota}%. Ganaste ${c.examen.puntos || 100} puntos.<br><button class="btn-ghost" style="margin-top:10px" onclick="verCertificado('${cursoId}')">🏅 Ver certificado</button></div>`
+            : `<div class="ex-fail">❌ Nota: ${nota}%. Necesitas ${minimo}% para aprobar. Repasa las lecciones y vuelve a intentarlo.</div>`;
+        res.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    // Punto ganado → ledger `puntos` (lo contabilizará el futuro módulo de Nivel/Rango). ID
+    // determinista email+curso → idempotente: repetir el examen no duplica puntos.
+    async function otorgarPuntos(c) {
+        try {
+            await setDoc(doc(db, 'puntos', miClave + '__academia__' + c.id), {
+                email: usuario.email, nombre: usuario.nombre, origen: 'academia',
+                detalle: 'Aprobó examen: ' + (c.titulo || ''), puntos: Number(c.examen.puntos) || 100,
+                ref: c.id, fecha: serverTimestamp()
+            }, { merge: true });
+        } catch (e) { /* best-effort: el examen ya quedó aprobado aunque falle el registro de puntos */ }
+    }
+
+    // ---------------- Certificado ----------------
+    window.verCertificado = (cursoId) => irA('certificado', cursoId);
+    function renderCertificado(cont) {
+        const c = cursoById(cursoSelId); if (!c) { irA('cursos'); return; }
+        const p = progresoDe(cursoSelId);
+        const aprob = p && p.examenAprobado;
+        const fecha = (p && p.examenFecha && p.examenFecha.toDate) ? p.examenFecha.toDate() : new Date();
+        const fTxt = fecha.toLocaleDateString('es-DO', { day: '2-digit', month: 'long', year: 'numeric' });
+        cont.innerHTML = `<div class="crumbs"><a onclick="irA('curso','${c.id}')">← ${esc(c.titulo || 'Curso')}</a></div>
+            ${aprob ? `<div class="cert" id="cert"><div class="cert-in">
+                <img src="../logo.png" alt="ARTAL" class="cert-logo">
+                <div class="cert-t">Certificado de aprobación</div>
+                <div class="cert-sub">La Academia ARTAL certifica que</div>
+                <div class="cert-name">${esc(usuario.nombre)}</div>
+                <div class="cert-sub">completó y aprobó el curso</div>
+                <div class="cert-curso">${esc(c.emoji || '🎓')} ${esc(c.titulo || '')}</div>
+                <div class="cert-meta">Nota: ${p.examenNota || 0}% · ${esc(fTxt)}</div>
+                <div class="cert-firma">ARTAL Dominicana · Formación interna</div>
+            </div></div>
+            <div class="bar" style="margin-top:14px"><button class="btn-y" onclick="window.print()">🖨 Imprimir / guardar PDF</button><button class="btn-ghost" onclick="irA('curso','${c.id}')">Volver</button></div>`
+            : '<div class="empty">Aún no has aprobado el examen de este curso.</div>'}`;
     }
 
     function renderLeccion(cont) {
@@ -536,6 +663,83 @@
         } catch (e) { alert('No se pudieron crear: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Crear lecciones marcadas'; }
     };
+
+    // ---------------- Examen: editor (autor) ----------------
+    let examenDraft = null, examenCursoId = null;
+    window.abrirExamen = function (cursoId) {
+        const c = cursoById(cursoId); if (!c) return;
+        examenCursoId = cursoId;
+        const ex = c.examen;
+        examenDraft = (ex && Array.isArray(ex.preguntas)) ? JSON.parse(JSON.stringify(ex)) : { activo: true, notaMinima: 70, puntos: 100, preguntas: [] };
+        if (!examenDraft.preguntas.length) examenDraft.preguntas.push({ q: '', opciones: ['', ''], correcta: 0 });
+        renderExamenEditor();
+        document.getElementById('modal-examen').classList.add('show');
+    };
+    function leerExamenDOM() {
+        if (!examenDraft) return;
+        examenDraft.notaMinima = Math.max(1, Math.min(100, Number(document.getElementById('ex-min').value) || 70));
+        examenDraft.puntos = Math.max(0, Number(document.getElementById('ex-pts').value) || 0);
+        document.querySelectorAll('#ex-editor .ed-q').forEach((bl, qi) => {
+            const p = examenDraft.preguntas[qi]; if (!p) return;
+            p.q = bl.querySelector('.ed-qtext').value;
+            p.opciones = Array.from(bl.querySelectorAll('.ed-op')).map(o => o.value);
+            const sel = bl.querySelector('input[type=radio]:checked');
+            p.correcta = sel ? +sel.value : 0;
+        });
+    }
+    function renderExamenEditor() {
+        const d = examenDraft;
+        document.getElementById('ex-editor').innerHTML = `
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+                <div style="flex:1;min-width:120px"><label>Nota mínima para aprobar (%)</label><input id="ex-min" type="number" min="1" max="100" value="${d.notaMinima || 70}"></div>
+                <div style="flex:1;min-width:120px"><label>Puntos al aprobar</label><input id="ex-pts" type="number" min="0" value="${d.puntos != null ? d.puntos : 100}"></div>
+            </div>
+            <div style="margin-top:10px">${d.preguntas.map((p, qi) => `<div class="ed-q">
+                <label>Pregunta ${qi + 1}</label>
+                <input class="ed-qtext" type="text" value="${esc(p.q || '')}" placeholder="Escribe la pregunta">
+                <div style="font-size:11.5px;color:#8a93a0;margin:8px 0 2px">Opciones (marca la correcta):</div>
+                ${(p.opciones || []).map((o, oi) => `<div class="op-row">
+                    <input type="radio" name="correcta${qi}" value="${oi}" ${p.correcta === oi ? 'checked' : ''}>
+                    <input class="ed-op" type="text" value="${esc(o)}" placeholder="Opción ${oi + 1}">
+                    <button class="btn-ghost" style="min-height:34px;padding:4px 9px" onclick="exDelOpcion(${qi},${oi})">✕</button>
+                </div>`).join('')}
+                <div style="margin-top:6px"><button class="btn-ghost" style="min-height:34px;padding:6px 10px;font-size:12px" onclick="exAddOpcion(${qi})">＋ Opción</button>
+                <button class="btn-ghost" style="min-height:34px;padding:6px 10px;font-size:12px;color:#c0392b" onclick="exDelPregunta(${qi})">🗑 Quitar pregunta</button></div>
+            </div>`).join('')}</div>
+            <button class="btn-ghost" onclick="exAddPregunta()">＋ Agregar pregunta</button>`;
+    }
+    window.exAddPregunta = () => { leerExamenDOM(); examenDraft.preguntas.push({ q: '', opciones: ['', ''], correcta: 0 }); renderExamenEditor(); };
+    window.exDelPregunta = (qi) => { leerExamenDOM(); examenDraft.preguntas.splice(qi, 1); if (!examenDraft.preguntas.length) examenDraft.preguntas.push({ q: '', opciones: ['', ''], correcta: 0 }); renderExamenEditor(); };
+    window.exAddOpcion = (qi) => { leerExamenDOM(); examenDraft.preguntas[qi].opciones.push(''); renderExamenEditor(); };
+    window.exDelOpcion = (qi, oi) => { leerExamenDOM(); const p = examenDraft.preguntas[qi]; if (p.opciones.length <= 2) { alert('Deja al menos 2 opciones.'); return; } p.opciones.splice(oi, 1); if (p.correcta >= p.opciones.length) p.correcta = 0; renderExamenEditor(); };
+    window.guardarExamen = async function () {
+        leerExamenDOM();
+        // Validación mínima: cada pregunta con texto y al menos 2 opciones con contenido.
+        for (const p of examenDraft.preguntas) {
+            if (!String(p.q || '').trim()) { alert('Hay una pregunta sin texto.'); return; }
+            if ((p.opciones || []).filter(o => String(o).trim()).length < 2) { alert('Cada pregunta necesita al menos 2 opciones con texto.'); return; }
+        }
+        examenDraft.activo = true;
+        try {
+            await updateDoc(doc(db, 'academiaCursos', examenCursoId), { examen: examenDraft });
+            cerrar('modal-examen');
+        } catch (e) { alert('No se pudo guardar el examen: ' + (e.message || e)); }
+    };
+    window.quitarExamen = async function () {
+        if (!confirm('¿Quitar el examen de este curso? El progreso de quienes ya lo aprobaron se conserva.')) return;
+        try { await updateDoc(doc(db, 'academiaCursos', examenCursoId), { examen: { activo: false, preguntas: [] } }); cerrar('modal-examen'); }
+        catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay" id="modal-examen"><div class="modal-box">
+        <h2>Examen del curso</h2>
+        <div id="ex-editor"></div>
+        <div class="modal-actions">
+            <button class="btn-ghost" onclick="quitarExamen()" style="color:#c0392b">Quitar examen</button>
+            <button class="btn-ghost" onclick="cerrar('modal-examen')">Cancelar</button>
+            <button class="btn-y" onclick="guardarExamen()">Guardar examen</button>
+        </div>
+    </div></div>`);
 
     render();
 </script>
