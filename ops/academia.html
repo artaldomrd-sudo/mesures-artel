@@ -268,6 +268,7 @@
     // ---------------- Render ----------------
     function render() {
         const cont = document.getElementById('vista');
+        if (vista === 'progreso' && esAutor) return renderProgreso(cont);
         if (vista === 'examen' && cursoById(cursoSelId)) return renderExamen(cont);
         if (vista === 'certificado' && cursoById(cursoSelId)) return renderCertificado(cont);
         if (vista === 'leccion' && leccionById(leccionSelId)) return renderLeccion(cont);
@@ -277,7 +278,7 @@
 
     function renderCursos(cont) {
         const list = cursosVisibles();
-        const nuevo = esAutor ? `<button class="btn-y" onclick="abrirCurso()">+ Nuevo curso</button>` : '';
+        const nuevo = esAutor ? `<button class="btn-y" onclick="abrirCurso()">+ Nuevo curso</button><button class="btn-ghost" onclick="irA('progreso')">📊 Progreso del equipo</button>` : '';
         let html = `<p class="intro">Clases para aprender a instalar, la mentalidad de trabajo de ARTAL y todo lo necesario para integrarte al equipo. Ve tu avance en cada curso.</p><div class="bar">${nuevo}</div>`;
         if (!list.length) { cont.innerHTML = html + '<p class="empty">Aún no hay cursos. ' + (esAutor ? 'Crea el primero con «+ Nuevo curso».' : 'Pronto habrá contenido.') + '</p>'; return; }
         html += '<div class="grid">' + list.map(c => {
@@ -396,6 +397,40 @@
                 ref: c.id, fecha: serverTimestamp()
             }, { merge: true });
         } catch (e) { /* best-effort: el examen ya quedó aprobado aunque falle el registro de puntos */ }
+    }
+
+    // ---------------- Panel de progreso del equipo (autor) ----------------
+    function renderProgreso(cont) {
+        const cursosL = cursosVisibles();
+        // Todas las personas con algún progreso, ordenadas por nombre.
+        const personas = [...new Map(progreso.map(p => [p.email, p.nombre || p.email])).entries()]
+            .map(([email, nombre]) => ({ email, nombre })).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+        let html = `<div class="crumbs"><a onclick="irA('cursos')">← Cursos</a></div>
+            <h2 style="color:var(--artal-blue);font-size:20px;margin:2px 0 6px">📊 Progreso del equipo</h2>
+            <div style="font-size:13px;color:#667;margin-bottom:16px">Avance por curso: lecciones completadas y examen. Los puntos se acumulan para el módulo de niveles.</div>`;
+        if (!personas.length) { cont.innerHTML = html + '<p class="empty">Todavía nadie ha registrado avance.</p>'; return; }
+        cursosL.forEach(c => {
+            const total = leccionesDe(c.id).length;
+            const filas = personas.map(per => {
+                const p = progreso.find(x => x.email === per.email && x.cursoId === c.id);
+                const hechas = (p && Array.isArray(p.leccionesCompletadas)) ? p.leccionesCompletadas.length : 0;
+                if (!p || (hechas === 0 && !(p && p.examenAprobado))) return '';
+                const pct = total ? Math.round(hechas / total * 100) : 0;
+                const exTxt = tieneExamen(c)
+                    ? (p && p.examenAprobado ? `<span style="color:#1e8449;font-weight:bold">✅ ${p.examenNota || 0}%</span>` : (p && p.examenNota != null ? `<span style="color:#c0392b">✗ ${p.examenNota}%</span>` : '—'))
+                    : '<span style="color:#a3abb4">sin examen</span>';
+                const pts = (p && p.examenAprobado && tieneExamen(c)) ? (c.examen.puntos || 100) : 0;
+                return `<tr><td>${esc(per.nombre)}</td><td>${hechas}/${total} (${pct}%)</td><td>${exTxt}</td><td style="text-align:right">${pts ? '+' + pts : ''}</td></tr>`;
+            }).filter(Boolean).join('');
+            html += `<div style="background:#fff;border-radius:12px;box-shadow:var(--shadow);padding:14px 16px;margin-bottom:14px">
+                <div style="font-weight:bold;color:var(--artal-blue);font-size:15px;margin-bottom:8px">${esc(c.emoji || '🎓')} ${esc(c.titulo || 'Curso')} <span style="color:#a3abb4;font-weight:normal;font-size:12.5px">· ${total} lección(es)</span></div>
+                ${filas ? `<table style="width:100%;border-collapse:collapse;font-size:13.5px">
+                    <thead><tr style="text-align:left;color:#8a93a0;font-size:11.5px"><th style="padding:6px 8px">Persona</th><th style="padding:6px 8px">Lecciones</th><th style="padding:6px 8px">Examen</th><th style="padding:6px 8px;text-align:right">Puntos</th></tr></thead>
+                    <tbody>${filas.replace(/<tr>/g, '<tr style="border-top:1px solid #eef1f4">')}</tbody></table>`
+                    : '<div style="color:#a3abb4;font-size:12.5px">Nadie ha empezado este curso.</div>'}
+            </div>`;
+        });
+        cont.innerHTML = html;
     }
 
     // ---------------- Certificado ----------------
