@@ -205,7 +205,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { fotoAddBtnHTML, fotosThumbsHTML } from './fotos.js';
 
     // Todo el equipo puede VER la academia (admin/lector siempre pasan). Editar el contenido queda
@@ -341,21 +341,30 @@
                 <div class="bar" style="margin-top:8px"><button class="btn-ghost" onclick="abrirExamen('${c.id}')">${tieneExamen(c) ? '✏ Editar examen' : '＋ Crear examen'}</button></div></div>`;
         }
         if (!tieneExamen(c)) return '';
+        const MAX = 2;
         const p = progresoDe(c.id);
+        const intentos = (p && p.examenIntentos) || 0;
         if (p && p.examenAprobado) {
             return `<div class="examen-box aprobado"><div class="ex-h">✅ Examen aprobado</div>
-                <div class="ex-info">Nota: ${p.examenNota || 0}% · ganaste ${c.examen.puntos || 100} puntos.</div>
-                <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="verCertificado('${c.id}')">🏅 Ver certificado</button><button class="btn-ghost" onclick="irA('examen','${c.id}')">Repetir</button></div></div>`;
+                <div class="ex-info">Nota: ${p.examenNota || 0}% · ganaste ${c.examen.puntos || 100} puntos. Ya quedó validado: no se puede volver a tomar.</div>
+                <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="verCertificado('${c.id}')">🏅 Ver certificado</button></div></div>`;
         }
+        if (p && p.examenBloqueado) {
+            return `<div class="examen-box" style="background:#fdeeee;border-color:#f2c9c4"><div class="ex-h" style="color:#c0392b">❌ Examen no superado</div>
+                <div class="ex-info">No aprobaste en ${MAX} intentos (última nota: ${p.examenNota || 0}%). Se agendó una reunión con tu supervisor para revisarlo juntos. Por ahora no se puede volver a intentar.</div></div>`;
+        }
+        const restante = MAX - intentos;
         return `<div class="examen-box"><div class="ex-h">📝 Examen del curso</div>
-            <div class="ex-info">${todasHechas ? `Aprueba con ${c.examen.notaMinima || 70}% y gana ${c.examen.puntos || 100} puntos.` : `Primero completa las ${total} lecciones (llevas ${hechas}).`}</div>
-            <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="irA('examen','${c.id}')" ${todasHechas ? '' : 'disabled style="opacity:.5;cursor:default"'}>📝 Presentar examen</button></div></div>`;
+            <div class="ex-info">${todasHechas ? `Aprueba con ${c.examen.notaMinima || 70}% y gana ${c.examen.puntos || 100} puntos.${intentos > 0 ? ` <b>Te queda ${restante} intento.</b>` : ` Tienes ${MAX} intentos.`}` : `Primero completa las ${total} lecciones (llevas ${hechas}).`}</div>
+            <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="irA('examen','${c.id}')" ${todasHechas ? '' : 'disabled style="opacity:.5;cursor:default"'}>📝 ${intentos > 0 ? 'Reintentar (último intento)' : 'Presentar examen'}</button></div></div>`;
     }
 
     // ---------------- Examen: presentar (alumno) ----------------
     function renderExamen(cont) {
         const c = cursoById(cursoSelId);
         if (!tieneExamen(c)) { irA('curso', c ? c.id : undefined); return; }
+        const pp = progresoDe(cursoSelId);
+        if (pp && (pp.examenAprobado || pp.examenBloqueado)) { irA('curso', c.id); return; }  // ya validado o sin intentos
         const preg = c.examen.preguntas;
         cont.innerHTML = `<div class="crumbs"><a onclick="irA('curso','${c.id}')">← ${esc(c.titulo || 'Curso')}</a></div>
             <h2 style="color:var(--artal-blue);font-size:20px;margin:2px 0 4px">Examen — ${esc(c.titulo || '')}</h2>
@@ -367,6 +376,8 @@
     }
     window.entregarExamen = async function (cursoId) {
         const c = cursoById(cursoId); if (!c || !tieneExamen(c)) return;
+        const prevP = progresoDe(cursoId);
+        if (prevP && (prevP.examenAprobado || prevP.examenBloqueado)) { irA('curso', cursoId); return; }  // no puede volver a tomarlo
         const preg = c.examen.preguntas;
         let aciertos = 0, respondidas = 0;
         preg.forEach((p, i) => { const sel = document.querySelector(`input[name="q${i}"]:checked`); if (sel) { respondidas++; if (+sel.value === p.correcta) aciertos++; } });
@@ -375,18 +386,42 @@
         const nota = Math.round(aciertos / preg.length * 100);
         const minimo = c.examen.notaMinima || 70;
         const aprob = nota >= minimo;
+        const MAX = 2;
+        const intentos = ((prevP && prevP.examenIntentos) || 0) + 1;
+        const bloquear = !aprob && intentos >= MAX;
         try {
             await setDoc(doc(db, 'academiaProgreso', miClave + '__' + cursoId), {
                 email: usuario.email, nombre: usuario.nombre, cursoId,
-                examenNota: nota, examenAprobado: aprob || examenAprobado(cursoId), examenFecha: serverTimestamp()
+                examenNota: nota, examenIntentos: intentos, examenAprobado: aprob, examenBloqueado: bloquear,
+                examenFecha: serverTimestamp()
             }, { merge: true });
             if (aprob) await otorgarPuntos(c);
+            if (bloquear) await agendarCitaSupervisor(c, nota);
         } catch (e) { res.innerHTML = '<div class="ex-fail">No se pudo guardar: ' + esc(e.message || e) + '</div>'; return; }
-        res.innerHTML = aprob
-            ? `<div class="ex-ok">✅ ¡Aprobado! Nota: ${nota}%. Ganaste ${c.examen.puntos || 100} puntos.<br><button class="btn-ghost" style="margin-top:10px" onclick="verCertificado('${cursoId}')">🏅 Ver certificado</button></div>`
-            : `<div class="ex-fail">❌ Nota: ${nota}%. Necesitas ${minimo}% para aprobar. Repasa las lecciones y vuelve a intentarlo.</div>`;
+        if (aprob) {
+            res.innerHTML = `<div class="ex-ok">✅ ¡Aprobado! Nota: ${nota}%. Ganaste ${c.examen.puntos || 100} puntos.<br>Este examen queda validado (no se puede repetir).<br><button class="btn-ghost" style="margin-top:10px" onclick="verCertificado('${cursoId}')">🏅 Ver certificado</button></div>`;
+        } else if (bloquear) {
+            res.innerHTML = `<div class="ex-fail">❌ Nota: ${nota}%. No superaste el examen en ${MAX} intentos. Se agendó una reunión con tu supervisor para revisarlo juntos.<br><button class="btn-ghost" style="margin-top:10px" onclick="irA('curso','${cursoId}')">Volver al curso</button></div>`;
+        } else {
+            res.innerHTML = `<div class="ex-fail">❌ Nota: ${nota}%. Necesitas ${minimo}%. Te queda ${MAX - intentos} intento — repasa las lecciones y vuelve a intentarlo.<br><button class="btn-ghost" style="margin-top:10px" onclick="irA('curso','${cursoId}')">Volver al curso</button></div>`;
+        }
         res.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
+    // Al fallar 2 veces: agenda una cita/recordatorio para gerencia (supervisor) — usa el calendario
+    // (colección citas) que ya dispara notificaciones. El cliente del empleado puede escribir en citas.
+    async function agendarCitaSupervisor(c, nota) {
+        try {
+            await addDoc(collection(db, 'citas'), {
+                tipo: 'recordatorio',
+                titulo: 'Evaluar examen no superado — ' + usuario.nombre,
+                descripcion: usuario.nombre + ' no aprobó el examen del curso "' + (c.titulo || '') + '" en 2 intentos (última nota ' + nota + '%). Reunirse para evaluar por qué y tomar medidas.',
+                fecha: Timestamp.fromDate(new Date()),
+                asignadoA: 'gerente', asignados: [{ nombre: 'Andrea' }, { nombre: 'Anny' }, { nombre: 'Dylan' }],
+                completadoPor: [], completada: false, creadoPorNombre: usuario.nombre,
+                origen: 'academia_examen', ref: c.id, empleado: usuario.nombre, empleadoEmail: usuario.email
+            });
+        } catch (e) { /* best-effort: el bloqueo ya quedó guardado aunque falle la cita */ }
+    }
     // Punto ganado → ledger `puntos` (lo contabilizará el futuro módulo de Nivel/Rango). ID
     // determinista email+curso → idempotente: repetir el examen no duplica puntos.
     async function otorgarPuntos(c) {
@@ -417,7 +452,9 @@
                 if (!p || (hechas === 0 && !(p && p.examenAprobado))) return '';
                 const pct = total ? Math.round(hechas / total * 100) : 0;
                 const exTxt = tieneExamen(c)
-                    ? (p && p.examenAprobado ? `<span style="color:#1e8449;font-weight:bold">✅ ${p.examenNota || 0}%</span>` : (p && p.examenNota != null ? `<span style="color:#c0392b">✗ ${p.examenNota}%</span>` : '—'))
+                    ? (p && p.examenAprobado ? `<span style="color:#1e8449;font-weight:bold">✅ ${p.examenNota || 0}%</span>`
+                        : (p && p.examenBloqueado ? `<span style="color:#c0392b;font-weight:bold">🔒 no superó (${p.examenNota || 0}%)</span>`
+                            : (p && p.examenNota != null ? `<span style="color:#c76a1c">✗ ${p.examenNota}% · reintenta</span>` : '—')))
                     : '<span style="color:#a3abb4">sin examen</span>';
                 const pts = (p && p.examenAprobado && tieneExamen(c)) ? (c.examen.puntos || 100) : 0;
                 return `<tr><td>${esc(per.nombre)}</td><td>${hechas}/${total} (${pct}%)</td><td>${exTxt}</td><td style="text-align:right">${pts ? '+' + pts : ''}</td></tr>`;
