@@ -407,7 +407,7 @@
         try { arr = JSON.parse(document.getElementById('imp-json').value); } catch (e) { msg.textContent = '❌ El texto no es un JSON válido.'; return; }
         if (!Array.isArray(arr)) arr = [arr];
         msg.textContent = 'Importando ' + arr.length + '…';
-        let ok = 0; const sinVincular = [];
+        let ok = 0; const sinVincular = []; const errores = [];
         for (const r of arr) {
             try {
                 // Auto-vincular al empleado por nombre (para que el empleado la vea por su correo).
@@ -421,10 +421,14 @@
                 const ref = await addDoc(collection(db, 'rrhhReuniones'), r);
                 if (r.proximaFecha) await crearReminder(r, ref.id);
                 ok++;
-            } catch (e) { /* sigue con las demás */ }
+            } catch (e) { errores.push((r.empleadoNombre || '?') + ': ' + (e && (e.code || e.message) ? (e.code || e.message) : e)); }
         }
-        msg.innerHTML = `✓ Importadas ${ok} de ${arr.length}.` + (sinVincular.length ? `<br><span style="color:#c76a1c">⚠️ Revisa (para que el empleado las vea con su login): ${esc([...new Set(sinVincular)].join(', '))}</span>` : '');
-        if (!sinVincular.length) setTimeout(cerrarImportar, 1400);
+        let out = `✓ Importadas ${ok} de ${arr.length}.`;
+        if (errores.length) out += `<br><span style="color:#c0392b">❌ ${esc(errores.join(' · '))}</span>`;
+        if (String(errores.join()).includes('permission')) out += `<br><span style="color:#c0392b">Falta publicar las reglas de Firestore (colección rrhhReuniones) — pídeselas a Claude y publícalas en Firebase Console.</span>`;
+        if (sinVincular.length) out += `<br><span style="color:#c76a1c">⚠️ Revisa (para que el empleado las vea con su login): ${esc([...new Set(sinVincular)].join(', '))}</span>`;
+        msg.innerHTML = out;
+        if (ok === arr.length && !sinVincular.length) setTimeout(cerrarImportar, 1400);
     };
 
     // Modal de importar (solo admin lo abre).
