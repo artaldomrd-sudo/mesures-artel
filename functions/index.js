@@ -161,11 +161,14 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
     // los problemas NUEVOS sin atender (no repite en cada edición).
     const probsSinAtender = (m) => Object.entries(m || {})
         .filter(([, v]) => v && v.estado === 'problema' && v.atendido !== true)
-        .map(([id, v]) => ({ key: id + '|' + (v.comentario || ''), comentario: v.comentario || '' }));
+        .map(([id, v]) => {
+            const falt = Array.isArray(v.faltantes) && v.faltantes.length ? v.faltantes.join(', ') : '';
+            return { key: id + '|' + (v.comentario || '') + '|' + falt, detalle: (falt ? 'Faltó ' + falt : '') + (v.comentario ? (falt ? ' — ' : '') + v.comentario : '') };
+        });
     const antesProb = new Set(probsSinAtender(before.itemStatus).map(p => p.key));
     const nuevosProb = probsSinAtender(after.itemStatus).filter(p => !antesProb.has(p.key));
     if (nuevosProb.length) {
-        const detalle = nuevosProb.map(p => p.comentario).filter(Boolean)[0] || '';
+        const detalle = nuevosProb.map(p => p.detalle).filter(Boolean)[0] || '';
         const titulo = '🚚 El chofer reportó un faltante';
         const cuerpo = lugar + (detalle ? ': ' + String(detalle).slice(0, 120) : ' — falta un elemento por llegar');
         if (interno) await pushATokens(await tokensPorRol('admin'), titulo, cuerpo, 'ops/fabrica-interna.html');
