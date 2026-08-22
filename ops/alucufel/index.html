@@ -11,6 +11,17 @@
 <style>
     main { max-width: 620px; padding-top: 28px; }
     .welcome { color: var(--artal-blue); font-size: 15px; margin: 0 0 4px; font-weight: bold; }
+    .avisos-chofer { margin-top: 22px; }
+    .avisos-chofer h2 { font-size: 15px; color: #c0392b; margin: 0 0 10px; }
+    .aviso-card { display: flex; gap: 10px; align-items: flex-start; background: #fff; border-radius: 12px; box-shadow: var(--shadow); border-left: 4px solid #e74c3c; padding: 11px 13px; margin-bottom: 9px; }
+    .aviso-card .ic { font-size: 18px; line-height: 1.2; }
+    .aviso-card .b { flex: 1; min-width: 0; }
+    .aviso-card b { color: var(--artal-blue); font-size: 13.5px; }
+    .aviso-card .txt { font-size: 13px; color: #333; margin-top: 3px; }
+    .aviso-card .acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .aviso-card .acts button, .aviso-card .acts a { border: none; border-radius: 7px; padding: 7px 12px; font-weight: bold; font-size: 12px; cursor: pointer; font-family: 'Arimo'; text-decoration: none; min-height: 36px; }
+    .a-ver { background: var(--artal-blue); color: #fff; }
+    .a-done { background: #2ecc71; color: #fff; }
 </style>
 </head>
 <body>
@@ -34,13 +45,15 @@
         <a class="card-link" href="cotizaciones.html"><span class="tile-badge" id="badge-cotizaciones"></span><div class="emoji">📐</div><div class="title">Cotizaciones</div><div class="desc">Costear solicitudes pendientes</div></a>
         <a class="card-link" href="fabrica.html"><span class="tile-badge" id="badge-fabrica"></span><div class="emoji">🏭</div><div class="title">Fábrica</div><div class="desc">Pedidos en producción</div></a>
     </div>
+    <div class="avisos-chofer" id="avisos-chofer"></div>
 </main>
 
 <script type="module">
     import { requireAuth, auth, signOut } from '../auth-common.js';
     import { enableNotifications } from '../notifications.js';
     import { db } from '../firebase-config.js';
-    import { collection, query, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { openOrderPreview } from '../order-preview.js';
 
     const usuario = await requireAuth(['contratista', 'fabrica']);
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -67,6 +80,33 @@
     onSnapshot(query(collection(db, 'orders'), where('status', 'in', ['pendiente_fabrica', 'en_fabrica'])), (snap) => {
         setBadge('badge-fabrica', snap.size);
     });
+
+    // Faltantes reportados por el chofer ("no llegó", "falta el vidrio"): a ALUCUFEL debe llegarle
+    // de inmediato en su página principal, para reponer/enviar lo que faltó. (Los internos no.)
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    window.hubVer = (id) => openOrderPreview(id, 'fabrica');
+    window.hubAtender = async (id, iid) => { try { await updateDoc(doc(db, 'orders', id), { ['itemStatus.' + iid + '.atendido']: true }); } catch (e) { alert('No se pudo marcar: ' + (e.message || e)); } };
+    onSnapshot(collection(db, 'orders'), (snap) => {
+        const avisos = [];
+        snap.forEach(d => {
+            const o = d.data();
+            if (o.destino === 'interno') return;
+            const m = o.itemStatus || {};
+            Object.keys(m).forEach(iid => {
+                const s = m[iid];
+                if (s && s.estado === 'problema' && s.atendido !== true) avisos.push({ id: d.id, iid, o, comentario: s.comentario || '' });
+            });
+        });
+        const cont = document.getElementById('avisos-chofer');
+        if (!avisos.length) { cont.innerHTML = ''; return; }
+        cont.innerHTML = `<h2>🚚 Faltantes reportados por el chofer (${avisos.length})</h2>` + avisos.map(a => `
+            <div class="aviso-card"><span class="ic">🚚</span><div class="b">
+                <b>${esc((a.o.cliente || 'Sin cliente') + (a.o.obra ? ' — ' + a.o.obra : ''))}</b>
+                <div class="txt">${esc(a.comentario || 'Falta un elemento por llegar')}</div>
+                <div class="acts"><a class="a-ver" href="#" onclick="hubVer('${a.id}');return false;">Ver hoja</a>
+                <button class="a-done" onclick="hubAtender('${a.id}','${a.iid}')">Marcar atendido</button></div>
+            </div>`).join('');
+    }, () => {});
 </script>
 
 </body>
