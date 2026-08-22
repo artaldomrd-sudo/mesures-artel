@@ -134,6 +134,12 @@
     .recordar-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: normal; color: #333; margin: 0; cursor: pointer; }
     .recordar-group input { width: auto; min-height: 0; }
     .empty { color: #999; font-size: 13px; text-align: center; padding: 14px; }
+    /* Recordatorio por trabajo (en línea dentro de la tarjeta) */
+    .rec-inline-wrap { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+    .rec-inline { display: flex; align-items: center; gap: 8px; background: #fff6e6; border: 1px solid #f2d9a8; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; color: #8a5b0e; }
+    .rec-inline span { flex: 1; }
+    .rec-inline button { background: transparent; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+    .btn-rec { background: #e67e22; color: #fff; border: none; border-radius: 8px; padding: 9px 13px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
 </style>
 </head>
 <body>
@@ -149,6 +155,7 @@
         <a href="inventario.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">📦 Inventario</a>
         <a href="academia.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🎓 Academia</a>
         <a href="rrhh-reuniones.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🎯 Mis objetivos</a>
+        <a href="historial.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🗂️ Historial</a>
         <button id="bio-btn" title="Registrar tu huella/Face ID en este teléfono para confirmar instalaciones">🔒 Mi biometría</button>
         <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
         <button id="signout-btn">Cerrar sesión</button>
@@ -157,30 +164,23 @@
 
 <main>
     <div class="tabs">
-        <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">📋 Mi día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
-        <button class="tab" id="tabbtn-cal" onclick="setTab('cal')">📅 Calendario</button>
-        <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">🏗️ Por instalar <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
+        <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
+        <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">🏗️ Obras asignadas <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
     </div>
 
-    <!-- ===== Pestaña: Mi día ===== -->
+    <!-- ===== Pestaña: Calendario día a día (agenda + calendario colapsable) ===== -->
     <div class="tabpanel" id="tab-dia">
         <section>
             <div class="sec-head">
-                <h2 class="sec-title rec">🔔 Recordatorios</h2>
-                <button class="btn-add" onclick="abrirModalRec()">+ Recordatorio</button>
-            </div>
-            <div id="rec-list"><p class="empty">Cargando…</p></div>
-        </section>
-        <section>
-            <div class="sec-head">
-                <h2 class="sec-title ag">📌 Trabajos agendados</h2>
+                <h2 class="sec-title ag">📌 Agenda día a día</h2>
                 <button class="btn-add" onclick="abrirModalTrabajo()">+ Trabajo</button>
             </div>
             <div id="dia-agenda"><p class="empty">Cargando…</p></div>
         </section>
+        <button class="new-job-btn" id="btn-toggle-cal" onclick="toggleCalendario()" style="background:#eef4fb;color:var(--artal-blue);">📅 Ver calendario del mes / agendar</button>
     </div>
 
-    <!-- ===== Pestaña: Calendario ===== -->
+    <!-- ===== Calendario del mes (se muestra dentro de "día a día" al tocar el botón) ===== -->
     <div class="tabpanel" id="tab-cal" style="display:none;">
         <button class="new-job-btn" id="new-job-btn" onclick="abrirNuevo()" style="display:none;">+ Nuevo trabajo de instalación</button>
         <div id="por-programar-wrap"></div>
@@ -201,7 +201,7 @@
     <div class="tabpanel" id="tab-inst" style="display:none;">
         <div id="sin-agendar-wrap"></div>
         <section>
-            <h2 class="sec-title obra">🏗️ Obras listas para instalar</h2>
+            <h2 class="sec-title obra">🏗️ Obras asignadas (listas para instalar)</h2>
             <div id="orders-list"><p class="empty">Cargando…</p></div>
         </section>
     </div>
@@ -364,14 +364,22 @@
     }
     const ESTADO_LABEL = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
 
-    /* ===== Pestañas ===== */
+    /* ===== Pestañas (2: día a día [con calendario colapsable] + obras asignadas) ===== */
     let tabActual = 'dia';
+    let calAbierto = false;
     window.setTab = function (t) {
         tabActual = t;
-        ['dia', 'cal', 'inst'].forEach(x => {
-            document.getElementById('tab-' + x).style.display = x === t ? 'flex' : 'none';
-            document.getElementById('tabbtn-' + x).classList.toggle('active', x === t);
-        });
+        document.getElementById('tab-dia').style.display = t === 'dia' ? 'flex' : 'none';
+        document.getElementById('tab-cal').style.display = (t === 'dia' && calAbierto) ? 'flex' : 'none';
+        document.getElementById('tab-inst').style.display = t === 'inst' ? 'flex' : 'none';
+        document.getElementById('tabbtn-dia').classList.toggle('active', t === 'dia');
+        document.getElementById('tabbtn-inst').classList.toggle('active', t === 'inst');
+    };
+    window.toggleCalendario = function () {
+        calAbierto = !calAbierto;
+        document.getElementById('tab-cal').style.display = (tabActual === 'dia' && calAbierto) ? 'flex' : 'none';
+        document.getElementById('btn-toggle-cal').textContent = calAbierto ? '📅 Ocultar calendario del mes' : '📅 Ver calendario del mes / agendar';
+        if (calAbierto) renderCalendario();
     };
 
     /* ===== GPS ===== */
@@ -447,7 +455,8 @@
         const fin = jobFin(j);
         const fmt = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
         if (j.modoFecha === 'rango') return fin ? `Del ${fmt(ini)} al ${fmt(fin)}` : `En curso desde el ${fmt(ini)}`;
-        return ini.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+        // Día único: mostrar FECHA + hora (antes solo salía la hora, se pedía la fecha).
+        return ini.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + ini.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
     }
 
     /* ===== Tarjeta de trabajo (instalaciones) ===== */
@@ -492,9 +501,11 @@
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
             </div>
             ${navHtml}
+            ${recInlineHTML(recsCache.filter(c => c.instalacionId === j.id))}
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
             ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>
             ${puedeCambiarEstado ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
@@ -516,6 +527,14 @@
     function recFechaTxt(c) {
         const f = (c.fecha && c.fecha.toDate) ? c.fecha.toDate() : null;
         return f ? `${fD(f)} · ${fHora(f)}` : '';
+    }
+    // Recordatorios en línea de un trabajo/obra (los que el instalador marca por cada trabajo).
+    function recInlineHTML(list) {
+        if (!list.length) return '';
+        return `<div class="rec-inline-wrap">${list.map(c => `<div class="rec-inline">
+            <span>🔔 ${esc(c.titulo || 'Recordatorio')}${recFechaTxt(c) ? ' · ' + esc(recFechaTxt(c)) : ''}</span>
+            <button onclick="marcarRecHecho('${c.id}')" title="Marcar hecho">✓</button>
+            <button onclick="borrarRec('${c.id}')" title="Borrar">🗑</button></div>`).join('')}</div>`;
     }
     function recEtapaRow(hecha, titulo, nombre, fnCall) {
         const sub = nombre ? ` <span style="color:#889;font-size:12px">· ${esc(nombre)}</span>` : '';
@@ -601,6 +620,8 @@
                 ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
                 ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
             </div>
+            ${recInlineHTML(recsCache.filter(c => c.orderId === id))}
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecObra('${id}')">🔔 Recordatorio</button></div>
             ${esAdmin ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">
                 <span style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">👷 Instalador:</span>
                 <select id="asig-inst-${id}" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;min-height:40px;background:#fff">
@@ -629,21 +650,14 @@
     }
 
     function renderMiDia() {
-        // Recordatorios
-        const rl = document.getElementById('rec-list');
-        const recs = recsCache.slice().sort((a, b) => {
-            const fa = (a.fecha && a.fecha.toDate) ? a.fecha.toDate() : null;
-            const fb = (b.fecha && b.fecha.toDate) ? b.fecha.toDate() : null;
-            if (fa && fb) return fa - fb; if (fa) return -1; if (fb) return 1; return 0;
-        });
-        rl.innerHTML = recs.length ? recs.map(recCardHTML).join('') : '<p class="empty">No hay recordatorios.</p>';
-        // Trabajos agendados: con fecha (no completados) ordenados + en curso sin fecha
+        // Agenda día a día: trabajos con fecha (no completados) ordenados + en curso sin fecha.
+        // (Los recordatorios ya no van sueltos aquí: se marcan por cada trabajo/obra en su tarjeta.)
         const conFecha = allJobs.filter(j => jobDate(j) && j.estado !== 'completado').sort((a, b) => jobDate(a) - jobDate(b));
         const enCurso = allJobs.filter(j => !jobDate(j) && j.estado === 'en_proceso');
         const lista = enCurso.concat(conFecha);
         document.getElementById('dia-agenda').innerHTML = lista.length
             ? `<div class="day-group">${lista.map(jobCardHTML).join('')}</div>`
-            : '<p class="empty">No hay trabajos agendados.</p>';
+            : '<p class="empty">No hay trabajos agendados. Usa “+ Trabajo” o agenda desde el calendario.</p>';
     }
 
     function renderGrid() {
@@ -725,9 +739,10 @@
     }
 
     function renderBadges() {
-        const nRec = recsCache.length;
+        const hoy = new Date();
+        const nHoy = allJobs.filter(j => jobDate(j) && jobEnDia(j, hoy) && j.estado !== 'completado').length;
         const bDia = document.getElementById('badge-dia');
-        bDia.style.display = nRec ? 'inline-block' : 'none'; bDia.textContent = nRec;
+        bDia.style.display = nHoy ? 'inline-block' : 'none'; bDia.textContent = nHoy;
         const nInst = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado === true).length;
         const bInst = document.getElementById('badge-inst');
         bInst.style.display = nInst ? 'inline-block' : 'none'; bInst.textContent = nInst;
@@ -750,8 +765,8 @@
 
     onSnapshot(query(collection(db, 'citas'), where('asignadoA', '==', 'instalador')), (snap) => {
         recsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.completada !== true);
-        renderMiDia(); renderBadges();
-    }, (err) => { document.getElementById('rec-list').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
+        renderTodo();   // los recordatorios ahora viven dentro de cada tarjeta de trabajo/obra
+    }, (err) => { console.error('citas:', err); });
 
     onSnapshot(collection(db, 'usuarios'), (snap) => {
         instaladores = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador'); });
@@ -776,8 +791,13 @@
     document.getElementById('job-cliente').addEventListener('input', actualizarObrasDatalist);
 
     /* ===== Recordatorios: crear / completar ===== */
-    window.abrirModalRec = function () { ['rec-titulo', 'rec-fecha', 'rec-nota'].forEach(i => document.getElementById(i).value = ''); document.getElementById('modal-rec').classList.add('show'); };
-    window.cerrarModalRec = function () { document.getElementById('modal-rec').classList.remove('show'); };
+    // El recordatorio se crea SIEMPRE dentro de un trabajo o una obra (no suelto), para no
+    // sobrecargar la pantalla. `recCtx` guarda a qué trabajo/obra queda ligado.
+    let recCtx = null;
+    function abrirModalRecUI() { ['rec-titulo', 'rec-fecha', 'rec-nota'].forEach(i => document.getElementById(i).value = ''); document.getElementById('modal-rec').classList.add('show'); }
+    window.abrirRecTrabajo = function (jid) { const j = allJobs.find(x => x.id === jid) || {}; recCtx = { instalacionId: jid, orderId: j.orderId || null, cliente: j.cliente || '', obra: j.obra || '' }; abrirModalRecUI(); };
+    window.abrirRecObra = function (oid) { const o = (ordersCache.find(x => x.id === oid) || {}).data || {}; recCtx = { instalacionId: null, orderId: oid, cliente: o.cliente || '', obra: o.obra || '' }; abrirModalRecUI(); };
+    window.cerrarModalRec = function () { document.getElementById('modal-rec').classList.remove('show'); recCtx = null; };
     window.guardarRec = async function () {
         const titulo = document.getElementById('rec-titulo').value.trim();
         if (!titulo) { alert('Escribe qué recordar.'); return; }
@@ -787,6 +807,8 @@
                 tipo: 'recordatorio', titulo, descripcion: document.getElementById('rec-nota').value.trim(),
                 fecha: fechaStr ? Timestamp.fromDate(new Date(fechaStr)) : null,
                 asignadoA: 'instalador', asignados: [yo], etapas: [], completadoPor: [],
+                cliente: (recCtx && recCtx.cliente) || '', obra: (recCtx && recCtx.obra) || '',
+                instalacionId: (recCtx && recCtx.instalacionId) || null, orderId: (recCtx && recCtx.orderId) || null,
                 creadoPorNombre: usuario.nombre, completada: false,
                 recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
                 fechaCreacion: serverTimestamp()
