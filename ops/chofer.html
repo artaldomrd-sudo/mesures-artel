@@ -19,6 +19,12 @@
     .signature-row button { background: transparent; border: 1.5px solid #ccc; color: #666; border-radius: 7px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: 'Arimo'; }
     .btn-enruta { background: #3498db; color: #fff; }
     .enruta-badge { font-size: 12.5px; color: #3498db; font-weight: bold; margin-top: 8px; }
+    /* Aviso: pedidos en ruta hace rato sin marcar entregado */
+    .aviso-ruta { background: #fff4e5; border: 1.5px solid #f0b429; border-left: 5px solid #e67e22; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; color: #8a5b0e; }
+    .aviso-ruta .t { font-weight: bold; font-size: 14.5px; margin-bottom: 6px; }
+    .aviso-ruta .t b { color: #c0392b; }
+    .aviso-ruta .lst { font-size: 12.5px; line-height: 1.6; }
+    .aviso-ruta button { margin-top: 9px; background: #e67e22; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
 </style>
 </head>
 <body>
@@ -37,6 +43,7 @@
 </header>
 
 <main>
+    <div id="aviso-ruta" style="display:none;"></div>
     <div class="tabs">
         <button class="tab-btn active" id="tab-espera" onclick="setTab('espera')">En espera</button>
         <button class="tab-btn" id="tab-ruta" onclick="setTab('ruta')">En ruta</button>
@@ -144,8 +151,31 @@
         render(allDocs);
     };
 
+    // Aviso: si un pedido lleva 4+ horas "en ruta" sin marcarse entregado, se lo recordamos arriba
+    // (por si al chofer se le olvidó). Se recalcula en cada snapshot y cada minuto (para que aparezca
+    // solo al cumplirse las 4 h aunque la app quede abierta).
+    const HORAS_AVISO = 4;
+    function horasEnRuta(o) {
+        const f = (o.fechaEnRuta && o.fechaEnRuta.toDate) ? o.fechaEnRuta.toDate() : null;
+        return f ? (Date.now() - f.getTime()) / 3600000 : null;
+    }
+    function renderAvisoRuta() {
+        const box = document.getElementById('aviso-ruta');
+        if (!box) return;
+        const pend = allDocs.map(d => ({ id: d.id, o: d.data() }))
+            .filter(x => !x.o.entregado && x.o.enRuta === true && horasEnRuta(x.o) != null && horasEnRuta(x.o) >= HORAS_AVISO);
+        if (!pend.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = 'block';
+        box.innerHTML = `<div class="aviso-ruta">
+            <div class="t">⚠️ Tienes ${pend.length} pedido(s) en ruta sin marcar como <b>entregado</b></div>
+            <div class="lst">${pend.map(p => `• ${esc(p.o.cliente || 'Sin cliente')}${p.o.obra ? ' — ' + esc(p.o.obra) : ''} <span style="color:#a06a12">(en ruta hace ${Math.floor(horasEnRuta(p.o))} h)</span>`).join('<br>')}</div>
+            <button onclick="setTab('ruta')">Ver pedidos en ruta</button>
+        </div>`;
+    }
+
     function render(docs) {
         allDocs = docs;
+        renderAvisoRuta();
         const list = document.getElementById('orders-list');
         // La asignación (ver historial.html) es solo informativa: cualquier chofer ve todos los
         // pedidos, así uno puede cubrir al otro si falta.
@@ -179,6 +209,7 @@
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+    setInterval(renderAvisoRuta, 60 * 1000);   // reevalúa el aviso de "en ruta 4h+" aunque no lleguen cambios
 
     // El chofer marca "En ruta" apenas recoge el pedido — puramente informativo (no bloquea ni
     // exige nada para llegar a "Entregado"), solo para que se sepa que ya salió a la calle.
