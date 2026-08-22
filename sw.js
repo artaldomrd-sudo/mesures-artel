@@ -51,20 +51,30 @@ self.addEventListener('fetch', (event) => {
 // controla cómo se muestra — evita notificaciones duplicadas en distintos navegadores.
 self.addEventListener('push', (event) => {
     let payload = {};
-    try { payload = event.data ? event.data.json() : {}; } catch (e) { /* payload no es JSON */ }
-    const title = payload.title || 'ARTAL Operaciones';
+    try { payload = event.data ? event.data.json() : {}; }
+    catch (e) { try { payload = { body: event.data && event.data.text() }; } catch (_) { } }
+    // FCM entrega los campos personalizados ANIDADOS bajo "data"; algunos navegadores los dan
+    // planos. Leemos de "data" primero y caemos a plano — así el título/cuerpo real siempre llega
+    // (antes se leía plano y salía el título genérico con cuerpo vacío: "no decían nada").
+    const d = (payload && typeof payload.data === 'object' && payload.data) ? payload.data : payload;
+    const title = d.title || payload.title || 'ARTAL Operaciones';
+    const cuerpo = d.body || payload.body || 'Toca para abrir y ver el detalle.';
+    const url = d.url || payload.url || 'ops/index.html';
     const options = {
-        body: payload.body || '',
+        body: cuerpo,
         icon: 'logo.png',
         badge: 'logo.png',
-        data: { url: payload.url || 'ops/calendario.html' }
+        tag: d.tag || url,          // agrupa/reemplaza avisos del mismo tema en vez de apilar copias
+        renotify: true,             // vuelve a avisar (sonido/vibración) aunque reemplace uno anterior
+        timestamp: Date.now(),
+        data: { url }
     };
     event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const url = (event.notification.data && event.notification.data.url) || 'ops/calendario.html';
+    const url = (event.notification.data && event.notification.data.url) || 'ops/index.html';
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
             for (const client of windowClients) {
