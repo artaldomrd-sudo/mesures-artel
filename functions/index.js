@@ -38,11 +38,30 @@ async function tokensPorRol(...roles) {
     return [...new Set(tokens)];
 }
 
+// Arma el mensaje push. Incluye SIEMPRE un bloque `notification` (no solo `data`): iOS/Safari
+// necesita ese bloque para mostrar el título/cuerpo reales — sin él muestra un aviso genérico
+// ("from ARTAL — Panel de Control"). También va `data` (para el service worker y el click) y
+// `webpush` con el enlace de apertura.
+const BASE_URL = 'https://artaldomrd-sudo.github.io/mesures-artel/';
+function buildPush(token, title, body, url) {
+    const b = body || '';
+    const link = BASE_URL + (url || 'ops/index.html');
+    return {
+        token,
+        notification: { title: title || 'ARTAL Operaciones', body: b },
+        data: { title: title || 'ARTAL Operaciones', body: b, url: url || 'ops/index.html' },
+        webpush: {
+            notification: { title: title || 'ARTAL Operaciones', body: b, icon: BASE_URL + 'logo.png' },
+            fcmOptions: { link }
+        }
+    };
+}
+async function enviarPush(token, title, body, url) {
+    try { await getMessaging().send(buildPush(token, title, body, url)); }
+    catch (e) { console.error('enviarPush', e); }
+}
 async function pushATokens(tokens, title, body, url) {
-    for (const token of tokens) {
-        try { await getMessaging().send({ token, data: { title, body, url } }); }
-        catch (e) { console.error('pushATokens', e); }
-    }
+    for (const token of tokens) await enviarPush(token, title, body, url);
 }
 
 // Una cita/recordatorio puede tener VARIAS personas asignadas (`asignados: [{email,nombre}]`,
@@ -76,18 +95,7 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
     for (const email of emails) {
         const token = await tokenDe(email);
         if (!token) continue;
-        try {
-            await getMessaging().send({
-                token,
-                data: {
-                    title: 'Nueva cita: ' + (cita.titulo || 'Sin título'),
-                    body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                    url: urlDestino
-                }
-            });
-        } catch (e) {
-            console.error('No se pudo enviar la notificación de la cita', event.params.citaId, email, e);
-        }
+        await enviarPush(token, 'Nueva cita: ' + (cita.titulo || 'Sin título'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
     }
 });
 
@@ -107,18 +115,7 @@ exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', a
     for (const u of admins) {
         const token = u.data().fcmToken;
         if (!token) continue;
-        try {
-            await getMessaging().send({
-                token,
-                data: {
-                    title: 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''),
-                    body: cuerpo || 'Un cliente pidió cotización desde el sitio web',
-                    url: 'ops/solicitudes.html'
-                }
-            });
-        } catch (e) {
-            console.error('No se pudo enviar la notificación de solicitud web', event.params.id, u.id, e);
-        }
+        await enviarPush(token, 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''), cuerpo || 'Un cliente pidió cotización desde el sitio web', 'ops/solicitudes.html');
     }
 });
 
@@ -178,18 +175,7 @@ async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix)
             if (token) {
                 const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
                 const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
-                try {
-                    await getMessaging().send({
-                        token,
-                        data: {
-                            title: tituloPrefix + (d.titulo || lugar || 'Recordatorio'),
-                            body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                            url: urlDestino
-                        }
-                    });
-                } catch (e) {
-                    console.error('No se pudo enviar el recordatorio', coll, docu.id, e);
-                }
+                await enviarPush(token, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
             }
         }
         await docu.ref.update({ recordatorioEnviado: true });
@@ -222,18 +208,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
                 for (const email of getEmails(d)) {
                     const token = await tokenDe(email);
                     if (!token) continue;
-                    try {
-                        await getMessaging().send({
-                            token,
-                            data: {
-                                title: tituloPrefix + (d.titulo || lugar || 'Recordatorio'),
-                                body: [fechaTexto, lugar].filter(Boolean).join(' · '),
-                                url: (typeof urlDestino === 'function' ? urlDestino(d) : urlDestino)
-                            }
-                        });
-                    } catch (e) {
-                        console.error('No se pudo enviar el recordatorio', coll, docu.id, off, email, e);
-                    }
+                    await enviarPush(token, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), (typeof urlDestino === 'function' ? urlDestino(d) : urlDestino));
                 }
             }
             enviados.push(off);
