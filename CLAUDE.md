@@ -1204,16 +1204,22 @@ Antes eran DOS pantallas separadas que confundían (`ops/instalaciones.html` "Ag
 = planificar, calendario+GPS+agendar; `ops/instalador.html` "Trabajo en Obra" = ejecutar,
 recordatorios+obras+firma), más un hub `ops/instalacion.html` que solo linkeaba a ambas. A pedido
 del usuario ("se me hace difícil entender entre las dos... todo en una sola pantalla"), se fusionó
-en **`ops/instalacion.html`** con **3 pestañas** (`setTab`): **📋 Mi día** (recordatorios `citas`
-con etapas/completado-por-persona + trabajos agendados `instalaciones` próximos), **📅 Calendario**
-(rejilla mensual + "por programar" + modal completo de agendar/editar con GPS/instaladores/rango/
-recordatorios), **🏗️ Por instalar** (obras `orders` listas → tarjeta unificada con firma del
-cliente + avance parcial + "📅 Agendar" + "📦 Solo recoger" + "↩ No está listo"). Combina TODO lo
-de las dos viejas: `jobCardHTML` (instalaciones, con estado/GPS/reprogramar/editar/fotos),
-`recCardHTML` (recordatorios con etapas), `orderCardHTML` (firma, de la vieja instalador.html),
+en **`ops/instalacion.html`**. **Simplificada a 2 pestañas (2026-08-22, antes eran 3)** por pedido
+del usuario ("muy compleja"): **🗓️ Calendario día a día** (agenda de `instalaciones` con fecha+hora
+—antes solo mostraba la hora— + **rejilla del mes COLAPSABLE**: botón `toggleCalendario`/`calAbierto`
+muestra/oculta el `tab-cal` con la rejilla mensual, "por programar" y el modal completo de agendar/
+editar) y **🏗️ Obras asignadas** (antes "Por instalar": obras `orders` listas → tarjeta unificada
+con firma/biometría + avance parcial + "📅 Agendar" + "📦 Solo recoger" + "↩ No está listo").
+`setTab` ahora solo maneja `dia`/`inst` (el `tab-cal` vive dentro de "día a día"). **Recordatorios
+ya NO van sueltos** (sobrecargaban): se quitó la sección "🔔 Recordatorios" + "+ Recordatorio"; ahora
+hay un botón **🔔 Recordatorio por cada trabajo y cada obra** (`abrirRecTrabajo`/`abrirRecObra` →
+`recCtx` → la cita guarda `instalacionId`/`orderId`) y sus recordatorios se ven **en línea dentro de
+la tarjeta** (`recInlineHTML`, filtrando `recsCache` por ese id). `recCardHTML`/`recEtapaRow` quedan
+como código muerto inofensivo. Enlace **🗂️ Historial** en el encabezado (a `historial.html`, admin)
+para ver/corregir trabajos ya entregados o verificar datos meses después. Badge de "día a día" =
+trabajos de hoy. Combina: `jobCardHTML` (instalaciones), `orderCardHTML` (firma),
 `cambiarEstado`+`movimientosInstalaciones` (auditoría), `marcarSinInstalacion`, etc. Un solo juego
-de listeners (`instalaciones`, `orders` x2, `citas`, `usuarios`, `clientes`). Tarjeta ÚNICA por
-trabajo con todas sus acciones → nunca hay que saltar de pantalla. `requireAuth(['instalador',
+de listeners (`instalaciones`, `orders` x2, `citas`, `usuarios`, `clientes`). `requireAuth(['instalador',
 'ayudante'])`, admin gestiona todo. El tile del Panel ("Instalación") ya apunta aquí.
 **`ops/instalaciones.html` e `ops/instalador.html` siguen existiendo como respaldo** (accesibles por
 URL directa) hasta confirmar en producción; el hub que las enlazaba se reemplazó por esta pantalla.
