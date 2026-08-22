@@ -85,7 +85,7 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
 
     const fecha = cita.fecha && cita.fecha.toDate ? cita.fecha.toDate() : null;
     const fechaTexto = fecha
-        ? fecha.toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' })
+        ? fecha.toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' })
         : '';
     const lugar = [cita.cliente, cita.obra].filter(Boolean).join(' — ');
     // Un aviso para el equipo de instalación abre SU pantalla (Trabajo en Obra), no el calendario
@@ -189,7 +189,7 @@ async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix)
         if (ahora <= fecha) {
             const token = await tokenDe(d[campoEmail]);
             if (token) {
-                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
+                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' });
                 const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
                 await enviarPush(token, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
             }
@@ -219,7 +219,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
             if (enviados.includes(off)) continue;
             if (ahora < fecha - off * 60000) continue; // aún no toca este aviso
             if (ahora <= fecha + GRACE_MS) {
-                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' });
+                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' });
                 const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
                 for (const email of getEmails(d)) {
                     const token = await tokenDe(email);
