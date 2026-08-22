@@ -363,6 +363,10 @@
         }[c]));
     }
     const ESTADO_LABEL = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
+    // Estados del PEDIDO (orders) y cuáles ve el chofer (Transportes). Sirve para que la tarjeta de
+    // instalación diga la verdad: solo "esperando al chofer" si el pedido ya está en su fila.
+    const ORDER_STATUS_LABEL = { solicitada: 'Cotización solicitada', costeada: 'Cotización costeada', enviada_cliente: 'Cotización enviada', pendiente_fabrica: 'Pendiente en fábrica', en_fabrica: 'En fábrica', parcialmente_listo: 'Parcialmente listo', listo_para_cargar: 'Listo para cargar', parcialmente_instalado: 'Parcialmente instalado', completado: 'Completado' };
+    const EN_FILA_CHOFER = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'completado'];
 
     /* ===== Pestañas (2: día a día [con calendario colapsable] + obras asignadas) ===== */
     let tabActual = 'dia';
@@ -480,9 +484,17 @@
         const ord = j.orderId ? ((ordersCache.find(x => x.id === j.orderId) || {}).data || null) : null;
         let completarHtml = '';
         if (ord && !ord.instalado) {
-            completarHtml = ord.entregado === true
-                ? `<button class="btn-instalado" style="margin-top:8px" onclick="confirmarInstalacionBio('${j.orderId}')">✅ Confirmar instalación (huella / Face ID)</button>`
-                : `<div class="esperando-note">🚚 Esperando que el chofer entregue. No se puede instalar hasta confirmar la entrega.</div>`;
+            if (ord.entregado === true) {
+                completarHtml = `<button class="btn-instalado" style="margin-top:8px" onclick="confirmarInstalacionBio('${j.orderId}')">✅ Confirmar instalación (huella / Face ID)</button>`;
+            } else if (EN_FILA_CHOFER.includes(ord.status)) {
+                completarHtml = ord.enRuta === true
+                    ? `<div class="esperando-note">🚚 En ruta con el chofer. Podrás instalar cuando confirme la entrega.</div>`
+                    : `<div class="esperando-note">🚚 Esperando que el chofer lo recoja y entregue (está en <b>Transportes › En espera</b>).</div>`;
+            } else {
+                // El pedido NO está en la fila del chofer: por eso no aparece en Transportes. Se lo
+                // decimos claro en vez de un "esperando entrega" que nunca llega.
+                completarHtml = `<div class="esperando-note" style="background:#eef4fb;color:#1f6aa5;">🏭 Este pedido todavía no está listo para transporte (estado: <b>${esc(ORDER_STATUS_LABEL[ord.status] || ord.status || '—')}</b>). No aparece en Transportes hasta que fábrica lo marque <b>“Listo para cargar”</b>.</div>`;
+            }
         } else if (ord && ord.instalado) {
             completarHtml = `<div class="checklist-note" style="color:#2ecc71;font-weight:bold">✅ Instalado${ord.confirmacionInstalador && ord.confirmacionInstalador.nombre ? ' por ' + esc(ord.confirmacionInstalador.nombre) + ' 🔒' : ''}</div>`;
         }
