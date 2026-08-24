@@ -559,10 +559,10 @@
         try { const s = await getDoc(doc(db, 'rrhhNominas', key)); if (s.exists()) guardada = s.data(); } catch (e) { }
         // Se restauran las líneas CRUDAS (montos mensuales) guardadas (campo `lineas`).
         const previos = {}; if (guardada && Array.isArray(guardada.lineas)) guardada.lineas.forEach(l => previos[l.empleadoId] = l);
-        // TODOS los empleados aparecen en cada corrida; cada uno se calcula según su forma de cobro
-        // (mensual: todo en la 1ra quincena, 0 en la 2da; quincenal: mitad en cada una).
+        // Solo aparecen los que COBRAN en este período: los mensuales cobran todo en la 1ra quincena,
+        // así que en la 2da quincena NO aparecen (ya cobraron). En la corrida mensual aparecen todos.
         const runTipo = tipoNom();
-        const lineas = empleados.map(e => {
+        const lineas = empleados.filter(e => periodoDe(e.formaCobro, runTipo).cobra).map(e => {
             const p = previos[e.id] || {};
             // Los préstamos solo se debitan en el período en que COBRA (mensual no cobra en Q2).
             const cobra = periodoDe(e.formaCobro, runTipo).cobra;
@@ -577,7 +577,7 @@
             };
         });
         if (guardada && Array.isArray(guardada.lineas)) {
-            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId) && periodoDe(l.formaCobro, runTipo).cobra) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
         nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
         renderNomina();
@@ -620,7 +620,7 @@
         </tr>`).join('');
         document.getElementById('nom-cont').innerHTML = `
         <div class="sec-title">Nómina — ${fmtPeriodoKey(nominaActual.key)} · ${calc.length} empleados${div === 2 ? ' · <span style="color:#7d3c98">quincenal</span>' : ''}</div>
-        <p class="muted" style="margin:2px 0 6px">Aparecen <b>todos</b> los empleados. Los de cobro <b>mensual</b> cobran todo en la 1ra quincena (en la 2da salen en 0); los <b>quincenales</b>, mitad en cada una. La forma de cobro se configura en la ficha del empleado.</p>
+        <p class="muted" style="margin:2px 0 6px">Los de cobro <b>mensual</b> aparecen solo en la <b>1ra quincena</b> (cobran todo ahí) y en la corrida mensual; en la 2da quincena no aparecen. Los <b>quincenales</b> van mitad en cada quincena. La forma de cobro se configura en la ficha del empleado.</p>
         <div class="tabla-wrap"><table class="nom">
             <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
             <tbody id="nom-tbody">${rows}</tbody>
