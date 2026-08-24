@@ -29,6 +29,11 @@
     .tabla-isr th, .tabla-isr td { padding: 6px 6px; text-align: right; }
     .tabla-isr th { color: #778; font-size: 11px; text-transform: uppercase; }
     .tabla-isr input { width: 100%; padding: 7px 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; text-align: right; box-sizing: border-box; }
+    /* Mini % a cargo del empleado dentro de cada casilla AFP/SFS/ISR */
+    .pct-wrap { display: flex; align-items: center; justify-content: flex-end; gap: 2px; margin-top: 3px; }
+    .pct-wrap span { font-size: 10px; color: #99a; }
+    .pct-mini { width: 42px; padding: 2px 4px; border: 1px solid #d7dee6; border-radius: 5px; font-family: 'Arimo'; font-size: 11px; text-align: right; }
+    .pct-mini:disabled { background: #f1f1f4; color: #bbb; }
 
     /* Nómina tabla */
     .tabla-wrap { overflow-x: auto; }
@@ -359,17 +364,29 @@
         const gravableMensual = (sueldo + ingresos) - afpM - sfsM;
         // Los empleados SIN TSS (no declarados) NO llevan ISR (antes se les calculaba sobre el sueldo).
         const isrM = sinTSS ? 0 : isrAnual(gravableMensual * 12) / 12;
-        // Factor de descuento del EMPLEADO (beneficio): ej. 50 = solo se le retiene la mitad de AFP/SFS/ISR.
-        // El aporte del EMPLEADOR (afpPat/sfsPat/srlPat) NO cambia. Default 100 = retención normal.
-        const descPct = (l.descPct != null && l.descPct !== '') ? n2(l.descPct) : 100;
-        const factor = descPct / 100;
+        // % que se le RETIENE al empleado de cada concepto, POR SEPARADO (AFP/SFS/ISR). 100 = normal
+        // (paga todo); menos = la empresa asume esa parte de ESE concepto. El aporte del EMPLEADOR
+        // (afpPat/sfsPat/srlPat) NO cambia. Compat: `descPct` viejo (uno solo) sirve de respaldo.
+        const rp = (v) => (v != null && v !== '') ? n2(v) : null;
+        const base = rp(l.descPct);
+        const dAfp = rp(l.descAfp) ?? base ?? 100;
+        const dSfs = rp(l.descSfs) ?? base ?? 100;
+        const dIsr = rp(l.descIsr) ?? base ?? 100;
         // Reparto por período: mitad en cada quincena.
-        const sueldoP = sueldo / div, ingresosP = ingresos / div, afp = (afpM * factor) / div, sfs = (sfsM * factor) / div, isr = (isrM * factor) / div;
+        const sueldoP = sueldo / div, ingresosP = ingresos / div, afp = (afpM * dAfp / 100) / div, sfs = (sfsM * dSfs / 100) / div, isr = (isrM * dIsr / 100) / div;
         const deducciones = n2(l.deducciones);   // otras deducciones manuales
         const prestamo = n2(l.prestamo);         // cuota de préstamo de este período (no se divide)
         const neto = (sueldoP + ingresosP) - afp - sfs - isr - deducciones - prestamo;
         const afpPat = (baseAfp * (cfg.afpPat / 100)) / div, sfsPat = (baseSfs * (cfg.sfsPat / 100)) / div, srlPat = (baseSfs * (cfg.srlPat / 100)) / div;
-        return { ...l, sueldo: sueldoP, ingresos: ingresosP, sueldoMes: sueldo, descPct, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS };
+        return { ...l, sueldo: sueldoP, ingresos: ingresosP, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS };
+    }
+
+    // % inicial de un concepto (AFP/SFS/ISR): el guardado específico; si no, el % global viejo de la
+    // línea (compat); si no, el del empleado; si no, 100.
+    function pctIni(especifico, lineaGuardada, emp) {
+        if (especifico != null && especifico !== '') return n2(especifico);
+        if (lineaGuardada && lineaGuardada.descPct != null && lineaGuardada.descPct !== '') return n2(lineaGuardada.descPct);
+        return (emp && emp.descuentoPct != null) ? n2(emp.descuentoPct) : 100;
     }
 
     // ---------- NÓMINA MENSUAL ----------
@@ -389,13 +406,13 @@
                 empleadoId: e.id, nombre: e.nombre,
                 sueldo: p.sueldo != null ? n2(p.sueldo) : n2(e.sueldoBase),   // mensual
                 ingresos: n2(p.ingresos), deducciones: n2(p.deducciones),
-                descPct: p.descPct != null ? n2(p.descPct) : (e.descuentoPct != null ? n2(e.descuentoPct) : 100),
+                descAfp: pctIni(p.descAfp, p, e), descSfs: pctIni(p.descSfs, p, e), descIsr: pctIni(p.descIsr, p, e),
                 sinTSS: e.enTSS === false,
                 prestamo: prs.reduce((a, x) => a + x.monto, 0), prestamosDetalle: prs
             };
         });
         if (guardada && Array.isArray(guardada.lineas)) {
-            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresos: n2(l.ingresos), deducciones: n2(l.deducciones), descPct: l.descPct != null ? n2(l.descPct) : 100, sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresos: n2(l.ingresos), deducciones: n2(l.deducciones), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
         nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
         renderNomina();
@@ -409,7 +426,9 @@
             l.sueldo = n2(tr.querySelector('[data-k=sueldo]').value);
             l.ingresos = n2(tr.querySelector('[data-k=ingresos]').value);
             l.deducciones = n2(tr.querySelector('[data-k=deducciones]').value);
-            const dp = tr.querySelector('[data-k=descpct]'); if (dp) l.descPct = n2(dp.value);
+            const da = tr.querySelector('[data-k=descafp]'); if (da) l.descAfp = n2(da.value);
+            const ds = tr.querySelector('[data-k=descsfs]'); if (ds) l.descSfs = n2(ds.value);
+            const di = tr.querySelector('[data-k=descisr]'); if (di) l.descIsr = n2(di.value);
         });
         renderNomina();
     };
@@ -428,10 +447,9 @@
             <td style="text-align:center"><input type="checkbox" ${l.sinTSS ? '' : 'checked'} onchange="toggleTSS('${esc(l.empleadoId)}', this.checked)" title="En seguridad social (TSS)"></td>
             <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="recalcNom()" title="Sueldo mensual"></td>
             <td><input type="number" data-k="ingresos" value="${nominaActual.lineas.find(x=>x.empleadoId===l.empleadoId).ingresos}" onchange="recalcNom()"></td>
-            <td><input type="number" data-k="descpct" value="${l.descPct}" onchange="recalcNom()" title="% de AFP/SFS/ISR que se le retiene (100 = normal, 50 = solo la mitad por beneficio)" style="width:64px"></td>
-            <td class="neg">${fmt(l.afp)}</td>
-            <td class="neg">${fmt(l.sfs)}</td>
-            <td class="neg">${fmt(l.isr)}</td>
+            <td class="neg">${fmt(l.afp)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descafp" value="${l.descAfp}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de AFP a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg">${fmt(l.sfs)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descsfs" value="${l.descSfs}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de SFS a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${l.prestamo ? fmt(l.prestamo) : '—'}</td>
             <td><input type="number" data-k="deducciones" value="${nominaActual.lineas.find(x=>x.empleadoId===l.empleadoId).deducciones}" onchange="recalcNom()"></td>
             <td class="pos"><b>${fmt(l.neto)}</b></td>
@@ -440,10 +458,10 @@
         document.getElementById('nom-cont').innerHTML = `
         <div class="sec-title">Nómina — ${fmtPeriodoKey(nominaActual.key)} · ${calc.length} empleados${div === 2 ? ' · <span style="color:#7d3c98">quincenal</span>' : ''}</div>
         <div class="tabla-wrap"><table class="nom">
-            <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>% desc.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
+            <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
             <tbody id="nom-tbody">${rows}</tbody>
             <tfoot><tr class="tot">
-                <td class="nom-name">TOTALES</td><td></td><td>${fmt(tot.sueldo)}</td><td>${fmt(tot.ingresos)}</td><td></td>
+                <td class="nom-name">TOTALES</td><td></td><td>${fmt(tot.sueldo)}</td><td>${fmt(tot.ingresos)}</td>
                 <td>${fmt(tot.afp)}</td><td>${fmt(tot.sfs)}</td><td>${fmt(tot.isr)}</td><td>${fmt(tot.prestamo)}</td><td>${fmt(tot.deducciones)}</td>
                 <td>${fmt(tot.neto)}</td><td></td>
             </tr></tfoot>
