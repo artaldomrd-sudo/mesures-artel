@@ -40,6 +40,8 @@
     .lec-read h2 { color: var(--artal-blue); font-size: 20px; margin: 4px 0 2px; }
     .lec-read .meta { font-size: 12.5px; color: #8a93a0; margin-bottom: 14px; }
     .lec-read .cont { font-size: 15px; color: #2f3944; line-height: 1.6; white-space: pre-wrap; }
+    .lec-video { position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 10px 0 16px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: #000; }
+    .lec-video iframe, .lec-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
     .lec-read .nav { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
     .btn-done { background: #2ecc71; color: #fff; border: none; border-radius: 9px; padding: 12px 18px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-done.is-done { background: #eaf7ef; color: #1e8449; }
@@ -164,6 +166,8 @@
             <button type="button" class="btn-ia" onclick="iaRedactarLeccion()">✨ Convertir en lección</button>
             <div class="ai-msg" id="l-ia-msg"></div>
         </div>
+        <label>Video (YouTube) <span class="lbl-opt">— opcional, pega el enlace</span></label>
+        <input type="text" id="l-video" placeholder="https://youtu.be/…  o  https://www.youtube.com/watch?v=…">
         <label>Contenido</label>
         <textarea id="l-contenido" placeholder="Aquí aparece la lección (puedes escribirla a mano o generarla con el asistente de arriba)."></textarea>
         <div id="l-adjuntos-wrap" style="display:none">
@@ -212,6 +216,14 @@
     // gateado en la UI a admin/capacitador (esAutor).
     const usuario = await requireAuth(['instalador', 'ayudante', 'chofer', 'fabrica', 'contratista', 'cotizaciones', 'contable', 'capacitador']);
     wireBackButton(usuario.roles);
+    // "Volver" contextual: dentro de la Academia navega atrás por vista (lección→curso→cursos);
+    // solo desde la lista de cursos sale al inicio (Panel/ERP) con su enlace normal.
+    document.getElementById('btn-back').addEventListener('click', (e) => {
+        if (vista === 'cursos') return;                       // deja que el href lleve al inicio
+        e.preventDefault();
+        if (vista === 'curso' || vista === 'progreso') irA('cursos');
+        else irA('curso', cursoSelId);                        // lección, examen, certificado → al curso
+    });
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     const esAutor = usuario.roles.includes('admin') || usuario.roles.includes('capacitador');
@@ -493,6 +505,23 @@
             : '<div class="empty">Aún no has aprobado el examen de este curso.</div>'}`;
     }
 
+    // Saca el ID de un enlace de YouTube (watch, youtu.be, embed, shorts) o acepta el ID pelado.
+    function ytId(url) {
+        const s = String(url || '').trim(); if (!s) return '';
+        let m = s.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/); if (m) return m[1];
+        m = s.match(/[?&]v=([A-Za-z0-9_-]{6,})/); if (m) return m[1];
+        m = s.match(/youtube\.com\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{6,})/); if (m) return m[1];
+        if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+        return '';
+    }
+    function videoEmbedHTML(url) {
+        const id = ytId(url);
+        if (id) return `<div class="lec-video"><iframe src="https://www.youtube.com/embed/${id}" title="Video de la lección" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>`;
+        if (/\.(mp4|webm|ogg)(\?|$)/i.test(url || '')) return `<div class="lec-video"><video src="${esc(url)}" controls playsinline></video></div>`;
+        if (/^https?:\/\//i.test(url || '')) return `<a href="${esc(url)}" target="_blank" rel="noopener" class="btn-ghost" style="display:inline-block;margin:10px 0">▶ Ver video</a>`;
+        return '';
+    }
+
     function renderLeccion(cont) {
         const l = leccionById(leccionSelId); if (!l) { irA('curso', cursoSelId); return; }
         const c = cursoById(l.cursoId) || {};
@@ -505,6 +534,7 @@
             <div class="lec-read">
                 <h2>${esc(l.titulo || 'Lección')}</h2>
                 <div class="meta">Lección ${idx + 1} de ${lecs.length}${l.duracion ? ' · ⏱ ' + n2(l.duracion) + ' min' : ''}</div>
+                ${videoEmbedHTML(l.video)}
                 <div class="cont">${esc(l.contenido || '')}</div>
                 ${fotos}${addBtn}
                 ${esAutor ? `<div class="bar" style="margin-top:14px"><button class="btn-ghost" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="btn-ia" style="margin-top:0" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
@@ -580,6 +610,7 @@
         document.getElementById('lec-modal-title').textContent = 'Nueva lección';
         document.getElementById('l-titulo').value = '';
         document.getElementById('l-duracion').value = '';
+        document.getElementById('l-video').value = '';
         document.getElementById('l-contenido').value = '';
         document.getElementById('l-notas').value = ''; document.getElementById('l-ia-msg').textContent = '';
         document.getElementById('l-adjuntos-wrap').style.display = 'none';   // se suben tras crearla
@@ -591,6 +622,7 @@
         document.getElementById('lec-modal-title').textContent = 'Editar lección';
         document.getElementById('l-titulo').value = l.titulo || '';
         document.getElementById('l-duracion').value = l.duracion != null ? l.duracion : '';
+        document.getElementById('l-video').value = l.video || '';
         document.getElementById('l-contenido').value = l.contenido || '';
         document.getElementById('l-notas').value = ''; document.getElementById('l-ia-msg').textContent = '';
         renderLecAdjuntos(id);
@@ -608,6 +640,7 @@
         if (!titulo) { alert('Escribe el título de la lección.'); return; }
         const datos = {
             titulo, duracion: n2(document.getElementById('l-duracion').value),
+            video: document.getElementById('l-video').value.trim(),
             contenido: document.getElementById('l-contenido').value.trim()
         };
         const btn = document.querySelector('#modal-leccion .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
