@@ -494,8 +494,11 @@
                     : `<div class="esperando-note">🚚 Esperando que el chofer lo recoja y entregue (está en <b>Transportes › En espera</b>).</div>`;
             } else {
                 // El pedido NO está en la fila del chofer: por eso no aparece en Transportes. Se lo
-                // decimos claro en vez de un "esperando entrega" que nunca llega.
-                completarHtml = `<div class="esperando-note" style="background:#eef4fb;color:#1f6aa5;">🏭 Este pedido todavía no está listo para transporte (estado: <b>${esc(ORDER_STATUS_LABEL[ord.status] || ord.status || '—')}</b>). No aparece en Transportes hasta que fábrica lo marque <b>“Listo para cargar”</b>.</div>`;
+                // decimos claro en vez de un "esperando entrega" que nunca llega. Si el pedido no
+                // aparece en el tablero de Fábrica (por su destino, o porque salió "directo a
+                // instalación"), el admin puede avanzarlo aquí mismo a "Listo para cargar".
+                completarHtml = `<div class="esperando-note" style="background:#eef4fb;color:#1f6aa5;">🏭 Este pedido todavía no está listo para transporte (estado: <b>${esc(ORDER_STATUS_LABEL[ord.status] || ord.status || '—')}</b>). No aparece en Transportes hasta que fábrica lo marque <b>“Listo para cargar”</b>.</div>`
+                    + (esAdmin ? `<button class="btn-instalado" style="margin-top:8px" onclick="marcarPedidoListo('${j.orderId}')">✅ Marcar listo para cargar (admin)</button>` : '');
             }
         } else if (ord && ord.instalado) {
             completarHtml = `<div class="checklist-note" style="color:#2ecc71;font-weight:bold">✅ Instalado${ord.confirmacionInstalador && ord.confirmacionInstalador.nombre ? ' por ' + esc(ord.confirmacionInstalador.nombre) + ' 🔒' : ''}</div>`;
@@ -1084,6 +1087,16 @@
             });
             if (ta) ta.value = '';
         } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
+    };
+    // Atajo de admin: avanzar un pedido a "Listo para cargar" desde la tarjeta de instalación
+    // (para cuando no aparece en el tablero de Fábrica por su destino o por ser directo a
+    // instalación). Deja el pedido listo para transporte/instalación.
+    window.marcarPedidoListo = async function (orderId) {
+        if (!orderId) return;
+        if (!confirm('¿Marcar este pedido como "Listo para cargar"?\n\nQuedará disponible en Transportes y para instalar.')) return;
+        try {
+            await updateDoc(doc(db, 'orders', orderId), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() });
+        } catch (e) { alert('No se pudo cambiar el estado: ' + (e && e.message ? e.message : e)); }
     };
     // Comentario del instalador en un trabajo del Calendario (colección instalaciones).
     window.guardarComentarioJob = async function (jobId) {
