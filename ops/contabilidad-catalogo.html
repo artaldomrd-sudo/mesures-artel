@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-title" content="ARTAL DOMINICANA">
+<title>ARTAL — Catálogo de Cuentas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+    main { max-width: 1040px; }
+    .nota-citrus { background: #eef6ff; border: 1px solid #cfe0f5; border-radius: 10px; padding: 10px 14px;
+        font-size: 12.5px; color: #33506e; margin: 4px 0 14px; }
+    .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 9px 14px; flex: 1; min-width: 96px; text-align: center; }
+    .kpi .n { font-size: 17px; font-weight: bold; line-height: 1; }
+    .kpi .l { font-size: 10px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar input[type=search] { flex: 1; min-width: 180px; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; }
+    .bar select { padding: 10px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 13px; min-height: 44px; background: #fff; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: var(--artal-blue); color: #fff; border: none; border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-g { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 11px 15px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+
+    .tree { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .row { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid #f0f2f5; font-size: 13px; }
+    .row:hover { background: #f8fafc; }
+    .row.lvl1 { background: #f4f7fb; font-weight: bold; }
+    .row .tw { width: 20px; flex: 0 0 20px; text-align: center; cursor: pointer; color: #8a93a0; font-size: 12px; user-select: none; }
+    .row .code { font-variant-numeric: tabular-nums; color: #55606b; min-width: 84px; font-size: 12px; }
+    .row .nm { flex: 1; min-width: 0; }
+    .row .badge-t { font-size: 9.5px; font-weight: bold; text-transform: uppercase; letter-spacing: .03em; border-radius: 20px; padding: 2px 7px; }
+    .badge-g { background: #eef1f4; color: #667; } .badge-d { background: #e8f5ea; color: #1f8a4c; }
+    .chip-cat { font-size: 9.5px; font-weight: bold; border-radius: 20px; padding: 2px 8px; color: #fff; white-space: nowrap; }
+    .row .acts { display: flex; gap: 5px; opacity: 0; transition: opacity .12s; }
+    .row:hover .acts { opacity: 1; }
+    .row .acts button { border: none; background: transparent; cursor: pointer; font-size: 13px; padding: 3px 5px; border-radius: 6px; }
+    .row .acts button:hover { background: #eef1f4; }
+    @media (max-width: 620px) { .row .acts { opacity: 1; } .row .chip-cat { display: none; } }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.show { display: flex; }
+    .modal-box { background: #fff; border-radius: var(--radius); width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; padding: 20px; }
+    .modal-box.wide { max-width: 640px; }
+    .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 12px; }
+    .modal-box label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin: 10px 0 4px; }
+    .modal-box input, .modal-box select { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; background: #fff; }
+    .lbl-opt { font-weight: normal; color: #8a93a0; font-size: 11px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
+    .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .citrus-status { font-size: 12.5px; color: #445; background: #f7f9fc; border-radius: 8px; padding: 10px 12px; margin-top: 10px; white-space: pre-wrap; max-height: 260px; overflow: auto; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver">← Contabilidad</a>
+        <a class="btn-back" href="index.html" title="Ir al Panel de Control">🏠 Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Catálogo de <span class="accent">Cuentas</span></h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota-citrus">📒 <b>Citrus es la fuente fiscal de verdad</b> del plan de cuentas. Aquí puedes verlo,
+        buscarlo, generar el PDF y mantenerlo sincronizado. Usa <b>«Traer desde Citrus»</b> para actualizarlo con el ERP fiscal.</div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="bar">
+        <input type="search" id="q" placeholder="Buscar por nombre o código…" oninput="render()">
+        <select id="fcat" onchange="render()">
+            <option value="">Todas las categorías</option>
+            <option value="Activo">Activo</option><option value="Pasivo">Pasivo</option>
+            <option value="Capital">Capital</option><option value="Ingreso">Ingreso</option>
+            <option value="Costo">Costo</option><option value="Gastos">Gastos</option>
+        </select>
+        <button class="btn-y" onclick="abrir()">+ Nueva cuenta</button>
+        <button class="btn-g" onclick="expandirTodo(true)">Expandir</button>
+        <button class="btn-g" onclick="expandirTodo(false)">Colapsar</button>
+        <button class="btn-o" onclick="exportarPDF()">⬇ PDF</button>
+        <button class="btn-g" id="btn-citrus" onclick="abrirCitrus()" style="display:none">🔌 Citrus</button>
+    </div>
+
+    <div id="tree" class="tree"><p class="empty" style="padding:16px">Cargando…</p></div>
+</main>
+
+<!-- Modal cuenta -->
+<div class="modal-overlay" id="modal">
+    <div class="modal-box">
+        <h2 id="modal-title">Nueva cuenta</h2>
+        <label>Categoría *</label>
+        <select id="c-cat" onchange="sugerirCodigo()">
+            <option value="Activo">Activo</option><option value="Pasivo">Pasivo</option>
+            <option value="Capital">Capital</option><option value="Ingreso">Ingreso</option>
+            <option value="Costo">Costo</option><option value="Gastos">Gastos</option>
+        </select>
+        <label>Nombre de la cuenta *</label>
+        <input type="text" id="c-nom" placeholder="Ej. CAJA CHICA EN RD$">
+        <label>Cuenta padre <span class="lbl-opt">— vacío = cuenta raíz</span></label>
+        <select id="c-padre" onchange="sugerirCodigo()"></select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px">
+            <div><label>Identificador (código) *</label><input type="text" id="c-id" inputmode="numeric" placeholder="Ej. 100103"></div>
+            <div><label>Tipo</label><select id="c-tipo"><option value="General">General (agrupa)</option><option value="Detalle">Detalle (registra)</option></select></div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
+            <button class="btn-guardar" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Citrus -->
+<div class="modal-overlay" id="modal-citrus">
+    <div class="modal-box wide">
+        <h2>🔌 Sincronizar con Citrus</h2>
+        <p style="font-size:13px;color:#556;margin:0 0 8px">Trae el plan de cuentas (<code>cuenta-contable</code>) del ERP
+            fiscal Citrus y lo actualiza aquí. Solo administración. Citrus manda: lo de aquí se sobreescribe con lo suyo.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn-o" onclick="traerDeCitrus(false)">🔎 Ver qué trae Citrus</button>
+            <button class="btn-y" onclick="traerDeCitrus(true)">⬇ Traer y actualizar aquí</button>
+        </div>
+        <div class="citrus-status" id="citrus-status" style="display:none"></div>
+        <div class="modal-actions">
+            <button class="btn-cancelar" onclick="cerrarCitrus()" style="flex:0 0 auto;padding-left:24px;padding-right:24px">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { requirePin } from './pin-gate.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, doc, setDoc, deleteDoc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { CATALOGO_SEED } from './catalogo-cuentas-seed.js';
+
+    const usuario = await requireAuth(['contable']);
+    await requirePin(usuario);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    const esAdmin = usuario.roles.includes('admin');
+    if (esAdmin) document.getElementById('btn-citrus').style.display = '';
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const CAT_COLOR = { Activo: '#2f7fd6', Pasivo: '#e0733a', Capital: '#7d3ac1', Ingreso: '#1f9d61', Costo: '#0f9b9b', Gastos: '#b5651d' };
+    const byCodigo = (a, b) => (a.codigo < b.codigo ? -1 : a.codigo > b.codigo ? 1 : 0);
+
+    let cuentas = [];
+    const colapsados = new Set();   // códigos cuyos hijos están ocultos
+    let cargóUnaVez = false;
+
+    onSnapshot(collection(db, 'catalogoCuentas'), (s) => {
+        cuentas = s.docs.map(d => ({ codigo: d.id, ...d.data() }));
+        if (!cargóUnaVez) { cargóUnaVez = true; if (!cuentas.length) ofrecerImportar(); }
+        render();
+    }, (err) => { document.getElementById('tree').innerHTML = '<p class="empty" style="padding:16px">Error: ' + esc(err.message) + '</p>'; });
+
+    // Un código es hijo de otro si empieza por él (el esquema es prefijo-jerárquico).
+    const ocultoPorColapso = (codigo) => [...colapsados].some(c => c !== codigo && codigo.startsWith(c));
+    const tieneHijos = (codigo) => cuentas.some(x => x.codigo !== codigo && x.codigo.startsWith(codigo));
+
+    window.expandirTodo = function (abrir) {
+        colapsados.clear();
+        if (!abrir) cuentas.forEach(c => { if (tieneHijos(c.codigo)) colapsados.add(c.codigo); });
+        render();
+    };
+    window.toggle = function (codigo) { if (colapsados.has(codigo)) colapsados.delete(codigo); else colapsados.add(codigo); render(); };
+
+    function render() {
+        const q = (document.getElementById('q').value || '').trim().toLowerCase();
+        const fcat = document.getElementById('fcat').value;
+        pintarKpis();
+        let lista = cuentas.slice().sort(byCodigo);
+        if (fcat) lista = lista.filter(c => c.categoria === fcat);
+        const buscando = q.length > 0;
+        if (buscando) lista = lista.filter(c => (c.nombre || '').toLowerCase().includes(q) || String(c.codigo).includes(q));
+
+        const cont = document.getElementById('tree');
+        if (!cuentas.length) { cont.innerHTML = '<p class="empty" style="padding:16px">Aún no hay cuentas. Importa el catálogo inicial o créalas.</p>'; return; }
+        if (!lista.length) { cont.innerHTML = '<p class="empty" style="padding:16px">Sin resultados.</p>'; return; }
+
+        cont.innerHTML = lista.map(c => {
+            if (!buscando && ocultoPorColapso(c.codigo)) return '';
+            const nivel = Number(c.nivel) || 1;
+            const hijos = tieneHijos(c.codigo);
+            const tw = (hijos && !buscando) ? `<span class="tw" onclick="toggle('${esc(c.codigo)}')">${colapsados.has(c.codigo) ? '▸' : '▾'}</span>` : '<span class="tw"></span>';
+            const indent = 'padding-left:' + (6 + (nivel - 1) * 16) + 'px';
+            const catCol = CAT_COLOR[c.categoria] || '#8a93a0';
+            return `<div class="row ${nivel === 1 ? 'lvl1' : ''}">
+                ${tw}
+                <span class="code">${esc(c.codigo)}</span>
+                <span class="nm" style="${indent}">${esc(c.nombre || '')}</span>
+                <span class="badge-t ${c.tipo === 'Detalle' ? 'badge-d' : 'badge-g'}">${c.tipo === 'Detalle' ? 'Detalle' : 'General'}</span>
+                <span class="chip-cat" style="background:${catCol}">${esc(c.categoria || '')}</span>
+                <span class="acts">
+                    <button title="Editar" onclick="editar('${esc(c.codigo)}')">✏</button>
+                    <button title="Eliminar" onclick="borrar('${esc(c.codigo)}')">🗑</button>
+                </span>
+            </div>`;
+        }).join('');
+    }
+
+    function pintarKpis() {
+        const por = {};
+        cuentas.forEach(c => { por[c.categoria] = (por[c.categoria] || 0) + 1; });
+        const cats = ['Activo', 'Pasivo', 'Capital', 'Ingreso', 'Costo', 'Gastos'];
+        const html = [`<div class="kpi"><div class="n" style="color:var(--artal-blue)">${cuentas.length}</div><div class="l">Cuentas</div></div>`]
+            .concat(cats.map(k => `<div class="kpi"><div class="n" style="color:${CAT_COLOR[k]}">${por[k] || 0}</div><div class="l">${k}</div></div>`));
+        document.getElementById('kpis').innerHTML = html.join('');
+    }
+
+    // ---------- Importar catálogo inicial ----------
+    function ofrecerImportar() {
+        if (!esAdmin) return;
+        if (confirm('El catálogo está vacío. ¿Cargar el catálogo inicial de ARTAL (' + CATALOGO_SEED.length + ' cuentas) importado de Citrus?')) importarInicial();
+    }
+    window.importarInicial = async function () {
+        const batch = writeBatch(db);   // 352 < 500 → cabe en un solo lote
+        CATALOGO_SEED.forEach(c => {
+            batch.set(doc(db, 'catalogoCuentas', c.id), {
+                nombre: c.n, nivel: c.l, tipo: c.t === 'D' ? 'Detalle' : 'General',
+                padre: c.p || '', categoria: c.c, naturaleza: 'Control', origen: 'citrus-seed'
+            });
+        });
+        try { await batch.commit(); alert('✓ Catálogo inicial importado (' + CATALOGO_SEED.length + ' cuentas).'); }
+        catch (e) { alert('No se pudo importar: ' + (e && e.message ? e.message : e)); }
+    };
+
+    // ---------- Modal cuenta ----------
+    let editCodigo = null;
+    function llenarPadres(cat, sel) {
+        const padres = cuentas.filter(c => c.tipo === 'General' && (!cat || c.categoria === cat)).sort(byCodigo);
+        document.getElementById('c-padre').innerHTML = '<option value="">— (cuenta raíz)</option>' +
+            padres.map(c => `<option value="${esc(c.codigo)}">${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join('');
+        if (sel != null) document.getElementById('c-padre').value = sel;
+    }
+    window.sugerirCodigo = function () {
+        llenarPadres(document.getElementById('c-cat').value, document.getElementById('c-padre').value);
+        if (editCodigo) return;   // al editar no tocamos el código
+        const padre = document.getElementById('c-padre').value;
+        const idIn = document.getElementById('c-id');
+        if (!padre) return;
+        // Sugerir el siguiente correlativo de 2 dígitos bajo ese padre.
+        const hijos = cuentas.filter(c => c.padre === padre).map(c => c.codigo);
+        let max = 0;
+        hijos.forEach(h => { const suf = h.slice(padre.length); const nn = parseInt(suf, 10); if (!isNaN(nn) && nn > max) max = nn; });
+        idIn.value = padre + String(max + 1).padStart(2, '0');
+    };
+    window.abrir = function () {
+        editCodigo = null; document.getElementById('modal-title').textContent = 'Nueva cuenta';
+        document.getElementById('c-cat').value = 'Activo';
+        document.getElementById('c-nom').value = '';
+        document.getElementById('c-tipo').value = 'General';
+        document.getElementById('c-id').value = '';
+        llenarPadres('Activo', '');
+        document.getElementById('modal').classList.add('show');
+    };
+    window.editar = function (codigo) {
+        const c = cuentas.find(x => x.codigo === codigo); if (!c) return;
+        editCodigo = codigo; document.getElementById('modal-title').textContent = 'Editar cuenta ' + codigo;
+        document.getElementById('c-cat').value = c.categoria || 'Activo';
+        document.getElementById('c-nom').value = c.nombre || '';
+        document.getElementById('c-tipo').value = c.tipo || 'General';
+        document.getElementById('c-id').value = c.codigo;
+        document.getElementById('c-id').disabled = true;   // el código es el id del documento
+        llenarPadres(c.categoria, c.padre || '');
+        document.getElementById('modal').classList.add('show');
+    };
+    window.cerrar = function () { document.getElementById('c-id').disabled = false; document.getElementById('modal').classList.remove('show'); };
+    window.guardar = async function () {
+        const cat = document.getElementById('c-cat').value;
+        const nom = document.getElementById('c-nom').value.trim();
+        const tipo = document.getElementById('c-tipo').value;
+        const padre = document.getElementById('c-padre').value;
+        const codigo = document.getElementById('c-id').value.trim();
+        if (!nom) { alert('Escribe el nombre de la cuenta.'); return; }
+        if (!codigo) { alert('Escribe el identificador (código).'); return; }
+        if (!editCodigo && cuentas.some(c => c.codigo === codigo)) { alert('Ya existe una cuenta con el código ' + codigo + '.'); return; }
+        if (padre && !codigo.startsWith(padre)) { if (!confirm('El código «' + codigo + '» no empieza por el de su cuenta padre («' + padre + '»). ¿Guardar igual?')) return; }
+        const nivel = padre ? ((cuentas.find(c => c.codigo === padre) || {}).nivel || 1) + 1 : 1;
+        const btn = document.querySelector('#modal .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        try {
+            await setDoc(doc(db, 'catalogoCuentas', codigo), {
+                nombre: nom, nivel, tipo, padre: padre || '', categoria: cat, naturaleza: 'Control',
+                actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
+            }, { merge: true });
+            cerrar();
+        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = 'Guardar'; }
+    };
+    window.borrar = async function (codigo) {
+        if (tieneHijos(codigo)) { alert('No se puede eliminar «' + codigo + '»: tiene cuentas hijas. Elimina o reasigna las hijas primero.'); return; }
+        if (!confirm('¿Eliminar la cuenta ' + codigo + '?')) return;
+        try { await deleteDoc(doc(db, 'catalogoCuentas', codigo)); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
+    // ---------- Exportar PDF (formato tipo Citrus) ----------
+    window.exportarPDF = function () {
+        if (!window.jspdf || !window.jspdf.jsPDF) { alert('No cargó la librería de PDF. Revisa tu conexión.'); return; }
+        if (!cuentas.length) { alert('No hay cuentas para exportar.'); return; }
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'pt', 'letter');
+        const hoy = new Date().toLocaleDateString('es-DO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const lista = cuentas.slice().sort(byCodigo);
+        const body = lista.map(c => {
+            const nivel = Number(c.nivel) || 1;
+            const sangria = '   '.repeat(Math.max(0, nivel - 1));
+            return [c.codigo, sangria + (c.nombre || ''), String(nivel), c.tipo || '', c.padre || '', c.categoria || ''];
+        });
+        pdf.autoTable({
+            head: [['Identificador', 'Nombre', 'Nivel', 'Tipo', 'Cuenta Padre', 'Categoría']],
+            body,
+            startY: 92,
+            margin: { top: 92, left: 36, right: 36 },
+            styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak' },
+            headStyles: { fillColor: [10, 61, 98], textColor: 255, fontSize: 7.5 },
+            columnStyles: { 0: { cellWidth: 74 }, 1: { cellWidth: 220 }, 2: { cellWidth: 34, halign: 'center' }, 3: { cellWidth: 48 }, 4: { cellWidth: 66 }, 5: { cellWidth: 'auto' } },
+            didParseCell: (d) => { if (d.section === 'body' && d.row.raw && d.row.raw[3] === 'General') d.cell.styles.fontStyle = 'bold'; },
+            didDrawPage: () => {
+                pdf.setFontSize(13); pdf.setTextColor(10, 61, 98); pdf.setFont('helvetica', 'bold');
+                pdf.text('ARTAL DOMINICANA SRL', 36, 40);
+                pdf.setFontSize(11); pdf.text('Catálogo de Cuentas', 36, 58);
+                pdf.setFontSize(8); pdf.setTextColor(90, 90, 90); pdf.setFont('helvetica', 'normal');
+                pdf.text('Fecha de impresión: ' + hoy + '   ·   ' + lista.length + ' cuentas', 36, 72);
+            }
+        });
+        pdf.save('Catalogo_de_Cuentas_ARTAL.pdf');
+    };
+
+    // ---------- Citrus ----------
+    const CITRUS_READ_URL = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusRead';
+    window.abrirCitrus = function () { document.getElementById('citrus-status').style.display = 'none'; document.getElementById('modal-citrus').classList.add('show'); };
+    window.cerrarCitrus = function () { document.getElementById('modal-citrus').classList.remove('show'); };
+
+    // Mapea un registro de Citrus a nuestro modelo, tolerante a distintos nombres de campo.
+    function mapCitrusCuenta(r) {
+        const pick = (...ks) => { for (const k of ks) { if (r[k] != null && r[k] !== '') return r[k]; } return ''; };
+        const codigo = String(pick('Codigo', 'Identificador', 'Cuenta', 'CodigoCuenta', 'NumeroCuenta', 'Numero')).trim();
+        const nombre = String(pick('Nombre', 'Descripcion', 'NombreCuenta', 'Detalle')).trim();
+        const padre = String(pick('CuentaPadre', 'CodigoPadre', 'PadreCodigo', 'CuentaPadreCodigo')).trim();
+        const tipoRaw = String(pick('Tipo', 'TipoCuenta', 'Grupo')).toLowerCase();
+        const tipo = /detal/.test(tipoRaw) ? 'Detalle' : 'General';
+        const nivel = Number(pick('Nivel', 'NivelCuenta')) || (codigo ? Math.max(1, Math.ceil(codigo.length / 2)) : 1);
+        const categoria = String(pick('Categoria', 'CategoriaCuenta', 'Clasificacion', 'TipoMayor')).trim();
+        return { codigo, nombre, padre, tipo, nivel, categoria };
+    }
+
+    window.traerDeCitrus = async function (aplicar) {
+        const box = document.getElementById('citrus-status'); box.style.display = 'block'; box.textContent = 'Consultando Citrus…';
+        let idToken;
+        try { idToken = await auth.currentUser.getIdToken(); } catch (_) { box.textContent = 'No hay sesión válida.'; return; }
+        let resp;
+        try {
+            const r = await fetch(CITRUS_READ_URL, {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken },
+                body: JSON.stringify({ entidad: 'cuenta-contable', pagina: 0 })
+            });
+            resp = await r.json();
+            if (!r.ok) {
+                let extra = resp && resp.permitidas ? '\n\nEntidades permitidas hoy: ' + resp.permitidas.join(', ') + '\n→ Falta agregar «cuenta-contable» a la whitelist de citrusRead y volver a desplegar functions.' : '';
+                box.textContent = 'Citrus respondió ' + r.status + ': ' + JSON.stringify(resp) + extra; return;
+            }
+        } catch (e) { box.textContent = 'Error de red llamando a Citrus: ' + (e && e.message ? e.message : e); return; }
+
+        // La forma exacta de la respuesta puede variar; buscamos el array de registros.
+        const d = resp.data;
+        let arr = Array.isArray(d) ? d : (d && (d.Data || d.data || d.Items || d.items || d.Resultado || d.resultado || d.lista));
+        if (!Array.isArray(arr)) { box.textContent = 'Citrus respondió OK pero no reconocí la lista de cuentas. Respuesta cruda:\n\n' + JSON.stringify(d, null, 1).slice(0, 2000); return; }
+        if (!arr.length) { box.textContent = 'Citrus respondió OK pero devolvió 0 cuentas (el entorno de pruebas puede estar vacío).'; return; }
+
+        const mapeadas = arr.map(mapCitrusCuenta).filter(x => x.codigo);
+        if (!aplicar) {
+            box.textContent = 'Citrus devolvió ' + arr.length + ' cuentas (' + mapeadas.length + ' con código).\n\nMuestra del mapeo (primeras 5):\n' +
+                JSON.stringify(mapeadas.slice(0, 5), null, 1) + '\n\nCampos crudos del primer registro:\n' + JSON.stringify(arr[0], null, 1).slice(0, 1200) +
+                '\n\nSi el mapeo se ve bien, pulsa «Traer y actualizar aquí».';
+            return;
+        }
+        if (!mapeadas.length) { box.textContent = 'No pude extraer códigos de cuenta del formato de Citrus. Revisa los campos crudos:\n\n' + JSON.stringify(arr[0], null, 1).slice(0, 1500); return; }
+        box.textContent = 'Guardando ' + mapeadas.length + ' cuentas…';
+        try {
+            // Lotes de 400 por si el catálogo es grande.
+            for (let i = 0; i < mapeadas.length; i += 400) {
+                const batch = writeBatch(db);
+                mapeadas.slice(i, i + 400).forEach(c => batch.set(doc(db, 'catalogoCuentas', c.codigo), {
+                    nombre: c.nombre, nivel: c.nivel, tipo: c.tipo, padre: c.padre, categoria: c.categoria,
+                    naturaleza: 'Control', origen: 'citrus', citrusSync: serverTimestamp()
+                }, { merge: true }));
+                await batch.commit();
+            }
+            box.textContent = '✓ Sincronizadas ' + mapeadas.length + ' cuentas desde Citrus.';
+        } catch (e) { box.textContent = 'Error guardando: ' + (e && e.message ? e.message : e); }
+    };
+
+    window.render = render;
+</script>
+
+</body>
+</html>

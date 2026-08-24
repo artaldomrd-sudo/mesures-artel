@@ -751,8 +751,10 @@
             const pagado = n.pagado === true;
             const puedeEnviar = usuario.roles.includes('admin') || usuario.roles.includes('comunicaciones');
             const enviados = n.volantesEnviados === true;
+            const sinCorreo = Array.isArray(n.volanteSinCorreo) ? n.volanteSinCorreo : [];
+            const avisoSinCorreo = (enviados && sinCorreo.length) ? `<div style="color:#c0392b;font-size:12px;margin-top:4px">⚠️ Sin correo (no recibieron): ${esc(sinCorreo.join(', '))}. Ponles su correo en Empleados y reenvía.</div>` : '';
             const btnEnviar = !puedeEnviar ? '' : (enviados
-                ? `<span style="color:#1e8449;font-weight:bold;font-size:12.5px">📨 ${n.volantesCount || ''} volante(s) enviados</span> <button class="btn-vol" style="color:#e74c3c" onclick="cancelarVolantes('${esc(n.key)}')">Cancelar envío</button>`
+                ? `<span style="color:#1e8449;font-weight:bold;font-size:12.5px">📨 ${n.volantesCount || ''} volante(s) enviados</span> <button class="btn-vol" style="color:#e74c3c" onclick="cancelarVolantes('${esc(n.key)}')">Cancelar envío</button>${avisoSinCorreo}`
                 : `<button class="btn-vol" style="background:#25a244" onclick="enviarVolantes('${esc(n.key)}')">📨 Enviar volantes</button>`);
             return `<div class="param-card" style="border-left:5px solid ${pagado ? '#2ecc71' : '#e0a800'};margin-bottom:10px">
                 <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
@@ -845,9 +847,10 @@
                 ids.push(m.id); ok++;
             } catch (e) { /* sigue con los demás */ }
         }
-        try { await updateDoc(doc(db, 'rrhhNominas', key), { volantesEnviados: ids.length > 0, volanteMsgIds: ids, volantesCount: ok, volantesFecha: serverTimestamp() }); } catch (e) { }
+        const sinCorreoU = [...new Set(sinCorreo)];
+        try { await updateDoc(doc(db, 'rrhhNominas', key), { volantesEnviados: ids.length > 0, volanteMsgIds: ids, volantesCount: ok, volanteSinCorreo: sinCorreoU, volantesFecha: serverTimestamp() }); } catch (e) { }
         let msg = '✓ Volantes enviados: ' + ok;
-        if (sinCorreo.length) msg += '\n\n⚠️ Sin correo (no se enviaron): ' + [...new Set(sinCorreo)].join(', ') + '.\nAgrégales el correo en Empleados.';
+        if (sinCorreoU.length) msg += '\n\n⚠️ Sin correo (NO recibieron): ' + sinCorreoU.join(', ') + '.\nPonles su correo (el de su login) en RRHH → Empleados y reenvía.';
         msg += '\n\nSe puede revertir con «Cancelar envío».';
         alert(msg);
     };

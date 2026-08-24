@@ -499,7 +499,7 @@ const CITRUS_ENTIDADES = new Set([
     'tienda', 'cliente', 'item', 'suplidor', 'vendedor', 'categoria', 'marca', 'usuario',
     'empleado', 'almacen', 'factura-cliente', 'factura-suplidor', 'cotizacion', 'recibo',
     'orden-compra', 'orden-venta', 'conduce', 'anticipo', 'despacho', 'diario',
-    'movimientoInventario', 'notaCreditoCxC', 'notaDebitoCxC'
+    'movimientoInventario', 'notaCreditoCxC', 'notaDebitoCxC', 'cuenta-contable'
 ]);
 
 // Verifica que quien llama sea un usuario admin autenticado (manda su ID token de Firebase en
@@ -579,7 +579,7 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
 // Entidades que se permite CREAR (POST /v5/{entidad}) desde el panel. Se amplía a medida que se
 // conectan flujos reales. `suplidor` + `factura-suplidor` habilitan crear una cuenta por pagar en
 // ARTAL y empujarla a Citrus (el ERP fiscal).
-const CITRUS_WRITE_ENTIDADES = new Set(['cliente', 'suplidor', 'factura-suplidor']);
+const CITRUS_WRITE_ENTIDADES = new Set(['cliente', 'suplidor', 'factura-suplidor', 'cuenta-contable']);
 
 // Crea un registro en Citrus (POST). Solo admin. Recibe { entidad, body } y devuelve la respuesta
 // de Citrus tal cual (status + JSON) para inspeccionarla.
