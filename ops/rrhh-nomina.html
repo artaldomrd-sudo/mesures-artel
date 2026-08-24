@@ -485,8 +485,17 @@
     // divisor: 1 mensual, 2 quincenal (reparte el mes a la mitad). El préstamo (cuota por período)
     // NO se divide — es el monto que el usuario fija por nómina. TSS/ISR se calculan sobre el mes y
     // se dividen al final; los topes y la escala de ISR quedan correctos (son mensuales/anuales).
-    function calcLinea(l, divisor) {
-        const div = divisor || 1;
+    // Divisor y si COBRA en este período, según la forma de cobro del empleado y la corrida:
+    // - mensual: cobra TODO en la 1ra quincena (Q1); en Q2 no cobra (todo 0). Corrida mensual → full.
+    // - quincenal (o sin definir): mitad en cada quincena.
+    function periodoDe(forma, runTipo) {
+        if (runTipo === 'mensual') return { div: 1, cobra: true };
+        if (forma === 'mensual') return { div: 1, cobra: runTipo === 'q1' };   // Q1 completo, Q2 en 0
+        return { div: 2, cobra: true };
+    }
+    function calcLinea(l, runTipo) {
+        const per = periodoDe(l.formaCobro, runTipo || (nominaActual && nominaActual.tipo) || 'mensual');
+        const div = per.div, cf = per.cobra ? 1 : 0;   // cf=0 → no cobra este período (todo queda en 0)
         const sinTSS = !!l.sinTSS;
         const sueldo = n2(l.sueldo);
         // Otros ingresos: lista [{tipo, monto, gravable}]. Compat: número viejo `ingresos` = 1 ítem gravable.
@@ -513,12 +522,13 @@
         const dSfs = rp(l.descSfs) ?? base ?? 100;
         const dIsr = rp(l.descIsr) ?? base ?? 100;
         // Reparto por período: mitad en cada quincena.
-        const sueldoP = sueldo / div, ingresosP = ingresos / div, afp = (afpM * dAfp / 100) / div, sfs = (sfsM * dSfs / 100) / div, isr = (isrM * dIsr / 100) / div;
-        const deducciones = dedTotal;            // otras deducciones (suma de la lista)
-        const prestamo = n2(l.prestamo);         // cuota de préstamo de este período (no se divide)
+        // Todo lo del período se multiplica por cf: si no cobra (mensual en Q2), queda en 0.
+        const sueldoP = (sueldo / div) * cf, ingresosP = (ingresos / div) * cf, afp = (afpM * dAfp / 100 / div) * cf, sfs = (sfsM * dSfs / 100 / div) * cf, isr = (isrM * dIsr / 100 / div) * cf;
+        const deducciones = dedTotal * cf;       // otras deducciones (suma de la lista)
+        const prestamo = n2(l.prestamo) * cf;    // cuota de préstamo de este período
         const neto = (sueldoP + ingresosP) - afp - sfs - isr - deducciones - prestamo;
-        const afpPat = (baseAfp * (cfg.afpPat / 100)) / div, sfsPat = (baseSfs * (cfg.sfsPat / 100)) / div, srlPat = (baseSfs * (cfg.srlPat / 100)) / div;
-        return { ...l, sueldo: sueldoP, ingresos: ingresosP, ingMes: ingTotalMes, ingItems, dedItems, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS };
+        const afpPat = (baseAfp * cfg.afpPat / 100 / div) * cf, sfsPat = (baseSfs * cfg.sfsPat / 100 / div) * cf, srlPat = (baseSfs * cfg.srlPat / 100 / div) * cf;
+        return { ...l, sueldo: sueldoP, ingresos: ingresosP, ingMes: ingTotalMes, ingItems, dedItems, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS, cobra: per.cobra };
     }
 
     // % inicial de un concepto (AFP/SFS/ISR): el guardado específico; si no, el % global viejo de la
@@ -549,15 +559,16 @@
         try { const s = await getDoc(doc(db, 'rrhhNominas', key)); if (s.exists()) guardada = s.data(); } catch (e) { }
         // Se restauran las líneas CRUDAS (montos mensuales) guardadas (campo `lineas`).
         const previos = {}; if (guardada && Array.isArray(guardada.lineas)) guardada.lineas.forEach(l => previos[l.empleadoId] = l);
-        // Incluir a cada empleado según SU forma de cobro: una corrida quincenal (Q1/Q2) trae a los
-        // de cobro quincenal; una mensual trae a los mensuales. Sin forma definida → aparece en ambas.
-        const runQuincenal = tipoNom() !== 'mensual';
-        const empleadosCorrida = empleados.filter(e => { const f = e.formaCobro; return !f ? true : (runQuincenal ? f === 'quincenal' : f === 'mensual'); });
-        const lineas = empleadosCorrida.map(e => {
+        // TODOS los empleados aparecen en cada corrida; cada uno se calcula según su forma de cobro
+        // (mensual: todo en la 1ra quincena, 0 en la 2da; quincenal: mitad en cada una).
+        const runTipo = tipoNom();
+        const lineas = empleados.map(e => {
             const p = previos[e.id] || {};
-            const prs = prestamosDeEmpleado(e.id, key);
+            // Los préstamos solo se debitan en el período en que COBRA (mensual no cobra en Q2).
+            const cobra = periodoDe(e.formaCobro, runTipo).cobra;
+            const prs = cobra ? prestamosDeEmpleado(e.id, key) : [];
             return {
-                empleadoId: e.id, nombre: e.nombre,
+                empleadoId: e.id, nombre: e.nombre, formaCobro: e.formaCobro || '',
                 sueldo: p.sueldo != null ? n2(p.sueldo) : n2(e.sueldoBase),   // mensual
                 ingresosItems: itemsIniIng(p), deduccionesItems: itemsIniDed(p),
                 descAfp: pctIni(p.descAfp, p, e), descSfs: pctIni(p.descSfs, p, e), descIsr: pctIni(p.descIsr, p, e),
@@ -566,7 +577,7 @@
             };
         });
         if (guardada && Array.isArray(guardada.lineas)) {
-            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
         nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
         renderNomina();
@@ -592,10 +603,10 @@
         let lineasVis = nominaActual.lineas;
         if (filtro === 'tss') lineasVis = lineasVis.filter(l => !l.sinTSS);
         else if (filtro === 'sin') lineasVis = lineasVis.filter(l => l.sinTSS);
-        const calc = lineasVis.map(l => calcLinea(l, div));
+        const calc = lineasVis.map(l => calcLinea(l, nominaActual.tipo));
         const tot = calc.reduce((a, l) => ({ sueldo: a.sueldo + l.sueldo, ingresos: a.ingresos + l.ingresos, afp: a.afp + l.afp, sfs: a.sfs + l.sfs, isr: a.isr + l.isr, deducciones: a.deducciones + l.deducciones, prestamo: a.prestamo + l.prestamo, neto: a.neto + l.neto }), { sueldo: 0, ingresos: 0, afp: 0, sfs: 0, isr: 0, deducciones: 0, prestamo: 0, neto: 0 });
-        const rows = calc.map(l => `<tr data-id="${esc(l.empleadoId)}">
-            <td class="nom-name">${esc(l.nombre)}</td>
+        const rows = calc.map(l => `<tr data-id="${esc(l.empleadoId)}"${l.cobra === false ? ' style="opacity:.6"' : ''}>
+            <td class="nom-name">${esc(l.nombre)}${l.cobra === false ? '<div style="font-size:10.5px;color:#c76a1c;font-weight:bold">— cobró todo en la 1ra quincena</div>' : ''}</td>
             <td style="text-align:center"><input type="checkbox" ${l.sinTSS ? '' : 'checked'} onchange="toggleTSS('${esc(l.empleadoId)}', this.checked)" title="En seguridad social (TSS)"></td>
             <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="recalcNom()" title="Sueldo mensual"></td>
             <td>${l.ingMes ? fmt(l.ingMes) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarIngresos('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
@@ -609,7 +620,7 @@
         </tr>`).join('');
         document.getElementById('nom-cont').innerHTML = `
         <div class="sec-title">Nómina — ${fmtPeriodoKey(nominaActual.key)} · ${calc.length} empleados${div === 2 ? ' · <span style="color:#7d3c98">quincenal</span>' : ''}</div>
-        <p class="muted" style="margin:2px 0 6px">Incluye empleados de cobro <b>${div === 2 ? 'quincenal' : 'mensual'}</b> (y los que no lo tengan definido). La forma de cobro se configura en la ficha del empleado.</p>
+        <p class="muted" style="margin:2px 0 6px">Aparecen <b>todos</b> los empleados. Los de cobro <b>mensual</b> cobran todo en la 1ra quincena (en la 2da salen en 0); los <b>quincenales</b>, mitad en cada una. La forma de cobro se configura en la ficha del empleado.</p>
         <div class="tabla-wrap"><table class="nom">
             <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
             <tbody id="nom-tbody">${rows}</tbody>
@@ -626,7 +637,7 @@
         if (!nominaActual) { alert('Primero genera la nómina de un período.'); return; }
         recalcNom();
         const key = nominaActual.key, div = nominaActual.div || 1;
-        const calc = nominaActual.lineas.map(l => calcLinea(l, div));
+        const calc = nominaActual.lineas.map(l => calcLinea(l, nominaActual.tipo));
         if (!confirm(`¿Guardar la nómina de ${fmtPeriodoKey(key)}?\n\nSe debitarán las cuotas de préstamo de este período a los saldos.`)) return;
         try {
             await setDoc(doc(db, 'rrhhNominas', key), {
@@ -729,7 +740,7 @@
     window.verVolante = function (empId) {
         recalcNom();
         const div = nominaActual.div || 1;
-        const l = nominaActual.lineas.map(x => calcLinea(x, div)).find(x => x.empleadoId === empId);
+        const l = nominaActual.lineas.map(x => calcLinea(x, nominaActual.tipo)).find(x => x.empleadoId === empId);
         if (!l) return;
         volanteHTML = volanteDe(l, nominaActual.key);
         document.getElementById('volante-modal-body').innerHTML = volanteHTML;
@@ -870,7 +881,7 @@
     function nominaCompletaHTML() {
         if (!nominaActual) return '';
         const div = nominaActual.div || 1;
-        const calc = nominaActual.lineas.map(l => calcLinea(l, div));
+        const calc = nominaActual.lineas.map(l => calcLinea(l, nominaActual.tipo));
         const t = calc.reduce((a, l) => ({ sueldo: a.sueldo + l.sueldo, ing: a.ing + l.ingresos, afp: a.afp + l.afp, sfs: a.sfs + l.sfs, isr: a.isr + l.isr, pres: a.pres + l.prestamo, ded: a.ded + l.deducciones, neto: a.neto + l.neto, afpPat: a.afpPat + l.afpPat, sfsPat: a.sfsPat + l.sfsPat, srlPat: a.srlPat + l.srlPat }), { sueldo: 0, ing: 0, afp: 0, sfs: 0, isr: 0, pres: 0, ded: 0, neto: 0, afpPat: 0, sfsPat: 0, srlPat: 0 });
         const cel = (v) => v ? fmt(v) : '—';
         const filas = calc.map(l => `<tr><td>${esc(l.nombre)}${l.sinTSS ? ' <span style="color:#999">(sin TSS)</span>' : ''}</td>
