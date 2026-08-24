@@ -131,6 +131,8 @@
                 <div id="f-costo-preview" class="hint" style="margin-top:4px"></div>
                 <label style="margin-top:8px">% de descuentos AFP/SFS/ISR <span style="font-weight:normal;color:#999">(100 = normal; ej. 50 si tiene beneficio de media retención)</span></label>
                 <input type="number" id="f-descpct" min="0" max="100" step="1" value="100" placeholder="100">
+                <label style="margin-top:8px">Forma de cobro <span style="font-weight:normal;color:#999">— define en qué nómina aparece</span></label>
+                <select id="f-formacobro"><option value="mensual">Mensual</option><option value="quincenal">Quincenal (2 veces al mes)</option></select>
             </div>
         </div>
         <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <a href="rrhh-catalogos.html" target="_blank" style="color:var(--artal-blue);font-weight:bold;">Catálogos</a> (se abre en otra pestaña) y vuelve aquí.</p>
@@ -194,8 +196,11 @@
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
-    const usuario = await requireAuth([]);
+    // Admin gestiona; la contable (Yunairy) entra en SOLO LECTURA para ver la información del personal.
+    const usuario = await requireAuth(['contable']);
     await requirePin(usuario);
+    const esAdmin = usuario.roles.includes('admin');
+    if (!esAdmin) { const bn = document.querySelector('.btn-nuevo'); if (bn) bn.style.display = 'none'; }
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -544,12 +549,12 @@
                 ${extra ? `<div class="meta">${extra}</div>` : ''}
                 ${costo ? `<div class="meta">💵 Sueldo <b>${fmtRD(e.sueldoBase)}/mes</b> · Costo real <b>${fmtRD(costo.dia)}/día</b> ${e.enTSS !== false ? '(' + fmtRD(costo.mes) + '/mes con cargas)' : '(salario total, fuera de nómina)'}</div>` : ''}
             </div>
-            <div class="row-actions">
+            ${esAdmin ? `<div class="row-actions">
                 <button class="b-editar" onclick="editar('${e.id}')">✏ Editar</button>
                 <a class="b-exped" href="rrhh-ciclo.html?emp=${e.id}">📋 Expediente</a>
                 <button class="b-toggle" onclick="toggle('${e.id}')">${estado === 'activo' ? 'Desactivar' : 'Reactivar'}</button>
                 <button class="b-borrar" onclick="borrar('${e.id}')">🗑</button>
-            </div>
+            </div>` : ''}
         </div>`;
     }
 
@@ -570,6 +575,7 @@
         document.getElementById('f-departamento').value = ''; document.getElementById('f-sucursal').value = '';
         document.getElementById('f-entss').checked = true;
         document.getElementById('f-descpct').value = 100;
+        document.getElementById('f-formacobro').value = 'mensual';
         actualizarCostoPreview();
         refreshSelects();
         renderCargos([]);
@@ -588,6 +594,7 @@
         document.getElementById('f-sueldo').value = e.sueldoBase != null ? e.sueldoBase : '';
         document.getElementById('f-entss').checked = e.enTSS !== false;
         document.getElementById('f-descpct').value = e.descuentoPct != null ? e.descuentoPct : 100;
+        document.getElementById('f-formacobro').value = e.formaCobro || 'mensual';
         actualizarCostoPreview();
         document.getElementById('f-direccion').value = e.direccion || '';
         document.getElementById('f-notas').value = e.notas || '';
@@ -623,6 +630,7 @@
             sueldoBase: sueldoNum,
             enTSS,
             descuentoPct,
+            formaCobro: document.getElementById('f-formacobro').value,
             costoMesReal: sueldoNum ? Math.round(kCosto.mes * 100) / 100 : null,
             costoDiaReal: sueldoNum ? Math.round(kCosto.dia * 100) / 100 : null,
             notas: document.getElementById('f-notas').value.trim(),

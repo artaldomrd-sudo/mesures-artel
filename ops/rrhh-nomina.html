@@ -549,7 +549,11 @@
         try { const s = await getDoc(doc(db, 'rrhhNominas', key)); if (s.exists()) guardada = s.data(); } catch (e) { }
         // Se restauran las líneas CRUDAS (montos mensuales) guardadas (campo `lineas`).
         const previos = {}; if (guardada && Array.isArray(guardada.lineas)) guardada.lineas.forEach(l => previos[l.empleadoId] = l);
-        const lineas = empleados.map(e => {
+        // Incluir a cada empleado según SU forma de cobro: una corrida quincenal (Q1/Q2) trae a los
+        // de cobro quincenal; una mensual trae a los mensuales. Sin forma definida → aparece en ambas.
+        const runQuincenal = tipoNom() !== 'mensual';
+        const empleadosCorrida = empleados.filter(e => { const f = e.formaCobro; return !f ? true : (runQuincenal ? f === 'quincenal' : f === 'mensual'); });
+        const lineas = empleadosCorrida.map(e => {
             const p = previos[e.id] || {};
             const prs = prestamosDeEmpleado(e.id, key);
             return {
@@ -605,6 +609,7 @@
         </tr>`).join('');
         document.getElementById('nom-cont').innerHTML = `
         <div class="sec-title">Nómina — ${fmtPeriodoKey(nominaActual.key)} · ${calc.length} empleados${div === 2 ? ' · <span style="color:#7d3c98">quincenal</span>' : ''}</div>
+        <p class="muted" style="margin:2px 0 6px">Incluye empleados de cobro <b>${div === 2 ? 'quincenal' : 'mensual'}</b> (y los que no lo tengan definido). La forma de cobro se configura en la ficha del empleado.</p>
         <div class="tabla-wrap"><table class="nom">
             <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
             <tbody id="nom-tbody">${rows}</tbody>
