@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARTAL — Préstamos Bancarios</title>
+<title>ARTAL — Préstamos y Leasing</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
@@ -63,7 +63,7 @@
     <div class="header-title">
         <a class="btn-back" href="bancos.html" title="Volver">← Bancos</a>
         <img class="logo" src="../logo.png" alt="ARTAL">
-        <h1>Préstamos Bancarios</h1>
+        <h1>Préstamos y Leasing</h1>
     </div>
     <div class="who">
         <span id="user-name"></span>
@@ -74,7 +74,7 @@
 <main>
     <div class="kpis" id="kpis"></div>
     <div class="bar">
-        <button class="btn-y" onclick="abrir()">+ Nuevo préstamo</button>
+        <button class="btn-y" onclick="abrir()">+ Nuevo préstamo / leasing</button>
     </div>
     <div id="lista"><p class="empty">Cargando…</p></div>
 </main>
@@ -83,19 +83,32 @@
 <div class="modal-overlay" id="modal">
     <div class="modal-box">
         <h2 id="modal-title">Nuevo préstamo</h2>
+        <label>Tipo</label>
+        <select id="p-tipo" onchange="tipoChange()">
+            <option value="prestamo">Préstamo bancario</option>
+            <option value="leasing">Leasing (arrendamiento financiero)</option>
+        </select>
         <label>Descripción *</label>
         <input type="text" id="p-desc" placeholder="Ej. Préstamo capital de trabajo">
+        <div id="wrap-bien" style="display:none">
+            <label>Bien arrendado <span class="lbl-opt">— ej. vehículo, marca / modelo</span></label>
+            <input type="text" id="p-bien" placeholder="Ej. Vehículo Toyota Hilux 2024">
+        </div>
         <div class="grid2">
-            <div><label>Banco / entidad</label><input type="text" id="p-banco" placeholder="Banco"></div>
+            <div><label>Banco / entidad</label><input type="text" id="p-banco" placeholder="Banco / arrendadora"></div>
             <div><label>Fecha de inicio</label><input type="date" id="p-inicio" oninput="prevCuota()"></div>
         </div>
         <div class="grid2">
-            <div><label>Monto prestado (RD$) *</label><input type="number" id="p-monto" min="0" step="0.01" oninput="prevCuota()"></div>
+            <div><label id="lbl-monto">Monto prestado (RD$) *</label><input type="number" id="p-monto" min="0" step="0.01" oninput="prevCuota()"></div>
             <div><label>Tasa anual (%) *</label><input type="number" id="p-tasa" min="0" step="0.01" placeholder="Ej. 14" oninput="prevCuota()"></div>
         </div>
         <div class="grid2">
             <div><label>Plazo (meses) *</label><input type="number" id="p-plazo" min="1" step="1" placeholder="Ej. 36" oninput="prevCuota()"></div>
             <div><label>Sistema</label><select id="p-sistema" onchange="prevCuota()"><option value="frances">Francés (cuota fija)</option><option value="aleman">Alemán (capital fijo)</option><option value="bullet">Bullet (paga al final)</option></select></div>
+        </div>
+        <div class="grid2">
+            <div id="wrap-inicial"><label>Inicial / pago inicial <span class="lbl-opt">— opcional</span></label><input type="number" id="p-inicial" min="0" step="0.01" placeholder="0"></div>
+            <div id="wrap-residual" style="display:none"><label>Valor residual / opción de compra <span class="lbl-opt">— al final</span></label><input type="number" id="p-residual" min="0" step="0.01" placeholder="0" oninput="prevCuota()"></div>
         </div>
         <label>Notas <span class="lbl-opt">— opcional</span></label>
         <input type="text" id="p-notas" placeholder="Garantía, nº de préstamo…">
@@ -146,12 +159,16 @@
     // Tabla de amortización. i = tasa mensual. Francés: cuota fija. Alemán: capital fijo (cuota
     // decrece). Bullet: solo interés cada mes y todo el capital en la última. La última fila
     // ajusta el capital al saldo restante para que cierre exacto sin arrastres de redondeo.
-    function amortizacion(P, tasaAnual, n, sistema) {
+    // `residual` (opcional, solo leasing): valor residual / opción de compra que se salda en la
+    // última cuota (balloon). Con residual = 0 el cálculo es idéntico al de un préstamo normal.
+    function amortizacion(P, tasaAnual, n, sistema, residual) {
         P = n2(P); n = Math.max(1, Math.floor(n2(n)));
+        residual = Math.max(0, Math.min(n2(residual), P));
         const i = (n2(tasaAnual) / 100) / 12;
         const rows = []; let saldo = P;
-        const capFijo = P / n;
-        const cuotaFr = i > 0 ? P * i / (1 - Math.pow(1 + i, -n)) : P / n;
+        const capFijo = (P - residual) / n;
+        // Cuota francesa que amortiza hasta el valor residual al final (no hasta 0).
+        const cuotaFr = i > 0 ? (P - residual * Math.pow(1 + i, -n)) * i / (1 - Math.pow(1 + i, -n)) : (P - residual) / n;
         for (let k = 1; k <= n; k++) {
             const interes = saldo * i;
             let capital;
@@ -164,6 +181,10 @@
         }
         return rows;
     }
+    // Amortización de un registro guardado (aplica el residual solo si es leasing).
+    function amortDe(p) {
+        return amortizacion(p.monto, p.tasaAnual, Math.floor(n2(p.plazoMeses)), p.sistema, p.tipo === 'leasing' ? n2(p.residual) : 0);
+    }
 
     let prestamos = [];
     onSnapshot(collection(db, 'bancosPrestamos'), (s) => { prestamos = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); },
@@ -171,37 +192,53 @@
 
     // ---------- Modal préstamo ----------
     let editId = null;
+    // Muestra/oculta los campos propios del leasing y adapta las etiquetas.
+    window.tipoChange = function () {
+        const es = document.getElementById('p-tipo').value === 'leasing';
+        document.getElementById('wrap-bien').style.display = es ? '' : 'none';
+        document.getElementById('wrap-residual').style.display = es ? '' : 'none';
+        document.getElementById('lbl-monto').textContent = es ? 'Monto financiado (RD$) *' : 'Monto prestado (RD$) *';
+        prevCuota();
+    };
     window.prevCuota = function () {
         const P = n2(document.getElementById('p-monto').value), t = n2(document.getElementById('p-tasa').value), n = Math.floor(n2(document.getElementById('p-plazo').value)), sis = document.getElementById('p-sistema').value;
+        const esLeasing = document.getElementById('p-tipo').value === 'leasing';
+        const residual = esLeasing ? n2(document.getElementById('p-residual').value) : 0;
         const box = document.getElementById('cuota-prev');
         if (P <= 0 || n < 1) { box.innerHTML = 'Completa monto, tasa y plazo para ver la cuota.'; return; }
-        const rows = amortizacion(P, t, n, sis);
+        const rows = amortizacion(P, t, n, sis, residual);
         const totalInt = rows.reduce((a, r) => a + r.interes, 0);
         const cuota1 = rows[0].cuota;
         const txt = sis === 'frances' ? `Cuota mensual fija: <b>${fmt(cuota1)}</b>` :
             sis === 'aleman' ? `Primera cuota: <b>${fmt(cuota1)}</b> (va bajando)` :
                 `Cuota mensual (interés): <b>${fmt(cuota1)}</b> + capital <b>${fmt(P)}</b> al final`;
-        box.innerHTML = `${txt}<br>Total a pagar: <b>${fmt(P + totalInt)}</b> · Intereses: <b>${fmt(totalInt)}</b>`;
+        const resTxt = residual > 0 ? `<br>Incluye valor residual / opción de compra de <b>${fmt(residual)}</b> en la última cuota.` : '';
+        box.innerHTML = `${txt}<br>Total a pagar: <b>${fmt(P + totalInt)}</b> · Intereses: <b>${fmt(totalInt)}</b>${resTxt}`;
     };
     window.abrir = function () {
-        editId = null; document.getElementById('modal-title').textContent = 'Nuevo préstamo';
-        ['p-desc', 'p-banco', 'p-monto', 'p-tasa', 'p-plazo', 'p-notas'].forEach(id => document.getElementById(id).value = '');
+        editId = null; document.getElementById('modal-title').textContent = 'Nuevo préstamo / leasing';
+        ['p-desc', 'p-banco', 'p-monto', 'p-tasa', 'p-plazo', 'p-notas', 'p-bien', 'p-inicial', 'p-residual'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('p-inicio').value = hoyISO();
         document.getElementById('p-sistema').value = 'frances';
-        prevCuota(); document.getElementById('modal').classList.add('show');
+        document.getElementById('p-tipo').value = 'prestamo';
+        tipoChange(); document.getElementById('modal').classList.add('show');
     };
     window.editar = function (id) {
         const p = prestamos.find(x => x.id === id); if (!p) return;
-        editId = id; document.getElementById('modal-title').textContent = 'Editar préstamo';
+        editId = id; document.getElementById('modal-title').textContent = 'Editar ' + (p.tipo === 'leasing' ? 'leasing' : 'préstamo');
+        document.getElementById('p-tipo').value = p.tipo || 'prestamo';
         document.getElementById('p-desc').value = p.descripcion || '';
+        document.getElementById('p-bien').value = p.bien || '';
         document.getElementById('p-banco').value = p.banco || '';
         document.getElementById('p-inicio').value = p.fechaInicio || hoyISO();
         document.getElementById('p-monto').value = p.monto != null ? p.monto : '';
         document.getElementById('p-tasa').value = p.tasaAnual != null ? p.tasaAnual : '';
         document.getElementById('p-plazo').value = p.plazoMeses != null ? p.plazoMeses : '';
         document.getElementById('p-sistema').value = p.sistema || 'frances';
+        document.getElementById('p-inicial').value = p.inicial != null ? p.inicial : '';
+        document.getElementById('p-residual').value = p.residual != null ? p.residual : '';
         document.getElementById('p-notas').value = p.notas || '';
-        prevCuota(); document.getElementById('modal').classList.add('show');
+        tipoChange(); document.getElementById('modal').classList.add('show');
     };
     window.cerrar = function () { document.getElementById('modal').classList.remove('show'); };
     window.guardar = async function () {
@@ -210,9 +247,12 @@
         if (!desc) { alert('Escribe la descripción.'); return; }
         if (monto <= 0) { alert('Escribe el monto prestado.'); return; }
         if (plazo < 1) { alert('Escribe el plazo en meses.'); return; }
+        const tipo = document.getElementById('p-tipo').value;
         const datos = {
+            tipo, bien: tipo === 'leasing' ? document.getElementById('p-bien').value.trim() : '',
             descripcion: desc, banco: document.getElementById('p-banco').value.trim(), fechaInicio: document.getElementById('p-inicio').value || hoyISO(),
             monto, tasaAnual: tasa, plazoMeses: plazo, sistema: document.getElementById('p-sistema').value, notas: document.getElementById('p-notas').value.trim(),
+            inicial: n2(document.getElementById('p-inicial').value), residual: tipo === 'leasing' ? n2(document.getElementById('p-residual').value) : 0,
             actualizado: serverTimestamp(), actualizadoPor: usuario.nombre
         };
         const btn = document.querySelector('#modal .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
@@ -227,7 +267,7 @@
         const p = prestamos.find(x => x.id === id); if (!p) return;
         const pagadas = n2(p.cuotasPagadas), n = Math.floor(n2(p.plazoMeses));
         if (pagadas >= n) { alert('Este préstamo ya está saldado.'); return; }
-        const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+        const rows = amortDe(p);
         const prox = rows[pagadas];
         if (!confirm('¿Registrar el pago de la cuota ' + (pagadas + 1) + ' de ' + n + ' (' + fmt(prox.cuota) + ')?')) return;
         try { await updateDoc(doc(db, 'bancosPrestamos', id), { cuotasPagadas: pagadas + 1, ultimoPagoPor: usuario.nombre, ultimoPagoFecha: serverTimestamp() }); }
@@ -249,9 +289,9 @@
     window.verAmort = function (id) {
         const p = prestamos.find(x => x.id === id); if (!p) return;
         const n = Math.floor(n2(p.plazoMeses)), pagadas = n2(p.cuotasPagadas);
-        const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+        const rows = amortDe(p);
         const totInt = rows.reduce((a, r) => a + r.interes, 0), totCuota = rows.reduce((a, r) => a + r.cuota, 0);
-        document.getElementById('amort-title').textContent = 'Amortización — ' + (p.descripcion || 'Préstamo') + ' (' + (SIS[p.sistema] || p.sistema) + ')';
+        document.getElementById('amort-title').textContent = (p.tipo === 'leasing' ? 'Leasing — ' : 'Amortización — ') + (p.descripcion || 'Préstamo') + ' (' + (SIS[p.sistema] || p.sistema) + (p.tipo === 'leasing' && n2(p.residual) > 0 ? ', residual ' + fmt0(p.residual) : '') + ')';
         document.getElementById('amort-body').innerHTML = `<table class="amort">
             <thead><tr><th class="l">#</th><th class="l">Fecha</th><th>Cuota</th><th>Interés</th><th>Capital</th><th>Saldo</th></tr></thead>
             <tbody>${rows.map(r => `<tr class="${r.k <= pagadas ? 'pg' : ''}">
@@ -271,7 +311,7 @@
         let deuda = 0, cuotaMes = 0, vigentes = 0;
         activos.forEach(p => {
             const n = Math.floor(n2(p.plazoMeses)), pagadas = n2(p.cuotasPagadas);
-            const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+            const rows = amortDe(p);
             const saldo = pagadas > 0 ? (rows[Math.min(pagadas, n) - 1].saldo) : n2(p.monto);
             deuda += saldo;
             if (pagadas < n) { vigentes++; cuotaMes += rows[pagadas].cuota; }
@@ -281,21 +321,24 @@
         ].map(([l, x]) => `<div class="kpi"><div class="n">${x}</div><div class="l">${l}</div></div>`).join('');
 
         const cont = document.getElementById('lista');
-        if (!prestamos.length) { cont.innerHTML = '<p class="empty">Aún no hay préstamos. Registra uno con «+ Nuevo préstamo».</p>'; return; }
+        if (!prestamos.length) { cont.innerHTML = '<p class="empty">Aún no hay préstamos ni leasings. Registra uno con «+ Nuevo préstamo / leasing».</p>'; return; }
         const orden = activos.sort((a, b) => String(b.fechaInicio || '').localeCompare(String(a.fechaInicio || '')));
         cont.innerHTML = orden.map(p => {
             const n = Math.floor(n2(p.plazoMeses)), pagadas = Math.min(n2(p.cuotasPagadas), n);
-            const rows = amortizacion(p.monto, p.tasaAnual, n, p.sistema);
+            const rows = amortDe(p);
             const saldo = pagadas > 0 ? rows[pagadas - 1].saldo : n2(p.monto);
             const saldado = pagadas >= n;
             const prox = saldado ? null : rows[pagadas];
             const pct = n ? Math.round(pagadas / n * 100) : 0;
+            const esLeasing = p.tipo === 'leasing';
             return `<div class="order-card pr-card ${saldado ? 'pagado' : ''}">
-                <div class="pr-head"><b>${esc(p.descripcion || 'Préstamo')}${p.banco ? ' · ' + esc(p.banco) : ''}</b><span class="pr-sis">${esc(SIS[p.sistema] || p.sistema)}</span></div>
+                <div class="pr-head"><b>${esc(p.descripcion || 'Préstamo')}${p.banco ? ' · ' + esc(p.banco) : ''}</b><span style="display:flex;gap:6px;flex-wrap:wrap">${esLeasing ? `<span class="pr-sis" style="color:#0a7d5a;background:#e6f7f0">Leasing</span>` : ''}<span class="pr-sis">${esc(SIS[p.sistema] || p.sistema)}</span></span></div>
                 <div class="pr-grid">
-                    <span>Monto <b>${fmt0(p.monto)}</b></span>
+                    ${esLeasing && p.bien ? `<span>Bien <b>${esc(p.bien)}</b></span>` : ''}
+                    <span>${esLeasing ? 'Financiado' : 'Monto'} <b>${fmt0(p.monto)}</b></span>
                     <span>Tasa <b>${n2(p.tasaAnual)}%</b></span>
                     <span>Plazo <b>${n} meses</b></span>
+                    ${esLeasing && n2(p.residual) > 0 ? `<span>Residual <b>${fmt0(p.residual)}</b></span>` : ''}
                     <span>Saldo <b>${fmt0(saldo)}</b></span>
                     ${prox ? `<span>Próx. cuota <b>${fmt0(prox.cuota)}</b> · ${esc(fmtFecha(addMeses(p.fechaInicio, pagadas + 1)))}</span>` : '<span style="color:#1f9d61;font-weight:bold">Saldado ✓</span>'}
                 </div>

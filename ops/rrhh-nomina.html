@@ -735,18 +735,25 @@
     onSnapshot(collection(db, 'bancosCuentas'), (s) => { cuentasBanco = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.activo !== false); renderHistorial(); }, () => {});
     onSnapshot(collection(db, 'bancosMovimientos'), (s) => { movsBanco = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); }, () => {});
     const saldoCuenta = (c) => n2(c.saldoInicial) + movsBanco.filter(m => m.cuentaId === c.id).reduce((a, m) => a + (m.tipo === 'credito' ? n2(m.monto) : -n2(m.monto)), 0);
+    // Las cuentas de Bancos guardan el nombre en `alias` (+ `banco`), no en `nombre`.
+    const nombreCuenta = (c) => (c.alias || c.nombre || 'Cuenta') + (c.banco ? ' · ' + c.banco : '');
     const totalNetoNomina = (n) => Array.isArray(n.calc) ? n.calc.reduce((a, l) => a + n2(l.neto), 0) : 0;
 
     function renderHistorial() {
         const cont = document.getElementById('hist-cont'); if (!cont) return;
         const lista = nominasGuardadas.slice().sort((a, b) => String(b.key || '').localeCompare(String(a.key || '')));
         if (!lista.length) { cont.innerHTML = '<p class="empty">No hay nóminas guardadas todavía. Genera una y pulsa «Guardar» en la pestaña Nómina.</p>'; return; }
-        const optsCuentas = cuentasBanco.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}${c.banco ? ' · ' + esc(c.banco) : ''} — saldo ${fmt(saldoCuenta(c))}</option>`).join('');
+        const optsCuentas = cuentasBanco.map(c => `<option value="${esc(c.id)}">${esc(nombreCuenta(c))} — saldo ${fmt(saldoCuenta(c))}</option>`).join('');
         cont.innerHTML = lista.map(n => {
             const total = totalNetoNomina(n);
             const fechaG = (n.fechaGuardado && n.fechaGuardado.toDate) ? n.fechaGuardado.toDate().toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
             const pagFecha = (n.pagoFecha && n.pagoFecha.toDate) ? n.pagoFecha.toDate().toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
             const pagado = n.pagado === true;
+            const puedeEnviar = usuario.roles.includes('admin') || usuario.roles.includes('comunicaciones');
+            const enviados = n.volantesEnviados === true;
+            const btnEnviar = !puedeEnviar ? '' : (enviados
+                ? `<span style="color:#1e8449;font-weight:bold;font-size:12.5px">📨 ${n.volantesCount || ''} volante(s) enviados</span> <button class="btn-vol" style="color:#e74c3c" onclick="cancelarVolantes('${esc(n.key)}')">Cancelar envío</button>`
+                : `<button class="btn-vol" style="background:#25a244" onclick="enviarVolantes('${esc(n.key)}')">📨 Enviar volantes</button>`);
             return `<div class="param-card" style="border-left:5px solid ${pagado ? '#2ecc71' : '#e0a800'};margin-bottom:10px">
                 <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
                     <b>${esc(fmtPeriodoKey(n.key))}</b>
@@ -755,11 +762,11 @@
                 <div class="muted" style="margin-top:3px">${(n.calc ? n.calc.length : 0)} empleados${fechaG ? ' · guardada ' + fechaG : ''}${n.guardadoPor ? ' por ' + esc(n.guardadoPor) : ''}</div>
                 ${pagado
                     ? `<div style="margin-top:8px;color:#1e8449;font-weight:bold">✅ Pagado${pagFecha ? ' el ' + pagFecha : ''}${n.pagoCuentaNombre ? ' desde ' + esc(n.pagoCuentaNombre) : ''}</div>
-                       <div style="margin-top:8px"><button class="btn-vol" style="color:#e74c3c" onclick="deshacerPagoNomina('${esc(n.key)}')">↩ Deshacer pago</button> <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button></div>`
+                       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn-vol" style="color:#e74c3c" onclick="deshacerPagoNomina('${esc(n.key)}')">↩ Deshacer pago</button> <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button> ${btnEnviar}</div>`
                     : `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
                         <select id="pago-cta-${esc(n.key)}" style="padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px">${optsCuentas || '<option value="">(no hay cuentas — créalas en Bancos)</option>'}</select>
                         <button class="btn-y" style="padding:9px 14px;font-size:13px;min-height:0" onclick="pagarNomina('${esc(n.key)}')">✅ Pago completado</button>
-                        <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button>
+                        <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button> ${btnEnviar}
                        </div>`}
             </div>`;
         }).join('');
@@ -778,7 +785,7 @@
         const cta = cuentasBanco.find(c => c.id === ctaId);
         if (!cta) { alert('Elige la cuenta bancaria desde la que se paga (créala en Bancos si no hay).'); return; }
         const saldo = saldoCuenta(cta);
-        let msg = `¿Registrar el PAGO de la nómina «${fmtPeriodoKey(key)}» por ${fmt(total)} desde ${cta.nombre}?\n\nSaldo actual: ${fmt(saldo)} → quedará ${fmt(saldo - total)}.\n\nSe crea un egreso en Bancos.`;
+        let msg = `¿Registrar el PAGO de la nómina «${fmtPeriodoKey(key)}» por ${fmt(total)} desde ${nombreCuenta(cta)}?\n\nSaldo actual: ${fmt(saldo)} → quedará ${fmt(saldo - total)}.\n\nSe crea un egreso en Bancos.`;
         if (saldo < total) msg += '\n\n⚠️ El saldo es menor que el pago (la cuenta quedará en negativo).';
         if (!confirm(msg)) return;
         try {
@@ -788,7 +795,7 @@
                 categoria: 'Nómina', conciliado: false, origen: 'nomina', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             await updateDoc(doc(db, 'rrhhNominas', key), {
-                pagado: true, pagoCuentaId: cta.id, pagoCuentaNombre: cta.nombre, pagoMonto: total,
+                pagado: true, pagoCuentaId: cta.id, pagoCuentaNombre: nombreCuenta(cta), pagoMonto: total,
                 pagoMovimientoId: mov.id, pagoFecha: serverTimestamp(), pagoPor: usuario.nombre
             });
         } catch (e) { alert('No se pudo registrar el pago: ' + (e && e.message ? e.message : e)); }
@@ -800,6 +807,58 @@
             if (n.pagoMovimientoId) { try { await deleteDoc(doc(db, 'bancosMovimientos', n.pagoMovimientoId)); } catch (_) { } }
             await updateDoc(doc(db, 'rrhhNominas', key), { pagado: false, pagoMovimientoId: null, pagoFecha: null });
         } catch (e) { alert('No se pudo deshacer: ' + (e && e.message ? e.message : e)); }
+    };
+
+    // Texto plano del volante (para enviar por mensajería interna).
+    function volanteTexto(l, periodoKey) {
+        const L = ['ARTAL DOMINICANA — Volante de pago', l.nombre, 'Período: ' + fmtPeriodoKey(periodoKey), ''];
+        L.push('Sueldo: ' + fmt(l.sueldo));
+        if (l.ingresos) L.push('Otros ingresos: ' + fmt(l.ingresos));
+        if (!l.sinTSS) { L.push('AFP: - ' + fmt(l.afp)); L.push('SFS: - ' + fmt(l.sfs)); }
+        if (l.isr) L.push('ISR: - ' + fmt(l.isr));
+        if (l.prestamo) L.push('Cuota de préstamo: - ' + fmt(l.prestamo));
+        if (l.deducciones) L.push('Otras deducciones: - ' + fmt(l.deducciones));
+        L.push('', 'NETO A PAGAR: ' + fmt(l.neto));
+        return L.join('\n');
+    }
+    // Envía a cada empleado su volante DIRECTO (sin abrir nada) a su Mensajería interna.
+    window.enviarVolantes = async function (key) {
+        const n = nominasGuardadas.find(x => x.key === key); if (!n || !Array.isArray(n.lineas)) return;
+        if (n.volantesEnviados) { alert('Ya se enviaron los volantes de esta nómina. Usa «Cancelar envío» si quieres reenviarlos.'); return; }
+        if (!confirm('¿Enviar a cada empleado su volante de «' + fmtPeriodoKey(key) + '» por la mensajería interna?\n\nCada uno lo recibe en su bandeja de Mensajería.')) return;
+        let ok = 0; const ids = []; const sinCorreo = [];
+        for (const rawL of n.lineas) {
+            const l = calcLinea(rawL, n.tipo);
+            if (l.cobra === false) continue;   // no cobró este período → sin volante
+            const emp = empleados.find(e => e.id === l.empleadoId);
+            const correo = emp && emp.correo ? emp.correo : '';
+            if (!correo) { sinCorreo.push(l.nombre); continue; }
+            try {
+                const m = await addDoc(collection(db, 'mensajes'), {
+                    estado: 'enviado', asunto: 'Tu volante de pago — ' + fmtPeriodoKey(key),
+                    cuerpo: volanteTexto(l, key),
+                    remitenteEmail: usuario.email, remitenteNombre: usuario.nombre,
+                    fecha: serverTimestamp(), paraTodos: false, destinatarios: [correo],
+                    requiereFirma: false, adjuntos: [], enlace: null, acuses: {},
+                    origen: 'volante_nomina', nominaKey: key
+                });
+                ids.push(m.id); ok++;
+            } catch (e) { /* sigue con los demás */ }
+        }
+        try { await updateDoc(doc(db, 'rrhhNominas', key), { volantesEnviados: ids.length > 0, volanteMsgIds: ids, volantesCount: ok, volantesFecha: serverTimestamp() }); } catch (e) { }
+        let msg = '✓ Volantes enviados: ' + ok;
+        if (sinCorreo.length) msg += '\n\n⚠️ Sin correo (no se enviaron): ' + [...new Set(sinCorreo)].join(', ') + '.\nAgrégales el correo en Empleados.';
+        msg += '\n\nSe puede revertir con «Cancelar envío».';
+        alert(msg);
+    };
+    // Cancela el envío: borra esos mensajes de la bandeja de los empleados (para pruebas).
+    window.cancelarVolantes = async function (key) {
+        const n = nominasGuardadas.find(x => x.key === key); if (!n) return;
+        const ids = Array.isArray(n.volanteMsgIds) ? n.volanteMsgIds : [];
+        if (!confirm('¿Cancelar el envío de volantes de «' + fmtPeriodoKey(key) + '»?\n\nSe eliminan los ' + ids.length + ' mensaje(s) de la bandeja de los empleados.')) return;
+        for (const id of ids) { try { await deleteDoc(doc(db, 'mensajes', id)); } catch (_) { } }
+        try { await updateDoc(doc(db, 'rrhhNominas', key), { volantesEnviados: false, volanteMsgIds: [], volantesCount: 0 }); } catch (e) { }
+        alert('✓ Volantes cancelados (' + ids.length + ' mensaje(s) eliminados).');
     };
 
     // ---------- VOLANTE ----------
