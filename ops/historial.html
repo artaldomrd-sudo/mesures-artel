@@ -14,6 +14,8 @@
     .carpeta-back { background: none; border: none; color: var(--artal-blue); font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; padding: 4px 0 14px; }
     .carpeta-back:hover { text-decoration: underline; }
     .carpeta-cliente-titulo { color: var(--artal-blue); font-size: 18px; margin: 0 0 14px; }
+    .reorg-btn { position: absolute; top: 8px; right: 8px; border: none; background: rgba(255,255,255,.72); border-radius: 8px; padding: 4px 7px; font-size: 14px; line-height: 1; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .reorg-btn:hover { background: #fff; }
     .carpeta { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 16px; border-left: 6px solid #8e44ad; }
     .carpeta.abierta { padding-bottom: 14px; }
     .carpeta-top { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
@@ -114,7 +116,7 @@
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, doc, deleteDoc, updateDoc, onSnapshot, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, doc, deleteDoc, updateDoc, writeBatch, onSnapshot, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { buildClientMap, clientList } from './clients.js';
     window.openOrderPreview = openOrderPreview;
@@ -578,6 +580,7 @@
             carpetaNivel = 'clientes';
             carpetaClienteSel = null;
             carpetaObraSel = null;
+            carpetaResidencialSel = null;
             document.getElementById('carpeta-search').value = '';
             renderCarpetas();
         }
@@ -688,6 +691,7 @@
     let carpetaNivel = 'clientes'; // 'clientes' | 'obras' | 'docs'
     let carpetaClienteSel = null;
     let carpetaObraSel = null;
+    let carpetaResidencialSel = null; // null = nivel superior; si tiene valor, se ven los clientes de ese residencial
 
     // Los cards leen la clave desde `data-*` (vía `this.dataset`, decodificado por el propio
     // navegador) en vez de interpolar el texto crudo dentro del onclick — así un nombre de
@@ -696,6 +700,17 @@
     window.carpetaAbrirCliente = function (el) {
         carpetaClienteSel = el.dataset.ckey;
         carpetaNivel = 'obras';
+        document.getElementById('carpeta-search').value = '';
+        renderCarpetas();
+    };
+    // Abre un residencial/sección: se queda en el nivel 'clientes' pero filtrado a ese residencial.
+    window.carpetaAbrirResidencial = function (el) {
+        carpetaResidencialSel = el.dataset.rkey;
+        document.getElementById('carpeta-search').value = '';
+        renderCarpetas();
+    };
+    window.carpetaVolverResidenciales = function () {
+        carpetaResidencialSel = null;
         document.getElementById('carpeta-search').value = '';
         renderCarpetas();
     };
@@ -719,8 +734,10 @@
             const obra = (o.obra || '').trim();
             const titulo = obra || cliente || 'Sin obra';
             const key = normTexto(cliente) + '|||' + normTexto(obra);
-            if (!grupos.has(key)) grupos.set(key, { key, titulo, cliente: cliente || 'Sin cliente', docs: [] });
-            grupos.get(key).docs.push({ id, o });
+            if (!grupos.has(key)) grupos.set(key, { key, titulo, cliente: cliente || 'Sin cliente', residencial: (o.residencial || '').trim(), docs: [] });
+            const g = grupos.get(key);
+            if (!g.residencial && o.residencial) g.residencial = o.residencial.trim();
+            g.docs.push({ id, o });
         });
         carpetasArr = Array.from(grupos.values());
 
@@ -740,29 +757,149 @@
     // documentos tiene en total.
     function renderCarpetasClientes(list) {
         const term = normTexto(document.getElementById('carpeta-search').value);
+        // Un card por cliente, con su residencial (si tiene) y el botón ⚙️ de reorganizar.
         const clientesMap = new Map();
         carpetasArr.forEach(g => {
             const ckey = normTexto(g.cliente);
-            if (!clientesMap.has(ckey)) clientesMap.set(ckey, { ckey, cliente: g.cliente, obras: 0, docs: 0, ultima: 0 });
+            if (!clientesMap.has(ckey)) clientesMap.set(ckey, { ckey, cliente: g.cliente, residencial: g.residencial || '', obras: 0, docs: 0, ultima: 0 });
             const c = clientesMap.get(ckey);
+            if (!c.residencial && g.residencial) c.residencial = g.residencial;
             c.obras++;
             c.docs += g.docs.length;
             c.ultima = Math.max(c.ultima, ...g.docs.map(d => orderDate(d.o)));
         });
-        let clientes = Array.from(clientesMap.values());
-        if (term) clientes = clientes.filter(c => normTexto(c.cliente).includes(term) ||
-            carpetasArr.some(g => normTexto(g.cliente) === c.ckey && normTexto(g.titulo).includes(term)));
-        clientes.sort((a, b) => b.ultima - a.ultima);
+        const clientes = Array.from(clientesMap.values());
 
-        if (!clientes.length) { list.innerHTML = '<p class="empty">No hay clientes registrados.</p>'; return; }
-
-        list.innerHTML = `<div class="grid">` + clientes.map(c => `
-            <a class="card-link" href="#" data-ckey="${esc(c.ckey)}" onclick="carpetaAbrirCliente(this); return false;">
+        const cardCliente = (c) => `
+            <a class="card-link" href="#" data-ckey="${esc(c.ckey)}" onclick="carpetaAbrirCliente(this); return false;" style="position:relative">
+                <button class="reorg-btn" data-ckey="${esc(c.ckey)}" title="Renombrar cliente / mover a un residencial" onclick="event.stopPropagation();event.preventDefault();reorganizarCliente(this.dataset.ckey);return false;">⚙️</button>
                 <div class="emoji">👤</div>
                 <div class="title">${esc(c.cliente)}</div>
-                <div class="desc">${c.obras} obra${c.obras === 1 ? '' : 's'} · ${c.docs} doc${c.docs === 1 ? '' : 's'}</div>
-            </a>`).join('') + `</div>`;
+                <div class="desc">${c.obras} obra${c.obras === 1 ? '' : 's'} · ${c.docs} doc${c.docs === 1 ? '' : 's'}${c.residencial ? ' · 🏘️ ' + esc(c.residencial) : ''}</div>
+            </a>`;
+
+        // --- Dentro de un residencial: solo sus clientes ---
+        if (carpetaResidencialSel) {
+            const resNombre = (clientes.find(c => normTexto(c.residencial) === carpetaResidencialSel) || {}).residencial || carpetaResidencialSel;
+            let dentro = clientes.filter(c => normTexto(c.residencial) === carpetaResidencialSel);
+            if (term) dentro = dentro.filter(c => normTexto(c.cliente).includes(term));
+            dentro.sort((a, b) => b.ultima - a.ultima);
+            const volver = `<button class="carpeta-back" onclick="carpetaVolverResidenciales()">← Residenciales</button>`;
+            list.innerHTML = volver + `<h2 class="carpeta-cliente-titulo">🏘️ ${esc(resNombre)}</h2>` +
+                (dentro.length ? `<div class="grid">` + dentro.map(cardCliente).join('') + `</div>` : `<p class="empty">No hay clientes en este residencial.</p>`);
+            return;
+        }
+
+        // --- Nivel superior: residenciales (📁) + clientes sueltos (👤), ordenados por recencia ---
+        const resMap = new Map();
+        clientes.forEach(c => {
+            if (!c.residencial) return;
+            const rkey = normTexto(c.residencial);
+            if (!resMap.has(rkey)) resMap.set(rkey, { rkey, residencial: c.residencial, clientes: 0, docs: 0, ultima: 0 });
+            const r = resMap.get(rkey);
+            r.clientes++; r.docs += c.docs; r.ultima = Math.max(r.ultima, c.ultima);
+        });
+        let residenciales = Array.from(resMap.values());
+        let sueltos = clientes.filter(c => !c.residencial);
+        if (term) {
+            residenciales = residenciales.filter(r => normTexto(r.residencial).includes(term) ||
+                clientes.some(c => normTexto(c.residencial) === r.rkey && normTexto(c.cliente).includes(term)));
+            sueltos = sueltos.filter(c => normTexto(c.cliente).includes(term) ||
+                carpetasArr.some(g => normTexto(g.cliente) === c.ckey && normTexto(g.titulo).includes(term)));
+        }
+        const entradas = residenciales.map(r => ({ t: 'res', ultima: r.ultima, r })).concat(sueltos.map(c => ({ t: 'cli', ultima: c.ultima, c })));
+        entradas.sort((a, b) => b.ultima - a.ultima);
+
+        if (!entradas.length) { list.innerHTML = '<p class="empty">No hay clientes registrados.</p>'; return; }
+
+        list.innerHTML = `<div class="grid">` + entradas.map(e => {
+            if (e.t === 'res') {
+                const r = e.r;
+                return `
+            <a class="card-link" href="#" data-rkey="${esc(r.rkey)}" onclick="carpetaAbrirResidencial(this); return false;" style="position:relative">
+                <button class="reorg-btn" data-rkey="${esc(r.rkey)}" title="Renombrar residencial" onclick="event.stopPropagation();event.preventDefault();renombrarResidencial(this.dataset.rkey);return false;">✏️</button>
+                <div class="emoji">🏘️</div>
+                <div class="title">${esc(r.residencial)}</div>
+                <div class="desc">${r.clientes} cliente${r.clientes === 1 ? '' : 's'} · ${r.docs} doc${r.docs === 1 ? '' : 's'}</div>
+            </a>`;
+            }
+            return cardCliente(e.c);
+        }).join('') + `</div>`;
     }
+
+    // Actualiza en lotes (400) el conjunto de pedidos indicado.
+    async function batchUpdateOrders(ids, campos) {
+        for (let i = 0; i < ids.length; i += 400) {
+            const b = writeBatch(db);
+            ids.slice(i, i + 400).forEach(id => b.update(doc(db, 'orders', id), campos));
+            await b.commit();
+        }
+    }
+    function cerrarReorg() { const ov = document.getElementById('reorg-ov'); if (ov) ov.remove(); }
+    window.cerrarReorg = cerrarReorg;
+
+    // Renombrar un cliente (juntar el mismo cliente que quedó con nombres distintos) y/o asignarlo
+    // a un residencial/sección. Reescribe cliente/residencial en TODOS sus pedidos de una vez.
+    window.reorganizarCliente = function (ckey) {
+        const grupos = carpetasArr.filter(g => normTexto(g.cliente) === ckey);
+        if (!grupos.length) return;
+        const nombreActual = grupos[0].cliente;
+        const resActual = (grupos.find(g => g.residencial) || {}).residencial || '';
+        const nDocs = grupos.reduce((a, g) => a + g.docs.length, 0);
+        const nombres = [...new Set(carpetasArr.map(g => g.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        const residenciales = [...new Set(carpetasArr.map(g => g.residencial).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+        cerrarReorg();
+        const ov = document.createElement('div');
+        ov.id = 'reorg-ov';
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+        ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;padding:20px;font-family:Arimo;">
+            <h2 style="color:var(--artal-blue);font-size:17px;margin:0 0 4px;">Reorganizar cliente</h2>
+            <p style="font-size:12.5px;color:#667;margin:0 0 12px;">${esc(nombreActual)} · ${nDocs} documento${nDocs === 1 ? '' : 's'}</p>
+            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue);display:block;margin:8px 0 4px;">Nombre del cliente</label>
+            <input id="reorg-nombre" list="reorg-nombres" value="${esc(nombreActual)}" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-family:Arimo;font-size:14px;box-sizing:border-box;">
+            <datalist id="reorg-nombres">${nombres.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+            <p style="font-size:11px;color:#8a93a0;margin:5px 0 0;">Ponle el nombre de otro cliente ya existente para juntarlos en uno solo.</p>
+            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue);display:block;margin:12px 0 4px;">Residencial / Sección <span style="font-weight:normal;color:#8a93a0;">— opcional</span></label>
+            <input id="reorg-res" list="reorg-reslist" value="${esc(resActual)}" placeholder="Ej. Spirit of Las Terrenas" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-family:Arimo;font-size:14px;box-sizing:border-box;">
+            <datalist id="reorg-reslist">${residenciales.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+            <p style="font-size:11px;color:#8a93a0;margin:5px 0 0;">Escribe el mismo residencial en varios clientes para agruparlos en esa sección. Déjalo vacío para sacarlo del residencial.</p>
+            <div style="display:flex;gap:10px;margin-top:16px;">
+                <button onclick="cerrarReorg()" style="flex:1;padding:11px;border:1.5px solid #ddd;border-radius:8px;background:#fff;color:#888;font-weight:bold;cursor:pointer;font-family:Arimo;">Cancelar</button>
+                <button id="reorg-save" style="flex:1;padding:11px;border:none;border-radius:8px;background:#2ecc71;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;">Guardar</button>
+            </div>
+        </div>`;
+        ov.onclick = (e) => { if (e.target === ov) cerrarReorg(); };
+        ov.querySelector('#reorg-save').onclick = async () => {
+            const nuevoNombre = ov.querySelector('#reorg-nombre').value.trim() || nombreActual;
+            const nuevoRes = ov.querySelector('#reorg-res').value.trim();
+            const ids = allOrders.filter(({ data: o }) => normTexto((o.cliente || '').trim()) === ckey).map(x => x.id);
+            if (!ids.length) { cerrarReorg(); return; }
+            let msg = 'Se actualizarán ' + ids.length + ' documento(s).';
+            if (normTexto(nuevoNombre) !== ckey) msg += '\nCliente: «' + nombreActual + '» → «' + nuevoNombre + '»' + (nombres.some(n => normTexto(n) === normTexto(nuevoNombre) && normTexto(n) !== ckey) ? ' (se juntan)' : '');
+            if (nuevoRes !== resActual) msg += '\nResidencial: ' + (nuevoRes ? '«' + nuevoRes + '»' : '(ninguno)');
+            if (!confirm(msg + '\n\n¿Continuar?')) return;
+            const btn = ov.querySelector('#reorg-save'); btn.disabled = true; btn.textContent = 'Guardando…';
+            try { await batchUpdateOrders(ids, { cliente: nuevoNombre, residencial: nuevoRes }); cerrarReorg(); }
+            catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); btn.disabled = false; btn.textContent = 'Guardar'; }
+        };
+        document.body.appendChild(ov);
+    };
+
+    // Renombra un residencial completo (o lo disuelve si se deja vacío) en todos sus pedidos.
+    window.renombrarResidencial = function (rkey) {
+        const grupos = carpetasArr.filter(g => normTexto(g.residencial) === rkey);
+        if (!grupos.length) return;
+        const resActual = grupos[0].residencial;
+        const nClientes = new Set(grupos.map(g => normTexto(g.cliente))).size;
+        const nuevo = prompt('Nombre del residencial / sección (déjalo vacío para disolverlo y sacar a sus ' + nClientes + ' cliente(s)):', resActual);
+        if (nuevo === null) return;
+        const nuevoRes = nuevo.trim();
+        const ids = allOrders.filter(({ data: o }) => normTexto((o.residencial || '').trim()) === rkey).map(x => x.id);
+        if (!ids.length) return;
+        batchUpdateOrders(ids, { residencial: nuevoRes })
+            .then(() => { if (carpetaResidencialSel === rkey && !nuevoRes) carpetaResidencialSel = null; })
+            .catch(e => alert('No se pudo: ' + (e && e.message ? e.message : e)));
+    };
 
     // ¿"wa" y "wb" (arrays de palabras normalizadas) son el mismo proyecto? Dos patrones,
     // palabra por palabra (nunca por caracteres — así "Casa Bel" no matchea "Casa Beltrán"):
