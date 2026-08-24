@@ -374,9 +374,9 @@
         const tipos = esIng ? (cfg.tiposIngreso || []).map(t => t.nombre) : (cfg.tiposDeduccion || []);
         document.getElementById('items-title').textContent = (esIng ? 'Otros ingresos' : 'Otras deducciones') + ' — ' + (emp ? emp.nombre : '');
         document.getElementById('items-body').innerHTML = ctx.items.length ? ctx.items.map((it, i) => `<div class="item-row" data-i="${i}">
-            <select class="it-tipo">${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+            <select class="it-tipo"${esIng ? ' onchange="ingTipoChange(this)"' : ''}>${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
             <input class="it-monto" type="number" min="0" step="0.01" value="${it.monto || ''}" placeholder="Monto RD$/mes">
-            ${esIng ? `<label class="it-grav" title="¿Afecta el ISR?"><input type="checkbox" class="it-gravable" ${it.gravable !== false ? 'checked' : ''}> gravable</label>` : ''}
+            ${esIng ? `<label class="it-grav" title="¿Paga ISR? (Viático/Reembolso: no)"><input type="checkbox" class="it-gravable" ${it.gravable !== false ? 'checked' : ''}> ISR</label>` : ''}
             <button class="it-del" onclick="itemsDel(${i})" title="Quitar">✕</button>
         </div>`).join('') : '<p class="muted">Sin conceptos todavía. Agrega uno abajo.</p>';
         document.getElementById('items-extra').innerHTML = esIng ? '' :
@@ -401,6 +401,13 @@
         itemsCtx.items.push(o); renderItemsModal();
     };
     window.itemsDel = function (i) { leerItemsModal(); itemsCtx.items.splice(i, 1); renderItemsModal(); };
+    // Al elegir el tipo de ingreso, la casilla ISR se pone según ese tipo (Viático/Reembolso → sin
+    // ISR; feriado/horas extra/bono → con ISR). Se puede seguir marcando/desmarcando a mano.
+    window.ingTipoChange = function (sel) {
+        const row = sel.closest('.item-row'); const chk = row && row.querySelector('.it-gravable'); if (!chk) return;
+        const t = (cfg.tiposIngreso || []).find(x => x.nombre === sel.value);
+        chk.checked = t ? (t.gravable !== false) : true;
+    };
     window.repartirCuota = function () {
         const total = n2(document.getElementById('rep-total').value), nn = Math.max(1, parseInt(document.getElementById('rep-n').value) || 1);
         if (total <= 0) { alert('Escribe el total a repartir.'); return; }
