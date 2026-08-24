@@ -519,6 +519,12 @@
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
             ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
+            <div class="coment-box">
+                <div class="coment-title">💬 Comentarios del instalador</div>
+                ${(Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length) ? `<div class="coment-list">${j.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
+                <textarea id="jcoment-${j.id}" class="coment-ta" placeholder="Anota cualquier cosa del proceso: por qué no se pudo terminar, faltantes, cliente ausente, daños, etc."></textarea>
+                <button class="btn-coment" onclick="guardarComentarioJob('${j.id}')">Guardar comentario</button>
+            </div>
             <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>
             ${puedeCambiarEstado ? `
             <div class="admin-row">
@@ -1074,6 +1080,20 @@
             const snap = await getDoc(doc(db, 'orders', orderId));
             const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
             await updateDoc(doc(db, 'orders', orderId), {
+                comentariosInstalador: prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString() }])
+            });
+            if (ta) ta.value = '';
+        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
+    };
+    // Comentario del instalador en un trabajo del Calendario (colección instalaciones).
+    window.guardarComentarioJob = async function (jobId) {
+        const ta = document.getElementById('jcoment-' + jobId);
+        const texto = (ta && ta.value || '').trim();
+        if (!texto) { alert('Escribe un comentario antes de guardar.'); return; }
+        try {
+            const snap = await getDoc(doc(db, 'instalaciones', jobId));
+            const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
+            await updateDoc(doc(db, 'instalaciones', jobId), {
                 comentariosInstalador: prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString() }])
             });
             if (ta) ta.value = '';
