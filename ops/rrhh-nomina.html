@@ -75,6 +75,15 @@
     .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    .btn-mini-edit { background: #eef4fb; color: var(--artal-blue); border: none; border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; }
+    .item-row, .cat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .item-row select, .item-row input[type=number], .cat-row input { padding: 8px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
+    .item-row .it-tipo { flex: 1; min-width: 120px; } .item-row .it-monto { width: 120px; }
+    .item-row .it-grav, .cat-row .it-grav { font-size: 12px; color: #556; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+    .item-row .it-del, .cat-row .it-del { background: transparent; border: none; color: #e74c3c; font-weight: bold; cursor: pointer; font-size: 15px; }
+    .reparto { background: #f6f8fb; border: 1px solid #e6ecf3; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.9; }
+    .reparto input { padding: 6px 8px; border: 1.5px solid #ddd; border-radius: 6px; font-family: 'Arimo'; }
+    .reparto button { background: var(--artal-blue); color: #fff; border: none; border-radius: 6px; padding: 6px 10px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12px; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -204,6 +213,15 @@
             </table>
             <p class="muted">En el último tramo deja «Hasta» en 0 (o vacío) para indicar «en adelante».</p>
         </div>
+        <div class="param-card">
+            <div class="sec-title" style="margin-top:0">Tipos de «otros ingresos»</div>
+            <p class="muted" style="margin-top:0">Marca «gravable» si ese ingreso paga ISR (ej. día feriado, bono). Los no gravables (viático, reembolso) suman al neto pero no al impuesto.</p>
+            <div id="cat-ing"></div>
+            <button class="btn-y" onclick="catAdd('ing')" style="margin-top:4px;padding:7px 12px;font-size:12.5px;min-height:0">＋ Tipo de ingreso</button>
+            <div class="sec-title">Tipos de «otras deducciones»</div>
+            <div id="cat-ded"></div>
+            <button class="btn-y" onclick="catAdd('ded')" style="margin-top:4px;padding:7px 12px;font-size:12.5px;min-height:0">＋ Tipo de deducción</button>
+        </div>
         <button class="btn-y" onclick="guardarParametros()">💾 Guardar parámetros</button>
         <span id="param-msg" class="muted" style="margin-left:10px"></span>
     </section>
@@ -249,7 +267,19 @@
             { limite: 624329.00, tasa: 15, fijo: 0, base: 416220.00 },
             { limite: 867123.00, tasa: 20, fijo: 31216.00, base: 624329.00 },
             { limite: 0, tasa: 25, fijo: 79776.00, base: 867123.00 }
-        ]
+        ],
+        // Catálogos editables (pestaña Parámetros). Ingresos con `gravable` (si afecta ISR).
+        tiposIngreso: [
+            { nombre: 'Día feriado trabajado', gravable: true },
+            { nombre: 'Día / horas extra', gravable: true },
+            { nombre: 'Bono', gravable: true },
+            { nombre: 'Comisión', gravable: true },
+            { nombre: 'Incentivo', gravable: true },
+            { nombre: 'Viático', gravable: false },
+            { nombre: 'Reembolso', gravable: false },
+            { nombre: 'Otro', gravable: true }
+        ],
+        tiposDeduccion: ['Adelanto de sueldo', 'Uniforme', 'Herramienta / daño', 'Ausencia / tardanza', 'Cooperativa', 'Multa', 'Otro']
     };
     let cfg = JSON.parse(JSON.stringify(DEFAULTS));
     let empleados = [];
@@ -310,6 +340,91 @@
         return m[3] ? `${m[3] === '1' ? '1ra' : '2da'} quincena de ${base}` : base;
     }
 
+    // ---------- OTROS INGRESOS / DEDUCCIONES por tipo (modal) ----------
+    let itemsCtx = null;
+    window.editarIngresos = function (empId) {
+        const l = nominaActual && nominaActual.lineas.find(x => x.empleadoId === empId); if (!l) return;
+        itemsCtx = { empId, tipo: 'ing', items: itemsIniIng(l) };
+        renderItemsModal();
+    };
+    window.editarDeducciones = function (empId) {
+        const l = nominaActual && nominaActual.lineas.find(x => x.empleadoId === empId); if (!l) return;
+        itemsCtx = { empId, tipo: 'ded', items: itemsIniDed(l) };
+        renderItemsModal();
+    };
+    function renderItemsModal() {
+        const ctx = itemsCtx, esIng = ctx.tipo === 'ing';
+        const emp = nominaActual.lineas.find(x => x.empleadoId === ctx.empId);
+        const tipos = esIng ? (cfg.tiposIngreso || []).map(t => t.nombre) : (cfg.tiposDeduccion || []);
+        document.getElementById('items-title').textContent = (esIng ? 'Otros ingresos' : 'Otras deducciones') + ' — ' + (emp ? emp.nombre : '');
+        document.getElementById('items-body').innerHTML = ctx.items.length ? ctx.items.map((it, i) => `<div class="item-row" data-i="${i}">
+            <select class="it-tipo">${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+            <input class="it-monto" type="number" min="0" step="0.01" value="${it.monto || ''}" placeholder="Monto RD$/mes">
+            ${esIng ? `<label class="it-grav" title="¿Afecta el ISR?"><input type="checkbox" class="it-gravable" ${it.gravable !== false ? 'checked' : ''}> gravable</label>` : ''}
+            <button class="it-del" onclick="itemsDel(${i})" title="Quitar">✕</button>
+        </div>`).join('') : '<p class="muted">Sin conceptos todavía. Agrega uno abajo.</p>';
+        document.getElementById('items-extra').innerHTML = esIng ? '' :
+            `<div class="reparto"><b>Repartir un total en cuotas:</b><br>
+             <input id="rep-total" type="number" min="0" step="0.01" placeholder="Total RD$" style="width:120px"> en
+             <input id="rep-n" type="number" min="1" step="1" value="2" style="width:56px"> períodos
+             <button onclick="repartirCuota()">Agregar cuota</button>
+             <div class="muted" style="margin-top:5px">Agrega la cuota (total ÷ períodos) como descuento de ESTA nómina. Para cuotas automáticas en cada nómina, usa la pestaña Préstamos.</div></div>`;
+        document.getElementById('modal-items').classList.add('show');
+    }
+    function leerItemsModal() {
+        itemsCtx.items = [...document.querySelectorAll('#items-body .item-row')].map(r => {
+            const o = { tipo: r.querySelector('.it-tipo').value, monto: n2(r.querySelector('.it-monto').value) };
+            if (itemsCtx.tipo === 'ing') { const g = r.querySelector('.it-gravable'); o.gravable = g ? g.checked : true; }
+            return o;
+        });
+    }
+    window.itemsAdd = function () {
+        leerItemsModal();
+        const primero = itemsCtx.tipo === 'ing' ? ((cfg.tiposIngreso[0] || {}).nombre || 'Otro') : (cfg.tiposDeduccion[0] || 'Otro');
+        const o = { tipo: primero, monto: 0 }; if (itemsCtx.tipo === 'ing') o.gravable = true;
+        itemsCtx.items.push(o); renderItemsModal();
+    };
+    window.itemsDel = function (i) { leerItemsModal(); itemsCtx.items.splice(i, 1); renderItemsModal(); };
+    window.repartirCuota = function () {
+        const total = n2(document.getElementById('rep-total').value), nn = Math.max(1, parseInt(document.getElementById('rep-n').value) || 1);
+        if (total <= 0) { alert('Escribe el total a repartir.'); return; }
+        leerItemsModal();
+        itemsCtx.items.push({ tipo: (cfg.tiposDeduccion[0] || 'Otro'), monto: Math.round((total / nn) * 100) / 100 });
+        renderItemsModal();
+    };
+    window.cerrarItems = function () { document.getElementById('modal-items').classList.remove('show'); itemsCtx = null; };
+    window.guardarItems = function () {
+        leerItemsModal();
+        const l = nominaActual.lineas.find(x => x.empleadoId === itemsCtx.empId);
+        if (l) {
+            const items = itemsCtx.items.filter(x => n2(x.monto) > 0);
+            if (itemsCtx.tipo === 'ing') l.ingresosItems = items; else l.deduccionesItems = items;
+        }
+        cerrarItems(); renderNomina();
+    };
+    document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay" id="modal-items"><div class="modal-box">
+        <h2 id="items-title">Conceptos</h2>
+        <div id="items-body"></div>
+        <button class="btn-y" onclick="itemsAdd()" style="margin-top:8px;padding:8px 14px;font-size:13px;min-height:0">＋ Agregar concepto</button>
+        <div id="items-extra" style="margin-top:12px"></div>
+        <div class="modal-actions"><button class="btn-cancelar" onclick="cerrarItems()">Cancelar</button><button class="btn-guardar" onclick="guardarItems()">Guardar</button></div>
+    </div></div>`);
+
+    // Catálogo de tipos (editable en Parámetros).
+    function renderCatalogos() {
+        const ci = document.getElementById('cat-ing'); const cd = document.getElementById('cat-ded');
+        if (ci) ci.innerHTML = (cfg.tiposIngreso || []).map((t, i) => `<div class="cat-row"><input class="ci-nombre" value="${esc(t.nombre)}" style="flex:1"><label class="it-grav"><input type="checkbox" class="ci-grav" ${t.gravable !== false ? 'checked' : ''}> gravable</label><button class="it-del" onclick="catDel('ing',${i})">✕</button></div>`).join('');
+        if (cd) cd.innerHTML = (cfg.tiposDeduccion || []).map((t, i) => `<div class="cat-row"><input class="cd-nombre" value="${esc(t)}" style="flex:1"><button class="it-del" onclick="catDel('ded',${i})">✕</button></div>`).join('');
+    }
+    function leerCatalogos() {
+        const ing = []; document.querySelectorAll('#cat-ing .cat-row').forEach(r => { const nom = r.querySelector('.ci-nombre').value.trim(); if (nom) ing.push({ nombre: nom, gravable: r.querySelector('.ci-grav').checked }); });
+        if (ing.length) cfg.tiposIngreso = ing;
+        const ded = []; document.querySelectorAll('#cat-ded .cat-row').forEach(r => { const nom = r.querySelector('.cd-nombre').value.trim(); if (nom) ded.push(nom); });
+        if (ded.length) cfg.tiposDeduccion = ded;
+    }
+    window.catAdd = function (tipo) { leerCatalogos(); if (tipo === 'ing') (cfg.tiposIngreso = cfg.tiposIngreso || []).push({ nombre: 'Nuevo', gravable: true }); else (cfg.tiposDeduccion = cfg.tiposDeduccion || []).push('Nuevo'); renderCatalogos(); };
+    window.catDel = function (tipo, i) { leerCatalogos(); if (tipo === 'ing') cfg.tiposIngreso.splice(i, 1); else cfg.tiposDeduccion.splice(i, 1); renderCatalogos(); };
+
     // ---------- PARÁMETROS ----------
     function pintarParametros() {
         const g = (id, v) => document.getElementById(id).value = v;
@@ -322,8 +437,10 @@
             <td><input type="number" step="0.01" data-i="${i}" data-k="fijo" value="${t.fijo}"></td>
             <td><input type="number" step="0.01" data-i="${i}" data-k="base" value="${t.base}"></td>
         </tr>`).join('');
+        renderCatalogos();
     }
     function leerParametros() {
+        leerCatalogos();
         const v = (id) => n2(document.getElementById(id).value);
         cfg.afpEmp = v('p-afpEmp'); cfg.afpPat = v('p-afpPat'); cfg.sfsEmp = v('p-sfsEmp'); cfg.sfsPat = v('p-sfsPat');
         cfg.srlPat = v('p-srlPat'); cfg.topeAfp = v('p-topeAfp'); cfg.topeSfs = v('p-topeSfs');
@@ -356,12 +473,19 @@
         const div = divisor || 1;
         const sinTSS = !!l.sinTSS;
         const sueldo = n2(l.sueldo);
-        const ingresos = n2(l.ingresos);       // otros ingresos gravables
+        // Otros ingresos: lista [{tipo, monto, gravable}]. Compat: número viejo `ingresos` = 1 ítem gravable.
+        const ingItems = Array.isArray(l.ingresosItems) ? l.ingresosItems : (n2(l.ingresos) ? [{ tipo: 'Otro', monto: n2(l.ingresos), gravable: true }] : []);
+        const ingTotalMes = ingItems.reduce((a, x) => a + n2(x.monto), 0);         // total (afecta el neto)
+        const ingGravMes = ingItems.reduce((a, x) => a + (x.gravable !== false ? n2(x.monto) : 0), 0); // solo lo gravable (afecta ISR)
+        const ingresos = ingTotalMes;
+        // Otras deducciones: lista [{tipo, monto}]. Compat: número viejo `deducciones` = 1 ítem.
+        const dedItems = Array.isArray(l.deduccionesItems) ? l.deduccionesItems : (n2(l.deducciones) ? [{ tipo: 'Otro', monto: n2(l.deducciones) }] : []);
+        const dedTotal = dedItems.reduce((a, x) => a + n2(x.monto), 0);
         const baseAfp = sinTSS ? 0 : (cfg.topeAfp > 0 ? Math.min(sueldo, cfg.topeAfp) : sueldo);
         const baseSfs = sinTSS ? 0 : (cfg.topeSfs > 0 ? Math.min(sueldo, cfg.topeSfs) : sueldo);
         const afpM = baseAfp * (cfg.afpEmp / 100);
         const sfsM = baseSfs * (cfg.sfsEmp / 100);
-        const gravableMensual = (sueldo + ingresos) - afpM - sfsM;
+        const gravableMensual = (sueldo + ingGravMes) - afpM - sfsM;
         // Los empleados SIN TSS (no declarados) NO llevan ISR (antes se les calculaba sobre el sueldo).
         const isrM = sinTSS ? 0 : isrAnual(gravableMensual * 12) / 12;
         // % que se le RETIENE al empleado de cada concepto, POR SEPARADO (AFP/SFS/ISR). 100 = normal
@@ -374,11 +498,11 @@
         const dIsr = rp(l.descIsr) ?? base ?? 100;
         // Reparto por período: mitad en cada quincena.
         const sueldoP = sueldo / div, ingresosP = ingresos / div, afp = (afpM * dAfp / 100) / div, sfs = (sfsM * dSfs / 100) / div, isr = (isrM * dIsr / 100) / div;
-        const deducciones = n2(l.deducciones);   // otras deducciones manuales
+        const deducciones = dedTotal;            // otras deducciones (suma de la lista)
         const prestamo = n2(l.prestamo);         // cuota de préstamo de este período (no se divide)
         const neto = (sueldoP + ingresosP) - afp - sfs - isr - deducciones - prestamo;
         const afpPat = (baseAfp * (cfg.afpPat / 100)) / div, sfsPat = (baseSfs * (cfg.sfsPat / 100)) / div, srlPat = (baseSfs * (cfg.srlPat / 100)) / div;
-        return { ...l, sueldo: sueldoP, ingresos: ingresosP, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS };
+        return { ...l, sueldo: sueldoP, ingresos: ingresosP, ingMes: ingTotalMes, ingItems, dedItems, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS };
     }
 
     // % inicial de un concepto (AFP/SFS/ISR): el guardado específico; si no, el % global viejo de la
@@ -387,6 +511,16 @@
         if (especifico != null && especifico !== '') return n2(especifico);
         if (lineaGuardada && lineaGuardada.descPct != null && lineaGuardada.descPct !== '') return n2(lineaGuardada.descPct);
         return (emp && emp.descuentoPct != null) ? n2(emp.descuentoPct) : 100;
+    }
+
+    // Ítems iniciales de otros ingresos / deducciones (con compat de los números viejos).
+    function itemsIniIng(src) {
+        if (src && Array.isArray(src.ingresosItems)) return src.ingresosItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto), gravable: x.gravable !== false }));
+        return (src && n2(src.ingresos)) ? [{ tipo: 'Otro', monto: n2(src.ingresos), gravable: true }] : [];
+    }
+    function itemsIniDed(src) {
+        if (src && Array.isArray(src.deduccionesItems)) return src.deduccionesItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto) }));
+        return (src && n2(src.deducciones)) ? [{ tipo: 'Otro', monto: n2(src.deducciones) }] : [];
     }
 
     // ---------- NÓMINA MENSUAL ----------
@@ -405,14 +539,14 @@
             return {
                 empleadoId: e.id, nombre: e.nombre,
                 sueldo: p.sueldo != null ? n2(p.sueldo) : n2(e.sueldoBase),   // mensual
-                ingresos: n2(p.ingresos), deducciones: n2(p.deducciones),
+                ingresosItems: itemsIniIng(p), deduccionesItems: itemsIniDed(p),
                 descAfp: pctIni(p.descAfp, p, e), descSfs: pctIni(p.descSfs, p, e), descIsr: pctIni(p.descIsr, p, e),
                 sinTSS: e.enTSS === false,
                 prestamo: prs.reduce((a, x) => a + x.monto, 0), prestamosDetalle: prs
             };
         });
         if (guardada && Array.isArray(guardada.lineas)) {
-            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresos: n2(l.ingresos), deducciones: n2(l.deducciones), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId)) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
         nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
         renderNomina();
@@ -424,8 +558,6 @@
             const id = tr.dataset.id, l = nominaActual.lineas.find(x => x.empleadoId === id);
             if (!l) return;
             l.sueldo = n2(tr.querySelector('[data-k=sueldo]').value);
-            l.ingresos = n2(tr.querySelector('[data-k=ingresos]').value);
-            l.deducciones = n2(tr.querySelector('[data-k=deducciones]').value);
             const da = tr.querySelector('[data-k=descafp]'); if (da) l.descAfp = n2(da.value);
             const ds = tr.querySelector('[data-k=descsfs]'); if (ds) l.descSfs = n2(ds.value);
             const di = tr.querySelector('[data-k=descisr]'); if (di) l.descIsr = n2(di.value);
@@ -446,12 +578,12 @@
             <td class="nom-name">${esc(l.nombre)}</td>
             <td style="text-align:center"><input type="checkbox" ${l.sinTSS ? '' : 'checked'} onchange="toggleTSS('${esc(l.empleadoId)}', this.checked)" title="En seguridad social (TSS)"></td>
             <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="recalcNom()" title="Sueldo mensual"></td>
-            <td><input type="number" data-k="ingresos" value="${nominaActual.lineas.find(x=>x.empleadoId===l.empleadoId).ingresos}" onchange="recalcNom()"></td>
+            <td>${l.ingMes ? fmt(l.ingMes) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarIngresos('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
             <td class="neg">${fmt(l.afp)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descafp" value="${l.descAfp}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de AFP a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${fmt(l.sfs)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descsfs" value="${l.descSfs}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de SFS a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${l.prestamo ? fmt(l.prestamo) : '—'}</td>
-            <td><input type="number" data-k="deducciones" value="${nominaActual.lineas.find(x=>x.empleadoId===l.empleadoId).deducciones}" onchange="recalcNom()"></td>
+            <td>${l.deducciones ? fmt(l.deducciones) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarDeducciones('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
             <td class="pos"><b>${fmt(l.neto)}</b></td>
             <td><button class="btn-vol" onclick="verVolante('${esc(l.empleadoId)}')">Volante</button></td>
         </tr>`).join('');
