@@ -10,11 +10,15 @@
 // inactiva, al rato vuelve a pedirlo — que es justo la protección buscada (no basta con dejar la
 // sesión de Google abierta).
 //
-// Para RESETEAR el PIN de alguien que lo olvidó: un admin borra el campo `pinHash` de su
-// usuarios/{email} (más adelante habrá un botón; por ahora se hace desde Firebase Console).
+// RECUPERAR el PIN olvidado (self-service): en el overlay hay un botón "¿Olvidaste tu PIN?" que
+// re-confirma la identidad con Google (reauthenticateWithPopup) y, si coincide, borra el `pinHash`
+// para que la persona cree uno nuevo. Se re-autentica a propósito (no basta con la sesión ya
+// abierta) para no romper la protección que da el PIN. Un admin también puede borrar el campo
+// `pinHash` desde Firebase Console si hiciera falta.
 
-import { db } from './firebase-config.js';
+import { db, auth, googleProvider } from './firebase-config.js';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { biometriaDisponible, registrarBiometria, confirmarBiometria } from './biometria.js';
 
 const UNLOCK_MIN = 10;   // minutos que dura el desbloqueo antes de volver a pedir el PIN
@@ -79,6 +83,7 @@ export async function requirePin(usuario) {
             <div class="pin-err" id="pin-err"></div>
             <button class="pin-btn" id="pin-ok">${crear ? 'Guardar PIN' : 'Entrar'}</button>
             ${(!crear && bioDisp && !bioReg) ? '<button class="pin-salir" id="pin-bio-reg" style="color:#16a085;font-weight:bold;">🔒 Activar biometría en este teléfono</button>' : ''}
+            ${!crear ? '<button class="pin-salir" id="pin-forgot" style="color:#1c4e7a;font-weight:bold;">¿Olvidaste tu PIN?</button>' : ''}
             <button class="pin-salir" id="pin-salir">← Volver</button>
         </div>`;
         document.body.appendChild(ov);
@@ -109,6 +114,22 @@ export async function requirePin(usuario) {
             err('');
             try { await confirmarBiometria(usuario); marcarDesbloqueado(); ov.remove(); resolve(); }
             catch (e) { err(e && e.message === 'SIN_REGISTRO' ? 'No tienes biometría registrada.' : 'Biometría no confirmada. Usa tu PIN.'); }
+        };
+        // Recuperar PIN olvidado: re-confirma con Google, borra el pinHash y reabre en modo "crear".
+        const btnForgot = ov.querySelector('#pin-forgot');
+        if (btnForgot) btnForgot.onclick = async () => {
+            err('');
+            if (!confirm('Para restablecer tu PIN vamos a confirmar tu identidad con Google.\n\n¿Continuar?')) return;
+            try {
+                const res = await reauthenticateWithPopup(auth.currentUser, googleProvider);
+                const em = res && res.user ? res.user.email : '';
+                if (em && usuario.email && em.toLowerCase() !== usuario.email.toLowerCase()) { err('Esa cuenta de Google no es la tuya.'); return; }
+                await updateDoc(ref, { pinHash: null, pinReset: serverTimestamp() });
+                ov.remove();
+                resolve(requirePin(usuario));   // reabre: ahora pinHash es null → pide crear uno nuevo
+            } catch (e) {
+                err(e && e.code === 'auth/popup-closed-by-user' ? 'Se cerró la ventana de Google.' : 'No se pudo confirmar con Google. Intenta de nuevo.');
+            }
         };
         // Activar biometría en este teléfono (la primera vez); al registrarla, entra.
         const btnBioReg = ov.querySelector('#pin-bio-reg');
