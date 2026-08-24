@@ -118,6 +118,7 @@
 <main>
     <div class="tabs">
         <button class="tab-btn active" id="tab-mensual" onclick="setTab('mensual')">Nómina</button>
+        <button class="tab-btn" id="tab-historial" onclick="setTab('historial')">Historial y pagos</button>
         <button class="tab-btn" id="tab-prestamos" onclick="setTab('prestamos')">Préstamos</button>
         <button class="tab-btn" id="tab-regalia" onclick="setTab('regalia')">Regalía</button>
         <button class="tab-btn" id="tab-liquidacion" onclick="setTab('liquidacion')">Liquidación</button>
@@ -146,6 +147,12 @@
         </div>
         <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad sueldo y descuentos (TSS/ISR) del mes; las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
         <div id="nom-cont"><p class="empty">Elige un período y pulsa «Generar / cargar».</p></div>
+    </section>
+
+    <!-- HISTORIAL Y PAGOS -->
+    <section class="panel" id="panel-historial">
+        <p class="muted" style="margin:0 0 10px">Nóminas guardadas. Marca <b>«Pago completado»</b> para descontar el neto de la cuenta bancaria elegida (crea el egreso en Bancos).</p>
+        <div id="hist-cont"><p class="empty">Cargando…</p></div>
     </section>
 
     <!-- PRÉSTAMOS -->
@@ -313,7 +320,7 @@
     }).catch(() => pintarParametros());
 
     window.setTab = function (t) {
-        ['mensual', 'prestamos', 'regalia', 'liquidacion', 'parametros'].forEach(k => {
+        ['mensual', 'historial', 'prestamos', 'regalia', 'liquidacion', 'parametros'].forEach(k => {
             document.getElementById('tab-' + k).classList.toggle('active', k === t);
             document.getElementById('panel-' + k).classList.toggle('show', k === t);
         });
@@ -720,6 +727,79 @@
         if (l) l.sinTSS = !enTSS;
         renderNomina();
         try { await updateDoc(doc(db, 'rrhhEmpleados', empId), { enTSS: enTSS }); } catch (e) { console.error('enTSS', e); }
+    };
+
+    // ---------- HISTORIAL DE NÓMINAS + PAGO DESDE BANCO ----------
+    let nominasGuardadas = [], cuentasBanco = [], movsBanco = [];
+    onSnapshot(collection(db, 'rrhhNominas'), (s) => { nominasGuardadas = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); }, () => {});
+    onSnapshot(collection(db, 'bancosCuentas'), (s) => { cuentasBanco = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.activo !== false); renderHistorial(); }, () => {});
+    onSnapshot(collection(db, 'bancosMovimientos'), (s) => { movsBanco = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); }, () => {});
+    const saldoCuenta = (c) => n2(c.saldoInicial) + movsBanco.filter(m => m.cuentaId === c.id).reduce((a, m) => a + (m.tipo === 'credito' ? n2(m.monto) : -n2(m.monto)), 0);
+    const totalNetoNomina = (n) => Array.isArray(n.calc) ? n.calc.reduce((a, l) => a + n2(l.neto), 0) : 0;
+
+    function renderHistorial() {
+        const cont = document.getElementById('hist-cont'); if (!cont) return;
+        const lista = nominasGuardadas.slice().sort((a, b) => String(b.key || '').localeCompare(String(a.key || '')));
+        if (!lista.length) { cont.innerHTML = '<p class="empty">No hay nóminas guardadas todavía. Genera una y pulsa «Guardar» en la pestaña Nómina.</p>'; return; }
+        const optsCuentas = cuentasBanco.map(c => `<option value="${esc(c.id)}">${esc(c.nombre)}${c.banco ? ' · ' + esc(c.banco) : ''} — saldo ${fmt(saldoCuenta(c))}</option>`).join('');
+        cont.innerHTML = lista.map(n => {
+            const total = totalNetoNomina(n);
+            const fechaG = (n.fechaGuardado && n.fechaGuardado.toDate) ? n.fechaGuardado.toDate().toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+            const pagFecha = (n.pagoFecha && n.pagoFecha.toDate) ? n.pagoFecha.toDate().toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+            const pagado = n.pagado === true;
+            return `<div class="param-card" style="border-left:5px solid ${pagado ? '#2ecc71' : '#e0a800'};margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+                    <b>${esc(fmtPeriodoKey(n.key))}</b>
+                    <span style="font-weight:bold;color:var(--artal-blue)">Neto a pagar: ${fmt(total)}</span>
+                </div>
+                <div class="muted" style="margin-top:3px">${(n.calc ? n.calc.length : 0)} empleados${fechaG ? ' · guardada ' + fechaG : ''}${n.guardadoPor ? ' por ' + esc(n.guardadoPor) : ''}</div>
+                ${pagado
+                    ? `<div style="margin-top:8px;color:#1e8449;font-weight:bold">✅ Pagado${pagFecha ? ' el ' + pagFecha : ''}${n.pagoCuentaNombre ? ' desde ' + esc(n.pagoCuentaNombre) : ''}</div>
+                       <div style="margin-top:8px"><button class="btn-vol" style="color:#e74c3c" onclick="deshacerPagoNomina('${esc(n.key)}')">↩ Deshacer pago</button> <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button></div>`
+                    : `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                        <select id="pago-cta-${esc(n.key)}" style="padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px">${optsCuentas || '<option value="">(no hay cuentas — créalas en Bancos)</option>'}</select>
+                        <button class="btn-y" style="padding:9px 14px;font-size:13px;min-height:0" onclick="pagarNomina('${esc(n.key)}')">✅ Pago completado</button>
+                        <button class="btn-vol" onclick="verNominaHist('${esc(n.key)}')">Ver / imprimir</button>
+                       </div>`}
+            </div>`;
+        }).join('');
+    }
+    window.verNominaHist = function (key) {
+        const n = nominasGuardadas.find(x => x.key === key); if (!n) return;
+        // Carga esa nómina en la pestaña Nómina para verla/imprimirla.
+        nominaActual = { periodo: n.periodo, key: n.key, tipo: n.tipo, div: n.div || 1, lineas: n.lineas || [] };
+        setTab('mensual'); renderNomina();
+    };
+    window.pagarNomina = async function (key) {
+        const n = nominasGuardadas.find(x => x.key === key); if (!n) return;
+        const total = totalNetoNomina(n);
+        if (total <= 0) { alert('Esta nómina no tiene neto a pagar.'); return; }
+        const ctaId = (document.getElementById('pago-cta-' + key) || {}).value;
+        const cta = cuentasBanco.find(c => c.id === ctaId);
+        if (!cta) { alert('Elige la cuenta bancaria desde la que se paga (créala en Bancos si no hay).'); return; }
+        const saldo = saldoCuenta(cta);
+        let msg = `¿Registrar el PAGO de la nómina «${fmtPeriodoKey(key)}» por ${fmt(total)} desde ${cta.nombre}?\n\nSaldo actual: ${fmt(saldo)} → quedará ${fmt(saldo - total)}.\n\nSe crea un egreso en Bancos.`;
+        if (saldo < total) msg += '\n\n⚠️ El saldo es menor que el pago (la cuenta quedará en negativo).';
+        if (!confirm(msg)) return;
+        try {
+            const mov = await addDoc(collection(db, 'bancosMovimientos'), {
+                cuentaId: cta.id, fecha: hoyISO(), descripcion: 'Pago de nómina — ' + fmtPeriodoKey(key),
+                tipo: 'debito', monto: Math.round(total * 100) / 100, referencia: 'NOMINA:' + key,
+                categoria: 'Nómina', conciliado: false, origen: 'nomina', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
+            });
+            await updateDoc(doc(db, 'rrhhNominas', key), {
+                pagado: true, pagoCuentaId: cta.id, pagoCuentaNombre: cta.nombre, pagoMonto: total,
+                pagoMovimientoId: mov.id, pagoFecha: serverTimestamp(), pagoPor: usuario.nombre
+            });
+        } catch (e) { alert('No se pudo registrar el pago: ' + (e && e.message ? e.message : e)); }
+    };
+    window.deshacerPagoNomina = async function (key) {
+        const n = nominasGuardadas.find(x => x.key === key); if (!n) return;
+        if (!confirm('¿Deshacer el pago de «' + fmtPeriodoKey(key) + '»?\n\nSe elimina el egreso del banco y la nómina vuelve a quedar pendiente.')) return;
+        try {
+            if (n.pagoMovimientoId) { try { await deleteDoc(doc(db, 'bancosMovimientos', n.pagoMovimientoId)); } catch (_) { } }
+            await updateDoc(doc(db, 'rrhhNominas', key), { pagado: false, pagoMovimientoId: null, pagoFecha: null });
+        } catch (e) { alert('No se pudo deshacer: ' + (e && e.message ? e.message : e)); }
     };
 
     // ---------- VOLANTE ----------
