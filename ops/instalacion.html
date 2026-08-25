@@ -486,7 +486,7 @@
         const ord = j.orderId ? ((ordersCache.find(x => x.id === j.orderId) || {}).data || null) : null;
         let completarHtml = '';
         if (ord && !ord.instalado) {
-            if (ord.entregado === true) {
+            if (ord.entregado === true || ord.directoInstalacion === true) {
                 completarHtml = `<button class="btn-instalado" style="margin-top:8px" onclick="confirmarInstalacionBio('${j.orderId}')">✅ Confirmar instalación (huella / Face ID)</button>`;
             } else if (EN_FILA_CHOFER.includes(ord.status)) {
                 completarHtml = ord.enRuta === true
@@ -611,12 +611,15 @@
     function orderCardHTML(id, o) {
         const c = contarItems(o);
         const resuelto = c.total === 0 || c.resueltos === c.total;
-        const entregado = o.entregado === true;
+        // Instalación directa: no pasa por chofer/transporte ni por el checklist de fábrica — se
+        // instala en obra directamente. Se considera "entregado" y listo para confirmar.
+        const esDirecto = o.directoInstalacion === true;
+        const entregado = o.entregado === true || esDirecto;
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcialFab = o.status === 'parcialmente_listo';
         const yaParcialInst = o.status === 'parcialmente_instalado';
         const puedeParcial = entregado && c.instalados > 0 && c.instalados < c.total;
-        const puedeInstalar = resuelto && entregado;
+        const puedeInstalar = (resuelto || esDirecto) && entregado;
         const yaAgendado = agendadosOrderIds.has(id);
         const metaLine = esCompra
             ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>`
@@ -634,14 +637,15 @@
             </div>
             ${yaParcialInst ? `<div class="checklist-note" style="color:#e67e22">🟠 Parcialmente instalado — quedan ${c.total - c.instalados} ítem(s).</div>` : ''}
             ${esParcialFab ? `<div class="checklist-note" style="color:#f39c12;">⚠ Pedido PARCIAL de fábrica — abre "Ver hoja" para ver cuáles llegaron (en verde).</div>` : ''}
-            ${!entregado ? `<div class="esperando-note">🚚 Esperando que el chofer entregue. No se puede instalar hasta confirmar la entrega.</div>`
-                : (resuelto ? '' : `<div class="checklist-note">⚠ Faltan ${c.faltan} ítem(s) por marcar en el checklist ("Ver hoja").</div>`)}
+            ${esDirecto ? `<div class="esperando-note" style="background:#eef4fb;color:#1f6aa5;">📋 Instalación directa (no pasa por fábrica ni chofer). Sube el PDF de pedido de vidrios cuando midas en obra.</div>`
+                : (!entregado ? `<div class="esperando-note">🚚 Esperando que el chofer entregue. No se puede instalar hasta confirmar la entrega.</div>`
+                : (resuelto ? '' : `<div class="checklist-note">⚠ Faltan ${c.faltan} ítem(s) por marcar en el checklist ("Ver hoja").</div>`))}
             <div class="actions">
                 <button class="btn-instalado" ${puedeInstalar ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${puedeInstalar ? `confirmarInstalacionBio('${id}')` : ''}">✅ Confirmar instalación (huella / Face ID)</button>
                 ${puedeParcial ? `<button class="btn-parcial" onclick="guardarAvanceParcial('${id}')">💾 Avance parcial (${c.instalados}/${c.total})</button>` : ''}
                 ${esAdmin && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
                 ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
-                ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
+                ${(esCompra || esDirecto) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
             </div>
             <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e6ea;">
                 <div style="font-size:12.5px;font-weight:bold;color:var(--artal-blue);margin-bottom:5px;">📄 PDF pedido de vidrios ${o.directoInstalacion ? '<span style="font-weight:normal;color:#8a93a0;font-size:11px;">— súbelo cuando midas los vidrios en obra</span>' : ''}</div>
@@ -1138,7 +1142,8 @@
     // en vez de firma del cliente. Sigue bloqueado hasta que el chofer marque entregado.
     window.confirmarInstalacionBio = async function (id) {
         const snap = await getDoc(doc(db, 'orders', id));
-        if (!snap.exists() || snap.data().entregado !== true) { alert('El chofer todavía no ha entregado este pedido. No puedes registrar la instalación hasta confirmar la entrega.'); return; }
+        // Los pedidos "directo a instalación" no pasan por el chofer, así que no se exige entrega.
+        if (!snap.exists() || (snap.data().entregado !== true && snap.data().directoInstalacion !== true)) { alert('El chofer todavía no ha entregado este pedido. No puedes registrar la instalación hasta confirmar la entrega.'); return; }
         try {
             await confirmarBiometria(usuario);
         } catch (e) {
@@ -1159,7 +1164,7 @@
     };
     window.guardarAvanceParcial = async function (id) {
         const snap = await getDoc(doc(db, 'orders', id));
-        if (!snap.exists() || snap.data().entregado !== true) { alert('El chofer todavía no ha entregado este pedido.'); return; }
+        if (!snap.exists() || (snap.data().entregado !== true && snap.data().directoInstalacion !== true)) { alert('El chofer todavía no ha entregado este pedido.'); return; }
         if (!confirm('¿Guardar avance parcial? El pedido quedará como "Parcialmente instalado" y seguirá en tu lista para terminar el resto.')) return;
         await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_instalado', fechaParcialInstalado: serverTimestamp() });
     };
