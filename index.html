@@ -474,6 +474,7 @@
                 <button class="side-btn fabrica" style="border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Lo maneja ALUCUFEL (contratista externo)"><span id="btn-destino-alucufel-text">ALUCUFEL</span></button>
                 <button class="side-btn fabrica" style="border-color:#8e44ad; color:#8e44ad;" onclick="enviarOrden('interno', this)" title="Lo maneja ARTAL internamente — no aparece en la página de ALUCUFEL"><span id="btn-destino-interno-text">Oficina ARTAL</span></button>
             </div>
+            <button class="side-btn fabrica" style="margin-top:6px; border-color:#2f7fd6; color:#2f7fd6;" onclick="enviarOrden('instalacion', this)" title="Va directo a la página de Instalación, sin pasar por fábrica. Para trabajos que se cortan/instalan en obra (perfiles); el PDF del pedido de vidrios se sube después en Instalación.">📋 Instalación (directo)</button>
 
             <input type="file" id="import-file" accept=".json" style="display:none;" onchange="importJSON(event)">
 
@@ -6502,6 +6503,10 @@
 
             if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
 
+            // Instalación directa: trabajos que NO pasan por fábrica (perfiles que se cortan e
+            // instalan en obra; el pedido de vidrios se sube después). Van directo a la página de
+            // Instalación → status 'listo_para_cargar' + directoInstalacion (se oculta de Fábrica).
+            const esInstalacion = destino === 'instalacion';
             // Destino: ALUCUFEL (contratista externo) u Oficina ARTAL/Fábrica Interna
             // (internamente). Aplica tanto a Cotización como a Fabricación.
             const destinoFinal = destino === 'interno' ? 'interno' : 'alucufel';
@@ -6509,20 +6514,25 @@
             await addDoc(collection(db, 'orders'), {
                 cliente: clienteEnviado,
                 obra: obraEnviada,
-                docType: appJSON.docType,
+                docType: esInstalacion ? 'FAB' : appJSON.docType,
                 destino: destinoFinal,
                 material: appJSON.header.material,
                 color: appJSON.header.color,
-                status: isFab ? 'pendiente_fabrica' : 'solicitada',
+                status: esInstalacion ? 'listo_para_cargar' : (isFab ? 'pendiente_fabrica' : 'solicitada'),
+                ...(esInstalacion ? { directoInstalacion: true } : {}),
                 items,
                 totalItems: items.length,
                 appJSON,
-                ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
+                ...(esInstalacion
+                    ? { fechaCotizado: serverTimestamp(), fechaListoParaCargar: serverTimestamp() }
+                    : (isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() }))
             });
             syncClienteObra(clienteEnviado, obraEnviada);
-            alert(isFab
-                ? (destinoFinal === 'interno' ? 'Enviado a fábrica interna correctamente.' : 'Enviado a fábrica (ALUCUFEL) correctamente.')
-                : (destinoFinal === 'interno' ? 'Cotización enviada a la oficina interna correctamente.' : 'Cotización enviada al contratista correctamente.'));
+            alert(esInstalacion
+                ? 'Enviado directo a Instalación. Podrás subir ahí el PDF del pedido de vidrios cuando lo tengas.'
+                : isFab
+                    ? (destinoFinal === 'interno' ? 'Enviado a fábrica interna correctamente.' : 'Enviado a fábrica (ALUCUFEL) correctamente.')
+                    : (destinoFinal === 'interno' ? 'Cotización enviada a la oficina interna correctamente.' : 'Cotización enviada al contratista correctamente.'));
         } catch (e) {
             alert('No se pudo enviar: ' + (e && e.message ? e.message : e));
         } finally {
