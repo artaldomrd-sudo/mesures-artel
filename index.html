@@ -1535,11 +1535,12 @@
             let body = `<div>Pose: <strong>${poseTxt}</strong> · Forma: ${formaMap[state.forma || 'recto']}</div><div>Tramos: ${tramos.length} | Long. total: <strong>${total}</strong> mm</div><div style="margin-top:4px; color:#555; font-size:12px;">${list}</div>`;
             const pu = perfilUDeBaranda(state);
             if (pu) {
-                const d = desglosePerfilU(pu.materialMm);
-                let puTxt;
-                if (d.enteros > 0 && d.restoMm > 0) puTxt = `${d.enteros} perfil(es) U entero(s) + 1 pedazo de ${(d.restoMm / 1000).toFixed(2)} m`;
-                else if (d.enteros > 0) puTxt = `${d.enteros} perfil(es) U entero(s) (exacto)`;
-                else puTxt = `1 pedazo de ${(d.restoMm / 1000).toFixed(2)} m`;
+                // Plan de corte real (secuencial), no una simple división del total: parte los tramos
+                // más largos que una barra y arrastra los sobrantes, como se corta en el taller.
+                const plan = planSecuencialPerfilU(pu.piezas);
+                const recUtil = plan.recortes.filter(r => r >= 100).sort((a, b) => b - a);
+                let puTxt = `${plan.barras} perfil(es) U de 6.30 m`;
+                if (recUtil.length) puTxt += ` · recorte(s): ${recUtil.map(r => r + ' mm').join(', ')}`;
                 body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${puTxt}` + (pu.esquinas ? ` · ${pu.esquinas} corte(s) de esquina` : '') + `</div>`;
             }
             actualizarPerfilUTotal();
@@ -2606,7 +2607,8 @@
     }
 
     // ===== Calculador de perfil U (base de baranda) — con OPTIMIZACIÓN de recortes =====
-    // Cada perfil entero mide 6.30 m (6300 mm). Cada corte de esquina (giro) consume 5 cm (50 mm).
+    // Cada perfil se compra de 6.40 m pero SIEMPRE se pierden ~100 mm → 6.30 m (6300 mm) útiles.
+    // Cada corte de esquina (giro) consume 5 cm (50 mm).
     // No se redondea por balcón: se juntan TODAS las piezas del proyecto y se acomodan en barras
     // de 6.30 m reutilizando los sobrantes (cutting-stock, First-Fit-Decreasing). Un tramo mayor
     // a 6.30 m se parte (empalme) en piezas que caben en una barra.
@@ -2652,6 +2654,25 @@
             if (!colocado) restante.push(PERFIL_U_LARGO_MM - p);
         });
         return restante.length;
+    }
+
+    // Plan de corte SECUENCIAL (como se corta de verdad, tramo por tramo en orden): se va llenando
+    // una barra y, cuando el próximo pedazo no cabe, se abre otra y su sobrante queda de recorte
+    // reutilizable. Las piezas ya vienen con los tramos largos partidos (ver perfilUDeBaranda) y
+    // con el material extra de cada esquina. Devuelve cuántas barras enteras hacen falta + los
+    // recortes que sobran. Reproduce el cálculo manual del taller (ej.: 6950 = 6300 + 650…).
+    function planSecuencialPerfilU(piezas) {
+        let barras = 0, libre = 0;
+        const recortes = [];
+        piezas.forEach(p => {
+            if (p > libre) {
+                if (barras > 0 && libre > 0) recortes.push(libre);  // sobrante de la barra anterior
+                barras++; libre = PERFIL_U_LARGO_MM;
+            }
+            libre -= p;
+        });
+        if (barras > 0 && libre > 0) recortes.push(libre);
+        return { barras, recortes };
     }
 
     function actualizarPerfilUTotal() {
