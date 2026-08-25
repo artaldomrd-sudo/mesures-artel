@@ -734,9 +734,10 @@
             const obra = (o.obra || '').trim();
             const titulo = obra || cliente || 'Sin obra';
             const key = normTexto(cliente) + '|||' + normTexto(obra);
-            if (!grupos.has(key)) grupos.set(key, { key, titulo, cliente: cliente || 'Sin cliente', residencial: (o.residencial || '').trim(), docs: [] });
+            if (!grupos.has(key)) grupos.set(key, { key, titulo, cliente: cliente || 'Sin cliente', residencial: (o.residencial || '').trim(), separada: false, docs: [] });
             const g = grupos.get(key);
             if (!g.residencial && o.residencial) g.residencial = o.residencial.trim();
+            if (o.noAgruparProyecto) g.separada = true;
             g.docs.push({ id, o });
         });
         carpetasArr = Array.from(grupos.values());
@@ -901,6 +902,29 @@
             .catch(e => alert('No se pudo: ' + (e && e.message ? e.message : e)));
     };
 
+    // Desvincular: separar un proyecto auto-agrupado en sus obras individuales (marca sus pedidos
+    // con noAgruparProyecto para que `agruparPorProyecto` deje de unirlas).
+    window.separarProyecto = function (rootKey) {
+        const obrasCliente = carpetasArr.filter(g => normTexto(g.cliente) === carpetaClienteSel);
+        const proy = agruparPorProyecto(obrasCliente).find(p => p.rootKey === rootKey);
+        if (!proy || proy.obras.length < 2) return;
+        if (!confirm('¿Separar «' + proy.rootTitulo + '» en sus ' + proy.obras.length + ' obras individuales?\n\nCada obra quedará como carpeta aparte.')) return;
+        const ids = proy.obras.flatMap(g => g.docs.map(d => d.id));
+        batchUpdateOrders(ids, { noAgruparProyecto: true }).catch(e => alert('No se pudo: ' + (e && e.message ? e.message : e)));
+    };
+    // Volver a juntar una obra separada con las del mismo nombre (quita el flag en todas ellas).
+    window.juntarProyecto = function (rootKey) {
+        const obrasCliente = carpetasArr.filter(g => normTexto(g.cliente) === carpetaClienteSel);
+        const palabrasDe = g => normTexto(g.titulo).split(/\s+/).filter(Boolean);
+        const esta = obrasCliente.find(g => palabrasDe(g).join(' ') === rootKey);
+        if (!esta) return;
+        const grupo = obrasCliente.filter(g => mismoProyecto(palabrasDe(g), palabrasDe(esta)));
+        const ids = grupo.flatMap(g => g.docs.map(d => d.id));
+        if (!ids.length) return;
+        if (!confirm('¿Volver a juntar esta obra con las del mismo nombre?')) return;
+        batchUpdateOrders(ids, { noAgruparProyecto: false }).catch(e => alert('No se pudo: ' + (e && e.message ? e.message : e)));
+    };
+
     // ¿"wa" y "wb" (arrays de palabras normalizadas) son el mismo proyecto? Dos patrones,
     // palabra por palabra (nunca por caracteres — así "Casa Bel" no matchea "Casa Beltrán"):
     //  1. Extensión: TODAS las palabras de la más corta calzan al principio de la más larga
@@ -928,13 +952,14 @@
     // C, A/B/C terminan en el mismo proyecto aunque A y C solas no calcen entre sí. La obra con
     // menos palabras del grupo resultante es la "raíz" — su texto es el nombre del proyecto.
     function agruparPorProyecto(obrasDeCliente) {
-        const items = obrasDeCliente.map(g => ({ g, palabras: normTexto(g.titulo).split(/\s+/).filter(Boolean) }));
+        const items = obrasDeCliente.map(g => ({ g, palabras: normTexto(g.titulo).split(/\s+/).filter(Boolean), sep: !!g.separada }));
         const parent = items.map((_, i) => i);
         const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
         const union = (i, j) => { const ri = find(i), rj = find(j); if (ri !== rj) parent[ri] = rj; };
         for (let i = 0; i < items.length; i++) {
             for (let j = i + 1; j < items.length; j++) {
-                if (mismoProyecto(items[i].palabras, items[j].palabras)) union(i, j);
+                // Una obra marcada como "separada" (desvinculada a mano) nunca se une a otra.
+                if (!items[i].sep && !items[j].sep && mismoProyecto(items[i].palabras, items[j].palabras)) union(i, j);
             }
         }
 
@@ -970,11 +995,18 @@
                 const docs = p.obras.flatMap(g => g.docs);
                 const ultimo = docs.slice().sort((a, b) => orderDate(b.o) - orderDate(a.o))[0].o;
                 const t = docTag(ultimo);
+                const esMulti = p.obras.length > 1;
+                const estaSeparada = p.obras.some(g => g.separada);
+                const nObras = p.obras.length;
+                const btnSep = esMulti
+                    ? `<button class="reorg-btn" data-okey="${esc(p.rootKey)}" title="Desvincular: separar en ${nObras} obras individuales" onclick="event.stopPropagation();event.preventDefault();separarProyecto(this.dataset.okey);return false;">✂️</button>`
+                    : (estaSeparada ? `<button class="reorg-btn" data-okey="${esc(p.rootKey)}" title="Volver a juntar con obras del mismo nombre" onclick="event.stopPropagation();event.preventDefault();juntarProyecto(this.dataset.okey);return false;">🔗</button>` : '');
                 return `
-            <a class="card-link" href="#" data-okey="${esc(p.rootKey)}" onclick="carpetaAbrirObra(this); return false;">
+            <a class="card-link" href="#" data-okey="${esc(p.rootKey)}" onclick="carpetaAbrirObra(this); return false;" style="position:relative">
+                ${btnSep}
                 <div class="emoji">📁</div>
                 <div class="title">${esc(p.rootTitulo)}</div>
-                <div class="desc">${docs.length} doc${docs.length === 1 ? '' : 's'} · <span class="doc-tag ${t.cls}">${t.label}</span></div>
+                <div class="desc">${docs.length} doc${docs.length === 1 ? '' : 's'}${esMulti ? ' · ' + nObras + ' obras' : ''} · <span class="doc-tag ${t.cls}">${t.label}</span></div>
             </a>`;
             }).join('') + `</div>`;
     }
