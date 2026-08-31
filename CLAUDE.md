@@ -485,6 +485,53 @@ estilo simplificado del CAD.
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).
+- **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
+  del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
+  `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin
+  tocar, solo el texto visible — proyectos guardados de antes siguen abriendo igual) para
+  distinguirla de la nueva **"Puerta Deslizante Conectores"** (`tipo: 'deslizante_conn'`,
+  `type: 'door_slide_conn'`, tipo nuevo — mismo patrón de tipos "sueltos que viven dentro de
+  Vidrio de Ducha" que `mamp_fija`/`door_glass`/`door_slide`, insertable también en el CAD libre).
+  Diferencia real: Prensas usa un **riel superior continuo con colgadores** (`case 'door_slide'`
+  en `cadTechnical`); Conectores **no lleva riel** — se fija con **2 filas de hoyos de conector**
+  cerca del borde superior, a **90mm y 150mm** desde ese borde (medidas reales del sistema,
+  confirmadas por el usuario con un plano a mano), con 2 hoyos por fila (izquierda/derecha) y las
+  etiquetas "90"/"150" dibujadas junto a los hoyos — `case 'door_slide_conn'`, agregado justo
+  después del de Prensas, reusando el mismo tirador/cerradura/flecha de corrido/moldura (solo
+  cambia el hardware de fijación de arriba). Como no tiene riel, **no participa** de la extensión
+  de riel entre paneles vecinos que sí aplica a "Prensas" (`renderFacade`, el `forEach` que
+  extiende el riel filtra por `L.p.tipo !== 'deslizante'` — un tipo distinto como
+  `'deslizante_conn'` ya queda afuera solo, sin tocar ese código). `getPanelRects` para
+  `door_slide_conn` reusa el mismo rect que `door_slide` (`[30, 9, 40, 47]` — la proporción del
+  panel de vidrio no cambia, solo el hardware dibujado encima). El switch grande de `renderSVG`
+  (usado solo para tarjetas sueltas heredadas, no para paneles de Vidrio de Ducha ni para el CAD)
+  **no** necesitaba un caso nuevo — `door_slide_conn` es un tipo recién creado, no hay proyectos
+  viejos con ese `type` que dependan de ese camino de renderizado.
+- **Referencia de Accesorios, conectada en vivo al inventario real.** Pedido explícito del
+  usuario: un selector, por panel (mampara/puerta/deslizante — confirmado explícitamente "por
+  panel" y no uno solo por ítem, porque cada panel usa hardware distinto), para que quien cotiza
+  sepa de una vez qué accesorio pedir — "se va a conectar directamente con el inventario, sin
+  restricción de si no hay disponible... porque algunos accesorios no hacemos stock" (o sea: el
+  selector NO filtra por cantidad en existencia, es solo una referencia informativa). Fuente:
+  colección `inventario` de Firestore (la misma de `ops/inventario.html`), filtrada a
+  `categoria === 'herraje' && subgrupo === 'mamparas_vidrio'` (categoría/subgrupo que ya existían
+  en el catálogo de `ops/inventario.html` antes de este cambio — no se creó nada nuevo ahí).
+  `startFsClientListeners()` (script módulo de `index.html`, mismo patrón que ya usa para
+  `productosUnidades`→`window.artalUnidades`) agrega un `onSnapshot(collection(db,'inventario'))`
+  que expone la lista ya filtrada en `window.artalAccesoriosMampara` (`{id, tipo, referencia}`) y
+  llama a `window.refreshAccesoriosSelects()` (script clásico) — que re-pinta el
+  `facade-builder-${id}` de cada tarjeta de Vidrio de Ducha ya abierta, para que el selector no se
+  quede con la lista vacía/vieja si los datos llegan después de que la tarjeta ya se dibujó. Sin
+  sesión/señal (como el resto de estas integraciones), el selector simplemente no tiene opciones
+  más allá de "-- Referencia de Accesorios --", sin romper nada. `renderPanelOptions` agrega el
+  `<select>` (`grid-column: span 2`) al final de los 4 casos existentes (fijo con moldura, fijo
+  con conectores, deslizante/deslizante_conn, puerta abisagrada) — guarda **dos** campos en el
+  panel al elegir: `p.accesorioRef` (el id del doc de `inventario`, por si hace falta referenciar
+  el registro real más adelante) y `p.accesorioRefLabel` (el texto ya resuelto en el momento de
+  elegir, `tipo (referencia)`) — el resumen/PDF (`generateSummary`, línea "Accesorios: ...") usa
+  **siempre** `accesorioRefLabel`, nunca vuelve a resolver el id contra la lista en vivo, para que
+  una cotización ya hecha no cambie de texto (o se rompa) si el inventario se edita/renombra
+  después.
 
 ## Cortinas/Enrollables (`categoria: 'cortina'`)
 

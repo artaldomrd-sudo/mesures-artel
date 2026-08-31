@@ -585,7 +585,7 @@
             'gal1': 'Galandaje 1 Hoja', 'gal2_lat': 'Galandaje 2 Hojas (Lat)', 'gal2_cent': 'Galandaje 2 Hojas (Cent)',
             'gal3_3v': 'Galandaje 3 Hojas', 'gal4_2v': 'Galandaje 4 Hojas (Cent)', 'gal4_4v': 'Galandaje 4 Hojas (Lat)', 'gal6_3v': 'Galandaje 6 Hojas',
             'win_abat': 'Ventana Abisagrada', 'win_ob': 'Oscilobatiente (OB)', 'win_proy': 'Ventana Proyectada', 'win_souf': 'Ventana Soufflet',
-            'door_abat': 'Puerta Abisagrada', 'mamp_fija': 'Mampara Fija', 'door_glass': 'Puerta Vidrio', 'door_slide': 'Puerta Deslizante Suspendida', 'fachada_din': 'Paño Fijo',
+            'door_abat': 'Puerta Abisagrada', 'mamp_fija': 'Mampara Fija', 'door_glass': 'Puerta Vidrio', 'door_slide': 'Puerta Deslizante Prensas', 'door_slide_conn': 'Puerta Deslizante Conectores', 'fachada_din': 'Paño Fijo',
             'ducha_cab': 'Cabina de Ducha', 'ducha_facade': 'Vidrio de Ducha', 'baranda_bal': 'Baranda de Vidrio'
         };
         return names[type] || 'Elemento';
@@ -1554,12 +1554,13 @@
         }
 
         if (state.categoria === 'cerramiento') {
-            const tipoTxt = { fijo: 'Panel Fijo', puerta: 'Puerta Abatible', deslizante: 'Puerta Deslizante' };
+            const tipoTxt = { fijo: 'Panel Fijo', puerta: 'Puerta Abatible', deslizante: 'Puerta Deslizante Prensas', deslizante_conn: 'Puerta Deslizante Conectores' };
             const paneles = state.paneles || [];
             const list = paneles.map((p, i) => {
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
-                if (p.tipo !== 'fijo') { extras.push('Apertura ' + (p.orientacion === 'D' ? 'Der' : 'Izq')); if (p.tirador) extras.push('Tirador ' + (p.tirador === 'redondo' ? 'redondo' : p.tirador + '"')); if (p.tipo === 'deslizante') extras.push('Kit de prensa'); const cerr = [p.cerr_luna && 'Media-Luna', p.cerr_digital && 'Digital', p.cerr_piso && 'Piso'].filter(Boolean); if (cerr.length) extras.push('Cerradura: ' + cerr.join('+')); }
+                if (p.tipo !== 'fijo') { extras.push('Apertura ' + (p.orientacion === 'D' ? 'Der' : 'Izq')); if (p.tirador) extras.push('Tirador ' + (p.tirador === 'redondo' ? 'redondo' : p.tirador + '"')); if (p.tipo === 'deslizante') extras.push('Kit de prensa'); if (p.tipo === 'deslizante_conn') extras.push('Kit de conectores'); const cerr = [p.cerr_luna && 'Media-Luna', p.cerr_digital && 'Digital', p.cerr_piso && 'Piso'].filter(Boolean); if (cerr.length) extras.push('Cerradura: ' + cerr.join('+')); }
+                if (p.accesorioRefLabel) extras.push('Accesorios: ' + p.accesorioRefLabel);
                 const vid = `${p.vidrio || 'templado'} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}`.trim();
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}`;
             }).join('<br>');
@@ -2788,7 +2789,7 @@
         if(type.startsWith('gal')) return 'galandaje';
         if(type.startsWith('win') || type === 'door_abat') return 'ventana';
         if(type === 'mamp_fija') return 'mampara';
-        if(type === 'door_glass' || type === 'door_slide') return 'puerta_vidrio';
+        if(type === 'door_glass' || type === 'door_slide' || type === 'door_slide_conn') return 'puerta_vidrio';
         if(type === 'fachada_din') return 'fachada';
         if(type === 'ducha_cab') return 'ducha';
         if(type === 'ducha_facade') return 'cerramiento';
@@ -2900,8 +2901,8 @@
             const cp = (state.cerr_piso || state.cerradura_piso === 'si') ? 'checked' : '';
             const chk = 'style="width:15px;height:15px;accent-color:#0A3D62;margin:0;"';
             const cerraduraGroup = `<div style="grid-column: span 2; display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:#fff; border:1px solid #ccc; border-radius:3px; padding:6px 9px; font-size:12px;"><span style="font-weight:bold; color:#0A3D62;">Cerradura:</span><label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${cl} ${chk} onchange="${fn}, 'cerr_luna', this.checked)">Media Luna</label><label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${cd} ${chk} onchange="${fn}, 'cerr_digital', this.checked)">Digital</label><label style="display:flex;gap:4px;align-items:center;cursor:pointer;"><input type="checkbox" ${cp} ${chk} onchange="${fn}, 'cerr_piso', this.checked)">Piso</label></div>`;
-            if (type === 'door_slide') {
-                // Puerta deslizante suspendida (sin acabado de perfil: es vidrio templado)
+            if (type === 'door_slide' || type === 'door_slide_conn') {
+                // Puerta deslizante (prensas o conectores; sin acabado de perfil: es vidrio templado)
                 return `${vistaOption}${herrajeColorSel}${tiradorSel}${cerraduraGroup}${vidriosBasicos}`;
             }
             // Puerta de vidrio abatible (sin acabado de perfil)
@@ -3285,7 +3286,8 @@
                                 <option value="door_abat">Puerta Abisagrada</option>
                                 <option value="mamp_fija">Mampara Fija</option>
                                 <option value="door_glass">Puerta Vidrio</option>
-                                <option value="door_slide">Puerta Deslizante Suspendida</option>
+                                <option value="door_slide">Puerta Deslizante Prensas</option>
+                                <option value="door_slide_conn">Puerta Deslizante Conectores</option>
                                 <option value="fachada_din">Paño Fijo / Fachada</option>
                             </select>
                         </div>
@@ -4031,7 +4033,7 @@
                 return [fitPropRect(state)];
             case 'mamp_fija': return [[30, 5, 40, 50]];
             case 'door_glass': return [[30, 5, 40, 50]];
-            case 'door_slide': return [[30, 9, 40, 47]];
+            case 'door_slide': case 'door_slide_conn': return [[30, 9, 40, 47]];
         }
         return [];
     }
@@ -5323,6 +5325,29 @@
             if (state.moldura && state.moldura !== 'no') s += moldFrame(state.moldura);
             return s;
         }
+        if (t === 'door_slide_conn') {
+            // Puerta deslizante por conectores (sin riel/prensas arriba): el sistema de
+            // deslizamiento se fija con 2 hoyos de conector por lado, en dos alturas distintas
+            // (90mm y 150mm desde el borde superior — mismo criterio real que usa el fabricante,
+            // no una posición esquemática arbitraria), en vez del riel continuo de "Prensas".
+            const openLeft = !isD;
+            let s = '';
+            const connR = Math.max(1.1, hs * 0.55);
+            const conn = (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${connR.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(connR * 0.4).toFixed(1)}" fill="#fff" fill-opacity="0.7" stroke="none"/>`;
+            const rowY1 = H * 0.05, rowY2 = H * 0.085;
+            [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY1); });
+            [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY2); });
+            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY1 - 1.6).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">90</text>`;
+            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY2 + connR + 3.2).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">150</text>`;
+            const lx = openLeft ? W * 0.68 : W * 0.32;
+            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barSizes[state.tirador] * H, bw = Math.max(2.4, W * 0.06); s += `<rect x="${(lx - bw * 0.28).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${(bw * 0.56).toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bw * 0.28).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
+            else s += knob(lx, cy, hs);
+            const eX3 = openLeft ? W * 0.96 : W * 0.04, dr3 = openLeft ? -1 : 1;
+            s += cerraduraMarks(eX3, dr3, cy, H * 0.99, Math.max(hs, W * 0.1), herrajeCol, state.cerr_luna, state.cerr_digital, state.cerr_piso);
+            s += arw(W / 2, cy + H * 0.1, openLeft ? 'L' : 'R', Math.min(W * 0.34, H * 0.18));
+            if (state.moldura && state.moldura !== 'no') s += moldFrame(state.moldura);
+            return s;
+        }
         if (t === 'mamp_fija') {
             // Moldura U: marco perimetral en negro o blanco (sin conectores)
             if (state.fijacion === 'moldura') return moldFrame(state.moldura_color);
@@ -5358,6 +5383,18 @@
     }
 
     // ===== FACHADA DE DUCHA (constructor de paneles) =====
+    // Cuando llegan (o cambian) las referencias de accesorios desde Firestore, re-pinta el
+    // constructor de cada tarjeta de Vidrio de Ducha abierta para que las opciones del selector
+    // se actualicen solas — sin esto, una tarjeta ya en pantalla se queda con la lista vacía
+    // (o vieja) hasta que el usuario haga algún otro cambio que dispare un re-render.
+    window.refreshAccesoriosSelects = function () {
+        Object.keys(cardsState).forEach(id => {
+            if (cardsState[id] && cardsState[id].categoria === 'cerramiento') {
+                const b = document.getElementById('facade-builder-' + id);
+                if (b) b.innerHTML = renderFacadeBuilder(id);
+            }
+        });
+    };
     function refreshFacade(id, rebuildUI) {
         const st = cardsState[id];
         st.ancho = (st.paneles || []).reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
@@ -5425,20 +5462,29 @@
         const bis = p.bisagras || 'botella';
         const bisagras = `<select onchange="${u('bisagras', 'this.value')}"><option value="botella" ${bis === 'botella' ? 'selected' : ''}>Kit Botella</option><option value="bisagra" ${bis === 'bisagra' ? 'selected' : ''}>Bisagras Laterales</option></select>`;
         const cerr = `<div style="grid-column:span 2; display:flex; gap:10px; align-items:center; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:4px 7px; font-size:11px;"><b style="color:#0A3D62;">Cerradura:</b><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_luna ? 'checked' : ''} onchange="${u('cerr_luna', 'this.checked')}">Luna</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_digital ? 'checked' : ''} onchange="${u('cerr_digital', 'this.checked')}">Digital</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_piso ? 'checked' : ''} onchange="${u('cerr_piso', 'this.checked')}">Piso</label></div>`;
+        // Referencia de accesorios: conectada en vivo al inventario (herraje → mamparas_vidrio),
+        // sin filtrar por si hay stock (hay accesorios que no se manejan en existencia) — el
+        // objetivo es que quien cotiza sepa de una vez qué pedir, no reservar stock. Se guarda el
+        // id (accesorioRef) y además el texto ya resuelto (accesorioRefLabel) para que el resumen/
+        // PDF no dependa de que el ítem siga existiendo igual en el inventario más adelante.
+        const accCache = window.artalAccesoriosMampara || [];
+        const accVal = p.accesorioRef || '';
+        const accOpts = accCache.map(a => `<option value="${escAttr(a.id)}" ${accVal === a.id ? 'selected' : ''}>${escHtml(a.tipo || '(sin nombre)')}${a.referencia ? ' (' + escHtml(a.referencia) + ')' : ''}</option>`).join('');
+        const accesorios = `<select style="grid-column: span 2;" onchange="facadeUpdatePanel(${id}, ${i}, 'accesorioRef', this.value); facadeUpdatePanel(${id}, ${i}, 'accesorioRefLabel', this.options[this.selectedIndex].text);"><option value="" ${accVal === '' ? 'selected' : ''}>-- Referencia de Accesorios --</option>${accOpts}</select>`;
         if (p.tipo === 'fijo') {
             const fj = p.fijacion || 'conectores';
             const fijSel = `<select onchange="${u('fijacion', 'this.value')}"><option value="conectores" ${fj === 'conectores' ? 'selected' : ''}>Fijación: Conectores</option><option value="moldura" ${fj === 'moldura' ? 'selected' : ''}>Fijación: Moldura U</option></select>`;
             if (fj === 'moldura') {
                 const mc = p.moldura_color || 'negro';
                 const moldSel = `<select onchange="${u('moldura_color', 'this.value')}"><option value="negro" ${mc === 'negro' ? 'selected' : ''}>Moldura Negra</option><option value="blanco" ${mc === 'blanco' ? 'selected' : ''}>Moldura Blanca</option></select>`;
-                return colorVidrio + grosor + fijSel + moldSel;
+                return colorVidrio + grosor + fijSel + moldSel + accesorios;
             }
-            return colorVidrio + grosor + fijSel + herr;
+            return colorVidrio + grosor + fijSel + herr + accesorios;
         }
         const md = p.moldura || 'no';
         const molduraDoor = `<select onchange="${u('moldura', 'this.value')}"><option value="no" ${md === 'no' ? 'selected' : ''}>Sin Moldura</option><option value="negro" ${md === 'negro' ? 'selected' : ''}>Moldura Negra</option><option value="blanco" ${md === 'blanco' ? 'selected' : ''}>Moldura Blanca</option></select>`;
-        if (p.tipo === 'deslizante') return tirador + herr + molduraDoor + colorVidrio + grosor + cerr;
-        return bisagras + tirador + herr + molduraDoor + colorVidrio + grosor + cerr; // puerta abisagrada
+        if (p.tipo === 'deslizante' || p.tipo === 'deslizante_conn') return tirador + herr + molduraDoor + colorVidrio + grosor + cerr + accesorios;
+        return bisagras + tirador + herr + molduraDoor + colorVidrio + grosor + cerr + accesorios; // puerta abisagrada
     }
 
     function renderFacadeBuilder(id) {
@@ -5448,7 +5494,7 @@
             h += `<div style="border:1px solid #d7dde3; border-radius:6px; padding:7px; background:#fbfcfd;">
                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:5px;">
                     <b style="color:#0A3D62; font-size:12px; white-space:nowrap;">Panel ${i + 1}</b>
-                    <select onchange="facadeSetTipo(${id}, ${i}, this.value)" style="flex:1;"><option value="fijo" ${p.tipo === 'fijo' ? 'selected' : ''}>Mampara (Fijo)</option><option value="puerta" ${p.tipo === 'puerta' ? 'selected' : ''}>Puerta Abisagrada</option><option value="deslizante" ${p.tipo === 'deslizante' ? 'selected' : ''}>Puerta Deslizante</option></select>
+                    <select onchange="facadeSetTipo(${id}, ${i}, this.value)" style="flex:1;"><option value="fijo" ${p.tipo === 'fijo' ? 'selected' : ''}>Mampara (Fijo)</option><option value="puerta" ${p.tipo === 'puerta' ? 'selected' : ''}>Puerta Abisagrada</option><option value="deslizante" ${p.tipo === 'deslizante' ? 'selected' : ''}>Puerta Deslizante Prensas</option><option value="deslizante_conn" ${p.tipo === 'deslizante_conn' ? 'selected' : ''}>Puerta Deslizante Conectores</option></select>
                     <input type="number" inputmode="numeric" value="${p.ancho || ''}" placeholder="Ancho mm" style="width:70px; padding:5px; border:1px solid #ccc; border-radius:3px;" oninput="facadeUpdatePanel(${id}, ${i}, 'ancho', this.value)">
                     ${(p.tipo === 'fijo' && (p.fijacion || 'conectores') === 'moldura') ? '' : `<button onclick="facadeInvertPanel(${id}, ${i})" title="Invertir este panel (lado de fijación / apertura)" style="background:#f39c12; color:#fff; border:none; border-radius:3px; width:26px; height:26px; cursor:pointer; font-weight:bold;">&#8646;</button>`}
                     <button onclick="facadeRemovePanel(${id}, ${i})" title="Borrar panel" style="background:#e74c3c; color:#fff; border:none; border-radius:3px; width:26px; height:26px; cursor:pointer; font-weight:bold;">×</button>
@@ -5462,7 +5508,8 @@
                 <option value="">+ Agregar...</option>
                 <option value="fijo">Mampara (Panel Fijo)</option>
                 <option value="puerta">Puerta Abisagrada</option>
-                <option value="deslizante">Puerta Deslizante</option>
+                <option value="deslizante">Puerta Deslizante Prensas</option>
+                <option value="deslizante_conn">Puerta Deslizante Conectores</option>
             </select>
             <button onclick="facadeInvert(${id})" title="Invertir el sentido de la fachada" style="background:#f39c12; color:#fff; border:none; border-radius:4px; padding:9px 14px; font-weight:bold; cursor:pointer; white-space:nowrap;">&#8646; Invertir</button>
         </div>`;
@@ -5476,7 +5523,7 @@
         const total = widths.reduce((a, b) => a + b, 0);
         const DW = 100, scale = DW / total, Hd = alto * scale;
         const headTop = Math.max(5, Hd * 0.14);
-        const tipoMap = { fijo: 'mamp_fija', puerta: 'door_glass', deslizante: 'door_slide' };
+        const tipoMap = { fijo: 'mamp_fija', puerta: 'door_glass', deslizante: 'door_slide', deslizante_conn: 'door_slide_conn' };
         let defs = '', body = '', xoff = 0;
         const layout = [];
         paneles.forEach((p, i) => {
@@ -6453,6 +6500,19 @@
                 .filter(u => u.abreviatura);
             if (typeof window.czRefreshUnidades === 'function') window.czRefreshUnidades();
         }, () => {});
+        // Referencias de accesorios de mampara/vidrio de ducha, en vivo desde el inventario real
+        // (ops/inventario.html: categoria 'herraje', subgrupo 'mamparas_vidrio') — para que el
+        // selector "Referencia de Accesorios" del constructor de Vidrio de Ducha sepa qué mostrar.
+        // A propósito SIN filtrar por cantidad/stock: hay accesorios que no se manejan en
+        // existencia (se piden directo al proveedor cuando hace falta), y el selector es solo
+        // para que quien cotiza sepa qué pedir, no para reservar inventario.
+        onSnapshot(collection(db, 'inventario'), (snap) => {
+            window.artalAccesoriosMampara = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .filter(x => x.categoria === 'herraje' && x.subgrupo === 'mamparas_vidrio')
+                .map(x => ({ id: x.id, tipo: x.tipo || '', referencia: x.referencia || '' }))
+                .sort((a, b) => a.tipo.localeCompare(b.tipo, 'es'));
+            if (typeof window.refreshAccesoriosSelects === 'function') window.refreshAccesoriosSelects();
+        }, () => {});
         // Empleados (RRHH) con su costo laboral real por día — para armar el equipo de una obra en el
         // calculador de transporte + instalación. Solo activos con costo calculado (ver rrhh-empleados.html).
         onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
@@ -6586,7 +6646,7 @@
     };
     function getStageSetKey(type, state) {
         if (['win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat'].includes(type)) return 'abisagrada';
-        if (['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'door_slide'].includes(type)) return 'corredera';
+        if (['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'door_slide', 'door_slide_conn'].includes(type)) return 'corredera';
         if (['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v'].includes(type)) return 'galandaje';
         if (['fachada_din', 'mamp_fija', 'door_glass', 'ducha_facade', 'ducha_cab'].includes(type)) return 'panoFijo';
         if (type === 'baranda_bal') return (state && state.fijacion === 'base_u') ? 'barandaLingote' : 'barandaBase';

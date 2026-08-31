@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'fachada_din', 'cort_roller', 'cort_shutter'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -82,6 +82,7 @@ try {
   ctx.__render('facade', { type: 'ducha_facade', categoria: 'cerramiento', alto: 2000, paneles: [
     { tipo: 'fijo', ancho: 700, color_vidrio: 'natural', herraje_color: 'cromado', fijacion: 'moldura', moldura_color: 'negro' },
     { tipo: 'deslizante', ancho: 900, orientacion: 'I', color_vidrio: 'natural', herraje_color: 'cromado', tirador: 'redondo', cerr_luna: true, cerr_piso: true },
+    { tipo: 'deslizante_conn', ancho: 900, orientacion: 'D', color_vidrio: 'natural', herraje_color: 'negro', tirador: '5', cerr_luna: true },
     { tipo: 'puerta', ancho: 700, orientacion: 'D', bisagras: 'bisagra', color_vidrio: 'natural', herraje_color: 'negro', tirador: '8', cerr_piso: true, moldura: 'blanco' },
   ] }); ok++;
 } catch (e) { fail++; console.error('  ducha_facade:', e.message); }
