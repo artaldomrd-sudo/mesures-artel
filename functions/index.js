@@ -3,7 +3,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -266,7 +266,67 @@ exports.arqueoTarde = onSchedule({ schedule: '55 16 * * *', timeZone: 'America/S
     await recordarArqueo('pm', '🧮 Arqueo de la TARDE (4:55)');
 });
 
+// ---------- Recurrencia de recordatorios (modo 'auto') ----------
+// Genera la próxima ocurrencia de los recordatorios recurrentes en modo 'auto' cuya fecha ya pasó,
+// aunque nadie tenga el calendario abierto. Los de modo 'completar' se generan del lado del cliente
+// (calendario.html) cuando se marca la ocurrencia actual como hecha. Frecuencias: diario/semanal/
+// mensual/anual × "cada N". El fin puede ser: nunca / N meses / hasta una fecha / N veces.
+const REP_FRECS = ['diario', 'semanal', 'mensual', 'anual'];
+function addPeriodo(base, repetir, cada) {
+    const d = new Date(base); const n = Math.max(1, Number(cada) || 1);
+    if (repetir === 'diario') d.setDate(d.getDate() + n);
+    else if (repetir === 'semanal') d.setDate(d.getDate() + 7 * n);
+    else if (repetir === 'mensual') d.setMonth(d.getMonth() + n);
+    else if (repetir === 'anual') d.setFullYear(d.getFullYear() + n);
+    return d;
+}
+function debeSeguirRepitiendo(c, nextDate, nextCount) {
+    const fin = c.repetirFin || 'nunca';
+    if (fin === 'nunca') return true;
+    if (fin === 'veces') return nextCount <= (Number(c.repetirFinValor) || 1);
+    if (fin === 'fecha') { const tope = c.repetirFinValor ? new Date(c.repetirFinValor + 'T23:59:59') : null; return tope ? nextDate <= tope : true; }
+    if (fin === 'meses') {
+        const inicio = c.repetirInicio ? new Date(c.repetirInicio) : (c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date());
+        const tope = new Date(inicio); tope.setMonth(tope.getMonth() + (Number(c.repetirFinValor) || 1));
+        return nextDate <= tope;
+    }
+    return true;
+}
+async function procesarRecurrencias() {
+    const ahora = Date.now();
+    const snap = await db.collection('citas').where('repetir', 'in', REP_FRECS).get();
+    for (const docu of snap.docs) {
+        const c = docu.data();
+        if (c.repetirGenerado === true) continue;
+        const modo = c.repetirModo || (c.repetir === 'mensual' ? 'completar' : 'auto');
+        if (modo !== 'auto') continue;   // 'completar' lo maneja el cliente
+        const fechaMs = c.fecha && c.fecha.toDate ? c.fecha.toDate().getTime() : null;
+        if (fechaMs == null || ahora < fechaMs) continue;   // aún no pasa la fecha de esta ocurrencia
+        const base = c.fecha.toDate();
+        const cada = Math.max(1, Number(c.repetirCada) || 1);
+        const next = addPeriodo(base, c.repetir, cada);
+        const nextCount = (Number(c.repetirCount) || 1) + 1;
+        await docu.ref.update({ repetirGenerado: true });   // marca antes de crear (evita duplicados)
+        if (!debeSeguirRepitiendo(c, next, nextCount)) continue;   // fin de la serie
+        await db.collection('citas').add({
+            tipo: c.tipo || 'recordatorio', titulo: c.titulo || '', descripcion: c.descripcion || '',
+            fecha: next, duracionMin: c.duracionMin || 0,
+            orderId: c.orderId || null, cliente: c.cliente || '', obra: c.obra || '',
+            asignadoA: c.asignadoA || 'gerente', asignados: c.asignados || [],
+            etapas: (c.etapas || []).map(e => ({ titulo: e.titulo || '', nombre: e.nombre || '', email: e.email || '', hecha: false, fechaHecha: null })),
+            completadoPor: [], completada: false, creadoPorNombre: c.creadoPorNombre || '',
+            recordatorios: c.recordatorios || [], recordatoriosEnviados: [],
+            recordatoriosPendientes: (c.recordatorios || []).length > 0,
+            repetir: c.repetir, repetirCada: cada, repetirModo: 'auto',
+            repetirFin: c.repetirFin || 'nunca', repetirFinValor: (c.repetirFinValor != null ? c.repetirFinValor : null),
+            repetirInicio: c.repetirInicio || base.toISOString(),
+            repetirCount: nextCount, repetirGenerado: false, fechaCreacion: FieldValue.serverTimestamp()
+        });
+    }
+}
+
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
+    await procesarRecurrencias();   // genera las próximas ocurrencias de los recurrentes 'auto'
     // Nuevo esquema (varios avisos por evento)
     await procesarRecordatoriosMulti('citas', emailsAsignados, (d) => d.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html', 'Recordatorio: ');
     await procesarRecordatoriosMulti('instalaciones', (d) => (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map(a => a && a.email).filter(Boolean) : (d.instaladorEmail ? [d.instaladorEmail] : [])), 'ops/instalaciones.html', 'Instalación próxima: ');

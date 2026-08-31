@@ -179,10 +179,35 @@
         </div>
 
         <label>Repetir</label>
-        <select id="cita-repetir">
+        <select id="cita-repetir" onchange="toggleRepetir()">
             <option value="no">No se repite</option>
-            <option value="mensual">Cada mes (al marcarlo hecho, se crea el del mes siguiente)</option>
+            <option value="diario">Cada día</option>
+            <option value="semanal">Cada semana</option>
+            <option value="mensual">Cada mes</option>
+            <option value="anual">Cada año</option>
         </select>
+        <div id="repetir-detalle" style="display:none; margin-top:8px; padding:10px 12px; background:#f5f8fc; border:1px solid #e2e9f2; border-radius:9px;">
+            <label style="margin-top:0;">Cada</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <input type="number" id="cita-repetir-cada" min="1" value="1" style="width:90px;">
+                <span id="repetir-unidad" style="font-size:13px;color:#556;">día(s)</span>
+            </div>
+            <label>¿Cómo se repite?</label>
+            <select id="cita-repetir-modo">
+                <option value="auto">Automático — avisa solo en cada fecha</option>
+                <option value="completar">Al marcarlo hecho — la próxima aparece cuando completo esta</option>
+            </select>
+            <label>¿Hasta cuándo?</label>
+            <select id="cita-repetir-fin" onchange="toggleRepetirFin()">
+                <option value="nunca">Siempre (hasta borrarlo)</option>
+                <option value="meses">Durante N meses</option>
+                <option value="fecha">Hasta una fecha</option>
+                <option value="veces">N veces</option>
+            </select>
+            <div id="repetir-fin-meses" style="display:none;"><label>Cantidad de meses</label><input type="number" id="cita-repetir-meses" min="1" value="3"></div>
+            <div id="repetir-fin-fecha" style="display:none;"><label>Fecha tope</label><input type="date" id="cita-repetir-fechatope"></div>
+            <div id="repetir-fin-veces" style="display:none;"><label>Cantidad de veces</label><input type="number" id="cita-repetir-veces" min="1" value="10"></div>
+        </div>
 
         <label>Recordatorios (puedes marcar varios)</label>
         <div id="cita-recordar" class="recordar-group">
@@ -490,15 +515,43 @@
         render();
     };
 
-    // Recordatorios mensuales: cuando uno con repetir='mensual' queda COMPLETADO, se genera solo
-    // el del mes siguiente (misma info, sin completar). El original se marca `repetirGenerado` para
-    // no duplicar. Se usa un Set local para evitar dobles mientras la escritura se propaga.
+    // Recurrencia de recordatorios. Frecuencias: diario/semanal/mensual/anual (× "cada N"). Dos
+    // modos: 'auto' (se genera la próxima ocurrencia al pasar la fecha, avisa solo) o 'completar'
+    // (la próxima aparece al marcar la actual hecha). El original se marca `repetirGenerado` para
+    // no duplicar. La Cloud Function también genera las de modo 'auto' aunque nadie abra el
+    // calendario; esto es el respaldo del lado del cliente. Set local para evitar dobles.
+    const REP_FRECS = ['diario', 'semanal', 'mensual', 'anual'];
     const rolling = new Set();
-    async function rollMensual(c) {
+    function addPeriodo(base, repetir, cada) {
+        const d = new Date(base); const n = Math.max(1, Number(cada) || 1);
+        if (repetir === 'diario') d.setDate(d.getDate() + n);
+        else if (repetir === 'semanal') d.setDate(d.getDate() + 7 * n);
+        else if (repetir === 'mensual') d.setMonth(d.getMonth() + n);
+        else if (repetir === 'anual') d.setFullYear(d.getFullYear() + n);
+        return d;
+    }
+    // Compat: eventos viejos con repetir='mensual' sin repetirModo → se comportan como 'completar'.
+    function repModo(c) { return c.repetirModo || (c.repetir === 'mensual' ? 'completar' : 'auto'); }
+    function debeSeguirRepitiendo(c, nextDate, nextCount) {
+        const fin = c.repetirFin || 'nunca';
+        if (fin === 'nunca') return true;
+        if (fin === 'veces') return nextCount <= (Number(c.repetirFinValor) || 1);
+        if (fin === 'fecha') { const tope = c.repetirFinValor ? new Date(c.repetirFinValor + 'T23:59:59') : null; return tope ? nextDate <= tope : true; }
+        if (fin === 'meses') {
+            const inicio = c.repetirInicio ? new Date(c.repetirInicio) : ((c.fecha && c.fecha.toDate) ? c.fecha.toDate() : new Date());
+            const tope = new Date(inicio); tope.setMonth(tope.getMonth() + (Number(c.repetirFinValor) || 1));
+            return nextDate <= tope;
+        }
+        return true;
+    }
+    async function rollRecurrente(c) {
         try {
             await updateDoc(doc(db, 'citas', c.id), { repetirGenerado: true });
             const base = (c.fecha && c.fecha.toDate) ? c.fecha.toDate() : new Date();
-            const next = new Date(base); next.setMonth(next.getMonth() + 1);
+            const cada = Math.max(1, Number(c.repetirCada) || 1);
+            const next = addPeriodo(base, c.repetir, cada);
+            const nextCount = (Number(c.repetirCount) || 1) + 1;
+            if (!debeSeguirRepitiendo(c, next, nextCount)) return;   // llegó al fin de la serie
             await addDoc(collection(db, 'citas'), {
                 tipo: c.tipo || 'recordatorio', titulo: c.titulo || '', descripcion: c.descripcion || '',
                 fecha: Timestamp.fromDate(next), duracionMin: c.duracionMin || 0,
@@ -508,22 +561,26 @@
                 completadoPor: [], completada: false, creadoPorNombre: c.creadoPorNombre || '',
                 recordatorios: c.recordatorios || [], recordatoriosEnviados: [],
                 recordatoriosPendientes: (c.recordatorios || []).length > 0,
-                repetir: 'mensual', repetirGenerado: false, fechaCreacion: serverTimestamp()
+                repetir: c.repetir, repetirCada: cada, repetirModo: repModo(c),
+                repetirFin: c.repetirFin || 'nunca', repetirFinValor: (c.repetirFinValor != null ? c.repetirFinValor : null),
+                repetirInicio: c.repetirInicio || base.toISOString(),
+                repetirCount: nextCount, repetirGenerado: false, fechaCreacion: serverTimestamp()
             });
-        } catch (e) { /* si falla, se reintenta en el próximo snapshot */ rolling.delete(c.id); }
+        } catch (e) { rolling.delete(c.id); }
     }
-    async function rollMensualSiToca() {
+    async function rollSiToca() {
         for (const c of allCitas) {
-            if (c.repetir === 'mensual' && !c.repetirGenerado && !rolling.has(c.id) && citaCompletadaCalc(c)) {
-                rolling.add(c.id);
-                await rollMensual(c);
-            }
+            if (!REP_FRECS.includes(c.repetir) || c.repetirGenerado || rolling.has(c.id)) continue;
+            // Los de modo 'auto' los genera la Cloud Function (cada 5 min), aunque nadie tenga el
+            // calendario abierto. Aquí solo se generan los de 'completar', al marcar la actual hecha.
+            if (repModo(c) !== 'completar') continue;
+            if (citaCompletadaCalc(c)) { rolling.add(c.id); await rollRecurrente(c); }
         }
     }
     onSnapshot(collection(db, 'citas'), (snap) => {
         allCitas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
-        rollMensualSiToca();
+        rollSiToca();
     }, (err) => {
         document.getElementById('citas-list').innerHTML = '<p class="empty">Error cargando citas: ' + err.message + '</p>';
     });
@@ -570,6 +627,20 @@
             : '<span style="font-size:13px;color:#888;">(no hay instaladores registrados)</span>';
     });
 
+    // Muestra/oculta el detalle de repetición y ajusta la etiqueta de la unidad.
+    window.toggleRepetir = function () {
+        const v = document.getElementById('cita-repetir').value;
+        document.getElementById('repetir-detalle').style.display = v === 'no' ? 'none' : 'block';
+        const u = { diario: 'día(s)', semanal: 'semana(s)', mensual: 'mes(es)', anual: 'año(s)' }[v] || '';
+        const el = document.getElementById('repetir-unidad'); if (el) el.textContent = u;
+    };
+    window.toggleRepetirFin = function () {
+        const v = document.getElementById('cita-repetir-fin').value;
+        document.getElementById('repetir-fin-meses').style.display = v === 'meses' ? 'block' : 'none';
+        document.getElementById('repetir-fin-fecha').style.display = v === 'fecha' ? 'block' : 'none';
+        document.getElementById('repetir-fin-veces').style.display = v === 'veces' ? 'block' : 'none';
+    };
+
     function resetForm() {
         editingId = null;
         document.getElementById('cita-titulo').value = '';
@@ -577,6 +648,13 @@
         document.getElementById('cita-fecha').value = '';
         document.getElementById('cita-duracion').value = '60';
         document.getElementById('cita-repetir').value = 'no';
+        document.getElementById('cita-repetir-cada').value = '1';
+        document.getElementById('cita-repetir-modo').value = 'auto';
+        document.getElementById('cita-repetir-fin').value = 'nunca';
+        document.getElementById('cita-repetir-meses').value = '3';
+        document.getElementById('cita-repetir-veces').value = '10';
+        document.getElementById('cita-repetir-fechatope').value = '';
+        toggleRepetir(); toggleRepetirFin();
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
         document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
         window.etapasDraft = [];
@@ -710,6 +788,23 @@
             .map(e => ({ titulo: (e.titulo || '').trim(), nombre: e.nombre || '', email: e.email || '', hecha: false, fechaHecha: null }));
         etapas.forEach(e => { if (e.email && !asignados.some(a => a.email === e.email)) asignados.push({ email: e.email, nombre: e.nombre }); });
 
+        // Configuración de repetición. Modo 'auto' (avisa solo en cada fecha) o 'completar' (la
+        // próxima ocurrencia aparece al marcar la actual hecha). Fin: siempre / N meses / fecha / N veces.
+        const repetirVal = document.getElementById('cita-repetir').value || 'no';
+        let repCfg = { repetir: repetirVal, repetirGenerado: false };
+        if (repetirVal !== 'no') {
+            const cada = Math.max(1, Number(document.getElementById('cita-repetir-cada').value) || 1);
+            const modo = document.getElementById('cita-repetir-modo').value || 'auto';
+            const fin = document.getElementById('cita-repetir-fin').value || 'nunca';
+            let finValor = null;
+            if (fin === 'meses') finValor = Math.max(1, Number(document.getElementById('cita-repetir-meses').value) || 1);
+            else if (fin === 'veces') finValor = Math.max(1, Number(document.getElementById('cita-repetir-veces').value) || 1);
+            else if (fin === 'fecha') finValor = document.getElementById('cita-repetir-fechatope').value || null;
+            repCfg = { repetir: repetirVal, repetirCada: cada, repetirModo: modo, repetirFin: fin, repetirFinValor: finValor, repetirGenerado: false };
+            // El inicio y el contador solo se fijan al CREAR — al editar una serie en curso no se resetean.
+            if (!editingId) { repCfg.repetirInicio = new Date(fechaStr).toISOString(); repCfg.repetirCount = 1; }
+        }
+
         const datos = {
             tipo: tipoEvento,
             titulo, descripcion,
@@ -723,8 +818,7 @@
             recordatorios,
             recordatoriosEnviados: [],
             recordatoriosPendientes: recordatorios.length > 0,
-            repetir: document.getElementById('cita-repetir').value || 'no',
-            repetirGenerado: false
+            ...repCfg
         };
 
         try {
@@ -837,7 +931,17 @@
         document.getElementById('cita-fecha').value =
             `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`;
         if (c.duracionMin != null) document.getElementById('cita-duracion').value = String(c.duracionMin);
-        document.getElementById('cita-repetir').value = c.repetir === 'mensual' ? 'mensual' : 'no';
+        const repEdit = REP_FRECS.includes(c.repetir) ? c.repetir : 'no';
+        document.getElementById('cita-repetir').value = repEdit;
+        if (repEdit !== 'no') {
+            document.getElementById('cita-repetir-cada').value = String(Math.max(1, Number(c.repetirCada) || 1));
+            document.getElementById('cita-repetir-modo').value = repModo(c);
+            document.getElementById('cita-repetir-fin').value = c.repetirFin || 'nunca';
+            if (c.repetirFin === 'meses') document.getElementById('cita-repetir-meses').value = String(c.repetirFinValor || 3);
+            else if (c.repetirFin === 'veces') document.getElementById('cita-repetir-veces').value = String(c.repetirFinValor || 10);
+            else if (c.repetirFin === 'fecha') document.getElementById('cita-repetir-fechatope').value = c.repetirFinValor || '';
+        }
+        toggleRepetir(); toggleRepetirFin();
         // Ligada a pedido o libre
         setTipoCita(c.orderId ? 'pedido' : 'libre');
         if (c.orderId) document.getElementById('cita-pedido').value = c.orderId;
