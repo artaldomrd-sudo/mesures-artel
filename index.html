@@ -5352,14 +5352,21 @@
         if (t === 'mamp_fija') {
             // Moldura U: marco perimetral en negro o blanco (sin conectores)
             if (state.fijacion === 'moldura') return moldFrame(state.moldura_color);
-            // conectores (fijaciones a pared): 2 en el lado de fijación (según orientación) y
-            // 1 en la parte baja del lado libre. orientación D = pared a la derecha.
+            // conectores (fijaciones a pared): 2 en el lado de fijación (según orientación,
+            // siempre) y, abajo: 1 conector hasta 900mm de ancho, 2 desde 1000mm (regla
+            // confirmada por el usuario). orientación D = pared a la derecha.
             const conn = (x, y) => `<rect x="${(x - hs).toFixed(1)}" y="${(y - hs).toFixed(1)}" width="${(hs * 2).toFixed(1)}" height="${(hs * 2).toFixed(1)}" rx="0.6" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(hs * 0.42).toFixed(1)}" fill="#cdd9e3" stroke="none"/>`;
             const mx = hs * 1.6, my = hs * 1.6;
             const wallLeft = !isD;
             const wallX = wallLeft ? mx : (W - mx);
-            const freeBottomX = wallLeft ? (W * 0.72) : (W * 0.28);
-            return conn(wallX, H * 0.25) + conn(wallX, H * 0.75) + conn(freeBottomX, H - my);
+            let s = conn(wallX, H * 0.25) + conn(wallX, H * 0.75);
+            if ((parseInt(state.ancho) || 0) >= 1000) {
+                s += conn(W * 0.3, H - my) + conn(W * 0.7, H - my);
+            } else {
+                const freeBottomX = wallLeft ? (W * 0.72) : (W * 0.28);
+                s += conn(freeBottomX, H - my);
+            }
+            return s;
         }
         return '';
     }
@@ -5438,7 +5445,16 @@
         if (key === 'ancho') p.ancho = parseInt(String(value).replace(/\D/g, '')) || 0;
         else p[key] = value;
         if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(value)) p.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(value)) p.vidrio = 'templado'; }
-        refreshFacade(id, key === 'fijacion');
+        // herraje_color/prensaForma/fijacion cambian qué referencia de ACCESORIOS_KIT aplica —
+        // bug real reportado con foto: elegir "Prensa en L" no cambiaba la referencia mostrada
+        // porque estas 3 claves no disparaban ningún re-render del panel (herraje_color/
+        // prensaForma son selects onchange, sin costo de reconstruir todo el panel; fijacion ya
+        // lo hacía de antes). "ancho" también afecta la cantidad (3 vs 4 conectores, ver
+        // accesorioKitFor) pero es un <input> que dispara esto en cada tecla — reconstruir todo
+        // el panel ahí perdería el foco mientras se escribe, así que solo refresca la cajita de
+        // Accesorios (updateAccesoriosBox), no todo el formulario.
+        if (key === 'ancho') window.updateAccesoriosBox(id, i);
+        refreshFacade(id, ['fijacion', 'herraje_color', 'prensaForma'].includes(key));
     };
     window.facadeSetTipo = function (id, i, tipo) {
         const p = cardsState[id].paneles[i]; if (!p) return;
@@ -5475,10 +5491,29 @@
         if (!porColor) return null;
         if (p.tipo === 'fijo') {
             if (p.fijacion === 'moldura') return null; // moldura no usa prensas
-            return porColor[p.prensaForma || 'recta'] || null;
+            const base = porColor[p.prensaForma || 'recta'];
+            if (!base) return null;
+            // Regla confirmada por el usuario: hasta 900mm de ancho, 3 conectores (2 en la
+            // altura + 1 abajo, como ya se ve en el dibujo); desde 1000mm, 4 (2 en la altura +
+            // 2 en el ancho abajo) — la cantidad reemplaza el qty fijo de la tabla.
+            const qty = (parseInt(p.ancho) || 0) >= 1000 ? 4 : 3;
+            return base.map(k => ({ ref: k.ref, qty }));
         }
         return porColor;
     }
+    // HTML de la caja "Accesorios" sola (sin el <div> contenedor con el id, ver accesoriosBoxHTML
+    // más abajo) — separado para poder refrescar SOLO esta caja cuando cambia ancho/color/forma,
+    // sin reconstruir el resto del formulario del panel (evita perder el foco del campo Ancho,
+    // que dispara esto en cada tecla mientras se escribe).
+    function accesoriosBoxInner(p) {
+        const kit = accesorioKitFor(p);
+        return `<b style="color:#0A3D62;">Accesorios:</b> ${kit ? kit.map(k => `${escHtml(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ') : '<span style="color:#b9770e;">sin definir para este color todavía</span>'}`;
+    }
+    window.updateAccesoriosBox = function (id, i) {
+        const p = cardsState[id] && cardsState[id].paneles[i]; if (!p) return;
+        const box = document.getElementById(`acc-box-${id}-${i}`);
+        if (box) box.innerHTML = accesoriosBoxInner(p);
+    };
     // Resuelve una referencia (ej. "ALC00344") al nombre del ítem en el inventario real, si ya
     // está cargado (window.artalInventarioPorReferencia, ver startFsClientListeners) — si no
     // (sin sesión, o el ítem no existe todavía en el inventario), muestra solo el código.
@@ -5502,9 +5537,10 @@
         const bisagras = `<select onchange="${u('bisagras', 'this.value')}"><option value="botella" ${bis === 'botella' ? 'selected' : ''}>Kit Botella</option><option value="bisagra" ${bis === 'bisagra' ? 'selected' : ''}>Bisagras Laterales</option></select>`;
         const cerr = `<div style="grid-column:span 2; display:flex; gap:10px; align-items:center; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:4px 7px; font-size:11px;"><b style="color:#0A3D62;">Cerradura:</b><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_luna ? 'checked' : ''} onchange="${u('cerr_luna', 'this.checked')}">Luna</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_digital ? 'checked' : ''} onchange="${u('cerr_digital', 'this.checked')}">Digital</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_piso ? 'checked' : ''} onchange="${u('cerr_piso', 'this.checked')}">Piso</label></div>`;
         // Accesorios: lista FIJA según tipo de panel + color de herraje (ver ACCESORIOS_KIT) —
-        // solo informativo, no editable (pedido explícito: nada de selección manual).
-        const kit = accesorioKitFor(p);
-        const accesorios = `<div style="grid-column: span 2; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px; font-size:11px; color:#333;"><b style="color:#0A3D62;">Accesorios:</b> ${kit ? kit.map(k => `${escHtml(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ') : '<span style="color:#b9770e;">sin definir para este color todavía</span>'}</div>`;
+        // solo informativo, no editable (pedido explícito: nada de selección manual). Id fijo
+        // para poder refrescar solo esta caja (ver updateAccesoriosBox) sin reconstruir todo el
+        // panel cuando cambia ancho/color/forma.
+        const accesorios = `<div id="acc-box-${id}-${i}" style="grid-column: span 2; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px; font-size:11px; color:#333;">${accesoriosBoxInner(p)}</div>`;
         if (p.tipo === 'fijo') {
             const fj = p.fijacion || 'conectores';
             const fijSel = `<select onchange="${u('fijacion', 'this.value')}"><option value="conectores" ${fj === 'conectores' ? 'selected' : ''}>Fijación: Conectores</option><option value="moldura" ${fj === 'moldura' ? 'selected' : ''}>Fijación: Moldura U</option></select>`;
@@ -5576,7 +5612,7 @@
         paneles.forEach((p, i) => {
             const wi = widths[i] * scale, puid = `${uid}f${i}`;
             const herrajeCol = p.herraje_color === 'negro' ? '#111111' : '#8d99a4';
-            const mini = { type: tipoMap[p.tipo] || 'mamp_fija', categoria: (p.tipo === 'fijo' ? 'mampara' : 'puerta_vidrio'), orientacion: p.orientacion || 'I', bisagras: p.bisagras || 'botella', tirador: p.tirador || '', cerr_luna: p.cerr_luna, cerr_digital: p.cerr_digital, cerr_piso: p.cerr_piso, herraje_color: p.herraje_color, color_vidrio: p.color_vidrio, fijacion: p.fijacion, moldura_color: p.moldura_color, moldura: p.moldura };
+            const mini = { type: tipoMap[p.tipo] || 'mamp_fija', categoria: (p.tipo === 'fijo' ? 'mampara' : 'puerta_vidrio'), orientacion: p.orientacion || 'I', bisagras: p.bisagras || 'botella', tirador: p.tirador || '', cerr_luna: p.cerr_luna, cerr_digital: p.cerr_digital, cerr_piso: p.cerr_piso, herraje_color: p.herraje_color, color_vidrio: p.color_vidrio, fijacion: p.fijacion, moldura_color: p.moldura_color, moldura: p.moldura, ancho: p.ancho };
             defs += glassDefs(puid, p.color_vidrio);
             body += `<g transform="translate(${xoff.toFixed(2)}, ${headTop.toFixed(2)})">`;
             body += glassOnlyPanel(puid, 0, 0, wi - 1.8, Hd - 1.8);
@@ -5805,10 +5841,12 @@
 
             case 'mamp_fija': {
                 drawing += '<rect x="30" y="5" width="40" height="50"/>';
-                // Conectores (fijaciones): 2 en el borde izquierdo y 2 en el borde inferior,
-                // todos RETIRADOS de las esquinas.
+                // Conectores (fijaciones): 2 en el borde izquierdo, RETIRADOS de las esquinas, y
+                // abajo 1 conector hasta 900mm de ancho, 2 desde 1000mm (regla confirmada por el
+                // usuario — mismo criterio que la rama de renderFacade/cadTechnical).
                 const mc = (x, y) => `<rect x="${(x - 1.6).toFixed(1)}" y="${(y - 1.6).toFixed(1)}" width="3.2" height="3.2" rx="0.4" fill="${herrajeCol}" stroke="#000" stroke-width="0.3"/><circle cx="${x}" cy="${y}" r="0.8" fill="#cdd9e3" stroke="none"/>`;
-                drawing += mc(32.5, 16) + mc(32.5, 44) + mc(58, 52.5);
+                drawing += mc(32.5, 16) + mc(32.5, 44);
+                drawing += (parseInt(state.ancho) || 0) >= 1000 ? (mc(42, 52.5) + mc(58, 52.5)) : mc(58, 52.5);
                 break;
             }
 

@@ -541,6 +541,34 @@ estilo simplificado del CAD.
     `prensaForma`). Iba a dejar el conteo de selects de una columna en 5 (impar) en esa rama —
     mismo bug de hueco vacío que ya se había corregido en deslizante — así que el select de
     Forma de Prensa nace directo con `grid-column: span 2` (ninguna fila queda a medias).
+    **Cantidad de conectores, regla confirmada por el usuario**: hasta 900mm de ancho → 3
+    conectores (2 en la altura + 1 abajo, coincide con las 3 marcas que ya dibuja `cadTechnical`
+    para `mamp_fija`); desde 1000mm → 4 (2 en la altura + 2 en el ancho abajo) — mismo tipo de
+    prensa, solo cambia la cantidad. `accesorioKitFor` calcula este `qty` a partir de `p.ancho`
+    en vez de usar un número fijo en la tabla (`ACCESORIOS_KIT.fijo` guarda solo la `ref`, sin
+    `qty` — el qty siempre se deriva). **El dibujo también marca el 4to conector** (pedido
+    explícito: "es obligatorio que lo marque correctamente", no solo el texto de Accesorios) —
+    tanto en `cadTechnical` (rama `mamp_fija`, usada por `renderFacade`/paneles de Vidrio de
+    Ducha y por el CAD) como en el `case 'mamp_fija'` del switch grande de `renderSVG` (la
+    tarjeta suelta heredada, para proyectos viejos). Ambos leen `state.ancho`/`p.ancho` — por eso
+    la `mini` que arma `renderFacade` por panel ahora incluye `ancho: p.ancho` (antes no viajaba,
+    no hacía falta hasta esta regla). Con ancho ≥1000, los 2 conectores del lado de la pared se
+    mantienen igual (arriba/abajo del lado de fijación) y el conector único de abajo se reemplaza
+    por 2, repartidos a los lados del centro del ancho libre.
+  - **Bug real corregido, reportado con foto: elegir "Prensa en L" no cambiaba la referencia
+    mostrada.** Causa: `facadeUpdatePanel` solo reconstruía el formulario del panel
+    (`renderFacadeBuilder`, donde vive la cajita de Accesorios) cuando la clave cambiada era
+    `'fijacion'` — `herraje_color` y `prensaForma` (las otras dos claves de las que depende
+    `accesorioKitFor`) no disparaban ningún re-render, así que la cajita se quedaba con el texto
+    viejo aunque `cardsState` ya tuviera el valor nuevo. Arreglo: `refreshFacade` ahora
+    reconstruye el formulario también con `herraje_color`/`prensaForma` (seguro: son `<select
+    onchange>`, no hay foco de escritura que perder). `ancho` es distinto — es un `<input
+    oninput>` que dispara esto en cada tecla, así que reconstruir todo el panel ahí perdería el
+    foco a mitad de escribir la medida; en su lugar, `window.updateAccesoriosBox(id, i)` — nueva
+    función — actualiza el `innerHTML` de **solo** la cajita de Accesorios (id fijo
+    `acc-box-${id}-${i}`) sin tocar el resto del formulario. `accesoriosBoxInner(p)` (el HTML de
+    adentro de la cajita) quedó factorizado aparte para que `renderPanelOptions` y
+    `updateAccesoriosBox` compartan exactamente la misma lógica de resolución, sin duplicarla.
   - **Accesorios adicionales, texto libre, SOLO para deslizante/deslizante_conn.** Pedido
     explícito del usuario: "agrega un campo para agregar accesorios en caso de que sea necesario
     (cerraduras o demás)" — a diferencia del kit fijo (sin edición posible), este es un `<input
