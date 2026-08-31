@@ -514,8 +514,18 @@ estilo simplificado del CAD.
   restricción de si no hay disponible... porque algunos accesorios no hacemos stock" (o sea: el
   selector NO filtra por cantidad en existencia, es solo una referencia informativa). Fuente:
   colección `inventario` de Firestore (la misma de `ops/inventario.html`), filtrada a
-  `categoria === 'herraje' && subgrupo === 'mamparas_vidrio'` (categoría/subgrupo que ya existían
-  en el catálogo de `ops/inventario.html` antes de este cambio — no se creó nada nuevo ahí).
+  `subgrupo === 'mamparas_vidrio'` — sin exigir además una `categoria` fija.
+  **Bug real corregido, reportado por el usuario con fotos reales**: el primer intento filtraba
+  también por `categoria === 'herraje'`, asumiendo que "Mamparas de vidrio" vivía dentro de la
+  categoría fija "Herrajes" de `ops/inventario.html` — el selector quedaba siempre vacío. La
+  sub-sección real ("Mamparas de vidrio", junto con "Puertas de vidrio" y otras — `SUBGRUPOS_ACC`
+  en `ops/inventario.html`) vive dentro de una categoría **"Accesorios puertas/ventanas/Vidrios"**
+  que en `ops/inventario.html` es una categoría **custom** (creada desde la app con "+ Nueva
+  categoría", colección `categoriasInventario`, id autogenerado por Firestore) — no la categoría
+  fija `herraje`. Arreglo: filtrar solo por `subgrupo === 'mamparas_vidrio'`, sin condición de
+  `categoria` — ese valor de subgrupo es único en todo el catálogo (no lo reusa ninguna otra
+  sub-sección), así que alcanza solo y de paso queda a prueba de que alguien renombre o recree
+  esa categoría custom más adelante (el id cambiaría, el subgrupo no).
   `startFsClientListeners()` (script módulo de `index.html`, mismo patrón que ya usa para
   `productosUnidades`→`window.artalUnidades`) agrega un `onSnapshot(collection(db,'inventario'))`
   que expone la lista ya filtrada en `window.artalAccesoriosMampara` (`{id, tipo, referencia}`) y
