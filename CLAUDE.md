@@ -79,8 +79,30 @@ un **PDF de Cotización o Fabricación** para el cliente.
   sin marco: mampara/puerta de vidrio, canto de vidrio traslúcido en vez de borde opaco).
   **Paño Fijo** (`fachada_din`) usa `glassOnlyPanel` cuando `state.fijacion === 'sin_marco'`
   (opción "Sin Marco" del menú), igual que mampara/puerta de vidrio.
+- **Láminas de Louver (`vidrio === 'louvers'`)**: en vez de vidrio, `louverPanel` dibuja solo
+  lamas horizontales — pedido explícito del usuario con una foto de referencia real (puerta
+  jalousie de aluminio). Mismo patrón de despacho que `extrudedPanel`/`glassOnlyPanel`
+  (`panelFn = vidrio==='louvers' ? louverPanel : (...)`, en los 3 puntos donde se decide qué
+  función de panel usar: switch grande de `renderSVG`, `renderCADProportional`, y
+  `buildPanoFragment` del Paño Fijo adosado). Usa los mismos placeholders de color
+  (`#0A3D62`/`#1c5a85`/`#0d3f5f`) que reemplaza `applyFinish`, así que las lamas y el borde
+  siguen el acabado de perfil elegido. **Mismo efecto 3D que `extrudedPanel`** (pedido explícito
+  del usuario, "el mismo efecto 3D que el resto de los ítems"): borde de espesor a la derecha y
+  abajo (mismas 2 `polyFrom` de `extrudedPanel`, mismo grosor visual `t=2.5`) — sin el reflejo
+  de vidrio (`glassReflection`), que no aplica porque no es vidrio. **Primer intento
+  (revertido): agregaba también un refuerzo en X por hoja**
+  (dividiendo el relleno a la mitad para 2 hojas) — el usuario aclaró que esas diagonales se
+  confundían visualmente con la flecha/chevron de apertura que el `case` del tipo ya dibuja
+  encima ("solo se mantienen las líneas que representan las puertas como en la original de
+  vidrio"): `louverPanel` quedó reducido a marco + lamas, sin ninguna diagonal propia, y
+  `getPanelRects`/`glassLayer` volvieron a su versión genérica de siempre (sin dividir en 2
+  mitades — ya no hace falta, no hay X que separar por hoja). Cantidad de lamas fija (12) —
+  esquemático como el resto de los herrajes de la app, no a escala real de mm.
 - **Acabado del perfil**: `applyFinish(svg, color_perfil, color_ral)` reemplaza los azules base
-  `#0A3D62 / #1c5a85 / #0d3f5f` por el color del acabado (`FINISHES`, `finishColors`).
+  `#0A3D62 / #1c5a85 / #0d3f5f` por el color del acabado (`FINISHES`, `finishColors`) —
+  Natural/Negro/Grafito/Blanco/Madera/RAL/**Inox** (`#c9a876`, tono champagne — agregado a
+  pedido explícito del usuario junto con el dibujo de Louver; reconocido también por
+  `headerAcabado()` con las palabras "inox"/"champagne"/"champán").
 - **Medidas: línea de un extremo al otro (estilo plano técnico)**, no solo texto flotante.
   `dimLineH(x1, x2, y, edgeY, label, fontSize)` (ancho) y `dimLineV(y1, y2, x, edgeX, label,
   fontSize)` (alto) dibujan línea testigo (perpendicular, desde el borde real del elemento hasta
