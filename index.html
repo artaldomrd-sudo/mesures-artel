@@ -1560,7 +1560,8 @@
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
                 if (p.tipo !== 'fijo') { extras.push('Apertura ' + (p.orientacion === 'D' ? 'Der' : 'Izq')); if (p.tirador) extras.push('Tirador ' + (p.tirador === 'redondo' ? 'redondo' : p.tirador + '"')); if (p.tipo === 'deslizante') extras.push('Kit de prensa'); if (p.tipo === 'deslizante_conn') extras.push('Kit de conectores'); const cerr = [p.cerr_luna && 'Media-Luna', p.cerr_digital && 'Digital', p.cerr_piso && 'Piso'].filter(Boolean); if (cerr.length) extras.push('Cerradura: ' + cerr.join('+')); }
-                if (p.accesorioRefLabel) extras.push('Accesorios: ' + p.accesorioRefLabel);
+                { const kit = accesorioKitFor(p); if (kit) extras.push('Accesorios: ' + kit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ')); }
+                if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = `${p.vidrio || 'templado'} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}`.trim();
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}`;
             }).join('<br>');
@@ -5383,11 +5384,11 @@
     }
 
     // ===== FACHADA DE DUCHA (constructor de paneles) =====
-    // Cuando llegan (o cambian) las referencias de accesorios desde Firestore, re-pinta el
-    // constructor de cada tarjeta de Vidrio de Ducha abierta para que las opciones del selector
-    // se actualicen solas — sin esto, una tarjeta ya en pantalla se queda con la lista vacía
-    // (o vieja) hasta que el usuario haga algún otro cambio que dispare un re-render.
-    window.refreshAccesoriosSelects = function () {
+    // Cuando llega (o cambia) el inventario desde Firestore, re-pinta el constructor de cada
+    // tarjeta de Vidrio de Ducha abierta para que los nombres resueltos de ACCESORIOS_KIT se
+    // actualicen solos — sin esto, una tarjeta ya en pantalla se queda mostrando solo el código
+    // (sin nombre) hasta que el usuario haga algún otro cambio que dispare un re-render.
+    window.refreshAccesoriosInfo = function () {
         Object.keys(cardsState).forEach(id => {
             if (cardsState[id] && cardsState[id].categoria === 'cerramiento') {
                 const b = document.getElementById('facade-builder-' + id);
@@ -5447,6 +5448,44 @@
         refreshFacade(id, true);
     };
 
+    // Kit de accesorios FIJO por tipo de panel + color de herraje — a pedido explícito del
+    // usuario, un selector manual "complica mucho": en vez de eso, cada combinación ya confirmada
+    // (tipo de panel + color) trae su propia lista fija de referencias de inventario, sin permitir
+    // elegir otra cosa. Se va llenando a mano a medida que el usuario confirma cada combinación
+    // real (mismo patrón que TELA_COLECCIONES en Cortinas: arranca con lo confirmado, crece con el
+    // tiempo) — una combinación todavía no confirmada simplemente no tiene entrada acá.
+    // "fijo" (mampara con conectores) tiene una dimensión extra: la FORMA de la prensa (recta o
+    // en L, según la instalación) — confirmado explícitamente por el usuario con las 4
+    // referencias reales (2 formas x 2 colores), por eso va anidado un nivel más que
+    // deslizante_conn en vez de una lista plana.
+    const ACCESORIOS_KIT = {
+        deslizante_conn: {
+            cromado: [{ ref: 'ALC00344', qty: 1 }, { ref: 'TUB00380', qty: 1 }],
+            // negro: pendiente de confirmar con el usuario.
+        },
+        fijo: {
+            cromado: { recta: [{ ref: 'ALC00150', qty: 1 }], L: [{ ref: 'ALC00151', qty: 1 }] },
+            negro: { recta: [{ ref: 'ALC00004', qty: 1 }], L: [{ ref: 'ALC00445', qty: 1 }] },
+        }
+    };
+    function accesorioKitFor(p) {
+        const porTipo = ACCESORIOS_KIT[p.tipo];
+        if (!porTipo) return null;
+        const porColor = porTipo[p.herraje_color || 'cromado'];
+        if (!porColor) return null;
+        if (p.tipo === 'fijo') {
+            if (p.fijacion === 'moldura') return null; // moldura no usa prensas
+            return porColor[p.prensaForma || 'recta'] || null;
+        }
+        return porColor;
+    }
+    // Resuelve una referencia (ej. "ALC00344") al nombre del ítem en el inventario real, si ya
+    // está cargado (window.artalInventarioPorReferencia, ver startFsClientListeners) — si no
+    // (sin sesión, o el ítem no existe todavía en el inventario), muestra solo el código.
+    function resolveAccesorioLabel(ref) {
+        const item = (window.artalInventarioPorReferencia || {})[ref];
+        return item && item.tipo ? `${item.tipo} (${ref})` : ref;
+    }
     function renderPanelOptions(id, i, p) {
         const u = (k, v) => `facadeUpdatePanel(${id}, ${i}, '${k}', ${v})`;
         const cv = p.color_vidrio || 'natural';
@@ -5462,15 +5501,10 @@
         const bis = p.bisagras || 'botella';
         const bisagras = `<select onchange="${u('bisagras', 'this.value')}"><option value="botella" ${bis === 'botella' ? 'selected' : ''}>Kit Botella</option><option value="bisagra" ${bis === 'bisagra' ? 'selected' : ''}>Bisagras Laterales</option></select>`;
         const cerr = `<div style="grid-column:span 2; display:flex; gap:10px; align-items:center; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:4px 7px; font-size:11px;"><b style="color:#0A3D62;">Cerradura:</b><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_luna ? 'checked' : ''} onchange="${u('cerr_luna', 'this.checked')}">Luna</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_digital ? 'checked' : ''} onchange="${u('cerr_digital', 'this.checked')}">Digital</label><label style="display:flex;gap:3px;align-items:center;cursor:pointer;"><input type="checkbox" ${p.cerr_piso ? 'checked' : ''} onchange="${u('cerr_piso', 'this.checked')}">Piso</label></div>`;
-        // Referencia de accesorios: conectada en vivo al inventario (herraje → mamparas_vidrio),
-        // sin filtrar por si hay stock (hay accesorios que no se manejan en existencia) — el
-        // objetivo es que quien cotiza sepa de una vez qué pedir, no reservar stock. Se guarda el
-        // id (accesorioRef) y además el texto ya resuelto (accesorioRefLabel) para que el resumen/
-        // PDF no dependa de que el ítem siga existiendo igual en el inventario más adelante.
-        const accCache = window.artalAccesoriosMampara || [];
-        const accVal = p.accesorioRef || '';
-        const accOpts = accCache.map(a => `<option value="${escAttr(a.id)}" ${accVal === a.id ? 'selected' : ''}>${escHtml(a.tipo || '(sin nombre)')}${a.referencia ? ' (' + escHtml(a.referencia) + ')' : ''}</option>`).join('');
-        const accesorios = `<select style="grid-column: span 2;" onchange="facadeUpdatePanel(${id}, ${i}, 'accesorioRef', this.value); facadeUpdatePanel(${id}, ${i}, 'accesorioRefLabel', this.options[this.selectedIndex].text);"><option value="" ${accVal === '' ? 'selected' : ''}>-- Referencia de Accesorios --</option>${accOpts}</select>`;
+        // Accesorios: lista FIJA según tipo de panel + color de herraje (ver ACCESORIOS_KIT) —
+        // solo informativo, no editable (pedido explícito: nada de selección manual).
+        const kit = accesorioKitFor(p);
+        const accesorios = `<div style="grid-column: span 2; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px; font-size:11px; color:#333;"><b style="color:#0A3D62;">Accesorios:</b> ${kit ? kit.map(k => `${escHtml(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ') : '<span style="color:#b9770e;">sin definir para este color todavía</span>'}</div>`;
         if (p.tipo === 'fijo') {
             const fj = p.fijacion || 'conectores';
             const fijSel = `<select onchange="${u('fijacion', 'this.value')}"><option value="conectores" ${fj === 'conectores' ? 'selected' : ''}>Fijación: Conectores</option><option value="moldura" ${fj === 'moldura' ? 'selected' : ''}>Fijación: Moldura U</option></select>`;
@@ -5479,11 +5513,24 @@
                 const moldSel = `<select onchange="${u('moldura_color', 'this.value')}"><option value="negro" ${mc === 'negro' ? 'selected' : ''}>Moldura Negra</option><option value="blanco" ${mc === 'blanco' ? 'selected' : ''}>Moldura Blanca</option></select>`;
                 return colorVidrio + grosor + fijSel + moldSel + accesorios;
             }
-            return colorVidrio + grosor + fijSel + herr + accesorios;
+            // Forma de la prensa: determina cuál de las 2 referencias de ACCESORIOS_KIT.fijo
+            // aplica (recta o en L) — span-2 para no repetir el mismo problema de hueco vacío
+            // que ya se corrigió en el panel deslizante (colorVidrio+grosor+fijSel+herr ya son 4,
+            // par; agregar un 5to select de una columna volvería a dejar un hueco).
+            const pf = p.prensaForma || 'recta';
+            const prensaFormaSel = `<select style="grid-column: span 2;" onchange="${u('prensaForma', 'this.value')}"><option value="recta" ${pf === 'recta' ? 'selected' : ''}>Prensa Recta</option><option value="L" ${pf === 'L' ? 'selected' : ''}>Prensa en L</option></select>`;
+            return colorVidrio + grosor + fijSel + herr + prensaFormaSel + accesorios;
         }
         const md = p.moldura || 'no';
         const molduraDoor = `<select onchange="${u('moldura', 'this.value')}"><option value="no" ${md === 'no' ? 'selected' : ''}>Sin Moldura</option><option value="negro" ${md === 'negro' ? 'selected' : ''}>Moldura Negra</option><option value="blanco" ${md === 'blanco' ? 'selected' : ''}>Moldura Blanca</option></select>`;
-        if (p.tipo === 'deslizante' || p.tipo === 'deslizante_conn') return tirador + herr + molduraDoor + colorVidrio + grosor + cerr + accesorios;
+        // grosor va con estilo span-2 (5 selects de a 1 columna antes de cerr/accesorios, que ya
+        // ocupan la fila completa cada uno, dejaba un hueco vacío al lado de "Grosor" — bug real
+        // reportado con foto). Con grosor a ancho completo, cada fila queda llena, sin huecos.
+        const grosorFull = grosor.replace('<select', '<select style="grid-column: span 2;"');
+        // Accesorios adicionales (opcional): texto libre para casos que el kit fijo no cubre
+        // (ej. una cerradura extra) — pedido explícito del usuario, solo para deslizantes.
+        const accExtra = `<input type="text" value="${escAttr(p.accesoriosExtra || '')}" placeholder="Accesorios adicionales (opcional: cerraduras, etc.)" style="grid-column: span 2; padding:5px; border:1px solid #ccc; border-radius:3px;" oninput="${u('accesoriosExtra', 'this.value')}">`;
+        if (p.tipo === 'deslizante' || p.tipo === 'deslizante_conn') return tirador + herr + molduraDoor + colorVidrio + grosorFull + cerr + accesorios + accExtra;
         return bisagras + tirador + herr + molduraDoor + colorVidrio + grosor + cerr + accesorios; // puerta abisagrada
     }
 
@@ -6500,26 +6547,16 @@
                 .filter(u => u.abreviatura);
             if (typeof window.czRefreshUnidades === 'function') window.czRefreshUnidades();
         }, () => {});
-        // Referencias de accesorios de mampara/vidrio de ducha, en vivo desde el inventario real
-        // (ops/inventario.html: sub-sección "Mamparas de vidrio", subgrupo 'mamparas_vidrio') —
-        // para que el selector "Referencia de Accesorios" del constructor de Vidrio de Ducha sepa
-        // qué mostrar. Filtra SOLO por `subgrupo`, sin exigir una `categoria` fija: esa
-        // sub-sección vive dentro de una categoría "Accesorios puertas/ventanas/Vidrios" que en
-        // ops/inventario.html es una categoría CUSTOM creada desde la app (colección
-        // `categoriasInventario`, id autogenerado por Firestore) — no la categoría fija 'herraje'
-        // como se asumió al principio (bug real: el selector quedaba siempre vacío porque
-        // ningún ítem tenía `categoria === 'herraje'`). `subgrupo === 'mamparas_vidrio'` es único
-        // en todo el catálogo de inventario (no lo reusa ninguna otra sección), así que alcanza
-        // solo, sin depender de qué id de categoría le haya tocado.
-        // A propósito SIN filtrar por cantidad/stock: hay accesorios que no se manejan en
-        // existencia (se piden directo al proveedor cuando hace falta), y el selector es solo
-        // para que quien cotiza sepa qué pedir, no para reservar inventario.
+        // Inventario real, indexado por `referencia` (ej. "ALC00344") — para resolver el nombre
+        // legible de cada código fijo en ACCESORIOS_KIT (script clásico) sin tener que mantener
+        // los nombres duplicados a mano. Sin filtro de subgrupo/categoría: un kit puede mezclar
+        // referencias de secciones distintas (ej. "ALC..." de Mamparas de vidrio junto a
+        // "TUB..." de Tubos/Perfiles), así que se indexa TODO el inventario.
         onSnapshot(collection(db, 'inventario'), (snap) => {
-            window.artalAccesoriosMampara = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                .filter(x => x.subgrupo === 'mamparas_vidrio')
-                .map(x => ({ id: x.id, tipo: x.tipo || '', referencia: x.referencia || '' }))
-                .sort((a, b) => a.tipo.localeCompare(b.tipo, 'es'));
-            if (typeof window.refreshAccesoriosSelects === 'function') window.refreshAccesoriosSelects();
+            const map = {};
+            snap.docs.forEach(d => { const x = d.data(); if (x.referencia) map[x.referencia] = { tipo: x.tipo || '' }; });
+            window.artalInventarioPorReferencia = map;
+            if (typeof window.refreshAccesoriosInfo === 'function') window.refreshAccesoriosInfo();
         }, () => {});
         // Empleados (RRHH) con su costo laboral real por día — para armar el equipo de una obra en el
         // calculador de transporte + instalación. Solo activos con costo calculado (ver rrhh-empleados.html).

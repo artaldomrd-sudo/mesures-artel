@@ -507,41 +507,53 @@ estilo simplificado del CAD.
   (usado solo para tarjetas sueltas heredadas, no para paneles de Vidrio de Ducha ni para el CAD)
   **no** necesitaba un caso nuevo — `door_slide_conn` es un tipo recién creado, no hay proyectos
   viejos con ese `type` que dependan de ese camino de renderizado.
-- **Referencia de Accesorios, conectada en vivo al inventario real.** Pedido explícito del
-  usuario: un selector, por panel (mampara/puerta/deslizante — confirmado explícitamente "por
-  panel" y no uno solo por ítem, porque cada panel usa hardware distinto), para que quien cotiza
-  sepa de una vez qué accesorio pedir — "se va a conectar directamente con el inventario, sin
-  restricción de si no hay disponible... porque algunos accesorios no hacemos stock" (o sea: el
-  selector NO filtra por cantidad en existencia, es solo una referencia informativa). Fuente:
-  colección `inventario` de Firestore (la misma de `ops/inventario.html`), filtrada a
-  `subgrupo === 'mamparas_vidrio'` — sin exigir además una `categoria` fija.
-  **Bug real corregido, reportado por el usuario con fotos reales**: el primer intento filtraba
-  también por `categoria === 'herraje'`, asumiendo que "Mamparas de vidrio" vivía dentro de la
-  categoría fija "Herrajes" de `ops/inventario.html` — el selector quedaba siempre vacío. La
-  sub-sección real ("Mamparas de vidrio", junto con "Puertas de vidrio" y otras — `SUBGRUPOS_ACC`
-  en `ops/inventario.html`) vive dentro de una categoría **"Accesorios puertas/ventanas/Vidrios"**
-  que en `ops/inventario.html` es una categoría **custom** (creada desde la app con "+ Nueva
-  categoría", colección `categoriasInventario`, id autogenerado por Firestore) — no la categoría
-  fija `herraje`. Arreglo: filtrar solo por `subgrupo === 'mamparas_vidrio'`, sin condición de
-  `categoria` — ese valor de subgrupo es único en todo el catálogo (no lo reusa ninguna otra
-  sub-sección), así que alcanza solo y de paso queda a prueba de que alguien renombre o recree
-  esa categoría custom más adelante (el id cambiaría, el subgrupo no).
-  `startFsClientListeners()` (script módulo de `index.html`, mismo patrón que ya usa para
-  `productosUnidades`→`window.artalUnidades`) agrega un `onSnapshot(collection(db,'inventario'))`
-  que expone la lista ya filtrada en `window.artalAccesoriosMampara` (`{id, tipo, referencia}`) y
-  llama a `window.refreshAccesoriosSelects()` (script clásico) — que re-pinta el
-  `facade-builder-${id}` de cada tarjeta de Vidrio de Ducha ya abierta, para que el selector no se
-  quede con la lista vacía/vieja si los datos llegan después de que la tarjeta ya se dibujó. Sin
-  sesión/señal (como el resto de estas integraciones), el selector simplemente no tiene opciones
-  más allá de "-- Referencia de Accesorios --", sin romper nada. `renderPanelOptions` agrega el
-  `<select>` (`grid-column: span 2`) al final de los 4 casos existentes (fijo con moldura, fijo
-  con conectores, deslizante/deslizante_conn, puerta abisagrada) — guarda **dos** campos en el
-  panel al elegir: `p.accesorioRef` (el id del doc de `inventario`, por si hace falta referenciar
-  el registro real más adelante) y `p.accesorioRefLabel` (el texto ya resuelto en el momento de
-  elegir, `tipo (referencia)`) — el resumen/PDF (`generateSummary`, línea "Accesorios: ...") usa
-  **siempre** `accesorioRefLabel`, nunca vuelve a resolver el id contra la lista en vivo, para que
-  una cotización ya hecha no cambie de texto (o se rompa) si el inventario se edita/renombra
-  después.
+- **Accesorios por panel: kit FIJO por tipo + color, no un selector manual.** Primer intento
+  (revertido): un `<select>` conectado en vivo al inventario para elegir la referencia a mano —
+  el usuario lo probó y pidió explícitamente lo contrario: "no vamos a hacerlo así porque va a
+  complicar mucho... al seleccionar una puerta debe aparecer los accesorios que lleva sin permitir
+  selección manual". Ejemplo real que dio: Puerta Deslizante Conectores en cromado lleva
+  `ALC00344` + `TUB00380`; en negro, pendiente de confirmar. Diseño actual: `ACCESORIOS_KIT`
+  (objeto `{ tipo: { color_herraje: [{ref, qty}, ...] } }`) es una tabla FIJA, sin UI para
+  editarla — se va llenando a mano en el código a medida que el usuario confirma cada
+  combinación real (mismo patrón incremental que `TELA_COLECCIONES` en Cortinas: arranca con lo
+  confirmado, crece con el tiempo — una combinación todavía no confirmada simplemente no tiene
+  entrada). `accesorioKitFor(p)` resuelve `ACCESORIOS_KIT[p.tipo][p.herraje_color || 'cromado']`;
+  si no hay entrada, `renderPanelOptions` muestra "sin definir para este color todavía" (caja
+  informativa, `grid-column: span 2`, ya no un `<select>`) y `generateSummary` simplemente no
+  agrega la línea "Accesorios: ..." (en vez de mostrar algo inventado). Las referencias (`ref`)
+  son códigos fijos en el código (`ALC00344`, `TUB00380`, ...) — `resolveAccesorioLabel(ref)` les
+  busca el nombre legible contra `window.artalInventarioPorReferencia` (todo el inventario,
+  indexado por el campo `referencia`, sin filtrar por subgrupo — un kit puede mezclar
+  referencias de secciones distintas, ej. "ALC..." de Mamparas de vidrio junto con "TUB..." de
+  Tubos/Perfiles) — si el código no está en el inventario todavía (o no hay sesión/señal), se
+  muestra el código solo, sin nombre, en vez de romper. `startFsClientListeners()` mantiene el
+  mismo patrón de siempre (`onSnapshot(collection(db,'inventario'))` → `window.
+  artalInventarioPorReferencia` → `window.refreshAccesoriosInfo()` re-pinta los constructores de
+  Vidrio de Ducha ya abiertos cuando llegan los datos). Nada de esto depende de cantidad en
+  stock (los `qty` son fijos por kit, no relacionados a inventario disponible).
+  - **"fijo" (mampara) tiene una dimensión extra: la forma de la prensa.** El usuario dio 4
+    referencias reales (2 formas x 2 colores): cromado → recta `ALC00150` / L `ALC00151`;
+    negro → recta `ALC00004` / L `ALC00445` (confirmó explícitamente que negro sigue el mismo
+    orden #1=recta/#2=L que cromado). Por eso `ACCESORIOS_KIT.fijo` anida un nivel más que
+    `deslizante_conn`: `{ color: { recta: [...], L: [...] } }`. Nuevo campo `p.prensaForma`
+    ('recta' por defecto o 'L'), select propio **solo quando `fijacion === 'conectores'`**
+    (moldura no usa prensas — `accesorioKitFor` corta ahí con `return null` antes de mirar
+    `prensaForma`). Iba a dejar el conteo de selects de una columna en 5 (impar) en esa rama —
+    mismo bug de hueco vacío que ya se había corregido en deslizante — así que el select de
+    Forma de Prensa nace directo con `grid-column: span 2` (ninguna fila queda a medias).
+  - **Accesorios adicionales, texto libre, SOLO para deslizante/deslizante_conn.** Pedido
+    explícito del usuario: "agrega un campo para agregar accesorios en caso de que sea necesario
+    (cerraduras o demás)" — a diferencia del kit fijo (sin edición posible), este es un `<input
+    type="text">` opcional (`p.accesoriosExtra`, `grid-column: span 2`) para casos puntuales que
+    el kit no cubre — el resumen/PDF le agrega su propia línea "Accesorios adicionales: ..." solo
+    si el campo no está vacío, aparte de (no en reemplazo de) la línea "Accesorios: ..." del kit.
+  - **Bug real de presentación corregido, reportado con foto**: en el panel deslizante/
+    deslizante_conn, los 5 `<select>` de una sola columna antes de Cerradura/Accesorios (que ya
+    ocupan la fila entera cada uno) dejaban un hueco vacío al lado de "Grosor" — 5 es impar, así
+    que el grid de 2 columnas no lo podía emparejar y `Cerradura` (que necesita las 2 columnas)
+    se corría a la fila siguiente sin llenar la que dejó "Grosor" a medias. Arreglo: "Grosor"
+    pasa a `grid-column: span 2` en esa rama (única con esta combinación impar; Paño Fijo y
+    Puerta Abisagrada ya daban un número par de selects sueltos, sin este problema).
 
 ## Cortinas/Enrollables (`categoria: 'cortina'`)
 
