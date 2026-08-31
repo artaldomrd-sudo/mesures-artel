@@ -121,7 +121,7 @@
         .item-card.drag-over { border: 2px dashed var(--artal-yellow); background: #fffdf4; }
         
         /* Botón de arrastre - SEGURO REFORZADO */
-        .drag-handle { position: absolute; top: -10px; left: -10px; background: var(--artal-blue); color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: grab; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; user-select: none; -webkit-user-select: none; }
+        .drag-handle { position: absolute; top: -10px; left: -10px; background: var(--artal-blue); color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: grab; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; user-select: none; -webkit-user-select: none; touch-action: none; }
         .drag-handle:active { cursor: grabbing; }
 
         /* CAD CARD DYNAMIC WIDTH */
@@ -550,7 +550,6 @@
     // esto es lo global: cargos, modo de ITBIS y líneas manuales). Se guarda con el proyecto y viaja
     // a `orders` (getAppJSON) — preparado para mapear a /v5/cotizacion de Citrus cuando se conecte.
     let cotizCli = { transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [], calc: {} };
-    let handleClicked = false; // SEGURO DE ARRASTRE EXCLUSIVO POR MANECILLA
     // Cliente+proyecto del notebook actualmente abierto (vía "Abrir proyecto" o un "Guardar"
     // exitoso previo en esta misma sesión) — para saber si un "Guardar" es continuar ESTE
     // proyecto (sin preguntar) o si viene de una hoja distinta que coincide de nombre con un
@@ -1814,56 +1813,48 @@
         }, { distance: Number.POSITIVE_INFINITY }).element;
     }
 
+    // Reordenar tarjetas arrastrando desde la manecilla (.drag-handle). Antes usaba el HTML5
+    // Drag and Drop nativo (dragstart/dragover/drop) — bug real reportado por el usuario ("no
+    // puedo desplazar mis cuadros"): la tarjeta se creaba con `draggable="false"` y nada la
+    // volvía a poner en `true` (el handle solo tocaba una bandera `handleClicked` que el
+    // dragstart consultaba, pero el atributo `draggable` en sí nunca se activaba) — el arrastre
+    // nunca pudo funcionar. Aparte de ese bug, el Drag and Drop nativo tampoco sirve en iPad: en
+    // iOS Safari (el dispositivo real de campo para "toma de medidas") los eventos dragstart/
+    // dragover/drop no se disparan desde gestos táctiles. Reemplazado por Pointer Events
+    // (pointerdown/pointermove/pointerup), que sí unifican mouse y touch — reutiliza
+    // getDragAfterElement (misma lógica de "insertar antes de la tarjeta más cercana") tal cual,
+    // solo cambia qué evento la dispara.
     function initDragAndDrop() {
         const list = document.getElementById('item-list');
-        
-        list.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('item-card') && handleClicked) {
-                draggedCard = e.target;
-                setTimeout(() => e.target.classList.add('dragging'), 0);
-            } else {
-                e.preventDefault(); 
-            }
-        });
+        let draggingCard = null;
 
-        list.addEventListener('dragend', (e) => {
-            if (e.target.classList.contains('item-card')) {
-                e.target.classList.remove('dragging');
-                e.target.setAttribute('draggable', 'false'); 
-                draggedCard = null;
-                document.querySelectorAll('.item-card').forEach(card => card.classList.remove('drag-over'));
-                saveProgress(); 
-            }
-        });
-
-        list.addEventListener('dragover', (e) => {
-            e.preventDefault(); 
-            const afterElement = getDragAfterElement(list, e.clientY, e.clientX);
-            const currentHover = e.target.closest('.item-card');
-            
-            if (currentHover && currentHover !== draggedCard) {
-                currentHover.classList.add('drag-over');
-            }
-
-            if (draggedCard) {
-                if (afterElement == null) {
-                    list.appendChild(draggedCard);
-                } else {
-                    list.insertBefore(draggedCard, afterElement);
-                }
-            }
-        });
-
-        list.addEventListener('dragleave', (e) => {
-            const currentHover = e.target.closest('.item-card');
-            if (currentHover) currentHover.classList.remove('drag-over');
-        });
-        
-        list.addEventListener('drop', (e) => {
+        function onPointerMove(e) {
+            if (!draggingCard) return;
             e.preventDefault();
-            const currentHover = e.target.closest('.item-card');
-            if (currentHover) currentHover.classList.remove('drag-over');
-            handleClicked = false;
+            const afterElement = getDragAfterElement(list, e.clientY, e.clientX);
+            if (afterElement == null) list.appendChild(draggingCard);
+            else if (afterElement !== draggingCard) list.insertBefore(draggingCard, afterElement);
+        }
+        function onPointerUp() {
+            if (!draggingCard) return;
+            draggingCard.classList.remove('dragging');
+            draggingCard = null;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', onPointerUp);
+            document.removeEventListener('pointercancel', onPointerUp);
+            saveProgress();
+        }
+        list.addEventListener('pointerdown', (e) => {
+            const handle = e.target.closest('.drag-handle');
+            if (!handle) return;
+            const card = handle.closest('.item-card');
+            if (!card) return;
+            e.preventDefault();
+            draggingCard = card;
+            card.classList.add('dragging');
+            document.addEventListener('pointermove', onPointerMove, { passive: false });
+            document.addEventListener('pointerup', onPointerUp);
+            document.addEventListener('pointercancel', onPointerUp);
         });
     }
 
@@ -3234,13 +3225,12 @@
         if (cardsState[id].type === 'draw') extraClasses += ' cad-card';
         card.className = 'item-card' + extraClasses;
         card.id = 'card-' + id;
-        card.setAttribute('draggable', 'false');
 
         let lockedBtnColor = cardsState[id].locked ? '#27ae60' : '#f39c12';
         let lockedBtnIcon = cardsState[id].locked ? LOCK_CLOSED : LOCK_OPEN;
         let lockBtnHtml = `<button id="lock-btn-${id}" class="lock-btn" onclick="toggleLock(${id})" title="Bloquear/Desbloquear" style="position:absolute; top:-10px; right: 25px; background: ${lockedBtnColor}; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5;">${lockedBtnIcon}</button>`;
-        
-        let dragHandleHtml = `<div class="drag-handle" title="Arrastrar para mover" onmousedown="handleClicked = true;" onmouseup="handleClicked = false;" ontouchstart="handleClicked = true;" ontouchend="handleClicked = false;"></div>`;
+
+        let dragHandleHtml = `<div class="drag-handle" title="Arrastrar para mover">&#9776;</div>`;
 
         let displayLabel = cardsState[id].label;
 

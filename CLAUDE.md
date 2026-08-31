@@ -1601,6 +1601,39 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
   **no** entra en ninguna de las 3 secciones personales (solo se ve en "Todos") — no es "de"
   ninguna de las 3 personas de gerencia, es del equipo de instalación.
 
+## Reordenar tarjetas (arrastrar desde la manecilla)
+
+- **Bug real corregido, reportado por el usuario: "no puedo desplazar mis cuadros".** El
+  mecanismo de arrastre (`initDragAndDrop`) usaba el HTML5 Drag and Drop nativo
+  (`dragstart`/`dragover`/`drop`/`dragend`) — pero la tarjeta se creaba con
+  `card.setAttribute('draggable', 'false')` y **nada la volvía a poner en `true`**: la manecilla
+  (`.drag-handle`) solo tocaba una bandera JS (`handleClicked`) que `dragstart` consultaba, pero
+  el atributo `draggable` en sí — lo único que el navegador mira para permitir empezar un
+  arrastre nativo — nunca se activaba. El arrastre nunca pudo funcionar, en ningún dispositivo.
+  Además, aunque se hubiera arreglado ese detalle, el HTML5 Drag and Drop nativo **no funciona
+  con gestos táctiles en iOS Safari** (el dispositivo real de campo para "toma de medidas", ver
+  encabezado de este archivo) — los eventos `dragstart`/`dragover`/`drop` no se disparan desde
+  touch.
+- **Arreglo**: `initDragAndDrop` se reescribió con **Pointer Events**
+  (`pointerdown`/`pointermove`/`pointerup`/`pointercancel`), que unifican mouse y touch en el
+  mismo modelo de eventos — sin depender del Drag and Drop nativo del navegador. Reutiliza tal
+  cual `getDragAfterElement(container, y, x)` (la lógica de "insertar antes de la tarjeta más
+  cercana al puntero", ya existía y no tenía el bug — el problema era solo el disparador). El
+  `pointerdown` tiene que empezar en `.drag-handle` (`e.target.closest('.drag-handle')`) — el
+  resto de la tarjeta no es agarrable, a propósito, para no interferir con seleccionar texto en
+  las notas o tocar los demás controles. `.drag-handle` tiene `touch-action: none` en CSS para
+  que el navegador no intente hacer scroll de la página mientras se arrastra en iPad.
+- Se eliminó la bandera global `handleClicked` y el atributo `draggable` (ya no hacen falta con
+  Pointer Events) — la manecilla ahora es un ícono ☰ simple, sin `onmousedown`/`ontouchstart`
+  inline (todo el manejo vive en `initDragAndDrop`).
+- El orden de las tarjetas en el DOM (`#item-list`) ya se guardaba/restauraba de antes
+  (`getAppJSON` arma `data.order` a partir del DOM vivo; `restoreData` lo usa para reconstruir
+  las tarjetas en ese mismo orden, con `Object.keys(...).sort(...)` solo como respaldo para
+  datos viejos sin ese campo) — no hizo falta tocar esa parte, el arreglo del arrastre solo
+  necesitaba que las tarjetas SE PUDIERAN mover en el DOM para que ese mecanismo ya existente
+  tuviera algo que guardar. Confirmado en vivo: reordenar y guardar/restaurar conserva el orden
+  nuevo.
+
 ## Convenciones aprendidas (para no repetir errores)
 
 - Verificar SIEMPRE con `verify.mjs` antes de dar por bueno un dibujo.
