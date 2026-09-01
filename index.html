@@ -3667,8 +3667,13 @@
         const state = cardsState[id];
         const area = document.querySelector('#card-' + id + ' .drawing-area');
         if (!area) return;
-        const aplica = state && (state.panoArriba || state.panoAbajo || state.categoria === 'cerramiento');
-        if (!aplica) {
+        const esPano = state && (state.panoArriba || state.panoAbajo || state.categoria === 'cerramiento');
+        // Correderas/galandajes: su viewBox está dimensionado para el caso de más vías, así que
+        // con menos vías queda espacio muerto abajo y el dibujo se ve pequeño y arriba. Recortamos
+        // el viewBox al contenido real para que llene el cuadro y quede centrado (sin cambiar el
+        // alto fijo del contenedor, a diferencia de los paños/ducha).
+        const esCorredera = state && (state.categoria === 'corredera' || state.categoria === 'galandaje');
+        if (!esPano && !esCorredera) {
             area.style.height = '';
             if (panoResizeObserver) panoResizeObserver.unobserve(area);
             return;
@@ -3681,6 +3686,11 @@
         const pad = 6; // aire para el trazo/sombra que getBBox() no cuenta (solo mide relleno)
         const vb = [bbox.x - pad, bbox.y - pad, bbox.width + pad * 2, bbox.height + pad * 2];
         svg.setAttribute('viewBox', vb.map(n => n.toFixed(1)).join(' '));
+        if (esCorredera && !esPano) {
+            area.style.height = '';   // mantiene el alto fijo del cuadro; solo recorta el viewBox
+            if (panoResizeObserver) panoResizeObserver.unobserve(area);
+            return;
+        }
         const w = area.clientWidth;
         if (!w) return;
         area.style.height = Math.min(650, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
@@ -4579,8 +4589,8 @@
             }
         }
 
-        svg += dimLineH(bx, bx + bw, 4, by, `${state.ancho || 0} mm`, 9);
-        svg += dimLineV(by, by + bh, bx + bw + 4, bx + bw, `${state.alto || 0} mm`, 9);
+        svg += dimLineH(bx, bx + bw, 4, by, `${state.ancho || 0} mm`, 11);
+        svg += dimLineV(by, by + bh, bx + bw + 4, bx + bw, `${state.alto || 0} mm`, 11);
         svg += `</svg>`;
         return svg;
     }
@@ -4981,7 +4991,7 @@
 
         // Separador + título (común)
         const head = `<line x1="2" y1="61" x2="98" y2="61" stroke="#d3d8dd" stroke-width="0.7"/>` +
-            `<text x="50" y="59.5" font-family="Arimo" font-size="4.6" font-weight="bold" fill="#3a444e" text-anchor="middle" stroke="none">VISTA SUPERIOR (planta)</text>`;
+            `<text x="50" y="59.5" font-family="Arimo" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
         const lbl = (x, y, t) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="middle" stroke="none">${t}</text>`;
 
         // ---- CENTRAL: hojas se encuentran en el centro y cascadean hacia los lados.
@@ -5146,7 +5156,7 @@
             return `<g style="stroke:#111;stroke-width:1.1px;fill:none"><line x1="${sx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${cy.toFixed(1)}"/><polyline points="${hx.toFixed(1)},${(cy - 1.5).toFixed(1)} ${ex.toFixed(1)},${cy.toFixed(1)} ${hx.toFixed(1)},${(cy + 1.5).toFixed(1)}"/></g>`;
         };
         const head = `<line x1="2" y1="61" x2="98" y2="61" stroke="#d3d8dd" stroke-width="0.7"/>` +
-            `<text x="50" y="59.5" font-family="Arimo" font-size="4.6" font-weight="bold" fill="#3a444e" text-anchor="middle" stroke="none">VISTA SUPERIOR (planta)</text>`;
+            `<text x="50" y="59.5" font-family="Arimo" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
         const lbl = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="${anchor || 'middle'}" stroke="none">${t}</text>`;
 
         // n segmentos que cubren X0..X1 en partes iguales, superpuestos OVERLAP unidades con
