@@ -1542,14 +1542,19 @@
             const CELDA_NOM = { pf: 'Paño fijo', cor2: 'Corredera 2H', cor3: 'Corredera 3H', cor4: 'Corredera 4H', puerta: 'Puerta de abrir', ventana: 'Ventana de abrir', louvers: 'Louvers', osci: 'Oscilobatiente', vacio: 'Vacío / muro' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
+            const faH = state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0;
+            const fbH = state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0;
+            const totalH = (parseInt(state.gridAlto) || 0) + faH + fbH;
             let filas = '';
+            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm)</div>`;
             cols.forEach((c, ci) => {
                 const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm)`).join(' + ');
                 filas += `<div>Columna ${ci + 1} — Ancho ${c.w} mm: ${cel}</div>`;
             });
+            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm)</div>`;
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
-                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA POR GRILLA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${state.gridAlto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
-                <div>${cols.length} columna(s)</div>
+                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA POR GRILLA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
+                <div>${cols.length} columna(s)${faH ? ' + faja superior' : ''}${fbH ? ' + faja inferior' : ''}</div>
                 ${filas}
                 <div>Vidrio: ${state.vidrio || 'templado'} ${espesorLabel(state.espesor)}</div>
                 <div>Acabado: ${headerColor}</div>
@@ -5005,26 +5010,36 @@
     }
     function renderFachadaGrid(state, uid) {
         const cols = (state.cols && state.cols.length) ? state.cols : [{ w: 1000, rows: [{ h: state.gridAlto || 2000, celda: 'pf' }] }];
-        const alto = Math.max(1, parseInt(state.gridAlto) || 0);
+        const gAlto = Math.max(1, parseInt(state.gridAlto) || 0);
+        // Fajas de ANCHO COMPLETO: bandas horizontales arriba/abajo que cruzan todas las columnas
+        // (ej. un paño fijo/montante superior sobre las columnas). Opcionales.
+        const fa = state.fajaArriba, fb = state.fajaAbajo;
+        const faH = fa ? Math.max(1, parseInt(fa.h) || 0) : 0;
+        const fbH = fb ? Math.max(1, parseInt(fb.h) || 0) : 0;
+        const totalH = faH + gAlto + fbH;
         const totalW = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
-        const DW = 100, scale = DW / totalW, DH = alto * scale;
-        let body = '', cx = 0; const colInfo = [];
+        const DW = 100, scale = DW / totalW;
+        const faDH = faH * scale, gDH = gAlto * scale, fbDH = fbH * scale, DHt = faDH + gDH + fbDH;
+        let body = '';
+        if (fa) body += gridCell(uid, 0, 0, DW, faDH, fa.celda);   // faja superior (ancho completo)
+        let cx = 0; const colInfo = []; const gy0 = faDH;
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
-            const rows = (c.rows && c.rows.length) ? c.rows : [{ h: alto, celda: 'pf' }];
+            const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
             const rowSum = Math.max(1, rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0));
-            let cy = 0;
-            rows.forEach(r => { const rh = ((parseInt(r.h) || 0) / rowSum) * DH; body += gridCell(uid, cx, cy, cw, rh, r.celda); cy += rh; });
+            let cy = gy0;
+            rows.forEach(r => { const rh = ((parseInt(r.h) || 0) / rowSum) * gDH; body += gridCell(uid, cx, cy, cw, rh, r.celda); cy += rh; });
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0 }); cx += cw;
         });
+        if (fb) body += gridCell(uid, 0, gy0 + gDH, DW, fbDH, fb.celda);   // faja inferior (ancho completo)
         // marco perimetral más grueso
-        body += `<rect x="0" y="0" width="${DW}" height="${DH.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
+        body += `<rect x="0" y="0" width="${DW}" height="${DHt.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         // cotas: ancho total (abajo) + mm por columna + alto total (derecha)
-        let cotas = dimLineH(0, DW, DH + 13, DH, `${totalW} mm`, 5.5);
-        if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DH + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
-        cotas += dimLineV(0, DH, DW + 6, DW, `${alto} mm`, 5.5);
+        let cotas = dimLineH(0, DW, DHt + 13, DHt, `${totalW} mm`, 5.5);
+        if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
+        cotas += dimLineV(0, DHt, DW + 6, DW, `${totalH} mm`, 5.5);
         cotas += `<text x="0" y="-4" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
-        const vbH = DH + 30;
+        const vbH = DHt + 30;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -10 ${DW + 42} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + cotas + '</svg>';
@@ -5036,13 +5051,25 @@
         const st = cardsState[id]; const cols = st.cols || [];
         const VIDS = [['templado', 'Templado'], ['laminado', 'Laminado']];
         const inp = 'padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:Arimo;box-sizing:border-box;';
+        // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
+        const fajaRow = (side, faja) => {
+            const nom = side === 'arriba' ? 'Faja superior' : 'Faja inferior';
+            if (!faja) return `<button onclick="gridToggleFaja(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:6px;font-size:12px;cursor:pointer;">+ ${nom} (ancho completo)</button>`;
+            return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><b style="font-size:12px;color:#1e7a46">${nom} · ancho completo</b><button onclick="gridToggleFaja(${id},'${side}')" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button></div>
+                <div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;">
+                    <input type="number" value="${faja.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" oninput="gridSetFajaH(${id},'${side}',this.value)">
+                    <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                </div></div>`;
+        };
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue)">Alto total (mm)</label>
+            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue)">Alto columnas (mm)</label>
             <input type="number" value="${st.gridAlto || 0}" min="20" step="5" style="${inp}width:88px" oninput="gridSetAlto(${id},this.value)">
             <label style="font-size:12px;font-weight:bold;color:var(--artal-blue)">Vidrio</label>
             <select style="${inp}" onchange="gridSetVidrio(${id},this.value)">${VIDS.map(v => `<option value="${v[0]}" ${st.vidrio === v[0] ? 'selected' : ''}>${v[1]}</option>`).join('')}</select>
         </div>`;
+        h += fajaRow('arriba', st.fajaArriba);
         cols.forEach((c, ci) => {
             h += `<div style="border:1px solid #dde5ee;border-radius:8px;padding:8px;margin-top:8px;background:#fff;">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:4px;">
@@ -5062,10 +5089,21 @@
             });
             h += `<button onclick="gridAddRow(${id},${ci})" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Fila en esta columna</button></div>`;
         });
-        h += `<button onclick="gridAddCol(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">+ Columna</button></div>`;
+        h += `<button onclick="gridAddCol(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">+ Columna</button>`;
+        h += fajaRow('abajo', st.fajaAbajo);
+        h += `</div>`;
         return h;
     }
-    function gridDeriv(id) { const st = cardsState[id]; st.ancho = (st.cols || []).reduce((a, c) => a + (parseInt(c.w) || 0), 0); st.alto = parseInt(st.gridAlto) || 0; }
+    function gridDeriv(id) {
+        const st = cardsState[id];
+        st.ancho = (st.cols || []).reduce((a, c) => a + (parseInt(c.w) || 0), 0);
+        const faH = st.fajaArriba ? (parseInt(st.fajaArriba.h) || 0) : 0;
+        const fbH = st.fajaAbajo ? (parseInt(st.fajaAbajo.h) || 0) : 0;
+        st.alto = (parseInt(st.gridAlto) || 0) + faH + fbH;
+    }
+    window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf' }; gridFull(id); };
+    window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
+    window.gridSetFajaCelda = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].celda = v; gridFull(id); };
     function gridDraw(id) { gridDeriv(id); const sc = document.getElementById('schematic-' + id); if (sc) sc.innerHTML = renderSVG(id); adaptDrawingToContent(id); saveProgress(); }
     function gridFull(id) { gridDraw(id); const b = document.getElementById('grid-builder-' + id); if (b) b.innerHTML = renderGridBuilder(id); }
     window.gridSetAlto = (id, v) => { const st = cardsState[id]; st.gridAlto = parseInt(v) || 0; (st.cols || []).forEach(c => { if ((c.rows || []).length === 1) c.rows[0].h = st.gridAlto; }); gridDraw(id); };
