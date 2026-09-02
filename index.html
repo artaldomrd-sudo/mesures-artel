@@ -4187,7 +4187,11 @@
         // no a un valor fijo — así el paño de abajo queda pegado al vidrio mismo, sin el hueco
         // que antes dejaba antes la vista de planta.
         let planViewFrag = '';
-        let elevH = vbH;
+        // Alto real de la elevación = del tope del viewBox al FONDO REAL del panel (no al borde
+        // inferior del viewBox, que en los tipos sin vista de planta — ej. Paño Fijo — reserva un
+        // margen vacío abajo). Si se usara vbH, la línea de "alto total" de la izquierda bajaría
+        // más que el dibujo (reportado con foto). Con esto va justo de esquina a esquina.
+        let elevH = (panelRect[1] + panelRect[3]) - vbY;
         const planMatch = inner.match(/<g class="plan-view-layer">[\s\S]*?<\/g>/);
         if (planMatch) {
             planViewFrag = planMatch[0];
@@ -5750,7 +5754,7 @@
             viewBox = `${pr[0]} ${pr[1]} ${pr[2]} ${pr[3]}`;
             aspect = 'none';
         } else {
-            viewBox = (state.categoria === 'galandaje' || state.categoria === 'corredera') ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 118' : '-14 -6 144 70');
+            viewBox = (state.categoria === 'galandaje' || state.categoria === 'corredera') ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 124' : '-14 -6 144 70');
             aspect = 'xMidYMid meet';
         }
 
@@ -5781,11 +5785,11 @@
             let opensTowardsViewer = (vistaAfuera && opensAfuera) || (!vistaAfuera && !opensAfuera);
             let dirY = opensTowardsViewer ? 1 : -1;
 
-            // y0 = línea de pared de la planta. Se bajó de 85 a 91 porque el panel proporcional
-            // (PROP_BOX/fitPropRect) llega hasta y≈70; con el arco de giro hacia ARRIBA (dirY=-1)
-            // y radio grande, la planta se montaba encima del panel. Con y0=91 y maxR más chico
-            // el arco de arriba se queda por debajo del panel y el de abajo no se sale del viewBox.
-            let y0 = 91;
+            // y0 = línea de pared de la planta. Bajada a 97 (el viewBox de estos tipos se amplió a
+            // 124) para separarla bien del panel (que llega a y≈70) y aprovechar el margen de abajo.
+            // Con maxR=34 (dy≤17): el arco de arriba llega a ~80 (bajo el panel) y el de abajo a ~114
+            // (dentro del viewBox de bottom 116).
+            let y0 = 97;
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
 
             // startX/w se pasan desde el rect real del panel (ver PROP_BOX/fitPropRect) para que
@@ -5823,6 +5827,12 @@
                 html += `<line x1="${hingeX}" y1="${y0}" x2="${endX}" y2="${endY}" style="stroke:#0A3D62;"/>`;
                 html += `<path d="M ${freeX} ${y0} A ${r} ${r} 0 0 ${sweep} ${endX} ${endY}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
             }
+            // Marca el lado interior/exterior de la pared (como galandajes/correderas). El batiente
+            // abre hacia el interior salvo "apertura afuera"; ese lado (donde queda el arco de giro)
+            // se rotula según corresponda. Van al extremo izquierdo de la línea de pared.
+            const swingEsExt = opensAfuera;
+            html += `<text x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
+            html += `<text x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
             return html;
         };
 
