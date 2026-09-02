@@ -506,6 +506,7 @@
                 <input type="text" id="header-obra" placeholder="ej: Altea Villa 11" list="obra-datalist" autocomplete="off">
                 <datalist id="obra-datalist"></datalist>
                 <select id="header-obra-sel" onchange="abrirProyectoDeCliente(this.value)" title="Abrir otro proyecto guardado de este mismo cliente" style="margin-top:4px;width:100%;font-size:12px;padding:5px 6px;border:1.5px solid #ccc;border-radius:6px;background:#f4f7fb;color:#333;font-family:'Arimo';"><option value="">▾ Abrir otro proyecto de este cliente…</option></select>
+                <button id="btn-nuevo-proy-cliente" onclick="nuevoProyectoMismoCliente()" title="Crear un proyecto NUEVO para el mismo cliente (hoja en blanco, conserva el cliente)" style="display:none;margin-top:4px;width:100%;font-size:12px;padding:6px;border:1.5px solid #2ecc71;border-radius:6px;background:#eafaf0;color:#1e8449;font-weight:bold;cursor:pointer;font-family:'Arimo';">➕ Nuevo proyecto de este cliente</button>
             </div>
             <div class="header-field hf-ubicacion">
                 <label>UBICACIÓN</label>
@@ -976,18 +977,46 @@
                 if (!confirm(`⚠ OJO: el cliente "${cliente}" se parece mucho a "${similar}", que YA existe.\n\n¿Es el mismo cliente? Si es así, cancela y escríbelo igual que "${similar}".\n\nPulsa Aceptar SOLO si de verdad es un cliente distinto.`)) return;
             }
         }
-        // Igual para la obra dentro de un cliente ya existente.
+        // Igual para la obra: si el nombre se parece a uno que el cliente YA tiene (typo), damos
+        // 3 opciones en un diálogo: corregir/reemplazar el viejo, crear uno nuevo aparte, o cancelar.
         if (obraKey === obra) {
             const similarO = Object.keys(projects[cliKey]).find(o => o !== obra && sonSospechosos(o, obra));
             if (similarO) {
-                if (!confirm(`⚠ OJO: el proyecto "${obra}" se parece mucho a "${similarO}", que este cliente YA tiene.\n\n¿Es el mismo? Si es así, cancela y usa el nombre "${similarO}".\n\nPulsa Aceptar SOLO si es un proyecto distinto.`)) return;
+                dialogoObraSimilar(obra, similarO,
+                    () => finalizarGuardadoProyecto(projects, cliKey, obraKey, similarO),   // corregir: borra el viejo
+                    () => finalizarGuardadoProyecto(projects, cliKey, obraKey, null));        // crear nuevo aparte
+                return;
             }
         }
+        finalizarGuardadoProyecto(projects, cliKey, obraKey, null);
+    }
 
+    // Diálogo de 3 opciones cuando el nombre del proyecto se parece a uno ya guardado.
+    function dialogoObraSimilar(obra, similarO, onReemplazar, onNuevo) {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const btn = 'width:100%;padding:12px 14px;border:none;border-radius:9px;font-weight:bold;font-size:14px;cursor:pointer;font-family:Arimo;text-align:left;line-height:1.35;';
+        ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:480px;width:100%;padding:22px;font-family:Arimo;">
+            <h2 style="color:#0A3D62;font-size:18px;margin:0 0 12px;">⚠️ Nombre parecido</h2>
+            <p style="font-size:14px;color:#445;margin:0 0 16px;">El proyecto <b>"${escHtml(obra)}"</b> se parece mucho a <b>"${escHtml(similarO)}"</b>, que este cliente YA tiene. ¿Qué quieres hacer?</p>
+            <div style="display:flex;flex-direction:column;gap:9px;">
+                <button id="dlg-reemp" style="${btn}background:#2ecc71;color:#fff;">✏️ Es el mismo — corregir el nombre<br><span style="font-weight:normal;font-size:12px;">Renombra el guardado a "${escHtml(obra)}" y borra el anterior</span></button>
+                <button id="dlg-nuevo" style="${btn}background:#0A3D62;color:#fff;">➕ Es otro proyecto distinto — crear nuevo<br><span style="font-weight:normal;font-size:12px;">Deja los dos proyectos por separado</span></button>
+                <button id="dlg-cancel" style="${btn}background:#fff;color:#888;border:1.5px solid #ddd;text-align:center;">Cancelar</button>
+            </div>
+        </div>`;
+        ov.querySelector('#dlg-reemp').onclick = () => { ov.remove(); onReemplazar(); };
+        ov.querySelector('#dlg-nuevo').onclick = () => { ov.remove(); onNuevo(); };
+        ov.querySelector('#dlg-cancel').onclick = () => ov.remove();
+        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        document.body.appendChild(ov);
+    }
+
+    // Guardado real del proyecto. `borrarSimilar` (opcional): nombre de un proyecto parecido a
+    // corregir/eliminar (cuando el usuario eligió "corregir el nombre" en el diálogo de arriba).
+    function finalizarGuardadoProyecto(projects, cliKey, obraKey, borrarSimilar) {
         // Si ya existe un proyecto guardado con ese cliente+nombre Y esta hoja no es la que se
-        // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en
-        // silencio — pasó en la práctica: dos hojas distintas (ej. una para barandas) guardadas
-        // sin querer con el mismo nombre de cliente/proyecto, la segunda borró la primera.
+        // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en silencio.
         const targetKey = (cliKey + '|' + obraKey).toLowerCase();
         const yaExiste = projects[cliKey][obraKey] !== undefined;
         if (yaExiste && targetKey !== openedProjectKey) {
@@ -996,6 +1025,11 @@
 
         const jsonData = getAppJSON();
         projects[cliKey][obraKey] = jsonData;
+        // Corregir el nombre de un proyecto parecido (typo): borra el viejo (local + nube).
+        if (borrarSimilar && borrarSimilar !== obraKey && projects[cliKey][borrarSimilar] !== undefined) {
+            delete projects[cliKey][borrarSimilar];
+            if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(cliKey, borrarSimilar);
+        }
         localStorage.setItem('artal_projects', JSON.stringify(projects));
         openedProjectKey = targetKey;
         if (window.syncClienteObra) window.syncClienteObra(cliKey, obraKey);
@@ -1011,12 +1045,7 @@
 
         alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
 
-        // Pedido explícito del usuario: después de guardar, ofrecer dejar la hoja en blanco —
-        // así la próxima persona que abra la app no se encuentra con un proyecto ajeno ya
-        // guardado en pantalla (miedo a tocar/borrar algo por accidente). Es una PREGUNTA, no
-        // automático: si todavía sigue midiendo el mismo proyecto y solo estaba guardando
-        // progreso ("guardar seguido mientras se mide" es el uso normal, ver saveProject más
-        // arriba), puede decir que no y seguir donde estaba sin perder las tarjetas.
+        // Ofrecer dejar la hoja en blanco (pregunta, no automático) para el próximo proyecto.
         if (confirm('¿Dejar la hoja en blanco para el próximo proyecto?')) {
             clearNotebookToBlank();
         }
@@ -2717,6 +2746,24 @@
         setDocType('COTIZACIÓN');
         saveProgress();
     }
+
+    // Crear un proyecto NUEVO para el MISMO cliente (solo admin, ver botón en el encabezado):
+    // deja la hoja en blanco conservando cliente/material/color, para arrancar otro proyecto de
+    // ese cliente sin tener que reescribir esos datos. Es un proyecto aparte (openedProjectKey=null).
+    window.nuevoProyectoMismoCliente = function () {
+        const cli = (document.getElementById('header-cliente').value || '').trim();
+        if (!cli) { alert('Primero escribe o elige el cliente arriba.'); return; }
+        if (!confirm('¿Crear un proyecto NUEVO para "' + cli + '"?\n\nSe deja la hoja en blanco (tarjetas y nombre del proyecto vacíos), conservando el cliente. Si tienes trabajo sin guardar, guárdalo primero.')) return;
+        const material = document.getElementById('header-material').value || '';
+        const color = document.getElementById('header-color').value || '';
+        clearNotebookToBlank();
+        document.getElementById('header-cliente').value = cli;
+        document.getElementById('header-material').value = material;
+        document.getElementById('header-color').value = color;
+        if (window.refreshObraDatalist) window.refreshObraDatalist();
+        saveProgress();
+        const ob = document.getElementById('header-obra'); if (ob) ob.focus();
+    };
 
     function resetNotebook() {
         if(confirm('¿Empezar una hoja en blanco? Se borrarán las tarjetas actuales de la pantalla.')) {
@@ -6544,13 +6591,31 @@
         }, (err) => { console.error('startFsProjectsListener falló (revisar permisos/reglas de Firestore):', err); });
     }
 
-    onAuthStateChanged(auth, (user) => {
+    // Muestra las opciones SOLO-ADMIN del cuaderno (ej. "Nuevo proyecto de este cliente") según
+    // si el usuario de Google que inició sesión tiene rol admin en usuarios/{email}. Sin sesión o
+    // sin rol admin, quedan ocultas. La sesión de Firebase persiste, así que el admin las ve al
+    // reabrir sin volver a entrar.
+    function aplicarVisibilidadAdminCuaderno() {
+        const b = document.getElementById('btn-nuevo-proy-cliente');
+        if (b) b.style.display = window.esAdminCuaderno ? 'block' : 'none';
+    }
+    window.aplicarVisibilidadAdminCuaderno = aplicarVisibilidadAdminCuaderno;
+    onAuthStateChanged(auth, async (user) => {
         if (user) {
             bulkSyncClientesUnaVez();
             startFsClientListeners();
             bulkSyncProjectsUnaVez();
             startFsProjectsListener();
+            try {
+                const snap = await getDoc(doc(db, 'usuarios', user.email));
+                const rol = snap.exists() ? snap.data().rol : null;
+                const roles = Array.isArray(rol) ? rol : [rol];
+                window.esAdminCuaderno = roles.includes('admin');
+            } catch (e) { window.esAdminCuaderno = false; }
+        } else {
+            window.esAdminCuaderno = false;
         }
+        aplicarVisibilidadAdminCuaderno();
     });
 
     // Precios de combustible en vivo (MICM): config/preciosCombustible lo actualiza una Cloud
