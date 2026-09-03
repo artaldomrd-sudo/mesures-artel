@@ -5195,9 +5195,21 @@
         const faH = fa ? Math.max(1, parseInt(fa.h) || 0) : 0;
         const fbH = fb ? Math.max(1, parseInt(fb.h) || 0) : 0;
         const totalH = faH + gAlto + fbH;
-        const totalW = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
-        const DW = 100, scale = DW / totalW;
+        // Fachada IRREGULAR: cada banda (faja arriba / columnas / faja abajo) puede tener su propio
+        // ancho. El ancho total de la fachada = la banda más ancha; las más angostas se ALINEAN
+        // (izq/centro/der) dentro de ese ancho. Una faja de un solo elemento ocupa el ancho completo.
+        const wMain = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
+        const faSub = !!(fa && fa.cols && fa.cols.length), fbSub = !!(fb && fb.cols && fb.cols.length);
+        const wFa = faSub ? Math.max(1, fa.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0)) : 0;
+        const wFb = fbSub ? Math.max(1, fb.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0)) : 0;
+        const maxW = Math.max(wMain, wFa, wFb);
+        const totalW = maxW;
+        const DW = 100, scale = DW / maxW;
         const faDH = faH * scale, gDH = gAlto * scale, fbDH = fbH * scale, DHt = faDH + gDH + fbDH;
+        const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
+        const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
+        const bwFa = faSub ? wFa * scale : DW, offFa = faSub ? alignOff(fa.align, bwFa) : 0;
+        const bwFb = fbSub ? wFb * scale : DW, offFb = fbSub ? alignOff(fb.align, bwFb) : 0;
         // Tubos / refuerzos de aluminio: barras sólidas en color de carpintería. Definidas antes del
         // loop de columnas para poder dibujar también el tubo horizontal entre filas de una columna.
         const tb = state.tubos || {};
@@ -5205,13 +5217,13 @@
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         // Dibuja una faja (banda de ancho completo): un solo elemento, o subdividida en varias
         // sub-columnas con anchos propios (ej. 3 ventanas proyectadas arriba de anchos distintos).
-        const drawFaja = (f, y0, hh) => {
+        const drawFaja = (f, y0, hh, xoff, bw) => {
             if (!f) return '';
             if (f.cols && f.cols.length) {
                 const wsum = Math.max(1, f.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
-                let out = '', fx = 0;
+                let out = '', fx = xoff;
                 f.cols.forEach((sc, i) => {
-                    const sw = (parseInt(sc.w) || 0) / wsum * DW;
+                    const sw = (parseInt(sc.w) || 0) / wsum * bw;
                     out += gridCell(uid, fx, y0, sw, hh, sc.celda, sc, state.vidrio);
                     if (i > 0) out += `<line x1="${fx.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${fx.toFixed(1)}" y2="${(y0 + hh).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
                     out += `<text x="${(fx + sw / 2).toFixed(1)}" y="${(y0 + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="middle" stroke="none">${parseInt(sc.w) || 0}</text>`;
@@ -5219,11 +5231,11 @@
                 });
                 return out;
             }
-            return gridCell(uid, 0, y0, DW, hh, f.celda, f, state.vidrio);
+            return gridCell(uid, xoff, y0, bw, hh, f.celda, f, state.vidrio);
         };
         let body = '';
-        if (fa) body += drawFaja(fa, 0, faDH);   // faja superior (ancho completo, o subdividida)
-        let cx = 0; const colInfo = []; const gy0 = faDH; const rowDims = [];
+        if (fa) body += drawFaja(fa, 0, faDH, offFa, bwFa);   // faja superior (ancho propio + alineación)
+        let cx = offMain; const colInfo = []; const gy0 = faDH; const rowDims = [];
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
@@ -5236,12 +5248,12 @@
             });
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0 }); cx += cw;
         });
-        if (fb) body += drawFaja(fb, gy0 + gDH, fbDH);   // faja inferior (ancho completo, o subdividida)
+        if (fb) body += drawFaja(fb, gy0 + gDH, fbDH, offFb, bwFb);   // faja inferior (ancho propio + alineación)
         // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
         // columna y en las divisiones internas del elemento (ej. el centro de una corredera 2 hojas).
         // 'perfil' = montante de aluminio; 'tope' = junta de vidrio a tope (línea fina); 'ninguna' = continuo.
         const fajaDivXs = (side) => {
-            const xs = []; let cxd = 0;
+            const xs = []; let cxd = offMain;
             cols.forEach((c, ci) => {
                 const cw = (parseInt(c.w) || 0) * scale;
                 if (ci > 0) xs.push(cxd);
@@ -5263,13 +5275,15 @@
         };
         body += drawFajaDiv(fa, 'arriba', 0, faDH);
         body += drawFajaDiv(fb, 'abajo', gy0 + gDH, DHt);
-        // marco perimetral más grueso
-        body += `<rect x="0" y="0" width="${DW}" height="${DHt.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
-        // Tubo entre columnas HORIZONTAL: barra a todo el ancho en la división entre la faja (banda de
-        // ancho completo) y las columnas — arriba y/o abajo, según qué fajas existan (línea roja de la foto).
+        // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
+        const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
+        if (fa) body += bandRect(offFa, 0, bwFa, faDH);
+        body += bandRect(offMain, gy0, bwMain, gDH);
+        if (fb) body += bandRect(offFb, gy0 + gDH, bwFb, fbDH);
+        // Tubo entre columnas HORIZONTAL: barra en la división entre la faja y las columnas (ancho de columnas).
         if (tb.entreH) {
-            if (fa) body += tuboRect(0, gy0 - tt / 2, DW, tt);
-            if (fb) body += tuboRect(0, gy0 + gDH - tt / 2, DW, tt);
+            if (fa) body += tuboRect(offMain, gy0 - tt / 2, bwMain, tt);
+            if (fb) body += tuboRect(offMain, gy0 + gDH - tt / 2, bwMain, tt);
         }
         // Tubos perimetrales: si están INCLUIDOS en la medida se dibujan dentro del envolvente
         // (la cota los abarca); si NO están incluidos se dibujan FUERA (más allá de la línea de cota).
@@ -5369,6 +5383,7 @@
                     ${cellExtra(sc.celda, sc, key => `gridFajaColCfg(${id},'${side}',${i},'${key}',this.value)`)}
                 </div>`).join('');
                 inner += `<button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Columna en la faja</button>`;
+                inner += `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:5px;"><label style="${lblR}">Alineación</label><select style="${inp}" onchange="gridFajaAlign(${id},'${side}',this.value)">${ALIGN.map(a => `<option value="${a[0]}" ${(faja.align || 'centro') === a[0] ? 'selected' : ''}>${a[1]}</option>`).join('')}</select></div>`;
             } else {
                 // faja de un solo elemento (con opción de dividir en columnas)
                 inner = `<div style="display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;">
@@ -5381,6 +5396,7 @@
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
         const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];
+        const ALIGN = [['izq', 'Izquierda'], ['centro', 'Centro'], ['der', 'Derecha']];
         const cp = st.color_perfil || 'natural';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
@@ -5425,6 +5441,10 @@
             h += `<button onclick="gridAddRow(${id},${ci})" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Fila en esta columna</button></div>`;
         });
         h += `<button onclick="gridAddCol(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">+ Columna</button>`;
+        // Alineación de la banda de columnas dentro del ancho total — solo útil si alguna faja es más
+        // ancha (fachada irregular). Se muestra cuando hay una faja subdividida.
+        const hayFajaSub = (st.fajaArriba && st.fajaArriba.cols) || (st.fajaAbajo && st.fajaAbajo.cols);
+        if (hayFajaSub) h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:8px;"><label style="${gbl}">Alineación columnas</label><select style="${inp}" onchange="gridSetAlign(${id},this.value)">${opt(ALIGN, st.gridAlign || 'centro')}</select></div>`;
         h += fajaRow('abajo', st.fajaAbajo);
         // ---- Tubos / refuerzos de aluminio (superior/inferior/laterales/entre columnas) ----
         const tb = st.tubos || {};
@@ -5523,6 +5543,9 @@
     };
     window.gridSetColorPerfil = (id, v) => { cardsState[id].color_perfil = v; gridFull(id); };   // gridFull: muestra/oculta el campo RAL
     window.gridSetColorRal = (id, v) => { cardsState[id].color_ral = v; gridDraw(id); };
+    // Alineación de una banda más angosta dentro del ancho total (fachada irregular)
+    window.gridSetAlign = (id, v) => { cardsState[id].gridAlign = v; gridDraw(id); };
+    window.gridFajaAlign = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].align = v; gridDraw(id); };
     // Al cambiar el tipo de elemento de una celda/faja, su aluminio se resetea al que aplica a ese tipo.
     window.gridSetCelda = (id, ci, ri, v) => { const r = cardsState[id].cols[ci].rows[ri]; r.celda = v; r.alu = celdaAluDefault(v); gridFull(id); };
     window.gridSetCeldaAlu = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].alu = v; gridDraw(id); };
