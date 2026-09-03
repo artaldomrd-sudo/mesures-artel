@@ -128,8 +128,10 @@
 
         /* CAD CARD DYNAMIC WIDTH */
         .item-card.cad-card.panoramic { grid-column: 1 / -1; width: 100%; }
-        .item-card.grid-card { grid-column: 1 / -1; width: 100%; }
-        .item-card.grid-card .drawing-area { min-height: 360px; }
+        /* Fachada compuesta: solo las MUY anchas ocupan todo el ancho (clase .panoramic, la agrega
+           adaptDrawingToContent según la proporción); las demás quedan a media página (2 por línea). */
+        .item-card.grid-card.panoramic { grid-column: 1 / -1; width: 100%; }
+        .item-card.grid-card .drawing-area { min-height: 300px; }
         .cad-body { display: flex; flex-direction: column; gap: 15px; width: 100%; }
         .item-card.locked.cad-card.panoramic .cad-body { flex-direction: column; align-items: stretch; }
         .item-card.locked.cad-card.panoramic .drawing-area { width: 100%; height: auto; min-height: 300px; }
@@ -284,8 +286,8 @@
         }
 
         /* CAD CARDS PANORAMIC (100% WIDTH, HORIZONTAL LAYOUT) */
-        body.printing-sheets .item-card.grid-card { grid-column: 1 / -1 !important; width: 100% !important; }
-        body.printing-sheets .item-card.grid-card .drawing-area { height: 72mm !important; min-height: 72mm !important; max-height: 72mm !important; width: 100% !important; }
+        body.printing-sheets .item-card.grid-card.panoramic { grid-column: 1 / -1 !important; width: 100% !important; }
+        body.printing-sheets .item-card.grid-card.panoramic .drawing-area { height: 72mm !important; min-height: 72mm !important; max-height: 72mm !important; width: 100% !important; }
         body.printing-sheets .item-card.cad-card.panoramic {
             display: block !important; width: 98% !important; margin-right: 0 !important;
             height: auto !important; min-height: 95mm !important; max-height: none !important;
@@ -1558,7 +1560,7 @@
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             const cfgTxt = (celda, o) => {
                 const p = [];
-                if (o.vidrio) p.push(({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[o.vidrio] || o.vidrio);
+                if (o.vidrio) p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[o.vidrio] || o.vidrio) + ((o.vidrio === 'templado' || o.vidrio === 'laminado') && o.espesor ? ' ' + espesorLabel(o.espesor) : ''));
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); }
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 if (o.cierre) p.push('cierre ' + o.cierre);
@@ -3369,7 +3371,7 @@
         
         let extraClasses = cardsState[id].locked ? ' locked' : '';
         if (cardsState[id].type === 'draw') extraClasses += ' cad-card';
-        if (cardsState[id].categoria === 'fachada_grid') extraClasses += ' grid-card panoramic';
+        if (cardsState[id].categoria === 'fachada_grid') extraClasses += ' grid-card';   // .panoramic (ancho completo) lo agrega adaptDrawingToContent solo si es muy ancha
         card.className = 'item-card' + extraClasses;
         card.id = 'card-' + id;
 
@@ -3844,11 +3846,25 @@
         // con menos vías queda espacio muerto abajo y el dibujo se ve pequeño y arriba. Recortamos
         // el viewBox al contenido real para que llene el cuadro y quede centrado (sin cambiar el
         // alto fijo del contenedor, a diferencia de los paños/ducha).
-        const esCorredera = state && (state.categoria === 'corredera' || state.categoria === 'galandaje' || state.categoria === 'fachada_grid');
-        if (!esPano && !esCorredera) {
+        const esCorredera = state && (state.categoria === 'corredera' || state.categoria === 'galandaje');
+        // La fachada compuesta se ajusta como los paños (alto del contenedor a la proporción real),
+        // no con alto fijo: una fachada muy alta o muy ancha en un cuadro fijo deja las cotas/el
+        // vidrio diminutos (reportado). Recorta el viewBox al contenido Y adapta el alto de la caja.
+        const esGrid = state && state.categoria === 'fachada_grid';
+        if (!esPano && !esCorredera && !esGrid) {
             area.style.height = '';
             if (panoResizeObserver) panoResizeObserver.unobserve(area);
             return;
+        }
+        // Fachada compuesta: solo las MUY anchas ocupan todo el ancho (panoramic); las demás quedan a
+        // media página para poder poner dos por línea. Se decide por la proporción real ancho/alto.
+        if (esGrid) {
+            const card = document.getElementById('card-' + id);
+            const fw = f => (f && f.cols) ? f.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) : 0;
+            const maxWmm = Math.max((state.cols || []).reduce((a, c) => a + (parseInt(c.w) || 0), 0), fw(state.fajaArriba), fw(state.fajaAbajo), 1);
+            const totalHmm = (parseInt(state.gridAlto) || 0) + (state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0) + (state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0);
+            const wide = totalHmm > 0 && (maxWmm / totalHmm) >= 1.8;
+            if (card) card.classList.toggle('panoramic', wide);
         }
         const svg = area.querySelector('svg');
         if (!svg) return;
@@ -5207,8 +5223,13 @@
         const wFb = fbSub ? Math.max(1, fb.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0)) : 0;
         const maxW = Math.max(wMain, wFa, wFb);
         const totalW = maxW;
-        const DW = 100, scale = DW / maxW;
-        const faDH = faH * scale, gDH = gAlto * scale, fbDH = fbH * scale, DHt = faDH + gDH + fbDH;
+        const DW = 100, scale = DW / maxW;   // escala HORIZONTAL (mm→unidades), ancho siempre a escala real
+        // Escala VERTICAL con proporción acotada: si la fachada es extremadamente ancha y baja (o muy
+        // alta y angosta) el dibujo a escala exacta deja el vidrio diminuto / cotas ilegibles. Se limita
+        // el alto del dibujo a un rango (≈6:1 de ancho a 1:6 de alto) — el alto real se muestra en la cota.
+        const rawDHt = totalH * scale, minDHt = DW * 0.16, maxDHt = DW * 6;
+        const scaleV = Math.max(minDHt, Math.min(maxDHt, rawDHt)) / totalH;
+        const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV, DHt = faDH + gDH + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
         const bwFa = faSub ? wFa * scale : DW, offFa = faSub ? alignOff(fa.align, bwFa) : 0;
@@ -5363,7 +5384,9 @@
         // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
         const cellExtra = (celda, obj, mk) => {
             if (celda === 'vacio' || celda === 'louvers') return '';
-            const vid = cfgRow('Vidrio', cfgSel(obj.vidrio || '', VIDCELL, mk('vidrio')));
+            // Vidrio por paño + su grosor (solo si eligió un vidrio de la celda que sea Templado/Laminado).
+            const grosor = (obj.vidrio === 'templado' || obj.vidrio === 'laminado') ? cfgRow('Grosor', cfgSel(obj.espesor || '', ESP, mk('espesor'))) : '';
+            const vid = cfgRow('Vidrio', cfgSel(obj.vidrio || '', VIDCELL, mk('vidrio'))) + grosor;
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : '';
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
@@ -5577,10 +5600,13 @@
     };
     window.gridFajaDelCol = (id, side, i) => { const f = cardsState[id][fajaKey(side)]; if (!f || !f.cols) return; f.cols.splice(i, 1); if (f.cols.length === 1) { Object.assign(f, f.cols[0]); delete f.cols; } gridFull(id); };
     window.gridFajaColW = (id, side, i, v) => { const f = cardsState[id][fajaKey(side)]; if (f && f.cols && f.cols[i]) f.cols[i].w = parseInt(v) || 0; gridDraw(id); };
-    window.gridFajaColCfg = (id, side, i, key, v) => { const f = cardsState[id][fajaKey(side)]; if (f && f.cols && f.cols[i]) { f.cols[i][key] = v; if (key === 'celda') f.cols[i].alu = celdaAluDefault(v); } (key === 'celda' || key === 'apertura') ? gridFull(id) : gridDraw(id); };
+    window.gridFajaColCfg = (id, side, i, key, v) => { const f = cardsState[id][fajaKey(side)]; if (f && f.cols && f.cols[i]) { const o = f.cols[i]; o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); } (key === 'celda' || cellCfgFull(key)) ? gridFull(id) : gridDraw(id); };
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
-    window.gridSetCellCfg = (id, ci, ri, key, v) => { cardsState[id].cols[ci].rows[ri][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
-    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
+    // Al fijar el grosor de un paño, se auto-selecciona su tipo de vidrio (igual que el global).
+    const cellCfgEspesor = (o, key, v) => { if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(v)) o.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(v)) o.vidrio = 'templado'; } };
+    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor';   // estos cambian qué campos se muestran
+    window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
+    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
