@@ -1576,7 +1576,9 @@
             if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
             if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
             if (tbz.entre) tubosArr.push('entre columnas (vert.)'); if (tbz.entreH) tubosArr.push('entre columnas (horiz.)');
-            const tubosLine = tubosArr.length ? `<div>Tubos/refuerzos: ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}</div>` : '';
+            const perim = tbz.sup || tbz.inf || tbz.izq || tbz.der;
+            const incTxt = perim ? (tbz.incluidos !== false ? ' · incluidos en la medida' : ' · NO incluidos (aparte)') : '';
+            const tubosLine = tubosArr.length ? `<div>Tubos/refuerzos: ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}${incTxt}</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA COMPUESTA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
                 <div>${cols.length} columna(s)${faH ? ' + faja superior' : ''}${fbH ? ' + faja inferior' : ''}</div>
@@ -5210,32 +5212,39 @@
             if (fa) body += tuboRect(0, gy0 - tt / 2, DW, tt);
             if (fb) body += tuboRect(0, gy0 + gDH - tt / 2, DW, tt);
         }
-        if (tb.sup) body += tuboRect(0, 0, DW, tt);
-        if (tb.inf) body += tuboRect(0, DHt - tt, DW, tt);
-        if (tb.izq) body += tuboRect(0, 0, tt, DHt);
-        if (tb.der) body += tuboRect(DW - tt, 0, tt, DHt);
+        // Tubos perimetrales: si están INCLUIDOS en la medida se dibujan dentro del envolvente
+        // (la cota los abarca); si NO están incluidos se dibujan FUERA (más allá de la línea de cota).
+        const inc = tb.incluidos !== false;   // por defecto incluidos
+        if (tb.sup) body += tuboRect(0, inc ? 0 : -tt, DW, tt);
+        if (tb.inf) body += tuboRect(0, inc ? DHt - tt : DHt, DW, tt);
+        if (tb.izq) body += tuboRect(inc ? 0 : -tt, 0, tt, DHt);
+        if (tb.der) body += tuboRect(inc ? DW - tt : DW, 0, tt, DHt);
         // Tubo entre columnas VERTICAL: barra en cada división entre columnas vecinas (alto de columnas).
         if (tb.entre) for (let i = 1; i < colInfo.length; i++) {
             const bx = colInfo[i].x;
             body += tuboRect(bx - tt / 2, gy0, tt, gDH);
             if (tb.medida) body += `<text x="${bx.toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
         }
-        // cotas: ancho total (abajo) + mm por columna + alto total (derecha)
-        let cotas = dimLineH(0, DW, DHt + 13, DHt, `${totalW} mm`, 5.5);
-        if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
-        cotas += dimLineV(0, DHt, DW + 6, DW, `${totalH} mm`, 5.5);
+        // cotas: ancho total (abajo) + mm por columna + alto total (derecha). Si un tubo perimetral
+        // NO está incluido en la medida, se dibuja fuera del envolvente y la cota se corre para
+        // quedar más allá del tubo (así la medida abarca solo el vidrio/columnas, no el tubo).
+        const extB = (tb.inf && !inc) ? tt : 0, extR = (tb.der && !inc) ? tt : 0, extL = (tb.izq && !inc) ? tt : 0, extT = (tb.sup && !inc) ? tt : 0;
+        let cotas = dimLineH(0, DW, DHt + extB + 13, DHt + extB, `${totalW} mm`, 5.5);
+        if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + extB + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
+        cotas += dimLineV(0, DHt, DW + 6 + extR, DW + extR, `${totalH} mm`, 5.5);
         // Alturas por PAÑO/sección (izquierda): faja superior, banda de columnas, faja inferior —
         // solo cuando hay más de una banda horizontal (si no, el alto total ya lo dice todo).
         if (fa || fb) {
-            if (fa) cotas += dimLineV(0, faDH, -7, 0, `${faH}`, 4.4);
-            cotas += dimLineV(gy0, gy0 + gDH, -7, 0, `${gAlto}`, 4.4);
-            if (fb) cotas += dimLineV(gy0 + gDH, DHt, -7, 0, `${fbH}`, 4.4);
+            const lx = -7 - extL, le = -extL;
+            if (fa) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
+            cotas += dimLineV(gy0, gy0 + gDH, lx, le, `${gAlto}`, 4.4);
+            if (fb) cotas += dimLineV(gy0 + gDH, DHt, lx, le, `${fbH}`, 4.4);
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });
-        cotas += `<text x="0" y="-4" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
-        const vbH = DHt + 30;
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22 -10 ${DW + 48} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
+        cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
+        const vbY = -10 - extT, vbH = (DHt + extB + 20) - vbY;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22 ${vbY.toFixed(1)} ${DW + 48} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + cotas + '</svg>';
         return applyFinish(svg, state.color_perfil, state.color_ral);
@@ -5352,6 +5361,10 @@
                 ${tuboChk('entre', 'Tubo entre columnas (vertical)')}
                 ${tuboChk('entreH', 'Tubo entre columnas (horizontal)')}
             </div>
+            ${(tb.sup || tb.inf || tb.izq || tb.der) ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px dashed #d9e2ec;">
+                <label style="${gbl}">En la medida</label>
+                <select style="${inp}" onchange="gridSetTuboInc(${id},this.value)"><option value="si" ${(tb.incluidos !== false) ? 'selected' : ''}>Tubos incluidos en la medida</option><option value="no" ${(tb.incluidos === false) ? 'selected' : ''}>Tubos NO incluidos (se agregan aparte)</option></select>
+            </div>` : ''}
         </div>`;
         h += `</div>`;
         return h;
@@ -5424,8 +5437,9 @@
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
     window.gridDelRow = (id, ci, ri) => { const c = cardsState[id].cols[ci]; if (c.rows.length > 1) c.rows.splice(ri, 1); gridFull(id); };
     // Tubos / refuerzos
-    window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridDraw(id); };
+    window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridFull(id); };
     window.gridSetTuboMedida = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = {}; st.tubos.medida = v; gridDraw(id); };
+    window.gridSetTuboInc = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = {}; st.tubos.incluidos = (v === 'si'); gridDraw(id); };
 
     function renderBarandaBuilder(id) {
         const st = cardsState[id];
