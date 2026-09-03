@@ -1585,7 +1585,7 @@
                 ${filas}
                 <div>Vidrio: ${(state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim()}</div>
                 ${tubosLine}
-                <div>Acabado: ${headerColor}</div>
+                <div>Acabado: ${({ natural: 'Natural / Plata', negro: 'Negro', blanco: 'Blanco', grafito: 'Grafito', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) })[state.color_perfil || 'natural']}</div>
             </div>`;
             return;
         }
@@ -5301,10 +5301,13 @@
                 </div>${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin';
+        const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];
+        const cp = st.color_perfil || 'natural';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
-            <label style="${gbl}">Alto columnas (mm)</label>
-            <input type="number" value="${st.gridAlto || 0}" min="20" step="5" style="${inp}" oninput="gridSetAlto(${id},this.value)">
+            <label style="${gbl}">Color / Acabado</label>
+            <select style="${inp}" onchange="gridSetColorPerfil(${id},this.value)">${opt(ACAB, cp)}</select>
+            ${cp === 'ral' ? `<label style="${gbl}">RAL / Hex</label><input type="text" value="${st.color_ral || ''}" placeholder="ej: RAL 7016 o #6b6b6b" style="${inp}" oninput="gridSetColorRal(${id},this.value)">` : ''}
             <label style="${gbl}">Vidrio</label>
             <select style="${inp}" onchange="gridSetVidrio(${id},this.value)">${opt(VIDS, st.vidrio || 'templado')}</select>
             ${conVidrio ? `<label style="${gbl}">Grosor de vidrio</label>
@@ -5323,11 +5326,11 @@
                         ${cols.length > 1 ? `<button onclick="gridDelCol(${id},${ci})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : ''}
                     </span>
                 </div>`;
-            const unaFila = (c.rows || []).length === 1;   // con 1 sola fila, su alto = "Alto columnas" (no se duplica)
+            const unaFila = (c.rows || []).length === 1;   // 1 fila = su alto ES el alto de la banda (compartido entre columnas)
             (c.rows || []).forEach((r, ri) => {
                 h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;">
-                    <div style="display:grid;grid-template-columns:${unaFila ? '1fr auto' : '66px 1fr auto'};gap:5px;align-items:center;">
-                        ${unaFila ? '' : `<input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto de la fila (mm)" oninput="gridSetRowH(${id},${ci},${ri},this.value)">`}
+                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;">
+                        <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" placeholder="Alto" ${unaFila ? `class="bandh-${id}"` : ''} oninput="gridSetRowH(${id},${ci},${ri},this.value)">
                         <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${r.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                         ${(c.rows || []).length > 1 ? `<button onclick="gridDelRow(${id},${ci},${ri})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
                     </div>
@@ -5421,7 +5424,20 @@
     window.gridSetColorVidrio = (id, v) => { cardsState[id].color_vidrio = v; gridDraw(id); };
     window.gridSetHerraje = (id, v) => { cardsState[id].herraje_color = v; gridDraw(id); };
     window.gridSetColW = (id, ci, v) => { cardsState[id].cols[ci].w = parseInt(v) || 0; gridDraw(id); };
-    window.gridSetRowH = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].h = parseInt(v) || 0; gridDraw(id); };
+    window.gridSetRowH = (id, ci, ri, v) => {
+        const st = cardsState[id]; const col = st.cols[ci]; const val = parseInt(v) || 0;
+        col.rows[ri].h = val;
+        // Una fila = alto de la BANDA de columnas (todas las columnas comparten alto en una fachada):
+        // al editarlo se sincronizan las demás columnas de 1 fila y el alto de banda (gridAlto).
+        if ((col.rows || []).length === 1) {
+            st.gridAlto = val;
+            st.cols.forEach(c => { if ((c.rows || []).length === 1) c.rows[0].h = val; });
+            document.querySelectorAll('.bandh-' + id).forEach(inp => { if (inp !== document.activeElement) inp.value = val; });
+        }
+        gridDraw(id);
+    };
+    window.gridSetColorPerfil = (id, v) => { cardsState[id].color_perfil = v; gridFull(id); };   // gridFull: muestra/oculta el campo RAL
+    window.gridSetColorRal = (id, v) => { cardsState[id].color_ral = v; gridDraw(id); };
     // Al cambiar el tipo de elemento de una celda/faja, su aluminio se resetea al que aplica a ese tipo.
     window.gridSetCelda = (id, ci, ri, v) => { const r = cardsState[id].cols[ci].rows[ri]; r.celda = v; r.alu = celdaAluDefault(v); gridFull(id); };
     window.gridSetCeldaAlu = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].alu = v; gridDraw(id); };
