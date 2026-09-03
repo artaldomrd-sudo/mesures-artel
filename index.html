@@ -75,7 +75,9 @@
         .btn-cat:hover { background: var(--artal-yellow); color: var(--artal-blue); font-weight: bold; border-color: var(--artal-yellow); transform: translateY(-1px); }
         
         /* Hoja de Trabajo */
-        #main-canvas { flex-grow: 1; padding: 30px; overflow-y: auto; background: transparent; position: relative; display: flex; flex-direction: column; }
+        /* El padding-right lo estrecha JS al abrir el editor de Fachada Compuesta (drawer a la
+           derecha), para que la tarjeta no quede tapada; el dibujo (meet) reescala solo. */
+        #main-canvas { flex-grow: 1; padding: 30px; overflow-y: auto; background: transparent; position: relative; display: flex; flex-direction: column; transition: padding-right .22s ease; }
         
         /* BARRA TIPO DE DOCUMENTO (Cotización / Fabricación) */
         .doc-type-bar { text-align: center; margin-bottom: 18px; }
@@ -126,6 +128,8 @@
 
         /* CAD CARD DYNAMIC WIDTH */
         .item-card.cad-card.panoramic { grid-column: 1 / -1; width: 100%; }
+        .item-card.grid-card { grid-column: 1 / -1; width: 100%; }
+        .item-card.grid-card .drawing-area { min-height: 360px; }
         .cad-body { display: flex; flex-direction: column; gap: 15px; width: 100%; }
         .item-card.locked.cad-card.panoramic .cad-body { flex-direction: column; align-items: stretch; }
         .item-card.locked.cad-card.panoramic .drawing-area { width: 100%; height: auto; min-height: 300px; }
@@ -280,6 +284,8 @@
         }
 
         /* CAD CARDS PANORAMIC (100% WIDTH, HORIZONTAL LAYOUT) */
+        body.printing-sheets .item-card.grid-card { grid-column: 1 / -1 !important; width: 100% !important; }
+        body.printing-sheets .item-card.grid-card .drawing-area { height: 72mm !important; min-height: 72mm !important; max-height: 72mm !important; width: 100% !important; }
         body.printing-sheets .item-card.cad-card.panoramic {
             display: block !important; width: 98% !important; margin-right: 0 !important;
             height: auto !important; min-height: 95mm !important; max-height: none !important;
@@ -459,8 +465,8 @@
         <button class="btn-cat" onclick="addItem('Shutter', 'cort_shutter', 'cortina')">Shutter</button>
 
         <h3>Especial</h3>
-        <button class="btn-cat" style="background:#2f7fd6; color:#fff; text-align: center; font-weight: bold;" onclick="addItem('Fachada por Grilla', 'fachada_grid', 'fachada_grid')">+ FACHADA POR GRILLA</button>
-        <button class="btn-cat" style="background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('Fachada Compuesta', 'draw', 'dibujo')">+ FACHADA COMPUESTA (CAD)</button>
+        <button class="btn-cat" style="background:#2f7fd6; color:#fff; text-align: center; font-weight: bold;" onclick="addItem('Fachada Compuesta', 'fachada_grid', 'fachada_grid')">+ FACHADA COMPUESTA</button>
+        <button class="btn-cat" style="background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('Fachada Libre (CAD)', 'draw', 'dibujo')">+ FACHADA LIBRE (CAD)</button>
         
         <div style="margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px;">
             <div class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V1a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg> Acciones</div>
@@ -1539,24 +1545,32 @@
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'fachada_grid') {
-            const CELDA_NOM = { pf: 'Paño fijo', cor2: 'Corredera 2H', cor3: 'Corredera 3H', cor4: 'Corredera 4H', puerta: 'Puerta de abrir', ventana: 'Ventana de abrir', louvers: 'Louvers', osci: 'Oscilobatiente', vacio: 'Vacío / muro' };
+            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', vacio: 'Muro / Vacío' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
             const faH = state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0;
             const fbH = state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0;
             const totalH = (parseInt(state.gridAlto) || 0) + faH + fbH;
+            const aluTxt = a => a ? `, ${ALU_LABEL[a] || a}` : '';
             let filas = '';
-            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm)</div>`;
+            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm${aluTxt(state.fajaArriba.alu)})</div>`;
             cols.forEach((c, ci) => {
-                const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm)`).join(' + ');
+                const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm${aluTxt(r.alu)})`).join(' + ');
                 filas += `<div>Columna ${ci + 1} — Ancho ${c.w} mm: ${cel}</div>`;
             });
-            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm)</div>`;
+            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm${aluTxt(state.fajaAbajo.alu)})</div>`;
+            const tbz = state.tubos || {}; const tubosArr = [];
+            if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
+            if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
+            if (tbz.entre) tubosArr.push('entre columnas (vert.)'); if (tbz.entreH) tubosArr.push('entre columnas (horiz.)');
+            const tubosLine = tubosArr.length ? `<div>Tubos/refuerzos: ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
-                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA POR GRILLA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
+                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA COMPUESTA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
                 <div>${cols.length} columna(s)${faH ? ' + faja superior' : ''}${fbH ? ' + faja inferior' : ''}</div>
                 ${filas}
-                <div>Vidrio: ${state.vidrio || 'templado'} ${espesorLabel(state.espesor)}</div>
+                <div>Vidrio: ${(state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim()}</div>
+                <div>Accesorios (herrajes): ${(state.herraje_color || 'cromado') === 'negro' ? 'Negro Mate' : 'Cromado / Inox'}</div>
+                ${tubosLine}
                 <div>Acabado: ${headerColor}</div>
             </div>`;
             return;
@@ -3283,10 +3297,13 @@
                 }
             } else if (categoria === 'fachada_grid') {
                 cardsState[id].gridAlto = 2750;
-                cardsState[id].cols = [{ w: 2000, rows: [{ h: 2750, celda: 'cor2' }] }];
+                cardsState[id].cols = [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }];
                 cardsState[id].vidrio = 'templado';
                 cardsState[id].espesor = '10mm';
                 cardsState[id].color_vidrio = 'natural';
+                cardsState[id].herraje_color = 'cromado';
+                // Tubos/refuerzos de aluminio (superior/inferior/laterales/entre columnas), opcionales.
+                cardsState[id].tubos = { sup: false, inf: false, izq: false, der: false, entre: false, medida: '100 x 45' };
                 cardsState[id].ancho = 2000;
                 cardsState[id].alto = 2750;
             }
@@ -3305,6 +3322,7 @@
         
         let extraClasses = cardsState[id].locked ? ' locked' : '';
         if (cardsState[id].type === 'draw') extraClasses += ' cad-card';
+        if (cardsState[id].categoria === 'fachada_grid') extraClasses += ' grid-card panoramic';
         card.className = 'item-card' + extraClasses;
         card.id = 'card-' + id;
 
@@ -3459,7 +3477,7 @@
                 ${lockBtnHtml}
                 <div class="card-ref-row">
                     <input type="text" placeholder="Ref. (ej: F1)">
-                    <span>${displayLabel || 'FACHADA POR GRILLA'}</span>
+                    <span>FACHADA COMPUESTA</span>
                 </div>
                 <input type="text" placeholder="Ubicación (ej: Fachada frontal)" style="border:none; border-bottom:1px solid #eee; outline:none; font-size:13px; padding-bottom:4px; width:100%; color:var(--artal-blue);">
 
@@ -3468,11 +3486,10 @@
                 <div class="summary-box show-on-lock" id="summary-${id}"></div>
 
                 <div class="hide-on-lock">
-                    <div class="builder-title">Constructor · Fachada por Grilla</div>
-                    <div id="grid-builder-${id}">${renderGridBuilder(id)}</div>
-                    <div class="htotal-row">
-                        <label style="color:#e74c3c;">Cant:</label>
-                        <input type="number" value="${cardsState[id].cantidad || 1}" min="1" style="max-width:65px; border-color:#e74c3c;" oninput="updateState(${id}, 'cantidad', this.value)">
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <button onclick="abrirEditorFachada(${id})" style="flex:1; min-width:200px; padding:12px; border:none; border-radius:9px; background:var(--artal-blue); color:#fff; font-weight:bold; font-size:14px; cursor:pointer; font-family:'Arimo';">✏️ Editar fachada compuesta</button>
+                        <label style="color:#e74c3c; font-weight:bold; font-size:13px;">Cant:</label>
+                        <input type="number" value="${cardsState[id].cantidad || 1}" min="1" style="max-width:65px; border:1.5px solid #e74c3c; border-radius:6px; padding:8px;" oninput="updateState(${id}, 'cantidad', this.value)">
                     </div>
                 </div>
                 <textarea class="notes-area" placeholder="Notas adicionales..."></textarea>
@@ -4983,7 +5000,27 @@
     // Modelo: state.cols = [{ w, rows:[{ h, celda }] }], state.gridAlto. Cada celda es un módulo
     // (paño fijo, corredera, puerta, louver, oscilo, vacío). Dibujo 2D plano reusando el motor de
     // panel (extrudedPanel/louverPanel/wallBlock) + símbolos por tipo + cotas. Sin efecto 3D.
-    const GRID_CELDAS = [['pf', 'Paño fijo'], ['cor2', 'Corredera 2H'], ['cor3', 'Corredera 3H'], ['cor4', 'Corredera 4H'], ['puerta', 'Puerta de abrir'], ['ventana', 'Ventana de abrir'], ['louvers', 'Louvers'], ['osci', 'Oscilobatiente'], ['vacio', 'Vacío / muro']];
+    // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
+    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+
+    // Tipos de aluminio válidos POR tipo de elemento. El selector "Tipo de aluminio" de la fachada
+    // muestra solo la UNIÓN de los que aplican a los elementos presentes (ej. paños fijos + puerta
+    // → P40 de ventana / P40 de puerta / Titan; al agregar una corredera se suman P92/E70/E100/E200).
+    const ALU_MASTER = [['p40_ventana', 'P40 de ventana'], ['p40_puerta', 'P40 de puerta'], ['titan', 'Titan'], ['P92', 'P92'], ['E70', 'E70'], ['E100', 'E100'], ['E200', 'E200']];
+    const ALU_LABEL = Object.fromEntries(ALU_MASTER);
+    const ALU_POR_CELDA = {
+        pf: ['p40_ventana', 'p40_puerta'],
+        ventana: ['p40_ventana'],
+        osci: ['p40_ventana'],
+        puerta: ['p40_puerta', 'titan'],
+        cor2: ['P92', 'E70', 'E100', 'E200'],
+        cor3: ['P92', 'E70', 'E100', 'E200'],
+        cor4: ['P92', 'E70', 'E100', 'E200'],
+        louvers: [], vacio: []
+    };
+    // Opciones de aluminio para UNA celda concreta (según su tipo de elemento) — el selector va por paño.
+    function celdaAluOpts(celda) { const keys = ALU_POR_CELDA[celda] || []; return ALU_MASTER.filter(o => keys.includes(o[0])); }
+    function celdaAluDefault(celda) { const k = ALU_POR_CELDA[celda] || []; return k[0] || ''; }
 
     function gridArrow(cx, cy, size, dir) {
         const half = Math.min(size, 18) * 0.32, ex = dir === 'L' ? cx - half : cx + half, sx = dir === 'L' ? cx + half : cx - half, hx = dir === 'L' ? ex + 1.4 : ex - 1.4;
@@ -5020,6 +5057,11 @@
         const totalW = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
         const DW = 100, scale = DW / totalW;
         const faDH = faH * scale, gDH = gAlto * scale, fbDH = fbH * scale, DHt = faDH + gDH + fbDH;
+        // Tubos / refuerzos de aluminio: barras sólidas en color de carpintería. Definidas antes del
+        // loop de columnas para poder dibujar también el tubo horizontal entre filas de una columna.
+        const tb = state.tubos || {};
+        const tt = 4;   // grosor visible del tubo (unidades de viewBox, DW=100)
+        const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         let body = '';
         if (fa) body += gridCell(uid, 0, 0, DW, faDH, fa.celda);   // faja superior (ancho completo)
         let cx = 0; const colInfo = []; const gy0 = faDH;
@@ -5034,6 +5076,22 @@
         if (fb) body += gridCell(uid, 0, gy0 + gDH, DW, fbDH, fb.celda);   // faja inferior (ancho completo)
         // marco perimetral más grueso
         body += `<rect x="0" y="0" width="${DW}" height="${DHt.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
+        // Tubo entre columnas HORIZONTAL: barra a todo el ancho en la división entre la faja (banda de
+        // ancho completo) y las columnas — arriba y/o abajo, según qué fajas existan (línea roja de la foto).
+        if (tb.entreH) {
+            if (fa) body += tuboRect(0, gy0 - tt / 2, DW, tt);
+            if (fb) body += tuboRect(0, gy0 + gDH - tt / 2, DW, tt);
+        }
+        if (tb.sup) body += tuboRect(0, 0, DW, tt);
+        if (tb.inf) body += tuboRect(0, DHt - tt, DW, tt);
+        if (tb.izq) body += tuboRect(0, 0, tt, DHt);
+        if (tb.der) body += tuboRect(DW - tt, 0, tt, DHt);
+        // Tubo entre columnas VERTICAL: barra en cada división entre columnas vecinas (alto de columnas).
+        if (tb.entre) for (let i = 1; i < colInfo.length; i++) {
+            const bx = colInfo[i].x;
+            body += tuboRect(bx - tt / 2, gy0, tt, gDH);
+            if (tb.medida) body += `<text x="${bx.toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
+        }
         // cotas: ancho total (abajo) + mm por columna + alto total (derecha)
         let cotas = dimLineH(0, DW, DHt + 13, DHt, `${totalW} mm`, 5.5);
         if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
@@ -5049,8 +5107,22 @@
     // Constructor (UI) de la fachada por grilla — contenedor propio, se regenera solo.
     function renderGridBuilder(id) {
         const st = cardsState[id]; const cols = st.cols || [];
-        const VIDS = [['templado', 'Templado'], ['laminado', 'Laminado']];
-        const inp = 'padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:Arimo;box-sizing:border-box;';
+        // Opciones globales de la fachada (mismas listas que el resto de la app).
+        const VIDS = [['templado', 'Vidrio Templado'], ['laminado', 'Vidrio Laminado'], ['sin', 'Sin Vidrio']];
+        const ESP = [['', '-- Grosor --'], ['10mm', '3/8" (10mm)'], ['12mm', '1/2" (12mm)'], ['3+3', '3+3'], ['4+4', '4+4'], ['5+5', '5+5'], ['6+6', '6+6']];
+        const CVID = [['', '-- Color vidrio --'], ['natural', 'Natural / Transparente'], ['negro', 'Negro / Transparente'], ['azul', 'Azul / Transparente'], ['esmerilado', 'Esmerilado / Opaco'], ['reflectivo', 'Reflectivo']];
+        const HER = [['cromado', 'Cromado / Inox'], ['negro', 'Negro Mate']];
+        const opt = (arr, sel) => arr.map(o => `<option value="${o[0]}" ${sel === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
+        const inp = 'padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:Arimo;box-sizing:border-box;width:100%;';
+        const gbl = 'font-size:12px;font-weight:bold;color:var(--artal-blue);';
+        const lblR = 'font-size:11px;color:#667;text-align:right;align-self:center;';
+        // Select de ALUMINIO para una celda concreta (opciones = las de su tipo de elemento). Cada
+        // paño puede llevar un material distinto (ej. puerta P40 de puerta + paños fijos P40 de ventana).
+        const aluSel = (celda, val, onchange) => {
+            const opts = celdaAluOpts(celda);
+            if (!opts.length) return `<select disabled style="${inp}opacity:.55">${'<option>— sin material —</option>'}</select>`;
+            return `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${val === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
+        };
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
         const fajaRow = (side, faja) => {
             const nom = side === 'arriba' ? 'Faja superior' : 'Faja inferior';
@@ -5060,14 +5132,23 @@
                 <div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;">
                     <input type="number" value="${faja.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" oninput="gridSetFajaH(${id},'${side}',this.value)">
                     <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                    <label style="${lblR}">Aluminio</label>
+                    ${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}
                 </div></div>`;
         };
+        const conVidrio = (st.vidrio || 'templado') !== 'sin';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
-        h += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue)">Alto columnas (mm)</label>
-            <input type="number" value="${st.gridAlto || 0}" min="20" step="5" style="${inp}width:88px" oninput="gridSetAlto(${id},this.value)">
-            <label style="font-size:12px;font-weight:bold;color:var(--artal-blue)">Vidrio</label>
-            <select style="${inp}" onchange="gridSetVidrio(${id},this.value)">${VIDS.map(v => `<option value="${v[0]}" ${st.vidrio === v[0] ? 'selected' : ''}>${v[1]}</option>`).join('')}</select>
+        h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
+            <label style="${gbl}">Alto columnas (mm)</label>
+            <input type="number" value="${st.gridAlto || 0}" min="20" step="5" style="${inp}" oninput="gridSetAlto(${id},this.value)">
+            <label style="${gbl}">Vidrio</label>
+            <select style="${inp}" onchange="gridSetVidrio(${id},this.value)">${opt(VIDS, st.vidrio || 'templado')}</select>
+            ${conVidrio ? `<label style="${gbl}">Grosor de vidrio</label>
+            <select style="${inp}" onchange="gridSetEspesor(${id},this.value)">${opt(ESP, st.espesor || '')}</select>
+            <label style="${gbl}">Color de vidrio</label>
+            <select style="${inp}" onchange="gridSetColorVidrio(${id},this.value)">${opt(CVID, st.color_vidrio || '')}</select>` : ''}
+            <label style="${gbl}">Accesorios (herrajes)</label>
+            <select style="${inp}" onchange="gridSetHerraje(${id},this.value)">${opt(HER, st.herraje_color || 'cromado')}</select>
         </div>`;
         h += fajaRow('arriba', st.fajaArriba);
         cols.forEach((c, ci) => {
@@ -5081,16 +5162,41 @@
                     </span>
                 </div>`;
             (c.rows || []).forEach((r, ri) => {
-                h += `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:5px;">
-                    <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto de la fila (mm)" oninput="gridSetRowH(${id},${ci},${ri},this.value)">
-                    <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${r.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
-                    ${(c.rows || []).length > 1 ? `<button onclick="gridDelRow(${id},${ci},${ri})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
+                h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;">
+                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;">
+                        <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto de la fila (mm)" oninput="gridSetRowH(${id},${ci},${ri},this.value)">
+                        <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${r.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                        ${(c.rows || []).length > 1 ? `<button onclick="gridDelRow(${id},${ci},${ri})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
+                    </div>
+                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;">
+                        <label style="${lblR}">Aluminio</label>
+                        ${aluSel(r.celda, r.alu || '', `gridSetCeldaAlu(${id},${ci},${ri},this.value)`)}
+                        <span></span>
+                    </div>
                 </div>`;
             });
             h += `<button onclick="gridAddRow(${id},${ci})" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Fila en esta columna</button></div>`;
         });
         h += `<button onclick="gridAddCol(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">+ Columna</button>`;
         h += fajaRow('abajo', st.fajaAbajo);
+        // ---- Tubos / refuerzos de aluminio (superior/inferior/laterales/entre columnas) ----
+        const tb = st.tubos || {};
+        const tuboChk = (key, txt) => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:#374;"><input type="checkbox" ${tb[key] ? 'checked' : ''} onchange="gridToggleTubo(${id},'${key}')" style="width:15px;height:15px;">${txt}</label>`;
+        h += `<div style="border:1px solid #d9e2ec;border-radius:8px;padding:9px;margin-top:10px;background:#fbfcfe;">
+            <b style="font-size:12px;color:var(--artal-blue);display:block;margin-bottom:7px;">🧱 Tubos / refuerzos</b>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:8px;">
+                <label style="${gbl}">Medida del tubo</label>
+                <input type="text" value="${(tb.medida || '')}" placeholder="ej: 100 x 45 mm" style="${inp}" oninput="gridSetTuboMedida(${id},this.value)">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;">
+                ${tuboChk('sup', 'Tubo superior')}
+                ${tuboChk('inf', 'Tubo inferior')}
+                ${tuboChk('izq', 'Tubo lateral izq.')}
+                ${tuboChk('der', 'Tubo lateral der.')}
+                ${tuboChk('entre', 'Tubo entre columnas (vertical)')}
+                ${tuboChk('entreH', 'Tubo entre columnas (horizontal)')}
+            </div>
+        </div>`;
         h += `</div>`;
         return h;
     }
@@ -5101,20 +5207,63 @@
         const fbH = st.fajaAbajo ? (parseInt(st.fajaAbajo.h) || 0) : 0;
         st.alto = (parseInt(st.gridAlto) || 0) + faH + fbH;
     }
-    window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf' }; gridFull(id); };
+    window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); };
     window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
-    window.gridSetFajaCelda = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].celda = v; gridFull(id); };
+    window.gridSetFajaCelda = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) { cardsState[id][k].celda = v; cardsState[id][k].alu = celdaAluDefault(v); } gridFull(id); };
+
+    // Editor de la fachada compuesta en un POP-UP LATERAL (drawer a la derecha): el constructor
+    // (columnas/filas/fajas) vive aquí, y la tarjeta (a ancho completo) muestra el dibujo grande y
+    // se actualiza en vivo mientras editas. El contenedor #grid-builder-${id} vive dentro del
+    // drawer; gridFull/gridDraw lo encuentran por id igual que cuando estaba en la tarjeta.
+    window.abrirEditorFachada = function (id) {
+        cerrarEditorFachada();
+        const ov = document.createElement('div');
+        ov.id = 'fachada-editor';
+        ov.style.cssText = 'position:fixed;top:0;right:0;width:min(430px,94vw);height:100vh;background:#fff;box-shadow:-8px 0 30px -10px rgba(0,0,0,.35);z-index:9998;display:flex;flex-direction:column;font-family:Arimo;';
+        ov.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;background:var(--artal-blue);color:#fff;">
+                <b style="font-size:15px;">🧩 Fachada compuesta</b>
+                <button onclick="cerrarEditorFachada()" style="background:rgba(255,255,255,.18);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:bold;cursor:pointer;font-family:'Arimo';">Listo ✓</button>
+            </div>
+            <div style="padding:14px;overflow:auto;flex:1;">
+                <div id="grid-builder-${id}">${renderGridBuilder(id)}</div>
+            </div>`;
+        document.body.appendChild(ov);
+        document.body.classList.add('fachada-editor-open');
+        // Estrecha el lienzo el ancho real del drawer (+ un aire) para que la tarjeta no quede
+        // tapada — solo en pantallas anchas; en un móvil el drawer ocupa casi todo y no tiene sentido.
+        const mc = document.getElementById('main-canvas');
+        if (mc && window.innerWidth >= 780) mc.style.paddingRight = (Math.ceil(ov.getBoundingClientRect().width) + 22) + 'px';
+        const card = document.getElementById('card-' + id);
+        if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        // tras el reflow del lienzo, reajusta el dibujo al nuevo ancho
+        setTimeout(() => adaptDrawingToContent(id), 260);
+    };
+    window.cerrarEditorFachada = function () {
+        const o = document.getElementById('fachada-editor'); if (o) o.remove();
+        document.body.classList.remove('fachada-editor-open');
+        const mc = document.getElementById('main-canvas'); if (mc) mc.style.paddingRight = '';
+    };
     function gridDraw(id) { gridDeriv(id); const sc = document.getElementById('schematic-' + id); if (sc) sc.innerHTML = renderSVG(id); adaptDrawingToContent(id); saveProgress(); }
     function gridFull(id) { gridDraw(id); const b = document.getElementById('grid-builder-' + id); if (b) b.innerHTML = renderGridBuilder(id); }
     window.gridSetAlto = (id, v) => { const st = cardsState[id]; st.gridAlto = parseInt(v) || 0; (st.cols || []).forEach(c => { if ((c.rows || []).length === 1) c.rows[0].h = st.gridAlto; }); gridDraw(id); };
     window.gridSetVidrio = (id, v) => { cardsState[id].vidrio = v; gridFull(id); };
+    window.gridSetEspesor = (id, v) => { cardsState[id].espesor = v; gridDraw(id); };
+    window.gridSetColorVidrio = (id, v) => { cardsState[id].color_vidrio = v; gridDraw(id); };
+    window.gridSetHerraje = (id, v) => { cardsState[id].herraje_color = v; gridDraw(id); };
     window.gridSetColW = (id, ci, v) => { cardsState[id].cols[ci].w = parseInt(v) || 0; gridDraw(id); };
     window.gridSetRowH = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].h = parseInt(v) || 0; gridDraw(id); };
-    window.gridSetCelda = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].celda = v; gridFull(id); };
-    window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf' }] }); gridFull(id); };
+    // Al cambiar el tipo de elemento de una celda/faja, su aluminio se resetea al que aplica a ese tipo.
+    window.gridSetCelda = (id, ci, ri, v) => { const r = cardsState[id].cols[ci].rows[ri]; r.celda = v; r.alu = celdaAluDefault(v); gridFull(id); };
+    window.gridSetCeldaAlu = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].alu = v; gridDraw(id); };
+    window.gridSetFajaAlu = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].alu = v; gridDraw(id); };
+    window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
-    window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf' }); gridFull(id); };
+    window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
     window.gridDelRow = (id, ci, ri) => { const c = cardsState[id].cols[ci]; if (c.rows.length > 1) c.rows.splice(ri, 1); gridFull(id); };
+    // Tubos / refuerzos
+    window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridDraw(id); };
+    window.gridSetTuboMedida = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = {}; st.tubos.medida = v; gridDraw(id); };
 
     function renderBarandaBuilder(id) {
         const st = cardsState[id];
