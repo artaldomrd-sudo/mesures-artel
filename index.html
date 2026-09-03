@@ -1569,7 +1569,6 @@
                 <div>${cols.length} columna(s)${faH ? ' + faja superior' : ''}${fbH ? ' + faja inferior' : ''}</div>
                 ${filas}
                 <div>Vidrio: ${(state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim()}</div>
-                <div>Accesorios (herrajes): ${(state.herraje_color || 'cromado') === 'negro' ? 'Negro Mate' : 'Cromado / Inox'}</div>
                 ${tubosLine}
                 <div>Acabado: ${headerColor}</div>
             </div>`;
@@ -5134,13 +5133,17 @@
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         let body = '';
         if (fa) body += gridCell(uid, 0, 0, DW, faDH, fa.celda);   // faja superior (ancho completo)
-        let cx = 0; const colInfo = []; const gy0 = faDH;
+        let cx = 0; const colInfo = []; const gy0 = faDH; const rowDims = [];
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
             const rowSum = Math.max(1, rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0));
             let cy = gy0;
-            rows.forEach(r => { const rh = ((parseInt(r.h) || 0) / rowSum) * gDH; body += gridCell(uid, cx, cy, cw, rh, r.celda); cy += rh; });
+            rows.forEach(r => {
+                const rh = ((parseInt(r.h) || 0) / rowSum) * gDH; body += gridCell(uid, cx, cy, cw, rh, r.celda);
+                if (rows.length > 1) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
+                cy += rh;
+            });
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0 }); cx += cw;
         });
         if (fb) body += gridCell(uid, 0, gy0 + gDH, DW, fbDH, fb.celda);   // faja inferior (ancho completo)
@@ -5166,9 +5169,18 @@
         let cotas = dimLineH(0, DW, DHt + 13, DHt, `${totalW} mm`, 5.5);
         if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
         cotas += dimLineV(0, DHt, DW + 6, DW, `${totalH} mm`, 5.5);
+        // Alturas por PAÑO/sección (izquierda): faja superior, banda de columnas, faja inferior —
+        // solo cuando hay más de una banda horizontal (si no, el alto total ya lo dice todo).
+        if (fa || fb) {
+            if (fa) cotas += dimLineV(0, faDH, -7, 0, `${faH}`, 4.4);
+            cotas += dimLineV(gy0, gy0 + gDH, -7, 0, `${gAlto}`, 4.4);
+            if (fb) cotas += dimLineV(gy0 + gDH, DHt, -7, 0, `${fbH}`, 4.4);
+        }
+        // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
+        rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });
         cotas += `<text x="0" y="-4" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
         const vbH = DHt + 30;
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -10 ${DW + 42} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22 -10 ${DW + 48} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + cotas + '</svg>';
         return applyFinish(svg, state.color_perfil, state.color_ral);
@@ -5181,7 +5193,6 @@
         const VIDS = [['templado', 'Vidrio Templado'], ['laminado', 'Vidrio Laminado'], ['sin', 'Sin Vidrio']];
         const ESP = [['', '-- Grosor --'], ['10mm', '3/8" (10mm)'], ['12mm', '1/2" (12mm)'], ['3+3', '3+3'], ['4+4', '4+4'], ['5+5', '5+5'], ['6+6', '6+6']];
         const CVID = [['', '-- Color vidrio --'], ['natural', 'Natural / Transparente'], ['negro', 'Negro / Transparente'], ['azul', 'Azul / Transparente'], ['esmerilado', 'Esmerilado / Opaco'], ['reflectivo', 'Reflectivo']];
-        const HER = [['cromado', 'Cromado / Inox'], ['negro', 'Negro Mate']];
         const opt = (arr, sel) => arr.map(o => `<option value="${o[0]}" ${sel === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
         const inp = 'padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:Arimo;box-sizing:border-box;width:100%;';
         const gbl = 'font-size:12px;font-weight:bold;color:var(--artal-blue);';
@@ -5217,8 +5228,6 @@
             <select style="${inp}" onchange="gridSetEspesor(${id},this.value)">${opt(ESP, st.espesor || '')}</select>
             <label style="${gbl}">Color de vidrio</label>
             <select style="${inp}" onchange="gridSetColorVidrio(${id},this.value)">${opt(CVID, st.color_vidrio || '')}</select>` : ''}
-            <label style="${gbl}">Accesorios (herrajes)</label>
-            <select style="${inp}" onchange="gridSetHerraje(${id},this.value)">${opt(HER, st.herraje_color || 'cromado')}</select>
         </div>`;
         h += fajaRow('arriba', st.fajaArriba);
         cols.forEach((c, ci) => {
