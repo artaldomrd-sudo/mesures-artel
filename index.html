@@ -1552,13 +1552,15 @@
             const fbH = state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0;
             const totalH = (parseInt(state.gridAlto) || 0) + faH + fbH;
             const aluTxt = a => a ? `, ${ALU_LABEL[a] || a}` : '';
+            const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
+            const manijaTxt = (celda, m) => isCorS(celda) ? `, manija ${m === 'blanco' ? 'blanca' : 'negra'}` : '';
             let filas = '';
-            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm${aluTxt(state.fajaArriba.alu)})</div>`;
+            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm${aluTxt(state.fajaArriba.alu)}${manijaTxt(state.fajaArriba.celda, state.fajaArriba.manija)})</div>`;
             cols.forEach((c, ci) => {
-                const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm${aluTxt(r.alu)})`).join(' + ');
+                const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm${aluTxt(r.alu)}${manijaTxt(r.celda, r.manija)})`).join(' + ');
                 filas += `<div>Columna ${ci + 1} — Ancho ${c.w} mm: ${cel}</div>`;
             });
-            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm${aluTxt(state.fajaAbajo.alu)})</div>`;
+            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm${aluTxt(state.fajaAbajo.alu)}${manijaTxt(state.fajaAbajo.celda, state.fajaAbajo.manija)})</div>`;
             const tbz = state.tubos || {}; const tubosArr = [];
             if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
             if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
@@ -1734,6 +1736,7 @@
                 }
                 if (item.state.cierre) specs.push(`Cierre: ${item.state.cierre}`);
                 if (item.state.mosquitera && item.state.mosquitera !== '') specs.push(`Mosquitera: ${mosquiteraLabel(item.state.mosquitera)}`);
+                if (item.categoria === 'corredera' || item.categoria === 'galandaje') specs.push(`Manija: ${item.state.color_manija === 'blanco' ? 'Blanco' : 'Negro'}`);
                 if (item.state.vista) specs.push(`Vista: ${item.state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
                 if (item.state.union && (parseInt(item.state.panos) || 1) > 1) specs.push(`Unión: ${item.state.union}`);
                 if (item.state.fijacion) specs.push(`Fijación: ${item.state.fijacion === 'p40_puerta' ? 'P40 de puerta' : item.state.fijacion === 'sin_marco' ? 'Sin Marco' : item.state.fijacion}`);
@@ -1760,6 +1763,7 @@
             if(state.cierre) specs.push(`Cierre: ${state.cierre}`);
             if(state.cerradura) specs.push(`Cerradura: ${state.cerradura === 'mariposa' ? 'Mariposa' : 'Llave'}`);
             if(state.mosquitera && state.mosquitera !== '') specs.push(`Mosquitera: ${mosquiteraLabel(state.mosquitera)}`);
+            if(state.categoria === 'corredera' || state.categoria === 'galandaje') specs.push(`Manija: ${state.color_manija === 'blanco' ? 'Blanco' : 'Negro'}`);
             if(state.vista) specs.push(`Vista: ${state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
             if (state.perfil) specs.push(`Perfil: ${state.perfil}`);
             
@@ -2968,7 +2972,14 @@
                     <option value="Titan">Perfil Titan</option>
                 </select>`;
             }
-            return tipoAluminioHtml + extra + vistaOption + cierresVentana + vidriosBasicos + colorPerfilSel;
+            // Color de manija (correderas y galandajes) — por ahora solo Negro/Blanco (los modelos
+            // de manija se agregarán más adelante cuando el usuario los defina).
+            let manijaSel = '';
+            if (categoria === 'corredera' || categoria === 'galandaje') {
+                const cm = state.color_manija || 'negro';
+                manijaSel = `<select onchange="${fn}, 'color_manija', this.value)" title="Color de la manija"><option value="negro" ${cm === 'negro' ? 'selected' : ''}>Manija: Negro</option><option value="blanco" ${cm === 'blanco' ? 'selected' : ''}>Manija: Blanco</option></select>`;
+            }
+            return tipoAluminioHtml + extra + vistaOption + cierresVentana + vidriosBasicos + colorPerfilSel + manijaSel;
         } else if (categoria === 'puerta_vidrio') {
             const tv = state.tirador || '';
             const tiradorSel = `<select style="grid-column: span 2;" onchange="${fn}, 'tirador', this.value)"><option value="" ${tv===''?'selected':''}>-- Sin Tirador --</option><option value="redondo" ${tv==='redondo'?'selected':''}>Tirador Redondo</option><option value="5" ${tv==='5'?'selected':''}>Tirador 5"</option><option value="8" ${tv==='8'?'selected':''}>Tirador 8"</option><option value="12" ${tv==='12'?'selected':''}>Tirador 12"</option><option value="16" ${tv==='16'?'selected':''}>Tirador 16"</option></select>`;
@@ -3691,7 +3702,7 @@
         }
 
         if (cardsState[id].type !== 'draw') {
-            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
+            if (['panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -5204,6 +5215,9 @@
             if (!opts.length) return `<select disabled style="${inp}opacity:.55">${'<option>— sin material —</option>'}</select>`;
             return `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${val === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         };
+        // Color de manija — solo para celdas de corredera (por ahora Negro/Blanco). Fila propia.
+        const isCor = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
+        const manijaRow = (celda, val, onchange) => isCor(celda) ? `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Manija</label><select style="${inp}" onchange="${onchange}"><option value="negro" ${(val || 'negro') === 'negro' ? 'selected' : ''}>Negro</option><option value="blanco" ${(val || 'negro') === 'blanco' ? 'selected' : ''}>Blanco</option></select><span></span></div>` : '';
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
         const fajaRow = (side, faja) => {
             const nom = side === 'arriba' ? 'Faja superior' : 'Faja inferior';
@@ -5215,7 +5229,7 @@
                     <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                     <label style="${lblR}">Aluminio</label>
                     ${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}
-                </div></div>`;
+                </div>${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
@@ -5240,10 +5254,11 @@
                         ${cols.length > 1 ? `<button onclick="gridDelCol(${id},${ci})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : ''}
                     </span>
                 </div>`;
+            const unaFila = (c.rows || []).length === 1;   // con 1 sola fila, su alto = "Alto columnas" (no se duplica)
             (c.rows || []).forEach((r, ri) => {
                 h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;">
-                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;">
-                        <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto de la fila (mm)" oninput="gridSetRowH(${id},${ci},${ri},this.value)">
+                    <div style="display:grid;grid-template-columns:${unaFila ? '1fr auto' : '66px 1fr auto'};gap:5px;align-items:center;">
+                        ${unaFila ? '' : `<input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto de la fila (mm)" oninput="gridSetRowH(${id},${ci},${ri},this.value)">`}
                         <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${r.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                         ${(c.rows || []).length > 1 ? `<button onclick="gridDelRow(${id},${ci},${ri})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
                     </div>
@@ -5252,6 +5267,7 @@
                         ${aluSel(r.celda, r.alu || '', `gridSetCeldaAlu(${id},${ci},${ri},this.value)`)}
                         <span></span>
                     </div>
+                    ${manijaRow(r.celda, r.manija, `gridSetCeldaManija(${id},${ci},${ri},this.value)`)}
                 </div>`;
             });
             h += `<button onclick="gridAddRow(${id},${ci})" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Fila en esta columna</button></div>`;
@@ -5336,6 +5352,8 @@
     window.gridSetCelda = (id, ci, ri, v) => { const r = cardsState[id].cols[ci].rows[ri]; r.celda = v; r.alu = celdaAluDefault(v); gridFull(id); };
     window.gridSetCeldaAlu = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].alu = v; gridDraw(id); };
     window.gridSetFajaAlu = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].alu = v; gridDraw(id); };
+    window.gridSetCeldaManija = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].manija = v; gridDraw(id); };
+    window.gridSetFajaManija = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].manija = v; gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
