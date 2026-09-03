@@ -4961,14 +4961,84 @@
         return { inner, box };
     }
 
-    function renderBaranda(state, id) {
+    // ===== BARANDA 2D (elevación desarrollada, sin efecto 3D) =====
+    // Los tramos se despliegan en fila (elevación desarrollada, estándar de plano técnico) sin
+    // importar los giros L/U — cada giro se marca con una línea vertical + el ángulo. En pose
+    // escalera cada tramo se inclina según su pendiente (paralelogramo). Vidrio frameless con su
+    // efecto de gradiente; base/U toma el color de carpintería (applyFinish); herrajes su color.
+    function renderBaranda2D(state, id) {
         const uid = id;
         const H = state.alto > 0 ? state.alto : 1200;
         const tramos = (state.tramos && state.tramos.length) ? state.tramos : [{ L: 2000 }];
-        let r;
-        if (state.pose === 'escalera') r = renderBarandaStairs(uid, tramos, H, state);
-        else r = renderBarandaFlat(uid, barandaPlanSegs(tramos), H, state);
-        return wrapIso(uid, r.inner, r.box, 90, state.color_vidrio);
+        const esc = state.pose === 'escalera';
+        const fij = state.fijacion || 'base_u';
+        const herrajeCol = state.herraje_color === 'negro' ? '#111111' : '#8d99a4';
+        const totalL = Math.max(1, tramos.reduce((a, t) => a + (parseInt(t.L) || 0), 0));
+        const DW = 100, scale = DW / totalL, slope = 0.5;
+        const Hs = H * scale;                                   // alto del panel en unidades de viewBox
+        const baseHU = fij === 'base_u' ? Math.max(2.4, Hs * 0.05) : 0;   // canal U inferior
+        const liftU = fij === 'prensa_suelo' ? Math.max(3, Hs * 0.09) : 0; // vidrio elevado (spigots)
+        const bottomOff = baseHU + liftU;
+        // rise total (escalera) para dimensionar el viewBox
+        let totalRise = 0; if (esc) tramos.forEach(t => { if (!t.plataforma) totalRise += (parseInt(t.L) || 0) * slope; });
+        const riseU = totalRise * scale;
+        // recorrido: x por longitud; floorY sube (y decrece) en cada tramo con pendiente
+        let x = 0, floorY = riseU + Hs; const panels = [];
+        tramos.forEach((t, ti) => {
+            const w = (parseInt(t.L) || 0) * scale;
+            const dRise = (esc && !t.plataforma) ? (parseInt(t.L) || 0) * slope * scale : 0;
+            const fy0 = floorY, fy1 = floorY - dRise;
+            panels.push({ x0: x, x1: x + w, fy0, fy1, giro: t.giro, ang: t.angulo || 90, first: ti === 0 });
+            x += w; floorY = fy1;
+        });
+        const gap = tramos.length > 1 ? 0.5 : 0;   // separación visible entre paños
+        let body = '', herr = '', marks = '';
+        panels.forEach(p => {
+            const ax = p.x0 + gap / 2, bx = p.x1 - gap / 2;
+            const b0 = p.fy0 - bottomOff, b1 = p.fy1 - bottomOff;   // borde inferior del vidrio
+            const t0 = b0 - Hs, t1 = b1 - Hs;                       // borde superior del vidrio
+            // canal U inferior (toma el acabado)
+            if (baseHU) body += polyFrom([[ax, p.fy0 - baseHU], [bx, p.fy1 - baseHU], [bx, p.fy1], [ax, p.fy0]], 'fill="#0A3D62" stroke="#072c46" stroke-width="0.8"');
+            // vidrio (paralelogramo) con gradiente + reflejo + canto claro (sin marco)
+            body += polyFrom([[ax, t0], [bx, t1], [bx, b1], [ax, b0]], `fill="url(#glass-${uid})" stroke="#86a8c4" stroke-width="1" stroke-opacity="0.85" stroke-linejoin="round"`);
+            body += `<line x1="${ax.toFixed(1)}" y1="${b0.toFixed(1)}" x2="${(ax + (bx - ax) * 0.5).toFixed(1)}" y2="${(t0 + (t1 - t0) * 0.5).toFixed(1)}" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1.6"/>`;
+            // herrajes de fijación
+            const midY = (b0 + b1) / 2;
+            if (fij === 'prensa_suelo') {
+                // spigots: postes del vidrio al suelo
+                const n = Math.max(2, Math.round((bx - ax) / 20));
+                for (let k = 0; k < n; k++) { const px = ax + (bx - ax) * (k + 0.5) / n; const fy = p.fy0 + (p.fy1 - p.fy0) * ((k + 0.5) / n); herr += `<rect x="${(px - 1.1).toFixed(1)}" y="${(fy - liftU).toFixed(1)}" width="2.2" height="${liftU.toFixed(1)}" fill="${herrajeCol}"/>`; }
+            } else if (fij === 'conector_redondo' || fij === 'conector_cuadrado' || fij === 'conector_doble') {
+                const ys = b0 - Hs * 0.14, yInterp = f => (b0 + (b1 - b0) * f) - Hs * 0.14;
+                [0.18, 0.82].forEach(f => {
+                    const px = ax + (bx - ax) * f, py = yInterp(f), r = Math.max(1.4, Hs * 0.05);
+                    if (fij === 'conector_cuadrado') herr += `<rect x="${(px - r).toFixed(1)}" y="${(py - r).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(r * 2).toFixed(1)}" rx="0.4" fill="${herrajeCol}"/>`;
+                    else if (fij === 'conector_doble') herr += `<rect x="${(px - r * 0.7).toFixed(1)}" y="${(py - r * 1.4).toFixed(1)}" width="${(r * 1.4).toFixed(1)}" height="${(r * 2.8).toFixed(1)}" rx="${(r * 0.4).toFixed(1)}" fill="${herrajeCol}"/>`;
+                    else herr += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r.toFixed(1)}" fill="${herrajeCol}"/>`;
+                });
+            }
+            // marca de giro (elevación desarrollada): línea vertical + ángulo
+            if (!p.first && p.giro && p.giro !== 'recto') {
+                const gx = p.x0;
+                marks += `<line x1="${gx.toFixed(1)}" y1="${(t0 - 2).toFixed(1)}" x2="${gx.toFixed(1)}" y2="${(p.fy0 + 2).toFixed(1)}" stroke="#c0392b" stroke-width="0.8" stroke-dasharray="2 1.5"/>`;
+                marks += `<text x="${gx.toFixed(1)}" y="${(t0 - 3).toFixed(1)}" font-family="Arimo" font-size="3" fill="#c0392b" text-anchor="middle" stroke="none">${p.giro === 'der' ? '⟳' : '⟲'} ${p.ang}°</text>`;
+            }
+        });
+        // cotas
+        const yBottom = riseU + Hs;                 // línea de suelo del extremo más bajo
+        let cotas = dimLineH(0, DW, yBottom + 12, yBottom, `${totalL} mm`, 5.5);
+        if (panels.length > 1) panels.forEach(p => { cotas += `<text x="${((p.x0 + p.x1) / 2).toFixed(1)}" y="${(yBottom + 6).toFixed(1)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">${Math.round((p.x1 - p.x0) / scale)}</text>`; });
+        cotas += dimLineV(0, Hs, DW + 6, DW, `${H} mm`, 5.5);
+        cotas += `<text x="0" y="-4" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">${esc ? 'ELEVACIÓN (escalera)' : 'ELEVACIÓN'}</text>`;
+        const vbY = -10, vbH = (yBottom + 26) - vbY;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 ${vbY} ${DW + 42} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
+        svg += glassDefs(uid, state.color_vidrio || 'natural');
+        svg += body + herr + marks + cotas + '</svg>';
+        return svg;   // renderSVG envuelve renderBaranda con applyFinish (color de carpintería)
+    }
+
+    function renderBaranda(state, id) {
+        return renderBaranda2D(state, id);
     }
 
     // ---- CONSTRUCTOR DE BALCÓN 3D (UI) ----
