@@ -1558,6 +1558,7 @@
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             const cfgTxt = (celda, o) => {
                 const p = [];
+                if (o.vidrio) p.push(({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[o.vidrio] || o.vidrio);
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); }
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 if (o.cierre) p.push('cierre ' + o.cierre);
@@ -5150,8 +5151,10 @@
     function gridCell(uid, x, y, w, h, celda, cfg, gv) {
         celda = celda || 'pf'; cfg = cfg || {};
         if (celda === 'vacio') return wallBlock(uid, x, y, w, h);
-        // láminas de louver: por celda dedicada, o cuando el vidrio global de la fachada es 'louvers'
-        const esLouver = celda === 'louvers' || gv === 'louvers';
+        // Vidrio efectivo: el de la celda si lo definió (cfg.vidrio), si no el global de la fachada (gv).
+        // Así se puede tener, por ej., la puerta en Láminas de Louver y la faja en vidrio.
+        const cv = cfg.vidrio || gv;
+        const esLouver = celda === 'louvers' || cv === 'louvers';
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
         let s = esLouver ? louverPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver + marco 2D
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
@@ -5352,16 +5355,21 @@
         const MOSQ_COR = [['', '-- Mosquitera --'], ['con', 'Con Mosquitera']];
         const COR_INT = [['I', 'Hoja interior: Izq.'], ['D', 'Hoja interior: Der.']];
         const LADO = [['der', 'Abre a la derecha'], ['izq', 'Abre a la izquierda']];
+        // Vidrio POR CELDA (opcional): '' = usa el vidrio global de la fachada. Permite, por ej.,
+        // la puerta en Láminas de Louver y la faja en vidrio, en la misma fachada.
+        const VIDCELL = [['', 'Vidrio: global'], ['templado', 'Templado'], ['laminado', 'Laminado'], ['louvers', 'Láminas de Louver'], ['sin', 'Sin vidrio']];
         const cfgSel = (cur, opts, onchange) => `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         const cfgRow = (label, sel) => `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">${label}</label>${sel}<span></span></div>`;
         // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
         const cellExtra = (celda, obj, mk) => {
+            if (celda === 'vacio' || celda === 'louvers') return '';
+            const vid = cfgRow('Vidrio', cfgSel(obj.vidrio || '', VIDCELL, mk('vidrio')));
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : '';
-            if (celda === 'puerta') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
-            if (celda === 'ventana') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
-            if (celda === 'osci') return cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
-            if (isCor(celda)) return cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre')));
-            return '';
+            if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            if (celda === 'osci') return vid + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            if (isCor(celda)) return vid + cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre')));
+            return vid;   // pf, proy → al menos el selector de vidrio por paño
         };
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
         const fajaRow = (side, faja) => {
