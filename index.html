@@ -1554,13 +1554,14 @@
             const aluTxt = a => a ? `, ${ALU_LABEL[a] || a}` : '';
             const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
             const manijaTxt = (celda, m) => isCorS(celda) ? `, manija ${m === 'blanco' ? 'blanca' : 'negra'}` : '';
+            const divTxt = f => (f && f.division && f.division !== 'ninguna') ? `, división ${f.division === 'perfil' ? 'con perfil' : 'a tope'}` : '';
             let filas = '';
-            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm${aluTxt(state.fajaArriba.alu)}${manijaTxt(state.fajaArriba.celda, state.fajaArriba.manija)})</div>`;
+            if (state.fajaArriba) filas += `<div>Faja superior (ancho completo) — ${CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda} (${state.fajaArriba.h} mm${aluTxt(state.fajaArriba.alu)}${manijaTxt(state.fajaArriba.celda, state.fajaArriba.manija)}${divTxt(state.fajaArriba)})</div>`;
             cols.forEach((c, ci) => {
                 const cel = (c.rows || []).map(r => `${CELDA_NOM[r.celda] || r.celda} (${r.h} mm${aluTxt(r.alu)}${manijaTxt(r.celda, r.manija)})`).join(' + ');
                 filas += `<div>Columna ${ci + 1} — Ancho ${c.w} mm: ${cel}</div>`;
             });
-            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm${aluTxt(state.fajaAbajo.alu)}${manijaTxt(state.fajaAbajo.celda, state.fajaAbajo.manija)})</div>`;
+            if (state.fajaAbajo) filas += `<div>Faja inferior (ancho completo) — ${CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda} (${state.fajaAbajo.h} mm${aluTxt(state.fajaAbajo.alu)}${manijaTxt(state.fajaAbajo.celda, state.fajaAbajo.manija)}${divTxt(state.fajaAbajo)})</div>`;
             const tbz = state.tubos || {}; const tubosArr = [];
             if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
             if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
@@ -5158,6 +5159,29 @@
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0 }); cx += cw;
         });
         if (fb) body += gridCell(uid, 0, gy0 + gDH, DW, fbDH, fb.celda);   // faja inferior (ancho completo)
+        // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
+        // columna y en las divisiones internas del elemento (ej. el centro de una corredera 2 hojas).
+        // 'perfil' = montante de aluminio; 'tope' = junta de vidrio a tope (línea fina); 'ninguna' = continuo.
+        const fajaDivXs = (side) => {
+            const xs = []; let cxd = 0;
+            cols.forEach((c, ci) => {
+                const cw = (parseInt(c.w) || 0) * scale;
+                if (ci > 0) xs.push(cxd);
+                const rws = (c.rows && c.rows.length) ? c.rows : [{ celda: 'pf' }];
+                const rw = side === 'arriba' ? rws[0] : rws[rws.length - 1];
+                const n = rw.celda === 'cor2' ? 2 : rw.celda === 'cor3' ? 3 : rw.celda === 'cor4' ? 4 : 1;
+                for (let k = 1; k < n; k++) xs.push(cxd + cw * k / n);
+                cxd += cw;
+            });
+            return xs;
+        };
+        const drawFajaDiv = (faja, side, y0, y1) => {
+            if (!faja || !faja.division || faja.division === 'ninguna') return '';
+            const perfil = faja.division === 'perfil';
+            return fajaDivXs(side).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
+        };
+        body += drawFajaDiv(fa, 'arriba', 0, faDH);
+        body += drawFajaDiv(fb, 'abajo', gy0 + gDH, DHt);
         // marco perimetral más grueso
         body += `<rect x="0" y="0" width="${DW}" height="${DHt.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         // Tubo entre columnas HORIZONTAL: barra a todo el ancho en la división entre la faja (banda de
@@ -5229,7 +5253,7 @@
                     <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                     <label style="${lblR}">Aluminio</label>
                     ${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}
-                </div>${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}</div>`;
+                </div>${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
@@ -5354,6 +5378,7 @@
     window.gridSetFajaAlu = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].alu = v; gridDraw(id); };
     window.gridSetCeldaManija = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].manija = v; gridDraw(id); };
     window.gridSetFajaManija = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].manija = v; gridDraw(id); };
+    window.gridSetFajaDiv = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].division = v; gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
