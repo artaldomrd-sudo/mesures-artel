@@ -1545,7 +1545,7 @@
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'fachada_grid') {
-            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', vacio: 'Muro / Vacío' };
+            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
             const faH = state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0;
@@ -1566,7 +1566,9 @@
                 return p.length ? ', ' + p.join(', ') : '';
             };
             const nomC = celda => CELDA_NOM[celda] || celda;
-            const fajaLine = (f, pos) => `<div><b>${nomC(f.celda)} ${pos}</b> (ancho completo) — ${f.h} mm${aluTxt(f.alu)}${manijaTxt(f.celda, f.manija)}${cfgTxt(f.celda, f)}${divTxt(f)}</div>`;
+            const fajaLine = (f, pos) => (f.cols && f.cols.length)
+                ? `<div><b>Faja ${pos}</b> (${f.h} mm) — ${f.cols.map(sc => `${nomC(sc.celda)} ${sc.w} mm${aluTxt(sc.alu)}${manijaTxt(sc.celda, sc.manija)}${cfgTxt(sc.celda, sc)}`).join(' | ')}</div>`
+                : `<div><b>${nomC(f.celda)} ${pos}</b> (ancho completo) — ${f.h} mm${aluTxt(f.alu)}${manijaTxt(f.celda, f.manija)}${cfgTxt(f.celda, f)}${divTxt(f)}</div>`;
             let filas = '';
             if (state.fajaArriba) filas += fajaLine(state.fajaArriba, 'superior');
             cols.forEach((c, ci) => {
@@ -1590,8 +1592,15 @@
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
             const compParts = [];
             cols.forEach(c => (c.rows || []).forEach(r => compParts.push(CELDA_NOM[r.celda] || r.celda)));
-            if (state.fajaArriba) compParts.push((CELDA_NOM[state.fajaArriba.celda] || state.fajaArriba.celda).toLowerCase() + ' superior');
-            if (state.fajaAbajo) compParts.push((CELDA_NOM[state.fajaAbajo.celda] || state.fajaAbajo.celda).toLowerCase() + ' inferior');
+            const fajaComp = (f, pos) => {
+                if (!f) return;
+                if (f.cols && f.cols.length) {
+                    const nn = f.cols.map(sc => (CELDA_NOM[sc.celda] || sc.celda).toLowerCase());
+                    if (nn.every(n => n === nn[0])) compParts.push(`${nn.length} ${nn[0]} ${pos}`);   // ej. "3 ventana proyectada superior"
+                    else nn.forEach(n => compParts.push(n + ' ' + pos));
+                } else compParts.push((CELDA_NOM[f.celda] || f.celda).toLowerCase() + ' ' + pos);
+            };
+            fajaComp(state.fajaArriba, 'superior'); fajaComp(state.fajaAbajo, 'inferior');
             const compDesc = compParts.join(' + ');
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA COMPUESTA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
@@ -5112,7 +5121,7 @@
     // (paño fijo, corredera, puerta, louver, oscilo, vacío). Dibujo 2D plano reusando el motor de
     // panel (extrudedPanel/louverPanel/wallBlock) + símbolos por tipo + cotas. Sin efecto 3D.
     // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
-    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
 
     // Tipos de aluminio válidos POR tipo de elemento. El selector "Tipo de aluminio" de la fachada
     // muestra solo la UNIÓN de los que aplican a los elementos presentes (ej. paños fijos + puerta
@@ -5123,6 +5132,7 @@
         pf: ['p40_ventana', 'p40_puerta'],
         ventana: ['p40_ventana'],
         osci: ['p40_ventana'],
+        proy: ['p40_ventana'],
         puerta: ['p40_puerta', 'titan'],
         cor2: ['P92', 'E70', 'E100', 'E200'],
         cor3: ['P92', 'E70', 'E100', 'E200'],
@@ -5166,7 +5176,11 @@
                 s += `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
             }
         } else if (celda === 'osci') {
+            // oscilobatiente: bisagra abajo, abre adentro arriba → vértice ARRIBA (chevron apex superior)
             s += `<polyline points="${(x + pad).toFixed(1)},${(y + h - pad).toFixed(1)} ${cx.toFixed(1)},${(y + pad).toFixed(1)} ${(x + w - pad).toFixed(1)},${(y + h - pad).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"/>`;
+        } else if (celda === 'proy') {
+            // proyectada: bisagra arriba, abre afuera abajo → vértice ABAJO (chevron apex inferior)
+            s += `<polyline points="${(x + pad).toFixed(1)},${(y + pad).toFixed(1)} ${cx.toFixed(1)},${(y + h - pad).toFixed(1)} ${(x + w - pad).toFixed(1)},${(y + pad).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"/>`;
         } else if (celda === 'pf') {
             s += `<text x="${(x + w - 2).toFixed(1)}" y="${(y + 6).toFixed(1)}" font-family="Arimo" font-size="4" fill="#7a828a" text-anchor="end" stroke="none">PF</text>`;
         }
@@ -5189,8 +5203,26 @@
         const tb = state.tubos || {};
         const tt = 4;   // grosor visible del tubo (unidades de viewBox, DW=100)
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
+        // Dibuja una faja (banda de ancho completo): un solo elemento, o subdividida en varias
+        // sub-columnas con anchos propios (ej. 3 ventanas proyectadas arriba de anchos distintos).
+        const drawFaja = (f, y0, hh) => {
+            if (!f) return '';
+            if (f.cols && f.cols.length) {
+                const wsum = Math.max(1, f.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
+                let out = '', fx = 0;
+                f.cols.forEach((sc, i) => {
+                    const sw = (parseInt(sc.w) || 0) / wsum * DW;
+                    out += gridCell(uid, fx, y0, sw, hh, sc.celda, sc, state.vidrio);
+                    if (i > 0) out += `<line x1="${fx.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${fx.toFixed(1)}" y2="${(y0 + hh).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
+                    out += `<text x="${(fx + sw / 2).toFixed(1)}" y="${(y0 + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="middle" stroke="none">${parseInt(sc.w) || 0}</text>`;
+                    fx += sw;
+                });
+                return out;
+            }
+            return gridCell(uid, 0, y0, DW, hh, f.celda, f, state.vidrio);
+        };
         let body = '';
-        if (fa) body += gridCell(uid, 0, 0, DW, faDH, fa.celda, fa, state.vidrio);   // faja superior (ancho completo)
+        if (fa) body += drawFaja(fa, 0, faDH);   // faja superior (ancho completo, o subdividida)
         let cx = 0; const colInfo = []; const gy0 = faDH; const rowDims = [];
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
@@ -5204,7 +5236,7 @@
             });
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0 }); cx += cw;
         });
-        if (fb) body += gridCell(uid, 0, gy0 + gDH, DW, fbDH, fb.celda, fb, state.vidrio);   // faja inferior (ancho completo)
+        if (fb) body += drawFaja(fb, gy0 + gDH, fbDH);   // faja inferior (ancho completo, o subdividida)
         // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
         // columna y en las divisiones internas del elemento (ej. el centro de una corredera 2 hojas).
         // 'perfil' = montante de aluminio; 'tope' = junta de vidrio a tope (línea fina); 'ninguna' = continuo.
@@ -5225,7 +5257,7 @@
             return xs;
         };
         const drawFajaDiv = (faja, side, y0, y1) => {
-            if (!faja || !faja.division || faja.division === 'ninguna') return '';
+            if (!faja || (faja.cols && faja.cols.length) || !faja.division || faja.division === 'ninguna') return '';
             const perfil = faja.division === 'perfil';
             return fajaDivXs(side).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
         };
@@ -5321,14 +5353,31 @@
         const fajaRow = (side, faja) => {
             const nom = side === 'arriba' ? 'Faja superior' : 'Faja inferior';
             if (!faja) return `<button onclick="gridToggleFaja(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:6px;font-size:12px;cursor:pointer;">+ ${nom} (ancho completo)</button>`;
-            return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><b style="font-size:12px;color:#1e7a46">${nom} · ancho completo</b><button onclick="gridToggleFaja(${id},'${side}')" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button></div>
-                <div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;">
-                    <input type="number" value="${faja.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" oninput="gridSetFajaH(${id},'${side}',this.value)">
-                    <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
-                    <label style="${lblR}">Aluminio</label>
-                    ${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}
-                </div>${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}</div>`;
+            const head = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;gap:6px;"><b style="font-size:12px;color:#1e7a46">${nom} · ancho completo</b><span style="display:flex;gap:6px;align-items:center;"><label style="font-size:11px;color:#667">Alto</label><input type="number" value="${faja.h || 0}" min="5" step="5" style="${inp}width:64px" title="Alto de la faja (mm)" oninput="gridSetFajaH(${id},'${side}',this.value)"><button onclick="gridToggleFaja(${id},'${side}')" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button></span></div>`;
+            let inner;
+            if (faja.cols && faja.cols.length) {
+                // faja subdividida en varias columnas (anchos propios) — ej. 3 ventanas proyectadas arriba
+                inner = faja.cols.map((sc, i) => `<div style="border:1px solid #dde5ee;border-radius:6px;padding:6px;margin-top:5px;background:#fff;">
+                    <div style="display:grid;grid-template-columns:auto 72px 1fr auto;gap:5px;align-items:center;">
+                        <b style="font-size:11px;color:var(--artal-blue)">Col ${i + 1}</b>
+                        <input type="number" value="${sc.w || 0}" min="10" step="5" style="${inp}" title="Ancho (mm)" oninput="gridFajaColW(${id},'${side}',${i},this.value)">
+                        <select style="${inp}" onchange="gridFajaColCfg(${id},'${side}',${i},'celda',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${sc.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                        ${faja.cols.length > 1 ? `<button onclick="gridFajaDelCol(${id},'${side}',${i})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
+                    </div>
+                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Aluminio</label>${aluSel(sc.celda, sc.alu || '', `gridFajaColCfg(${id},'${side}',${i},'alu',this.value)`)}<span></span></div>
+                    ${manijaRow(sc.celda, sc.manija, `gridFajaColCfg(${id},'${side}',${i},'manija',this.value)`)}
+                    ${cellExtra(sc.celda, sc, key => `gridFajaColCfg(${id},'${side}',${i},'${key}',this.value)`)}
+                </div>`).join('');
+                inner += `<button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Columna en la faja</button>`;
+            } else {
+                // faja de un solo elemento (con opción de dividir en columnas)
+                inner = `<div style="display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;">
+                    <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${GRID_CELDAS.map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select><span></span></div>
+                    <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Aluminio</label>${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}<span></span></div>
+                    ${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}
+                    <button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">⊞ Dividir en columnas</button>`;
+            }
+            return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">${head}${inner}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
         const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];
@@ -5481,6 +5530,17 @@
     window.gridSetCeldaManija = (id, ci, ri, v) => { cardsState[id].cols[ci].rows[ri].manija = v; gridDraw(id); };
     window.gridSetFajaManija = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].manija = v; gridDraw(id); };
     window.gridSetFajaDiv = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].division = v; gridDraw(id); };
+    // Sub-columnas de la faja (banda superior/inferior dividida en varios elementos de anchos propios)
+    const fajaKey = side => side === 'arriba' ? 'fajaArriba' : 'fajaAbajo';
+    window.gridFajaAddCol = (id, side) => {
+        const f = cardsState[id][fajaKey(side)]; if (!f) return;
+        if (!f.cols) f.cols = [{ w: 1000, celda: f.celda || 'pf', alu: f.alu || celdaAluDefault(f.celda || 'pf'), apertura: f.apertura, lado: f.lado, manija: f.manija, cierre: f.cierre, cerradura: f.cerradura, mosquitera: f.mosquitera, cor_interior: f.cor_interior }];
+        f.cols.push({ w: 1000, celda: 'pf', alu: celdaAluDefault('pf') });
+        gridFull(id);
+    };
+    window.gridFajaDelCol = (id, side, i) => { const f = cardsState[id][fajaKey(side)]; if (!f || !f.cols) return; f.cols.splice(i, 1); if (f.cols.length === 1) { Object.assign(f, f.cols[0]); delete f.cols; } gridFull(id); };
+    window.gridFajaColW = (id, side, i, v) => { const f = cardsState[id][fajaKey(side)]; if (f && f.cols && f.cols[i]) f.cols[i].w = parseInt(v) || 0; gridDraw(id); };
+    window.gridFajaColCfg = (id, side, i, key, v) => { const f = cardsState[id][fajaKey(side)]; if (f && f.cols && f.cols[i]) { f.cols[i][key] = v; if (key === 'celda') f.cols[i].alu = celdaAluDefault(v); } (key === 'celda' || key === 'apertura') ? gridFull(id) : gridDraw(id); };
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
     window.gridSetCellCfg = (id, ci, ri, key, v) => { cardsState[id].cols[ci].rows[ri][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
     window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
