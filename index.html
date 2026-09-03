@@ -5383,7 +5383,7 @@
                     ${cellExtra(sc.celda, sc, key => `gridFajaColCfg(${id},'${side}',${i},'${key}',this.value)`)}
                 </div>`).join('');
                 inner += `<button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Columna en la faja</button>`;
-                inner += `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:5px;"><label style="${lblR}">Alineación</label><select style="${inp}" onchange="gridFajaAlign(${id},'${side}',this.value)">${ALIGN.map(a => `<option value="${a[0]}" ${(faja.align || 'centro') === a[0] ? 'selected' : ''}>${a[1]}</option>`).join('')}</select></div>`;
+                if (bandW(faja) < maxWB) inner += `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:5px;background:#eef6ff;border-radius:5px;padding:4px;"><label style="${lblR}">Posición</label><select style="${inp}" onchange="gridFajaAlign(${id},'${side}',this.value)">${ALIGN.map(a => `<option value="${a[0]}" ${(faja.align || 'centro') === a[0] ? 'selected' : ''}>${a[1]}</option>`).join('')}</select></div>`;
             } else {
                 // faja de un solo elemento (con opción de dividir en columnas)
                 inner = `<div style="display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;">
@@ -5397,6 +5397,12 @@
         const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
         const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];
         const ALIGN = [['izq', 'Izquierda'], ['centro', 'Centro'], ['der', 'Derecha']];
+        // Anchos de cada banda para saber cuál es más angosta (y solo ahí ofrecer la alineación,
+        // porque la banda más ancha ocupa todo el ancho y alinearla no hace nada).
+        const bandW = f => (f && f.cols && f.cols.length) ? f.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) : 0;
+        const wMainB = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0));
+        const wFaB = bandW(st.fajaArriba), wFbB = bandW(st.fajaAbajo);
+        const maxWB = Math.max(wMainB, wFaB, wFbB);
         const cp = st.color_perfil || 'natural';
         let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
@@ -5443,8 +5449,8 @@
         h += `<button onclick="gridAddCol(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">+ Columna</button>`;
         // Alineación de la banda de columnas dentro del ancho total — solo útil si alguna faja es más
         // ancha (fachada irregular). Se muestra cuando hay una faja subdividida.
-        const hayFajaSub = (st.fajaArriba && st.fajaArriba.cols) || (st.fajaAbajo && st.fajaAbajo.cols);
-        if (hayFajaSub) h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:8px;"><label style="${gbl}">Alineación columnas</label><select style="${inp}" onchange="gridSetAlign(${id},this.value)">${opt(ALIGN, st.gridAlign || 'centro')}</select></div>`;
+        // Alineación de la banda de columnas: solo si es más angosta que el ancho total (si no, no se mueve).
+        if (wMainB < maxWB) h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:8px;background:#eef6ff;border-radius:6px;padding:6px;"><label style="${gbl}">Posición columnas</label><select style="${inp}" onchange="gridSetAlign(${id},this.value)">${opt(ALIGN, st.gridAlign || 'centro')}</select></div>`;
         h += fajaRow('abajo', st.fajaAbajo);
         // ---- Tubos / refuerzos de aluminio (superior/inferior/laterales/entre columnas) ----
         const tb = st.tubos || {};
