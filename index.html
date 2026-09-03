@@ -1558,7 +1558,7 @@
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             const cfgTxt = (celda, o) => {
                 const p = [];
-                if ((celda === 'puerta' || celda === 'ventana') && o.apertura) p.push(apMap[o.apertura] || o.apertura);
+                if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); }
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 if (o.cierre) p.push('cierre ' + o.cierre);
                 if (o.cerradura) p.push('cerradura ' + o.cerradura);
@@ -4150,8 +4150,12 @@
         s += `<line x1="${(x1 - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x1 + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`;
         s += `<line x1="${(x2 - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x2 + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`;
         s += `</g>`;
-        const textY = y + dir * textGap;
-        s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${label}</text>`;
+        // Con el texto ARRIBA de la línea (dir<0) los glifos crecen hacia arriba (se alejan de la
+        // línea, ok). Con el texto ABAJO (dir>0) crecen hacia la línea y la cruzan → se ancla con
+        // dominant-baseline="hanging" para que cuelguen hacia abajo y queden separados de la línea.
+        const textY = y + dir * (dir > 0 ? Math.max(textGap, 1.5) : textGap);
+        const baseAttr = dir > 0 ? ' dominant-baseline="hanging"' : '';
+        s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle"${baseAttr} stroke="none">${label}</text>`;
         return s;
     }
     function dimLineV(y1, y2, x, edgeX, label, fontSize) {
@@ -4333,7 +4337,7 @@
         // de siempre terminaba cruzando la línea — reportado por el usuario con una foto real.
         // `ANCHO_RESERVED_H` es el espacio total que ocupa línea+texto con este gap más grande,
         // para correr la vista de planta hacia abajo y que no se superponga con el texto.
-        const ANCHO_GAP = 9, ANCHO_TEXT_GAP = 8;
+        const ANCHO_GAP = 9, ANCHO_TEXT_GAP = 2.6;   // dimLineH ancla el texto de abajo con baseline "hanging", ya no hace falta un gap grande
         const ANCHO_RESERVED_H = state.ancho > 0 ? 22 : 0;
         const planReservedH = planViewFrag ? (vbH - elevH) + gap : 0;
         const newVbY = topBoundary;
@@ -5154,7 +5158,11 @@
             if (ap.includes('2')) {
                 s += `<line x1="${(ix + iw / 2).toFixed(1)}" y1="${iy.toFixed(1)}" x2="${(ix + iw / 2).toFixed(1)}" y2="${(iy + ih).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
                 s += `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${(iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)} M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}l${(iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
+            } else if (cfg.lado === 'izq') {
+                // 1 hoja, vértice a la IZQUIERDA (abre a la izquierda)
+                s += `<path d="M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
             } else {
+                // 1 hoja, vértice a la DERECHA (abre a la derecha, por defecto)
                 s += `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
             }
         } else if (celda === 'osci') {
@@ -5297,11 +5305,14 @@
         const MOSQ_CAS = [['', '-- Mosquitera --'], ['fija', 'Mosquitera Fija'], ['amovible', 'Mosquitera Amovible']];
         const MOSQ_COR = [['', '-- Mosquitera --'], ['con', 'Con Mosquitera']];
         const COR_INT = [['I', 'Hoja interior: Izq.'], ['D', 'Hoja interior: Der.']];
+        const LADO = [['der', 'Abre a la derecha'], ['izq', 'Abre a la izquierda']];
         const cfgSel = (cur, opts, onchange) => `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         const cfgRow = (label, sel) => `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">${label}</label>${sel}<span></span></div>`;
+        // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
         const cellExtra = (celda, obj, mk) => {
-            if (celda === 'puerta') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
-            if (celda === 'ventana') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : '';
+            if (celda === 'puerta') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            if (celda === 'ventana') return cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (celda === 'osci') return cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (isCor(celda)) return cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre')));
             return '';
@@ -5471,8 +5482,8 @@
     window.gridSetFajaManija = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].manija = v; gridDraw(id); };
     window.gridSetFajaDiv = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].division = v; gridDraw(id); };
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
-    window.gridSetCellCfg = (id, ci, ri, key, v) => { cardsState[id].cols[ci].rows[ri][key] = v; gridDraw(id); };
-    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k][key] = v; gridDraw(id); };
+    window.gridSetCellCfg = (id, ci, ri, key, v) => { cardsState[id].cols[ci].rows[ri][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
+    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k][key] = v; (key === 'apertura') ? gridFull(id) : gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
