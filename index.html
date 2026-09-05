@@ -1545,48 +1545,63 @@
             const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
-            const faH = state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0;
-            const fbH = state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0;
-            const totalH = (parseInt(state.gridAlto) || 0) + faH + fbH;
-            const aluTxt = a => a ? `, ${ALU_LABEL[a] || a}` : '';
+            const fa = state.fajaArriba, fb = state.fajaAbajo;
+            const faH = fa ? (parseInt(fa.h) || 0) : 0;
+            const fbH = fb ? (parseInt(fb.h) || 0) : 0;
+            const gAlto = parseInt(state.gridAlto) || 0;
+            // Tubo horizontal (entre columnas) suma su grosor al alto — igual que el dibujo (ver renderFachadaGrid).
+            const tbz = state.tubos || {};
+            const tuboG = (() => { const n = String(tbz.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
+            const eHtop = (tbz.entreH && fa) ? tuboG : 0;
+            const eHbot = (tbz.entreH && fb) ? tuboG : 0;
+            const tuboAltoTotal = eHtop + eHbot;
+            const totalH = faH + gAlto + fbH + tuboAltoTotal;
             const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
-            const manijaTxt = (celda, m) => isCorS(celda) ? `, manija ${m === 'blanco' ? 'blanca' : 'negra'}` : '';
-            const divTxt = f => (f && f.division && f.division !== 'ninguna') ? `, división ${f.division === 'perfil' ? 'con perfil' : 'a tope'}` : '';
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
-            const cfgTxt = (celda, o) => {
+            // Lista de características (sin la medida, que va aparte y clara) separadas por " · ".
+            const specList = (celda, o) => {
                 const p = [];
+                if (o.alu) p.push(ALU_LABEL[o.alu] || o.alu);
                 if (o.vidrio) p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[o.vidrio] || o.vidrio) + ((o.vidrio === 'templado' || o.vidrio === 'laminado') && o.espesor ? ' ' + espesorLabel(o.espesor) : ''));
+                if (isCorS(celda) && o.manija) p.push('manija ' + (o.manija === 'blanco' ? 'blanca' : 'negra'));
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); }
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 if (o.cierre) p.push('cierre ' + o.cierre);
                 if (o.cerradura) p.push('cerradura ' + o.cerradura);
                 if (o.mosquitera) p.push('mosq. ' + (o.mosquitera === 'con' ? 'sí' : o.mosquitera));
-                return p.length ? ', ' + p.join(', ') : '';
+                if (o.division && o.division !== 'ninguna') p.push('división ' + (o.division === 'perfil' ? 'con perfil' : 'a tope'));
+                return p;
             };
             const nomC = celda => CELDA_NOM[celda] || celda;
+            // Una fila de detalle: nombre en negrita, medida en rojo (clara: ancho × alto), specs en gris.
+            const detRow = (name, medida, specsArr) => {
+                const s = (specsArr || []).filter(Boolean);
+                return `<div style="margin:3px 0;"><b>${name}</b> &nbsp;<span style="color:#e74c3c;">${medida}</span>${s.length ? `<div style="color:#666; padding-left:12px; font-size:12px;">${s.join(' · ')}</div>` : ''}</div>`;
+            };
             const fajaLine = (f, pos) => (f.cols && f.cols.length)
-                ? `<div><b>Faja ${pos}</b> (${f.h} mm) — ${f.cols.map(sc => `${nomC(sc.celda)} ${sc.w} mm${aluTxt(sc.alu)}${manijaTxt(sc.celda, sc.manija)}${cfgTxt(sc.celda, sc)}`).join(' | ')}</div>`
-                : `<div><b>${nomC(f.celda)} ${pos}</b> (ancho completo) — ${f.h} mm${aluTxt(f.alu)}${manijaTxt(f.celda, f.manija)}${cfgTxt(f.celda, f)}${divTxt(f)}</div>`;
+                ? `<div style="margin:3px 0;"><b>Faja ${pos}</b> &nbsp;<span style="color:#e74c3c;">alto ${f.h} mm</span>${f.cols.map(sc => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(sc.celda)}</b> — ancho ${sc.w} mm${specList(sc.celda, sc).length ? ' · ' + specList(sc.celda, sc).join(' · ') : ''}</div>`).join('')}</div>`
+                : detRow(`${nomC(f.celda)} ${pos}`, `ancho completo × ${f.h} mm alto`, specList(f.celda, f));
             let filas = '';
-            if (state.fajaArriba) filas += fajaLine(state.fajaArriba, 'superior');
+            if (fa) filas += fajaLine(fa, 'superior');
             cols.forEach((c, ci) => {
                 const rows = c.rows || [];
                 if (rows.length === 1) {
                     const r = rows[0];
-                    filas += `<div><b>${nomC(r.celda)}</b> — Ancho ${c.w} mm (${r.h} mm${aluTxt(r.alu)}${manijaTxt(r.celda, r.manija)}${cfgTxt(r.celda, r)})</div>`;
+                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm`, specList(r.celda, r));
                 } else {
-                    const cel = rows.map(r => `${nomC(r.celda)} (${r.h} mm${aluTxt(r.alu)}${manijaTxt(r.celda, r.manija)}${cfgTxt(r.celda, r)})`).join(' + ');
-                    filas += `<div><b>Columna ${ci + 1}</b> — Ancho ${c.w} mm: ${cel}</div>`;
+                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${specList(r.celda, r).length ? ' · ' + specList(r.celda, r).join(' · ') : ''}</div>`).join('');
+                    filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
-            if (state.fajaAbajo) filas += fajaLine(state.fajaAbajo, 'inferior');
-            const tbz = state.tubos || {}; const tubosArr = [];
+            if (fb) filas += fajaLine(fb, 'inferior');
+            const tubosArr = [];
             if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
             if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
             if (tbz.entre) tubosArr.push('entre columnas (vert.)'); if (tbz.entreH) tubosArr.push('entre columnas (horiz.)');
             const perim = tbz.sup || tbz.inf || tbz.izq || tbz.der;
             const incTxt = perim ? (tbz.incluidos !== false ? ' · incluidos en la medida' : ' · NO incluidos (aparte)') : '';
-            const tubosLine = tubosArr.length ? `<div>Tubos/refuerzos: ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}${incTxt}</div>` : '';
+            const sumaTxt = tuboAltoTotal ? ` · +${tuboAltoTotal} mm al alto` : '';
+            const tubosLine = tubosArr.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos:</b> ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}${incTxt}${sumaTxt}</div>` : '';
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
             const compParts = [];
             cols.forEach(c => (c.rows || []).forEach(r => compParts.push(CELDA_NOM[r.celda] || r.celda)));
@@ -1600,13 +1615,21 @@
             };
             fajaComp(state.fajaArriba, 'superior'); fajaComp(state.fajaAbajo, 'inferior');
             const compDesc = compParts.join(' + ');
-            summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
-                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA COMPUESTA</strong> — A: <span style="color:#e74c3c;">${totalW}</span> mm | H: <span style="color:#e74c3c;">${totalH}</span> mm | Cant: ${state.cantidad || 1}</div>
-                <div style="font-weight:bold; color:var(--artal-blue);">${compDesc}</div>
+            const acabadoTxt = ({ natural: 'Natural / Plata', negro: 'Negro', blanco: 'Blanco', grafito: 'Grafito', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) })[state.color_perfil || 'natural'];
+            const vidrioDef = (state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : (state.vidrio === 'louvers' ? 'Láminas de Louver' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim());
+            summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.6;">
+                <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:6px; padding-bottom:5px;">
+                    <strong>FACHADA COMPUESTA</strong>${(state.cantidad || 1) > 1 ? ` &nbsp;×${state.cantidad}` : ''}
+                    <div style="margin-top:3px;">Ancho total <b style="color:#e74c3c;">${totalW} mm</b> &nbsp;·&nbsp; Alto total <b style="color:#e74c3c;">${totalH} mm</b></div>
+                    <div style="color:var(--artal-blue); font-weight:bold; margin-top:2px;">${compDesc}</div>
+                </div>
+                <div style="color:#888; font-size:11px; letter-spacing:.5px; margin-bottom:2px;">DETALLE POR ELEMENTO</div>
                 ${filas}
-                <div>Vidrio: ${(state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : (state.vidrio === 'louvers' ? 'Láminas de Louver' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim())}</div>
-                ${tubosLine}
-                <div>Acabado: ${({ natural: 'Natural / Plata', negro: 'Negro', blanco: 'Blanco', grafito: 'Grafito', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) })[state.color_perfil || 'natural']}</div>
+                <div style="border-top:1px solid #ddd; margin-top:6px; padding-top:5px;">
+                    <div><b>Acabado:</b> ${acabadoTxt}</div>
+                    <div><b>Vidrio por defecto:</b> ${vidrioDef}</div>
+                    ${tubosLine}
+                </div>
             </div>`;
             return;
         }
@@ -5280,29 +5303,23 @@
     // Símbolo de giro en planta para una abisagrada — MISMA representación que el ítem suelto
     // (drawPlanView): hoja(s) a 30° + arco punteado. Coherencia total con las tarjetas no-fachada.
     // planY = línea de pared; interior arriba (-y), exterior abajo (+y). 'afuera' abre hacia +y.
-    function gridPlanSymbol(cfg, startX, w, planY, maxR) {
+    function gridPlanSymbol(cfg, startX, w, planY, maxDepth) {
+        // SIN arco: solo líneas rectas hacia el lado que abre. 2 hojas = dos líneas desde las jambas
+        // que se juntan en el centro (V/^ según abra adentro/afuera). 1 hoja = una línea desde la bisagra.
         const ap = cfg.apertura || 'adentro_1';
-        const dirY = ap.includes('afuera') ? 1 : -1;
+        const dirY = ap.includes('afuera') ? 1 : -1;   // afuera = hacia abajo (+y, exterior); adentro = arriba (-y, interior)
+        const d = Math.min(w * 0.5, maxDepth);
         const solid = 'stroke:#0A3D62;stroke-width:1;fill:none';
-        const dashed = 'stroke:#0A3D62;stroke-width:1;fill:none;stroke-dasharray:2,2';
-        let h = '';
+        const tipY = planY + d * dirY;
         if (ap.includes('2')) {
-            const r = Math.min(w / 2, maxR), dx = r * 0.866, dy = r * 0.5 * dirY, cX = startX + w / 2;
-            h += `<line x1="${startX.toFixed(1)}" y1="${planY}" x2="${(startX + dx).toFixed(1)}" y2="${(planY + dy).toFixed(1)}" style="${solid}"/>`;
-            h += `<path d="M ${cX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${dirY > 0 ? 1 : 0} ${(startX + dx).toFixed(1)} ${(planY + dy).toFixed(1)}" style="${dashed}"/>`;
-            h += `<line x1="${(startX + w).toFixed(1)}" y1="${planY}" x2="${(startX + w - dx).toFixed(1)}" y2="${(planY + dy).toFixed(1)}" style="${solid}"/>`;
-            h += `<path d="M ${cX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${dirY > 0 ? 0 : 1} ${(startX + w - dx).toFixed(1)} ${(planY + dy).toFixed(1)}" style="${dashed}"/>`;
-        } else {
-            const r = Math.min(w * 0.875, maxR);
-            const hingeLeft = cfg.lado !== 'izq';                 // lado 'der' (manija der) → bisagra izquierda
-            const hingeX = hingeLeft ? startX : startX + w, freeX = hingeLeft ? startX + w : startX;
-            const dx = (hingeLeft ? 1 : -1) * r * 0.866, dy = r * 0.5 * dirY;
-            const endX = hingeX + dx, endY = planY + dy;
-            const sweep = hingeLeft ? (dirY > 0 ? 1 : 0) : (dirY > 0 ? 0 : 1);
-            h += `<line x1="${hingeX.toFixed(1)}" y1="${planY}" x2="${endX.toFixed(1)}" y2="${endY.toFixed(1)}" style="${solid}"/>`;
-            h += `<path d="M ${freeX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${sweep} ${endX.toFixed(1)} ${endY.toFixed(1)}" style="${dashed}"/>`;
+            const cX = startX + w / 2;
+            return `<line x1="${startX.toFixed(1)}" y1="${planY}" x2="${cX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`
+                + `<line x1="${(startX + w).toFixed(1)}" y1="${planY}" x2="${cX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`;
         }
-        return h;
+        // 1 hoja: línea desde la bisagra al lado libre, hacia el lado que abre
+        const hingeLeft = cfg.lado !== 'izq';           // lado 'der' (manija der) → bisagra izquierda
+        const hingeX = hingeLeft ? startX : startX + w, freeX = hingeLeft ? startX + w : startX;
+        return `<line x1="${hingeX.toFixed(1)}" y1="${planY}" x2="${freeX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`;
     }
     function gridColPlan(x, w, col, planY, depth) {
         const rows = (col && col.rows) || [];
@@ -5310,10 +5327,7 @@
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
-        // maxR del arco: suficientemente grande para que el arco NO se distorsione (radio < media
-        // cuerda hacía que SVG lo agrandara, dando arcos gigantes distintos al ítem suelto), acotado
-        // para que la banda de planta no sea muy profunda.
-        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, Math.min(w * 0.45, 20));
+        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, 12);   // profundidad de las líneas (cabe en la banda de planta)
         if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
             // corredera en planta: rieles paralelos + hojas superpuestas (esquemático)
             const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
@@ -5592,13 +5606,10 @@
             <label style="${gbl}">Color / Acabado</label>
             <select style="${inp}" onchange="gridSetColorPerfil(${id},this.value)">${opt(ACAB, cp)}</select>
             ${cp === 'ral' ? `<label style="${gbl}">RAL / Hex</label><input type="text" value="${st.color_ral || ''}" placeholder="ej: RAL 7016 o #6b6b6b" style="${inp}" oninput="gridSetColorRal(${id},this.value)">` : ''}
-            <label style="${gbl}">Vidrio</label>
-            <select style="${inp}" onchange="gridSetVidrio(${id},this.value)">${opt(VIDS, st.vidrio || 'templado')}</select>
-            ${conVidrio ? `<label style="${gbl}">Grosor de vidrio</label>
-            <select style="${inp}" onchange="gridSetEspesor(${id},this.value)">${opt(ESP, st.espesor || '')}</select>
             <label style="${gbl}">Color de vidrio</label>
-            <select style="${inp}" onchange="gridSetColorVidrio(${id},this.value)">${opt(CVID, st.color_vidrio || '')}</select>` : ''}
+            <select style="${inp}" onchange="gridSetColorVidrio(${id},this.value)">${opt(CVID, st.color_vidrio || '')}</select>
         </div>`;
+        // (El tipo de vidrio y el grosor NO van arriba: se definen por elemento — evita duplicar.)
         h += `<label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--artal-blue);font-weight:bold;margin:2px 0 8px;"><input type="checkbox" ${st.verPlanta !== false ? 'checked' : ''} onchange="gridSetVerPlanta(${id},this.checked)" style="width:15px;height:15px;">Mostrar vista en planta (correderas / abisagradas)</label>`;
         h += fajaRow('arriba', st.fajaArriba);
         cols.forEach((c, ci) => {
