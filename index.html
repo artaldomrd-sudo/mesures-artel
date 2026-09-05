@@ -5310,7 +5310,10 @@
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
-        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, depth);
+        // maxR del arco: suficientemente grande para que el arco NO se distorsione (radio < media
+        // cuerda hacía que SVG lo agrandara, dando arcos gigantes distintos al ítem suelto), acotado
+        // para que la banda de planta no sea muy profunda.
+        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, Math.min(w * 0.45, 20));
         if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
             // corredera en planta: rieles paralelos + hojas superpuestas (esquemático)
             const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
@@ -5328,7 +5331,13 @@
         const fa = state.fajaArriba, fb = state.fajaAbajo;
         const faH = fa ? Math.max(1, parseInt(fa.h) || 0) : 0;
         const fbH = fb ? Math.max(1, parseInt(fb.h) || 0) : 0;
-        const totalH = faH + gAlto + fbH;
+        const tb = state.tubos || {};
+        // Grosor real del tubo (2º número de la medida, ej. "100 x 45" → 45). Un tubo HORIZONTAL
+        // ocupa una banda real y SUMA su grosor a la altura total (entre la faja y las columnas).
+        const tuboG = (() => { const n = String(tb.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
+        const eHtop = (tb.entreH && fa) ? tuboG : 0;   // tubo horizontal bajo la faja superior
+        const eHbot = (tb.entreH && fb) ? tuboG : 0;   // tubo horizontal sobre la faja inferior
+        const totalH = faH + eHtop + gAlto + eHbot + fbH;
         // Fachada IRREGULAR: cada banda (faja arriba / columnas / faja abajo) puede tener su propio
         // ancho. El ancho total de la fachada = la banda más ancha; las más angostas se ALINEAN
         // (izq/centro/der) dentro de ese ancho. Una faja de un solo elemento ocupa el ancho completo.
@@ -5341,18 +5350,19 @@
         const DW = 100, scale = DW / maxW;   // escala HORIZONTAL (mm→unidades), ancho siempre a escala real
         // Escala VERTICAL con proporción acotada: si la fachada es extremadamente ancha y baja (o muy
         // alta y angosta) el dibujo a escala exacta deja el vidrio diminuto / cotas ilegibles. Se limita
-        // el alto del dibujo a un rango (≈6:1 de ancho a 1:6 de alto) — el alto real se muestra en la cota.
+        // el alto del dibujo a un rango — el alto real se muestra en la cota.
         const rawDHt = totalH * scale, minDHt = DW * 0.4, maxDHt = DW * 2.1;
         const scaleV = Math.max(minDHt, Math.min(maxDHt, rawDHt)) / totalH;
-        const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV, DHt = faDH + gDH + fbDH;
+        const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV;
+        const eHtopDH = eHtop * scaleV, eHbotDH = eHbot * scaleV;
+        const gy0 = faDH + eHtopDH;              // columnas empujadas hacia abajo por el tubo horizontal superior
+        const fbY = gy0 + gDH + eHbotDH;         // faja inferior
+        const DHt = fbY + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
         const bwFa = faSub ? wFa * scale : DW, offFa = faSub ? alignOff(fa.align, bwFa) : 0;
         const bwFb = fbSub ? wFb * scale : DW, offFb = fbSub ? alignOff(fb.align, bwFb) : 0;
-        // Tubos / refuerzos de aluminio: barras sólidas en color de carpintería. Definidas antes del
-        // loop de columnas para poder dibujar también el tubo horizontal entre filas de una columna.
-        const tb = state.tubos || {};
-        const tt = 4;   // grosor visible del tubo (unidades de viewBox, DW=100)
+        const tt = 4;   // grosor visible de los tubos que NO suman (perimetrales/verticales), en unidades de viewBox
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         // Dibuja una faja (banda de ancho completo): un solo elemento, o subdividida en varias
         // sub-columnas con anchos propios (ej. 3 ventanas proyectadas arriba de anchos distintos).
@@ -5373,7 +5383,7 @@
         };
         let body = '';
         if (fa) body += drawFaja(fa, 0, faDH, offFa, bwFa);   // faja superior (ancho propio + alineación)
-        let cx = offMain; const colInfo = []; const gy0 = faDH; const rowDims = [];
+        let cx = offMain; const colInfo = []; const rowDims = [];
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
@@ -5386,7 +5396,7 @@
             });
             colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0, col: c }); cx += cw;
         });
-        if (fb) body += drawFaja(fb, gy0 + gDH, fbDH, offFb, bwFb);   // faja inferior (ancho propio + alineación)
+        if (fb) body += drawFaja(fb, fbY, fbDH, offFb, bwFb);   // faja inferior (ancho propio + alineación)
         // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
         // columna y en las divisiones internas del elemento (ej. el centro de una corredera 2 hojas).
         // 'perfil' = montante de aluminio; 'tope' = junta de vidrio a tope (línea fina); 'ninguna' = continuo.
@@ -5412,17 +5422,16 @@
             return fajaDivXs(side).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
         };
         body += drawFajaDiv(fa, 'arriba', 0, faDH);
-        body += drawFajaDiv(fb, 'abajo', gy0 + gDH, DHt);
+        body += drawFajaDiv(fb, 'abajo', fbY, DHt);
         // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
         const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         if (fa) body += bandRect(offFa, 0, bwFa, faDH);
         body += bandRect(offMain, gy0, bwMain, gDH);
-        if (fb) body += bandRect(offFb, gy0 + gDH, bwFb, fbDH);
-        // Tubo entre columnas HORIZONTAL: barra en la división entre la faja y las columnas (ancho de columnas).
-        if (tb.entreH) {
-            if (fa) body += tuboRect(offMain, gy0 - tt / 2, bwMain, tt);
-            if (fb) body += tuboRect(offMain, gy0 + gDH - tt / 2, bwMain, tt);
-        }
+        if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
+        // Tubo entre columnas HORIZONTAL: banda REAL (su grosor suma a la altura), entre la faja y las
+        // columnas (arriba) y/o entre columnas y faja inferior (abajo).
+        if (eHtop) body += tuboRect(offMain, faDH, bwMain, eHtopDH);
+        if (eHbot) body += tuboRect(offMain, gy0 + gDH, bwMain, eHbotDH);
         // Tubos perimetrales: si están INCLUIDOS en la medida se dibujan dentro del envolvente
         // (la cota los abarca); si NO están incluidos se dibujan FUERA (más allá de la línea de cota).
         const inc = tb.incluidos !== false;   // por defecto incluidos
@@ -5462,8 +5471,10 @@
         if (fa || fb) {
             const lx = -7 - extL, le = -extL;
             if (fa) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
+            if (eHtop) cotas += dimLineV(faDH, faDH + eHtopDH, lx, le, `${tuboG}`, 3.4);   // banda del tubo horizontal
             cotas += dimLineV(gy0, gy0 + gDH, lx, le, `${gAlto}`, 4.4);
-            if (fb) cotas += dimLineV(gy0 + gDH, DHt, lx, le, `${fbH}`, 4.4);
+            if (eHbot) cotas += dimLineV(gy0 + gDH, fbY, lx, le, `${tuboG}`, 3.4);
+            if (fb) cotas += dimLineV(fbY, DHt, lx, le, `${fbH}`, 4.4);
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });
@@ -5684,13 +5695,16 @@
         // tapada — solo en pantallas anchas; en un móvil el drawer ocupa casi todo y no tiene sentido.
         const mc = document.getElementById('main-canvas');
         if (mc && window.innerWidth >= 780) mc.style.paddingRight = (Math.ceil(ov.getBoundingClientRect().width) + 22) + 'px';
+        // Primero ajustar el alto del dibujo al nuevo ancho (el reflow del drawer cambia el ancho de
+        // la tarjeta) para que la posición quede FIJA; recién después centrar y bloquear el scroll.
+        adaptDrawingToContent(id);
         const card = document.getElementById('card-' + id);
+        // desbloquear temporalmente por si quedó bloqueado, para poder desplazar a la tarjeta
+        if (mc) mc.style.overflowY = 'auto';
         if (card) card.scrollIntoView({ block: 'start', behavior: 'auto' });
         // Bloquear el scroll del lienzo: la fachada que se edita queda fija al frente (evita que la
         // página suba/baje mientras se trabaja, lo que confundía). Se restaura al cerrar el pop-up.
-        if (mc) mc.style.overflowY = 'hidden';
-        // tras el reflow del lienzo, reajusta el dibujo al nuevo ancho
-        setTimeout(() => adaptDrawingToContent(id), 260);
+        setTimeout(() => { if (card) card.scrollIntoView({ block: 'start', behavior: 'auto' }); if (mc) mc.style.overflowY = 'hidden'; }, 80);
     };
     window.cerrarEditorFachada = function () {
         const o = document.getElementById('fachada-editor'); if (o) o.remove();
