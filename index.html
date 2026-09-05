@@ -4241,6 +4241,21 @@
         s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle"${baseAttr} stroke="none">${label}</text>`;
         return s;
     }
+    // Línea de cota SEGMENTADA (estilo plano de arquitecto): una sola línea con marcas en cada
+    // frontera de columna y el valor de cada tramo centrado — en vez de números sueltos encima del
+    // dibujo. `xs` = fronteras (n+1 posiciones), `mms` = valor de cada tramo (n). El texto va sobre
+    // la línea (hacia el dibujo).
+    function dimSegH(xs, mms, y, edgeY, fontSize) {
+        fontSize = fontSize || 3.6;
+        const dir = Math.sign(y - edgeY) || 1, over = 1.3, tick = 1.4;
+        let s = `<g stroke="${DIM_COLOR}" stroke-width="0.4" fill="none">`;
+        xs.forEach(x => { s += `<line x1="${x.toFixed(1)}" y1="${edgeY.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y + dir * over).toFixed(1)}"/>`; });   // testigos
+        s += `<line x1="${xs[0].toFixed(1)}" y1="${y.toFixed(1)}" x2="${xs[xs.length - 1].toFixed(1)}" y2="${y.toFixed(1)}"/>`;                        // línea principal
+        xs.forEach(x => { s += `<line x1="${(x - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`; });   // marcas 45°
+        s += `</g>`;
+        for (let i = 0; i < mms.length; i++) { const cxm = (xs[i] + xs[i + 1]) / 2; s += `<text x="${cxm.toFixed(1)}" y="${(y - 1.3).toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${mms[i]}</text>`; }
+        return s;
+    }
     function dimLineV(y1, y2, x, edgeX, label, fontSize) {
         fontSize = fontSize || 6;
         const dir = Math.sign(x - edgeX) || 1;
@@ -5347,8 +5362,7 @@
                     const sw = (parseInt(sc.w) || 0) / wsum * bw;
                     out += gridCell(uid, fx, y0, sw, hh, sc.celda, sc, state.vidrio);
                     if (i > 0) out += `<line x1="${fx.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${fx.toFixed(1)}" y2="${(y0 + hh).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
-                    out += `<text x="${(fx + sw / 2).toFixed(1)}" y="${(y0 + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="middle" stroke="none">${parseInt(sc.w) || 0}</text>`;
-                    fx += sw;
+                    fx += sw;   // el ancho de cada sub-columna se acota abajo (línea de cota segmentada), no como texto encima
                 });
                 return out;
             }
@@ -5423,8 +5437,22 @@
         // NO está incluido en la medida, se dibuja fuera del envolvente y la cota se corre para
         // quedar más allá del tubo (así la medida abarca solo el vidrio/columnas, no el tubo).
         const extB = (tb.inf && !inc) ? tt : 0, extR = (tb.der && !inc) ? tt : 0, extL = (tb.izq && !inc) ? tt : 0, extT = (tb.sup && !inc) ? tt : 0;
-        let cotas = dimLineH(0, DW, DHt + extB + 13, DHt + extB, `${totalW} mm`, 5.5);
-        if (cols.length > 1) colInfo.forEach(ci => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(DHt + extB + 6).toFixed(1)}" font-family="Arimo" font-size="3.6" fill="#7a828a" text-anchor="middle" stroke="none">${ci.mm}</text>`; });
+        // Cotas de ancho estilo plano: línea de cota SEGMENTADA por cada banda con más de una columna
+        // (faja/columnas), apiladas bajo el dibujo, y el total debajo. (Antes eran números sueltos encima.)
+        const bandXs = (fcols, off, bw) => {
+            const wsum = fcols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) || 1;
+            let x = off; const xs = [x], mms = [];
+            fcols.forEach(c => { x += (parseInt(c.w) || 0) / wsum * bw; xs.push(x); mms.push(parseInt(c.w) || 0); });
+            return { xs, mms };
+        };
+        const dimRows = [];
+        if (faSub && fa.cols.length > 1) dimRows.push(bandXs(fa.cols, offFa, bwFa));
+        if (colInfo.length > 1) dimRows.push({ xs: [colInfo[0].x].concat(colInfo.map(ci => ci.x + ci.w)), mms: colInfo.map(ci => ci.mm) });
+        if (fbSub && fb.cols.length > 1) dimRows.push(bandXs(fb.cols, offFb, bwFb));
+        let cotas = '', dyc = DHt + extB + 9;
+        dimRows.forEach(row => { cotas += dimSegH(row.xs, row.mms, dyc, DHt + extB, 3.6); dyc += 8; });
+        cotas += dimLineH(0, DW, dyc + 3, DHt + extB, `${totalW} mm`, 5.5);
+        const anchoBottom = dyc + 3;
         cotas += dimLineV(0, DHt, DW + 6 + extR, DW + extR, `${totalH} mm`, 5.5);
         // Alturas por PAÑO/sección (izquierda): faja superior, banda de columnas, faja inferior —
         // solo cuando hay más de una banda horizontal (si no, el alto total ya lo dice todo).
@@ -5441,12 +5469,12 @@
         let planExtra = 0;
         const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(r.celda)));
         if (state.verPlanta && hayOperable) {
-            const planDepth = 14, planY = DHt + extB + 26;
+            const planDepth = 14, planY = anchoBottom + 14;
             cotas += `<text x="${offMain.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             colInfo.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, planDepth); });
-            planExtra = planDepth + 12;
+            planExtra = (planY + planDepth) - anchoBottom;
         }
-        const vbY = -10 - extT, vbH = (DHt + extB + 20 + planExtra) - vbY;
+        const vbY = -10 - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22 ${vbY.toFixed(1)} ${DW + 48} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + cotas + '</svg>';
