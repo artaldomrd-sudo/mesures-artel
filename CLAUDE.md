@@ -711,6 +711,28 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   ("abre izq./der."), manija, hoja interior, cierre, cerradura, mosquitera, división. Tubos con
   redacción para fábrica: "Tubos laterales (izq. y der.): incluidos/NO incluidos en el ancho
   total", "Tubo horizontal entre columnas: incluido en la altura total", etc.
+- **Fachada de ESQUINA (en "L")** — pedido del usuario (2026-09-05) a partir de un plano de
+  arquitecto real (Sienna tipología C-3: elevación desplegada plana con la esquina marcada por una
+  línea punteada, y la planta mostrando la "L" real). Campos: `esquinaLado` (`''` | `'izq'` |
+  `'der'`) y `esquinaCols` (cuántas columnas forman el ala, 1..cols-1; default 1). Opción "Esquina"
+  en el pop-up (solo con 2+ columnas; `gridSetEsquina`/`gridSetEsquinaCols`). El **ala** (las
+  primeras N columnas si `izq`, las últimas si `der`) gira 90° **hacia adentro**; el resto es el
+  **frente**. `renderFachadaGrid`: (1) elevación desplegada sin cambios + línea punteada vertical
+  en `cornerX` de arriba a abajo + etiqueta "ESQUINA" (una línea por encima de "VISTA EXTERIOR",
+  `vbY=-14` en ese caso) + una fila de cota extra "ala | frente" (si alguna tiene más de una
+  columna); (2) planta: el frente se dibuja como siempre con `gridColPlan` sobre `planY`, y el ala
+  con el MISMO `gridColPlan` en coordenadas locales (x como en la elevación, y = interior arriba)
+  dentro de un `<g transform="matrix(...)">` que la gira 90° hacia arriba desde la esquina — ala
+  izquierda: `matrix(0 1 -1 0 cornerX planY-wingW)` (extremo lejano arriba, exterior a la
+  izquierda); ala derecha: `matrix(0 -1 1 0 cornerX planY)` (exterior a la derecha). `planY` baja
+  lo necesario para que el ala (largo `wingW`, a la misma escala que la elevación) quepa entre la
+  cota de ancho y la pared; `planLeftExt`/`planRightExt` ensanchan el viewBox si el exterior del
+  ala (rieles/arcos) sobresale. Las etiquetas int/ext se mueven al lado derecho del frente cuando
+  el ala está a la izquierda. Resumen: línea "Fachada de esquina (en L): ala … + frente …".
+  **Cierre "Multipunto de Esquina"** (`cierre: 'multipunto_esquina'`, `CIERRE_COR`): SOLO en el
+  select de cierre de las correderas (pedido explícito), no en puertas; el resumen mapea los
+  valores de cierre a texto legible (antes imprimía el value crudo). `verify.mjs` cubre `izq` y
+  `der` (RENDER OK: 80).
 - **Cotización cliente / `enviarOrden`**: como `type !== 'draw'`, la fachada compuesta sí tiene SVG
   y viaja como cualquier tarjeta (no necesita el caso especial del CAD).
 

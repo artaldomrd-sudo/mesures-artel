@@ -126,6 +126,23 @@ for (const id of ['card1', 'temp']) {
     }); ok++;
   } catch (e) { fail++; console.error(`  fachada_grid (${id}):`, e.message); }
 }
+// Fachada de ESQUINA (en L): ala izquierda y ala derecha, con corredera (cierre multipunto de esquina)
+// y puerta abisagrada en el ala, para cubrir la planta girada 90° y la cota por ala.
+for (const esquinaLado of ['izq', 'der']) {
+  try {
+    ctx.__render('card1', {
+      type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true,
+      esquinaLado, esquinaCols: 2,
+      cols: [
+        { w: 1200, rows: [{ h: 2750, celda: 'cor3', alu: 'P92', cierre: 'multipunto_esquina' }] },
+        { w: 900, rows: [{ h: 2750, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'der' }] },
+        { w: 2500, rows: [{ h: 2750, celda: 'cor4', alu: 'E200', cor_interior: 'D', cierre: 'multipunto_esquina' }] },
+        { w: 800, rows: [{ h: 2750, celda: 'pf', alu: 'p40_ventana' }] },
+      ],
+      fajaArriba: { h: 400, celda: 'pf', alu: 'p40_ventana', division: 'perfil' },
+    }); ok++;
+  } catch (e) { fail++; console.error(`  fachada_grid esquina ${esquinaLado}:`, e.message); }
+}
 // Caso mínimo (defaults de addItem: 1 columna corredera, sin fajas ni tubos)
 try {
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, cols: [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }], vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'cromado', tubos: { medida: '100 x 45' }, verPlanta: true }); ok++;
