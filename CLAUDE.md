@@ -678,12 +678,21 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   paralelos esquemáticos. **Abisagradas: `planViewAbatible(type, stateInfo, startX, w, y0, maxR,
   opts)`** — función top-level que es la ÚNICA fuente de la planta de puerta/ventana abisagrada:
   la tarjeta suelta (`drawPlanView`, closure en `renderSVG`) la llama con `y0=97, maxR=34,
-  {showLabels:true, hingeLeft:true}`; la fachada con `maxR=(depth-2)*2` (acotado a la banda de
-  planta), `{showLabels:false, hingeLeft: r.lado !== 'izq'}` y **`vista:'afuera'`** forzado (la
-  fachada siempre se dibuja como vista exterior; sin esto el giro sale espejado). Pedido explícito
-  del usuario: "idéntica a la tarjeta suelta, no parecida" (se descartó un símbolo propio). Caso 2
-  hojas confirmado visualmente por el usuario; el de 1 hoja quedó coherente por código (chevron y
-  bisagra coinciden) pero **pendiente de que el usuario lo revise en dispositivo**.
+  {showLabels:true, hingeLeft:true}`; la fachada con **`maxR = w·34/65`** (misma proporción
+  radio/ancho que la suelta, que usa maxR=34 con un panel de 65), `{showLabels:false, hingeLeft:
+  r.lado !== 'izq'}` y **`vista:'afuera'`** forzado (la fachada siempre se dibuja como vista
+  exterior; sin esto el giro sale espejado). Pedido explícito del usuario, repetido varias veces:
+  "idéntica a la tarjeta suelta, no parecida" (se descartó un símbolo propio). **Dos bugs reales
+  corregidos (2026-09-05, con fotos)**: (1) `maxR` se recortaba a la franja de planta fija
+  (`(depth-2)*2 ≈ 24`) aunque la columna midiera 100 → la cuerda del arco (jamba→punta de hoja) era
+  más larga que 2·r y el navegador inflaba el arco a un semicírculo gigante montado sobre la
+  elevación; (2) la franja de planta era FIJA (14) y un giro hacia ADENTRO (arriba, `dirY=-1`) se
+  salía por encima. Ahora `renderFachadaGrid` calcula `upNeed`/`downNeed` (dy = r·0.5 de cada
+  abisagrada según abra adentro/afuera; rieles de correderas hacia abajo) y coloca la pared en
+  `planY = anchoBottom + 15 + upNeed` con `planExtra` según `downNeed` — el viewBox crece lo que
+  haga falta. **La planta de correderas dentro de la fachada respeta `cor_interior`** (I/D, un
+  riel por hoja en escalera, hoja interior arriba), misma regla que `correderaPlan` — antes lo
+  ignoraba (reportado con foto). Verificado en navegador lado a lado con la puerta suelta.
 - **UI**: la tarjeta (`.grid-card`, media línea por defecto; `adaptDrawingToContent` recorta el
   viewBox y ajusta el alto con tope 430px) solo muestra el dibujo + botón "✏️ Editar fachada
   compuesta" → `abrirEditorFachada(id)` abre un **pop-up lateral** (drawer `#fachada-editor` a la

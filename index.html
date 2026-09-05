@@ -5475,16 +5475,17 @@
         }
         return html;
     }
-    function gridColPlan(x, w, col, planY, depth) {
+    function gridColPlan(x, w, col, planY, maxR) {
         const rows = (col && col.rows) || [];
         const r = rows.find(rr => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(rr.celda)) || rows[0] || { celda: 'pf' };
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
         if (celda === 'puerta' || celda === 'ventana') {
-            // MISMA vista en planta que la tarjeta suelta (arco + hojas). maxR se acota a la banda de
-            // planta disponible (depth) para que el arco no se salga: dy = maxR*0.5 ≤ depth-2.
-            const maxR = Math.max(6, (depth - 2) * 2);
+            // MISMA vista en planta que la tarjeta suelta (arco + hojas), con el MISMO radio en proporción
+            // al ancho (maxR = w·34/65, ver renderFachadaGrid). Bug real (foto del usuario): antes maxR se
+            // recortaba a la franja de planta (≈24) aunque la columna midiera 100 → la cuerda del arco era
+            // más larga que 2·r y el navegador inflaba el arco a un semicírculo gigante sobre el dibujo.
             const type = celda === 'ventana' ? 'win_abat' : 'puerta';
             // La fachada compuesta siempre se dibuja como VISTA EXTERIOR → vista:'afuera', para que la
             // dirección del giro (int arriba / ext abajo) coincida con la tarjeta suelta vista desde afuera.
@@ -5666,16 +5667,34 @@
         rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });
         cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
         // Vista en planta (opcional): útil cuando hay correderas / puertas o ventanas abisagradas.
+        // IDÉNTICA a la tarjeta suelta (planViewAbatible): mismo radio en proporción al ancho de la
+        // hoja (la suelta usa maxR=34 con un panel de 65 → 34/65 del ancho) y la franja de planta
+        // se dimensiona según lo que necesite el giro: hacia AFUERA (vista exterior → abajo) o hacia
+        // ADENTRO (arriba, entre la cota de ancho y la pared) — antes la franja era fija (14) y un
+        // giro hacia adentro se montaba sobre la elevación (reportado con foto).
         let planExtra = 0;
         const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(r.celda)));
         if (state.verPlanta !== false && hayOperable) {   // activada por defecto (correderas y puertas/ventanas abisagradas)
-            const planDepth = 14, planY = anchoBottom + 16;
-            cotas += `<text x="${offMain.toFixed(1)}" y="${(planY - 8).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
-            colInfo.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, planDepth); });
+            const RATIO_R = 34 / 65;
+            let upNeed = 0, downNeed = 0;
+            colInfo.forEach(ci => (ci.col.rows || []).forEach(r => {
+                if (r.celda === 'puerta' || r.celda === 'ventana') {
+                    const ap = r.apertura || 'adentro_1';
+                    const rad = ap.includes('2') ? Math.min(ci.w / 2, ci.w * RATIO_R) : Math.min(ci.w * 0.875, ci.w * RATIO_R);
+                    if (ap.includes('afuera')) downNeed = Math.max(downNeed, rad * 0.5); else upNeed = Math.max(upNeed, rad * 0.5);
+                } else if (r.celda === 'cor2' || r.celda === 'cor3' || r.celda === 'cor4') {
+                    const n = r.celda === 'cor2' ? 2 : r.celda === 'cor3' ? 3 : 4;
+                    downNeed = Math.max(downNeed, (n - 1) * 2.4 + 1);
+                }
+            }));
+            const planTop = anchoBottom + 8;            // debajo de la línea de cota del ancho total
+            const planY = planTop + 7 + upNeed;         // línea de pared: deja arriba el espacio del giro hacia adentro
+            cotas += `<text x="${offMain.toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+            colInfo.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R); });
             // int/ext una sola vez (interior arriba, exterior abajo — vista exterior), como drawPlanView
             cotas += `<text x="${(offMain - 6).toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">int</text>`;
             cotas += `<text x="${(offMain - 6).toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ext</text>`;
-            planExtra = (planY + planDepth) - anchoBottom;
+            planExtra = (planY + Math.max(downNeed, 8) + 4) - anchoBottom;
         }
         const vbY = -10 - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-22 ${vbY.toFixed(1)} ${DW + 48} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
