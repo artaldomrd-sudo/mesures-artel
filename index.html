@@ -5277,45 +5277,48 @@
         }
         return s;
     }
-    // Vista en planta (top-down) de UNA columna de la fachada: pared/vidrio + símbolo según el tipo
-    // (corredera = rieles + hojas; abisagrada = hoja abierta + arco de giro; pf/otros = línea de vidrio).
-    // planY = cara exterior; el interior queda hacia abajo (+y). depth = profundidad máx del dibujo.
-    function leafPlan(hingeX, planY, side, dir, r) {
-        // hoja abierta perpendicular a la pared (hacia interior/exterior según dir) + arco de barrido
-        const tipY = planY + dir * r;
-        const handleX = hingeX + side * r;
-        let s = `<line x1="${hingeX.toFixed(1)}" y1="${planY.toFixed(1)}" x2="${hingeX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="#111" stroke-width="1"/>`;
-        const sweep = (dir * side > 0) ? 0 : 1;
-        s += `<path d="M ${handleX.toFixed(1)} ${planY.toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${sweep} ${hingeX.toFixed(1)} ${tipY.toFixed(1)}" fill="none" stroke="#5a6772" stroke-width="0.5" stroke-dasharray="2 1.5"/>`;
-        return s;
+    // Símbolo de giro en planta para una abisagrada — MISMA representación que el ítem suelto
+    // (drawPlanView): hoja(s) a 30° + arco punteado. Coherencia total con las tarjetas no-fachada.
+    // planY = línea de pared; interior arriba (-y), exterior abajo (+y). 'afuera' abre hacia +y.
+    function gridPlanSymbol(cfg, startX, w, planY, maxR) {
+        const ap = cfg.apertura || 'adentro_1';
+        const dirY = ap.includes('afuera') ? 1 : -1;
+        const solid = 'stroke:#0A3D62;stroke-width:1;fill:none';
+        const dashed = 'stroke:#0A3D62;stroke-width:1;fill:none;stroke-dasharray:2,2';
+        let h = '';
+        if (ap.includes('2')) {
+            const r = Math.min(w / 2, maxR), dx = r * 0.866, dy = r * 0.5 * dirY, cX = startX + w / 2;
+            h += `<line x1="${startX.toFixed(1)}" y1="${planY}" x2="${(startX + dx).toFixed(1)}" y2="${(planY + dy).toFixed(1)}" style="${solid}"/>`;
+            h += `<path d="M ${cX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${dirY > 0 ? 1 : 0} ${(startX + dx).toFixed(1)} ${(planY + dy).toFixed(1)}" style="${dashed}"/>`;
+            h += `<line x1="${(startX + w).toFixed(1)}" y1="${planY}" x2="${(startX + w - dx).toFixed(1)}" y2="${(planY + dy).toFixed(1)}" style="${solid}"/>`;
+            h += `<path d="M ${cX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${dirY > 0 ? 0 : 1} ${(startX + w - dx).toFixed(1)} ${(planY + dy).toFixed(1)}" style="${dashed}"/>`;
+        } else {
+            const r = Math.min(w * 0.875, maxR);
+            const hingeLeft = cfg.lado !== 'izq';                 // lado 'der' (manija der) → bisagra izquierda
+            const hingeX = hingeLeft ? startX : startX + w, freeX = hingeLeft ? startX + w : startX;
+            const dx = (hingeLeft ? 1 : -1) * r * 0.866, dy = r * 0.5 * dirY;
+            const endX = hingeX + dx, endY = planY + dy;
+            const sweep = hingeLeft ? (dirY > 0 ? 1 : 0) : (dirY > 0 ? 0 : 1);
+            h += `<line x1="${hingeX.toFixed(1)}" y1="${planY}" x2="${endX.toFixed(1)}" y2="${endY.toFixed(1)}" style="${solid}"/>`;
+            h += `<path d="M ${freeX.toFixed(1)} ${planY} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${sweep} ${endX.toFixed(1)} ${endY.toFixed(1)}" style="${dashed}"/>`;
+        }
+        return h;
     }
     function gridColPlan(x, w, col, planY, depth) {
         const rows = (col && col.rows) || [];
         const r = rows.find(rr => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(rr.celda)) || rows[0] || { celda: 'pf' };
-        const celda = r.celda, per = '#0A3D62';
-        if (celda === 'puerta' || celda === 'ventana') {
-            const ap = r.apertura || 'adentro_1';
-            const dir = ap.startsWith('adentro') ? 1 : -1;      // interior(abajo) / exterior(arriba)
-            let s = `<line x1="${x.toFixed(1)}" y1="${planY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${planY.toFixed(1)}" stroke="${per}" stroke-width="0.8"/>`;
-            if (ap.includes('2')) {
-                const rr = Math.min(w / 2, depth);
-                s += leafPlan(x, planY, +1, dir, rr) + leafPlan(x + w, planY, -1, dir, rr);
-            } else {
-                const rr = Math.min(w, depth);
-                const hingeLeft = (r.lado !== 'izq');   // lado 'der' (manija der) → bisagra izquierda
-                s += leafPlan(hingeLeft ? x : x + w, planY, hingeLeft ? 1 : -1, dir, rr);
-            }
-            return s;
-        }
+        const celda = r.celda;
+        // línea de pared (mismo estilo grueso/gris que drawPlanView)
+        let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, depth);
         if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
-            const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4;
-            let s = `<line x1="${x.toFixed(1)}" y1="${planY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${planY.toFixed(1)}" stroke="#8d99a4" stroke-width="0.7"/>`;
-            s += `<line x1="${x.toFixed(1)}" y1="${(planY + g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + g).toFixed(1)}" stroke="#8d99a4" stroke-width="0.7"/>`;
+            // corredera en planta: rieles paralelos + hojas superpuestas (esquemático)
+            const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
+            s += `<line x1="${x.toFixed(1)}" y1="${(planY + g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
             for (let k = 0; k < n; k++) { const sx = x + w * k / n, ex = x + w * (k + 1) / n, ry = planY + (k % 2) * g; s += `<line x1="${sx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="${per}" stroke-width="1.6"/>`; }
             return s;
         }
-        // pf / louvers / osci / proy: paño en planta (línea de vidrio)
-        return `<line x1="${x.toFixed(1)}" y1="${planY.toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${planY.toFixed(1)}" stroke="#0A3D62" stroke-width="1.4"/>`;
+        return s;   // pf / louvers / osci / proy: solo la línea de pared
     }
     function renderFachadaGrid(state, uid) {
         const cols = (state.cols && state.cols.length) ? state.cols : [{ w: 1000, rows: [{ h: state.gridAlto || 2000, celda: 'pf' }] }];
@@ -5469,9 +5472,12 @@
         let planExtra = 0;
         const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(r.celda)));
         if (state.verPlanta !== false && hayOperable) {   // activada por defecto (correderas y puertas/ventanas abisagradas)
-            const planDepth = 14, planY = anchoBottom + 14;
-            cotas += `<text x="${offMain.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+            const planDepth = 14, planY = anchoBottom + 16;
+            cotas += `<text x="${offMain.toFixed(1)}" y="${(planY - 8).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             colInfo.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, planDepth); });
+            // int/ext una sola vez (interior arriba, exterior abajo — vista exterior), como drawPlanView
+            cotas += `<text x="${(offMain - 6).toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">int</text>`;
+            cotas += `<text x="${(offMain - 6).toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ext</text>`;
             planExtra = (planY + planDepth) - anchoBottom;
         }
         const vbY = -10 - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
@@ -5510,17 +5516,18 @@
         const MOSQ_COR = [['', '-- Mosquitera --'], ['con', 'Con Mosquitera']];
         const COR_INT = [['I', 'Hoja interior: Izq.'], ['D', 'Hoja interior: Der.']];
         const LADO = [['der', 'Abre a la derecha'], ['izq', 'Abre a la izquierda']];
-        // Vidrio POR CELDA (opcional): '' = usa el vidrio global de la fachada. Permite, por ej.,
-        // la puerta en Láminas de Louver y la faja en vidrio, en la misma fachada.
-        const VIDCELL = [['', 'Vidrio: global'], ['templado', 'Templado'], ['laminado', 'Laminado'], ['louvers', 'Láminas de Louver'], ['sin', 'Sin vidrio']];
+        // Vidrio POR CELDA: muestra el valor en efecto (el del paño si se cambió, si no el de la
+        // fachada) para poder tenerlo distinto por paño (ej. puerta en louvers + faja en vidrio).
+        const VIDCELL = [['templado', 'Templado'], ['laminado', 'Laminado'], ['louvers', 'Láminas de Louver'], ['sin', 'Sin vidrio']];
         const cfgSel = (cur, opts, onchange) => `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         const cfgRow = (label, sel) => `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">${label}</label>${sel}<span></span></div>`;
         // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
         const cellExtra = (celda, obj, mk) => {
             if (celda === 'vacio' || celda === 'louvers') return '';
-            // Vidrio por paño + su grosor (solo si eligió un vidrio de la celda que sea Templado/Laminado).
-            const grosor = (obj.vidrio === 'templado' || obj.vidrio === 'laminado') ? cfgRow('Grosor', cfgSel(obj.espesor || '', ESP, mk('espesor'))) : '';
-            const vid = cfgRow('Vidrio', cfgSel(obj.vidrio || '', VIDCELL, mk('vidrio'))) + grosor;
+            // Vidrio en efecto por paño (el del paño si se cambió, si no el de la fachada) + su grosor.
+            const effVid = obj.vidrio || st.vidrio || 'templado';
+            const grosor = (effVid === 'templado' || effVid === 'laminado') ? cfgRow('Grosor', cfgSel(obj.espesor || st.espesor || '', ESP, mk('espesor'))) : '';
+            const vid = cfgRow('Vidrio', cfgSel(effVid, VIDCELL, mk('vidrio'))) + grosor;
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : '';
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
@@ -5678,14 +5685,17 @@
         const mc = document.getElementById('main-canvas');
         if (mc && window.innerWidth >= 780) mc.style.paddingRight = (Math.ceil(ov.getBoundingClientRect().width) + 22) + 'px';
         const card = document.getElementById('card-' + id);
-        if (card) card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if (card) card.scrollIntoView({ block: 'start', behavior: 'auto' });
+        // Bloquear el scroll del lienzo: la fachada que se edita queda fija al frente (evita que la
+        // página suba/baje mientras se trabaja, lo que confundía). Se restaura al cerrar el pop-up.
+        if (mc) mc.style.overflowY = 'hidden';
         // tras el reflow del lienzo, reajusta el dibujo al nuevo ancho
         setTimeout(() => adaptDrawingToContent(id), 260);
     };
     window.cerrarEditorFachada = function () {
         const o = document.getElementById('fachada-editor'); if (o) o.remove();
         document.body.classList.remove('fachada-editor-open');
-        const mc = document.getElementById('main-canvas'); if (mc) mc.style.paddingRight = '';
+        const mc = document.getElementById('main-canvas'); if (mc) { mc.style.paddingRight = ''; mc.style.overflowY = ''; }
     };
     function gridDraw(id) { gridDeriv(id); const sc = document.getElementById('schematic-' + id); if (sc) sc.innerHTML = renderSVG(id); adaptDrawingToContent(id); saveProgress(); }
     function gridFull(id) { gridDraw(id); const b = document.getElementById('grid-builder-' + id); if (b) b.innerHTML = renderGridBuilder(id); }
