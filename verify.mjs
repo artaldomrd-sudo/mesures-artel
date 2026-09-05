@@ -103,5 +103,33 @@ for (const t of ['win_abat', 'win_ob', 'door_abat', 'win_proy']) {
   }
 }
 
+// Fachada Compuesta (fachada_grid): grilla de columnas + fajas + tubos, con vista en planta.
+// Cubre gridCell (todos los tipos de celda), fajas subdivididas y con división, tubos
+// perimetrales NO incluidos (cotas corridas), tubo horizontal (suma al alto), y planViewAbatible
+// vía gridColPlan en sus 3 variantes (1 hoja izq, 1 hoja der, 2 hojas) + corredera en planta.
+for (const id of ['card1', 'temp']) {
+  try {
+    ctx.__render(id, {
+      type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2400, vidrio: 'templado', espesor: '10mm',
+      color_vidrio: 'natural', herraje_color: 'cromado', color_perfil: 'negro', verPlanta: true, gridAlign: 'centro',
+      cols: [
+        { w: 1800, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', manija: 'negro', cor_interior: 'D', mosquitera: 'con' }] },
+        { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'izq', cerradura: 'digital' }] },
+        { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'titan', apertura: 'adentro_1', lado: 'der' }] },
+        { w: 1200, rows: [{ h: 2400, celda: 'ventana', alu: 'p40_ventana', apertura: 'adentro_2' }] },
+        { w: 1000, rows: [{ h: 1200, celda: 'pf', alu: 'p40_ventana' }, { h: 600, celda: 'osci', alu: 'p40_ventana' }, { h: 600, celda: 'louvers', vidrio: 'louvers' }] },
+        { w: 600, rows: [{ h: 2400, celda: 'vacio' }] },
+      ],
+      fajaArriba: { h: 500, celda: 'proy', align: 'der', cols: [{ w: 2000, celda: 'proy', alu: 'p40_ventana' }, { w: 1500, celda: 'pf', alu: 'p40_ventana', vidrio: 'laminado', espesor: '4+4' }, { w: 1500, celda: 'proy', alu: 'p40_ventana' }] },
+      fajaAbajo: { h: 400, celda: 'pf', alu: 'p40_ventana', division: 'perfil' },
+      tubos: { sup: true, inf: true, izq: true, der: true, entre: true, entreH: true, medida: '100 x 45', incluidos: false },
+    }); ok++;
+  } catch (e) { fail++; console.error(`  fachada_grid (${id}):`, e.message); }
+}
+// Caso mínimo (defaults de addItem: 1 columna corredera, sin fajas ni tubos)
+try {
+  ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, cols: [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }], vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'cromado', tubos: { medida: '100 x 45' }, verPlanta: true }); ok++;
+} catch (e) { fail++; console.error('  fachada_grid (minimo):', e.message); }
+
 console.log(`RENDER OK: ${ok} FAIL: ${fail}`);
 process.exit(fail ? 1 : 0);

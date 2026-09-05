@@ -6,9 +6,11 @@ un **PDF de Cotización o Fabricación** para el cliente.
 
 ## Qué es (arquitectura)
 
-- **Un solo archivo: `index.html`** (~3465 líneas). Sin build, sin dependencias externas salvo
-  la fuente Google *Arimo* por CDN. Todo el CSS va en un `<style>` inline y todo el JS en
-  bloques `<script>` inline.
+- **Un solo archivo: `index.html`** (~8200 líneas). Sin build, sin dependencias externas salvo
+  la fuente Google *Arimo* por CDN (y jsPDF/html2canvas por CDN para el PDF). Todo el CSS va en
+  un `<style>` inline y el JS en DOS bloques: un `<script>` clásico (render/lógica, el que prueba
+  `verify.mjs`) y un `<script type="module">` (Firebase: auth, sync, inventario — NO lo cubre
+  `verify.mjs`).
 - Se abre directamente en el navegador (doble clic) o se sube a **GitHub Pages** para usarla en
   iPad. Repo del usuario: `artaldomrd-sudo/mesures-artel` (Pages sirve `index.html` en la raíz).
 - **Los dibujos son SVG generados por JavaScript** (strings). No hay imágenes de los elementos.
@@ -19,6 +21,15 @@ un **PDF de Cotización o Fabricación** para el cliente.
 
 ## Cómo trabajar / editar
 
+- **Tres áreas, tres sesiones (2026-09-05).** Este repo contiene tres productos que el usuario
+  lleva en sesiones separadas de la app de escritorio: **cuaderno** (`index.html`, `verify.mjs`,
+  `sw.js`, `manifest.json` — sesión "Artal cuaderno de relevo", rama `planos-2d`), **sistema
+  operativo** (`ops/`, `functions/`, `firestore.rules` — sesión "Artal sistema operativo (Panel +
+  ERP)", rama `sistema-operativo`) y **sitio web** (`sitio-web/`). El hook
+  `.claude/hooks/area-sesion.sh` (UserPromptSubmit) inyecta el área de la sesión en cada mensaje
+  leyendo `.claude/session-area/<session_id>`; si un pedido pertenece a otra área, **avisar antes
+  de tocar nada** (ver memoria `feedback-aviso-sesion-equivocada`). Producción sigue siendo `main`
+  para las tres. `HANDOFF.md` (no versionado) es el traspaso del cuaderno solamente.
 - Editar `index.html` directamente.
 - **SIEMPRE verificar antes de dar por bueno un cambio de dibujo** con `node verify.mjs`
   (ver más abajo). Comprueba sintaxis y renderiza todos los tipos sin error.
@@ -26,8 +37,13 @@ un **PDF de Cotización o Fabricación** para el cliente.
 - **HEIC no se puede decodificar** en este entorno de herramientas: pedir capturas en PNG/JPG.
 
 ### Verificación (`verify.mjs`)
-`node verify.mjs` extrae el `<script>` de `index.html`, hace un `check` de sintaxis y ejecuta
-`renderSVG` para todos los `type` en modo normal y CAD. Debe imprimir `RENDER OK: N FAIL: 0`.
+`node verify.mjs` extrae el `<script>` clásico de `index.html`, hace un `check` de sintaxis y ejecuta
+`renderSVG` para todos los `type` en modo normal y CAD, más fixtures dedicados para Vidrio de Ducha,
+Paño Fijo adosado y **Fachada Compuesta** (`fachada_grid`, agregado 2026-09-05: grilla completa con
+todos los tipos de celda, fajas subdivididas, tubos no incluidos, planta de 1 hoja izq/der y 2
+hojas). Debe imprimir `SYNTAX OK`, `GUARDRAIL exportPDF() OK` y `RENDER OK: 78 FAIL: 0`. Corre en
+un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas APIs va con
+`if (typeof setInterval !== 'undefined')`.
 
 ## Estado / datos
 
@@ -36,7 +52,7 @@ un **PDF de Cotización o Fabricación** para el cliente.
   color_vidrio, color_perfil, color_ral, herraje_color, vista, cierre, mosquitera, apertura,
   tipo_aluminio, locked`.
 - Categorías (`getCategoriaByType`): `corredera, galandaje, ventana, puerta_vidrio, mampara,
-  fachada, ducha, baranda, cerramiento`.
+  fachada, fachada_grid, ducha, baranda, cerramiento, cortina`.
 - **Vidrio de Ducha** (`categoria: 'cerramiento'`, `type: 'ducha_facade'`): `state.paneles` es
   un array; cada panel `{ tipo:'fijo'|'puerta'|'deslizante', ancho, color_vidrio, vidrio,
   espesor, herraje_color, orientacion, tirador, bisagras, cerr_luna, cerr_digital, cerr_piso,
@@ -62,14 +78,19 @@ un **PDF de Cotización o Fabricación** para el cliente.
   que ya vende ARTAL en
   el sitio web (Ondas, Perma, Roman, Venecianas, Verticales, Zebra) quedan pendientes de agregar
   si hace falta. Producto de tela/PVC, sin vidrio ni perfil de aluminio — ver más abajo.
-- **Especial**: dibujo libre / **CAD** ("Fachada Compuesta", `type:'draw'`): lienzo donde se
-  insertan módulos que se pegan con imán (vidrio con vidrio). Cortinas/enrollables NO participan
-  del CAD (mismo criterio que baranda/ducha/cerramiento, que tampoco se insertan ahí).
+- **Fachada Compuesta** (`type:'fachada_grid'`, `categoria:'fachada_grid'`, botón "+ FACHADA
+  COMPUESTA"): grilla 2D de columnas × filas + fajas + tubos, editada en un pop-up lateral. Es
+  la herramienta principal para fachadas desde 2026-08. Ver sección propia más abajo.
+- **Especial**: dibujo libre / **CAD** ("Fachada Libre (CAD)", `type:'draw'`): lienzo donde se
+  insertan módulos que se pegan con imán (vidrio con vidrio). Sigue en el menú, pero para fachadas
+  normales se usa la Fachada Compuesta de arriba. Cortinas/enrollables NO participan del CAD
+  (mismo criterio que baranda/ducha/cerramiento, que tampoco se insertan ahí).
 
 ## Sistema de dibujo (SVG)
 
 - `renderSVG(id)` es el punto de entrada. Deriva a:
   - `renderBaranda` (baranda), `renderDucha` (cabina), `renderFacade` (Vidrio de Ducha),
+    `renderFachadaGrid` (Fachada Compuesta), `renderCortina` (cortinas),
     `renderCADProportional` (cuando `id==='temp'`, es decir, módulos del CAD),
     y el `switch` grande para el resto.
 - **Proyecciones**: `isoPt` (isométrica), `oblPt` (oblicua), proyecciones de planta a medida.
@@ -604,6 +625,85 @@ estilo simplificado del CAD.
     se corría a la fila siguiente sin llenar la que dejó "Grosor" a medias. Arreglo: "Grosor"
     pasa a `grid-column: span 2` en esa rama (única con esta combinación impar; Paño Fijo y
     Puerta Abisagrada ya daban un número par de selects sueltos, sin este problema).
+
+## Fachada Compuesta (`fachada_grid`) — grilla 2D de columnas, fajas y tubos
+
+Herramienta para fachadas reales (ej. corredera + puerta + paños fijos con faja de ventilación
+arriba), sin el CAD libre. Dibujo **2D plano** (sin efecto 3D) reusando el motor de panel
+(`extrudedPanel`/`louverPanel`/`wallBlock`) + símbolo de apertura por tipo + cotas estilo plano.
+Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5250).
+
+- **Modelo de datos (`cardsState[id]`)**, defaults en `addItem` (rama `categoria === 'fachada_grid'`):
+  - `cols: [{ w, rows: [{ h, celda, alu, vidrio?, espesor?, apertura?, lado?, manija?, cierre?,
+    cerradura?, mosquitera?, cor_interior? }] }]` — columnas de izquierda a derecha, cada una con
+    una o más filas apiladas. `gridAlto` = alto de la banda de columnas (mm).
+  - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4` (correderas), `puerta`, `ventana`
+    (abisagradas), `osci`, `proy`, `louvers`, `vacio` (muro con hatch, `wallBlock`). **Nombres
+    idénticos a los ítems del menú lateral**, a propósito.
+  - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
+    tipo (`pf`→P40 ventana/puerta; `puerta`→P40 puerta/Titan; correderas→P92/E70/E100/E200;
+    `louvers`/`vacio`→ninguno). `celdaAluOpts(celda)` / `celdaAluDefault(celda)`.
+  - `fajaArriba` / `fajaAbajo`: `null` o `{ h, celda, alu, align?, division?, cols? }`. Banda de
+    ancho completo arriba/abajo de las columnas. Con `cols` (`gridFajaAddCol`) la faja se
+    subdivide en sub-columnas de anchos propios (ej. 3 proyectadas de anchos distintos); sin
+    `cols`, `division` (`'ninguna'|'perfil'|'tope'`) dibuja divisiones alineadas con las columnas
+    y con las hojas de la corredera de abajo (`fajaDivXs`).
+  - **Fachada irregular**: cada banda (faja arriba / columnas / faja abajo) puede tener ancho
+    distinto; el ancho total es la banda más ancha y las demás se alinean (`gridAlign`,
+    `faja.align` ∈ `izq|centro|der`). La alineación solo se muestra en la banda más angosta.
+  - `tubos: { sup, inf, izq, der, entre, entreH, medida:'100 x 45', incluidos }`.
+    **Regla del usuario (fábrica):** los tubos ENTRE columnas (`entre` vertical, `entreH`
+    horizontal) siempre van dentro del hueco → siempre incluidos en ancho/alto total. Los
+    perimetrales (`sup/inf/izq/der`) pueden estar incluidos o no (`incluidos`, default true): si
+    NO están incluidos se dibujan FUERA del envolvente y la cota se corre más allá del tubo. El
+    tubo horizontal (`entreH`) ocupa una banda REAL: su grosor (2º número de `medida`, ej. 45)
+    **suma al alto total** tanto en el dibujo como en el resumen (`totalH = faH + eHtop + gAlto +
+    eHbot + fbH`). No hay "+45 mm al alto" aparte: el alto total ya lo refleja.
+  - `verPlanta` (default true): vista en planta debajo cuando hay algún operable (corredera o
+    abisagrada). `vidrio`/`espesor` globales son el respaldo del vidrio por celda; `color_vidrio`,
+    `herraje_color`, `color_perfil`/`color_ral` son globales.
+  - `gridDeriv(id)` recalcula `ancho` (suma de columnas) y `alto` (`gridAlto` + fajas) en cada
+    redibujo, así el resto de la app (cotización cliente, PDF) ve medidas normales.
+- **Dibujo `renderFachadaGrid(state, uid)`**: escala horizontal exacta (`DW=100` = ancho máximo);
+  escala vertical acotada (`minDHt = 0.4·DW`, `maxDHt = 2.1·DW`) para que una fachada muy ancha y
+  baja o muy alta y angosta no deje el vidrio diminuto — el alto real siempre va en la cota.
+  `gridCell` dibuja cada celda: correderas con montantes + `gridArrow` alternadas; abisagradas con
+  el MISMO chevron que el ítem suelto (vértice hacia el lado que abre: `lado:'izq'` → vértice a la
+  izquierda; 2 hojas = montante central + 2 chevrones; `adentro` punteado, `afuera` continuo);
+  `osci` vértice arriba, `proy` vértice abajo; `pf` con etiqueta "PF". Cotas: `dimSegH` (línea de
+  cota SEGMENTADA por banda, un tramo por columna) + `dimLineH` total abajo + `dimLineV` total a la
+  derecha + alturas por banda a la izquierda cuando hay fajas. Etiqueta fija "VISTA EXTERIOR".
+  `applyFinish` al final como el resto.
+- **Vista en planta**: `gridColPlan(x, w, col, planY, depth)` por columna. Correderas: rieles
+  paralelos esquemáticos. **Abisagradas: `planViewAbatible(type, stateInfo, startX, w, y0, maxR,
+  opts)`** — función top-level que es la ÚNICA fuente de la planta de puerta/ventana abisagrada:
+  la tarjeta suelta (`drawPlanView`, closure en `renderSVG`) la llama con `y0=97, maxR=34,
+  {showLabels:true, hingeLeft:true}`; la fachada con `maxR=(depth-2)*2` (acotado a la banda de
+  planta), `{showLabels:false, hingeLeft: r.lado !== 'izq'}` y **`vista:'afuera'`** forzado (la
+  fachada siempre se dibuja como vista exterior; sin esto el giro sale espejado). Pedido explícito
+  del usuario: "idéntica a la tarjeta suelta, no parecida" (se descartó un símbolo propio). Caso 2
+  hojas confirmado visualmente por el usuario; el de 1 hoja quedó coherente por código (chevron y
+  bisagra coinciden) pero **pendiente de que el usuario lo revise en dispositivo**.
+- **UI**: la tarjeta (`.grid-card`, media línea por defecto; `adaptDrawingToContent` recorta el
+  viewBox y ajusta el alto con tope 430px) solo muestra el dibujo + botón "✏️ Editar fachada
+  compuesta" → `abrirEditorFachada(id)` abre un **pop-up lateral** (drawer `#fachada-editor` a la
+  derecha, ancho `min(430px, 94vw)`) con `renderGridBuilder(id)` dentro de `#grid-builder-${id}`;
+  el lienzo se estrecha (`padding-right`) y se bloquea el scroll para que la fachada quede fija al
+  frente mientras se edita; `cerrarEditorFachada()` restaura todo. Setters `window.gridSet*` /
+  `gridToggle*` / `gridAdd*` / `gridDel*` / `gridFaja*` → `gridDraw(id)` (solo redibuja) o
+  `gridFull(id)` (redibuja + regenera el formulario, cuando cambia el layout de opciones). NO pasa
+  por `updateState`/`getMenuOpciones`. Selector global: solo `Color de vidrio` (se quitó "Vidrio
+  por defecto", redundante — el vidrio va por celda).
+- **Resumen/PDF** (`generateSummary`, rama `fachada_grid`): encabezado "FACHADA COMPUESTA" con ancho
+  × alto total y una descripción legible de qué la compone (`compDesc`, ej. "Corredera 2 Hojas +
+  Puerta Abisagrada + 3 ventana proyectada superior"); "DETALLE POR ELEMENTO" con una fila por
+  elemento: nombre, medida `ancho × alto mm` etiquetada, y `specList` con material, **vidrio
+  efectivo por elemento** (`o.vidrio || state.vidrio` + grosor; `vacio` no lleva), apertura y lado
+  ("abre izq./der."), manija, hoja interior, cierre, cerradura, mosquitera, división. Tubos con
+  redacción para fábrica: "Tubos laterales (izq. y der.): incluidos/NO incluidos en el ancho
+  total", "Tubo horizontal entre columnas: incluido en la altura total", etc.
+- **Cotización cliente / `enviarOrden`**: como `type !== 'draw'`, la fachada compuesta sí tiene SVG
+  y viaja como cualquier tarjeta (no necesita el caso especial del CAD).
 
 ## Cortinas/Enrollables (`categoria: 'cortina'`)
 
