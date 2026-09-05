@@ -1562,7 +1562,14 @@
             const specList = (celda, o) => {
                 const p = [];
                 if (o.alu) p.push(ALU_LABEL[o.alu] || o.alu);
-                if (o.vidrio) p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[o.vidrio] || o.vidrio) + ((o.vidrio === 'templado' || o.vidrio === 'laminado') && o.espesor ? ' ' + espesorLabel(o.espesor) : ''));
+                // Vidrio POR ELEMENTO (puede variar entre paños): el propio del ítem o, si no tiene, el
+                // color/tipo del encabezado. 'vacio' (muro) no lleva vidrio. Se marca siempre para que
+                // fábrica lo vea en cada ítem, no solo en los que se cambiaron a mano.
+                if (celda !== 'vacio') {
+                    const ev = o.vidrio || state.vidrio || 'templado';
+                    const ee = o.espesor || state.espesor;
+                    p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[ev] || ev) + ((ev === 'templado' || ev === 'laminado') && ee ? ' ' + espesorLabel(ee) : ''));
+                }
                 if (isCorS(celda) && o.manija) p.push('manija ' + (o.manija === 'blanco' ? 'blanca' : 'negra'));
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); }
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
@@ -1594,14 +1601,26 @@
                 }
             });
             if (fb) filas += fajaLine(fb, 'inferior');
-            const tubosArr = [];
-            if (tbz.sup) tubosArr.push('superior'); if (tbz.inf) tubosArr.push('inferior');
-            if (tbz.izq) tubosArr.push('lateral izq.'); if (tbz.der) tubosArr.push('lateral der.');
-            if (tbz.entre) tubosArr.push('entre columnas (vert.)'); if (tbz.entreH) tubosArr.push('entre columnas (horiz.)');
-            const perim = tbz.sup || tbz.inf || tbz.izq || tbz.der;
-            const incTxt = perim ? (tbz.incluidos !== false ? ' · incluidos en la medida' : ' · NO incluidos (aparte)') : '';
-            const sumaTxt = tuboAltoTotal ? ` · +${tuboAltoTotal} mm al alto` : '';
-            const tubosLine = tubosArr.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos:</b> ${tubosArr.join(', ')}${tbz.medida ? ` — ${tbz.medida} mm` : ''}${incTxt}${sumaTxt}</div>` : '';
+            // Tubos: redacción clara para fábrica. Los de ENTRE COLUMNAS (horizontal/vertical) SIEMPRE
+            // van dentro del hueco -> siempre incluidos en la altura/ancho total. Los LATERALES y sup/inf
+            // (perimetrales) pueden estar incluidos o no en la medida total (flag `incluidos`).
+            const inc = tbz.incluidos !== false;
+            const tuboLines = [];
+            if (tbz.izq || tbz.der) {
+                const arr = [tbz.izq && 'izq.', tbz.der && 'der.'].filter(Boolean);
+                const label = arr.length > 1 ? 'Tubos laterales (izq. y der.)' : `Tubo lateral (${arr[0]})`;
+                const inw = inc ? (arr.length > 1 ? 'incluidos' : 'incluido') : (arr.length > 1 ? 'NO incluidos' : 'NO incluido');
+                tuboLines.push(`${label}: <b>${inw} en el ancho total</b>`);
+            }
+            if (tbz.sup || tbz.inf) {
+                const arr = [tbz.sup && 'superior', tbz.inf && 'inferior'].filter(Boolean);
+                const label = arr.length > 1 ? 'Tubos superior e inferior' : `Tubo ${arr[0]}`;
+                const inw = inc ? (arr.length > 1 ? 'incluidos' : 'incluido') : (arr.length > 1 ? 'NO incluidos' : 'NO incluido');
+                tuboLines.push(`${label}: <b>${inw} en la altura total</b>`);
+            }
+            if (tbz.entreH) tuboLines.push('Tubo horizontal entre columnas: <b>incluido en la altura total</b>');
+            if (tbz.entre) tuboLines.push('Tubo vertical entre columnas: <b>incluido en el ancho total</b>');
+            const tubosLine = tuboLines.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos${tbz.medida ? ` (${tbz.medida} mm)` : ''}:</b>${tuboLines.map(t => `<div style="padding-left:12px; color:#444;">${t}</div>`).join('')}</div>` : '';
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
             const compParts = [];
             cols.forEach(c => (c.rows || []).forEach(r => compParts.push(CELDA_NOM[r.celda] || r.celda)));
@@ -1616,7 +1635,8 @@
             fajaComp(state.fajaArriba, 'superior'); fajaComp(state.fajaAbajo, 'inferior');
             const compDesc = compParts.join(' + ');
             const acabadoTxt = ({ natural: 'Natural / Plata', negro: 'Negro', blanco: 'Blanco', grafito: 'Grafito', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) })[state.color_perfil || 'natural'];
-            const vidrioDef = (state.vidrio || 'templado') === 'sin' ? 'Sin vidrio' : (state.vidrio === 'louvers' ? 'Láminas de Louver' : `${state.vidrio || 'templado'} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`.trim());
+            // El tipo/grosor de vidrio va POR ELEMENTO (arriba). Aquí solo el color de vidrio, que es global.
+            const colorVidrioTxt = state.color_vidrio ? (state.color_vidrio.charAt(0).toUpperCase() + state.color_vidrio.slice(1)) : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.6;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:6px; padding-bottom:5px;">
                     <strong>FACHADA COMPUESTA</strong>${(state.cantidad || 1) > 1 ? ` &nbsp;×${state.cantidad}` : ''}
@@ -1627,7 +1647,7 @@
                 ${filas}
                 <div style="border-top:1px solid #ddd; margin-top:6px; padding-top:5px;">
                     <div><b>Acabado:</b> ${acabadoTxt}</div>
-                    <div><b>Vidrio por defecto:</b> ${vidrioDef}</div>
+                    ${colorVidrioTxt ? `<div><b>Color de vidrio:</b> ${colorVidrioTxt}</div>` : ''}
                     ${tubosLine}
                 </div>
             </div>`;
@@ -5303,23 +5323,49 @@
     // Símbolo de giro en planta para una abisagrada — MISMA representación que el ítem suelto
     // (drawPlanView): hoja(s) a 30° + arco punteado. Coherencia total con las tarjetas no-fachada.
     // planY = línea de pared; interior arriba (-y), exterior abajo (+y). 'afuera' abre hacia +y.
-    function gridPlanSymbol(cfg, startX, w, planY, maxDepth) {
-        // SIN arco: solo líneas rectas hacia el lado que abre. 2 hojas = dos líneas desde las jambas
-        // que se juntan en el centro (V/^ según abra adentro/afuera). 1 hoja = una línea desde la bisagra.
-        const ap = cfg.apertura || 'adentro_1';
-        const dirY = ap.includes('afuera') ? 1 : -1;   // afuera = hacia abajo (+y, exterior); adentro = arriba (-y, interior)
-        const d = Math.min(w * 0.5, maxDepth);
-        const solid = 'stroke:#0A3D62;stroke-width:1;fill:none';
-        const tipY = planY + d * dirY;
-        if (ap.includes('2')) {
-            const cX = startX + w / 2;
-            return `<line x1="${startX.toFixed(1)}" y1="${planY}" x2="${cX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`
-                + `<line x1="${(startX + w).toFixed(1)}" y1="${planY}" x2="${cX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`;
+    // Vista en planta de puerta/ventana abisagrada — MISMO modelo que la tarjeta suelta (drawPlanView):
+    // hojas como líneas sólidas a 30° + arco punteado del giro. Se parametriza y0/maxR/centro para
+    // reutilizar EXACTAMENTE el mismo dibujo en la fachada compuesta. Es una copia de drawPlanView,
+    // no una versión "parecida" — ambos (tarjeta suelta y fachada) llaman a esta función.
+    // opts.showLabels: rotula int/ext a la izquierda (solo tarjeta suelta; la fachada rotula su banda aparte).
+    // opts.hingeLeft: bisagra a la izquierda (default true, como drawPlanView); la fachada la deriva de `lado`.
+    function planViewAbatible(type, stateInfo, startX, w, y0, maxR, opts) {
+        opts = opts || {};
+        const showLabels = opts.showLabels === true;
+        let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
+        let opensAfuera = stateInfo.apertura && stateInfo.apertura.includes('afuera');
+        if (type === 'win_ob') opensAfuera = false;
+        let vistaAfuera = stateInfo.vista === 'afuera';
+        let opensTowardsViewer = (vistaAfuera && opensAfuera) || (!vistaAfuera && !opensAfuera);
+        let dirY = opensTowardsViewer ? 1 : -1;
+        let centerX = startX + w / 2;
+        let html = '';
+        if (is2Hojas) {
+            let r = Math.min(w / 2, maxR);
+            let dx = r * 0.866;
+            let dy = r * 0.5 * dirY;
+            html += `<line x1="${startX}" y1="${y0}" x2="${startX + dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
+            html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 1 : 0} ${startX + dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
+            html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+        } else {
+            let hingeLeft = opts.hingeLeft !== false;
+            let r = Math.min(w * 0.875, maxR);
+            let dx = r * 0.866;
+            let dy = r * 0.5 * dirY;
+            // Base con bisagra a la IZQUIERDA (idéntica a drawPlanView); si va a la derecha se refleja
+            // alrededor del centro de la columna (mismo efecto que el espejo orientacion='D' de la suelta).
+            let endX = startX + dx, endY = y0 + dy, sweep = dirY > 0 ? 1 : 0;
+            let leaf = `<line x1="${startX}" y1="${y0}" x2="${endX}" y2="${endY}" style="stroke:#0A3D62;"/>`
+                + `<path d="M ${startX + w} ${y0} A ${r} ${r} 0 0 ${sweep} ${endX} ${endY}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            html += hingeLeft ? leaf : `<g transform="translate(${(2 * centerX).toFixed(2)},0) scale(-1,1)">${leaf}</g>`;
         }
-        // 1 hoja: línea desde la bisagra al lado libre, hacia el lado que abre
-        const hingeLeft = cfg.lado !== 'izq';           // lado 'der' (manija der) → bisagra izquierda
-        const hingeX = hingeLeft ? startX : startX + w, freeX = hingeLeft ? startX + w : startX;
-        return `<line x1="${hingeX.toFixed(1)}" y1="${planY}" x2="${freeX.toFixed(1)}" y2="${tipY.toFixed(1)}" style="${solid}"/>`;
+        if (showLabels) {
+            const swingEsExt = opensAfuera;
+            html += `<text x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
+            html += `<text x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
+        }
+        return html;
     }
     function gridColPlan(x, w, col, planY, depth) {
         const rows = (col && col.rows) || [];
@@ -5327,7 +5373,15 @@
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
-        if (celda === 'puerta' || celda === 'ventana') return s + gridPlanSymbol(r, x, w, planY, 12);   // profundidad de las líneas (cabe en la banda de planta)
+        if (celda === 'puerta' || celda === 'ventana') {
+            // MISMA vista en planta que la tarjeta suelta (arco + hojas). maxR se acota a la banda de
+            // planta disponible (depth) para que el arco no se salga: dy = maxR*0.5 ≤ depth-2.
+            const maxR = Math.max(6, (depth - 2) * 2);
+            const type = celda === 'ventana' ? 'win_abat' : 'puerta';
+            // La fachada compuesta siempre se dibuja como VISTA EXTERIOR → vista:'afuera', para que la
+            // dirección del giro (int arriba / ext abajo) coincida con la tarjeta suelta vista desde afuera.
+            return s + planViewAbatible(type, { ...r, vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
+        }
         if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
             // corredera en planta: rieles paralelos + hojas superpuestas (esquemático)
             const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
@@ -6644,62 +6698,12 @@
         const putArrowCorStair = putArrow;
 
         const drawPlanView = (type, stateInfo, startX, w) => {
-            let is2Hojas = stateInfo.apertura && stateInfo.apertura.includes('2');
-            let opensAfuera = stateInfo.apertura && stateInfo.apertura.includes('afuera');
-            if (type === 'win_ob') opensAfuera = false;
-
-            let vistaAfuera = stateInfo.vista === 'afuera';
-            let opensTowardsViewer = (vistaAfuera && opensAfuera) || (!vistaAfuera && !opensAfuera);
-            let dirY = opensTowardsViewer ? 1 : -1;
-
-            // y0 = línea de pared de la planta. Bajada a 97 (el viewBox de estos tipos se amplió a
-            // 124) para separarla bien del panel (que llega a y≈70) y aprovechar el margen de abajo.
-            // Con maxR=34 (dy≤17): el arco de arriba llega a ~80 (bajo el panel) y el de abajo a ~114
-            // (dentro del viewBox de bottom 116).
-            let y0 = 97;
+            // y0 = línea de pared de la planta (97, dentro del viewBox ampliado a ~124). El dibujo del
+            // giro (hojas + arco punteado) lo hace planViewAbatible — la MISMA función que usa la
+            // fachada compuesta, para que la vista en planta sea idéntica en los dos casos.
+            const y0 = 97;
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
-
-            // startX/w se pasan desde el rect real del panel (ver PROP_BOX/fitPropRect) para que
-            // la vista de planta quede alineada bajo la elevación, sea cual sea el ancho real —
-            // pero el radio del giro (r) NO puede crecer libre con el ancho: el viewBox reserva
-            // un espacio vertical FIJO para esta vista (de y0=85 al borde inferior), así que con
-            // las cajas de proporción real más anchas (ver PROP_BOX) un panel ancho podía generar
-            // un radio que se salía del viewBox (dibujo "cortado"). `maxR` limita el radio al
-            // espacio vertical realmente disponible — para anchos normales no cambia nada (el
-            // radio real es menor que el límite); solo comprime el giro en casos muy anchos.
-            let centerX = 50;
-            const maxR = 34; // dy máx = 17: arco arriba llega a y0-17=74 (bajo el panel), abajo a y0+17=108 (dentro del viewBox de 110)
-
-            if (is2Hojas) {
-                let r = Math.min(w / 2, maxR);
-                let dx = r * 0.866;
-                let dy = r * 0.5 * dirY;
-
-                html += `<line x1="${startX}" y1="${y0}" x2="${startX + dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
-                html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 1 : 0} ${startX + dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
-
-                html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
-                html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
-            } else {
-                let r = Math.min(w * 0.875, maxR);
-                let hingeX = startX;
-                let freeX = startX + w;
-                let dx = r * 0.866;
-                let dy = r * 0.5 * dirY;
-                let endX = hingeX + dx;
-                let endY = y0 + dy;
-
-                let sweep = dirY > 0 ? 1 : 0;
-
-                html += `<line x1="${hingeX}" y1="${y0}" x2="${endX}" y2="${endY}" style="stroke:#0A3D62;"/>`;
-                html += `<path d="M ${freeX} ${y0} A ${r} ${r} 0 0 ${sweep} ${endX} ${endY}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
-            }
-            // Marca el lado interior/exterior de la pared (como galandajes/correderas). El batiente
-            // abre hacia el interior salvo "apertura afuera"; ese lado (donde queda el arco de giro)
-            // se rotula según corresponda. Van al extremo izquierdo de la línea de pared.
-            const swingEsExt = opensAfuera;
-            html += `<text x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
-            html += `<text x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
+            html += planViewAbatible(type, stateInfo, startX, w, y0, 34, { showLabels: true, hingeLeft: true });
             return html;
         };
 
