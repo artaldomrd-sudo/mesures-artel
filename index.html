@@ -5491,10 +5491,20 @@
             return s + planViewAbatible(type, { ...r, vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
         }
         if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
-            // corredera en planta: rieles paralelos + hojas superpuestas (esquemático)
+            // corredera en planta: un riel por hoja, en escalera — MISMA regla que la tarjeta suelta
+            // (`correderaPlan`): el selector "Hoja interior" (`cor_interior`, 'I' por defecto) decide qué
+            // lado va al riel INTERIOR (arriba, planY: int arriba / ext abajo) y el resto cascadea hacia el
+            // exterior. Bug real (foto del usuario): antes se ignoraba `cor_interior` y la hoja izquierda
+            // quedaba siempre interior, aunque se eligiera "Hoja interior: Der.".
             const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
-            s += `<line x1="${x.toFixed(1)}" y1="${(planY + g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
-            for (let k = 0; k < n; k++) { const sx = x + w * k / n, ex = x + w * (k + 1) / n, ry = planY + (k % 2) * g; s += `<line x1="${sx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="${per}" stroke-width="1.6"/>`; }
+            const leftIsInt = (r.cor_interior || 'I') === 'I';
+            s += `<line x1="${x.toFixed(1)}" y1="${(planY + (n - 1) * g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + (n - 1) * g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+            for (let k = 0; k < n; k++) {
+                const sx = x + w * k / n, ex = x + w * (k + 1) / n;
+                const depth = leftIsInt ? k : (n - 1 - k);   // 0 = riel interior (arriba) … n-1 = exterior (abajo)
+                const ry = planY + depth * g;
+                s += `<line x1="${sx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="${per}" stroke-width="1.6"/>`;
+            }
             return s;
         }
         return s;   // pf / louvers / osci / proy: solo la línea de pared
