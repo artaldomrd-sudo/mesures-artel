@@ -3914,15 +3914,11 @@
             if (panoResizeObserver) panoResizeObserver.unobserve(area);
             return;
         }
-        // Fachada compuesta: solo las MUY anchas ocupan todo el ancho (panoramic); las demás quedan a
-        // media página para poder poner dos por línea. Se decide por la proporción real ancho/alto.
+        // Fachada compuesta: SIEMPRE a media línea (2-3 por fila) para mantener coherencia de tamaños
+        // entre tarjetas — ni una muy ancha a ancho completo ni una muy alta estirada.
         if (esGrid) {
             const card = document.getElementById('card-' + id);
-            const fw = f => (f && f.cols) ? f.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) : 0;
-            const maxWmm = Math.max((state.cols || []).reduce((a, c) => a + (parseInt(c.w) || 0), 0), fw(state.fajaArriba), fw(state.fajaAbajo), 1);
-            const totalHmm = (parseInt(state.gridAlto) || 0) + (state.fajaArriba ? (parseInt(state.fajaArriba.h) || 0) : 0) + (state.fajaAbajo ? (parseInt(state.fajaAbajo.h) || 0) : 0);
-            const wide = totalHmm > 0 && (maxWmm / totalHmm) >= 1.8;
-            if (card) card.classList.toggle('panoramic', wide);
+            if (card) card.classList.remove('panoramic');
         }
         const svg = area.querySelector('svg');
         if (!svg) return;
@@ -3941,7 +3937,7 @@
         if (!w) return;
         // Tope de alto: la fachada compuesta se limita más (470px) para que una fachada alta y
         // angosta no deje la tarjeta excesivamente estirada; los paños/ducha siguen con 650.
-        const cap = esGrid ? 470 : 650;
+        const cap = esGrid ? 430 : 650;
         area.style.height = Math.min(cap, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
         if (panoResizeObserver) panoResizeObserver.observe(area);
     }
@@ -5343,7 +5339,7 @@
         // Escala VERTICAL con proporción acotada: si la fachada es extremadamente ancha y baja (o muy
         // alta y angosta) el dibujo a escala exacta deja el vidrio diminuto / cotas ilegibles. Se limita
         // el alto del dibujo a un rango (≈6:1 de ancho a 1:6 de alto) — el alto real se muestra en la cota.
-        const rawDHt = totalH * scale, minDHt = DW * 0.16, maxDHt = DW * 3;
+        const rawDHt = totalH * scale, minDHt = DW * 0.4, maxDHt = DW * 2.1;
         const scaleV = Math.max(minDHt, Math.min(maxDHt, rawDHt)) / totalH;
         const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV, DHt = faDH + gDH + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
@@ -5472,7 +5468,7 @@
         // Vista en planta (opcional): útil cuando hay correderas / puertas o ventanas abisagradas.
         let planExtra = 0;
         const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(r.celda)));
-        if (state.verPlanta && hayOperable) {
+        if (state.verPlanta !== false && hayOperable) {   // activada por defecto (correderas y puertas/ventanas abisagradas)
             const planDepth = 14, planY = anchoBottom + 14;
             cotas += `<text x="${offMain.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             colInfo.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, planDepth); });
@@ -5585,7 +5581,7 @@
             <label style="${gbl}">Color de vidrio</label>
             <select style="${inp}" onchange="gridSetColorVidrio(${id},this.value)">${opt(CVID, st.color_vidrio || '')}</select>` : ''}
         </div>`;
-        h += `<label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--artal-blue);font-weight:bold;margin:2px 0 8px;"><input type="checkbox" ${st.verPlanta ? 'checked' : ''} onchange="gridSetVerPlanta(${id},this.checked)" style="width:15px;height:15px;">Mostrar vista en planta (correderas / abisagradas)</label>`;
+        h += `<label style="display:flex;align-items:center;gap:7px;font-size:12px;cursor:pointer;color:var(--artal-blue);font-weight:bold;margin:2px 0 8px;"><input type="checkbox" ${st.verPlanta !== false ? 'checked' : ''} onchange="gridSetVerPlanta(${id},this.checked)" style="width:15px;height:15px;">Mostrar vista en planta (correderas / abisagradas)</label>`;
         h += fajaRow('arriba', st.fajaArriba);
         cols.forEach((c, ci) => {
             h += `<div style="border:1px solid #dde5ee;border-radius:8px;padding:8px;margin-top:8px;background:#fff;">
