@@ -1189,6 +1189,44 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
   mostrado es el original. Dedup de obras dentro de un cliente conserva la de `fechaModificacion`
   más reciente. `saveProject/loadProject/deleteProject/updateClientList/
   updateObraList/backupAllProjects`. Menú lateral: "Clientes" → "Proyecto".
+- **Autoguardado: SOLO escribe cuando el contenido cambió de verdad (2026-09-05, segunda pérdida
+  real de trabajo — proyecto "Sienna C-3", 2 horas perdidas dos veces).** El autoguardado
+  multi-capa anterior (commit 6a49232) tenía una bomba de tiempo: el guardado periódico (cada 8 s)
+  y el `beforeunload` escribían SIEMPRE, hubiera cambios o no, y `getAppJSON()` ponía
+  `_syncUpdatedAt = Date.now()` en cada escritura. Cualquier pestaña/dispositivo que tuviera el
+  proyecto abierto sin tocarlo (pestaña de fondo en la Mac, app del Dock del iPad, otra pestaña de
+  Safari — `_openedCli/_openedObra` persisten en `artal_live_progression`, así que "abierto" dura
+  hasta que se hace Hoja en blanco) re-subía su copia VIEJA a la nube cada 8 s con hora NUEVA, y
+  `mergeCloudProject`/`loadProgress` la tomaban como "la más reciente", pisando las ediciones
+  reales del otro dispositivo. Arreglo (`saveProgress`, `contentSigOf`, `restoreData`,
+  `getAppJSON`):
+  - `contentSigOf(json)` = `JSON.stringify` del estado SIN los campos que cambian solos
+    (`_syncUpdatedAt`, `fechaModificacion`, `_openedCli`, `_openedObra`). `saveProgress` compara
+    contra `_lastContentSig`: si es igual, **no escribe nada** (ni live, ni `artal_projects`, ni
+    nube) y no toca ningún reloj. `_lastChangeTs` (reloj del ÚLTIMO CAMBIO REAL) solo avanza con un
+    cambio real; `getAppJSON` usa `_syncUpdatedAt: _lastChangeTs || Date.now()`.
+  - `restoreData` fija la línea base al final (`_lastContentSig` = firma de lo recién restaurado,
+    `_lastChangeTs` = el reloj que traía el guardado): abrir un proyecto sin editarlo NUNCA lo
+    re-sube. `_lastLiveOpened` fuerza una sola escritura del estado en vivo (para persistir qué
+    proyecto está abierto) sin cambiar el reloj.
+  - `autosaveOpenedProject`: si otra pestaña de ESTE dispositivo dejó una versión más nueva, no la
+    pisa — guarda la pantalla como `"<obra> (conflicto HH:MM)"` (nunca se pierde ninguna).
+  - `mergeCloudProject`, proyecto abierto y versión más nueva en la nube (ahora solo pasa con un
+    cambio REAL en otro dispositivo): `confirm()` para cargarla; la pantalla actual se guarda antes
+    como versión en la nube.
+  - **Historial de versiones en la nube** (`proyectosGuardados/{id}/versiones/{updatedAt}`,
+    `saveProjectVersionToCloud` en el script módulo): una versión por cambio real (máx. una cada 3
+    min por proyecto), forzada en "Guardar proyecto", conflictos y restauraciones; se conservan las
+    15 más recientes (poda con `getDocs`+`deleteDoc`). Botón **"🕘 Versiones anteriores"** en el menú
+    lateral (`mostrarVersionesAnteriores`, script clásico, usa `window.listProjectVersions`):
+    lista fecha/hora, nº de ítems, motivo y dispositivo, y restaura una (la pantalla actual se
+    guarda antes como versión; la restaurada pasa a ser la más nueva, `_lastContentSig =
+    '__restaurada__'`). Requiere `match /proyectosGuardados/{id}/versiones/{v} { allow write: if
+    puedeEscribir(); }` en `firestore.rules` (la escritura NO se hereda del padre) — pegar a mano
+    en Firebase Console. Sin la regla, la escritura falla en silencio (try/catch) y la lista sale
+    vacía; nada más se rompe.
+  - Verificado en navegador (localhost): reloj estable tras 3 ciclos de autosave sin cambios y tras
+    recargar + 10 s; avanza (y se escribe local) con un cambio real. `verify.mjs` no cubre esto.
 - **`backupAllProjects()` en iPad: "copia creada" pero no aparece en ningún lado.** Caso real
   reportado por el usuario. Causa: un `<a download>` con un `data:` URI (todo el JSON de todos
   los proyectos codificado como texto en la URL) es poco confiable en iOS/iPadOS Safari para

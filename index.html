@@ -388,6 +388,7 @@
             <select id="select-cliente" onchange="updateObraList()"><option value="">-- Cliente --</option></select>
             <select id="select-proyecto"><option value="">-- Proyecto --</option></select>
             <button class="side-btn primary" style="margin-top:4px;" onclick="loadProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z"/><path d="M3 9h18l-1.5 8a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/></svg> Abrir proyecto</button>
+            <button class="side-btn ghost" style="margin-top:6px;" onclick="mostrarVersionesAnteriores()" title="Últimas versiones de este proyecto guardadas en la nube (se crean solas con cada cambio y con cada Guardar)">🕘 Versiones anteriores</button>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
             <button class="side-btn" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="nuevaParteProyecto()" title="Arranca una hoja nueva del mismo proyecto (2da etapa, barandas, adicional…) sin pisar la parte anterior">➕ Nueva parte del proyecto</button>
         </div>
@@ -565,6 +566,10 @@
     // proyecto (sin preguntar) o si viene de una hoja distinta que coincide de nombre con un
     // proyecto ya guardado (ahí sí hay que avisar antes de reemplazarlo, ver saveProject()).
     let openedProjectKey = null;
+    // Línea base del autoguardado (ver saveProgress): firma del contenido tal como quedó la última
+    // vez que se guardó/restauró, y reloj del ÚLTIMO CAMBIO REAL. `_syncUpdatedAt` solo avanza
+    // cuando el contenido cambia de verdad — nunca por el mero paso del tiempo.
+    let _lastContentSig = null, _lastChangeTs = 0, _lastLiveOpened = null;
     // Cliente/obra EXACTOS del proyecto abierto (para autoguardar en él sin depender de la grafía
     // del encabezado, que el usuario puede cambiar). openedProjectKey es sólo la clave en minúsculas.
     let openedProjectCli = null, openedProjectObra = null;
@@ -1045,7 +1050,9 @@
         localStorage.setItem('artal_projects', JSON.stringify(projects));
         openedProjectKey = targetKey; openedProjectCli = cliKey; openedProjectObra = obraKey;
         if (window.syncClienteObra) window.syncClienteObra(cliKey, obraKey);
+        _lastContentSig = contentSigOf(jsonData); _lastChangeTs = jsonData.header._syncUpdatedAt || Date.now();
         if (window.syncProjectToCloud) window.syncProjectToCloud(cliKey, obraKey, jsonData);
+        if (window.saveProjectVersionToCloud) window.saveProjectVersionToCloud(cliKey, obraKey, jsonData, 'guardado manual', true);
 
         updateClientList();
         document.getElementById('select-cliente').value = cliKey;
@@ -1398,7 +1405,16 @@
             const localTs = (local && local.header && local.header._syncUpdatedAt) || 0;
             const incomingTs = (jsonData.header && jsonData.header._syncUpdatedAt) || 0;
             if (incomingTs > localTs) {
-                alert(`"${obraKey}" (${cliKey}) se actualizó en otro dispositivo mientras lo tenías abierto aquí. Para ver esos cambios, abrilo de nuevo desde "Abrir proyecto" (tus cambios sin guardar en esta hoja se perderían).`);
+                // Solo llega aquí cuando OTRO dispositivo hizo un cambio REAL (ver saveProgress). Se
+                // ofrece cargarlo; lo que hay en pantalla se guarda antes como versión en la nube.
+                const cargar = confirm(`"${obraKey}" (${cliKey}) se actualizó en OTRO dispositivo mientras lo tienes abierto aquí.\n\nAceptar = cargar esa versión ahora (lo que hay en esta pantalla queda guardado en "Versiones anteriores").\nCancelar = seguir con lo de esta pantalla (tu próximo cambio pasará a ser la versión más nueva; la del otro dispositivo queda en "Versiones anteriores").`);
+                if (cargar) {
+                    try { if (window.saveProjectVersionToCloud) window.saveProjectVersionToCloud(cliKey, obraKey, getAppJSON(), 'reemplazada por otro dispositivo', true); } catch (_) { }
+                    projects[cliKey][obraKey] = jsonData;
+                    try { localStorage.setItem('artal_projects', JSON.stringify(projects)); } catch (e) { console.error('mergeCloudProject local', e); }
+                    restoreData(jsonData);
+                    saveProgress(); updateSavedStatusBadge();
+                }
             }
             return;
         }
@@ -1438,6 +1454,49 @@
     document.getElementById('header-cliente').addEventListener('input', updateSavedStatusBadge);
     document.getElementById('header-cliente').addEventListener('input', fillHeaderObraSel);
     document.getElementById('header-obra').addEventListener('input', updateSavedStatusBadge);
+
+    // Historial de versiones en la nube (proyectosGuardados/{id}/versiones): lista las últimas
+    // versiones guardadas de un proyecto y permite restaurar una. Red de seguridad para cuando
+    // una edición se pierde por cualquier motivo (otro dispositivo, pestaña vieja, cuota, etc.).
+    async function mostrarVersionesAnteriores() {
+        const cliente = document.getElementById('select-cliente').value || openedProjectCli;
+        const obra = document.getElementById('select-proyecto').value || openedProjectObra;
+        if (!cliente || !obra) { alert('Selecciona un Cliente y un Proyecto (o ten uno abierto) para ver sus versiones anteriores.'); return; }
+        if (!window.listProjectVersions) { alert('Inicia sesión con Google (botón de arriba) para ver las versiones guardadas en la nube.'); return; }
+        let vers;
+        try { vers = await window.listProjectVersions(cliente, obra); }
+        catch (e) { alert('No se pudieron leer las versiones: ' + (e && e.message || e)); return; }
+        if (vers === null) { alert('Inicia sesión con Google (botón de arriba) para ver las versiones guardadas en la nube.'); return; }
+        if (!vers.length) { alert(`Todavía no hay versiones anteriores en la nube para "${obra}" (${cliente}). Se van creando solas con cada cambio (máx. una cada 3 min) y con cada "Guardar proyecto".`); return; }
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const fmt = ts => { const d = new Date(ts); return d.toLocaleDateString('es-ES') + ' ' + d.toTimeString().slice(0, 5); };
+        const rows = vers.map((v, i) => `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #eee;">
+                <div style="flex:1;font-size:13px;"><b>${fmt(v.updatedAt)}</b> &nbsp;<span style="color:#667;">${v.nItems || 0} ítem(s)</span><div style="font-size:11px;color:#889;">${escHtml(v.motivo || 'autoguardado')} · disp. ${escHtml(String(v.deviceId || '').slice(0, 6))}</div></div>
+                <button data-i="${i}" style="padding:8px 12px;border:none;border-radius:8px;background:#0A3D62;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;">Restaurar</button>
+            </div>`).join('');
+        ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:85vh;overflow:auto;padding:22px;font-family:Arimo;">
+            <h2 style="color:#0A3D62;font-size:18px;margin:0 0 4px;">🕘 Versiones anteriores</h2>
+            <p style="font-size:13px;color:#445;margin:0 0 12px;"><b>${escHtml(obra)}</b> · ${escHtml(cliente)} — de la más reciente a la más vieja. Al restaurar, lo que hay ahora en pantalla se guarda también como versión.</p>
+            ${rows}
+            <button id="ver-cancel" style="margin-top:14px;width:100%;padding:11px;border:1.5px solid #ddd;border-radius:9px;background:#fff;color:#888;font-weight:bold;cursor:pointer;font-family:Arimo;">Cerrar</button>
+        </div>`;
+        ov.querySelector('#ver-cancel').onclick = () => ov.remove();
+        ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+        ov.querySelectorAll('button[data-i]').forEach(b => b.onclick = () => {
+            const v = vers[parseInt(b.dataset.i)];
+            if (!v || !v.jsonData) return;
+            if (!confirm(`¿Restaurar la versión del ${fmt(v.updatedAt)} de "${obra}"?\n\nLo que hay ahora en pantalla se guarda primero como versión anterior.`)) return;
+            try { if (openedProjectCli && window.saveProjectVersionToCloud) window.saveProjectVersionToCloud(openedProjectCli, openedProjectObra, getAppJSON(), 'antes de restaurar otra versión', true); } catch (_) { }
+            ov.remove();
+            restoreData(v.jsonData);
+            openedProjectKey = (cliente + '|' + obra).toLowerCase(); openedProjectCli = cliente; openedProjectObra = obra;
+            _lastContentSig = '__restaurada__';   // cuenta como cambio real → pasa a ser la versión más nueva (local + nube)
+            saveProgress(); updateSavedStatusBadge();
+            alert(`Versión del ${fmt(v.updatedAt)} restaurada y guardada como la más reciente.`);
+        });
+        document.body.appendChild(ov);
+    }
 
     function loadProject() {
         const cliente = document.getElementById('select-cliente').value;
@@ -2665,7 +2724,7 @@
                 fechaModificacion: modStr,
                 // Reloj (no fecha-solo-texto) para que la sincronización entre dispositivos
                 // (ver saveProject/mergeCloudProject) sepa cuál versión es más reciente.
-                _syncUpdatedAt: Date.now(),
+                _syncUpdatedAt: _lastChangeTs || Date.now(),
                 // Proyecto abierto (para que el autoguardado al proyecto siga funcionando tras recargar)
                 _openedCli: openedProjectCli || null,
                 _openedObra: openedProjectObra || null,
@@ -2748,6 +2807,12 @@
             });
             itemId = data.itemId || 0;
         }
+        // Línea base del autoguardado: lo recién restaurado NO cuenta como cambio. Conserva el
+        // reloj del guardado original — así una pestaña que solo ABRE un proyecto (sin editarlo)
+        // nunca lo re-sube a la nube con una hora nueva pisando ediciones hechas en otro sitio.
+        _lastChangeTs = (data.header && data.header._syncUpdatedAt) || Date.now();
+        try { _lastContentSig = contentSigOf(getAppJSON()); } catch (e) { _lastContentSig = null; }
+        _lastLiveOpened = null;   // forzar UNA escritura del estado en vivo (con el proyecto abierto)
     }
 
     // ===== Calculador de perfil U (base de baranda) — con OPTIMIZACIÓN de recortes =====
@@ -2844,10 +2909,42 @@
     // 3) Guardado periódico de seguridad + al cerrar la página (beforeunload).
     let _autosaveWarned = false, _projAutosaveTimer = null, _lastSaveOk = true;
     function writeLive(str) { try { localStorage.setItem('artal_live_progression', str); return true; } catch (e) { console.error('autosave live_progression', e); return false; } }
+    // Firma del CONTENIDO (sin los campos que cambian solos: reloj, fecha de modificación,
+    // proyecto abierto). Si la firma no cambia, no hubo edición real.
+    function contentSigOf(json) {
+        const h = json.header || (json.header = {});
+        const keep = [h._syncUpdatedAt, h.fechaModificacion, h._openedCli, h._openedObra];
+        h._syncUpdatedAt = 0; h.fechaModificacion = ''; h._openedCli = null; h._openedObra = null;
+        let sig;
+        try { sig = JSON.stringify(json); }
+        finally { h._syncUpdatedAt = keep[0]; h.fechaModificacion = keep[1]; h._openedCli = keep[2]; h._openedObra = keep[3]; }
+        return sig;
+    }
+    // BUG REAL (2026-09-05, proyecto "Sienna C-3", 2 horas perdidas dos veces): el guardado
+    // periódico (cada 8 s) escribía SIEMPRE, aunque nada hubiera cambiado, y cada escritura
+    // llevaba `_syncUpdatedAt = Date.now()`. Cualquier pestaña/dispositivo que tuviera el proyecto
+    // abierto sin tocarlo (una pestaña de fondo en la Mac, la app del Dock del iPad, etc.) re-subía
+    // su copia VIEJA a la nube cada 8 s con una hora NUEVA — y ganaba por "más reciente" contra
+    // las ediciones reales hechas en otro dispositivo. Ahora: solo se escribe (local y nube) cuando
+    // el contenido cambió de verdad; el reloj solo avanza con un cambio real.
     function saveProgress() {
-        let json, str;
-        try { json = getAppJSON(); str = JSON.stringify(json); }
+        let json;
+        try { json = getAppJSON(); }
         catch (e) { console.error('getAppJSON falló en autosave', e); return; }
+        const sig = contentSigOf(json);
+        let changed = false;
+        if (_lastContentSig === null) {
+            _lastContentSig = sig;   // primera llamada tras arrancar/restaurar: fija la línea base, no es un cambio
+        } else if (sig !== _lastContentSig) {
+            changed = true; _lastContentSig = sig;
+            _lastChangeTs = Date.now(); json.header._syncUpdatedAt = _lastChangeTs;
+        }
+        actualizarPerfilUTotal();
+        const h = json.header || {};
+        const openedNow = (h._openedCli || '') + '|' + (h._openedObra || '');
+        if (!changed && _lastLiveOpened === openedNow) { updateSavedStatusBadge(); return; }   // nada nuevo: no escribir, no tocar relojes, no pisar la nube
+        _lastLiveOpened = openedNow;
+        const str = JSON.stringify(json);
         let ok = writeLive(str);
         if (!ok) { try { localStorage.removeItem('artal_live_progression'); } catch (_) { } ok = writeLive(str); }
         _lastSaveOk = ok;
@@ -2855,8 +2952,7 @@
             _autosaveWarned = true;
             alert('⚠ No hay espacio para autoguardar localmente en este dispositivo.\n\nTu trabajo se sigue guardando en la nube (si iniciaste sesión). Usa "Copia de seguridad" para respaldar y considera borrar proyectos viejos para liberar espacio.');
         }
-        actualizarPerfilUTotal();
-        scheduleProjectAutosave(json);
+        if (changed) scheduleProjectAutosave(json);   // al proyecto guardado + nube SOLO con cambio real
         updateSavedStatusBadge();
     }
     function scheduleProjectAutosave(json) {
@@ -2870,9 +2966,21 @@
             json = json || getAppJSON();
             const projects = getProjects();
             if (!projects[openedProjectCli]) projects[openedProjectCli] = {};
-            projects[openedProjectCli][openedProjectObra] = json;
+            // Si otra pestaña de ESTE dispositivo dejó una versión MÁS NUEVA que la de esta pantalla,
+            // no se pisa: lo de esta pantalla se guarda aparte como "(conflicto HH:MM)" — nunca se
+            // pierde ninguna de las dos.
+            const existing = projects[openedProjectCli][openedProjectObra];
+            const exTs = (existing && existing.header && existing.header._syncUpdatedAt) || 0;
+            const myTs = (json.header && json.header._syncUpdatedAt) || 0;
+            let obraDest = openedProjectObra;
+            if (existing && exTs > myTs) {
+                const hh = new Date().toTimeString().slice(0, 5);
+                obraDest = `${openedProjectObra} (conflicto ${hh})`;
+                console.warn('autosave: había una versión más nueva de este proyecto en este dispositivo; esta pantalla se guardó como', obraDest);
+            }
+            projects[openedProjectCli][obraDest] = json;
             try { localStorage.setItem('artal_projects', JSON.stringify(projects)); } catch (e) { console.error('autosave proyecto (local)', e); }
-            if (window.syncProjectToCloud) window.syncProjectToCloud(openedProjectCli, openedProjectObra, json);   // respaldo en la nube
+            if (window.syncProjectToCloud) window.syncProjectToCloud(openedProjectCli, obraDest, json);   // respaldo en la nube (+ versión en el historial)
         } catch (e) { console.error('autosaveOpenedProject', e); }
     }
     // Guardado de seguridad periódico + al cerrar la pestaña (por si alguna edición no disparó saveProgress)
@@ -7344,7 +7452,7 @@
 
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
-    import { collection, addDoc, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
     import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
@@ -7422,9 +7530,41 @@
             const size = new Blob([JSON.stringify(payload)]).size;
             if (size > 900 * 1024) { console.warn('Proyecto muy grande para sincronizar a la nube (queda solo local):', size); return; }
             await setDoc(doc(db, 'proyectosGuardados', proyectoDocId(cliente, obra)), payload);
+            saveProjectVersionToCloud(cliente, obra, jsonData, 'autoguardado');   // historial (con límite de frecuencia)
         } catch (e) { console.error('syncProjectToCloud falló (guardado local no se ve afectado):', e); }
     }
     window.syncProjectToCloud = syncProjectToCloud;
+
+    // Historial de versiones: proyectosGuardados/{id}/versiones/{updatedAt}. Se guarda una versión
+    // con cada cambio real (máx. una cada 3 min por proyecto, salvo `force`: guardado manual,
+    // conflictos, restauraciones) y se conservan las 15 más recientes. Es la red de seguridad
+    // contra pérdidas: aunque una versión más vieja llegue a pisar la buena, la buena sigue aquí.
+    // Requiere en firestore.rules: match /proyectosGuardados/{id}/versiones/{v} { allow write: if puedeEscribir(); }
+    const VERSIONES_MAX = 15, VERSION_MIN_GAP_MS = 3 * 60000, _lastVersionAt = {};
+    async function saveProjectVersionToCloud(cliente, obra, jsonData, motivo, force) {
+        if (!auth.currentUser || !cliente || !obra || !jsonData) return;
+        const id = proyectoDocId(cliente, obra);
+        const ts = (jsonData.header && jsonData.header._syncUpdatedAt) || Date.now();
+        if (!force && _lastVersionAt[id] && (ts - _lastVersionAt[id]) < VERSION_MIN_GAP_MS) return;
+        try {
+            const payload = { updatedAt: ts, updatedAtServer: serverTimestamp(), deviceId: getDeviceId(), motivo: motivo || 'autoguardado',
+                nItems: Object.keys(jsonData.cardsState || {}).length, jsonData };
+            if (new Blob([JSON.stringify(payload)]).size > 900 * 1024) return;
+            const col = collection(db, 'proyectosGuardados', id, 'versiones');
+            await setDoc(doc(col, String(ts)), payload);
+            _lastVersionAt[id] = ts;
+            const snap = await getDocs(query(col, orderBy('updatedAt', 'desc')));
+            for (const d of snap.docs.slice(VERSIONES_MAX)) { try { await deleteDoc(d.ref); } catch (_) { } }
+        } catch (e) { console.error('saveProjectVersionToCloud falló (revisar firestore.rules para /versiones):', e); }
+    }
+    window.saveProjectVersionToCloud = saveProjectVersionToCloud;
+    async function listProjectVersions(cliente, obra) {
+        if (!auth.currentUser) return null;
+        const col = collection(db, 'proyectosGuardados', proyectoDocId(cliente, obra), 'versiones');
+        const snap = await getDocs(query(col, orderBy('updatedAt', 'desc'), limit(VERSIONES_MAX)));
+        return snap.docs.map(d => d.data());
+    }
+    window.listProjectVersions = listProjectVersions;
 
     async function deleteProjectFromCloud(cliente, obra) {
         if (!auth.currentUser || !cliente || !obra) return;
