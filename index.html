@@ -565,6 +565,9 @@
     // proyecto (sin preguntar) o si viene de una hoja distinta que coincide de nombre con un
     // proyecto ya guardado (ahí sí hay que avisar antes de reemplazarlo, ver saveProject()).
     let openedProjectKey = null;
+    // Cliente/obra EXACTOS del proyecto abierto (para autoguardar en él sin depender de la grafía
+    // del encabezado, que el usuario puede cambiar). openedProjectKey es sólo la clave en minúsculas.
+    let openedProjectCli = null, openedProjectObra = null;
 
     // Íconos de candado (abierto = desbloqueado / cerrado = bloqueado)
     const LOCK_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.4"/></svg>';
@@ -1040,7 +1043,7 @@
             if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(cliKey, borrarSimilar);
         }
         localStorage.setItem('artal_projects', JSON.stringify(projects));
-        openedProjectKey = targetKey;
+        openedProjectKey = targetKey; openedProjectCli = cliKey; openedProjectObra = obraKey;
         if (window.syncClienteObra) window.syncClienteObra(cliKey, obraKey);
         if (window.syncProjectToCloud) window.syncProjectToCloud(cliKey, obraKey, jsonData);
 
@@ -1328,7 +1331,7 @@
             if (!confirm('La hoja actual no está guardada. Si abres otro proyecto se reemplazará lo que hay en pantalla.\n\n¿Abrir de todos modos?')) { if (sel) sel.value = ''; return; }
         }
         restoreData(projects[cliKey][obra]);
-        openedProjectKey = (cliKey + '|' + obra).toLowerCase();
+        openedProjectKey = (cliKey + '|' + obra).toLowerCase(); openedProjectCli = cliKey; openedProjectObra = obra;
         saveProgress();
         updateSavedStatusBadge();
         fillHeaderObraSel();
@@ -1417,28 +1420,20 @@
     // misma sesión (eso exigiría comparar todo el contenido en cada tecla), y como
     // openedProjectKey vive solo en memoria, tras recargar la página el aviso vuelve a
     // "Sin guardar" aunque el proyecto ya estuviera guardado (hasta el próximo Guardar/Abrir).
+    // El aviso refleja el estado REAL del autoguardado (todo se guarda solo). Verde = guardado;
+    // rojo solo si el localStorage está lleno (ahí hay que respaldar/liberar espacio). Antes se
+    // basaba en si "existía" un proyecto con ese nombre, lo que confundía (decía "guardado" aunque
+    // los cambios en vivo no se hubieran persistido) — causa de una pérdida real de trabajo.
     function updateSavedStatusBadge() {
         const badge = document.getElementById('saved-status-badge');
         if (!badge) return;
-        const cliente = document.getElementById('header-cliente').value.trim();
-        const obra = document.getElementById('header-obra').value.trim();
-        // ¿Existe ya un proyecto guardado con este cliente+obra? (aunque no se haya "abierto" en esta
-        // sesión — ej. se llegó por el autosave). Antes solo se ponía verde si openedProjectKey
-        // coincidía, y asustaba con "Sin guardar" un proyecto que SÍ estaba registrado.
-        let existe = false, abiertoAqui = false;
-        if (cliente && obra) {
-            const projects = getProjects();
-            const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
-            existe = !!(cliKey && Object.keys(projects[cliKey]).some(o => normNombreKey(o) === normNombreKey(obra)));
-            abiertoAqui = existe && openedProjectKey === (cliente + '|' + obra).toLowerCase();
+        if (_lastSaveOk === false) {
+            badge.textContent = '⚠ Sin espacio — respalda';
+            badge.classList.remove('saved'); badge.classList.add('unsaved');
+            return;
         }
-        let txt, saved;
-        if (existe && abiertoAqui) { txt = '✓ Proyecto guardado'; saved = true; }
-        else if (existe) { txt = '✓ Proyecto registrado'; saved = true; }   // ya guardado antes (aunque no lo abriste ahora)
-        else { txt = '○ Sin guardar'; saved = false; }
-        badge.textContent = txt;
-        badge.classList.toggle('saved', saved);
-        badge.classList.toggle('unsaved', !saved);
+        badge.textContent = (openedProjectObra ? '✓ Guardado: ' + openedProjectObra : '✓ Guardado automático');
+        badge.classList.add('saved'); badge.classList.remove('unsaved');
     }
     document.getElementById('header-cliente').addEventListener('input', updateSavedStatusBadge);
     document.getElementById('header-cliente').addEventListener('input', fillHeaderObraSel);
@@ -1451,7 +1446,7 @@
         const projects = getProjects();
         if (projects[cliente] && projects[cliente][obra]) {
             restoreData(projects[cliente][obra]);
-            openedProjectKey = (cliente + '|' + obra).toLowerCase();
+            openedProjectKey = (cliente + '|' + obra).toLowerCase(); openedProjectCli = cliente; openedProjectObra = obra;
             saveProgress();
             updateSavedStatusBadge();
             alert(`Proyecto "${obra}" (${cliente}) abierto.`);
@@ -2628,6 +2623,9 @@
                 // Reloj (no fecha-solo-texto) para que la sincronización entre dispositivos
                 // (ver saveProject/mergeCloudProject) sepa cuál versión es más reciente.
                 _syncUpdatedAt: Date.now(),
+                // Proyecto abierto (para que el autoguardado al proyecto siga funcionando tras recargar)
+                _openedCli: openedProjectCli || null,
+                _openedObra: openedProjectObra || null,
                 material: document.getElementById('header-material').value,
                 color: document.getElementById('header-color').value
             },
@@ -2796,11 +2794,70 @@
             `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
     }
 
-    function saveProgress() { localStorage.setItem('artal_live_progression', JSON.stringify(getAppJSON())); actualizarPerfilUTotal(); }
+    // ===================== AUTOGUARDADO ROBUSTO (multi-capa, para no perder trabajo) =====================
+    // 1) localStorage 'artal_live_progression' (estado en vivo, con manejo de errores de cuota).
+    // 2) Si hay un proyecto ABIERTO, también se guarda en 'artal_projects' bajo ese cliente/obra
+    //    (debounced) + se sincroniza a la nube → al reabrir/cerrar no se pierde nada.
+    // 3) Guardado periódico de seguridad + al cerrar la página (beforeunload).
+    let _autosaveWarned = false, _projAutosaveTimer = null, _lastSaveOk = true;
+    function writeLive(str) { try { localStorage.setItem('artal_live_progression', str); return true; } catch (e) { console.error('autosave live_progression', e); return false; } }
+    function saveProgress() {
+        let json, str;
+        try { json = getAppJSON(); str = JSON.stringify(json); }
+        catch (e) { console.error('getAppJSON falló en autosave', e); return; }
+        let ok = writeLive(str);
+        if (!ok) { try { localStorage.removeItem('artal_live_progression'); } catch (_) { } ok = writeLive(str); }
+        _lastSaveOk = ok;
+        if (!ok && !_autosaveWarned) {
+            _autosaveWarned = true;
+            alert('⚠ No hay espacio para autoguardar localmente en este dispositivo.\n\nTu trabajo se sigue guardando en la nube (si iniciaste sesión). Usa "Copia de seguridad" para respaldar y considera borrar proyectos viejos para liberar espacio.');
+        }
+        actualizarPerfilUTotal();
+        scheduleProjectAutosave(json);
+        updateSavedStatusBadge();
+    }
+    function scheduleProjectAutosave(json) {
+        if (!openedProjectCli || !openedProjectObra) return;   // solo si hay un proyecto abierto/guardado
+        clearTimeout(_projAutosaveTimer);
+        _projAutosaveTimer = setTimeout(() => autosaveOpenedProject(json), 1000);   // debounce
+    }
+    function autosaveOpenedProject(json) {
+        if (!openedProjectCli || !openedProjectObra) return;
+        try {
+            json = json || getAppJSON();
+            const projects = getProjects();
+            if (!projects[openedProjectCli]) projects[openedProjectCli] = {};
+            projects[openedProjectCli][openedProjectObra] = json;
+            try { localStorage.setItem('artal_projects', JSON.stringify(projects)); } catch (e) { console.error('autosave proyecto (local)', e); }
+            if (window.syncProjectToCloud) window.syncProjectToCloud(openedProjectCli, openedProjectObra, json);   // respaldo en la nube
+        } catch (e) { console.error('autosaveOpenedProject', e); }
+    }
+    // Guardado de seguridad periódico + al cerrar la pestaña (por si alguna edición no disparó saveProgress)
+    if (typeof setInterval !== 'undefined') setInterval(() => { try { saveProgress(); } catch (_) { } }, 8000);
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('beforeunload', () => { try { if (openedProjectCli) autosaveOpenedProject(); saveProgress(); } catch (_) { } });
 
     function loadProgress() {
         const raw = localStorage.getItem('artal_live_progression');
-        if (raw) { try { restoreData(JSON.parse(raw)); } catch(e) {} }
+        let liveData = null;
+        if (raw) { try { liveData = JSON.parse(raw); } catch (e) { console.error('parse live_progression', e); } }
+        let data = liveData;
+        // Si el estado en vivo tenía un proyecto abierto, restaurarlo (para que el autoguardado al
+        // proyecto siga tras recargar) y PREFERIR la versión más nueva: si el autosave en vivo falló
+        // (p.ej. cuota llena) el proyecto guardado puede estar más fresco → se usa ése. Evita la
+        // pérdida reportada (al reabrir aparecía el estado viejo).
+        try {
+            const cli = liveData && liveData.header && liveData.header._openedCli;
+            const obra = liveData && liveData.header && liveData.header._openedObra;
+            if (cli && obra) {
+                openedProjectCli = cli; openedProjectObra = obra; openedProjectKey = (cli + '|' + obra).toLowerCase();
+                const projects = getProjects();
+                const saved = projects[cli] && projects[cli][obra];
+                const liveTs = (liveData.header && liveData.header._syncUpdatedAt) || 0;
+                const savedTs = (saved && saved.header && saved.header._syncUpdatedAt) || 0;
+                if (saved && savedTs > liveTs) data = saved;
+            }
+        } catch (e) { console.error('loadProgress preferencia', e); }
+        if (data) { try { restoreData(data); } catch (e) { console.error('restoreData', e); } }
         updateClientList();
         updateSavedStatusBadge();
     }
@@ -2809,7 +2866,7 @@
     // se usa tanto ahí (con confirm() antes) como después de guardar un proyecto con éxito,
     // donde no hace falta confirmar de nuevo porque ya fue una acción explícita del usuario.
     function clearNotebookToBlank() {
-        openedProjectKey = null;
+        openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
         updateSavedStatusBadge();
         document.getElementById('header-cliente').value = '';
         document.getElementById('header-obra').value = '';
@@ -2893,7 +2950,7 @@
         const displayDate = document.getElementById('header-fecha');
         displayDate.dataset.created = '';
         displayDate.innerText = 'Nueva parte del proyecto';
-        openedProjectKey = null; // es un proyecto nuevo → "Guardar" crea una entrada aparte
+        openedProjectKey = null; openedProjectCli = null; openedProjectObra = null; // proyecto nuevo → "Guardar" crea una entrada aparte
         fillHeaderObraSel();
         updateSavedStatusBadge();
         saveProgress();
