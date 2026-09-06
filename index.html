@@ -1013,16 +1013,17 @@
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:20px;';
         const btn = 'width:100%;padding:12px 14px;border:none;border-radius:9px;font-weight:bold;font-size:14px;cursor:pointer;font-family:Arimo;text-align:left;line-height:1.35;';
-        ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:480px;width:100%;padding:22px;font-family:Arimo;">
-            <h2 style="color:#0A3D62;font-size:18px;margin:0 0 12px;">⚠️ Nombre parecido</h2>
-            <p style="font-size:14px;color:#445;margin:0 0 16px;">El proyecto <b>"${escHtml(obra)}"</b> se parece mucho a <b>"${escHtml(similarO)}"</b>, que este cliente YA tiene. ¿Qué quieres hacer?</p>
+        ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;padding:22px;font-family:Arimo;">
+            <h2 style="color:#0A3D62;font-size:18px;margin:0 0 10px;">⚠️ Nombre parecido</h2>
+            <p style="font-size:14px;color:#445;margin:0 0 6px;">Vas a guardar <b>"${escHtml(obra)}"</b>, y este cliente ya tiene guardado <b>"${escHtml(similarO)}"</b>.</p>
+            <p style="font-size:13px;color:#667;margin:0 0 16px;">Elige qué hacer. Cada botón dice exactamente lo que pasará.</p>
             <div style="display:flex;flex-direction:column;gap:9px;">
-                <button id="dlg-reemp" style="${btn}background:#2ecc71;color:#fff;">✏️ Es el mismo — corregir el nombre<br><span style="font-weight:normal;font-size:12px;">Renombra el guardado a "${escHtml(obra)}" y borra el anterior</span></button>
-                <button id="dlg-nuevo" style="${btn}background:#0A3D62;color:#fff;">➕ Es otro proyecto distinto — crear nuevo<br><span style="font-weight:normal;font-size:12px;">Deja los dos proyectos por separado</span></button>
-                <button id="dlg-cancel" style="${btn}background:#fff;color:#888;border:1.5px solid #ddd;text-align:center;">Cancelar</button>
+                <button id="dlg-nuevo" style="${btn}background:#0A3D62;color:#fff;">✅ Guardar "${escHtml(obra)}" como proyecto NUEVO<br><span style="font-weight:normal;font-size:12px;">Se crea aparte. "${escHtml(similarO)}" queda tal cual, no se toca.</span></button>
+                <button id="dlg-reemp" style="${btn}background:#fff;color:#b03a2e;border:1.5px solid #e2b8b2;">🗑️ Es el MISMO proyecto, solo cambió el nombre: reemplazar "${escHtml(similarO)}"<br><span style="font-weight:normal;font-size:12px;">Se BORRA el guardado "${escHtml(similarO)}" y en su lugar queda este como "${escHtml(obra)}". Se pide confirmación.</span></button>
+                <button id="dlg-cancel" style="${btn}background:#fff;color:#888;border:1.5px solid #ddd;text-align:center;">Cancelar (no guardar nada)</button>
             </div>
         </div>`;
-        ov.querySelector('#dlg-reemp').onclick = () => { ov.remove(); onReemplazar(); };
+        ov.querySelector('#dlg-reemp').onclick = () => { if (!confirm(`¿Seguro? Se BORRARÁ el proyecto guardado "${similarO}" y quedará reemplazado por "${obra}".\n\nEsto no se puede deshacer (salvo desde "Versiones anteriores" en la nube).`)) return; ov.remove(); onReemplazar(); };
         ov.querySelector('#dlg-nuevo').onclick = () => { ov.remove(); onNuevo(); };
         ov.querySelector('#dlg-cancel').onclick = () => ov.remove();
         ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
@@ -1181,6 +1182,14 @@
     function sonSospechosos(a, b) {
         const na = normForSug(a), nb = normForSug(b);
         if (!na || !nb || na === nb) return false;
+        // Nombres que solo difieren en tokens CON dígitos ("Villa C-3" vs "Villa D-2", "Lote 11" vs
+        // "Lote 12") son proyectos DISTINTOS de la misma urbanización, no un error de tipeo — el
+        // usuario recibió el aviso de "nombre parecido" entre C-3 y D-2 y era confuso y peligroso
+        // (el botón "corregir" borraba el otro proyecto).
+        // (normForSug parte "C-3" en "c 3": un token de 1-2 letras pegado a un número también es código.)
+        const ta = na.split(/\s+/), tb = nb.split(/\s+/);
+        const esCodigo = (arr, i) => /\d/.test(arr[i]) || (arr[i].length <= 2 && ((arr[i + 1] && /\d/.test(arr[i + 1])) || (arr[i - 1] && /\d/.test(arr[i - 1]))));
+        if (ta.length === tb.length && ta.some((t, i) => t !== tb[i]) && ta.every((t, i) => t === tb[i] || (esCodigo(ta, i) && esCodigo(tb, i)))) return false;
         if (palabrasPrefijo(na, nb)) return true;
         if (Math.min(na.length, nb.length) >= 4 && levDist(na, nb) <= 2) return true; // typos
         return false;
