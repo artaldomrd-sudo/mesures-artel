@@ -641,7 +641,17 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     `gridCorN(celda)` da el nº de hojas, `gridCorCentral` marca la única central: `cor6_cent` con 3
     vías simétricas desde el centro y flechas R L L R R L como la suelta, sin "Hoja int."; `cor6_lat`
     en escalera de 6 vías con todas las flechas hacia el lado de "Hoja interior"; agregadas
-    2026-09-05 a pedido del usuario), `puerta`, `ventana`
+    2026-09-05 a pedido del usuario), **galandajes** `gal1/gal2_lat/gal2_cent/gal3_3v/gal4_2v/
+    gal4_4v/gal6_3v` (los 7 del menú, agregados 2026-09-05 — `GRID_GAL`/`gridGal(celda)` da `{n,
+    central}`; config por celda `gal_pocket` izq/der (solo laterales), `gal_install` dentro/fuera,
+    `gal_sheetrock` si/no, `mosquitera`; elevación en `gridCell` = bloque de pared (`wallBlock`,
+    16% del ancho, a un lado o a ambos) + hojas + flechas de plegado como el suelto; **planta =
+    literalmente `galandajePlan(mini, uid, {noHead:true, noLabels:true})`** — se le agregaron
+    `opts` y el canal lateral `galandajePlan.lastTop/lastBottom` — escalada al ancho de la columna
+    (`k = w/100`) y VOLTEADA verticalmente (`matrix(k 0 0 -k x planY+k·PB)`) porque el suelto dibuja
+    exterior arriba y la fachada lleva interior arriba; **con `esquinaLado` el selector de celda
+    oculta los centrales** (pliegan a dos lados, imposible en una esquina — regla explícita del
+    usuario; `celdaList(cur)` en `renderGridBuilder`, conserva el valor ya elegido), `puerta`, `ventana`
     (abisagradas), `osci`, `proy`, `louvers`, `vacio` (muro con hatch, `wallBlock`). **Nombres
     idénticos a los ítems del menú lateral**, a propósito.
   - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
