@@ -10,6 +10,10 @@
 <link rel="stylesheet" href="../shared.css?v=20260806">
 <style>
     .order-card { border-left-color: var(--artal-yellow); }
+    /* Botón de borrar (solo admin): rojo y discreto; pisa el azul genérico de .upload-row button de shared.css */
+    .upload-row button.btn-borrar { background: #fff; color: #c0392b; border: 1.5px solid #c0392b; box-shadow: none; padding: 10px 16px; }
+    .upload-row button.btn-borrar:hover { background: #c0392b; color: #fff; }
+    .upload-row button.btn-borrar:disabled { opacity: .6; cursor: default; }
 </style>
 </head>
 <body>
@@ -35,12 +39,14 @@
     import { requireAuth, auth, signOut } from '../auth-common.js';
     import { enableNotifications } from '../notifications.js';
     import { db, storage } from '../firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { openOrderPreview } from '../order-preview.js';
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['contratista']);
+    // Solo admin ve el botón de borrar (pedidos reenviados por error, duplicados). ALUCUFEL no.
+    const esAdmin = (usuario.roles || [usuario.rol]).flat().includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
@@ -67,6 +73,7 @@
             <div class="upload-row">
                 <input type="file" accept="application/pdf" id="file-${id}">
                 <button id="btn-${id}" onclick="subirCotizacion('${id}')">Enviar cotización de costo</button>
+                ${esAdmin ? `<button class="btn-borrar" data-id="${id}" data-label="${esc(o.cliente)} — ${esc(o.obra)} (${esc(recibido)})" onclick="borrarPedido(this)" title="Solo admin: eliminar esta solicitud">🗑 Borrar</button>` : ''}
             </div>
         </div>`;
     }
@@ -81,6 +88,20 @@
     onSnapshot(q, (snap) => render(snap.docs.filter(d => d.data().destino !== 'interno')), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+
+    // Solo admin (el botón no se dibuja para otros roles; las reglas de Firestore exigen puedeEscribir()).
+    // Caso real: la misma obra reenviada dos veces desde el cuaderno por un cambio — se borra el duplicado.
+    window.borrarPedido = async function (btn) {
+        const id = btn.dataset.id, label = btn.dataset.label;
+        if (!confirm('¿Eliminar esta solicitud de cotización?\n\n' + label + '\n\nEsta acción no se puede deshacer.')) return;
+        btn.disabled = true; btn.textContent = 'Borrando…';
+        try {
+            await deleteDoc(doc(db, 'orders', id));   // onSnapshot quita la tarjeta solo
+        } catch (e) {
+            alert('No se pudo borrar: ' + e.message);
+            btn.disabled = false; btn.textContent = '🗑 Borrar';
+        }
+    };
 
     window.subirCotizacion = async function (id) {
         const fileInput = document.getElementById('file-' + id);
