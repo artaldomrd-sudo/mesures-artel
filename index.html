@@ -1602,7 +1602,7 @@
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'fachada_grid') {
-            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
+            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', cor6_cent: 'Corredera 6 Hojas (Central)', cor6_lat: 'Corredera 6 Hojas (Lateral)', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
             const fa = state.fajaArriba, fb = state.fajaAbajo;
@@ -1616,7 +1616,7 @@
             const eHbot = (tbz.entreH && fb) ? tuboG : 0;
             const tuboAltoTotal = eHtop + eHbot;
             const totalH = faH + gAlto + fbH + tuboAltoTotal;
-            const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
+            const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4' || c === 'cor6_cent' || c === 'cor6_lat';
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             // Lista de características (sin la medida, que va aparte y clara) separadas por " · ".
             const specList = (celda, o) => {
@@ -5398,7 +5398,7 @@
     // (paño fijo, corredera, puerta, louver, oscilo, vacío). Dibujo 2D plano reusando el motor de
     // panel (extrudedPanel/louverPanel/wallBlock) + símbolos por tipo + cotas. Sin efecto 3D.
     // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
-    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
 
     // Tipos de aluminio válidos POR tipo de elemento. El selector "Tipo de aluminio" de la fachada
     // muestra solo la UNIÓN de los que aplican a los elementos presentes (ej. paños fijos + puerta
@@ -5414,9 +5414,16 @@
         cor2: ['P92', 'E70', 'E100', 'E200'],
         cor3: ['P92', 'E70', 'E100', 'E200'],
         cor4: ['P92', 'E70', 'E100', 'E200'],
+        cor6_cent: ['P92', 'E70', 'E100', 'E200'],
+        cor6_lat: ['P92', 'E70', 'E100', 'E200'],
         louvers: [], vacio: []
     };
     // Opciones de aluminio para UNA celda concreta (según su tipo de elemento) — el selector va por paño.
+    // Corredera en la fachada: nº de hojas por tipo de celda (0 = no es corredera). 'cor6_cent' es la
+    // única CENTRAL (pares simétricos desde el centro, 3 vías); el resto cascadea en escalera (una vía
+    // por hoja) hacia el lado de "Hoja interior" — misma regla que la tarjeta suelta (correderaPlan).
+    function gridCorN(celda) { return ({ cor2: 2, cor3: 3, cor4: 4, cor6_cent: 6, cor6_lat: 6 })[celda] || 0; }
+    function gridCorCentral(celda) { return celda === 'cor6_cent'; }
     function celdaAluOpts(celda) { const keys = ALU_POR_CELDA[celda] || []; return ALU_MASTER.filter(o => keys.includes(o[0])); }
     function celdaAluDefault(celda) { const k = ALU_POR_CELDA[celda] || []; return k[0] || ''; }
 
@@ -5434,10 +5441,15 @@
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
         let s = esLouver ? louverPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver + marco 2D
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
-        if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
-            const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4;
+        if (gridCorN(celda)) {
+            const n = gridCorN(celda);
             for (let k = 1; k < n; k++) { const lx = x + w * k / n; s += `<line x1="${lx.toFixed(1)}" y1="${(y + 2).toFixed(1)}" x2="${lx.toFixed(1)}" y2="${(y + h - 2).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`; }
-            for (let k = 0; k < n; k++) { const px = x + w * (k + 0.5) / n; s += gridArrow(px, cy, Math.min(w / n, h), k % 2 === 0 ? 'L' : 'R'); }
+            // Flechas: 6 central = mismo patrón que la tarjeta suelta cor6_cent (R L L R R L);
+            // 6 lateral = todas hacia el lado de "Hoja interior" (como cor6_lat suelta); cor2/3/4 como antes.
+            const dirs = celda === 'cor6_cent' ? ['R', 'L', 'L', 'R', 'R', 'L']
+                : celda === 'cor6_lat' ? Array(6).fill((cfg.cor_interior || 'I') === 'D' ? 'R' : 'L')
+                : Array.from({ length: n }, (_, k) => k % 2 === 0 ? 'L' : 'R');
+            for (let k = 0; k < n; k++) { const px = x + w * (k + 0.5) / n; s += gridArrow(px, cy, Math.min(w / n, h), dirs[k]); }
         } else if (celda === 'puerta' || celda === 'ventana') {
             // apertura: mismo símbolo que el ítem suelto del cuaderno (chevron corner→centro; 2 hojas
             // = montante central + dos chevrones). Dirección: adentro = línea punteada, afuera = continua.
@@ -5514,7 +5526,7 @@
     }
     function gridColPlan(x, w, col, planY, maxR) {
         const rows = (col && col.rows) || [];
-        const r = rows.find(rr => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(rr.celda)) || rows[0] || { celda: 'pf' };
+        const r = rows.find(rr => gridCorN(rr.celda) || rr.celda === 'puerta' || rr.celda === 'ventana') || rows[0] || { celda: 'pf' };
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
@@ -5528,18 +5540,21 @@
             // dirección del giro (int arriba / ext abajo) coincida con la tarjeta suelta vista desde afuera.
             return s + planViewAbatible(type, { ...r, vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
         }
-        if (celda === 'cor2' || celda === 'cor3' || celda === 'cor4') {
+        if (gridCorN(celda)) {
             // corredera en planta: un riel por hoja, en escalera — MISMA regla que la tarjeta suelta
             // (`correderaPlan`): el selector "Hoja interior" (`cor_interior`, 'I' por defecto) decide qué
             // lado va al riel INTERIOR (arriba, planY: int arriba / ext abajo) y el resto cascadea hacia el
             // exterior. Bug real (foto del usuario): antes se ignoraba `cor_interior` y la hoja izquierda
             // quedaba siempre interior, aunque se eligiera "Hoja interior: Der.".
-            const n = celda === 'cor2' ? 2 : celda === 'cor3' ? 3 : 4, g = 2.4, per = '#0A3D62';
+            const n = gridCorN(celda), g = 2.4, per = '#0A3D62', central = gridCorCentral(celda);
             const leftIsInt = (r.cor_interior || 'I') === 'I';
-            s += `<line x1="${x.toFixed(1)}" y1="${(planY + (n - 1) * g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + (n - 1) * g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+            const vias = central ? n / 2 : n;   // central: pares simétricos (n/2 vías); escalera: una vía por hoja
+            s += `<line x1="${x.toFixed(1)}" y1="${(planY + (vias - 1) * g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + (vias - 1) * g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
             for (let k = 0; k < n; k++) {
                 const sx = x + w * k / n, ex = x + w * (k + 1) / n;
-                const depth = leftIsInt ? k : (n - 1 - k);   // 0 = riel interior (arriba) … n-1 = exterior (abajo)
+                // 0 = riel interior (arriba) … vias-1 = exterior (abajo). Central: el par más próximo al centro
+                // va al riel interior (misma regla que correderaPlan modo 'cent'); escalera: según Hoja interior.
+                const depth = central ? (k < n / 2 ? (n / 2 - 1 - k) : (k - n / 2)) : (leftIsInt ? k : (n - 1 - k));
                 const ry = planY + depth * g;
                 s += `<line x1="${sx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="${per}" stroke-width="1.6"/>`;
             }
@@ -5633,7 +5648,7 @@
                 const rw = side === 'arriba' ? rws[0] : rws[rws.length - 1];
                 // nº de módulos verticales del elemento de abajo (para alinear la división de la faja):
                 // correderas por hojas; puerta/ventana de 2 hojas → 1 división en el centro.
-                const n = rw.celda === 'cor2' ? 2 : rw.celda === 'cor3' ? 3 : rw.celda === 'cor4' ? 4
+                const n = gridCorN(rw.celda) ? gridCorN(rw.celda)
                     : ((rw.celda === 'puerta' || rw.celda === 'ventana') && (rw.apertura || '').includes('2')) ? 2 : 1;
                 for (let k = 1; k < n; k++) xs.push(cxd + cw * k / n);
                 cxd += cw;
@@ -5728,7 +5743,7 @@
         // ADENTRO (arriba, entre la cota de ancho y la pared) — antes la franja era fija (14) y un
         // giro hacia adentro se montaba sobre la elevación (reportado con foto).
         let planExtra = 0;
-        const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => ['cor2', 'cor3', 'cor4', 'puerta', 'ventana'].includes(r.celda)));
+        const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => gridCorN(r.celda) || r.celda === 'puerta' || r.celda === 'ventana'));
         let planLeftExt = 0, planRightExt = 0;   // cuánto sobresale la planta a los costados (ala de esquina)
         if (state.verPlanta !== false && hayOperable) {   // activada por defecto (correderas y puertas/ventanas abisagradas)
             const RATIO_R = 34 / 65;
@@ -5742,9 +5757,9 @@
                         const ap = r.apertura || 'adentro_1';
                         const rad = ap.includes('2') ? Math.min(ci.w / 2, ci.w * RATIO_R) : Math.min(ci.w * 0.875, ci.w * RATIO_R);
                         if (ap.includes('afuera')) ext = Math.max(ext, rad * 0.5); else int = Math.max(int, rad * 0.5);
-                    } else if (r.celda === 'cor2' || r.celda === 'cor3' || r.celda === 'cor4') {
-                        const n = r.celda === 'cor2' ? 2 : r.celda === 'cor3' ? 3 : 4;
-                        ext = Math.max(ext, (n - 1) * 2.4 + 1);
+                    } else if (gridCorN(r.celda)) {
+                        const vias = gridCorCentral(r.celda) ? gridCorN(r.celda) / 2 : gridCorN(r.celda);
+                        ext = Math.max(ext, (vias - 1) * 2.4 + 1);
                     }
                 });
                 return { int, ext };
@@ -5805,7 +5820,7 @@
             return `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${val === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         };
         // Color de manija — solo para celdas de corredera (por ahora Negro/Blanco). Fila propia.
-        const isCor = c => c === 'cor2' || c === 'cor3' || c === 'cor4';
+        const isCor = c => gridCorN(c) > 0;
         const manijaRow = (celda, val, onchange) => isCor(celda) ? `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Manija</label><select style="${inp}" onchange="${onchange}"><option value="negro" ${(val || 'negro') === 'negro' ? 'selected' : ''}>Negro</option><option value="blanco" ${(val || 'negro') === 'blanco' ? 'selected' : ''}>Blanco</option></select><span></span></div>` : '';
         // Opciones de configuración por celda, IGUALES a las del ítem suelto del cuaderno, según el tipo.
         const APERT = [['adentro_1', 'Hacia adentro · 1 hoja'], ['adentro_2', 'Hacia adentro · 2 hojas'], ['afuera_1', 'Hacia afuera · 1 hoja'], ['afuera_2', 'Hacia afuera · 2 hojas']];
@@ -5832,7 +5847,7 @@
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (celda === 'osci') return vid + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
-            if (isCor(celda)) return vid + cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
+            if (isCor(celda)) return vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
             return vid;   // pf, proy → al menos el selector de vidrio por paño
         };
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.

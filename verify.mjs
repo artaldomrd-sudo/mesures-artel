@@ -119,6 +119,8 @@ for (const id of ['card1', 'temp']) {
         { w: 1200, rows: [{ h: 2400, celda: 'ventana', alu: 'p40_ventana', apertura: 'adentro_2' }] },
         { w: 1000, rows: [{ h: 1200, celda: 'pf', alu: 'p40_ventana' }, { h: 600, celda: 'osci', alu: 'p40_ventana' }, { h: 600, celda: 'louvers', vidrio: 'louvers' }] },
         { w: 600, rows: [{ h: 2400, celda: 'vacio' }] },
+        { w: 3600, rows: [{ h: 2400, celda: 'cor6_cent', alu: 'E200', cierre: 'multipunto_esquina' }] },
+        { w: 3600, rows: [{ h: 2400, celda: 'cor6_lat', alu: 'P92', cor_interior: 'D' }] },
       ],
       fajaArriba: { h: 500, celda: 'proy', align: 'der', cols: [{ w: 2000, celda: 'proy', alu: 'p40_ventana' }, { w: 1500, celda: 'pf', alu: 'p40_ventana', vidrio: 'laminado', espesor: '4+4' }, { w: 1500, celda: 'proy', alu: 'p40_ventana' }] },
       fajaAbajo: { h: 400, celda: 'pf', alu: 'p40_ventana', division: 'perfil' },

@@ -637,7 +637,11 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   - `cols: [{ w, rows: [{ h, celda, alu, vidrio?, espesor?, apertura?, lado?, manija?, cierre?,
     cerradura?, mosquitera?, cor_interior? }] }]` — columnas de izquierda a derecha, cada una con
     una o más filas apiladas. `gridAlto` = alto de la banda de columnas (mm).
-  - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4` (correderas), `puerta`, `ventana`
+  - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4/cor6_cent/cor6_lat` (correderas —
+    `gridCorN(celda)` da el nº de hojas, `gridCorCentral` marca la única central: `cor6_cent` con 3
+    vías simétricas desde el centro y flechas R L L R R L como la suelta, sin "Hoja int."; `cor6_lat`
+    en escalera de 6 vías con todas las flechas hacia el lado de "Hoja interior"; agregadas
+    2026-09-05 a pedido del usuario), `puerta`, `ventana`
     (abisagradas), `osci`, `proy`, `louvers`, `vacio` (muro con hatch, `wallBlock`). **Nombres
     idénticos a los ítems del menú lateral**, a propósito.
   - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
