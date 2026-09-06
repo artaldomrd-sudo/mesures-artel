@@ -636,7 +636,14 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
 - **Modelo de datos (`cardsState[id]`)**, defaults en `addItem` (rama `categoria === 'fachada_grid'`):
   - `cols: [{ w, rows: [{ h, celda, alu, vidrio?, espesor?, apertura?, lado?, manija?, cierre?,
     cerradura?, mosquitera?, cor_interior? }] }]` — columnas de izquierda a derecha, cada una con
-    una o más filas apiladas. `gridAlto` = alto de la banda de columnas (mm).
+    una o más filas apiladas. **Cada columna tiene su PROPIO alto** (suma de sus filas,
+    `gridColAlto`); `gridAlto` ya no se edita: es DERIVADO = la columna más alta (`gridBandAlto`,
+    recalculado en `gridSetRowH`/`gridDeriv`). Pedido del usuario (2026-09-05, "corredera 2150 +
+    puerta 2400, no me deja alturas distintas"): antes `gridSetRowH` copiaba el alto a todas las
+    columnas de 1 fila. En el dibujo cada fila va a la MISMA escala vertical que la banda (no
+    proporcional a su columna), las columnas más bajas se alinean al PISO (hueco arriba), el
+    marco (`bandRect`) va por columna, y una columna de 1 fila con alto ≠ banda muestra su alto
+    como etiqueta dentro (`rowDims`). Alto total = faja + tubo + columna más alta.
   - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4/cor6_cent/cor6_lat` (correderas —
     `gridCorN(celda)` da el nº de hojas, `gridCorCentral` marca la única central: `cor6_cent` con 3
     vías simétricas desde el centro y flechas R L L R R L como la suelta, sin "Hoja int."; `cor6_lat`

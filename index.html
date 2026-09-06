@@ -1617,7 +1617,7 @@
             const fa = state.fajaArriba, fb = state.fajaAbajo;
             const faH = fa ? (parseInt(fa.h) || 0) : 0;
             const fbH = fb ? (parseInt(fb.h) || 0) : 0;
-            const gAlto = parseInt(state.gridAlto) || 0;
+            const gAlto = gridBandAlto(state);   // banda = la columna más alta (cada columna puede tener su alto)
             // Tubo horizontal (entre columnas) suma su grosor al alto — igual que el dibujo (ver renderFachadaGrid).
             const tbz = state.tubos || {};
             const tuboG = (() => { const n = String(tbz.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
@@ -5439,6 +5439,11 @@
     // única CENTRAL (pares simétricos desde el centro, 3 vías); el resto cascadea en escalera (una vía
     // por hoja) hacia el lado de "Hoja interior" — misma regla que la tarjeta suelta (correderaPlan).
     function gridCorN(celda) { return ({ cor2: 2, cor3: 3, cor4: 4, cor6_cent: 6, cor6_lat: 6 })[celda] || 0; }
+    // Alto de una columna = suma de sus filas. Alto de la BANDA de columnas = la columna más alta
+    // (cada columna puede tener su propio alto — pedido del usuario 2026-09-05: corredera 2150 +
+    // puerta 2400 en la misma fachada; las más bajas se alinean al PISO, el hueco queda arriba).
+    function gridColAlto(c) { return ((c && c.rows) || []).reduce((a, r) => a + (parseInt(r.h) || 0), 0); }
+    function gridBandAlto(state) { const m = Math.max(0, ...((state.cols || []).map(gridColAlto))); return m || (parseInt(state.gridAlto) || 0); }
     function gridCorCentral(celda) { return celda === 'cor6_cent'; }
     // Galandajes en la fachada (mismos 7 tipos y nombres que el menú lateral). 'central' = hojas que
     // pliegan hacia los DOS lados (bolsillo a cada lado): no tiene sentido en una esquina, por eso el
@@ -5622,7 +5627,7 @@
     }
     function renderFachadaGrid(state, uid) {
         const cols = (state.cols && state.cols.length) ? state.cols : [{ w: 1000, rows: [{ h: state.gridAlto || 2000, celda: 'pf' }] }];
-        const gAlto = Math.max(1, parseInt(state.gridAlto) || 0);
+        const gAlto = Math.max(1, gridBandAlto(state));   // alto de la banda = la columna más alta
         // Fajas de ANCHO COMPLETO: bandas horizontales arriba/abajo que cruzan todas las columnas
         // (ej. un paño fijo/montante superior sobre las columnas). Opcionales.
         const fa = state.fajaArriba, fb = state.fajaAbajo;
@@ -5704,13 +5709,17 @@
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
             const rowSum = Math.max(1, rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0));
-            let cy = gy0;
+            // Cada fila a la MISMA escala vertical que la banda (no proporcional a la columna): una
+            // columna más baja que la banda queda alineada al piso y deja el hueco arriba.
+            const colDH = Math.min(gDH, rowSum * (gDH / gAlto));
+            const colTop = gy0 + (gDH - colDH);
+            let cy = colTop;
             rows.forEach(r => {
-                const rh = ((parseInt(r.h) || 0) / rowSum) * gDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio);
-                if (rows.length > 1) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
+                const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio);
+                if (rows.length > 1 || rowSum !== gAlto) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
                 cy += rh;
             });
-            colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0, col: c }); cx += cw;
+            colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0, col: c, top: colTop, h: colDH }); cx += cw;
         });
         if (fb) body += drawFaja(fb, fbY, fbDH, offFb, bwFb);   // faja inferior (ancho propio + alineación)
         // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
@@ -5742,7 +5751,7 @@
         // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
         const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         if (fa) body += bandRect(offFa, 0, bwFa, faDH);
-        body += bandRect(offMain, gy0, bwMain, gDH);
+        colInfo.forEach(ci => { body += bandRect(ci.x, ci.top, ci.w, ci.h); });   // marco por columna (pueden tener altos distintos)
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
         // Tubo entre columnas HORIZONTAL: banda REAL (su grosor suma a la altura), entre la faja y las
         // columnas (arriba) y/o entre columnas y faja inferior (abajo).
@@ -6095,7 +6104,8 @@
         st.ancho = (st.cols || []).reduce((a, c) => a + (parseInt(c.w) || 0), 0);
         const faH = st.fajaArriba ? (parseInt(st.fajaArriba.h) || 0) : 0;
         const fbH = st.fajaAbajo ? (parseInt(st.fajaAbajo.h) || 0) : 0;
-        st.alto = (parseInt(st.gridAlto) || 0) + faH + fbH;
+        st.gridAlto = gridBandAlto(st);
+        st.alto = st.gridAlto + faH + fbH;
     }
     window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); };
     window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
@@ -6157,13 +6167,9 @@
     window.gridSetRowH = (id, ci, ri, v) => {
         const st = cardsState[id]; const col = st.cols[ci]; const val = parseInt(v) || 0;
         col.rows[ri].h = val;
-        // Una fila = alto de la BANDA de columnas (todas las columnas comparten alto en una fachada):
-        // al editarlo se sincronizan las demás columnas de 1 fila y el alto de banda (gridAlto).
-        if ((col.rows || []).length === 1) {
-            st.gridAlto = val;
-            st.cols.forEach(c => { if ((c.rows || []).length === 1) c.rows[0].h = val; });
-            document.querySelectorAll('.bandh-' + id).forEach(inp => { if (inp !== document.activeElement) inp.value = val; });
-        }
+        // Cada columna tiene su PROPIO alto (antes se copiaba a todas las de 1 fila — el usuario no podía
+        // poner corredera 2150 + puerta 2400). gridAlto pasa a ser el alto de la banda = la más alta.
+        st.gridAlto = gridBandAlto(st);
         gridDraw(id);
     };
     window.gridSetColorPerfil = (id, v) => { cardsState[id].color_perfil = v; gridFull(id); };   // gridFull: muestra/oculta el campo RAL

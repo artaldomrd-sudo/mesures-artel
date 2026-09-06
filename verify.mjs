@@ -114,7 +114,7 @@ for (const id of ['card1', 'temp']) {
       color_vidrio: 'natural', herraje_color: 'cromado', color_perfil: 'negro', verPlanta: true, gridAlign: 'centro',
       cols: [
         { w: 1800, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', manija: 'negro', cor_interior: 'D', mosquitera: 'con' }] },
-        { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'izq', cerradura: 'digital' }] },
+        { w: 900, rows: [{ h: 2600, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'izq', cerradura: 'digital' }] },   // más alta que la banda: cada columna tiene su alto
         { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'titan', apertura: 'adentro_1', lado: 'der' }] },
         { w: 1200, rows: [{ h: 2400, celda: 'ventana', alu: 'p40_ventana', apertura: 'adentro_2' }] },
         { w: 1000, rows: [{ h: 1200, celda: 'pf', alu: 'p40_ventana' }, { h: 600, celda: 'osci', alu: 'p40_ventana' }, { h: 600, celda: 'louvers', vidrio: 'louvers' }] },
