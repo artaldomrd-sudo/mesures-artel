@@ -1258,6 +1258,19 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
     vacía; nada más se rompe.
   - Verificado en navegador (localhost): reloj estable tras 3 ciclos de autosave sin cambios y tras
     recargar + 10 s; avanza (y se escribe local) con un cambio real. `verify.mjs` no cubre esto.
+  - **Memoria POR PESTAÑA del proyecto abierto (`sessionStorage['artal_tab_opened']`).** Bug real
+    (mismo día): con dos pestañas/ventanas del cuaderno en el mismo navegador, cada una con un
+    proyecto distinto, `artal_live_progression` (localStorage, compartido) queda con el último que
+    se escribió — al hacer Cmd+R en la pestaña de "Sienna C-3" aparecía "puerta de entrada woof
+    woof" de la otra. `saveProgress` guarda en `sessionStorage` (no se comparte entre pestañas)
+    qué proyecto tiene abierto ESTA pestaña; `loadProgress`, si ese proyecto difiere del que trae
+    el estado en vivo, restaura el de la pestaña desde `artal_projects` (donde el autoguardado lo
+    deja con cada cambio) y avisa por `console.warn`. Además, cargar la página ya NO reescribe el
+    estado en vivo (`_lastLiveOpened` se fija al valor restaurado) para no pisar el de otra
+    pestaña, y `finalizarGuardadoProyecto` llama a `saveProgress()` de inmediato para persistir
+    el proyecto recién guardado sin esperar al tick de 8 s. Probado con dos pestañas reales
+    (cada una vuelve a su proyecto tras recargar). Hoja en blanco sin proyecto abierto sigue
+    dependiendo solo del estado en vivo compartido (no hay nada por pestaña que restaurar).
 - **`backupAllProjects()` en iPad: "copia creada" pero no aparece en ningún lado.** Caso real
   reportado por el usuario. Causa: un `<a download>` con un `data:` URI (todo el JSON de todos
   los proyectos codificado como texto en la URL) es poco confiable en iOS/iPadOS Safari para

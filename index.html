@@ -1060,6 +1060,7 @@
         document.getElementById('select-proyecto').value = obraKey;
 
         document.getElementById('header-fecha').innerText = `Creado: ${jsonData.header.fechaCreacion} | Mod: ${jsonData.header.fechaModificacion}`;
+        saveProgress();   // persiste YA qué proyecto quedó abierto (estado en vivo + memoria de esta pestaña), sin esperar al guardado periódico
         updateSavedStatusBadge();
 
         alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
@@ -2951,6 +2952,10 @@
         actualizarPerfilUTotal();
         const h = json.header || {};
         const openedNow = (h._openedCli || '') + '|' + (h._openedObra || '');
+        // Memoria POR PESTAÑA (sessionStorage no se comparte entre pestañas, a diferencia de localStorage):
+        // qué proyecto tiene abierto ESTA pestaña, para que al recargar (Cmd+R) vuelva a ese proyecto
+        // aunque otra pestaña/ventana del mismo navegador haya dejado otro en 'artal_live_progression'.
+        try { if (openedNow !== '|') sessionStorage.setItem('artal_tab_opened', openedNow); else sessionStorage.removeItem('artal_tab_opened'); } catch (_) { }
         if (!changed && _lastLiveOpened === openedNow) { updateSavedStatusBadge(); return; }   // nada nuevo: no escribir, no tocar relojes, no pisar la nube
         _lastLiveOpened = openedNow;
         const str = JSON.stringify(json);
@@ -3017,7 +3022,30 @@
                 if (saved && savedTs > liveTs) data = saved;
             }
         } catch (e) { console.error('loadProgress preferencia', e); }
+        // BUG REAL (2026-09-05): con dos pestañas/ventanas del cuaderno en el mismo navegador, cada una
+        // con un proyecto distinto, 'artal_live_progression' (compartido) queda con el ÚLTIMO que se
+        // escribió — al recargar la pestaña de "Sienna C-3" aparecía "puerta de entrada woof woof" de la
+        // otra. Si esta pestaña recuerda (sessionStorage) un proyecto abierto distinto del que trae el
+        // estado en vivo, se restaura SU proyecto desde 'artal_projects' (donde el autoguardado lo va
+        // dejando con cada cambio), no el de la otra pestaña.
+        try {
+            const tabOpened = sessionStorage.getItem('artal_tab_opened') || '';
+            const liveOpened = ((liveData && liveData.header && liveData.header._openedCli) || '') + '|' + ((liveData && liveData.header && liveData.header._openedObra) || '');
+            if (tabOpened && tabOpened !== '|' && tabOpened !== liveOpened) {
+                const [tCli, tObra] = tabOpened.split('|');
+                const projects = getProjects();
+                const mine = projects[tCli] && projects[tCli][tObra];
+                if (mine) {
+                    data = mine;
+                    openedProjectCli = tCli; openedProjectObra = tObra; openedProjectKey = (tCli + '|' + tObra).toLowerCase();
+                    console.warn('loadProgress: el estado en vivo era de otra pestaña (' + liveOpened + '); se restaura el proyecto de ESTA pestaña:', tabOpened);
+                }
+            }
+        } catch (e) { console.error('loadProgress pestaña', e); }
         if (data) { try { restoreData(data); } catch (e) { console.error('restoreData', e); } }
+        // Cargar la página NO es un cambio: no reescribir el estado en vivo (podría pisar el de otra
+        // pestaña). Se escribirá cuando haya un cambio real o cuando el usuario abra otro proyecto.
+        _lastLiveOpened = (openedProjectCli || '') + '|' + (openedProjectObra || '');
         updateClientList();
         updateSavedStatusBadge();
     }
@@ -5861,14 +5889,18 @@
         // Fachada de ESQUINA (en "L"): un ala (las primeras o las últimas N columnas) gira 90° hacia
         // adentro. La elevación se dibuja desplegada (plana, con la esquina marcada) y la vista en
         // planta muestra la "L" real — mismo modelo que los planos de arquitecto del usuario.
-        if (cols.length >= 2) {
+        {
             const esq = st.esquinaLado || '';
-            const nE = Math.min(Math.max(1, parseInt(st.esquinaCols) || 1), cols.length - 1);
+            const nE = Math.min(Math.max(1, parseInt(st.esquinaCols) || 1), Math.max(1, cols.length - 1));
             const ESQ = [['', 'Sin esquina (fachada recta)'], ['izq', 'Esquina a la IZQUIERDA (el ala izquierda gira hacia adentro)'], ['der', 'Esquina a la DERECHA (el ala derecha gira hacia adentro)']];
-            const NCOL = Array.from({ length: cols.length - 1 }, (_, i) => [String(i + 1), (i + 1) + (i ? ' columnas' : ' columna') + ' en el ala']);
+            const NCOL = Array.from({ length: Math.max(1, cols.length - 1) }, (_, i) => [String(i + 1), (i + 1) + (i ? ' columnas' : ' columna') + ' en el ala']);
+            // Siempre visible (el usuario no la encontraba con 1 sola columna). Con una sola columna no hay
+            // nada que girar: se avisa que hace falta una 2ª columna (una por cada lado de la esquina).
+            const aviso = cols.length < 2 ? `<div style="grid-column:1 / -1;font-size:11px;color:#a55;">Para la esquina hacen falta al menos 2 columnas (una a cada lado): agrega otra con "+ Columna".</div>` : '';
             h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 8px;background:#eef6ff;border-radius:6px;padding:6px;">
                 <label style="${gbl}">Esquina</label><select style="${inp}" onchange="gridSetEsquina(${id},this.value)">${opt(ESQ, esq)}</select>
-                ${esq ? `<label style="${gbl}">Ala</label><select style="${inp}" onchange="gridSetEsquinaCols(${id},this.value)">${opt(NCOL, String(nE))}</select>` : ''}
+                ${esq && cols.length >= 2 ? `<label style="${gbl}">Ala</label><select style="${inp}" onchange="gridSetEsquinaCols(${id},this.value)">${opt(NCOL, String(nE))}</select>` : ''}
+                ${esq ? aviso : ''}
             </div>`;
         }
         h += fajaRow('arriba', st.fajaArriba);
