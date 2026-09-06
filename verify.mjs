@@ -140,14 +140,15 @@ for (const esquinaLado of ['izq', 'der']) {
       type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true,
       esquinaLado, esquinaCols: 2,
       cols: [
-        { w: 1200, rows: [{ h: 2750, celda: 'cor3', alu: 'P92', cierre: 'multipunto_esquina' }] },
+        { w: 1200, rows: [{ h: 2750, celda: 'cor3', alu: 'P92', cierre: 'multipunto_esquina', cor_interior: esquinaLado === 'izq' ? 'I' : 'D' }] },
         { w: 900, rows: [{ h: 2750, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'der' }] },
         { w: 2500, rows: [{ h: 2750, celda: 'cor4', alu: 'E200', cor_interior: 'D', cierre: 'multipunto_esquina' }] },
         { w: 800, rows: [{ h: 2750, celda: 'pf', alu: 'p40_ventana' }] },
         { w: 2100, rows: [{ h: 2750, celda: 'gal3_3v', alu: 'P92', gal_pocket: 'izq', mosquitera: 'con' }] },
         { w: 2600, rows: [{ h: 2750, celda: 'gal4_4v', alu: 'P92', gal_pocket: 'der' }] },
       ],
-      fajaArriba: { h: 400, celda: 'pf', alu: 'p40_ventana', division: 'perfil' },
+      fajaArriba: { h: 400, celda: 'pf', alu: 'p40_ventana', division: 'perfil', esquinaSolo: 'frente' },
+      fajaAbajo: { h: 300, celda: 'pf', alu: 'p40_ventana', esquinaSolo: 'ala' },
     }); ok++;
   } catch (e) { fail++; console.error(`  fachada_grid esquina ${esquinaLado}:`, e.message); }
 }

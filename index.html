@@ -1714,7 +1714,7 @@
                         const ala = lado === 'izq' ? cols.slice(0, n) : cols.slice(cols.length - n);
                         const frente = lado === 'izq' ? cols.slice(n) : cols.slice(0, cols.length - n);
                         const mm = arr => arr.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
-                        return `<div style="margin-top:2px;"><b>Fachada de esquina (en L):</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}, gira hacia adentro) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.</div>`;
+                        return `<div style="margin-top:2px;"><b>Fachada de esquina (en L):</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}, gira hacia adentro) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.${[['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].filter(([, f]) => f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')).map(([pos, f]) => ` Faja ${pos} solo sobre ${f.esquinaSolo === 'ala' ? 'el ala' : 'el frente'}.`).join('')}</div>`;
                     })()}
                 </div>
                 <div style="color:#888; font-size:11px; letter-spacing:.5px; margin-bottom:2px;">DETALLE POR ELEMENTO</div>
@@ -5473,7 +5473,7 @@
             // Flechas: 6 central = mismo patrón que la tarjeta suelta cor6_cent (R L L R R L);
             // 6 lateral = todas hacia el lado de "Hoja interior" (como cor6_lat suelta); cor2/3/4 como antes.
             const dirs = celda === 'cor6_cent' ? ['R', 'L', 'L', 'R', 'R', 'L']
-                : celda === 'cor6_lat' ? Array(6).fill((cfg.cor_interior || 'I') === 'D' ? 'R' : 'L')
+                : (celda === 'cor6_lat' || celda === 'cor3') ? Array(n).fill((cfg.cor_interior || 'I') === 'D' ? 'R' : 'L')   // escalera: todas hacia el lado de "Hoja interior" (como cor3/cor6_lat sueltas)
                 : Array.from({ length: n }, (_, k) => k % 2 === 0 ? 'L' : 'R');
             for (let k = 0; k < n; k++) { const px = x + w * (k + 0.5) / n; s += gridArrow(px, cy, Math.min(w / n, h), dirs[k]); }
         } else if (celda === 'puerta' || celda === 'ventana') {
@@ -5550,7 +5550,7 @@
         }
         return html;
     }
-    function gridColPlan(x, w, col, planY, maxR, uid) {
+    function gridColPlan(x, w, col, planY, maxR, uid, corner) {
         const rows = (col && col.rows) || [];
         const r = rows.find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'puerta' || rr.celda === 'ventana') || rows[0] || { celda: 'pf' };
         const celda = r.celda;
@@ -5587,12 +5587,23 @@
             const n = gridCorN(celda), g = 2.4, per = '#0A3D62', central = gridCorCentral(celda);
             const leftIsInt = (r.cor_interior || 'I') === 'I';
             const vias = central ? n / 2 : n;   // central: pares simétricos (n/2 vías); escalera: una vía por hoja
-            s += `<line x1="${x.toFixed(1)}" y1="${(planY + (vias - 1) * g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + (vias - 1) * g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+            // ESQUINA sin poste (cierre multipunto de esquina): las dos hojas que llegan a la esquina — la
+            // exterior de cada columna — deben ENCONTRARSE. Para eso las dos van en el MISMO riel exterior
+            // (se desplazan los rieles de la columna con menos vías hacia afuera, `shift`) y se prolongan más
+            // allá del borde de su columna hasta el punto donde se cruzan los rieles (`ext`). Solo aplica
+            // cuando ambas hojas de esquina son exteriores (`corner.extend`); si son las interiores, ya se
+            // tocan en la línea de pared sin hacer nada. Regla del usuario (2026-09-05).
+            const shift = (corner && corner.extend && !central) ? Math.max(0, corner.vmax - vias) : 0;
+            const viasTot = vias + shift;
+            s += `<line x1="${x.toFixed(1)}" y1="${(planY + (viasTot - 1) * g).toFixed(1)}" x2="${(x + w).toFixed(1)}" y2="${(planY + (viasTot - 1) * g).toFixed(1)}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
             for (let k = 0; k < n; k++) {
-                const sx = x + w * k / n, ex = x + w * (k + 1) / n;
+                let sx = x + w * k / n, ex = x + w * (k + 1) / n;
                 // 0 = riel interior (arriba) … vias-1 = exterior (abajo). Central: el par más próximo al centro
                 // va al riel interior (misma regla que correderaPlan modo 'cent'); escalera: según Hoja interior.
-                const depth = central ? (k < n / 2 ? (n / 2 - 1 - k) : (k - n / 2)) : (leftIsInt ? k : (n - 1 - k));
+                const depth = (central ? (k < n / 2 ? (n / 2 - 1 - k) : (k - n / 2)) : (leftIsInt ? k : (n - 1 - k))) + shift;
+                if (corner && corner.extend && !central && depth === viasTot - 1 && (corner.end === 'end' ? k === n - 1 : k === 0)) {
+                    if (corner.end === 'end') ex += depth * g; else sx -= depth * g;   // hasta el cruce con el riel exterior de la otra columna
+                }
                 const ry = planY + depth * g;
                 s += `<line x1="${sx.toFixed(1)}" y1="${ry.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${ry.toFixed(1)}" stroke="${per}" stroke-width="1.6"/>`;
             }
@@ -5637,8 +5648,20 @@
         const DHt = fbY + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
-        const bwFa = faSub ? wFa * scale : DW, offFa = faSub ? alignOff(fa.align, bwFa) : 0;
-        const bwFb = fbSub ? wFb * scale : DW, offFb = fbSub ? alignOff(fb.align, bwFb) : 0;
+        // Fachada de esquina: rangos (en unidades del dibujo) del ALA y del FRENTE, para que una faja
+        // pueda ir solo sobre uno de los dos (ej. plano del usuario: faja superior solo sobre el frente).
+        const esqE = (() => {
+            const lado = (cols.length >= 2 && (state.esquinaLado === 'izq' || state.esquinaLado === 'der')) ? state.esquinaLado : '';
+            if (!lado) return null;
+            const n = Math.min(Math.max(1, parseInt(state.esquinaCols) || 1), cols.length - 1);
+            const wing = lado === 'izq' ? cols.slice(0, n) : cols.slice(cols.length - n);
+            const wW = wing.reduce((a, c) => a + (parseInt(c.w) || 0), 0) * scale;
+            return { lado, n, wingX0: lado === 'izq' ? offMain : offMain + bwMain - wW, wingW: wW, mainX0: lado === 'izq' ? offMain + wW : offMain, mainW: bwMain - wW };
+        })();
+        const fajaRange = f => (esqE && f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')) ? (f.esquinaSolo === 'ala' ? [esqE.wingX0, esqE.wingW] : [esqE.mainX0, esqE.mainW]) : null;
+        const rFa = fajaRange(fa), rFb = fajaRange(fb);
+        const bwFa = rFa ? rFa[1] : (faSub ? wFa * scale : DW), offFa = rFa ? rFa[0] : (faSub ? alignOff(fa.align, bwFa) : 0);
+        const bwFb = rFb ? rFb[1] : (fbSub ? wFb * scale : DW), offFb = rFb ? rFb[0] : (fbSub ? alignOff(fb.align, bwFb) : 0);
         const tt = 4;   // grosor visible de los tubos que NO suman (perimetrales/verticales), en unidades de viewBox
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         // Dibuja una faja (banda de ancho completo): un solo elemento, o subdividida en varias
@@ -5693,13 +5716,13 @@
             });
             return xs;
         };
-        const drawFajaDiv = (faja, side, y0, y1) => {
+        const drawFajaDiv = (faja, side, y0, y1, fx0, fw) => {
             if (!faja || (faja.cols && faja.cols.length) || !faja.division || faja.division === 'ninguna') return '';
             const perfil = faja.division === 'perfil';
-            return fajaDivXs(side).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
+            return fajaDivXs(side).filter(x => x > fx0 + 0.5 && x < fx0 + fw - 0.5).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
         };
-        body += drawFajaDiv(fa, 'arriba', 0, faDH);
-        body += drawFajaDiv(fb, 'abajo', fbY, DHt);
+        body += drawFajaDiv(fa, 'arriba', 0, faDH, offFa, bwFa);
+        body += drawFajaDiv(fb, 'abajo', fbY, DHt, offFb, bwFb);
         // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
         const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         if (fa) body += bandRect(offFa, 0, bwFa, faDH);
@@ -5806,15 +5829,36 @@
                 });
                 return { int, ext };
             };
+            // Columnas ADYACENTES a la esquina: si las dos son correderas en escalera, sus hojas de esquina
+            // deben encontrarse (ver gridColPlan). `cornerOf(ci)` da la instrucción para cada una.
+            const rowOp = ci => ((ci.col.rows || []).find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'puerta' || rr.celda === 'ventana') || (ci.col.rows || [])[0] || { celda: 'pf' });
+            let cornerMap = new Map();
+            if (esqLado && wingCols.length && mainCols.length) {
+                const wAdj = esqLado === 'izq' ? wingCols[wingCols.length - 1] : wingCols[0];
+                const mAdj = esqLado === 'izq' ? mainCols[0] : mainCols[mainCols.length - 1];
+                const rw = rowOp(wAdj), rm = rowOp(mAdj);
+                if (gridCorN(rw.celda) && !gridCorCentral(rw.celda) && gridCorN(rm.celda) && !gridCorCentral(rm.celda)) {
+                    const wLeftInt = (rw.cor_interior || 'I') === 'I', mLeftInt = (rm.cor_interior || 'I') === 'I';
+                    // ¿la hoja que llega a la esquina es la EXTERIOR en cada columna? (ala izq: su última hoja;
+                    // ala der: su primera; frente: la primera si la esquina está a la izq, la última si a la der)
+                    const wExt = esqLado === 'izq' ? wLeftInt : !wLeftInt;
+                    const mExt = esqLado === 'izq' ? !mLeftInt : mLeftInt;
+                    const vmax = Math.max(gridCorN(rw.celda), gridCorN(rm.celda));
+                    cornerMap.set(wAdj, { end: esqLado === 'izq' ? 'end' : 'start', vmax, extend: wExt && mExt });
+                    cornerMap.set(mAdj, { end: esqLado === 'izq' ? 'start' : 'end', vmax, extend: wExt && mExt });
+                }
+            }
+            const cornerOf = ci => cornerMap.get(ci) || null;
+            const needsC = ci => { const nn = needs(ci); const c = cornerOf(ci); if (c && c.extend) nn.ext = Math.max(nn.ext, (c.vmax - 1) * 2.4 + 1); return nn; };
             let upNeed = 0, downNeed = 0, wingExt = 0;
-            mainCols.forEach(ci => { const n = needs(ci); upNeed = Math.max(upNeed, n.int); downNeed = Math.max(downNeed, n.ext); });
-            wingCols.forEach(ci => { const n = needs(ci); wingExt = Math.max(wingExt, n.ext); });
+            mainCols.forEach(ci => { const n = needsC(ci); upNeed = Math.max(upNeed, n.int); downNeed = Math.max(downNeed, n.ext); });
+            wingCols.forEach(ci => { const n = needsC(ci); wingExt = Math.max(wingExt, n.ext); });
             const wingW = wingCols.reduce((a, c) => a + c.w, 0);   // largo del ala (a escala, igual que en la elevación)
             const planTop = anchoBottom + 8;            // debajo de la línea de cota del ancho total
             // Línea de pared del frente: deja arriba el espacio del giro hacia adentro y del ala girada.
             const planY = planTop + 7 + Math.max(upNeed, wingW ? wingW - 2 : 0);
             cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
-            mainCols.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R, uid); });
+            mainCols.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R, uid, cornerOf(ci)); });
             if (wingCols.length) {
                 // Ala girada 90° hacia adentro (sube desde la esquina). Se dibuja con el MISMO gridColPlan en
                 // coordenadas locales (x = como en la elevación, y = interior arriba / exterior abajo) y se
@@ -5823,7 +5867,7 @@
                 const x0 = wingCols[0].x;
                 const m = esqLado === 'izq' ? `matrix(0 1 -1 0 ${cornerX.toFixed(1)} ${(planY - wingW).toFixed(1)})` : `matrix(0 -1 1 0 ${cornerX.toFixed(1)} ${planY.toFixed(1)})`;
                 let ala = '';
-                wingCols.forEach(ci => { ala += gridColPlan(ci.x - x0, ci.w, ci.col, 0, ci.w * RATIO_R, uid); });
+                wingCols.forEach(ci => { ala += gridColPlan(ci.x - x0, ci.w, ci.col, 0, ci.w * RATIO_R, uid, cornerOf(ci)); });
                 cotas += `<g transform="${m}">${ala}</g>`;
                 // remate de la esquina (une la pared del ala con la del frente)
                 cotas += `<circle cx="${cornerX.toFixed(1)}" cy="${planY.toFixed(1)}" r="1.3" fill="#bdc3c7"/>`;
@@ -5928,7 +5972,9 @@
                     ${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}
                     <button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">⊞ Dividir en columnas</button>`;
             }
-            return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">${head}${inner}</div>`;
+            // Con esquina: la faja puede ir sobre toda la fachada desplegada, solo sobre el frente o solo sobre el ala.
+            const sobre = st.esquinaLado ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin:2px 0 6px;background:#eef6ff;border-radius:5px;padding:4px;"><label style="${lblR}">Sobre</label><select style="${inp}" onchange="gridSetFajaCfg(${id},'${side}','esquinaSolo',this.value)">${opt([['', 'Toda la fachada (ala + frente)'], ['frente', 'Solo el frente'], ['ala', 'Solo el ala de la esquina']], faja.esquinaSolo || '')}</select></div>` : '';
+            return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">${head}${sobre}${inner}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
         const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];

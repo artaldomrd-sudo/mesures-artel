@@ -743,6 +743,23 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   cota de ancho y la pared; `planLeftExt`/`planRightExt` ensanchan el viewBox si el exterior del
   ala (rieles/arcos) sobresale. Las etiquetas int/ext se mueven al lado derecho del frente cuando
   el ala está a la izquierda. Resumen: línea "Fachada de esquina (en L): ala … + frente …".
+  **Hojas que se encuentran en la esquina (2026-09-05, regla del usuario):** las dos hojas que
+  llegan a la esquina — la EXTERIOR de cada columna adyacente — deben cerrar una contra la otra
+  (cierre multipunto de esquina, sin poste). Funciona cuando en el ala la hoja exterior queda del
+  lado de la esquina y en el frente también (ej. esquina izq: col. 1 "Hoja interior: Izq.", col. 2
+  "Hoja interior: Der."); al revés (las dos interiores en la esquina) también cierran, en la
+  línea de pared. `renderFachadaGrid` arma `cornerMap` para las 2 columnas adyacentes si ambas
+  son correderas en escalera: `{end:'start'|'end', vmax, extend}` (`extend` = las dos hojas de
+  esquina son exteriores); `gridColPlan` entonces desplaza los rieles de la columna con menos
+  vías hacia afuera (`shift = vmax - vias`, para que las dos exteriores vayan en el MISMO riel)
+  y prolonga la hoja de esquina `depth·g` más allá del borde de su columna, hasta el cruce con
+  el riel de la otra — verificado con coordenadas (punto de encuentro idéntico). Config mixta
+  (una interior, otra exterior) se dibuja tal cual, sin cerrar. **Faja de un solo lado**
+  (`faja.esquinaSolo`: `''` toda | `'frente'` | `'ala'`, select "Sobre" en cada faja solo con
+  esquina): `esqE` (calculado temprano) da los rangos de ala/frente y `fajaRange` fija
+  `offFa/bwFa` (y `drawFajaDiv` filtra las divisiones a ese rango) — como el plano del usuario
+  (faja superior solo sobre el frente). Resumen: "Faja superior solo sobre el frente". Flechas de
+  `cor3` en la fachada: todas hacia el lado de "Hoja interior" (como la suelta; antes alternaban).
   **Cierre "Multipunto de Esquina"** (`cierre: 'multipunto_esquina'`, `CIERRE_COR`): SOLO en el
   select de cierre de las correderas (pedido explícito), no en puertas; el resumen mapea los
   valores de cierre a texto legible (antes imprimía el value crudo). `verify.mjs` cubre `izq` y
