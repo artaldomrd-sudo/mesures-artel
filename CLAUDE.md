@@ -1893,7 +1893,11 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
 - Flechas negras siempre; cromado = `#8d99a4`, negro = `#111111`.
 - En vidrio oscuro, herrajes negros pierden contraste (por eso se cuida el tamaño de las marcas).
 - Al añadir un campo nuevo al `state`, incluirlo en la lista blanca de re-render de `updateState`
-  (si no, el dibujo no se actualiza al cambiar el menú).
+  (si no, el dibujo no se actualiza al cambiar el menú). **Bug real (2026-09-05, con foto):** `vidrio`
+  y `espesor` NO estaban en esa lista — al elegir "Láminas de Louver" en una puerta suelta el estado
+  cambiaba pero el dibujo seguía en vidrio hasta el próximo redibujo por otro motivo (la Fachada
+  Compuesta sí lo dibujaba porque usa su propio `gridDraw`). Agregados los dos (`espesor` porque
+  auto-selecciona el tipo de vidrio).
 - El grosor auto-selecciona el tipo de vidrio: `3+3/4+4/5+5/6+6` → laminado; `10mm/12mm` → templado.
 - El tipo de aluminio del encabezado se aplica por defecto a ítems nuevos (correderas/
   galandajes) vía `headerAluminio` — no es "memoria" en vivo, no se actualiza si el ítem ya
