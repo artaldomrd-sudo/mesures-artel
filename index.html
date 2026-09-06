@@ -5660,8 +5660,15 @@
         })();
         const fajaRange = f => (esqE && f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')) ? (f.esquinaSolo === 'ala' ? [esqE.wingX0, esqE.wingW] : [esqE.mainX0, esqE.mainW]) : null;
         const rFa = fajaRange(fa), rFb = fajaRange(fb);
-        const bwFa = rFa ? rFa[1] : (faSub ? wFa * scale : DW), offFa = rFa ? rFa[0] : (faSub ? alignOff(fa.align, bwFa) : 0);
-        const bwFb = rFb ? rFb[1] : (fbSub ? wFb * scale : DW), offFb = rFb ? rFb[0] : (fbSub ? alignOff(fb.align, bwFb) : 0);
+        // Faja de un solo lado: una faja de UN elemento cubre todo ese lado; una faja SUBDIVIDIDA usa la
+        // suma REAL de sus columnas (a escala) y se alinea (izq/centro/der) DENTRO de ese lado — nunca se
+        // estira al ancho del lado (bug reportado con foto: 1000+1375+1375 se veía como los 8250 del frente).
+        const fajaBand = (f, sub, wReal, rng) => {
+            if (rng) { const bw = sub ? Math.min(wReal * scale, rng[1]) : rng[1]; const a = f.align || 'centro'; return [bw, rng[0] + (a === 'izq' ? 0 : a === 'der' ? (rng[1] - bw) : (rng[1] - bw) / 2)]; }
+            const bw = sub ? wReal * scale : DW; return [bw, sub ? alignOff(f.align, bw) : 0];
+        };
+        const [bwFa, offFa] = fa ? fajaBand(fa, faSub, wFa, rFa) : [DW, 0];
+        const [bwFb, offFb] = fb ? fajaBand(fb, fbSub, wFb, rFb) : [DW, 0];
         const tt = 4;   // grosor visible de los tubos que NO suman (perimetrales/verticales), en unidades de viewBox
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
         // Dibuja una faja (banda de ancho completo): un solo elemento, o subdividida en varias
