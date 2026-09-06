@@ -152,6 +152,15 @@ for (const esquinaLado of ['izq', 'der']) {
     }); ok++;
   } catch (e) { fail++; console.error(`  fachada_grid esquina ${esquinaLado}:`, e.message); }
 }
+// Faja superior LOCAL sobre algunas columnas (plano del usuario: corredera 2750 a toda altura + puerta 2150 +
+// PF 2150 con faja PF 450 solo sobre las columnas 2 y 3, apoyada dentro del alto total) y una que NO cabe.
+for (const h of [450, 900]) {
+  try {
+    ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true,
+      cols: [{ w: 4000, rows: [{ h: 2750, celda: 'cor2', alu: 'E200' }] }, { w: 1000, rows: [{ h: 2150, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado: 'izq' }] }, { w: 950, rows: [{ h: 2150, celda: 'pf', alu: 'p40_ventana' }] }],
+      fajaArriba: { h, celda: 'pf', alu: 'p40_ventana', desde: 2, hasta: 3, division: 'perfil' } }); ok++;
+  } catch (e) { fail++; console.error('  fachada_grid faja local ' + h + ':', e.message); }
+}
 // Caso mínimo (defaults de addItem: 1 columna corredera, sin fajas ni tubos)
 try {
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, cols: [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }], vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'cromado', tubos: { medida: '100 x 45' }, verPlanta: true }); ok++;

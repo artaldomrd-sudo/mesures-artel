@@ -1615,13 +1615,16 @@
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
             const fa = state.fajaArriba, fb = state.fajaAbajo;
-            const faH = fa ? (parseInt(fa.h) || 0) : 0;
+            const infoFa = gridFajaInfo(state, fa, 'arriba'), infoFb = gridFajaInfo(state, fb, 'abajo');
+            const faLocal = !!(infoFa && infoFa.local);
+            const faH = (fa && !faLocal) ? (parseInt(fa.h) || 0) : 0;   // faja LOCAL (sobre columnas más bajas) no suma al alto
             const fbH = fb ? (parseInt(fb.h) || 0) : 0;
+            const rangoTxt = info => (info && info.partial) ? ` · sobre col. ${info.i0 + 1}${info.i1 > info.i0 ? ' a ' + (info.i1 + 1) : ''}${info.local ? ' (apoyada, dentro del alto total)' : ''}` : '';
             const gAlto = gridBandAlto(state);   // banda = la columna más alta (cada columna puede tener su alto)
             // Tubo horizontal (entre columnas) suma su grosor al alto — igual que el dibujo (ver renderFachadaGrid).
             const tbz = state.tubos || {};
             const tuboG = (() => { const n = String(tbz.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
-            const eHtop = (tbz.entreH && fa) ? tuboG : 0;
+            const eHtop = (tbz.entreH && fa && !faLocal) ? tuboG : 0;
             const eHbot = (tbz.entreH && fb) ? tuboG : 0;
             const tuboAltoTotal = eHtop + eHbot;
             const totalH = faH + gAlto + fbH + tuboAltoTotal;
@@ -1663,7 +1666,7 @@
                 ? `<div style="margin:3px 0;"><b>Faja ${pos}</b> &nbsp;<span style="color:#e74c3c;">alto ${f.h} mm</span>${f.cols.map(sc => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(sc.celda)}</b> — ancho ${sc.w} mm${specList(sc.celda, sc).length ? ' · ' + specList(sc.celda, sc).join(' · ') : ''}</div>`).join('')}</div>`
                 : detRow(`${nomC(f.celda)} ${pos}`, `ancho completo × ${f.h} mm alto`, specList(f.celda, f));
             let filas = '';
-            if (fa) filas += fajaLine(fa, 'superior');
+            if (fa) filas += fajaLine(fa, 'superior' + rangoTxt(infoFa));
             cols.forEach((c, ci) => {
                 const rows = c.rows || [];
                 if (rows.length === 1) {
@@ -1674,7 +1677,7 @@
                     filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
-            if (fb) filas += fajaLine(fb, 'inferior');
+            if (fb) filas += fajaLine(fb, 'inferior' + rangoTxt(infoFb));
             // Tubos: redacción clara para fábrica. Los de ENTRE COLUMNAS (horizontal/vertical) SIEMPRE
             // van dentro del hueco -> siempre incluidos en la altura/ancho total. Los LATERALES y sup/inf
             // (perimetrales) pueden estar incluidos o no en la medida total (flag `incluidos`).
@@ -5443,6 +5446,25 @@
     // (cada columna puede tener su propio alto — pedido del usuario 2026-09-05: corredera 2150 +
     // puerta 2400 en la misma fachada; las más bajas se alinean al PISO, el hueco queda arriba).
     function gridColAlto(c) { return ((c && c.rows) || []).reduce((a, r) => a + (parseInt(r.h) || 0), 0); }
+    // Faja "sobre" un rango de columnas (`f.desde`/`f.hasta`, 1-based; default todas; compatibilidad con
+    // `esquinaSolo` ala/frente). Si el rango es PARCIAL y las columnas de ese rango + la faja caben dentro
+    // del alto de la banda (la columna más alta), la faja es LOCAL: se apoya encima de esas columnas SIN
+    // sumar al alto total — caso real del usuario (plano): corredera 2750 a toda altura + puerta 2150 y
+    // paño fijo 2150 con una faja PF 450 solo sobre ellos. Si no cabe, va sobre toda la fachada como siempre.
+    function gridFajaInfo(state, f, side) {
+        const cols = state.cols || [], n = cols.length;
+        if (!f || !n) return null;
+        let i0 = 0, i1 = n - 1;
+        const lado = (n >= 2 && (state.esquinaLado === 'izq' || state.esquinaLado === 'der')) ? state.esquinaLado : '';
+        const nE = lado ? Math.min(Math.max(1, parseInt(state.esquinaCols) || 1), n - 1) : 0;
+        if (f.desde || f.hasta) { i0 = Math.min(n - 1, Math.max(0, (parseInt(f.desde) || 1) - 1)); i1 = Math.min(n - 1, Math.max(i0, (parseInt(f.hasta) || n) - 1)); }
+        else if (lado && f.esquinaSolo === 'ala') { if (lado === 'izq') i1 = nE - 1; else i0 = n - nE; }
+        else if (lado && f.esquinaSolo === 'frente') { if (lado === 'izq') i0 = nE; else i1 = n - nE - 1; }
+        const partial = i0 > 0 || i1 < n - 1;
+        const maxIn = Math.max(0, ...cols.slice(i0, i1 + 1).map(gridColAlto));
+        const local = partial && side === 'arriba' && (maxIn + (parseInt(f.h) || 0) <= gridBandAlto(state));
+        return { i0, i1, partial, local, maxIn };
+    }
     function gridBandAlto(state) { const m = Math.max(0, ...((state.cols || []).map(gridColAlto))); return m || (parseInt(state.gridAlto) || 0); }
     function gridCorCentral(celda) { return celda === 'cor6_cent'; }
     // Galandajes en la fachada (mismos 7 tipos y nombres que el menú lateral). 'central' = hojas que
@@ -5631,13 +5653,16 @@
         // Fajas de ANCHO COMPLETO: bandas horizontales arriba/abajo que cruzan todas las columnas
         // (ej. un paño fijo/montante superior sobre las columnas). Opcionales.
         const fa = state.fajaArriba, fb = state.fajaAbajo;
-        const faH = fa ? Math.max(1, parseInt(fa.h) || 0) : 0;
+        const infoFa = gridFajaInfo(state, fa, 'arriba'), infoFb = gridFajaInfo(state, fb, 'abajo');
+        const faLocal = !!(infoFa && infoFa.local);
+        const faHReal = fa ? Math.max(1, parseInt(fa.h) || 0) : 0;
+        const faH = faLocal ? 0 : faHReal;   // una faja LOCAL (apoyada sobre columnas más bajas) no suma al alto
         const fbH = fb ? Math.max(1, parseInt(fb.h) || 0) : 0;
         const tb = state.tubos || {};
         // Grosor real del tubo (2º número de la medida, ej. "100 x 45" → 45). Un tubo HORIZONTAL
         // ocupa una banda real y SUMA su grosor a la altura total (entre la faja y las columnas).
         const tuboG = (() => { const n = String(tb.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
-        const eHtop = (tb.entreH && fa) ? tuboG : 0;   // tubo horizontal bajo la faja superior
+        const eHtop = (tb.entreH && fa && !faLocal) ? tuboG : 0;   // tubo horizontal bajo la faja superior (no con faja local)
         const eHbot = (tb.entreH && fb) ? tuboG : 0;   // tubo horizontal sobre la faja inferior
         const totalH = faH + eHtop + gAlto + eHbot + fbH;
         // Fachada IRREGULAR: cada banda (faja arriba / columnas / faja abajo) puede tener su propio
@@ -5656,24 +5681,17 @@
         const rawDHt = totalH * scale, minDHt = DW * 0.4, maxDHt = DW * 2.1;
         const scaleV = Math.max(minDHt, Math.min(maxDHt, rawDHt)) / totalH;
         const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV;
+        const faDHd = faHReal * scaleV;   // alto DIBUJADO de la faja superior (local o no)
         const eHtopDH = eHtop * scaleV, eHbotDH = eHbot * scaleV;
         const gy0 = faDH + eHtopDH;              // columnas empujadas hacia abajo por el tubo horizontal superior
         const fbY = gy0 + gDH + eHbotDH;         // faja inferior
         const DHt = fbY + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
-        // Fachada de esquina: rangos (en unidades del dibujo) del ALA y del FRENTE, para que una faja
-        // pueda ir solo sobre uno de los dos (ej. plano del usuario: faja superior solo sobre el frente).
-        const esqE = (() => {
-            const lado = (cols.length >= 2 && (state.esquinaLado === 'izq' || state.esquinaLado === 'der')) ? state.esquinaLado : '';
-            if (!lado) return null;
-            const n = Math.min(Math.max(1, parseInt(state.esquinaCols) || 1), cols.length - 1);
-            const wing = lado === 'izq' ? cols.slice(0, n) : cols.slice(cols.length - n);
-            const wW = wing.reduce((a, c) => a + (parseInt(c.w) || 0), 0) * scale;
-            return { lado, n, wingX0: lado === 'izq' ? offMain : offMain + bwMain - wW, wingW: wW, mainX0: lado === 'izq' ? offMain + wW : offMain, mainW: bwMain - wW };
-        })();
-        const fajaRange = f => (esqE && f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')) ? (f.esquinaSolo === 'ala' ? [esqE.wingX0, esqE.wingW] : [esqE.mainX0, esqE.mainW]) : null;
-        const rFa = fajaRange(fa), rFb = fajaRange(fb);
+        // Posición en x de cada columna (a escala), para acotar una faja a un rango de columnas.
+        const colXs = []; { let xx = offMain; cols.forEach(c => { colXs.push(xx); xx += (parseInt(c.w) || 0) * scale; }); }
+        const fajaRange = (info) => (info && info.partial) ? [colXs[info.i0], colXs[info.i1] + (parseInt(cols[info.i1].w) || 0) * scale - colXs[info.i0]] : null;
+        const rFa = fajaRange(infoFa), rFb = fajaRange(infoFb);
         // Faja de un solo lado: una faja de UN elemento cubre todo ese lado; una faja SUBDIVIDIDA usa la
         // suma REAL de sus columnas (a escala) y se alinea (izq/centro/der) DENTRO de ese lado — nunca se
         // estira al ancho del lado (bug reportado con foto: 1000+1375+1375 se veía como los 8250 del frente).
@@ -5703,7 +5721,9 @@
             return gridCell(uid, xoff, y0, bw, hh, f.celda, f, state.vidrio);
         };
         let body = '';
-        if (fa) body += drawFaja(fa, 0, faDH, offFa, bwFa);   // faja superior (ancho propio + alineación)
+        // Faja superior: sobre toda la fachada (y=0) o LOCAL, apoyada sobre la columna más alta de su rango.
+        const faY0 = faLocal ? (gy0 + (gDH - infoFa.maxIn * scaleV) - faDHd) : 0;
+        if (fa) body += drawFaja(fa, faY0, faDHd, offFa, bwFa);   // faja superior (ancho propio + alineación)
         let cx = offMain; const colInfo = []; const rowDims = [];
         cols.forEach(c => {
             const cw = (parseInt(c.w) || 0) * scale;
@@ -5746,11 +5766,12 @@
             const perfil = faja.division === 'perfil';
             return fajaDivXs(side).filter(x => x > fx0 + 0.5 && x < fx0 + fw - 0.5).map(x => `<line x1="${x.toFixed(1)}" y1="${(y0 + 0.6).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y1 - 0.6).toFixed(1)}" stroke="${perfil ? '#0A3D62' : '#86a8c4'}" stroke-width="${perfil ? 1.6 : 0.9}"${perfil ? '' : ' stroke-opacity="0.85"'}/>`).join('');
         };
-        body += drawFajaDiv(fa, 'arriba', 0, faDH, offFa, bwFa);
+        body += drawFajaDiv(fa, 'arriba', faY0, faY0 + faDHd, offFa, bwFa);
+        if (faLocal) rowDims.push({ x: offFa, w: bwFa, yTop: faY0, yBot: faY0 + faDHd, mm: faHReal });   // su alto, como etiqueta
         body += drawFajaDiv(fb, 'abajo', fbY, DHt, offFb, bwFb);
         // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
         const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
-        if (fa) body += bandRect(offFa, 0, bwFa, faDH);
+        if (fa) body += bandRect(offFa, faY0, bwFa, faDHd);
         colInfo.forEach(ci => { body += bandRect(ci.x, ci.top, ci.w, ci.h); });   // marco por columna (pueden tener altos distintos)
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
         // Tubo entre columnas HORIZONTAL: banda REAL (su grosor suma a la altura), entre la faja y las
@@ -5813,7 +5834,7 @@
         // solo cuando hay más de una banda horizontal (si no, el alto total ya lo dice todo).
         if (fa || fb) {
             const lx = -7 - extL, le = -extL;
-            if (fa) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
+            if (fa && !faLocal) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
             if (eHtop) cotas += dimLineV(faDH, faDH + eHtopDH, lx, le, `${tuboG}`, 3.4);   // banda del tubo horizontal
             cotas += dimLineV(gy0, gy0 + gDH, lx, le, `${gAlto}`, 4.4);
             if (eHbot) cotas += dimLineV(gy0 + gDH, fbY, lx, le, `${tuboG}`, 3.4);
@@ -5997,8 +6018,17 @@
                     ${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}
                     <button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">⊞ Dividir en columnas</button>`;
             }
-            // Con esquina: la faja puede ir sobre toda la fachada desplegada, solo sobre el frente o solo sobre el ala.
-            const sobre = st.esquinaLado ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin:2px 0 6px;background:#eef6ff;border-radius:5px;padding:4px;"><label style="${lblR}">Sobre</label><select style="${inp}" onchange="gridSetFajaCfg(${id},'${side}','esquinaSolo',this.value)">${opt([['', 'Toda la fachada (ala + frente)'], ['frente', 'Solo el frente'], ['ala', 'Solo el ala de la esquina']], faja.esquinaSolo || '')}</select></div>` : '';
+            // "Sobre": toda la fachada, solo algunas columnas (desde/hasta), o —con esquina— solo el frente / solo el ala.
+            let sobre = '';
+            if (cols.length >= 2) {
+                const modo = (faja.desde || faja.hasta) ? 'rango' : (st.esquinaLado && (faja.esquinaSolo === 'frente' || faja.esquinaSolo === 'ala') ? faja.esquinaSolo : '');
+                const MODOS = [['', 'Toda la fachada'], ['rango', 'Solo algunas columnas']].concat(st.esquinaLado ? [['frente', 'Solo el frente'], ['ala', 'Solo el ala de la esquina']] : []);
+                const NC = cols.map((c, i) => [String(i + 1), 'Col ' + (i + 1)]);
+                const info = gridFajaInfo(st, faja, side);
+                const nota = (modo === 'rango' && side === 'arriba') ? `<div style="grid-column:1 / -1;font-size:11px;color:${info && info.local ? '#1e7a46' : '#a55'};">${info && info.local ? 'Cabe dentro del alto: se apoya sobre esas columnas sin sumar al alto total.' : 'No cabe dentro del alto de la banda: se coloca encima de toda la fachada y suma al alto total.'}</div>` : '';
+                sobre = `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin:2px 0 6px;background:#eef6ff;border-radius:5px;padding:4px;"><label style="${lblR}">Sobre</label><select style="${inp}" onchange="gridSetFajaSobre(${id},'${side}',this.value)">${opt(MODOS, modo)}</select>
+                    ${modo === 'rango' ? `<label style="${lblR}">Desde</label><select style="${inp}" onchange="gridSetFajaCfg(${id},'${side}','desde',this.value)">${opt(NC, String(info.i0 + 1))}</select><label style="${lblR}">Hasta</label><select style="${inp}" onchange="gridSetFajaCfg(${id},'${side}','hasta',this.value)">${opt(NC, String(info.i1 + 1))}</select>` : ''}${nota}</div>`;
+            }
             return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">${head}${sobre}${inner}</div>`;
         };
         const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
@@ -6105,7 +6135,8 @@
         const faH = st.fajaArriba ? (parseInt(st.fajaArriba.h) || 0) : 0;
         const fbH = st.fajaAbajo ? (parseInt(st.fajaAbajo.h) || 0) : 0;
         st.gridAlto = gridBandAlto(st);
-        st.alto = st.gridAlto + faH + fbH;
+        const iFa = gridFajaInfo(st, st.fajaArriba, 'arriba');
+        st.alto = st.gridAlto + ((iFa && iFa.local) ? 0 : faH) + fbH;
     }
     window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); };
     window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
@@ -6178,6 +6209,13 @@
     window.gridSetAlign = (id, v) => { cardsState[id].gridAlign = v; gridDraw(id); };
     window.gridSetVerPlanta = (id, v) => { cardsState[id].verPlanta = !!v; gridDraw(id); };
     window.gridSetEsquina = (id, v) => { cardsState[id].esquinaLado = v || ''; gridFull(id); };
+    window.gridSetFajaSobre = (id, side, v) => {
+        const f = cardsState[id][side === 'arriba' ? 'fajaArriba' : 'fajaAbajo']; if (!f) return;
+        delete f.desde; delete f.hasta; f.esquinaSolo = '';
+        if (v === 'rango') { f.desde = 1; f.hasta = (cardsState[id].cols || []).length; }
+        else if (v === 'frente' || v === 'ala') f.esquinaSolo = v;
+        gridFull(id);
+    };
     window.gridSetEsquinaCols = (id, v) => { cardsState[id].esquinaCols = parseInt(v) || 1; gridDraw(id); };
     window.gridFajaAlign = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].align = v; gridDraw(id); };
     // Al cambiar el tipo de elemento de una celda/faja, su aluminio se resetea al que aplica a ese tipo.

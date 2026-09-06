@@ -664,8 +664,19 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
     tipo (`pf`→P40 ventana/puerta; `puerta`→P40 puerta/Titan; correderas→P92/E70/E100/E200;
     `louvers`/`vacio`→ninguno). `celdaAluOpts(celda)` / `celdaAluDefault(celda)`.
-  - `fajaArriba` / `fajaAbajo`: `null` o `{ h, celda, alu, align?, division?, cols? }`. Banda de
-    ancho completo arriba/abajo de las columnas. Con `cols` (`gridFajaAddCol`) la faja se
+  - `fajaArriba` / `fajaAbajo`: `null` o `{ h, celda, alu, align?, division?, cols?, desde?, hasta?,
+    esquinaSolo? }`. Banda arriba/abajo de las columnas. **"Sobre" (2026-09-05)**: toda la fachada
+    (default), **solo algunas columnas** (`desde`/`hasta`, 1-based) o, con esquina, solo el frente /
+    solo el ala (`esquinaSolo`). `gridFajaInfo(state, f, side)` resuelve el rango `{i0, i1, partial,
+    local, maxIn}`: si el rango es parcial y `maxIn + h ≤ gridBandAlto` la faja superior es **LOCAL**
+    — se apoya sobre la columna más alta de su rango, dentro del alto de la banda, y NO suma al alto
+    total (`faH = 0` en layout/`gridDeriv`/resumen; se dibuja con `faY0`/`faDHd` y su alto va como
+    etiqueta en `rowDims`; sin tubo horizontal) — caso real del plano del usuario: corredera 2750 a
+    toda altura + puerta 2150 + PF 2150 con faja PF 450 solo sobre las columnas 2-3. Si no cabe, va
+    encima de toda la fachada (solo en su rango en x) y suma al alto, como siempre; el pop-up avisa
+    cuál de los dos casos aplica. `colXs` (x de cada columna) da el rango en x; `fajaBand` alinea una
+    faja subdividida dentro de ese rango. Resumen: "Paño Fijo superior · sobre col. 2 a 3 (apoyada,
+    dentro del alto total)". `gridSetFajaSobre(id, side, v)` cambia el modo. Con `cols` (`gridFajaAddCol`) la faja se
     subdivide en sub-columnas de anchos propios (ej. 3 proyectadas de anchos distintos); sin
     `cols`, `division` (`'ninguna'|'perfil'|'tope'`) dibuja divisiones alineadas con las columnas
     y con las hojas de la corredera de abajo (`fajaDivXs`).
