@@ -1751,6 +1751,39 @@ Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).
 - Este visor se registra **después** de `loadProgress()` (dentro de su propio
   `DOMContentLoaded`) para que el autosave local nunca pise los datos del pedido de Firestore.
 
+#### Modo lectura rediseñado (`buildReadonlyView`, 2026-09-07)
+
+Pedido del usuario con captura real desde el celular del instalador: la ficha era el cuaderno de
+edición con los controles escondidos — encabezado de 5 casillas aplastado (nombres cortados),
+"Abrir otro proyecto"/"Nuevo proyecto de este cliente" visibles, placeholders "Ref. (ej: PV1)" /
+"Ubicación (ej: …)" que parecían campos por llenar, dibujo con aire, checklist al final.
+"Proponme mejoras consistentes" → propuesta A (cuaderno) aplicada tal cual:
+
+- `buildReadonlyView(role, orderData)` (script módulo, justo antes del visor `?orderId=`; se llama
+  después de `restoreData` y antes de `injectChecklist`): inserta `#ro-header` (pill
+  FABRICACIÓN/COTIZACIÓN, obra grande, cliente, línea "📍 ubicación · Material · Acabado · fechas",
+  logo chico) antes de `.project-header`; por tarjeta agrega `.ro-head` (Ref grande · tipo ·
+  📍 ubicación, solo lo que tenga valor) y `.ro-notes` (solo si la nota tiene texto); llama
+  `generateSummary` por si acaso; ajusta el alto de `.drawing-area` a la proporción real del
+  viewBox (150–460 px, `fitDrawings` + resize). Pone `body.ro-role-{rol}`.
+- Los 4 recuadros inyectados (`injectFabricaChecklist/Chofer/Instalador/PartesResumen`) llevan
+  clase `.ro-checklist`. **El orden lo da CSS con `order` de flex** (`.item-card` ya es flex
+  column): `.ro-head` −3 → `.ro-checklist` −2 → `.summary-box` −1 → dibujo 1 → `.ro-notes` 2.
+  No se tocó ninguna plantilla de tarjeta.
+- CSS bajo **`body.readonly-view:not(.printing-sheets)`** (importante: "Imprimir / PDF" de la
+  ficha usa el mismo body → sin el `:not` el PDF perdería encabezado/ref/notas): oculta
+  `.doc-type-bar`, `.project-header`, `#header-obra-sel`, `#btn-nuevo-proy-cliente`,
+  `.medida-toggle`, `.card-ref-row`, el input de ubicación, `.notes-area`, `.signature-section`;
+  texto 14 px y casillas de 22 px en el checklist. `body.printing-sheets` oculta `#ro-header` y
+  `.ro-*`. El banner `#perfil-u-banner` (perfil U + resina + tornillos) se oculta para
+  `ro-role-fabrica` y `ro-role-chofer`; instalador y sin rol lo ven.
+- Como todo vive en el script módulo, `verify.mjs` no lo cubre: probar en navegador simulando
+  (`document.body.classList.add('readonly-view'); window.buildReadonlyView('instalador', {docType:'FAB'})`).
+- Pendiente del lado sistema (propuesta B, otra sesión): mostrar resina/tornillos/perfil U en la
+  tarjeta de obra de `ops/instalacion.html` (el cuaderno tendría que guardar esos totales en el
+  pedido al enviarlo) y bajar la barra del modal de `ops/order-preview.js` sin "Reenviar" para
+  instalador/chofer.
+
 #### Partes de fábrica (`partesFabrica`, marco/hojas/vidrios/accesorios)
 
 Pedido explícito del usuario: fábrica (ALUCUFEL) necesita marcar **qué partes** de cada ítem está
