@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 10:53</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 11:01</div>
         </div>
     </div>
     
@@ -4644,16 +4644,16 @@
         const W = Math.max(anchoM * sc, box.maxW * 0.25), H = Math.max(alto * sc, box.maxH * 0.25);
         const scale = W / anchoM;
         const x0 = 50 - W / 2, y0 = box.top + (box.maxH - H) / 2;
-        // Tubos POR FUERA del hueco (regla del usuario): el tubo lateral va del lado de CIERRE (opuesto al
-        // bolsillo; en centrales, ambos extremos), fuera del hueco pero DENTRO del largo del riel (el tubo
-        // superior mide el riel total). Reserva su ancho `tt` en el layout para que la cota del hueco no lo incluya.
+        // Tubos POR FUERA de todo (regla del usuario): ni el hueco ni el ancho de marco/riel incluyen el tubo
+        // lateral — va pegado por fuera del riel, del lado de CIERRE (opuesto al bolsillo; en centrales, ambos
+        // extremos). `latL`/`latR` = su ancho dibujado a cada lado (0 si no hay), para colocar cotas fuera de él.
         const tubo = state.gal_tubo || '', tt = 3.2, hasLat = tubo === 'lat' || tubo === 'lat_sup45';
         const latL = hasLat && (cfg.central || !pocketLeft) ? tt : 0;
         const latR = hasLat && (cfg.central || pocketLeft) ? tt : 0;
-        const extLw = Math.max(0, extL * scale - (latL && !cfg.central ? 0 : 0)), extRw = Math.max(0, extR * scale);
-        const opW = Math.max(4, W - latL - latR - extLw - extRw);
+        const extLw = extL * scale, extRw = extR * scale;
+        const opW = Math.max(4, W - extLw - extRw);
         return { n: cfg.n, central: cfg.central, pocketLeft, anchoH, anchoM, alto, marcoDado: marcoIn > anchoH,
-            x0, y0, W, H, scale, extLw, extRw, latL, latR, tt, opX: x0 + latL + extLw, opW,
+            x0, y0, W, H, scale, extLw, extRw, latL, latR, tt, opX: x0 + extLw, opW,
             fuera: (state.gal_install || 'dentro') === 'fuera', viewerOut: state.vista === 'afuera', tubo };
     }
     // Elevación del galandaje (única para los 7 tipos). Devuelve las paredes (bloques con rayado sobre el
@@ -4664,8 +4664,8 @@
         const g = galLayout(state);
         const yTop = g.y0, yBot = g.y0 + g.H;
         let walls = '';
-        if (g.extLw > 0.5) walls += wallBlock(uid, g.x0 + g.latL, yTop - 2, g.extLw, g.H + 4);
-        if (g.extRw > 0.5) walls += wallBlock(uid, g.x0 + g.W - g.latR - g.extRw, yTop - 2, g.extRw, g.H + 4);
+        if (g.extLw > 0.5) walls += wallBlock(uid, g.x0, yTop - 2, g.extLw, g.H + 4);
+        if (g.extRw > 0.5) walls += wallBlock(uid, g.x0 + g.W - g.extRw, yTop - 2, g.extRw, g.H + 4);
         let frame = '';
         // riel (marco) a lo largo de todo el ancho de marco, arriba y abajo
         frame += `<rect x="${g.x0.toFixed(1)}" y="${(yTop - 1.6).toFixed(1)}" width="${g.W.toFixed(1)}" height="1.6" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.4"/>`;
@@ -4685,14 +4685,14 @@
         // REGLA (usuario 2026-09-07): el tubo superior horizontal mide SIEMPRE lo mismo que el riel total
         // (ancho de marco): va exactamente de x0 a x0+W. Los tubos laterales quedan DENTRO de ese largo
         // (su cara exterior alineada con el extremo del riel) y el corte a 45° se dibuja en la esquina.
-        const latXs = [g.latL ? g.x0 : null, g.latR ? g.x0 + g.W - tt : null].filter(v => v !== null);
+        const latXs = [g.latL ? g.x0 - tt : null, g.latR ? g.x0 + g.W : null].filter(v => v !== null);   // pegados POR FUERA del riel
         if (tubo === 'sup' || tubo === 'lat_sup45') frame += tuboRect(g.x0, supY, g.W, tt);
         if (tubo === 'lat' || tubo === 'lat_sup45') {
             latXs.forEach(lx => {
                 const y1 = tubo === 'lat_sup45' ? supY : yTop - 1.6;
                 frame += tuboRect(lx, y1, tt, yBot + 1.2 - y1);
                 // corte a 45°: diagonal en la esquina donde se encuentran los dos tubos
-                if (tubo === 'lat_sup45') { const left = lx <= g.x0 + 0.01; frame += `<line x1="${(left ? lx : lx + tt).toFixed(1)}" y1="${supY.toFixed(1)}" x2="${(left ? lx + tt : lx).toFixed(1)}" y2="${(supY + tt).toFixed(1)}" stroke="#0A3D62" stroke-width="0.9"/>`; }
+                if (tubo === 'lat_sup45') { const left = lx < g.x0; frame += `<line x1="${(left ? lx : lx + tt).toFixed(1)}" y1="${supY.toFixed(1)}" x2="${(left ? lx + tt : lx).toFixed(1)}" y2="${(supY + tt).toFixed(1)}" stroke="#0A3D62" stroke-width="0.9"/>`; }
             });
         }
         return { walls, frame, wallsBehind: g.fuera && g.viewerOut, layout: g };
@@ -6544,7 +6544,7 @@
         const PT = 78, wbh = 3.2, gt = 3, mt = 2.4, dz = 2.0, vg = 2.4;   // PT 78 (antes 66): deja sitio a la cota del hueco (texto bajo la línea) debajo de la elevación
         // Mismo layout proporcional que la elevación: el hueco y el sobrante del riel (bolsillo) a escala.
         const gl = galLayout(state);
-        const X0 = gl.opX - gl.extLw, X1 = gl.opX + gl.opW + gl.extRw;   // bolsillo + hueco (la zona del tubo lateral queda fuera)
+        const X0 = gl.x0, X1 = gl.x0 + gl.W;   // marco = bolsillo + hueco (el tubo lateral va por fuera)
         // Orientación según la VISTA: la planta se dibuja con el observador ABAJO. "Vista de afuera" → el
         // exterior queda abajo (la hoja "por fuera" queda debajo del concreto); "vista de adentro" → arriba.
         const flipV = state.vista === 'afuera';
@@ -7524,7 +7524,7 @@
             }
             if (state.categoria === 'galandaje' && dimPr) {
                 const g = galLayout(state);
-                if (state.alto > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + 5, g.x0 + g.W, `${(parseInt(state.alto) || 0) + penetracionRielMm(state)} mm`, 7);   // altura TOTAL (con penetración del riel)
+                if (state.alto > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + g.latR + 5, g.x0 + g.W + g.latR, `${(parseInt(state.alto) || 0) + penetracionRielMm(state)} mm`, 7);   // altura TOTAL (con penetración del riel), fuera del tubo lateral
                 // Ancho del HUECO debajo del dibujo (texto sobre la línea) y ancho de MARCO arriba: no se chocan
                 // (pedido del usuario: arriba las dos se pisaban).
                 if (state.ancho > 0) svg += dimLineH(g.opX, g.opX + g.opW, g.y0 + g.H + 5, g.y0 + g.H + 1.2, `${state.ancho} mm`, 6.5);   // texto debajo de la línea (57..63), título de la planta en PT-6.5=71.5
