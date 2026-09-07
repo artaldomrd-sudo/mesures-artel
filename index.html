@@ -541,7 +541,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 16:42</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 16:45</div>
         </div>
     </div>
     
@@ -8808,6 +8808,11 @@
             card.appendChild(box);
 
             const checkboxes = Array.from(box.querySelectorAll('.cl-stage'));
+            // "Terminado" es siempre la última etapa de cada STAGE_SETS. Marcarla = ítem instalado
+            // (las etapas previas se dan por hechas y se marcan solas); desmarcar una etapa previa
+            // quita "Terminado". Antes el ítem solo contaba como instalado con LAS 8 casillas marcadas,
+            // y el instalador que marcaba solo "Terminado" veía "Avance: 0/8" en ops/instalacion.html.
+            const cbTerminado = checkboxes[checkboxes.length - 1];
             const btnBad = box.querySelector('.cl-bad');
             const textarea = box.querySelector('.cl-comment');
             const btnSave = box.querySelector('.cl-save');
@@ -8816,8 +8821,8 @@
             async function guardar(nuevoComentario) {
                 const etapas = {};
                 checkboxes.forEach(cb => { etapas[cb.dataset.idx] = cb.checked; });
-                const todasMarcadas = checkboxes.every(cb => cb.checked);
-                estadoActual = nuevoComentario != null ? 'problema' : (todasMarcadas ? 'instalado' : null);
+                const terminado = !!(cbTerminado && cbTerminado.checked);
+                estadoActual = nuevoComentario != null ? 'problema' : (terminado ? 'instalado' : null);
                 if (nuevoComentario != null) comentarioActual = nuevoComentario;
 
                 msg.textContent = 'Guardando…';
@@ -8840,7 +8845,13 @@
                 }
             }
 
-            checkboxes.forEach(cb => { cb.onchange = () => guardar(null); });
+            checkboxes.forEach(cb => {
+                cb.onchange = () => {
+                    if (cb === cbTerminado && cb.checked) checkboxes.forEach(c => { c.checked = true; });
+                    else if (cb !== cbTerminado && !cb.checked && cbTerminado) cbTerminado.checked = false;
+                    guardar(null);
+                };
+            });
             btnBad.onclick = () => {
                 textarea.style.display = 'block';
                 btnSave.style.display = 'inline-block';

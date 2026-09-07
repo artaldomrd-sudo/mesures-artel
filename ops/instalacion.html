@@ -142,6 +142,14 @@
     .rec-inline span { flex: 1; }
     .rec-inline button { background: transparent; border: none; cursor: pointer; font-size: 13px; padding: 2px 4px; }
     .btn-rec { background: #e67e22; color: #fff; border: none; border-radius: 8px; padding: 9px 13px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    /* Menú ☰ del encabezado (instalador en celular: antes 7 botones ocupaban media pantalla) */
+    .who { position: relative; }
+    #menu-btn { font-size: 20px; line-height: 1; padding: 6px 14px; }
+    #menu-panel { position: absolute; right: 0; top: calc(100% + 8px); min-width: 230px; display: flex; flex-direction: column; gap: 6px; padding: 10px; background: #fff; border: 1px solid var(--glass-brd); border-radius: 16px; box-shadow: 0 16px 40px -12px rgba(28,78,122,.45); z-index: 200; }
+    #menu-panel[hidden] { display: none; }
+    #menu-panel a, #menu-panel button { display: flex; align-items: center; width: 100%; box-sizing: border-box; min-height: 44px; padding: 10px 14px; border-radius: 12px; background: #eef4fb; color: var(--artal-blue); font-weight: 700; font-size: 14px; text-decoration: none; border: none; box-shadow: none; text-align: left; cursor: pointer; }
+    #menu-panel a:hover, #menu-panel button:hover { background: #dde9f7; transform: none; }
+    #menu-panel #signout-btn { background: #fdecea; color: #c0392b; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -154,13 +162,18 @@
     </div>
     <div class="who">
         <span id="user-name"></span>
-        <a href="inventario.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">📦 Inventario</a>
-        <a href="academia.html" id="link-academia" style="display:none;text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🎓 Academia</a>
-        <a href="rrhh-reuniones.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🎯 Mis objetivos</a>
-        <a href="historial.html" style="text-decoration:none;background:#eef4fb;color:var(--artal-blue);border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;">🗂️ Historial</a>
-        <button id="bio-btn" title="Registrar tu huella/Face ID en este teléfono para confirmar instalaciones">🔒 Mi biometría</button>
-        <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
-        <button id="signout-btn">Cerrar sesión</button>
+        <button id="menu-btn" aria-label="Menú" aria-expanded="false" title="Menú">☰</button>
+        <!-- Menú desplegable: las secciones que antes ocupaban todo el encabezado (en el celular del
+             instalador tapaban media pantalla). Mismos ids de siempre para no tocar el JS que los usa. -->
+        <div id="menu-panel" hidden>
+            <a href="inventario.html">📦 Inventario</a>
+            <a href="rrhh-reuniones.html">🎯 Mis objetivos</a>
+            <a href="academia.html" id="link-academia" style="display:none;">🎓 Academia</a>
+            <a href="historial.html" id="link-historial" style="display:none;">🗂️ Historial</a>
+            <button id="bio-btn" title="Registrar tu huella/Face ID en este teléfono para confirmar instalaciones">🔒 Mi biometría</button>
+            <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
+            <button id="signout-btn">Cerrar sesión</button>
+        </div>
     </div>
 </header>
 
@@ -336,6 +349,15 @@
     const puedeCambiarEstado = esAdmin || usuario.roles.includes('instalador');
     // Academia está en BETA: su link solo se muestra al admin (oculto por defecto en el HTML).
     if (esAdmin) { const la = document.getElementById('link-academia'); if (la) la.style.display = ''; }
+    // Historial exige admin/lector (historial.html usa requireAuth([])): antes el link se le mostraba
+    // al instalador y lo rebotaba al tocarlo — ahora solo lo ve el admin.
+    if (esAdmin) { const lh = document.getElementById('link-historial'); if (lh) lh.style.display = ''; }
+    // Menú ☰: abre/cierra; se cierra al tocar fuera o al elegir una opción.
+    const menuBtn = document.getElementById('menu-btn'), menuPanel = document.getElementById('menu-panel');
+    const setMenu = (open) => { menuPanel.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); };
+    menuBtn.onclick = (e) => { e.stopPropagation(); setMenu(menuPanel.hidden); };
+    document.addEventListener('click', (e) => { if (!menuPanel.hidden && !menuPanel.contains(e.target)) setMenu(false); });
+    menuPanel.querySelectorAll('a, button').forEach(el => el.addEventListener('click', () => setMenu(false)));
     const yo = { email: usuario.email, nombre: usuario.nombre };
     wireBackButton(usuario.roles);
     document.getElementById('user-name').textContent = usuario.nombre;
