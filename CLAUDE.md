@@ -238,7 +238,7 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     sin sheetrock ya no dice "sheetrock (ext)" (dice "exterior").
   - **Cotas**: hueco a `y=4` (universal), alto a la derecha del marco completo, y "marco N mm" a `y=-3.5`
     encima (viewBox del galandaje pasa a `-14 -12 144 118`).
-  - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 60 según
+  - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 55 según
     `tipo_aluminio`; correderas y galandajes): `penetracionTxt(state)` en la línea MEDIDAS TOTALES del
     resumen: "H: 2200 mm + 55 mm penetración riel (E100) = 2255 mm alto total hueco"; sin serie elegida
     avisa que la elija. No toca `state.alto`.
