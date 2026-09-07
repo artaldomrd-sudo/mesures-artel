@@ -208,6 +208,13 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   media-luna (semicírculo), digital (teclado con puntos) y piso (rectángulo en la esquina
   inferior del borde de cierre). `dir=+1` si el vidrio está a la derecha del borde, `-1` si a la
   izquierda. Se usa igual en tarjeta normal y en CAD/fachada.
+- **"+ Penetración riel suelo" (correderas y galandajes, 2026-09-07)**: botón `toggle-btn` junto a
+  las medidas (mismo mecanismo que los extras del shutter: `renderShutterExtras` devuelve la fila para
+  `categoria` corredera/galandaje y `toggleShutterExtra(id, 'penetracionRiel')` invierte el booleano).
+  **Solo información**: NO cambia ninguna medida ni dibuja nada (el usuario lo aclaró explícitamente —
+  un primer intento ponía una barra y una nota en el dibujo y se quitó); al cerrar el candado aparece
+  "+ penetración riel suelo" en verde justo al lado del alto en la línea "MEDIDAS TOTALES" del resumen
+  (y entre paréntesis en los módulos del CAD).
 - **Vista superior (planta) de galandajes**: `galandajePlan(state, uid)`. Reglas validadas:
   el vidrio engancha del **concreto** sin mosquitera y del **sheetrock** con mosquitera (la
   mosquitera ocupa el riel exterior). Instalación "por fuera" = espejo vertical. "Sin sheetrock"

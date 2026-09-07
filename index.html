@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:44</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:49</div>
         </div>
     </div>
     
@@ -1911,7 +1911,7 @@
         if (state.type === 'draw') {
             const items = window['cadItems' + id] || [];
             html += `<div style="font-weight:bold; color:var(--artal-blue); font-size:14px; text-transform:uppercase; margin-bottom:4px;">Fachada Compuesta (${items.length} módulo${items.length === 1 ? '' : 's'})</div>`;
-            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
+            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm${state.penetracionRiel && (state.categoria === 'corredera' || state.categoria === 'galandaje') ? ' <span style="color:#1e7a46; font-weight:bold;">+ penetración riel suelo</span>' : ''} | Cantidad: ${state.cantidad || 1}</div>`;
             
             if(items.length === 0) {
                 html += '<span style="color:#e74c3c;">No hay elementos en el dibujo.</span></div>';
@@ -1937,7 +1937,7 @@
                 if (item.categoria === 'fachada') itemName = (parseInt(item.state.panos) || 1) > 1 ? 'Fachada Multipañó' : 'Paño Fijo';
                 if (item.state.tipo_aluminio) itemName += ' ' + item.state.tipo_aluminio;
                 
-                html += `<div style="margin-bottom: 6px;"><strong><span style="color:#e74c3c; border: 1px solid #e74c3c; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; margin-right: 4px;">${index + 1}</span> ${itemName}</strong> <span style="font-size:11px; color:#555;">(A:${item.state.ancho || 0} H:${item.state.alto || 0})</span><br>`;
+                html += `<div style="margin-bottom: 6px;"><strong><span style="color:#e74c3c; border: 1px solid #e74c3c; border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; margin-right: 4px;">${index + 1}</span> ${itemName}</strong> <span style="font-size:11px; color:#555;">(A:${item.state.ancho || 0} H:${item.state.alto || 0}${item.state.penetracionRiel && (item.categoria === 'corredera' || item.categoria === 'galandaje') ? ' + penetración riel suelo' : ''})</span><br>`;
                 
                 let specs = [];
                 if (!allVidrioSame && item.state.vidrio) {
@@ -1962,7 +1962,7 @@
                 if(specs.length > 0) html += `<span style="color:#666; font-size:11px; margin-left: 25px;"> ${specs.join(' | ')}</span></div>`;
             });
         } else {
-            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cantidad: ${state.cantidad || 1}</div>`;
+            html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm${state.penetracionRiel && (state.categoria === 'corredera' || state.categoria === 'galandaje') ? ' <span style="color:#1e7a46; font-weight:bold;">+ penetración riel suelo</span>' : ''} | Cantidad: ${state.cantidad || 1}</div>`;
             let specs = [];
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
             { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }
@@ -4104,8 +4104,14 @@
     // nota en el dibujo, mismo patrón visual que togglePano pero sin sub-configuración. ---
     function renderShutterExtras(id) {
         const state = cardsState[id];
-        if (!state || state.type !== 'cort_shutter') return '';
+        if (!state) return '';
         const btn = (key, label) => `<div class="toggle-btn small ${state[key] ? 'active' : ''}" onclick="toggleShutterExtra(${id}, '${key}')">${label}</div>`;
+        // Correderas y galandajes: "+ Penetración riel suelo" (el riel inferior va empotrado en el piso) —
+        // pedido del usuario 2026-09-07. Booleano `penetracionRiel`; nota en el dibujo + línea en el resumen.
+        if (state.categoria === 'corredera' || state.categoria === 'galandaje') {
+            return `<div class="shutter-extras-row"><span class="extras-label">Alto:</span>${btn('penetracionRiel', '+ Penetración riel suelo')}</div>`;
+        }
+        if (state.type !== 'cort_shutter') return '';
         return `
             <div class="shutter-extras-row"><span class="extras-label">Ancho:</span>${btn('guiaIzq', '+ Guía Izq.')}${btn('guiaDer', '+ Guía Der.')}</div>
             <div class="shutter-extras-row"><span class="extras-label">Alto:</span>${btn('guiaInf', '+ Guía Inf.')}${btn('cajonExtra', '+ Cajón')}</div>

@@ -73,7 +73,7 @@ const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
   try {
-    const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1200, alto: 2100, orientacion: 'I', panos: 2, color_vidrio: 'natural', vidrio: 'templado', tirador: 'redondo', herraje_color: 'cromado', cerr_luna: true, cerr_piso: true };
+    const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1200, alto: 2100, orientacion: 'I', panos: 2, penetracionRiel: true, color_vidrio: 'natural', vidrio: 'templado', tirador: 'redondo', herraje_color: 'cromado', cerr_luna: true, cerr_piso: true };
     ctx.__render(id, st); ok++;
   } catch (e) { fail++; console.error(`  ${t} (${id}):`, e.message); }
 }
