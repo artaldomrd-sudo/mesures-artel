@@ -30,6 +30,14 @@ un **PDF de Cotización o Fabricación** para el cliente.
   leyendo `.claude/session-area/<session_id>`; si un pedido pertenece a otra área, **avisar antes
   de tocar nada** (ver memoria `feedback-aviso-sesion-equivocada`). Producción sigue siendo `main`
   para las tres. `HANDOFF.md` (no versionado) es el traspaso del cuaderno solamente.
+- **Git: las dos sesiones comparten el MISMO checkout → commitear SIEMPRE directo en `main`, nunca
+  `git checkout` a otra rama** (2026-09-07 un commit del cuaderno cayó en `sistema-operativo` porque
+  la otra sesión cambió de rama entre dos comandos). Antes de commitear: `git branch --show-current`
+  debe decir `main`; `git add` solo de los archivos propios (nunca `-A`); si el push es rechazado,
+  `git pull --rebase origin main`. `planos-2d`/`sistema-operativo` quedan como punteros sin uso. El
+  sello "Versión AAAA-MM-DD HH:MM" al pie del menú lateral (`#build-stamp`) lo actualiza el hook
+  local `.git/hooks/pre-commit` en cada commit que toque `index.html` — sirve para saber qué código
+  corre un dispositivo (iPad/app del Dock) cuando "no se ve el cambio".
 - Editar `index.html` directamente.
 - **SIEMPRE verificar antes de dar por bueno un cambio de dibujo** con `node verify.mjs`
   (ver más abajo). Comprueba sintaxis y renderiza todos los tipos sin error.

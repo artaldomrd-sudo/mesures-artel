@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:08</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:11</div>
         </div>
     </div>
     
@@ -4674,7 +4674,12 @@
         }
         if (planViewFrag) {
             const planDelta = botH + ANCHO_RESERVED_H;
-            out += planDelta ? `<g transform="translate(0, ${planDelta.toFixed(1)})">${planViewFrag}</g>` : planViewFrag;
+            // La capa venía DENTRO del <g> espejado del ítem base (orientación D); al sacarla hay que volver a
+            // aplicarle el mismo espejo, si no la planta queda sin voltear (y las etiquetas, que ya traen su
+            // contra-espejo, saldrían al revés).
+            const flipT = (['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && state.orientacion === 'D') ? ' scale(-1, 1) translate(-100, 0)' : '';
+            const tr = (planDelta ? `translate(0, ${planDelta.toFixed(1)})` : '') + flipT;
+            out += tr.trim() ? `<g transform="${tr.trim()}">${planViewFrag}</g>` : planViewFrag;
         }
         out += '</svg>';
         return out;
@@ -5587,8 +5592,14 @@
         }
         if (showLabels) {
             const swingEsExt = opensAfuera;
-            html += `<text x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
-            html += `<text x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
+            // Con orientación D el dibujo entero va dentro de un <g> espejado (scale(-1,1) translate(-100,0)):
+            // el giro debe voltearse, pero el texto NO (salía "tni"/"txe", reportado con foto). El mismo
+            // espejo aplicado al texto (es su propia inversa) lo deja derecho y en su sitio (x=17). Va como
+            // atributo del <text>, no en un <g> anidado: composePanos extrae la capa de planta con una
+            // regex que corta en el primer </g>.
+            const tf = opts.mirrorLabels ? ' transform="scale(-1, 1) translate(-100, 0)"' : '';
+            html += `<text${tf} x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
+            html += `<text${tf} x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
         }
         return html;
     }
@@ -7122,7 +7133,7 @@
             // fachada compuesta, para que la vista en planta sea idéntica en los dos casos.
             const y0 = 97;
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
-            html += planViewAbatible(type, stateInfo, startX, w, y0, 34, { showLabels: true, hingeLeft: true });
+            html += planViewAbatible(type, stateInfo, startX, w, y0, 34, { showLabels: true, hingeLeft: true, mirrorLabels: stateInfo.orientacion === 'D' });
             return html;
         };
 
