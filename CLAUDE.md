@@ -864,9 +864,20 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   el usuario no distinguió por fijación.
 - **Regla de tornillos** (usuario, mismo día): en la base U va **un tornillo cada 30 cm**
   (`TORNILLOS_PASO_MM = 300`): por tramo `floor(L/300)+1` (extremos + intermedios; una barra de
-  6.40 m → 22), sumado por tramo × cantidad (`tornillosSugeridos`). **Solo `fijacion === 'base_u'`**;
-  prensa de suelo y conectores laterales quedan "por definir" en rojo hasta que el usuario dé su
-  cantidad por pieza.
+  6.40 m → 22), sumado por tramo × cantidad (`tornillosSugeridos`). Solo `fijacion === 'base_u'`.
+- **Prensa de suelo (reglas del usuario, mismo día)** — `prensaTramo(L)` / `prensasBaranda(state)`:
+  por TRAMO (un vidrio no dobla la esquina) se descuentan (N+1) espacios de `PRENSA_ESPACIO_MM=20`
+  (pared/vidrio en cada extremo + vidrio/vidrio) y se toma el MENOR N que deje cada vidrio en
+  ≤ `PRENSA_VIDRIO_MAX_MM=1700` (el usuario apunta a 1200–1700; ej. real 7350 → 5 vidrios de 1446).
+  Prensas: 2 por vidrio hasta 1300 mm, 3 por encima. Cada prensa: 4 hoyos → en concreto 4 **barras
+  roscadas de 1/4" × 15 cm** con arandela y tuerca (`PRENSA_BARRAS=4`); `tornillosSugeridos` devuelve
+  las barras y `tornillosLabel(state)` cambia la etiqueta "Tornillos" → "Barras roscadas 1/4" × 15
+  cm". El resumen agrega el despiece ("Tramo 1: 5 vidrio(s) de 1446 × H mm · 3 prensas c/u"), el
+  bloque de consumibles y el banner del proyecto suman vidrios/prensas/barras, y **el dibujo**
+  (`renderBaranda2D`, rama `prensa_suelo`) divide cada tramo en esos N vidrios (línea blanca) con 2
+  o 3 prensas por vidrio, en vez de los spigots esquemáticos de antes. Supuesto propio: en una L el
+  espacio de esquina cuenta como pared/vidrio (20 mm) en cada tramo. Conectores laterales siguen
+  "por definir".
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón
