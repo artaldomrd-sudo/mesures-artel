@@ -851,6 +851,31 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
 - **Cotización cliente / `enviarOrden`**: como `type !== 'draw'`, la fachada compuesta sí tiene SVG
   y viaja como cualquier tarjeta (no necesita el caso especial del CAD).
 
+## Baranda: consumibles de instalación (resina y tornillos, 2026-09-07)
+
+Pedido del usuario: que la hoja de fabricación/ficha lleve la cantidad de **resina** (anclaje
+químico) y de **tornillos** de cada baranda, para que el equipo de instalación prepare la obra sin
+calcular nada. "Automático en todos los módulos, menos admin para que yo pueda modificar".
+
+- **Regla de resina** (`RESINA_GAL_POR_ML = 1.5/20 ≈ 0.075 gal/ml`): sale de dos consumos REALES
+  medidos en obra por el usuario ese día — 20 m → 1½ galón, 6 m → ½ galón (ambos cuadran con esa
+  tasa). `barandaMl(state)` = suma de tramos × cantidad; `resinaSugeridaGal` redondea HACIA ARRIBA
+  al ¼ de galón. Se aplica a cualquier fijación (base U, prensa, conectores) — supuesto propio,
+  el usuario no distinguió por fijación.
+- **Tornillos: SIN regla todavía** (`TORNILLOS_POR_ML = 0` → "por definir" en rojo). Cuando el
+  usuario dé la cantidad (por ml, por lingote, por prensa/conector), ponerla en `tornillosSugeridos`.
+- **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
+  Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
+  `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón
+  "Nuevo proyecto de este cliente"). Los valores efectivos: `resinaBarandaGal(state)` /
+  `tornillosBaranda(state)`; un valor corregido se marca "(corregido)".
+- **Dónde se ve**: bloque "CONSUMIBLES DE INSTALACIÓN" al final de `renderBarandaBuilder`
+  (línea de lectura `.bar-consumibles-txt`, refrescada por `refreshBarandaConsumiblesTxt` al cambiar
+  tramos/cantidad sin reconstruir el formulario), línea "Instalación: Resina … · Tornillos …" en el
+  resumen de baranda (`generateSummary` → PDF y ficha `?orderId=`), y el banner del proyecto
+  `#perfil-u-banner` (`actualizarPerfilUTotal`), que ahora suma resina y tornillos de TODAS las
+  barandas (y ya no depende de que haya base U: aparece con cualquier baranda).
+
 ## Cortinas/Enrollables (`categoria: 'cortina'`)
 
 Categoría nueva, sin vidrio ni perfil de aluminio (producto de tela/PVC) — arranca con

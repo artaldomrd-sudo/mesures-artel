@@ -209,6 +209,8 @@
         .forma-btn { flex: 1; padding: 8px 4px; border: none; border-radius: 4px; background: var(--artal-blue); color: white; font-weight: bold; font-size: 11px; cursor: pointer; transition: 0.2s; }
         .forma-btn:hover { background: var(--artal-yellow); color: var(--artal-blue); }
         .forma-btn.active { background: var(--artal-yellow); color: var(--artal-blue); box-shadow: inset 0 0 0 2px var(--artal-blue); }
+        .adm-only { display: none !important; }
+        body.admin-cuaderno .adm-only { display: flex !important; }
         .bar-box { background: #f8fafc; border: 1px solid #e1e8ed; border-radius: 6px; padding: 12px; }
         .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
         .bar-row b { min-width: 70px; color: var(--text-dark); font-size: 13px; }
@@ -496,7 +498,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 11:01</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 15:49</div>
         </div>
     </div>
     
@@ -1822,6 +1824,15 @@
                 if (recUtil.length) puTxt += ` · recorte(s): ${recUtil.map(r => r + ' mm').join(', ')}`;
                 body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Perfil U:</strong> ${puTxt}` + (pu.esquinas ? ` · ${pu.esquinas} corte(s) de esquina` : '') + `</div>`;
             }
+            {
+                // Consumibles para el equipo de instalación (ver resinaSugeridaGal): siempre en el
+                // resumen/PDF/ficha. Resina = manual o sugerida; tornillos solo si se cargaron.
+                const rg = resinaBarandaGal(state), manualR = (state.resinaGal !== '' && state.resinaGal != null);
+                let cons = `Resina: <strong>${galTxt(rg)}</strong>` + (manualR ? '' : ` <span style="color:#777;">(sugerido · ${barandaMl(state).toFixed(1)} ml)</span>`);
+                const tor = tornillosBaranda(state);
+                cons += ` · Tornillos: <strong>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</strong>`;
+                body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Instalación:</strong> ${cons}</div>`;
+            }
             actualizarPerfilUTotal();
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>BARANDA DE VIDRIO</strong> — H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
@@ -2902,6 +2913,55 @@
         _lastLiveOpened = null;   // forzar UNA escritura del estado en vivo (con el proyecto abierto)
     }
 
+    // ===== Consumibles de instalación de baranda (resina y tornillos) =====
+    // Resina (anclaje químico): regla tomada de dos consumos REALES medidos en obra por el usuario
+    // (2026-09-07): 20 m → 1½ galón y 6 m → ½ galón ⇒ ≈ 0.075 gal por metro lineal (1 galón cada
+    // ~13 m). Se calcula sobre la longitud total de la baranda (suma de tramos × cantidad) y se
+    // redondea HACIA ARRIBA al cuarto de galón, que es como se compra/prepara en obra. Editable
+    // por baranda (state.resinaGal, null = automático). Tornillos: todavía SIN regla confirmada →
+    // campo manual (state.tornillos) hasta que el usuario dé la cantidad por lingote/prensa/conector.
+    const RESINA_GAL_POR_ML = 1.5 / 20;
+    function barandaMl(state) {
+        const tramos = (state && state.tramos) || [];
+        const mm = tramos.reduce((a, t) => a + (parseInt(t.L) || 0), 0);
+        return mm / 1000 * (parseInt(state.cantidad) || 1);
+    }
+    function resinaSugeridaGal(state) {
+        const ml = barandaMl(state);
+        if (ml <= 0) return 0;
+        return Math.ceil(ml * RESINA_GAL_POR_ML * 4 - 1e-9) / 4;
+    }
+    // Resina efectiva de una baranda: la escrita a mano si existe, si no la sugerida.
+    function resinaBarandaGal(state) {
+        if (!state || state.categoria !== 'baranda') return 0;
+        const m = parseFloat(state.resinaGal);
+        return (state.resinaGal !== '' && state.resinaGal != null && !isNaN(m)) ? m : resinaSugeridaGal(state);
+    }
+    // Tornillos: regla por metro lineal PENDIENTE de confirmar por el usuario (0 = sin regla →
+    // "por definir"). Cuando la dé, poner acá el número (o una tabla por fijación) y listo.
+    const TORNILLOS_POR_ML = 0;
+    function tornillosSugeridos(state) {
+        const ml = barandaMl(state);
+        if (ml <= 0 || !TORNILLOS_POR_ML) return null;
+        return Math.ceil(ml * TORNILLOS_POR_ML);
+    }
+    // Tornillos efectivos: manual (admin) si existe, si no la regla; null = por definir.
+    function tornillosBaranda(state) {
+        if (!state || state.categoria !== 'baranda') return null;
+        if (state.tornillos != null && state.tornillos !== '') return parseInt(state.tornillos) || 0;
+        return tornillosSugeridos(state);
+    }
+    // "1½ gal", "½ gal", "2 gal", "0.3 gal" (valores manuales que no caen en cuartos).
+    function galTxt(g) {
+        g = parseFloat(g) || 0;
+        const ent = Math.floor(g + 1e-9), frac = g - ent;
+        const fr = { 0: '', 0.25: '¼', 0.5: '½', 0.75: '¾' };
+        const key = [0, 0.25, 0.5, 0.75].find(k => Math.abs(frac - k) < 1e-6);
+        if (key === undefined) return g.toFixed(2).replace(/\.?0+$/, '') + ' gal';
+        const num = (ent ? ent : '') + (fr[key] || '');
+        return (num === '' ? '0' : num) + ' gal';
+    }
+
     // ===== Calculador de perfil U (base de baranda) — con OPTIMIZACIÓN de recortes =====
     // Cada perfil se compra de 6.40 m pero SIEMPRE se pierden ~100 mm → 6.30 m (6300 mm) útiles.
     // Cada corte de esquina (giro) consume 5 cm (50 mm).
@@ -2974,19 +3034,32 @@
     function actualizarPerfilUTotal() {
         const el = document.getElementById('perfil-u-banner');
         if (!el) return;
-        let piezas = [], hayBaranda = false, totalMm = 0;
+        let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, tornTot = 0, tornPend = 0;
         Object.values(cardsState).forEach(st => {
+            if (st.categoria === 'baranda') {
+                hayBaranda = true;
+                resinaTot += resinaBarandaGal(st);
+                const tor = tornillosBaranda(st);
+                if (tor != null) tornTot += tor; else tornPend++;
+            }
             const r = perfilUDeBaranda(st);
             if (!r) return;
-            hayBaranda = true;
+            hayBaseU = true;
             const cant = parseInt(st.cantidad) || 1;
             for (let k = 0; k < cant; k++) { piezas = piezas.concat(r.piezas); totalMm += r.materialMm; }
         });
         if (!hayBaranda) { el.style.display = 'none'; return; }
-        const perfiles = optimizarPerfilesU(piezas);
         el.style.display = '';
-        el.innerHTML = `📏 <b>Total perfil U para este trabajo: ${perfiles} perfil(es) de 6.40 m</b> ` +
-            `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
+        let html = '';
+        if (hayBaseU) {
+            const perfiles = optimizarPerfilesU(piezas);
+            html += `📏 <b>Total perfil U para este trabajo: ${perfiles} perfil(es) de 6.40 m</b> ` +
+                `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
+        }
+        // Consumibles de instalación de TODAS las barandas del proyecto (para preparar la obra).
+        html += `<div style="${hayBaseU ? 'margin-top:4px;' : ''}">🧴 <b>Resina para este trabajo: ${galTxt(resinaTot)}</b>` +
+            ` <span style="color:#555;">· 🔩 Tornillos: <b>${tornTot}</b>${tornPend ? ` (${tornPend} baranda(s) sin cantidad)` : ''}</span></div>`;
+        el.innerHTML = html;
     }
 
     // ===================== AUTOGUARDADO ROBUSTO (multi-capa, para no perder trabajo) =====================
@@ -4060,6 +4133,8 @@
                 const b = document.getElementById('baranda-builder-' + id);
                 if (b) b.innerHTML = renderBarandaBuilder(id);
             }
+            // la cantidad multiplica los metros lineales → resina/tornillos y banner total
+            if (key === 'cantidad' && cardsState[id].categoria === 'baranda') { refreshBarandaConsumiblesTxt(id); actualizarPerfilUTotal(); }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
             adaptDrawingToContent(id);
@@ -5590,8 +5665,9 @@
         if (rebuildUI) {
             const b = document.getElementById('baranda-builder-' + id);
             if (b) b.innerHTML = renderBarandaBuilder(id);
-        }
+        } else refreshBarandaConsumiblesTxt(id);
         if (cardsState[id].locked) generateSummary(id);
+        actualizarPerfilUTotal();
         saveProgress();
     }
 
@@ -6475,6 +6551,21 @@
                 </div>`;
         });
         h += `<button class="bar-add" onclick="barandaAddTramo(${id})">+ Añadir Tramo</button></div>`;
+        // Consumibles de instalación (resina/tornillos) — salen en el resumen/PDF/ficha para que el
+        // equipo de instalación prepare la obra. Cálculo AUTOMÁTICO para todos; solo el admin
+        // (window.esAdminCuaderno → body.admin-cuaderno) ve los campos para corregirlo a mano.
+        const sug = resinaSugeridaGal(st), manual = (st.resinaGal !== '' && st.resinaGal != null);
+        const tor = tornillosBaranda(st), torManual = (st.tornillos != null && st.tornillos !== '');
+        h += `<div class="bar-box" style="margin-top:8px;">
+            <div style="font-size:11px; font-weight:bold; color:var(--artal-blue); margin-bottom:4px;">CONSUMIBLES DE INSTALACIÓN <span class="bar-consumibles-ml" style="font-weight:normal; color:#777;">(${barandaMl(st).toFixed(1)} ml)</span></div>
+            <div class="bar-consumibles-txt" style="font-size:12px; color:#333;">${barandaConsumiblesTxt(st)}</div>
+            <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">Resina:</b>
+                <input type="number" step="0.25" min="0" value="${manual ? st.resinaGal : ''}" placeholder="auto: ${galTxt(sug)}" oninput="barandaSetConsumible(${id}, 'resinaGal', this.value)">
+                <span style="font-size:11px; color:#555; white-space:nowrap;">gal (vacío = auto)</span></div>
+            <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">Tornillos:</b>
+                <input type="number" min="0" step="1" value="${torManual ? st.tornillos : ''}" placeholder="${tornillosSugeridos(st) != null ? 'auto: ' + tornillosSugeridos(st) : 'cantidad'}" oninput="barandaSetConsumible(${id}, 'tornillos', this.value)">
+                <span style="font-size:11px; color:#555; white-space:nowrap;">und (vacío = auto)</span></div>
+        </div>`;
         if (st.pose === 'escalera') h += `<div style="font-size:10px; color:#777; margin-top:6px;">Pose en escalera: cada tramo es un tiro que sube. Usa Forma L/U y los giros para representar escaleras de varios pisos.</div>`;
         return h;
     }
@@ -6508,6 +6599,29 @@
         if (idx == null) idx = t.length - 1;
         t.splice(idx, 1);
         refreshBaranda(id, true);
+    }
+    // Línea de lectura "Resina: … · Tornillos: …" del bloque de consumibles (para todos).
+    function barandaConsumiblesTxt(st) {
+        const tor = tornillosBaranda(st);
+        return `Resina: <b>${galTxt(resinaBarandaGal(st))}</b>${(st.resinaGal !== '' && st.resinaGal != null) ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}` +
+            ` · Tornillos: <b>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</b>${(st.tornillos != null && st.tornillos !== '') ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
+    }
+    function refreshBarandaConsumiblesTxt(id) {
+        const box = document.querySelector(`#baranda-builder-${id} .bar-consumibles-txt`);
+        if (box) box.innerHTML = barandaConsumiblesTxt(cardsState[id]);
+        const ml = document.querySelector(`#baranda-builder-${id} .bar-consumibles-ml`);
+        if (ml) ml.textContent = `(${barandaMl(cardsState[id]).toFixed(1)} ml)`;
+    }
+    function barandaSetConsumible(id, key, value) {
+        const st = cardsState[id];
+        if (key === 'resinaGal') st.resinaGal = value === '' ? null : parseFloat(value);
+        else st.tornillos = value === '' ? null : parseInt(value) || 0;
+        // no se reconstruye el formulario (perdería el foco al escribir); se actualiza la línea de
+        // lectura del bloque, el resumen (si está fijado) y el banner total del proyecto
+        refreshBarandaConsumiblesTxt(id);
+        if (st.locked) generateSummary(id);
+        actualizarPerfilUTotal();
+        saveProgress();
     }
     function barandaUpdateTramo(id, idx, key, value) {
         const t = getTramos(id);
@@ -8124,6 +8238,8 @@
     function aplicarVisibilidadAdminCuaderno() {
         const b = document.getElementById('btn-nuevo-proy-cliente');
         if (b) b.style.display = window.esAdminCuaderno ? 'block' : 'none';
+        // Campos de corrección solo-admin (ej. resina/tornillos de baranda, clase .adm-only)
+        document.body.classList.toggle('admin-cuaderno', !!window.esAdminCuaderno);
     }
     window.aplicarVisibilidadAdminCuaderno = aplicarVisibilidadAdminCuaderno;
     onAuthStateChanged(auth, async (user) => {
