@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 10:41</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 10:53</div>
         </div>
     </div>
     
@@ -4644,9 +4644,17 @@
         const W = Math.max(anchoM * sc, box.maxW * 0.25), H = Math.max(alto * sc, box.maxH * 0.25);
         const scale = W / anchoM;
         const x0 = 50 - W / 2, y0 = box.top + (box.maxH - H) / 2;
+        // Tubos POR FUERA del hueco (regla del usuario): el tubo lateral va del lado de CIERRE (opuesto al
+        // bolsillo; en centrales, ambos extremos), fuera del hueco pero DENTRO del largo del riel (el tubo
+        // superior mide el riel total). Reserva su ancho `tt` en el layout para que la cota del hueco no lo incluya.
+        const tubo = state.gal_tubo || '', tt = 3.2, hasLat = tubo === 'lat' || tubo === 'lat_sup45';
+        const latL = hasLat && (cfg.central || !pocketLeft) ? tt : 0;
+        const latR = hasLat && (cfg.central || pocketLeft) ? tt : 0;
+        const extLw = Math.max(0, extL * scale - (latL && !cfg.central ? 0 : 0)), extRw = Math.max(0, extR * scale);
+        const opW = Math.max(4, W - latL - latR - extLw - extRw);
         return { n: cfg.n, central: cfg.central, pocketLeft, anchoH, anchoM, alto, marcoDado: marcoIn > anchoH,
-            x0, y0, W, H, scale, extLw: extL * scale, extRw: extR * scale, opX: x0 + extL * scale, opW: anchoH * scale,
-            fuera: (state.gal_install || 'dentro') === 'fuera', viewerOut: state.vista === 'afuera', tubo: state.gal_tubo || '' };
+            x0, y0, W, H, scale, extLw, extRw, latL, latR, tt, opX: x0 + latL + extLw, opW,
+            fuera: (state.gal_install || 'dentro') === 'fuera', viewerOut: state.vista === 'afuera', tubo };
     }
     // Elevación del galandaje (única para los 7 tipos). Devuelve las paredes (bloques con rayado sobre el
     // sobrante del riel) y el marco/hojas por separado para poder decidir el orden de dibujo: con
@@ -4656,8 +4664,8 @@
         const g = galLayout(state);
         const yTop = g.y0, yBot = g.y0 + g.H;
         let walls = '';
-        if (g.extLw > 0.5) walls += wallBlock(uid, g.x0, yTop - 2, g.extLw, g.H + 4);
-        if (g.extRw > 0.5) walls += wallBlock(uid, g.x0 + g.W - g.extRw, yTop - 2, g.extRw, g.H + 4);
+        if (g.extLw > 0.5) walls += wallBlock(uid, g.x0 + g.latL, yTop - 2, g.extLw, g.H + 4);
+        if (g.extRw > 0.5) walls += wallBlock(uid, g.x0 + g.W - g.latR - g.extRw, yTop - 2, g.extRw, g.H + 4);
         let frame = '';
         // riel (marco) a lo largo de todo el ancho de marco, arriba y abajo
         frame += `<rect x="${g.x0.toFixed(1)}" y="${(yTop - 1.6).toFixed(1)}" width="${g.W.toFixed(1)}" height="1.6" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.4"/>`;
@@ -4677,7 +4685,7 @@
         // REGLA (usuario 2026-09-07): el tubo superior horizontal mide SIEMPRE lo mismo que el riel total
         // (ancho de marco): va exactamente de x0 a x0+W. Los tubos laterales quedan DENTRO de ese largo
         // (su cara exterior alineada con el extremo del riel) y el corte a 45° se dibuja en la esquina.
-        const latXs = g.central ? [g.x0, g.x0 + g.W - tt] : (g.pocketLeft ? [g.x0 + g.W - tt] : [g.x0]);
+        const latXs = [g.latL ? g.x0 : null, g.latR ? g.x0 + g.W - tt : null].filter(v => v !== null);
         if (tubo === 'sup' || tubo === 'lat_sup45') frame += tuboRect(g.x0, supY, g.W, tt);
         if (tubo === 'lat' || tubo === 'lat_sup45') {
             latXs.forEach(lx => {
@@ -6536,7 +6544,7 @@
         const PT = 78, wbh = 3.2, gt = 3, mt = 2.4, dz = 2.0, vg = 2.4;   // PT 78 (antes 66): deja sitio a la cota del hueco (texto bajo la línea) debajo de la elevación
         // Mismo layout proporcional que la elevación: el hueco y el sobrante del riel (bolsillo) a escala.
         const gl = galLayout(state);
-        const X0 = gl.x0, X1 = gl.x0 + gl.W;
+        const X0 = gl.opX - gl.extLw, X1 = gl.opX + gl.opW + gl.extRw;   // bolsillo + hueco (la zona del tubo lateral queda fuera)
         // Orientación según la VISTA: la planta se dibuja con el observador ABAJO. "Vista de afuera" → el
         // exterior queda abajo (la hoja "por fuera" queda debajo del concreto); "vista de adentro" → arriba.
         const flipV = state.vista === 'afuera';
@@ -7520,7 +7528,7 @@
                 // Ancho del HUECO debajo del dibujo (texto sobre la línea) y ancho de MARCO arriba: no se chocan
                 // (pedido del usuario: arriba las dos se pisaban).
                 if (state.ancho > 0) svg += dimLineH(g.opX, g.opX + g.opW, g.y0 + g.H + 5, g.y0 + g.H + 1.2, `${state.ancho} mm`, 6.5);   // texto debajo de la línea (57..63), título de la planta en PT-6.5=71.5
-                if (g.marcoDado) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0 - 1.6, `marco ${g.anchoM} mm`, 6);
+                if (g.marcoDado) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0 - 1.6 - ((g.tubo === 'sup' || g.tubo === 'lat_sup45') ? g.tt : 0), `marco ${g.anchoM} mm`, 6);   // testigos desde encima del tubo superior
             } else if (state.alto > 0) {
                 if (dimPr) svg += dimLineV(dimPr[1], dimPr[1] + dimPr[3], dimPr[0] + dimPr[2] + 4, dimPr[0] + dimPr[2], `${(parseInt(state.alto) || 0) + penetracionRielMm(state)} mm`, 7);   // correderas: altura TOTAL con penetración del riel
                 else svg += `<text x="94" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;

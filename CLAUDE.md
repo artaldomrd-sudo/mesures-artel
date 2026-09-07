@@ -233,7 +233,11 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     con la diagonal del corte a 45° en la esquina. Color del acabado (placeholders `applyFinish`).
     **El tubo superior horizontal mide SIEMPRE lo mismo que el riel total (ancho de marco)** — regla del
     usuario: se dibuja exactamente de `x0` a `x0+W`, los laterales quedan dentro de ese largo, y el
-    resumen dice "largo tubo superior: N mm (= ancho de marco)".
+    resumen dice "largo tubo superior: N mm (= ancho de marco)". **Los tubos van POR FUERA del hueco**
+    (regla del usuario, lado del tubo lateral confirmado): `galLayout` reserva `latL`/`latR` (= `tt`) del
+    lado de cierre y el hueco (`opX/opW`) empieza después del tubo; la cota del hueco (abajo) no lo
+    incluye, la de marco (arriba) arranca sus testigos ENCIMA del tubo superior, y la planta usa
+    `X0/X1 = bolsillo + hueco` (sin la zona del tubo).
   - **Planta orientada según la vista**: `galandajePlan` usa el mismo layout (X0/X1 = marco, bolsillos =
     sobrante real, hojas = hueco/n) y `flipV = vista === 'afuera'` (observador abajo: el exterior pasa
     abajo — así "por fuera + vista de afuera" deja la hoja DEBAJO del concreto, como pidió el usuario).
