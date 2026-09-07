@@ -239,8 +239,11 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     abajo — así "por fuera + vista de afuera" deja la hoja DEBAJO del concreto, como pidió el usuario).
     Dos espejos (instalación por fuera + vista de afuera) se anulan. Etiquetas recolocadas y corregidas:
     sin sheetrock ya no dice "sheetrock (ext)" (dice "exterior").
-  - **Cotas**: hueco a `y=4` (universal), alto a la derecha del marco completo, y "marco N mm" a `y=-3.5`
-    encima (viewBox del galandaje pasa a `-14 -12 144 118`).
+  - **Cotas**: en el galandaje el ancho del HUECO va DEBAJO del dibujo (`y0+H+5`, texto bajo la línea)
+    y el ancho de MARCO arriba en `y=4` (las dos arriba se pisaban — pedido del usuario); alto a la
+    derecha del marco completo. Para dejar sitio abajo, `galandajePlan` baja a `PT=78` (antes 66; el
+    separador/título de "VISTA SUPERIOR" van relativos a PT) y el viewBox del galandaje pasa a
+    `-14 -12 144 132`. La cota del hueco va con el texto DEBAJO de la línea (`y0+H+5`, texto ≈57..63). La cota universal de ancho (`y=4`) se salta la categoría galandaje.
   - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 55 según
     `tipo_aluminio`; correderas y galandajes): `penetracionTxt(state)` en la línea MEDIDAS TOTALES del
     resumen: "H: 2200 mm + 55 mm penetración riel (E100) = 2255 mm alto total hueco"; sin serie elegida
