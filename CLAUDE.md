@@ -862,8 +862,11 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   tasa). `barandaMl(state)` = suma de tramos × cantidad; `resinaSugeridaGal` redondea HACIA ARRIBA
   al ¼ de galón. Se aplica a cualquier fijación (base U, prensa, conectores) — supuesto propio,
   el usuario no distinguió por fijación.
-- **Tornillos: SIN regla todavía** (`TORNILLOS_POR_ML = 0` → "por definir" en rojo). Cuando el
-  usuario dé la cantidad (por ml, por lingote, por prensa/conector), ponerla en `tornillosSugeridos`.
+- **Regla de tornillos** (usuario, mismo día): en la base U va **un tornillo cada 30 cm**
+  (`TORNILLOS_PASO_MM = 300`): por tramo `floor(L/300)+1` (extremos + intermedios; una barra de
+  6.40 m → 22), sumado por tramo × cantidad (`tornillosSugeridos`). **Solo `fijacion === 'base_u'`**;
+  prensa de suelo y conectores laterales quedan "por definir" en rojo hasta que el usuario dé su
+  cantidad por pieza.
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón

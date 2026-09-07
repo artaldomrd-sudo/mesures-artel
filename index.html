@@ -498,7 +498,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 15:49</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 15:53</div>
         </div>
     </div>
     
@@ -2937,13 +2937,19 @@
         const m = parseFloat(state.resinaGal);
         return (state.resinaGal !== '' && state.resinaGal != null && !isNaN(m)) ? m : resinaSugeridaGal(state);
     }
-    // Tornillos: regla por metro lineal PENDIENTE de confirmar por el usuario (0 = sin regla →
-    // "por definir"). Cuando la dé, poner acá el número (o una tabla por fijación) y listo.
-    const TORNILLOS_POR_ML = 0;
+    // Tornillos (regla del usuario, 2026-09-07): en la base U (lingote/perfil U) va un tornillo
+    // cada 30 cm — uno en cada extremo de cada tramo y uno cada 300 mm entre medio, así que un
+    // tramo de L mm lleva floor(L/300)+1 (una barra entera de 6.40 m → 22). Se suma por tramo
+    // (cada pieza arranca y termina con tornillo) × cantidad. Solo base U: prensas/conectores
+    // no tienen regla todavía → null ("por definir").
+    const TORNILLOS_PASO_MM = 300;
     function tornillosSugeridos(state) {
-        const ml = barandaMl(state);
-        if (ml <= 0 || !TORNILLOS_POR_ML) return null;
-        return Math.ceil(ml * TORNILLOS_POR_ML);
+        if (!state || (state.fijacion || 'base_u') !== 'base_u') return null;
+        const tramos = state.tramos || [];
+        let n = 0;
+        tramos.forEach(t => { const L = parseInt(t.L) || 0; if (L > 0) n += Math.floor(L / TORNILLOS_PASO_MM) + 1; });
+        if (!n) return null;
+        return n * (parseInt(state.cantidad) || 1);
     }
     // Tornillos efectivos: manual (admin) si existe, si no la regla; null = por definir.
     function tornillosBaranda(state) {
@@ -4134,7 +4140,7 @@
                 if (b) b.innerHTML = renderBarandaBuilder(id);
             }
             // la cantidad multiplica los metros lineales → resina/tornillos y banner total
-            if (key === 'cantidad' && cardsState[id].categoria === 'baranda') { refreshBarandaConsumiblesTxt(id); actualizarPerfilUTotal(); }
+            if ((key === 'cantidad' || key === 'fijacion') && cardsState[id].categoria === 'baranda') { refreshBarandaConsumiblesTxt(id); actualizarPerfilUTotal(); }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
             adaptDrawingToContent(id);
@@ -6563,7 +6569,7 @@
                 <input type="number" step="0.25" min="0" value="${manual ? st.resinaGal : ''}" placeholder="auto: ${galTxt(sug)}" oninput="barandaSetConsumible(${id}, 'resinaGal', this.value)">
                 <span style="font-size:11px; color:#555; white-space:nowrap;">gal (vacío = auto)</span></div>
             <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">Tornillos:</b>
-                <input type="number" min="0" step="1" value="${torManual ? st.tornillos : ''}" placeholder="${tornillosSugeridos(st) != null ? 'auto: ' + tornillosSugeridos(st) : 'cantidad'}" oninput="barandaSetConsumible(${id}, 'tornillos', this.value)">
+                <input type="number" min="0" step="1" value="${torManual ? st.tornillos : ''}" placeholder="${tornillosSugeridos(st) != null ? 'auto: ' + tornillosSugeridos(st) : 'cantidad'}" title="Base U: 1 tornillo cada 30 cm por tramo (22 por barra de 6.40 m)" oninput="barandaSetConsumible(${id}, 'tornillos', this.value)">
                 <span style="font-size:11px; color:#555; white-space:nowrap;">und (vacío = auto)</span></div>
         </div>`;
         if (st.pose === 'escalera') h += `<div style="font-size:10px; color:#777; margin-top:6px;">Pose en escalera: cada tramo es un tiro que sube. Usa Forma L/U y los giros para representar escaleras de varios pisos.</div>`;
