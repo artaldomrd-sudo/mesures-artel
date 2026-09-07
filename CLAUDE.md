@@ -215,6 +215,35 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   un primer intento ponía una barra y una nota en el dibujo y se quitó); al cerrar el candado aparece
   "+ penetración riel suelo" en verde justo al lado del alto en la línea "MEDIDAS TOTALES" del resumen
   (y entre paréntesis en los módulos del CAD).
+- **Galandaje suelto: reforma 2026-09-07 (pedido del usuario, varios puntos a la vez):**
+  - **Proporción real**: `galLayout(state)` (junto a `getPanelRects`) calcula el dibujo a escala en una
+    caja `92×40` (top 10): dos anchos — el HUECO (`ancho`) y el **ANCHO DE MARCO/riel**
+    (`anchoMarco`, input "Marco:" junto a A/H, solo galandajes) que sobresale del hueco por el lado
+    del bolsillo (laterales, según `orientacion`) o por ambos (centrales). Sin marco cargado, sobresale
+    un 20% del hueco por lado (esquemático). `getPanelRects` para los 7 `gal*` devuelve el rect del
+    hueco (vidrio). `GAL_TIPOS` = nº de hojas/central por tipo.
+  - **Elevación única** (`galElevParts`, reemplaza los 7 `case` fijos): paredes = `wallBlock` sobre el
+    sobrante del riel; riel arriba/abajo a lo largo del marco; marco de hojas sobre el hueco; flechas
+    (laterales hacia el bolsillo, centrales hacia afuera). **"Instalación: por fuera"**: el marco se monta
+    4 unidades sobre la pared y el ORDEN de dibujo depende de la vista: vista de afuera → paredes DETRÁS
+    del vidrio (`galWallsBehind` se antepone a `glassLayer`); vista de adentro → paredes encima.
+  - **Tubos** (`gal_tubo`: `''|'sup'|'lat'|'lat_sup45'`, select "Tubos:" en el menú del galandaje): tubo
+    superior horizontal sobre el riel; tubo lateral recto del lado de CIERRE (opuesto al bolsillo; en
+    centrales, ambos extremos — supuesto propio, el usuario no precisó el lado); "lateral + horizontal"
+    con la diagonal del corte a 45° en la esquina. Color del acabado (placeholders `applyFinish`).
+  - **Planta orientada según la vista**: `galandajePlan` usa el mismo layout (X0/X1 = marco, bolsillos =
+    sobrante real, hojas = hueco/n) y `flipV = vista === 'afuera'` (observador abajo: el exterior pasa
+    abajo — así "por fuera + vista de afuera" deja la hoja DEBAJO del concreto, como pidió el usuario).
+    Dos espejos (instalación por fuera + vista de afuera) se anulan. Etiquetas recolocadas y corregidas:
+    sin sheetrock ya no dice "sheetrock (ext)" (dice "exterior").
+  - **Cotas**: hueco a `y=4` (universal), alto a la derecha del marco completo, y "marco N mm" a `y=-3.5`
+    encima (viewBox del galandaje pasa a `-14 -12 144 118`).
+  - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 60 según
+    `tipo_aluminio`; correderas y galandajes): `penetracionTxt(state)` en la línea MEDIDAS TOTALES del
+    resumen: "H: 2200 mm + 55 mm penetración riel (E100) = 2255 mm alto total hueco"; sin serie elegida
+    avisa que la elija. No toca `state.alto`.
+  - Resumen del galandaje: Instalación/Sheetrock, "Ancho de marco (riel): N mm (hueco M mm)", "Tubos: …".
+    `medidasSospechosas` valida también `anchoMarco` (< 200 o menor que el hueco).
 - **Vista superior (planta) de galandajes**: `galandajePlan(state, uid)`. Reglas validadas:
   el vidrio engancha del **concreto** sin mosquitera y del **sheetrock** con mosquitera (la
   mosquitera ocupa el riel exterior). Instalación "por fuera" = espejo vertical. "Sin sheetrock"

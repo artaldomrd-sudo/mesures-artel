@@ -91,6 +91,13 @@ try {
 // donde la vista de planta se reubica al final) y uno sin ella (win_proy), en las 3
 // combinaciones (solo arriba, solo abajo, ambos) para no repetir la regresión donde el paño
 // de abajo quedaba pegado después de la vista de planta en vez de después de la ventana.
+// Galandajes proporcionales: hueco + ancho de marco, tubos, por fuera / por dentro, vista de afuera / adentro
+for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v']) {
+  for (const [inst, vista, tubo, o] of [['fuera', 'afuera', 'lat_sup45', 'D'], ['dentro', 'adentro', 'sup', 'I'], ['fuera', 'adentro', 'lat', 'I']]) {
+    try { ctx.__render('card1', { type: t, categoria: 'galandaje', ancho: 3000, alto: 2400, anchoMarco: 4200, orientacion: o, gal_install: inst, gal_sheetrock: 'no', vista, gal_tubo: tubo, mosquitera: 'con', tipo_aluminio: 'E100', penetracionRiel: true, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
+    catch (e) { fail++; console.error(`  galandaje ${t} ${inst}/${vista}/${tubo}:`, e.message); }
+  }
+}
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
   try { ctx.__render('card1', { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1000, alto: 2100, orientacion: 'D', vidrio: 'tubos2040', color_perfil: 'negro', panoArriba: t === 'win_abat' ? { alto: 300, vidrio: 'tubos2040', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }
