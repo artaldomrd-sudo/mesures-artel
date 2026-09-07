@@ -91,6 +91,13 @@ try {
 // donde la vista de planta se reubica al final) y uno sin ella (win_proy), en las 3
 // combinaciones (solo arriba, solo abajo, ambos) para no repetir la regresión donde el paño
 // de abajo quedaba pegado después de la vista de planta en vez de después de la ventana.
+// Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
+for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
+  try { ctx.__render('card1', { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1000, alto: 2100, orientacion: 'D', vidrio: 'tubos2040', color_perfil: 'negro', panoArriba: t === 'win_abat' ? { alto: 300, vidrio: 'tubos2040', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }
+  catch (e) { fail++; console.error('  tubos2040 ' + t + ':', e.message); }
+}
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', cols: [{ w: 1000, rows: [{ h: 2100, celda: 'puerta', alu: 'p40_puerta', vidrio: 'tubos2040' }] }, { w: 800, rows: [{ h: 2100, celda: 'pf', vidrio: 'tubos2040' }] }] }); ok++; }
+catch (e) { fail++; console.error('  tubos2040 fachada:', e.message); }
 const panoFixture = { alto: 400, vidrio: 'templado', espesor: '10mm', color_vidrio: 'esmerilado', fijacion: 'sin_marco', color_perfil: 'negro' };
 for (const t of ['win_abat', 'win_ob', 'door_abat', 'win_proy']) {
   for (const combo of [{ panoArriba: panoFixture }, { panoAbajo: panoFixture }, { panoArriba: panoFixture, panoAbajo: panoFixture }]) {

@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:32</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:39</div>
         </div>
     </div>
     
@@ -1644,7 +1644,7 @@
                 if (celda !== 'vacio') {
                     const ev = o.vidrio || state.vidrio || 'templado';
                     const ee = o.espesor || state.espesor;
-                    p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', sin: 'sin vidrio' })[ev] || ev) + ((ev === 'templado' || ev === 'laminado') && ee ? ' ' + espesorLabel(ee) : ''));
+                    p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', tubos2040: 'ventilación tubos 20x40', sin: 'sin vidrio' })[ev] || ev) + ((ev === 'templado' || ev === 'laminado') && ee ? ' ' + espesorLabel(ee) : ''));
                 }
                 if (isCorS(celda) && o.manija) p.push('manija ' + (o.manija === 'blanco' ? 'blanca' : 'negra'));
                 if (gridGal(celda)) {
@@ -1747,7 +1747,7 @@
         if (state.categoria === 'ducha') {
             let formaTxt = state.forma === 'angulo' ? 'Ángulo (Esquina)' : (state.forma === 'panel' ? 'Panel + Puerta' : 'Recto / Nicho');
             let fijTxt = state.fijacion === 'perfil' ? 'Perfil U' : (state.fijacion === 'bisagra' ? 'Bisagras' : 'Conectores');
-            let vid = state.vidrio === 'louvers' ? `Láminas de Louver (${headerColor})` : `${state.vidrio || ''} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`;
+            let vid = esNoVidrio(state.vidrio) ? `${noVidrioLabel(state.vidrio)} (${headerColor})` : `${state.vidrio || ''} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`;
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>CABINA DE DUCHA</strong> — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
                 <div>Forma: <strong>${formaTxt}</strong></div>
@@ -1762,7 +1762,7 @@
             let acabMap = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) };
             let finishTxt = state.fijacion === 'base_u' ? `Acabado: ${acabMap[state.color_perfil || 'natural']}` : `Color herraje: ${colMap[state.herraje_color] || 'Cromado (Inox)'}`;
             let formaMap = { recto: 'Recto', L: 'Forma L', U: 'Forma U' };
-            let vid = state.vidrio === 'louvers' ? `Láminas de Louver (${headerColor})` : `${state.vidrio || ''} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`;
+            let vid = esNoVidrio(state.vidrio) ? `${noVidrioLabel(state.vidrio)} (${headerColor})` : `${state.vidrio || ''} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`;
             let tramos = state.tramos || [];
             let total = tramos.reduce((a, t) => a + (parseInt(t.L) || 0), 0);
             let list = tramos.map((t, i) => `Tramo ${i + 1}: ${t.L || 0} mm` + (i >= 1 && t.giro !== 'recto' ? ` (giro ${t.giro === 'izq' ? 'Izq' : 'Der'} ${t.angulo || 90}°)` : '')).join('<br>');
@@ -1882,8 +1882,8 @@
             let allVidrioSame = items.length > 0 && items.every(i => i.state.vidrio === firstVidrio && i.state.espesor === firstEspesor && i.state.color_vidrio === firstColor);
 
             if (allVidrioSame && firstVidrio) {
-                if (firstVidrio === 'louvers') {
-                    html += `<div style="background:#e8f4f8; padding:5px 8px; border-radius:3px; border-left: 4px solid var(--artal-blue); margin-bottom: 8px;"><strong>Vidrio (Todo el conjunto):</strong> Láminas de Louver (Color: ${headerColor})</div>`;
+                if (esNoVidrio(firstVidrio)) {
+                    html += `<div style="background:#e8f4f8; padding:5px 8px; border-radius:3px; border-left: 4px solid var(--artal-blue); margin-bottom: 8px;"><strong>Vidrio (Todo el conjunto):</strong> ${noVidrioLabel(firstVidrio)} (Color: ${headerColor})</div>`;
                 } else {
                     html += `<div style="background:#e8f4f8; padding:5px 8px; border-radius:3px; border-left: 4px solid var(--artal-blue); margin-bottom: 8px;"><strong>Vidrio (Todo el conjunto):</strong> ${firstVidrio} ${firstEspesor || ''} ${firstColor || ''}</div>`;
                 }
@@ -1898,7 +1898,7 @@
                 
                 let specs = [];
                 if (!allVidrioSame && item.state.vidrio) {
-                    if (item.state.vidrio === 'louvers') specs.push(`Vidrio: Láminas de Louver (${headerColor})`);
+                    if (esNoVidrio(item.state.vidrio)) specs.push(`Vidrio: ${noVidrioLabel(item.state.vidrio)} (${headerColor})`);
                     else specs.push(`Vidrio: ${item.state.vidrio} ${espesorLabel(item.state.espesor)} ${item.state.color_vidrio || ''}`);
                 }
                 if (item.state.cierre) specs.push(`Cierre: ${item.state.cierre}`);
@@ -1924,7 +1924,7 @@
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
             { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }
             if(state.vidrio) {
-                if (state.vidrio === 'louvers') specs.push(`Vidrio: Láminas de Louver (${headerColor})`);
+                if (esNoVidrio(state.vidrio)) specs.push(`Vidrio: ${noVidrioLabel(state.vidrio)} (${headerColor})`);
                 else specs.push(`Vidrio: ${state.vidrio} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`);
             }
             if(state.cierre) specs.push(`Cierre: ${state.cierre}`);
@@ -1954,7 +1954,7 @@
 
             if (state.panoArriba || state.panoAbajo) {
                 const panoLine = (pano, label) => {
-                    const vid = pano.vidrio === 'louvers' ? `Láminas de Louver (${headerColor})`
+                    const vid = esNoVidrio(pano.vidrio) ? `${noVidrioLabel(pano.vidrio)} (${headerColor})`
                         : pano.vidrio === 'sin' ? 'Sin Vidrio'
                         : `${pano.vidrio || 'templado'} ${espesorLabel(pano.espesor)} ${pano.color_vidrio || ''}`.trim();
                     const fijTxt = pano.fijacion === 'sin_marco' ? 'Sin Marco' : pano.fijacion === 'p40_puerta' ? 'P40 de puerta' : (pano.fijacion || 'Conectores');
@@ -2131,7 +2131,7 @@
         const s = cardsState[id] || {};
         const titulo = s.label || s.type || 'Ítem';
         const specs = [];
-        if (s.type !== 'draw' && s.vidrio && s.vidrio !== 'louvers') specs.push(String(s.vidrio) + ' ' + (s.espesor || '') + (s.color_vidrio && s.color_vidrio !== 'natural' ? ' ' + s.color_vidrio : ''));
+        if (s.type !== 'draw' && s.vidrio && !esNoVidrio(s.vidrio)) specs.push(String(s.vidrio) + ' ' + (s.espesor || '') + (s.color_vidrio && s.color_vidrio !== 'natural' ? ' ' + s.color_vidrio : ''));
         // Baranda: tipo de base/fijación (perfil U, prensa de suelo, conectores…) — mismo mapa que el resumen.
         if (s.categoria === 'baranda') {
             const fijMap = { base_u: 'Base Aluminio U (perfil U)', prensa_suelo: 'Prensa de Suelo', conector_redondo: 'Conector Lateral Redondo', conector_cuadrado: 'Conector Lateral Cuadrado', conector_doble: 'Conector Lateral Doble' };
@@ -3199,8 +3199,8 @@
         let vidrioColor = '';
         let espesorHtml = '';
 
-        if (state.vidrio === 'louvers') {
-            vidrioColor = `<div style="grid-column: span 2; padding: 6px; font-size: 12px; color: var(--artal-blue); font-weight: bold; background: #e8f4f8; border-radius: 3px; border: 1px dashed var(--artal-blue); text-align: center;"> Color Louvers: ${headerColor}</div>`;
+        if (esNoVidrio(state.vidrio)) {
+            vidrioColor = `<div style="grid-column: span 2; padding: 6px; font-size: 12px; color: var(--artal-blue); font-weight: bold; background: #e8f4f8; border-radius: 3px; border: 1px dashed var(--artal-blue); text-align: center;"> Color ${state.vidrio === 'tubos2040' ? 'Tubos' : 'Louvers'}: ${headerColor}</div>`;
         } else {
             const cv = state.color_vidrio || '';
             vidrioColor = `<select onchange="${fn}, 'color_vidrio', this.value)"><option value="" ${cv===''?'selected':''}>-- Color del Vidrio --</option><option value="natural" ${cv==='natural'?'selected':''}>Natural / Transparente</option><option value="negro" ${cv==='negro'?'selected':''}>Negro / Transparente</option><option value="azul" ${cv==='azul'?'selected':''}>Azul / Transparente</option><option value="esmerilado" ${cv==='esmerilado'?'selected':''}>Esmerilado / Opaco</option><option value="reflectivo" ${cv==='reflectivo'?'selected':''}>Reflectivo</option></select>`;
@@ -3215,6 +3215,7 @@
                 <option value="templado" ${vt === 'templado' ? 'selected' : ''}>Vidrio Templado</option>
                 <option value="laminado" ${vt === 'laminado' ? 'selected' : ''}>Vidrio Laminado</option>
                 <option value="louvers" ${vt === 'louvers' ? 'selected' : ''}>Láminas de Louver</option>
+                <option value="tubos2040" ${vt === 'tubos2040' ? 'selected' : ''}>Ventilación tubos 20x40</option>
                 <option value="sin" ${vt === 'sin' ? 'selected' : ''}>Sin Vidrio</option>
             </select>
             ${espesorHtml}
@@ -3247,7 +3248,7 @@
         } else if (type === 'door_abat') {
             // Puerta abatible: sin mosquitera… salvo con Láminas de Louver (puerta jalousie), que sí la lleva
             // (pedido del usuario 2026-09-07). `updateState('vidrio')` regenera estas opciones, así aparece al elegirlo.
-            if (state.vidrio === 'louvers') cierresVentana += mosqFijaAmov;
+            if (esNoVidrio(state.vidrio)) cierresVentana += mosqFijaAmov;
         } else if (type === 'cor6_lat') {
             // corredera 6 hojas lateral (6 vías): sin selector de mosquitera
         } else {
@@ -4021,7 +4022,7 @@
             }
             // Puerta abatible: la mosquitera solo existe con Láminas de Louver; al volver a vidrio se limpia
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
-            if (key === 'vidrio' && cardsState[id].type === 'door_abat' && value !== 'louvers' && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
+            if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina') {
                 const card = document.getElementById('card-' + id);
                 if (card) {
@@ -4213,16 +4214,16 @@
         // color del encabezado) que usa el Paño Fijo normal (vidriosBasicos en getMenuOpciones)
         // — pedido explícito del usuario, el paño adosado tenía solo Templado/Laminado.
         let espesorSel = '', vidrioColorSel = '';
-        if (vt === 'louvers') {
+        if (esNoVidrio(vt)) {
             const headerColor = document.getElementById('header-color').value || 'Sin color definido';
-            vidrioColorSel = `<div style="grid-column: span 2; padding: 6px; font-size: 11px; color: var(--artal-blue); font-weight: bold; background: #e8f4f8; border-radius: 3px; border: 1px dashed var(--artal-blue); text-align: center;">Color Louvers: ${headerColor}</div>`;
+            vidrioColorSel = `<div style="grid-column: span 2; padding: 6px; font-size: 11px; color: var(--artal-blue); font-weight: bold; background: #e8f4f8; border-radius: 3px; border: 1px dashed var(--artal-blue); text-align: center;">Color ${vt === 'tubos2040' ? 'Tubos' : 'Louvers'}: ${headerColor}</div>`;
         } else {
             espesorSel = `<select onchange="${fn}, 'espesor', this.value)"><option value="" ${ce===''?'selected':''}>-- Grosor --</option><option value="10mm" ${ce==='10mm'?'selected':''}>3/8" (10mm)</option><option value="12mm" ${ce==='12mm'?'selected':''}>1/2" (12mm)</option><option value="3+3" ${ce==='3+3'?'selected':''}>3+3</option><option value="4+4" ${ce==='4+4'?'selected':''}>4+4</option><option value="5+5" ${ce==='5+5'?'selected':''}>5+5</option><option value="6+6" ${ce==='6+6'?'selected':''}>6+6</option></select>`;
             vidrioColorSel = `<select onchange="${fn}, 'color_vidrio', this.value)"><option value="" ${cv===''?'selected':''}>-- Color del Vidrio --</option><option value="natural" ${cv==='natural'?'selected':''}>Natural / Transparente</option><option value="negro" ${cv==='negro'?'selected':''}>Negro / Transparente</option><option value="azul" ${cv==='azul'?'selected':''}>Azul / Transparente</option><option value="esmerilado" ${cv==='esmerilado'?'selected':''}>Esmerilado / Opaco</option><option value="reflectivo" ${cv==='reflectivo'?'selected':''}>Reflectivo</option></select>`;
         }
         return `
             <input type="text" inputmode="numeric" value="${pano.alto || ''}" placeholder="Alto del paño (mm)" oninput="${fn}, 'alto', this.value)" style="grid-column: span 2;">
-            <select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option><option value="louvers" ${vt==='louvers'?'selected':''}>Láminas de Louver</option><option value="sin" ${vt==='sin'?'selected':''}>Sin Vidrio</option></select>
+            <select onchange="${fn}, 'vidrio', this.value)"><option value="templado" ${vt==='templado'?'selected':''}>Vidrio Templado</option><option value="laminado" ${vt==='laminado'?'selected':''}>Vidrio Laminado</option><option value="louvers" ${vt==='louvers'?'selected':''}>Láminas de Louver</option><option value="tubos2040" ${vt==='tubos2040'?'selected':''}>Ventilación tubos 20x40</option><option value="sin" ${vt==='sin'?'selected':''}>Sin Vidrio</option></select>
             ${espesorSel}
             ${vidrioColorSel}
             <select onchange="${fn}, 'fijacion', this.value)" title="Sistema / Fijación"><option value="conectores" ${fij==='conectores'?'selected':''}>Con Conectores</option><option value="moldura" ${fij==='moldura'?'selected':''}>Con Moldura Perimetral</option><option value="p40" ${fij==='p40'?'selected':''}>Perfiles Aluminio (P40)</option><option value="p40_puerta" ${fij==='p40_puerta'?'selected':''}>P40 de puerta</option><option value="sin_marco" ${fij==='sin_marco'?'selected':''}>Sin Marco</option></select>
@@ -4413,6 +4414,24 @@
         return s;
     }
 
+    // Ventilación de tubos 20x40: tubos horizontales de aluminio (macizos, en el color del acabado) con
+    // huecos entre sí, dentro del marco — como el louver, es un "no vidrio" (sin grosor ni color de vidrio).
+    // Placeholders de color (#1c5a85/#0A3D62) para que applyFinish los pinte con el acabado elegido.
+    function tubosPanel(uid, x, y, w, h) {
+        const n = 7, step = h / (2 * n + 1);   // n tubos y n+1 huecos iguales
+        let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#1c5a85" fill-opacity="0.06" stroke="none"/>`;
+        for (let i = 0; i < n; i++) {
+            const ty = y + step * (2 * i + 1);
+            s += `<rect x="${(x + 1).toFixed(1)}" y="${ty.toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${step.toFixed(2)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;
+        }
+        s += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="1.4"/>`;
+        return s;
+    }
+    // "No vidrio" (louver / tubos): sin grosor ni color de vidrio; toman el color del acabado.
+    function esNoVidrio(v) { return v === 'louvers' || v === 'tubos2040'; }
+    function panelFnFor(vidrio, glassOnly) { return vidrio === 'louvers' ? louverPanel : vidrio === 'tubos2040' ? tubosPanel : (glassOnly ? glassOnlyPanel : extrudedPanel); }
+    function noVidrioLabel(v) { return v === 'louvers' ? 'Láminas de Louver' : 'Ventilación tubos 20x40'; }
+
     // Pared moderna: bloque con sombreado arquitectónico (hatch diagonal), color neutro (no cambia con el acabado)
     function wallBlock(uid, x, y, w, h) {
         const cid = `wc-${uid}-${Math.round(x)}`;
@@ -4577,7 +4596,7 @@
         const [bx, , bw] = panelRect;
         const puid = `${uid}${side}`;
         const glassOnly = pano.fijacion === 'sin_marco';
-        const panelFn = pano.vidrio === 'louvers' ? louverPanel : (glassOnly ? glassOnlyPanel : extrudedPanel);
+        const panelFn = panelFnFor(pano.vidrio, glassOnly);
         let frag = glassDefs(puid, pano.color_vidrio);
         frag += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
         // El panel de vidrio (borde de espesor + reflejos) se voltea igual que el ítem base
@@ -5503,9 +5522,8 @@
         // Vidrio efectivo: el de la celda si lo definió (cfg.vidrio), si no el global de la fachada (gv).
         // Así se puede tener, por ej., la puerta en Láminas de Louver y la faja en vidrio.
         const cv = cfg.vidrio || gv;
-        const esLouver = celda === 'louvers' || cv === 'louvers';
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
-        let s = esLouver ? louverPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver + marco 2D
+        let s = cv === 'louvers' ? louverPanel(uid, x, y, w, h) : cv === 'tubos2040' ? tubosPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver/tubos + marco 2D
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
         if (gridGal(celda)) {
             // Galandaje: bloque de pared (bolsillo) donde se recogen las hojas — a un lado (lateral, según
@@ -5961,7 +5979,7 @@
     function renderGridBuilder(id) {
         const st = cardsState[id]; const cols = st.cols || [];
         // Opciones globales de la fachada (mismas listas que el resto de la app).
-        const VIDS = [['templado', 'Vidrio Templado'], ['laminado', 'Vidrio Laminado'], ['louvers', 'Láminas de Louver'], ['sin', 'Sin Vidrio']];
+        const VIDS = [['templado', 'Vidrio Templado'], ['laminado', 'Vidrio Laminado'], ['louvers', 'Láminas de Louver'], ['tubos2040', 'Ventilación tubos 20x40'], ['sin', 'Sin Vidrio']];
         const ESP = [['', '-- Grosor --'], ['10mm', '3/8" (10mm)'], ['12mm', '1/2" (12mm)'], ['3+3', '3+3'], ['4+4', '4+4'], ['5+5', '5+5'], ['6+6', '6+6']];
         const CVID = [['', '-- Color vidrio --'], ['natural', 'Natural / Transparente'], ['negro', 'Negro / Transparente'], ['azul', 'Azul / Transparente'], ['esmerilado', 'Esmerilado / Opaco'], ['reflectivo', 'Reflectivo']];
         const opt = (arr, sel) => arr.map(o => `<option value="${o[0]}" ${sel === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
@@ -5995,7 +6013,7 @@
         const GAL_SHEET = [['si', 'Sheetrock: Sí'], ['no', 'Sheetrock: No']];
         // Vidrio POR CELDA: muestra el valor en efecto (el del paño si se cambió, si no el de la
         // fachada) para poder tenerlo distinto por paño (ej. puerta en louvers + faja en vidrio).
-        const VIDCELL = [['templado', 'Templado'], ['laminado', 'Laminado'], ['louvers', 'Láminas de Louver'], ['sin', 'Sin vidrio']];
+        const VIDCELL = [['templado', 'Templado'], ['laminado', 'Laminado'], ['louvers', 'Láminas de Louver'], ['tubos2040', 'Ventilación tubos 20x40'], ['sin', 'Sin vidrio']];
         const cfgSel = (cur, opts, onchange) => `<select style="${inp}" onchange="${onchange}">${opts.map(o => `<option value="${o[0]}" ${(cur || '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select>`;
         const cfgRow = (label, sel) => `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">${label}</label>${sel}<span></span></div>`;
         // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
@@ -6055,7 +6073,7 @@
             }
             return `<div style="border:1px solid #cfe0d0;border-radius:8px;padding:8px;margin-top:6px;background:#f2f9f4;">${head}${sobre}${inner}</div>`;
         };
-        const conVidrio = (st.vidrio || 'templado') !== 'sin' && st.vidrio !== 'louvers';   // louvers/sin no llevan grosor ni color de vidrio
+        const conVidrio = (st.vidrio || 'templado') !== 'sin' && !esNoVidrio(st.vidrio);   // louvers/tubos/sin no llevan grosor ni color de vidrio
         const ACAB = [['blanco', 'Blanco'], ['negro', 'Negro'], ['natural', 'Natural / Plata'], ['grafito', 'Grafito'], ['madera', 'Madera'], ['inox', 'Inox (Champagne)'], ['ral', 'RAL Especial']];
         const ALIGN = [['izq', 'Izquierda'], ['centro', 'Centro'], ['der', 'Derecha']];
         // Anchos de cada banda para saber cuál es más angosta (y solo ahí ofrecer la alineación,
@@ -6814,7 +6832,7 @@
         let H = (ancho > 0 && alto > 0) ? (100 * alto / ancho) : 60;
         H = Math.max(16, Math.min(600, H));
         const glassOnly = (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio');
-        const panelFn = state.vidrio === 'louvers' ? louverPanel : (glassOnly ? glassOnlyPanel : extrudedPanel);
+        const panelFn = panelFnFor(state.vidrio, glassOnly);
         const tk = glassOnly ? 1.8 : 2.5;
         const herrajeCol = state.herraje_color === 'negro' ? '#111111' : '#8d99a4';
 
@@ -7341,7 +7359,7 @@
         // Paño Fijo con fijación "Sin Marco" usa el mismo canto de vidrio sin borde extruido.
         const glassOnly = (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio')
             || (state.type === 'fachada_din' && state.fijacion === 'sin_marco');
-        const panelFn = state.vidrio === 'louvers' ? louverPanel : (glassOnly ? glassOnlyPanel : extrudedPanel);
+        const panelFn = panelFnFor(state.vidrio, glassOnly);
         getPanelRects(state).forEach(r => { glassLayer += panelFn(uid, r[0], r[1], r[2], r[3]); });
 
         const isFlipped = ['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD;

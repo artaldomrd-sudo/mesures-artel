@@ -127,6 +127,15 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   `getPanelRects`/`glassLayer` volvieron a su versión genérica de siempre (sin dividir en 2
   mitades — ya no hace falta, no hay X que separar por hoja). Cantidad de lamas fija (12) —
   esquemático como el resto de los herrajes de la app, no a escala real de mm.
+- **Ventilación tubos 20x40 (`vidrio === 'tubos2040'`, agregado 2026-09-07 a pedido del usuario)**:
+  segundo "no vidrio" además del louver — `tubosPanel` dibuja tubos horizontales macizos (7, con
+  huecos iguales) dentro del marco, con los placeholders de color que pinta `applyFinish` (toman el
+  acabado). Helpers comunes: `esNoVidrio(v)` (louver o tubos: sin grosor ni color de vidrio, cajita
+  "Color Tubos/Louvers: {color del encabezado}", mosquitera disponible en puerta abisagrada),
+  `panelFnFor(vidrio, glassOnly)` (único despacho de panel usado por `renderSVG`,
+  `renderCADProportional` y `buildPanoFragment`) y `noVidrioLabel(v)` (texto de resumen/PDF:
+  "Ventilación tubos 20x40 (color)"). Está en los 4 selectores de vidrio (tarjeta suelta, paño
+  adosado, fachada global `VIDS` y por celda `VIDCELL`) y en `gridCell`. `verify.mjs` lo cubre.
 - **Acabado del perfil**: `applyFinish(svg, color_perfil, color_ral)` reemplaza los azules base
   `#0A3D62 / #1c5a85 / #0d3f5f` por el color del acabado (`FINISHES`, `finishColors`) —
   Natural/Negro/Grafito/Blanco/Madera/RAL/**Inox** (`#c9a876`, tono champagne — agregado a
