@@ -1906,6 +1906,15 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
 
 ## Convenciones aprendidas (para no repetir errores)
 
+- **Medidas sospechosas (cm escritos como mm), 2026-09-07.** Caso real: columna de fachada "99" → el
+  resumen/PDF decía 99 mm cuando eran 990. `medidasSospechosas(state)` (junto a `validateAllCards`)
+  devuelve la lista de anchos/altos > 0 y < `MEDIDA_MIN_MM` (200; fajas y paños adosados 100):
+  ancho/alto genéricos + paños adosados; en `fachada_grid` cada columna/fila/faja; en `cerramiento`
+  cada panel; CAD y baranda exentos (medidas derivadas). Se usa en: `updateState('ancho'/'alto')`
+  (`marcarMedidasSospechosas` → `error-pulse` + title "¿99 cm? escribe 990"), `toggleLock` (no deja
+  fijar, `alertaMedidasSospechosas`), `validateAllCards` (bloquea guardar/enviar/PDF) y el pop-up de la
+  fachada (`gridWarnInner` en `#grid-warn-${id}`, refrescado por `gridDraw`). Pedido explícito:
+  "bloquea para que no vuelva a suceder" — nunca convertir automáticamente, solo avisar y bloquear.
 - Verificar SIEMPRE con `verify.mjs` antes de dar por bueno un dibujo.
 - Flechas negras siempre; cromado = `#8d99a4`, negro = `#111111`.
 - En vidrio oscuro, herrajes negros pierden contraste (por eso se cuida el tamaño de las marcas).

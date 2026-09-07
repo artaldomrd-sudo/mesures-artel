@@ -496,7 +496,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:39</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 09:44</div>
         </div>
     </div>
     
@@ -660,6 +660,45 @@
         saveProgress();
     }
 
+    // Medidas "sospechosas": el cuaderno trabaja en MILÍMETROS y un ancho/alto de dos cifras casi siempre
+    // es un valor escrito en CENTÍMETROS (caso real 2026-09-07: columna de fachada "99" → salió 99 mm en el
+    // resumen/PDF cuando eran 990 mm). Se marca en rojo al escribir y se BLOQUEA fijar/guardar/enviar.
+    const MEDIDA_MIN_MM = 200, FAJA_MIN_MM = 100, PANO_MIN_MM = 100;
+    function medidasSospechosas(state) {
+        const out = [];
+        const chk = (v, min, label) => { v = parseInt(v) || 0; if (v > 0 && v < min) out.push(`${label}: ${v} mm  (¿son cm? serían ${v * 10} mm)`); };
+        if (!state) return out;
+        if (state.categoria === 'fachada_grid') {
+            (state.cols || []).forEach((c, i) => {
+                chk(c.w, MEDIDA_MIN_MM, `Columna ${i + 1}, ancho`);
+                (c.rows || []).forEach((r, j) => chk(r.h, MEDIDA_MIN_MM, `Columna ${i + 1}${(c.rows || []).length > 1 ? ', fila ' + (j + 1) : ''}, alto`));
+            });
+            [['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].forEach(([pos, f]) => {
+                if (!f) return;
+                chk(f.h, FAJA_MIN_MM, `Faja ${pos}, alto`);
+                (f.cols || []).forEach((sc, i) => chk(sc.w, MEDIDA_MIN_MM, `Faja ${pos}, col ${i + 1}, ancho`));
+            });
+            return out;
+        }
+        if (state.categoria === 'cerramiento') { (state.paneles || []).forEach((pn, i) => chk(pn.ancho, MEDIDA_MIN_MM, `Panel ${i + 1}, ancho`)); chk(state.alto, MEDIDA_MIN_MM, 'Alto'); return out; }
+        if (state.type === 'draw' || state.categoria === 'baranda') return out;   // medidas derivadas (CAD) / por tramos (baranda)
+        chk(state.ancho, MEDIDA_MIN_MM, 'Ancho'); chk(state.alto, MEDIDA_MIN_MM, 'Alto');
+        if (state.panoArriba) chk(state.panoArriba.alto, PANO_MIN_MM, 'Paño fijo arriba, alto');
+        if (state.panoAbajo) chk(state.panoAbajo.alto, PANO_MIN_MM, 'Paño fijo abajo, alto');
+        return out;
+    }
+    function alertaMedidasSospechosas(lista, ref) {
+        alert(`⚠ MEDIDAS SOSPECHOSAS${ref ? ' en ' + ref : ''} — el cuaderno trabaja en MILÍMETROS:\n\n• ${lista.join('\n• ')}\n\nSi la medida está en centímetros, escríbela en mm (ej. 99 cm = 990 mm).\nNo se puede fijar, guardar ni enviar hasta corregirla.`);
+    }
+    function marcarMedidasSospechosas(id) {
+        const st = cardsState[id]; if (!st) return;
+        ['ancho', 'alto'].forEach(k => {
+            const inp = document.getElementById(`${k}-${id}`); if (!inp) return;
+            const v = parseInt(st[k]) || 0, mal = v > 0 && v < MEDIDA_MIN_MM;
+            inp.classList.toggle('error-pulse', mal);
+            inp.title = mal ? `¿${v} cm? El cuaderno trabaja en mm: escribe ${v * 10}` : '';
+        });
+    }
     function validateAllCards() {
         let allLocked = true;
         let missingDim = false;
@@ -692,6 +731,10 @@
         if (missingDim) {
             alert(' ¡ATENCIÓN! Faltan medidas (Ancho o Alto) en algunos modelos.\n\nDesbloquea () el modelo que parpadea en rojo y añade las medidas.');
             return false;
+        }
+        for (const id of Object.keys(cardsState)) {
+            const sosp = medidasSospechosas(cardsState[id]);
+            if (sosp.length) { marcarMedidasSospechosas(id); alertaMedidasSospechosas(sosp, cardsState[id].label || cardsState[id].type); return false; }
         }
         return true;
     }
@@ -2015,6 +2058,8 @@
                 alert(' ¡ATENCIÓN! Faltan medidas (Ancho o Alto).\n\nCompleta las medidas antes de fijar este modelo.');
                 return;
             }
+            const sosp = medidasSospechosas(state);
+            if (sosp.length) { marcarMedidasSospechosas(id); alertaMedidasSospechosas(sosp); return; }
         }
 
         cardsState[id].locked = willLock;
@@ -3935,6 +3980,7 @@
             }
         } else if (key === 'ancho' || key === 'alto' || key === 'cantidad') {
             cardsState[id][key] = parseInt(String(value).replace(/\D/g, '')) || 0;
+            if (key !== 'cantidad') marcarMedidasSospechosas(id);   // rojo si parece cm (ver medidasSospechosas)
         } else {
             cardsState[id][key] = value;
         }
@@ -6083,7 +6129,8 @@
         const wFaB = bandW(st.fajaArriba), wFbB = bandW(st.fajaAbajo);
         const maxWB = Math.max(wMainB, wFaB, wFbB);
         const cp = st.color_perfil || 'natural';
-        let h = `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
+        let h = `<div id="grid-warn-${id}">${gridWarnInner(st)}</div>`;
+        h += `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
             <label style="${gbl}">Color / Acabado</label>
             <select style="${inp}" onchange="gridSetColorPerfil(${id},this.value)">${opt(ACAB, cp)}</select>
@@ -6223,7 +6270,13 @@
         document.body.classList.remove('fachada-editor-open');
         const mc = document.getElementById('main-canvas'); if (mc) { mc.style.paddingRight = ''; mc.style.overflowY = ''; }
     };
-    function gridDraw(id) { gridDeriv(id); const sc = document.getElementById('schematic-' + id); if (sc) sc.innerHTML = renderSVG(id); adaptDrawingToContent(id); saveProgress(); }
+    // Aviso de medidas sospechosas (en cm) dentro del pop-up de la fachada — se refresca en cada redibujo.
+    function gridWarnInner(st) {
+        const sosp = medidasSospechosas(st);
+        if (!sosp.length) return '';
+        return `<div style="background:#fdecea;border:1.5px solid #e74c3c;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:#922b21;"><b>⚠ Medidas sospechosas — el cuaderno trabaja en mm:</b><ul style="margin:4px 0 0 16px;padding:0;">${sosp.map(t => `<li>${t}</li>`).join('')}</ul>No se podrá fijar ni guardar hasta corregirlas.</div>`;
+    }
+    function gridDraw(id) { gridDeriv(id); const sc = document.getElementById('schematic-' + id); if (sc) sc.innerHTML = renderSVG(id); adaptDrawingToContent(id); const gw = document.getElementById('grid-warn-' + id); if (gw) gw.innerHTML = gridWarnInner(cardsState[id]); saveProgress(); }
     function gridFull(id) { gridDraw(id); const b = document.getElementById('grid-builder-' + id); if (b) b.innerHTML = renderGridBuilder(id); }
     window.gridSetAlto = (id, v) => { const st = cardsState[id]; st.gridAlto = parseInt(v) || 0; (st.cols || []).forEach(c => { if ((c.rows || []).length === 1) c.rows[0].h = st.gridAlto; }); gridDraw(id); };
     window.gridSetVidrio = (id, v) => { cardsState[id].vidrio = v; gridFull(id); };
