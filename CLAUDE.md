@@ -241,7 +241,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 55 según
     `tipo_aluminio`; correderas y galandajes): `penetracionTxt(state)` en la línea MEDIDAS TOTALES del
     resumen: "H: 2200 mm + 55 mm penetración riel (E100) = 2255 mm alto total hueco"; sin serie elegida
-    avisa que la elija. No toca `state.alto`.
+    avisa que la elija. No toca `state.alto`, pero **la cota de alto del DIBUJO muestra la altura TOTAL**
+    (alto + penetración) en correderas y galandajes — para fábrica es la que importa (usuario
+    2026-09-07); el desglose queda en el resumen. El input "Marco (riel):" va en su propia fila
+    debajo de Cant/A/H (apretado en la misma fila quedaba medio oculto).
   - Resumen del galandaje: Instalación/Sheetrock, "Ancho de marco (riel): N mm (hueco M mm)", "Tubos: …".
     `medidasSospechosas` valida también `anchoMarco` (< 200 o menor que el hueco).
 - **Vista superior (planta) de galandajes**: `galandajePlan(state, uid)`. Reglas validadas:
