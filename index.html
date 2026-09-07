@@ -1978,7 +1978,11 @@
                 specs.push(`Instalación: ${(state.gal_install || 'dentro') === 'fuera' ? 'Por fuera' : 'Por dentro'} · Sheetrock: ${(state.gal_sheetrock || 'si') === 'no' ? 'No' : 'Sí'}`);
                 if ((parseInt(state.anchoMarco) || 0) > 0) specs.push(`Ancho de marco (riel): ${state.anchoMarco} mm (hueco ${state.ancho || 0} mm)`);
                 const tuboTxt = ({ sup: 'Tubo superior horizontal', lat: 'Tubo lateral recto', lat_sup45: 'Tubo lateral + horizontal (corte 45°)' })[state.gal_tubo];
-                if (tuboTxt) specs.push(`Tubos: ${tuboTxt}`);
+                if (tuboTxt) {
+                    // el tubo superior horizontal mide siempre lo mismo que el riel total (ancho de marco)
+                    const largoSup = (state.gal_tubo === 'sup' || state.gal_tubo === 'lat_sup45') ? ((parseInt(state.anchoMarco) || 0) > 0 ? ` · largo tubo superior: <b>${state.anchoMarco} mm</b> (= ancho de marco)` : ' · largo tubo superior = ancho de marco (cargar "Marco (riel)")') : '';
+                    specs.push(`Tubos: ${tuboTxt}${largoSup}`);
+                }
             }
             if(state.categoria === 'corredera' || state.categoria === 'galandaje') specs.push(`Manija: ${state.color_manija === 'blanco' ? 'Blanco' : 'Negro'}`);
             if(state.vista) specs.push(`Vista: ${state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
@@ -4670,14 +4674,17 @@
         const tt = 3.2, tubo = g.tubo;
         const tuboRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.6"/>`;
         const supY = yTop - 1.6 - tt;
-        const latXs = g.central ? [g.x0 - tt, g.x0 + g.W] : (g.pocketLeft ? [g.x0 + g.W] : [g.x0 - tt]);
-        if (tubo === 'sup' || tubo === 'lat_sup45') frame += tuboRect(g.x0 - (tubo === 'lat_sup45' ? tt : 0) * (latXs.includes(g.x0 - tt) ? 1 : 0), supY, g.W + (tubo === 'lat_sup45' ? tt * latXs.length : 0), tt);
+        // REGLA (usuario 2026-09-07): el tubo superior horizontal mide SIEMPRE lo mismo que el riel total
+        // (ancho de marco): va exactamente de x0 a x0+W. Los tubos laterales quedan DENTRO de ese largo
+        // (su cara exterior alineada con el extremo del riel) y el corte a 45° se dibuja en la esquina.
+        const latXs = g.central ? [g.x0, g.x0 + g.W - tt] : (g.pocketLeft ? [g.x0 + g.W - tt] : [g.x0]);
+        if (tubo === 'sup' || tubo === 'lat_sup45') frame += tuboRect(g.x0, supY, g.W, tt);
         if (tubo === 'lat' || tubo === 'lat_sup45') {
             latXs.forEach(lx => {
                 const y1 = tubo === 'lat_sup45' ? supY : yTop - 1.6;
                 frame += tuboRect(lx, y1, tt, yBot + 1.2 - y1);
                 // corte a 45°: diagonal en la esquina donde se encuentran los dos tubos
-                if (tubo === 'lat_sup45') { const left = lx < g.x0; frame += `<line x1="${(left ? lx : lx + tt).toFixed(1)}" y1="${supY.toFixed(1)}" x2="${(left ? lx + tt : lx).toFixed(1)}" y2="${(supY + tt).toFixed(1)}" stroke="#0A3D62" stroke-width="0.9"/>`; }
+                if (tubo === 'lat_sup45') { const left = lx <= g.x0 + 0.01; frame += `<line x1="${(left ? lx : lx + tt).toFixed(1)}" y1="${supY.toFixed(1)}" x2="${(left ? lx + tt : lx).toFixed(1)}" y2="${(supY + tt).toFixed(1)}" stroke="#0A3D62" stroke-width="0.9"/>`; }
             });
         }
         return { walls, frame, wallsBehind: g.fuera && g.viewerOut, layout: g };

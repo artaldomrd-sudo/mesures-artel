@@ -231,6 +231,9 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     superior horizontal sobre el riel; tubo lateral recto del lado de CIERRE (opuesto al bolsillo; en
     centrales, ambos extremos — supuesto propio, el usuario no precisó el lado); "lateral + horizontal"
     con la diagonal del corte a 45° en la esquina. Color del acabado (placeholders `applyFinish`).
+    **El tubo superior horizontal mide SIEMPRE lo mismo que el riel total (ancho de marco)** — regla del
+    usuario: se dibuja exactamente de `x0` a `x0+W`, los laterales quedan dentro de ese largo, y el
+    resumen dice "largo tubo superior: N mm (= ancho de marco)".
   - **Planta orientada según la vista**: `galandajePlan` usa el mismo layout (X0/X1 = marco, bolsillos =
     sobrante real, hojas = hueco/n) y `flipV = vista === 'afuera'` (observador abajo: el exterior pasa
     abajo — así "por fuera + vista de afuera" deja la hoja DEBAJO del concreto, como pidió el usuario).
