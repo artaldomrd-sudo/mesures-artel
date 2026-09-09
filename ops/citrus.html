@@ -127,6 +127,9 @@
     </div>
 
     <div id="estado" class="estado" style="display:none;"></div>
+    <!-- Tabla compacta (aparece cuando la respuesta es una lista): para leer de un vistazo
+         códigos/letras sin desplegar el JSON completo. -->
+    <div id="tabla" style="display:none;overflow-x:auto;margin:10px 0;"></div>
     <pre class="out" id="out" style="display:none;"></pre>
 </main>
 
@@ -151,6 +154,21 @@
         const out = document.getElementById('out');
         out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
         out.style.display = 'block';
+        tabla(obj && Array.isArray(obj.data) ? obj.data : (obj && obj.data && Array.isArray(obj.data.data) ? obj.data.data : null));
+    }
+    // Tabla compacta con las columnas más útiles que existan en los registros (orden de preferencia).
+    const COLS_PREF = ['Id', 'IdentificadorCuenta', 'Codigo', 'Nombre', 'Tipo', 'Categoria', 'Grupo', 'Nivel', 'CuentaPadre', 'Estatus', 'EsCredito', 'EsBalanceGeneral', 'TipoComprobante', 'Documento', 'Telefono1', 'Email'];
+    function tabla(rows) {
+        const box = document.getElementById('tabla');
+        if (!rows || !rows.length || typeof rows[0] !== 'object') { box.style.display = 'none'; box.innerHTML = ''; return; }
+        const cols = COLS_PREF.filter(c => c in rows[0]);
+        if (!cols.length) { box.style.display = 'none'; return; }
+        const esc = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        box.innerHTML = '<table style="border-collapse:collapse;font-size:12.5px;background:#fff;border-radius:10px;overflow:hidden;">'
+            + '<thead><tr>' + cols.map(c => `<th style="text-align:left;padding:6px 10px;background:#eef4fb;color:var(--artal-blue);white-space:nowrap;">${esc(c)}</th>`).join('') + '</tr></thead><tbody>'
+            + rows.map(r => '<tr>' + cols.map(c => `<td style="padding:5px 10px;border-top:1px solid #eef1f4;white-space:nowrap;">${esc(r[c])}</td>`).join('') + '</tr>').join('')
+            + '</tbody></table>';
+        box.style.display = 'block';
     }
 
     async function llamar(entidad, pagina) {
