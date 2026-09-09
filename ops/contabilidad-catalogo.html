@@ -343,17 +343,48 @@
     window.cerrarCitrus = function () { document.getElementById('modal-citrus').classList.remove('show'); };
 
     // Mapea un registro de Citrus a nuestro modelo, tolerante a distintos nombres de campo.
-    function mapCitrusCuenta(r) {
+    // Clase mayor de una cuenta de Citrus → etiqueta de nuestro catálogo (Activo/Pasivo/Capital/Ingreso/
+    // Costo/Gastos). Citrus manda `Grupo` como letra (A=Activo, P=Pasivo, … — solo A confirmada con datos
+    // reales; C/G son ambiguas: Capital/Costo, Gastos/General), así que la fuente principal es el NOMBRE de
+    // la cuenta raíz (nivel 1) a la que pertenece, subiendo por CuentaPadre. Respaldos, en orden: letra de
+    // Grupo cuando no es ambigua → categoría que ya tenga esa cuenta en el panel → ''.
+    function catDeNombreRaiz(n) {
+        n = String(n || '').toLowerCase();
+        if (/activo/.test(n)) return 'Activo';
+        if (/pasivo/.test(n)) return 'Pasivo';
+        if (/capital|patrimonio/.test(n)) return 'Capital';
+        if (/ingreso|venta/.test(n)) return 'Ingreso';
+        if (/costo/.test(n)) return 'Costo';
+        if (/gasto/.test(n)) return 'Gastos';
+        return '';
+    }
+    const GRUPO_LETRA = { A: 'Activo', P: 'Pasivo', I: 'Ingreso' };   // C y G no se traducen (ambiguas)
+    function mapCitrusCuenta(r, byCodigo) {
         const pick = (...ks) => { for (const k of ks) { if (r[k] != null && r[k] !== '') return r[k]; } return ''; };
-        // Esquema real de GET /v5/cuenta-contable/buscar (doc v5 pág. 231): IdentificadorCuenta, Nombre,
-        // Descripcion, CuentaPadre, Tipo ('G'/'D'), Categoria (letra), Estatus, Nivel, Grupo, Id.
+        // Esquema real de GET /v5/cuenta-contable/buscar (doc v5 pág. 231, confirmado con datos 2026-09-09):
+        // IdentificadorCuenta, Nombre, Descripcion, CuentaPadre (código del padre), Tipo 'G'/'D',
+        // Categoria (letra; 'C' = corriente, subclasificación que no usamos), Estatus, Nivel, Grupo (letra), Id.
         const codigo = String(pick('IdentificadorCuenta', 'Codigo', 'Identificador', 'Cuenta', 'CodigoCuenta', 'NumeroCuenta', 'Numero')).trim();
         const nombre = String(pick('Nombre', 'Descripcion', 'NombreCuenta', 'Detalle')).trim();
         const padre = String(pick('CuentaPadre', 'CodigoPadre', 'PadreCodigo', 'CuentaPadreCodigo')).trim();
-        const tipoRaw = String(pick('Tipo', 'TipoCuenta', 'Grupo')).toLowerCase();
+        const tipoRaw = String(pick('Tipo', 'TipoCuenta')).toLowerCase();
         const tipo = (/detal/.test(tipoRaw) || tipoRaw === 'd') ? 'Detalle' : 'General';   // Citrus manda 'G'/'D'
         const nivel = Number(pick('Nivel', 'NivelCuenta')) || (codigo ? Math.max(1, Math.ceil(codigo.length / 2)) : 1);
-        const categoria = String(pick('Categoria', 'CategoriaCuenta', 'Clasificacion', 'TipoMayor')).trim();
+        // 1) raíz por CuentaPadre (o por el primer carácter del código si falta el padre en la lista)
+        let categoria = '';
+        if (byCodigo) {
+            let cur = r, hops = 0;
+            while (cur && hops++ < 12) {
+                const pc = String(cur.CuentaPadre || cur.CodigoPadre || '').trim();
+                if (!pc) break;
+                cur = byCodigo.get(pc);
+            }
+            if (cur) categoria = catDeNombreRaiz(cur.Nombre || cur.Descripcion);
+            if (!categoria && codigo) { const root = byCodigo.get(codigo.charAt(0)); if (root) categoria = catDeNombreRaiz(root.Nombre || root.Descripcion); }
+        }
+        // 2) letra de Grupo (solo las no ambiguas)  3) lo que ya tenga el panel para ese código
+        if (!categoria) categoria = GRUPO_LETRA[String(pick('Grupo')).toUpperCase()] || '';
+        if (!categoria) { const ya = (cuentas || []).find(c => c.codigo === codigo); if (ya && ya.categoria) categoria = ya.categoria; }
         return { codigo, nombre, padre, tipo, nivel, categoria };
     }
 
@@ -380,9 +411,11 @@
         if (!Array.isArray(arr)) { box.textContent = 'Citrus respondió OK pero no reconocí la lista de cuentas. Respuesta cruda:\n\n' + JSON.stringify(d, null, 1).slice(0, 2000); return; }
         if (!arr.length) { box.textContent = 'Citrus respondió OK pero devolvió 0 cuentas (el entorno de pruebas puede estar vacío).'; return; }
 
-        const mapeadas = arr.map(mapCitrusCuenta).filter(x => x.codigo);
+        const byCodigo = new Map(arr.map(x => [String(x.IdentificadorCuenta || x.Codigo || x.Identificador || '').trim(), x]));
+        const mapeadas = arr.map(x => mapCitrusCuenta(x, byCodigo)).filter(x => x.codigo);
+        const sinCat = mapeadas.filter(x => !x.categoria).length;
         if (!aplicar) {
-            box.textContent = 'Citrus devolvió ' + arr.length + ' cuentas (' + mapeadas.length + ' con código).\n\nMuestra del mapeo (primeras 5):\n' +
+            box.textContent = 'Citrus devolvió ' + arr.length + ' cuentas (' + mapeadas.length + ' con código' + (sinCat ? ', ' + sinCat + ' SIN categoría reconocida' : ', todas con categoría') + ').\n\nMuestra del mapeo (primeras 5):\n' +
                 JSON.stringify(mapeadas.slice(0, 5), null, 1) + '\n\nCampos crudos del primer registro:\n' + JSON.stringify(arr[0], null, 1).slice(0, 1200) +
                 '\n\nSi el mapeo se ve bien, pulsa «Traer y actualizar aquí».';
             return;
