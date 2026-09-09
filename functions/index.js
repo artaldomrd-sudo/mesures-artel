@@ -1,7 +1,7 @@
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
@@ -550,8 +550,20 @@ exports.extraerFactura = onRequest({ secrets: [anthropicKey], cors: true }, asyn
 //   firebase functions:secrets:set CITRUS_TOKEN
 // Se manda a Citrus en el header `Authorization` (token directo, sin "Bearer"). Base de pruebas:
 // https://testapi.citrus.com.do — para producción se cambia el host.
-const citrusToken = defineSecret('CITRUS_TOKEN');
-const CITRUS_BASE = 'https://testapi.citrus.com.do';
+const citrusToken = defineSecret('CITRUS_TOKEN');           // token del entorno de PRUEBAS (testapi)
+const citrusTokenProd = defineSecret('CITRUS_TOKEN_PROD');  // token del Citrus REAL (api.citrus.com.do)
+// Entorno activo: se fija en functions/.env (CITRUS_ENV=prod|test) y se aplica al desplegar — cambiar
+// de pruebas a producción NO requiere tocar código. Una petición puede pedir `entorno:'test'` para
+// seguir probando contra testapi aunque el default sea prod; nunca al revés (no se puede escalar a prod
+// desde el navegador si el default es test).
+const CITRUS_ENV = defineString('CITRUS_ENV', { default: 'test' });
+const CITRUS_BASES = { test: 'https://testapi.citrus.com.do', prod: 'https://api.citrus.com.do' };
+function citrusCtx(req) {
+    let entorno = CITRUS_ENV.value() === 'prod' ? 'prod' : 'test';
+    if (req.body && req.body.entorno === 'test') entorno = 'test';
+    const token = (entorno === 'prod' ? citrusTokenProd.value() : citrusToken.value()).trim();
+    return { entorno, base: CITRUS_BASES[entorno], token };
+}
 
 // Entidades con endpoint /extraccionDatos (lectura paginada de 1000). Whitelist para no dejar
 // pegarle a rutas arbitrarias desde el navegador.
@@ -582,21 +594,22 @@ async function callerAdmin(req) {
 
 // Lectura de una entidad de Citrus (extraccionDatos). Solo admin. Devuelve tal cual la respuesta
 // de Citrus (status + JSON) para poder inspeccionarla desde la pantalla de pruebas.
-exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (req, res) => {
+exports.citrusRead = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
     const email = await callerAdmin(req);
     if (!email) { res.status(403).json({ error: 'no-autorizado' }); return; }
 
     // Modo diagnóstico: prueba varios formatos de header contra /v5/tienda para descubrir cuál
     // acepta Citrus, sin exponer el token (solo su longitud). Se dispara con { diag: true }.
+    const ctx = citrusCtx(req);
     if (req.body && req.body.diag) {
-        const t = citrusToken.value().trim();
+        const t = ctx.token;
         const variantes = {
             'crudo (token directo)': t,
             'Bearer <token>': 'Bearer ' + t,
             'Token <token>': 'Token ' + t
         };
-        const probe = `${CITRUS_BASE}/v5/tienda/extraccionDatos`;
+        const probe = `${ctx.base}/v5/tienda/extraccionDatos`;
         const resultados = [];
         for (const [nombre, valor] of Object.entries(variantes)) {
             try {
@@ -607,7 +620,7 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
                 resultados.push({ formato: nombre, status: rr.status, mensaje: msg });
             } catch (e) { resultados.push({ formato: nombre, error: String((e && e.message) || e) }); }
         }
-        res.status(200).json({ diagnostico: true, longitudToken: t.length, resultados });
+        res.status(200).json({ diagnostico: true, entorno: ctx.entorno, longitudToken: t.length, resultados });
         return;
     }
 
@@ -624,15 +637,15 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
         if (req.body && req.body.detalles) params.set('request.cargarReferencias', 'true');
     }
     const qs = params.toString();
-    const url = `${CITRUS_BASE}/v5/${entidad}/${accion}${qs ? '?' + qs : ''}`;
+    const url = `${ctx.base}/v5/${entidad}/${accion}${qs ? '?' + qs : ''}`;
 
     try {
         // .trim() por si al guardar el secreto se coló un espacio/salto de línea (Citrus devuelve
         // 401 "Authorization Token Invalido" ante cualquier carácter de más).
-        const r = await fetch(url, { headers: { 'Authorization': citrusToken.value().trim(), 'Accept': 'application/json' } });
+        const r = await fetch(url, { headers: { 'Authorization': ctx.token, 'Accept': 'application/json' } });
         const text = await r.text();
         let data; try { data = JSON.parse(text); } catch (_) { data = text; }
-        res.status(200).json({ ok: r.ok, status: r.status, entidad, url, data });
+        res.status(200).json({ ok: r.ok, status: r.status, entorno: ctx.entorno, entidad, url, data });
     } catch (e) {
         console.error('citrusRead', entidad, e);
         res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
@@ -650,7 +663,7 @@ const CITRUS_LECTURA_PATH = { 'cuenta-contable': 'buscar' };
 
 // Crea un registro en Citrus (POST). Solo admin. Recibe { entidad, body } y devuelve la respuesta
 // de Citrus tal cual (status + JSON) para inspeccionarla.
-exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (req, res) => {
+exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
     const email = await callerAdmin(req);
     if (!email) { res.status(403).json({ error: 'no-autorizado' }); return; }
@@ -660,12 +673,13 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (r
     const body = req.body && req.body.body;
     if (!body || typeof body !== 'object') { res.status(400).json({ error: 'body' }); return; }
 
-    const url = `${CITRUS_BASE}/v5/${entidad}`;
+    const ctx = citrusCtx(req);
+    const url = `${ctx.base}/v5/${entidad}`;
     try {
         const r = await fetch(url, {
             method: 'POST',
             headers: {
-                'Authorization': citrusToken.value().trim(),
+                'Authorization': ctx.token,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
@@ -673,7 +687,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken], cors: true }, async (r
         });
         const text = await r.text();
         let data; try { data = JSON.parse(text); } catch (_) { data = text; }
-        res.status(200).json({ ok: r.ok, status: r.status, entidad, url, data });
+        res.status(200).json({ ok: r.ok, status: r.status, entorno: ctx.entorno, entidad, url, data });
     } catch (e) {
         console.error('citrusWrite', entidad, e);
         res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) });
