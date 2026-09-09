@@ -616,12 +616,15 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
 
     // Para la primera prueba de conexión se llama sin query params (defaults de Citrus: página 0,
     // desde 2011-07-01). Para paginar/traer detalles se agregan los parámetros del `request`.
+    const accion = CITRUS_LECTURA_PATH[entidad] || 'extraccionDatos';
     const pagina = Number(req.body && req.body.pagina) || 0;
     const params = new URLSearchParams();
-    if (pagina > 0) params.set('request.indiceDePagina', String(pagina));
-    if (req.body && req.body.detalles) params.set('request.cargarReferencias', 'true');
+    if (accion === 'extraccionDatos') {   // /buscar no pagina ni acepta estos params
+        if (pagina > 0) params.set('request.indiceDePagina', String(pagina));
+        if (req.body && req.body.detalles) params.set('request.cargarReferencias', 'true');
+    }
     const qs = params.toString();
-    const url = `${CITRUS_BASE}/v5/${entidad}/extraccionDatos${qs ? '?' + qs : ''}`;
+    const url = `${CITRUS_BASE}/v5/${entidad}/${accion}${qs ? '?' + qs : ''}`;
 
     try {
         // .trim() por si al guardar el secreto se coló un espacio/salto de línea (Citrus devuelve
@@ -640,6 +643,10 @@ exports.citrusRead = onRequest({ secrets: [citrusToken], cors: true }, async (re
 // conectan flujos reales. `suplidor` + `factura-suplidor` habilitan crear una cuenta por pagar en
 // ARTAL y empujarla a Citrus (el ERP fiscal).
 const CITRUS_WRITE_ENTIDADES = new Set(['cliente', 'suplidor', 'factura-suplidor', 'cuenta-contable']);
+// Entidades que NO tienen `extraccionDatos` en Citrus (404 "No action was found on the controller"):
+// se leen por `/buscar` (sin parámetros, devuelve la lista completa). Confirmado con la doc v5
+// (pág. 230): cuenta-contable solo expone GET /buscar, GET /{id}, POST y PUT.
+const CITRUS_LECTURA_PATH = { 'cuenta-contable': 'buscar' };
 
 // Crea un registro en Citrus (POST). Solo admin. Recibe { entidad, body } y devuelve la respuesta
 // de Citrus tal cual (status + JSON) para inspeccionarla.
