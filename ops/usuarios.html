@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Usuarios y roles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 980px; }
+    .nota { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 16px; line-height: 1.5; }
+    .nota.warn { background: #fff4e5; border-color: #f5d7a8; color: #8a5a10; }
+    .box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 18px; }
+    .box h2 { font-size: 15px; color: var(--artal-blue); margin: 0 0 10px; }
+    label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
+    .box input[type="text"], .box input[type="email"], .box input[type="search"] { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; background: #fff; }
+    .box input:disabled { background: #f3f4f6; color: #667; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+    .roles { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin-top: 6px; }
+    .rol { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1.5px solid #e3e8ee; border-radius: 10px; cursor: pointer; background: #fafbfc; }
+    .rol:has(input:checked) { border-color: var(--artal-blue); background: #eef4fb; }
+    .rol input { width: 18px; height: 18px; margin-top: 2px; flex: none; }
+    .rol b { display: block; font-size: 13.5px; color: #123; }
+    .rol span { font-size: 12px; color: #667; line-height: 1.35; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    button.act { background: var(--artal-blue); color: #fff; border: none; border-radius: 8px; padding: 12px 16px; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; min-height: 46px; }
+    button.act.sec { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
+    button.act.peligro { background: #fff; color: #c0392b; border: 1.5px solid #c0392b; }
+    button.act:disabled { opacity: .5; cursor: default; }
+    .chk { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: #123; cursor: pointer; }
+    .chk input { width: 18px; height: 18px; }
+    .u-card { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid #e3e8ee; border-radius: 12px; margin-bottom: 8px; background: #fff; flex-wrap: wrap; }
+    .u-card.off { opacity: .55; background: #f7f8fa; }
+    .u-main { flex: 1; min-width: 220px; }
+    .u-main b { font-size: 15px; color: #123; }
+    .u-main .mail { color: #667; font-size: 12.5px; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .chip { font-size: 11.5px; font-weight: bold; padding: 3px 9px; border-radius: 999px; background: #eef4fb; color: var(--artal-blue); }
+    .chip.admin { background: #fdecea; color: #c0392b; }
+    .chip.off { background: #eee; color: #777; }
+    .u-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+    .u-acts button { padding: 8px 12px; min-height: 36px; font-size: 12.5px; }
+    .msg { font-size: 13px; font-weight: bold; margin: 10px 0 0; min-height: 18px; }
+    .msg.ok { color: #16a085; } .msg.err { color: #c0392b; }
+    .muted { color: #667; font-size: 12.5px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html" title="Volver al Panel">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Usuarios y roles</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="nota">👥 Cada persona entra a la plataforma con <b>su cuenta de Google</b>. Aquí decides <b>quién</b> puede entrar y <b>con qué permisos</b> (roles). Una persona puede tener varios roles a la vez (ej. <i>contable</i> + <i>comunicaciones</i>). Los cambios aplican la próxima vez que la persona inicie sesión.</div>
+    <div class="nota warn" id="nota-solo-lectura" style="display:none">🔒 Solo un <b>admin</b> puede agregar o modificar usuarios. Tu sesión puede ver la lista pero no cambiarla.</div>
+
+    <div class="box" id="box-form">
+        <h2 id="form-title">Agregar usuario</h2>
+        <div class="form-grid">
+            <div><label>Correo de Google (con el que inicia sesión) *</label><input type="email" id="f-email" placeholder="nombre@gmail.com" autocomplete="off"></div>
+            <div><label>Nombre *</label><input type="text" id="f-nombre" placeholder="Nombre y apellido"></div>
+        </div>
+        <label style="margin-top:12px">Roles *</label>
+        <div class="roles" id="roles-grid"></div>
+        <div class="row" style="margin-top:14px;justify-content:space-between">
+            <label class="chk" style="margin:0"><input type="checkbox" id="f-activo" checked> Cuenta activa (si se desmarca, no puede entrar)</label>
+            <div class="row">
+                <button class="act sec" id="btn-cancelar" onclick="cancelarEdicion()" style="display:none">Cancelar</button>
+                <button class="act" id="btn-guardar" onclick="guardarUsuario()">💾 Guardar usuario</button>
+            </div>
+        </div>
+        <div class="msg" id="form-msg"></div>
+    </div>
+
+    <div class="box">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px">
+            <h2 style="margin:0">Usuarios <span id="u-count" class="muted"></span></h2>
+            <input type="search" id="buscar" placeholder="Buscar por nombre, correo o rol…" style="max-width:320px" oninput="renderLista()">
+        </div>
+        <div id="lista"><p class="muted">Cargando…</p></div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // requireAuth([]) deja pasar admin y lector: el lector ve la lista, pero solo el admin edita (y las
+    // reglas de Firestore lo exigen también del lado del servidor).
+    const usuario = await requireAuth([]);
+    const esAdmin = usuario.roles.includes('admin');
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    if (!esAdmin) { document.getElementById('nota-solo-lectura').style.display = ''; document.getElementById('box-form').style.display = 'none'; }
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // Catálogo de roles de la plataforma (los que reconocen requireAuth() de cada pantalla y las
+    // reglas de Firestore). Al agregar un rol nuevo en el código, sumarlo aquí para poder asignarlo.
+    const ROLES = [
+        { id: 'admin', nombre: 'Administrador', desc: 'Panel de Control completo: entra a todo y gestiona usuarios.' },
+        { id: 'lector', nombre: 'Solo lectura', desc: 'Ve todas las pantallas pero no puede modificar nada.' },
+        { id: 'cotizaciones', nombre: 'Cotizaciones / Ventas', desc: 'Precio final al cliente, clientes, oportunidades, comisiones, calculador de obra.' },
+        { id: 'contable', nombre: 'Contable (ERP)', desc: 'Bancos, contabilidad, activos, RRHH, nómina, catálogo de cuentas.' },
+        { id: 'comunicaciones', nombre: 'Comunicaciones', desc: 'Puede ENVIAR por la Mensajería ARTAL (comunicados, volantes de pago).' },
+        { id: 'capacitador', nombre: 'Capacitador (Academia)', desc: 'Crea y edita cursos y lecciones de la Academia.' },
+        { id: 'fabrica', nombre: 'Fábrica (ALUCUFEL)', desc: 'Tablero de fabricación: marcar partes listas, enviar a instalación.' },
+        { id: 'contratista', nombre: 'Contratista (ALUCUFEL)', desc: 'Sube las cotizaciones de costo de los pedidos.' },
+        { id: 'chofer', nombre: 'Transportes', desc: 'Recoger en fábrica, marcar en ruta y entregar en obra.' },
+        { id: 'instalador', nombre: 'Instalador', desc: 'Agenda de instalación, checklist en obra, confirmar con biometría.' },
+        { id: 'ayudante', nombre: 'Ayudante de instalación', desc: 'Ve la agenda y las obras; no cambia estados.' }
+    ];
+    document.getElementById('roles-grid').innerHTML = ROLES.map(r => `<label class="rol"><input type="checkbox" value="${r.id}"><div><b>${esc(r.nombre)}</b><span>${esc(r.desc)}</span></div></label>`).join('');
+    const nombreRol = (id) => (ROLES.find(r => r.id === id) || { nombre: id }).nombre;
+    const rolesDe = (u) => Array.isArray(u.rol) ? u.rol : (u.rol ? [u.rol] : []);
+
+    let usuarios = [], editando = null;   // editando = email del doc en edición
+    onSnapshot(collection(db, 'usuarios'), (snap) => {
+        usuarios = snap.docs.map(d => ({ email: d.id, ...d.data() })).sort((a, b) => String(a.nombre || a.email).localeCompare(String(b.nombre || b.email), 'es'));
+        renderLista();
+    }, (e) => { document.getElementById('lista').innerHTML = '<p class="muted">No se pudo cargar: ' + esc(e.message) + '</p>'; });
+
+    window.renderLista = function () {
+        const q = (document.getElementById('buscar').value || '').trim().toLowerCase();
+        const lista = usuarios.filter(u => !q || [u.nombre, u.email, ...rolesDe(u)].join(' ').toLowerCase().includes(q));
+        const admins = usuarios.filter(u => u.activo !== false && rolesDe(u).includes('admin')).length;
+        document.getElementById('u-count').textContent = `(${usuarios.length} · ${admins} admin${admins === 1 ? '' : 's'} activo${admins === 1 ? '' : 's'})`;
+        if (!lista.length) { document.getElementById('lista').innerHTML = '<p class="muted">No hay usuarios que coincidan.</p>'; return; }
+        document.getElementById('lista').innerHTML = lista.map(u => {
+            const off = u.activo === false, roles = rolesDe(u), yo = u.email === usuario.email;
+            return `<div class="u-card ${off ? 'off' : ''}">
+                <div class="u-main">
+                    <b>${esc(u.nombre || '(sin nombre)')}</b>${yo ? ' <span class="muted">(tú)</span>' : ''}
+                    <div class="mail">${esc(u.email)}</div>
+                    <div class="chips">${off ? '<span class="chip off">Desactivado</span>' : ''}${roles.map(r => `<span class="chip ${r === 'admin' ? 'admin' : ''}">${esc(nombreRol(r))}</span>`).join('') || '<span class="chip off">sin rol</span>'}${u.fcmToken ? '<span class="chip" title="Aceptó notificaciones en algún dispositivo">🔔</span>' : ''}</div>
+                </div>
+                ${esAdmin ? `<div class="u-acts">
+                    <button class="act sec" onclick="editarUsuario('${esc(u.email)}')">✏ Editar</button>
+                    <button class="act sec" onclick="toggleActivo('${esc(u.email)}')" ${yo ? 'disabled title="No puedes desactivarte a ti mismo"' : ''}>${off ? '✅ Activar' : '⏸ Desactivar'}</button>
+                    <button class="act peligro" onclick="eliminarUsuario('${esc(u.email)}')" ${yo ? 'disabled title="No puedes eliminarte a ti mismo"' : ''}>🗑</button>
+                </div>` : ''}
+            </div>`;
+        }).join('');
+    };
+
+    const rolesMarcados = () => [...document.querySelectorAll('#roles-grid input:checked')].map(i => i.value);
+    const msg = (t, cls) => { const m = document.getElementById('form-msg'); m.textContent = t; m.className = 'msg ' + (cls || ''); };
+
+    window.editarUsuario = function (email) {
+        const u = usuarios.find(x => x.email === email); if (!u) return;
+        editando = email;
+        document.getElementById('form-title').textContent = 'Editar usuario';
+        document.getElementById('f-email').value = email; document.getElementById('f-email').disabled = true;
+        document.getElementById('f-nombre').value = u.nombre || '';
+        document.getElementById('f-activo').checked = u.activo !== false;
+        const roles = rolesDe(u); document.querySelectorAll('#roles-grid input').forEach(i => i.checked = roles.includes(i.value));
+        document.getElementById('btn-cancelar').style.display = '';
+        msg('');
+        document.getElementById('box-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    window.cancelarEdicion = function () {
+        editando = null;
+        document.getElementById('form-title').textContent = 'Agregar usuario';
+        document.getElementById('f-email').value = ''; document.getElementById('f-email').disabled = false;
+        document.getElementById('f-nombre').value = ''; document.getElementById('f-activo').checked = true;
+        document.querySelectorAll('#roles-grid input').forEach(i => i.checked = false);
+        document.getElementById('btn-cancelar').style.display = 'none';
+        msg('');
+    };
+
+    // Salvaguardas para no dejar la plataforma sin administrador ni bloquearte a ti mismo.
+    function quedaAlgunAdmin(excluirEmail, nuevosRoles, nuevoActivo) {
+        return usuarios.some(u => u.email !== excluirEmail && u.activo !== false && rolesDe(u).includes('admin'))
+            || (nuevoActivo !== false && (nuevosRoles || []).includes('admin'));
+    }
+
+    window.guardarUsuario = async function () {
+        if (!esAdmin) return;
+        const email = (document.getElementById('f-email').value || '').trim().toLowerCase();
+        const nombre = (document.getElementById('f-nombre').value || '').trim();
+        const roles = rolesMarcados();
+        const activo = document.getElementById('f-activo').checked;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg('Escribe un correo válido (el de su cuenta de Google).', 'err'); return; }
+        if (!nombre) { msg('Escribe el nombre.', 'err'); return; }
+        if (!roles.length) { msg('Marca al menos un rol.', 'err'); return; }
+        if (!editando && usuarios.some(u => u.email === email)) { msg('Ese correo ya existe. Usa «Editar» en la lista.', 'err'); return; }
+        if (email === usuario.email && (!roles.includes('admin') || !activo)) { msg('No puedes quitarte el rol admin ni desactivar tu propia cuenta.', 'err'); return; }
+        if (!quedaAlgunAdmin(email, roles, activo)) { msg('La plataforma quedaría sin ningún administrador activo. Deja al menos uno.', 'err'); return; }
+        const btn = document.getElementById('btn-guardar'); btn.disabled = true; msg('Guardando…');
+        try {
+            // `rol` se guarda como string si es uno solo y como lista si son varios: es el formato que
+            // ya entienden requireAuth() y las reglas de Firestore (`u.rol is list ? u.rol : [u.rol]`).
+            const data = { nombre, rol: roles.length === 1 ? roles[0] : roles, activo, actualizadoPor: usuario.nombre, actualizado: serverTimestamp() };
+            if (!editando) { data.creadoPor = usuario.nombre; data.creado = serverTimestamp(); }
+            await setDoc(doc(db, 'usuarios', email), data, { merge: true });
+            msg('✓ Guardado. ' + (editando ? 'Los cambios aplican cuando la persona vuelva a iniciar sesión.' : nombre + ' ya puede entrar con ' + email + '.'), 'ok');
+            const eraEdicion = !!editando; cancelarEdicion();
+            if (!eraEdicion) msg('✓ ' + nombre + ' agregado. Ya puede entrar con ' + email + '.', 'ok');
+        } catch (e) { msg('No se pudo guardar: ' + (e && e.message ? e.message : e), 'err'); }
+        finally { btn.disabled = false; }
+    };
+
+    window.toggleActivo = async function (email) {
+        const u = usuarios.find(x => x.email === email); if (!u || !esAdmin || email === usuario.email) return;
+        const nuevo = u.activo === false;
+        if (!nuevo && !quedaAlgunAdmin(email, [], false)) { alert('No puedes desactivar al único administrador activo.'); return; }
+        if (!confirm((nuevo ? '¿Activar' : '¿Desactivar') + ' la cuenta de ' + (u.nombre || email) + '?' + (nuevo ? '' : '\n\nNo podrá entrar a la plataforma hasta que se active de nuevo. Sus datos se conservan.'))) return;
+        try { await updateDoc(doc(db, 'usuarios', email), { activo: nuevo, actualizadoPor: usuario.nombre, actualizado: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.eliminarUsuario = async function (email) {
+        const u = usuarios.find(x => x.email === email); if (!u || !esAdmin || email === usuario.email) return;
+        if (!quedaAlgunAdmin(email, [], false)) { alert('No puedes eliminar al único administrador activo.'); return; }
+        if (!confirm('¿Eliminar definitivamente a ' + (u.nombre || email) + '?\n\nSe borran su acceso y sus ajustes personales (notificaciones, PIN, biometría). Si solo quieres que no entre por ahora, usa «Desactivar».')) return;
+        try { await deleteDoc(doc(db, 'usuarios', email)); if (editando === email) cancelarEdicion(); }
+        catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
+    };
+</script>
+
+</body>
+</html>

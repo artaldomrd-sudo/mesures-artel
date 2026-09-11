@@ -64,7 +64,16 @@ service cloud.firestore {
     match /subgruposInventario/{id}  { allow write: if puedeEscribir(); }
     match /bultosHerramientas/{id}   { allow write: if puedeEscribir(); }
     match /clientes/{id}             { allow write: if puedeEscribir(); }
-    match /usuarios/{id}             { allow write: if puedeEscribir(); }
+    // Usuarios y roles: CREAR/BORRAR y cambiar rol/nombre/activo solo un ADMIN (pantalla
+    // usuarios.html). Cada persona puede actualizar SU propio documento solo en sus ajustes
+    // personales (fcmToken, panelOrden, notifOcultas, PIN, biometría…), nunca su rol ni su estado.
+    match /usuarios/{email} {
+      allow create, delete: if request.auth != null && 'admin' in rolesDelUsuario();
+      allow update: if request.auth != null && (
+        'admin' in rolesDelUsuario()
+        || (request.auth.token.email == email
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol', 'activo', 'nombre'])));
+    }
     match /proyectosGuardados/{id}   { allow write: if puedeEscribir(); }
     // Historial de versiones del cuaderno (proyectosGuardados/{id}/versiones/{ts}): la lectura la
     // cubre el match general; la escritura NO se hereda del padre, hay que declararla aparte.
