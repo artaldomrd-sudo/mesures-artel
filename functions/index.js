@@ -623,6 +623,39 @@ async function callerAdmin(req) {
     } catch (_) { return null; }
 }
 
+// Directorio `equipo/{email}` = espejo NO sensible de usuarios/{email} (solo nombre, rol, activo).
+// Las pantallas compartidas (instalación, mensajería, fábrica, historial…) leen de aquí; la
+// colección `usuarios` completa (PIN, biometría, tokens, 2FA, ajustes) solo la lee cada quien su
+// propio doc o un admin (ver firestore.rules). Se mantiene solo con este trigger.
+function espejoEquipo(data) {
+    const rol = Array.isArray(data.rol) ? data.rol : (data.rol ? [data.rol] : []);
+    return { nombre: data.nombre || '', rol, activo: data.activo !== false, actualizado: FieldValue.serverTimestamp() };
+}
+exports.sincronizarEquipo = onDocumentWritten('usuarios/{email}', async (event) => {
+    const email = event.params.email;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    try {
+        if (!after) await db.collection('equipo').doc(email).delete();
+        else await db.collection('equipo').doc(email).set(espejoEquipo(after));
+    } catch (e) { console.error('sincronizarEquipo', email, e); }
+});
+// Reconstruye TODO el directorio (una vez, o si se desincronizó). Solo admin.
+exports.equipoSync = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    try {
+        const snap = await db.collection('usuarios').get();
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.set(db.collection('equipo').doc(d.id), espejoEquipo(d.data())));
+        const eq = await db.collection('equipo').get();
+        const vivos = new Set(snap.docs.map(d => d.id));
+        eq.docs.forEach((d) => { if (!vivos.has(d.id)) batch.delete(d.ref); });
+        await batch.commit();
+        res.status(200).json({ ok: true, total: snap.size });
+    } catch (e) { console.error('equipoSync', e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
+});
+
 // Quita la verificación en 2 pasos (factores MFA) a un usuario — solo admin, desde Usuarios y roles.
 // Un cliente web no puede modificar los factores de otra cuenta; el Admin SDK sí.
 exports.mfaReset = onRequest({ cors: true }, async (req, res) => {

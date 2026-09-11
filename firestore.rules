@@ -36,9 +36,14 @@ service cloud.firestore {
         && d.keys().hasOnly(['origen','estado','nombre','telefono','email','tipo','mensaje','fecha']);
     }
 
-    // Todo se puede LEER estando autenticado.
-    match /{document=**} {
-      allow read: if request.auth != null;
+    // Todo se puede LEER estando autenticado — EXCEPTO `usuarios` (datos sensibles: PIN, biometría,
+    // tokens, 2FA), que solo lee cada quien su propio doc o un admin (ver más abajo). Las pantallas
+    // compartidas usan el espejo `equipo` (nombre, rol, activo), que lo mantiene una Cloud Function.
+    match /{coleccion}/{resto=**} {
+      allow read: if request.auth != null && coleccion != 'usuarios';
+    }
+    match /equipo/{email} {
+      allow write: if false;   // solo la Cloud Function sincronizarEquipo (Admin SDK)
     }
 
     // Precios de combustible (MICM): los actualiza una Cloud Function semanal (Admin SDK, se salta
@@ -68,6 +73,7 @@ service cloud.firestore {
     // usuarios.html). Cada persona puede actualizar SU propio documento solo en sus ajustes
     // personales (fcmToken, panelOrden, notifOcultas, PIN, biometría…), nunca su rol ni su estado.
     match /usuarios/{email} {
+      allow read: if request.auth != null && (request.auth.token.email == email || 'admin' in rolesDelUsuario());
       allow create, delete: if request.auth != null && 'admin' in rolesDelUsuario();
       allow update: if request.auth != null && (
         'admin' in rolesDelUsuario()
