@@ -94,14 +94,33 @@ export async function verificar2FA(user) {
     }
     const prov = new GoogleAuthProvider();
     prov.setCustomParameters({ login_hint: user.email });   // la misma cuenta, sin volver a elegir
-    overlay('<h2 style="margin:0;font-size:20px;">Verificación reforzada</h2><p style="opacity:.9;margin:0;max-width:340px;">Esta pantalla pide el código de tu app autenticadora cada vez. Google confirmará tu cuenta primero…</p>');
-    try {
-        await reauthenticateWithPopup(user, prov);
-        cerrar(); return true;   // (sin factor inscrito no debería llegar aquí)
-    } catch (e) {
-        if (e && e.code === 'auth/multi-factor-auth-required') { await resolverMFASignIn(e); return true; }
-        cerrar(); throw e;
-    }
+    // La ventana de Google solo puede abrirse desde un CLIC del usuario (si se abre sola al cargar,
+    // el navegador la bloquea: auth/popup-blocked). Por eso primero un botón.
+    const el = overlay(`<h2 style="margin:0;font-size:20px;">Verificación reforzada</h2>
+        <p style="opacity:.9;margin:0;max-width:360px;line-height:1.45;">Esta pantalla pide el código de tu app autenticadora cada vez. Al pulsar, Google confirma tu cuenta en una ventana y luego escribes el código de 6 dígitos.</p>
+        <button id="mfa-go" style="${btnCss}">Verificar con mi código</button>
+        <div id="mfa-msg" style="min-height:20px;color:#ffd166;font-size:13px;max-width:360px;"></div>
+        <button id="mfa-cancel" style="${linkCss}">Cancelar</button>`);
+    return new Promise((resolve, reject) => {
+        el.querySelector('#mfa-cancel').onclick = () => { cerrar(); reject(new Error('cancelado')); };
+        el.querySelector('#mfa-go').onclick = async () => {
+            const btn = el.querySelector('#mfa-go'); btn.disabled = true;
+            try {
+                await reauthenticateWithPopup(user, prov);
+                cerrar(); resolve(true);   // (sin factor inscrito no debería llegar aquí)
+            } catch (e) {
+                if (e && e.code === 'auth/multi-factor-auth-required') {
+                    try { await resolverMFASignIn(e); resolve(true); } catch (e2) { reject(e2); }
+                    return;
+                }
+                btn.disabled = false;
+                const m = el.querySelector('#mfa-msg');
+                if (e && e.code === 'auth/popup-blocked') m.textContent = 'El navegador bloqueó la ventana de Google. Permite ventanas emergentes para este sitio (icono junto a la dirección) y pulsa de nuevo.';
+                else if (e && (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request')) m.textContent = 'Cerraste la ventana de Google. Pulsa de nuevo para intentarlo.';
+                else m.textContent = 'Error: ' + (e && (e.message || e.code) || e);
+            }
+        };
+    });
 }
 
 // ---- Inscripción obligatoria (primera vez): QR + código de confirmación ----
