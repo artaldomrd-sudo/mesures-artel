@@ -4,8 +4,7 @@
 // BLINDAJE (2026-09-11, pedido del usuario: "que una sola vez se acepte y nunca se desactive"):
 //  · Antes se guardaba UN solo token por usuario (usuarios/{email}.fcmToken): cada dispositivo que
 //    activaba notificaciones PISABA el token del anterior, y ese otro dispositivo dejaba de recibir
-//    en silencio — con la cuenta general usada por varias personas en varios equipos, se
-//    "desactivaban" a cada rato. Ahora cada dispositivo guarda SU token en usuarios/{email}.fcmTokens
+//    en silencio — un mismo usuario con iPhone + Mac veía cómo se "desactivaban" a cada rato. Ahora cada dispositivo guarda SU token en usuarios/{email}.fcmTokens
 //    (mapa clave = hash del token → {token, dispositivo, fecha}); la Cloud Function manda a TODOS y
 //    borra sola los tokens muertos. `fcmToken` (el último) se sigue escribiendo por compatibilidad.
 //  · Los tokens de Google rotan y caducan: `refrescarNotificaciones()` corre SOLA en cada carga de
