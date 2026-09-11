@@ -108,6 +108,10 @@ export function requireAuth(rolesPermitidos) {
         return;
       }
       hideOverlay();
+      // Renueva en silencio el token de notificaciones de ESTE dispositivo (si el permiso ya fue
+      // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo
+      // activó las suyas. Best-effort: no bloquea la página ni muestra nada si falla.
+      import('./notifications.js').then((m) => m.refrescarNotificaciones && m.refrescarNotificaciones()).catch(() => {});
       resolve({ email: user.email, nombre: data.nombre || user.email, rol: roles[0], roles });
     });
   });

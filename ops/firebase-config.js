@@ -28,4 +28,8 @@ export const db = initializeFirestore(app, {
 });
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+// Mostrar SIEMPRE el selector de cuenta de Google. Sin esto, en un teléfono con una sola cuenta de
+// Google iniciada (ej. la general de ARTAL) Google entra directo con esa y no deja elegir otra —
+// justo lo que impedía entrar con el correo personal (2026-09-11).
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 export const storage = getStorage(app);

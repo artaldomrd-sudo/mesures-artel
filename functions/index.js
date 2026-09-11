@@ -17,10 +17,43 @@ const db = getFirestore();
 // cae poco después de la hora, sin reabrir recordatorios de eventos realmente viejos.
 const GRACE_MS = 15 * 60000;
 
-async function tokenDe(email) {
-    if (!email) return null;
+// Tokens FCM de un usuario: TODOS sus dispositivos (mapa `fcmTokens` {hash: {token, dispositivo,
+// fecha}}) más el `fcmToken` suelto de versiones anteriores. Devuelve [{token, key}] sin repetidos
+// (`key` = clave del mapa, o 'legacy' para el suelto) para poder borrar el que muera.
+function tokensDeDoc(data) {
+    const out = [], vistos = new Set();
+    const mapa = (data && data.fcmTokens && typeof data.fcmTokens === 'object') ? data.fcmTokens : {};
+    for (const [key, v] of Object.entries(mapa)) { const t = v && v.token; if (t && !vistos.has(t)) { vistos.add(t); out.push({ token: t, key }); } }
+    if (data && data.fcmToken && !vistos.has(data.fcmToken)) out.push({ token: data.fcmToken, key: 'legacy' });
+    return out;
+}
+async function tokensDe(email) {
+    if (!email) return [];
     const s = await db.collection('usuarios').doc(email).get();
-    return s.exists ? (s.data().fcmToken || null) : null;
+    return s.exists ? tokensDeDoc(s.data()) : [];
+}
+// Compat: primer token (lo usan llamadas viejas que esperaban uno solo).
+async function tokenDe(email) { const t = await tokensDe(email); return t.length ? t[0].token : null; }
+// Borra de usuarios/{email} un token que FCM reporta como muerto (dispositivo que desinstaló la app,
+// permiso revocado, token rotado…). Así la lista se limpia sola y no se acumulan tokens inútiles.
+async function purgarToken(email, entry) {
+    if (!email || !entry) return;
+    try {
+        const upd = {};
+        if (entry.key === 'legacy') upd.fcmToken = FieldValue.delete();
+        else upd['fcmTokens.' + entry.key] = FieldValue.delete();
+        await db.collection('usuarios').doc(email).update(upd);
+        console.log('token muerto eliminado', email, entry.key);
+    } catch (e) { console.warn('purgarToken', email, e && e.message); }
+}
+const TOKEN_MUERTO = new Set(['messaging/registration-token-not-registered', 'messaging/invalid-registration-token', 'messaging/invalid-argument']);
+// Manda un push a TODOS los dispositivos de un usuario y limpia los tokens muertos.
+async function enviarPushUsuario(email, title, body, url) {
+    const entries = await tokensDe(email);
+    for (const en of entries) {
+        try { await getMessaging().send(buildPush(en.token, title, body, url)); }
+        catch (e) { console.error('enviarPushUsuario', email, e && e.code); if (e && TOKEN_MUERTO.has(e.code)) await purgarToken(email, en); }
+    }
 }
 
 // Tokens FCM de TODOS los usuarios que tengan alguno de los roles indicados (rol puede ser string
@@ -33,9 +66,9 @@ async function tokensPorRol(...roles) {
         const data = d.data();
         const rol = data.rol;
         const rolesU = Array.isArray(rol) ? rol : [rol];
-        if (roles.some((r) => rolesU.includes(r)) && data.fcmToken) tokens.push(data.fcmToken);
+        if (roles.some((r) => rolesU.includes(r))) tokensDeDoc(data).forEach((en) => tokens.push({ ...en, email: d.id }));
     });
-    return [...new Set(tokens)];
+    return tokens;
 }
 
 // Arma el mensaje push. Incluye SIEMPRE un bloque `notification` (no solo `data`): iOS/Safari
@@ -60,8 +93,13 @@ async function enviarPush(token, title, body, url) {
     try { await getMessaging().send(buildPush(token, title, body, url)); }
     catch (e) { console.error('enviarPush', e); }
 }
+// Acepta strings (token suelto) o {token, key, email} (de tokensPorRol): con email se purgan los muertos.
 async function pushATokens(tokens, title, body, url) {
-    for (const token of tokens) await enviarPush(token, title, body, url);
+    for (const t of tokens) {
+        if (typeof t === 'string') { await enviarPush(t, title, body, url); continue; }
+        try { await getMessaging().send(buildPush(t.token, title, body, url)); }
+        catch (e) { console.error('pushATokens', t.email, e && e.code); if (t.email && e && TOKEN_MUERTO.has(e.code)) await purgarToken(t.email, t); }
+    }
 }
 
 // Una cita/recordatorio puede tener VARIAS personas asignadas (`asignados: [{email,nombre}]`,
@@ -93,9 +131,7 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
     const urlDestino = cita.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html';
 
     for (const email of emails) {
-        const token = await tokenDe(email);
-        if (!token) continue;
-        await enviarPush(token, 'Nueva cita: ' + (cita.titulo || 'Sin título'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
+        await enviarPushUsuario(email, 'Nueva cita: ' + (cita.titulo || 'Sin título'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
     }
 });
 
@@ -113,9 +149,7 @@ exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', a
     });
     const cuerpo = [s.tipo, s.nombre, s.telefono].filter(Boolean).join(' · ');
     for (const u of admins) {
-        const token = u.data().fcmToken;
-        if (!token) continue;
-        await enviarPush(token, 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''), cuerpo || 'Un cliente pidió cotización desde el sitio web', 'ops/solicitudes.html');
+        await enviarPushUsuario(u.id, 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''), cuerpo || 'Un cliente pidió cotización desde el sitio web', 'ops/solicitudes.html');
     }
 });
 
@@ -190,11 +224,10 @@ async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix)
         if (!fecha || !offset) { await docu.ref.update({ recordatorioEnviado: true }); continue; }
         if (ahora < fecha - offset * 60000) continue; // todavía no toca
         if (ahora <= fecha) {
-            const token = await tokenDe(d[campoEmail]);
-            if (token) {
+            if (d[campoEmail]) {
                 const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' });
                 const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
-                await enviarPush(token, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
+                await enviarPushUsuario(d[campoEmail], tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
             }
         }
         await docu.ref.update({ recordatorioEnviado: true });
@@ -225,9 +258,7 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
                 const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' });
                 const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
                 for (const email of getEmails(d)) {
-                    const token = await tokenDe(email);
-                    if (!token) continue;
-                    await enviarPush(token, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), (typeof urlDestino === 'function' ? urlDestino(d) : urlDestino));
+                    await enviarPushUsuario(email, tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), (typeof urlDestino === 'function' ? urlDestino(d) : urlDestino));
                 }
             }
             enviados.push(off);
