@@ -66,7 +66,7 @@
     .volante h3 { color: var(--artal-blue); margin: 0 0 2px; } .volante .vsub { color: #667; font-size: 12px; margin-bottom: 12px; }
     .volante table { width: 100%; border-collapse: collapse; }
     .volante td { padding: 5px 4px; border-bottom: 1px solid #eee; }
-    .volante td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    .volante td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .volante .vtot td { font-weight: bold; border-top: 2px solid var(--artal-blue); }
     /* Reporte de nómina completa (imprimible) */
     .nomrep { font-size: 10.5px; color: #111; }
@@ -274,6 +274,7 @@
         <div id="volante-modal-body"></div>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="document.getElementById('modal-volante').classList.remove('show')">Cerrar</button>
+            <button class="btn-guardar" id="btn-enviar-volante" style="background:#25a244;display:none" onclick="enviarVolanteActual()">📨 Enviar por mensajería</button>
             <button class="btn-guardar" onclick="imprimirVolante()">🖨 Imprimir</button>
         </div>
     </div>
@@ -291,6 +292,9 @@
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    // Enviar volantes por la mensajería interna: las reglas de Firestore solo dejan crear `mensajes` a
+    // admin y comunicaciones (Anny/Dylan). A los demás no se les muestra el botón.
+    const puedeEnviarMensajes = usuario.roles.includes('admin') || usuario.roles.includes('comunicaciones');
     const byNombre = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
     const n2 = (x) => (Number(x) || 0);
     const fmt = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -893,6 +897,7 @@
             <span class="estado ${estadoNomina().cls}">${estadoNomina().txt}</span>
             <button class="btn-y" onclick="guardarNomina()">💾 Guardar nómina</button>
             <button class="btn-o" onclick="imprimirNomina()">🖨 Imprimir / PDF</button>
+            ${puedeEnviarMensajes ? `<button class="btn-o" style="border-color:#25a244;color:#1e8449" onclick="enviarVolantesActual()" title="Cada empleado recibe su volante en su bandeja de Mensajería">📨 Enviar volantes a todos</button>` : ''}
         </div>`;
     }
     function estadoNomina() {
@@ -1177,11 +1182,43 @@
         if (!l) return;
         volanteHTML = volanteDe(l, nominaActual.key);
         volanteTitulo = 'Volante ' + l.nombre + ' ' + nombrePeriodo(nominaActual.key);
+        volanteCtx = { empId, nombre: l.nombre, key: nominaActual.key, texto: volanteTexto(l, nominaActual.key) };
+        const be = document.getElementById('btn-enviar-volante'); if (be) be.style.display = puedeEnviarMensajes ? '' : 'none';
         document.getElementById('volante-modal-body').innerHTML = volanteHTML;
         document.getElementById('modal-volante').classList.add('show');
     };
-    let volanteTitulo = '';
+    let volanteTitulo = '', volanteCtx = null;
     window.imprimirVolante = function () { imprimir(volanteHTML, volanteTitulo || 'Volante de pago'); };
+    // Envía SOLO este volante al empleado (mensajería interna). Exige la nómina guardada, para que lo que
+    // recibe coincida con lo registrado.
+    window.enviarVolanteActual = async function () {
+        if (!volanteCtx || !nominaActual) return;
+        if (!puedeEnviarMensajes) { alert('Solo admin o comunicaciones pueden enviar mensajes.'); return; }
+        if (nominaActual.sucia || !nominaActual.guardadaInfo) { alert('Guarda la nómina antes de enviar el volante, para que lo enviado coincida con lo registrado.'); return; }
+        const emp = empleados.find(e => e.id === volanteCtx.empId);
+        const correo = emp && emp.correo ? emp.correo : '';
+        if (!correo) { alert(volanteCtx.nombre + ' no tiene correo en su ficha de Empleados. Agrégaselo y vuelve a intentar.'); return; }
+        if (!confirm('¿Enviar el volante de «' + fmtPeriodoKey(volanteCtx.key) + '» a ' + volanteCtx.nombre + ' (' + correo + ') por la mensajería interna?')) return;
+        try {
+            const m = await addDoc(collection(db, 'mensajes'), {
+                estado: 'enviado', asunto: 'Tu volante de pago — ' + fmtPeriodoKey(volanteCtx.key),
+                cuerpo: volanteCtx.texto,
+                remitenteEmail: usuario.email, remitenteNombre: usuario.nombre,
+                fecha: serverTimestamp(), paraTodos: false, destinatarios: [correo],
+                requiereFirma: false, adjuntos: [], enlace: null, acuses: {},
+                origen: 'volante_nomina', nominaKey: volanteCtx.key
+            });
+            try { await updateDoc(doc(db, 'rrhhNominas', volanteCtx.key), { ['volantesPorEmpleado.' + volanteCtx.empId]: { fecha: serverTimestamp(), por: usuario.nombre, mensajeId: m.id } }); } catch (_) { }
+            alert('✓ Volante enviado a ' + volanteCtx.nombre + '.');
+        } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); }
+    };
+    // Todos los volantes de la nómina abierta (reusa enviarVolantes del Historial; exige guardada).
+    window.enviarVolantesActual = function () {
+        if (!nominaActual) return;
+        if (nominaActual.sucia || !nominaActual.guardadaInfo) { alert('Guarda la nómina antes de enviar los volantes.'); return; }
+        if (!nominasGuardadas.some(x => x.key === nominaActual.key)) { alert('La nómina guardada todavía no llegó del servidor; espera un segundo y vuelve a intentar.'); return; }
+        enviarVolantes(nominaActual.key);
+    };
 
     // ---------- REGALÍA ----------
     let regaliaData = [];
