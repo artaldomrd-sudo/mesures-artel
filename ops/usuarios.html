@@ -97,7 +97,10 @@
     <div class="box">
         <div class="row" style="justify-content:space-between;margin-bottom:10px">
             <h2 style="margin:0">Usuarios <span id="u-count" class="muted"></span></h2>
-            <input type="search" id="buscar" placeholder="Buscar por nombre, correo o rol…" style="max-width:320px" oninput="renderLista()">
+            <div class="row">
+                <button class="act sec" onclick="pedirNotificacionesTodos()" title="Todos los usuarios activos sin notificaciones verán el aviso para activarlas al entrar">🔔 Pedir activar a todos</button>
+                <input type="search" id="buscar" placeholder="Buscar por nombre, correo o rol…" style="max-width:320px" oninput="renderLista()">
+            </div>
         </div>
         <div id="lista"><p class="muted">Cargando…</p></div>
     </div>
@@ -302,6 +305,15 @@
         const u = usuarios.find(x => x.email === email); if (!u || !esAdmin) return;
         try { await updateDoc(doc(db, 'usuarios', email), { pedirNotificaciones: true, pedirNotificacionesPor: usuario.nombre, pedirNotificacionesFecha: serverTimestamp() }); alert('✓ Listo. La próxima vez que ' + (u.nombre || email) + ' entre a la plataforma verá el aviso para activar las notificaciones en su dispositivo.'); }
         catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.pedirNotificacionesTodos = async function () {
+        if (!esAdmin) return;
+        const pend = usuarios.filter(u => u.activo !== false && !u.pedirNotificaciones);
+        if (!pend.length) { alert('Todos los usuarios activos ya tienen el aviso pendiente o no hay usuarios.'); return; }
+        if (!confirm('¿Pedir a ' + pend.length + ' usuario(s) activo(s) que activen las notificaciones?\n\nCada uno verá el aviso con el botón al entrar a la plataforma (también quienes ya las tienen en un dispositivo, por si usan otro).')) return;
+        let ok = 0;
+        for (const u of pend) { try { await updateDoc(doc(db, 'usuarios', u.email), { pedirNotificaciones: true, pedirNotificacionesPor: usuario.nombre, pedirNotificacionesFecha: serverTimestamp() }); ok++; } catch (_) { } }
+        alert('✓ Aviso pedido a ' + ok + ' usuario(s).');
     };
     window.probarNotificacion = async function (email) {
         const u = usuarios.find(x => x.email === email); if (!u || !esAdmin) return;
