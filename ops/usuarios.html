@@ -64,7 +64,6 @@
 
 <main>
     <div class="nota">👥 Cada persona entra a la plataforma con <b>su cuenta de Google</b>. Aquí decides <b>quién</b> puede entrar y <b>con qué permisos</b> (roles). Una persona puede tener varios roles a la vez (ej. <i>contable</i> + <i>comunicaciones</i>). Los cambios aplican la próxima vez que la persona inicie sesión.</div>
-    <div class="nota warn" id="nota-solo-lectura" style="display:none">🔒 Solo un <b>admin</b> puede agregar o modificar usuarios. Tu sesión puede ver la lista pero no cambiarla.</div>
 
     <div class="box" id="box-mfa" style="display:none">
         <h2>🔐 Verificación en 2 pasos (app autenticadora)</h2>
@@ -112,6 +111,16 @@
     // requireAuth([]) deja pasar admin y lector: el lector ve la lista, pero solo el admin edita (y las
     // reglas de Firestore lo exigen también del lado del servidor).
     const usuario = await requireAuth([]);
+    // SOLO admin. requireAuth([]) también deja pasar al rol 'lector' (ve toda la plataforma en solo
+    // lectura), pero esta pantalla no debe verla nadie más que un administrador (pedido explícito).
+    if (!usuario.roles.includes('admin')) {
+        document.body.innerHTML = '';
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:#0A3D62;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:Arimo,sans-serif;text-align:center;padding:24px;';
+        ov.innerHTML = '<h2 style="margin:0;font-size:20px;">Solo administradores</h2><p style="max-width:320px;margin:0;opacity:.9;">La gestión de usuarios y roles está reservada a los administradores de ARTAL.</p><a href="index.html" style="color:#fff;border:1px solid #fff;border-radius:8px;padding:10px 16px;text-decoration:none;font-weight:700;">← Volver al Panel</a>';
+        document.body.appendChild(ov);
+        await new Promise(() => { });   // detiene el resto del script
+    }
     // Pantalla crítica: código de la app autenticadora EN CADA ENTRADA (verificación reforzada), en vez
     // del PIN. Si se cancela o falla, de vuelta al Panel.
     try {
@@ -122,11 +131,10 @@
         location.replace('index.html');
         await new Promise(() => { });   // detiene el resto del script mientras redirige
     }
-    const esAdmin = usuario.roles.includes('admin');
+    const esAdmin = true;   // a este punto solo llega un admin (ver arriba)
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
-    if (!esAdmin) { document.getElementById('nota-solo-lectura').style.display = ''; document.getElementById('box-form').style.display = 'none'; }
-    else { document.getElementById('box-mfa').style.display = ''; }
+    document.getElementById('box-mfa').style.display = '';
 
     // ---- MFA del proyecto (TOTP) vía Cloud Function mfaConfig ----
     async function llamarMfaConfig(accion) {
