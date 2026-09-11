@@ -145,7 +145,7 @@
             <button class="btn-o" onclick="guardarNomina()">💾 Guardar</button>
             <button class="btn-o" onclick="imprimirNomina()">🖨 Nómina completa</button>
         </div>
-        <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad el sueldo y la TSS del mes; el ISR se calcula con la escala mensual y se regulariza en la 2da quincena. Los otros ingresos se pagan completos en su período. Las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
+        <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad el sueldo y la TSS del mes; el ISR del mes (escala mensual) se retiene completo en la 2da quincena (configurable en Parámetros). Los otros ingresos se pagan completos en su período. Las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
         <div id="nom-cont"><p class="empty">Elige un período y pulsa «Generar / cargar».</p></div>
     </section>
 
@@ -229,13 +229,18 @@
         </div>
         <div class="param-card">
             <div class="sec-title" style="margin-top:0">Escala de ISR (mensual, DGII)</div>
-            <p class="muted" style="margin-top:0">El ISR se calcula sobre el salario <b>mensual</b> gravable (sueldo + ingresos gravables − AFP − SFS) con esta escala mensual. En la quincenal: la 1ra quincena retiene la mitad del ISR del mes (más el que agreguen sus extras) y la 2da retiene el ISR real del mes menos lo ya retenido en la 1ra.</p>
+            <p class="muted" style="margin-top:0">El ISR se calcula sobre el salario <b>mensual</b> gravable (sueldo + ingresos gravables − AFP − SFS) con esta escala mensual. En la quincenal, según el parámetro de abajo: todo el ISR del mes en la 2da quincena (práctica actual), o la mitad en cada una.</p>
             <table class="tabla-isr">
                 <thead><tr><th>Tramo</th><th>Hasta (RD$/mes)</th><th>Tasa (%)</th><th>Cuota fija (RD$)</th><th>Excedente sobre (RD$)</th></tr></thead>
                 <tbody id="isr-body"></tbody>
             </table>
             <p class="muted">En el último tramo deja «Hasta» en 0 (o vacío) para indicar «en adelante». «Excedente sobre» de cada tramo debe ser el «Hasta» del anterior (el sistema lo valida al guardar).</p>
             <button class="btn-o" type="button" onclick="restaurarEscalaISR()" style="padding:7px 12px;font-size:12.5px;min-height:0">↺ Restaurar escala oficial DGII</button>
+            <div class="param-grid" style="margin-top:12px">
+                <div><label>Retención del ISR en nómina quincenal</label>
+                    <select id="p-isrQ"><option value="q2">Todo el ISR del mes en la 2da quincena (1ra sin ISR)</option><option value="mitad">Mitad en cada quincena</option></select></div>
+            </div>
+            <p class="muted" style="margin:6px 0 0">El ISR del mes se calcula sobre sueldo + ingresos gravables de <b>ambas</b> quincenas − AFP − SFS. Con «todo en la 2da», la 1ra quincena no retiene nada y la 2da retiene el ISR completo del mes.</p>
         </div>
         <div class="param-card">
             <div class="sec-title" style="margin-top:0">Valor hora / valor día</div>
@@ -305,6 +310,9 @@
         ],
         // Base para valor-día y valor-hora (Código de Trabajo: 23.83 días laborables/mes, 8 h/día).
         diasLabMes: 23.83, horasDia: 8,
+        // Nómina quincenal: cuándo se retiene el ISR del mes. 'q2' = TODO en la 2da quincena, nada en la
+        // 1ra (práctica de ARTAL, confirmada 2026-09-11); 'mitad' = la mitad en cada quincena.
+        isrQuincena: 'q2',
         // Catálogos editables (pestaña Parámetros). Ingresos con `gravable` (si afecta ISR) y, para
         // horas/días extra, `calc` ('hora' | 'dia') + `factor`: se escribe la CANTIDAD y el sistema
         // calcula el monto con el valor-hora/valor-día del empleado (pedido de la contable).
@@ -341,6 +349,7 @@
         if (!Array.isArray(cfg.isrTramosMensual) || !cfg.isrTramosMensual.length) cfg.isrTramosMensual = JSON.parse(JSON.stringify(DEFAULTS.isrTramosMensual));
         if (!(n2(cfg.diasLabMes) > 0)) cfg.diasLabMes = DEFAULTS.diasLabMes;
         if (!(n2(cfg.horasDia) > 0)) cfg.horasDia = DEFAULTS.horasDia;
+        if (cfg.isrQuincena !== 'mitad') cfg.isrQuincena = 'q2';
         // Tipos de ingreso: los tipos con cálculo automático (horas/días extra) tienen que existir;
         // el viejo 'Día / horas extra' (monto a mano) se reemplaza por los nuevos.
         let tipos = Array.isArray(cfg.tiposIngreso) ? cfg.tiposIngreso.filter(t => t && t.nombre && t.nombre !== 'Día / horas extra' && t.nombre !== 'Día feriado trabajado') : [];
@@ -543,7 +552,7 @@
         const g = (id, v) => document.getElementById(id).value = v;
         g('p-afpEmp', cfg.afpEmp); g('p-afpPat', cfg.afpPat); g('p-sfsEmp', cfg.sfsEmp); g('p-sfsPat', cfg.sfsPat);
         g('p-srlPat', cfg.srlPat); g('p-topeAfp', cfg.topeAfp); g('p-topeSfs', cfg.topeSfs);
-        g('p-diasLab', cfg.diasLabMes); g('p-horasDia', cfg.horasDia);
+        g('p-diasLab', cfg.diasLabMes); g('p-horasDia', cfg.horasDia); g('p-isrQ', cfg.isrQuincena || 'q2');
         document.getElementById('isr-body').innerHTML = cfg.isrTramosMensual.map((t, i) => `<tr>
             <td style="text-align:left;color:#667">${i + 1}</td>
             <td><input type="number" step="0.01" data-i="${i}" data-k="limite" value="${t.limite}"></td>
@@ -559,6 +568,7 @@
         cfg.afpEmp = v('p-afpEmp'); cfg.afpPat = v('p-afpPat'); cfg.sfsEmp = v('p-sfsEmp'); cfg.sfsPat = v('p-sfsPat');
         cfg.srlPat = v('p-srlPat'); cfg.topeAfp = v('p-topeAfp'); cfg.topeSfs = v('p-topeSfs');
         cfg.diasLabMes = v('p-diasLab') || DEFAULTS.diasLabMes; cfg.horasDia = v('p-horasDia') || DEFAULTS.horasDia;
+        cfg.isrQuincena = document.getElementById('p-isrQ').value === 'mitad' ? 'mitad' : 'q2';
         document.querySelectorAll('#isr-body input').forEach(inp => {
             cfg.isrTramosMensual[+inp.dataset.i][inp.dataset.k] = n2(inp.value);
         });
@@ -706,6 +716,20 @@
                 const grav = sueldo + ingGravP - afpM - sfsM;
                 isrP100 = isrMensual(grav, tramos);
                 isrDetalle = { metodo: 'mensual', gravable: grav, isrMes: isrP100 };
+            } else if ((c.isrQuincena || 'q2') === 'q2') {
+                // Práctica de ARTAL: la 1ra quincena NO retiene ISR; la 2da retiene el ISR completo del
+                // mes (sueldo + extras gravables de las dos quincenas − TSS).
+                if (runTipo === 'q1') {
+                    isrP100 = 0;
+                    isrDetalle = { metodo: 'q1_sin_retencion' };
+                } else {
+                    const q1 = ctx.q1 || null;
+                    const ingGravQ1 = q1 ? n2(q1.ingGrav != null ? q1.ingGrav : q1.ingresos) : 0;
+                    const retQ1 = q1 ? n2(q1.isr) : 0;
+                    const isrMes = isrMensual(sueldo + ingGravQ1 + ingGravP - afpM - sfsM, tramos);
+                    isrP100 = Math.max(0, isrMes - retQ1);
+                    isrDetalle = { metodo: 'q2_todo', isrMes, retenidoQ1: retQ1, ingGravQ1, gravable: sueldo + ingGravQ1 + ingGravP - afpM - sfsM };
+                }
             } else {
                 const isrBase = isrMensual(sueldo - afpM - sfsM, tramos);           // mes sin extras
                 if (runTipo === 'q1') {
@@ -1083,6 +1107,8 @@
     // Nota corta de cómo salió el ISR (para que la contable pueda verificarlo a mano).
     function isrNota(l) {
         const d = l.isrDetalle; if (!d) return '';
+        if (d.metodo === 'q1_sin_retencion') return '(el ISR del mes se retiene en la 2da quincena)';
+        if (d.metodo === 'q2_todo') return `(ISR completo del mes: gravable ${fmt(d.gravable)}${d.ingGravQ1 ? ', incluye extras de la 1ra quincena' : ''}${d.retenidoQ1 ? ` − retenido en la 1ra ${fmt(d.retenidoQ1)}` : ''})`;
         if (d.metodo === 'q1') return `(escala mensual: ½ del ISR del mes ${fmt(d.mitadBase)}${l.ingGrav ? ' + el de las extras' : ''})`;
         if (d.metodo === 'q2_regularizado') return `(ISR del mes ${fmt(d.isrMes)} − retenido en la 1ra quincena ${fmt(d.retenidoQ1)})`;
         if (d.metodo === 'q2_estimado') return `(ISR del mes ${fmt(d.isrMes)} − ½ estimada de la 1ra quincena ${fmt(d.retenidoQ1)})`;
@@ -1096,6 +1122,8 @@
         const afpM = Math.min(sueldo, c.topeAfp > 0 ? c.topeAfp : Infinity) * c.afpEmp / 100, sfsM = Math.min(sueldo, c.topeSfs > 0 ? c.topeSfs : Infinity) * c.sfsEmp / 100;
         const L = [`Sueldo mes ${fmt(sueldo)} − AFP ${fmt(afpM)} − SFS ${fmt(sfsM)}${l.ingGrav ? ` + ingresos gravables ${fmt(l.ingGrav)}` : ''}`];
         if (d.metodo === 'mensual') L.push(`Gravable ${fmt(d.gravable)} → ISR del mes ${fmt(d.isrMes)} (escala mensual DGII)`);
+        if (d.metodo === 'q1_sin_retencion') L.push('1ra quincena: no se retiene ISR (todo va en la 2da)');
+        if (d.metodo === 'q2_todo') L.push(`Gravable del mes ${fmt(d.gravable)}${d.ingGravQ1 ? ` (incluye extras gravables de la 1ra quincena ${fmt(d.ingGravQ1)})` : ''} → ISR del mes ${fmt(d.isrMes)}${d.retenidoQ1 ? ` − retenido en la 1ra ${fmt(d.retenidoQ1)}` : ''} = 2da quincena`);
         if (d.metodo === 'q1') L.push(`ISR del mes ${fmt(d.isrMes)} − ½ del ISR sin extras ${fmt(d.mitadBase)} = 1ra quincena`);
         if (d.metodo === 'q2_regularizado') L.push(`ISR del mes ${fmt(d.isrMes)} − retenido en la 1ra quincena guardada ${fmt(d.retenidoQ1)} = 2da quincena`);
         if (d.metodo === 'q2_estimado') L.push(`ISR del mes ${fmt(d.isrMes)} − ½ estimada de la 1ra quincena ${fmt(d.retenidoQ1)} = 2da quincena`);
