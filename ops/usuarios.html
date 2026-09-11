@@ -66,6 +66,17 @@
     <div class="nota">👥 Cada persona entra a la plataforma con <b>su cuenta de Google</b>. Aquí decides <b>quién</b> puede entrar y <b>con qué permisos</b> (roles). Una persona puede tener varios roles a la vez (ej. <i>contable</i> + <i>comunicaciones</i>). Los cambios aplican la próxima vez que la persona inicie sesión.</div>
     <div class="nota warn" id="nota-solo-lectura" style="display:none">🔒 Solo un <b>admin</b> puede agregar o modificar usuarios. Tu sesión puede ver la lista pero no cambiarla.</div>
 
+    <div class="box" id="box-mfa" style="display:none">
+        <h2>🔐 Verificación en 2 pasos (app autenticadora)</h2>
+        <p class="muted" style="margin:0 0 10px">Obligatoria para admin, contable y comunicaciones. La consola de Firebase solo ofrece SMS; el método con app autenticadora (Google Authenticator / Authy) se activa desde aquí. Requiere que el proyecto esté en <b>Identity Platform</b> (Firebase Console → Authentication → «Actualizar»).</p>
+        <div class="row">
+            <span id="mfa-estado" class="muted">Consultando estado…</span>
+            <button class="act" id="btn-mfa-on" onclick="activarTotpProyecto()" style="display:none">🔐 Activar TOTP en el proyecto</button>
+            <button class="act sec" onclick="consultarMfa()">↻ Consultar</button>
+        </div>
+        <div class="msg" id="mfa-msg"></div>
+    </div>
+
     <div class="box" id="box-form">
         <h2 id="form-title">Agregar usuario</h2>
         <div class="form-grid">
@@ -107,6 +118,32 @@
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     if (!esAdmin) { document.getElementById('nota-solo-lectura').style.display = ''; document.getElementById('box-form').style.display = 'none'; }
+    else { document.getElementById('box-mfa').style.display = ''; consultarMfa(); }
+
+    // ---- MFA del proyecto (TOTP) vía Cloud Function mfaConfig ----
+    async function llamarMfaConfig(accion) {
+        const idToken = await auth.currentUser.getIdToken();
+        const r = await fetch('https://us-central1-artal-operaciones.cloudfunctions.net/mfaConfig', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken }, body: JSON.stringify({ accion }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error((j.error || ('HTTP ' + r.status)) + (j.codigo ? ' (' + j.codigo + ')' : ''));
+        return j;
+    }
+    function pintarMfa(j) {
+        const est = document.getElementById('mfa-estado'), btn = document.getElementById('btn-mfa-on');
+        if (j.totpActivo) { est.innerHTML = '<b style="color:#1e8449">✓ TOTP activo</b> — los roles sensibles deben inscribirse al entrar.'; est.className = ''; btn.style.display = 'none'; }
+        else { est.innerHTML = '<b style="color:#c0392b">TOTP desactivado</b> — los roles sensibles ven el aviso «pendiente» y pasan sin 2FA.'; est.className = ''; btn.style.display = ''; }
+    }
+    window.consultarMfa = async function () {
+        const m = document.getElementById('mfa-msg'); m.textContent = ''; m.className = 'msg';
+        try { pintarMfa(await llamarMfaConfig('estado')); }
+        catch (e) { document.getElementById('mfa-estado').textContent = 'No se pudo consultar.'; m.textContent = (e.message || e) + (/CONFIGURATION_NOT_FOUND|identity ?platform|not ?found|PERMISSION/i.test(String(e.message)) ? ' → Probablemente falta «Actualizar a Identity Platform» en Firebase Console → Authentication.' : ''); m.className = 'msg err'; }
+    };
+    window.activarTotpProyecto = async function () {
+        if (!confirm('¿Activar la verificación en 2 pasos con app autenticadora en todo el proyecto?\n\nDesde ese momento, admin, contable y comunicaciones tendrán que inscribirse (QR) al entrar.')) return;
+        const m = document.getElementById('mfa-msg'); m.textContent = 'Activando…'; m.className = 'msg';
+        try { pintarMfa(await llamarMfaConfig('activarTotp')); m.textContent = '✓ TOTP activado en el proyecto.'; m.className = 'msg ok'; }
+        catch (e) { m.textContent = 'No se pudo activar: ' + (e.message || e) + (/CONFIGURATION_NOT_FOUND|identity ?platform|not ?found|PERMISSION/i.test(String(e.message)) ? ' → Primero «Actualizar a Identity Platform» en Firebase Console → Authentication, luego vuelve a intentar.' : ''); m.className = 'msg err'; }
+    };
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

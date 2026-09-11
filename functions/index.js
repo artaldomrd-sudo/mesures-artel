@@ -642,6 +642,34 @@ exports.mfaReset = onRequest({ cors: true }, async (req, res) => {
     }
 });
 
+// Configuración MFA del PROYECTO (solo admin). La consola de Firebase solo deja activar SMS; el
+// método TOTP (app autenticadora) se activa por Admin SDK. body.accion: 'estado' | 'activarTotp'.
+exports.mfaConfig = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    const accion = String((req.body && req.body.accion) || 'estado');
+    const pcm = getAuth().projectConfigManager();
+    const resumen = (cfg) => {
+        const mfa = (cfg && cfg.multiFactorConfig) || {};
+        const provs = Array.isArray(mfa.providerConfigs) ? mfa.providerConfigs : [];
+        const totp = provs.find(p => p.totpProviderConfig);
+        return { smsEstado: mfa.state || 'DISABLED', totpActivo: !!(totp && totp.state === 'ENABLED'), crudo: mfa };
+    };
+    try {
+        if (accion === 'activarTotp') {
+            const cfg = await pcm.updateProjectConfig({ multiFactorConfig: { providerConfigs: [{ state: 'ENABLED', totpProviderConfig: { adjacentIntervals: 5 } }] } });
+            console.log('TOTP activado por', admin);
+            res.status(200).json({ ok: true, ...resumen(cfg) }); return;
+        }
+        const cfg = await pcm.getProjectConfig();
+        res.status(200).json({ ok: true, ...resumen(cfg) });
+    } catch (e) {
+        console.error('mfaConfig', accion, e);
+        res.status(500).json({ ok: false, error: String((e && e.message) || e), codigo: e && e.code });
+    }
+});
+
 // Lectura de una entidad de Citrus (extraccionDatos). Solo admin. Devuelve tal cual la respuesta
 // de Citrus (status + JSON) para poder inspeccionarla desde la pantalla de pruebas.
 exports.citrusRead = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true }, async (req, res) => {
