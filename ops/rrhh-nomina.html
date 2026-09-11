@@ -319,7 +319,10 @@
             { nombre: 'Reembolso', gravable: false },
             { nombre: 'Otro', gravable: true }
         ],
-        tiposDeduccion: ['Adelanto de sueldo', 'Uniforme', 'Herramienta / daño', 'Ausencia / tardanza', 'Cooperativa', 'Multa', 'Otro']
+        // Deducciones: {nombre, calc?, factor?}. 'Ausencia / tardanza' se calcula por DÍA (valor día ×
+        // días; 0.5 = medio día) — pedido del usuario 2026-09-11: al elegirla debe salir por defecto lo
+        // que cobra el empleado por día (ej. 33,000 ÷ 23.83 = 1,384.81).
+        tiposDeduccion: [{ nombre: 'Adelanto de sueldo' }, { nombre: 'Uniforme' }, { nombre: 'Herramienta / daño' }, { nombre: 'Ausencia / tardanza', calc: 'dia', factor: 1 }, { nombre: 'Cooperativa' }, { nombre: 'Multa' }, { nombre: 'Otro' }]
     };
     let cfg = JSON.parse(JSON.stringify(DEFAULTS));
     let empleados = [];
@@ -345,6 +348,11 @@
         conCalc.forEach(d => { const ya = tipos.find(t => t.nombre === d.nombre); if (ya) { ya.calc = d.calc; if (!(n2(ya.factor) > 0)) ya.factor = d.factor; } });
         tipos = [...conCalc.filter(d => !tipos.some(t => t.nombre === d.nombre)), ...tipos];
         cfg.tiposIngreso = tipos.length ? tipos : JSON.parse(JSON.stringify(DEFAULTS.tiposIngreso));
+        // Deducciones: versiones anteriores guardaban solo nombres (strings).
+        let ded = Array.isArray(cfg.tiposDeduccion) ? cfg.tiposDeduccion.map(t => typeof t === 'string' ? { nombre: t } : t).filter(t => t && t.nombre) : [];
+        if (!ded.length) ded = JSON.parse(JSON.stringify(DEFAULTS.tiposDeduccion));
+        DEFAULTS.tiposDeduccion.filter(d => d.calc).forEach(d => { const ya = ded.find(t => t.nombre === d.nombre); if (ya) { if (!ya.calc) { ya.calc = d.calc; ya.factor = d.factor; } } else ded.push({ ...d }); });
+        cfg.tiposDeduccion = ded;
     }
     getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => {
         if (s.exists()) cfg = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), s.data());
@@ -411,22 +419,25 @@
     function renderItemsModal() {
         const ctx = itemsCtx, esIng = ctx.tipo === 'ing';
         const emp = nominaActual.lineas.find(x => x.empleadoId === ctx.empId);
-        const tipos = esIng ? (cfg.tiposIngreso || []).map(t => t.nombre) : (cfg.tiposDeduccion || []);
+        const tipos = (esIng ? (cfg.tiposIngreso || []) : (cfg.tiposDeduccion || [])).map(t => t.nombre);
         document.getElementById('items-title').textContent = (esIng ? 'Otros ingresos' : 'Otras deducciones') + ' — ' + (emp ? emp.nombre : '');
         const sueldoMes = emp ? n2(emp.sueldo) : 0;
         document.getElementById('items-body').innerHTML = ctx.items.length ? ctx.items.map((it, i) => {
-            const def = esIng ? tipoIngresoDef(it.tipo) : null, calc = def && def.calc;
+            const def = tipoDef(it.tipo, esIng ? 'ing' : 'ded'), calc = def && def.calc;
+            if (calc && !esIng && it.cantidad == null) it.cantidad = 1;   // ausencia: 1 día por defecto
             const unit = calc ? valorUnitario(sueldoMes, calc) : 0, factor = calc ? (n2(def.factor) || 1) : 1;
             const monto = calc ? Math.round(unit * factor * n2(it.cantidad) * 100) / 100 : n2(it.monto);
             return `<div class="item-row" data-i="${i}">
-            <select class="it-tipo"${esIng ? ' onchange="ingTipoChange(this)"' : ''}>${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
+            <select class="it-tipo" onchange="ingTipoChange(this)">${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
             ${calc ? `<input class="it-cant" type="number" min="0" step="0.5" value="${it.cantidad || ''}" placeholder="${calc === 'hora' ? 'Horas' : 'Días'}" style="width:74px" oninput="itemsRecalc()">
                       <span class="it-calc muted" style="min-width:150px;font-size:12px">${n2(it.cantidad) ? `${n2(it.cantidad)} ${calc === 'hora' ? 'h' : 'd'} × ${fmt(unit)} × ${factor} = <b>${fmt(monto)}</b>` : `valor ${calc === 'hora' ? 'hora' : 'día'} ${fmt(unit)} × ${factor}`}</span>`
                     : `<input class="it-monto" type="number" min="0" step="0.01" value="${it.monto || ''}" placeholder="Monto RD$ (este período)">`}
             ${esIng ? `<label class="it-grav" title="¿Paga ISR? (Viático/Reembolso: no)"><input type="checkbox" class="it-gravable" ${it.gravable !== false ? 'checked' : ''}> ISR</label>` : ''}
             <button class="it-del" onclick="itemsDel(${i})" title="Quitar">✕</button>
         </div>`; }).join('') : '<p class="muted">Sin conceptos todavía. Agrega uno abajo.</p>';
-        if (esIng) document.getElementById('items-body').insertAdjacentHTML('beforeend', `<p class="muted" style="margin:6px 0 0;font-size:12px">Los montos son de <b>este período</b> (se pagan completos, no se reparten). Horas/días extra: escribe la cantidad; valor hora = sueldo ÷ ${cfg.diasLabMes} ÷ ${cfg.horasDia}.</p>`);
+        document.getElementById('items-body').insertAdjacentHTML('beforeend', esIng
+            ? `<p class="muted" style="margin:6px 0 0;font-size:12px">Los montos son de <b>este período</b> (se pagan completos, no se reparten). Horas/días extra: escribe la cantidad; valor hora = sueldo ÷ ${cfg.diasLabMes} ÷ ${cfg.horasDia}.</p>`
+            : `<p class="muted" style="margin:6px 0 0;font-size:12px">Ausencia / tardanza: escribe los <b>días</b> (0.5 = medio día); el monto sale del valor día del empleado (sueldo ÷ ${cfg.diasLabMes} = ${fmt(valorUnitario(sueldoMes, 'dia'))}).</p>`);
         document.getElementById('items-extra').innerHTML = esIng ? '' :
             `<div class="reparto"><b>Repartir un total en cuotas:</b><br>
              <input id="rep-total" type="number" min="0" step="0.01" placeholder="Total RD$" style="width:120px"> en
@@ -442,9 +453,9 @@
             const tipo = r.querySelector('.it-tipo').value;
             const o = { tipo, monto: 0 };
             if (itemsCtx.tipo === 'ing') { const g = r.querySelector('.it-gravable'); o.gravable = g ? g.checked : true; }
-            const def = itemsCtx.tipo === 'ing' ? tipoIngresoDef(tipo) : null;
+            const def = tipoDef(tipo, itemsCtx.tipo);
             const cant = r.querySelector('.it-cant');
-            if (def && def.calc && cant) { o.cantidad = n2(cant.value); o.calc = def.calc; o.factor = n2(def.factor) || 1; o.monto = montoItem(o, sueldoMes); }
+            if (def && def.calc && cant) { o.cantidad = n2(cant.value); o.calc = def.calc; o.factor = n2(def.factor) || 1; o.monto = montoItem(o, sueldoMes, cfg, itemsCtx.tipo); }
             else { const m = r.querySelector('.it-monto'); o.monto = m ? n2(m.value) : 0; }
             return o;
         });
@@ -453,7 +464,7 @@
     window.itemsRecalc = function () { leerItemsModal(); renderItemsModal(); };
     window.itemsAdd = function () {
         leerItemsModal();
-        const primero = itemsCtx.tipo === 'ing' ? ((cfg.tiposIngreso[0] || {}).nombre || 'Otro') : (cfg.tiposDeduccion[0] || 'Otro');
+        const primero = ((itemsCtx.tipo === 'ing' ? cfg.tiposIngreso[0] : cfg.tiposDeduccion[0]) || {}).nombre || 'Otro';
         const o = { tipo: primero, monto: 0 }; if (itemsCtx.tipo === 'ing') o.gravable = true;
         itemsCtx.items.push(o); renderItemsModal();
     };
@@ -464,13 +475,17 @@
         const row = sel.closest('.item-row'); const chk = row && row.querySelector('.it-gravable');
         const t = (cfg.tiposIngreso || []).find(x => x.nombre === sel.value);
         if (chk) chk.checked = t ? (t.gravable !== false) : true;
-        itemsRecalc();   // cambia entre «cantidad» y «monto» según el tipo
+        leerItemsModal();
+        const i = +((row || {}).dataset || {}).i, it = itemsCtx.items[i], def = it && tipoDef(it.tipo, itemsCtx.tipo);
+        if (it && def && def.calc && !(n2(it.cantidad) > 0)) it.cantidad = itemsCtx.tipo === 'ded' ? 1 : it.cantidad;   // ausencia: 1 día por defecto
+        renderItemsModal();   // cambia entre «cantidad» y «monto» según el tipo
     };
     window.repartirCuota = function () {
         const total = n2(document.getElementById('rep-total').value), nn = Math.max(1, parseInt(document.getElementById('rep-n').value) || 1);
         if (total <= 0) { alert('Escribe el total a repartir.'); return; }
         leerItemsModal();
-        itemsCtx.items.push({ tipo: (cfg.tiposDeduccion[0] || 'Otro'), monto: Math.round((total / nn) * 100) / 100 });
+        const sinCalc = (cfg.tiposDeduccion || []).find(t => !t.calc) || { nombre: 'Otro' };
+        itemsCtx.items.push({ tipo: sinCalc.nombre, monto: Math.round((total / nn) * 100) / 100 });
         renderItemsModal();
     };
     window.cerrarItems = function () { document.getElementById('modal-items').classList.remove('show'); itemsCtx = null; };
@@ -498,7 +513,10 @@
             <select class="ci-calc" title="Cálculo automático"><option value="" ${!t.calc ? 'selected' : ''}>monto fijo</option><option value="hora" ${t.calc === 'hora' ? 'selected' : ''}>por hora</option><option value="dia" ${t.calc === 'dia' ? 'selected' : ''}>por día</option></select>
             <input class="ci-factor" type="number" step="0.01" min="0" value="${t.calc ? (n2(t.factor) || 1) : ''}" placeholder="factor" title="Multiplicador (1.35 = recargo 35%)" style="width:70px">
             <button class="it-del" onclick="catDel('ing',${i})">✕</button></div>`).join('');
-        if (cd) cd.innerHTML = (cfg.tiposDeduccion || []).map((t, i) => `<div class="cat-row"><input class="cd-nombre" value="${esc(t)}" style="flex:1"><button class="it-del" onclick="catDel('ded',${i})">✕</button></div>`).join('');
+        if (cd) cd.innerHTML = (cfg.tiposDeduccion || []).map((t, i) => `<div class="cat-row"><input class="cd-nombre" value="${esc(t.nombre)}" style="flex:1">
+            <select class="cd-calc" title="Cálculo automático"><option value="" ${!t.calc ? 'selected' : ''}>monto fijo</option><option value="dia" ${t.calc === 'dia' ? 'selected' : ''}>por día</option><option value="hora" ${t.calc === 'hora' ? 'selected' : ''}>por hora</option></select>
+            <input class="cd-factor" type="number" step="0.01" min="0" value="${t.calc ? (n2(t.factor) || 1) : ''}" placeholder="factor" style="width:70px">
+            <button class="it-del" onclick="catDel('ded',${i})">✕</button></div>`).join('');
     }
     function leerCatalogos() {
         const ing = []; document.querySelectorAll('#cat-ing .cat-row').forEach(r => {
@@ -509,10 +527,15 @@
             ing.push(t);
         });
         if (ing.length) cfg.tiposIngreso = ing;
-        const ded = []; document.querySelectorAll('#cat-ded .cat-row').forEach(r => { const nom = r.querySelector('.cd-nombre').value.trim(); if (nom) ded.push(nom); });
+        const ded = []; document.querySelectorAll('#cat-ded .cat-row').forEach(r => {
+            const nom = r.querySelector('.cd-nombre').value.trim(); if (!nom) return;
+            const t = { nombre: nom }; const calc = (r.querySelector('.cd-calc') || {}).value || '';
+            if (calc) { t.calc = calc; t.factor = n2((r.querySelector('.cd-factor') || {}).value) || 1; }
+            ded.push(t);
+        });
         if (ded.length) cfg.tiposDeduccion = ded;
     }
-    window.catAdd = function (tipo) { leerCatalogos(); if (tipo === 'ing') (cfg.tiposIngreso = cfg.tiposIngreso || []).push({ nombre: 'Nuevo', gravable: true }); else (cfg.tiposDeduccion = cfg.tiposDeduccion || []).push('Nuevo'); renderCatalogos(); };
+    window.catAdd = function (tipo) { leerCatalogos(); if (tipo === 'ing') (cfg.tiposIngreso = cfg.tiposIngreso || []).push({ nombre: 'Nuevo', gravable: true }); else (cfg.tiposDeduccion = cfg.tiposDeduccion || []).push({ nombre: 'Nuevo' }); renderCatalogos(); };
     window.catDel = function (tipo, i) { leerCatalogos(); if (tipo === 'ing') cfg.tiposIngreso.splice(i, 1); else cfg.tiposDeduccion.splice(i, 1); renderCatalogos(); };
 
     // ---------- PARÁMETROS ----------
@@ -610,10 +633,11 @@
         const dia = n2(sueldoMes) / (n2(c.diasLabMes) || 23.83);
         return calc === 'hora' ? dia / (n2(c.horasDia) || 8) : dia;
     }
-    function tipoIngresoDef(nombre, c) { return ((c || cfg).tiposIngreso || []).find(t => t.nombre === nombre) || null; }
-    // Monto de un ítem de otros ingresos: si su tipo es por hora/día, cantidad × valor unitario × factor.
-    function montoItem(it, sueldoMes, c) {
-        const def = tipoIngresoDef(it.tipo, c);
+    function tipoDef(nombre, lista, c) { return (((c || cfg)[lista === 'ded' ? 'tiposDeduccion' : 'tiposIngreso']) || []).find(t => t && t.nombre === nombre) || null; }
+    const tipoIngresoDef = (nombre, c) => tipoDef(nombre, 'ing', c);
+    // Monto de un ítem (ingreso o deducción): si su tipo es por hora/día, cantidad × valor unitario × factor.
+    function montoItem(it, sueldoMes, c, lista) {
+        const def = tipoDef(it.tipo, lista || 'ing', c);
         const calc = it.calc || (def && def.calc) || '';
         if (calc && n2(it.cantidad) > 0) {
             const factor = n2(it.factor) || (def && n2(def.factor)) || 1;
@@ -661,7 +685,8 @@
         const ingGrav = ingItems.reduce((a, x) => a + (x.gravable !== false ? n2(x.monto) : 0), 0);
         const ingresosP = ingTotal * cf, ingGravP = ingGrav * cf;
         // Deducciones
-        const dedItems = Array.isArray(l.deduccionesItems) ? l.deduccionesItems : (n2(l.deducciones) ? [{ tipo: 'Otro', monto: n2(l.deducciones) }] : []);
+        const dedItems = (Array.isArray(l.deduccionesItems) ? l.deduccionesItems : (n2(l.deducciones) ? [{ tipo: 'Otro', monto: n2(l.deducciones) }] : []))
+            .map(it => ({ ...it, monto: montoItem(it, sueldo, c, 'ded') }));
         const dedTotal = dedItems.reduce((a, x) => a + n2(x.monto), 0);
         // TSS (parte del empleado, al 100%) — mensual y del período
         const topeA = c.topeAfp > 0 ? c.topeAfp : Infinity, topeS = c.topeSfs > 0 ? c.topeSfs : Infinity;
@@ -744,7 +769,7 @@
         return (src && n2(src.ingresos)) ? [{ tipo: 'Otro', monto: n2(src.ingresos), gravable: true }] : [];
     }
     function itemsIniDed(src) {
-        if (src && Array.isArray(src.deduccionesItems)) return src.deduccionesItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto) }));
+        if (src && Array.isArray(src.deduccionesItems)) return src.deduccionesItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto), ...(x.cantidad != null ? { cantidad: n2(x.cantidad), calc: x.calc, factor: x.factor } : {}) }));
         return (src && n2(src.deducciones)) ? [{ tipo: 'Otro', monto: n2(src.deducciones) }] : [];
     }
 
@@ -1008,7 +1033,7 @@
         if (!l.sinTSS) { L.push('AFP: - ' + fmt(l.afp)); L.push('SFS: - ' + fmt(l.sfs)); }
         if (l.isr) L.push('ISR: - ' + fmt(l.isr));
         if (l.prestamo) L.push('Cuota de préstamo: - ' + fmt(l.prestamo));
-        if (l.deducciones) L.push('Otras deducciones: - ' + fmt(l.deducciones));
+        (l.dedItems || []).filter(it => n2(it.monto) > 0).forEach(it => L.push(it.tipo + (n2(it.cantidad) ? ` (${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'día(s)'})` : '') + ': - ' + fmt(it.monto)));
         L.push('', 'NETO A PAGAR: ' + fmt(l.neto));
         return L.join('\n');
     }
@@ -1090,7 +1115,7 @@
                 <tr><td>SFS (${cfg.sfsEmp}%)</td><td class="r">- ${fmt(l.sfs)}</td></tr>`}
                 <tr><td>ISR${isrNota(l) ? ` <span class="muted">${isrNota(l)}</span>` : ''}</td><td class="r">- ${fmt(l.isr)}</td></tr>
                 ${l.prestamo ? `<tr><td>Cuota de préstamo</td><td class="r">- ${fmt(l.prestamo)}</td></tr>` : ''}
-                ${l.deducciones ? `<tr><td>Otras deducciones</td><td class="r">- ${fmt(l.deducciones)}</td></tr>` : ''}
+                ${(l.dedItems || []).filter(it => n2(it.monto) > 0).map(it => `<tr><td>${esc(it.tipo)}${n2(it.cantidad) ? ` <span class="muted">· ${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'día(s)'} × ${fmt(valorUnitario(l.sueldoMes, it.calc))}${(n2(it.factor) || 1) !== 1 ? ' × ' + it.factor : ''}</span>` : ''}</td><td class="r">- ${fmt(it.monto)}</td></tr>`).join('')}
                 <tr><td>Total ingresos</td><td class="r">${fmt(l.sueldo + l.ingresos)}</td></tr>
                 <tr><td>Total deducciones</td><td class="r">- ${fmt(totalDed)}</td></tr>
                 <tr class="vtot"><td>Neto a pagar</td><td class="r">${fmt(l.neto)}</td></tr>
