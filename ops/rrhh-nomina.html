@@ -14,6 +14,9 @@
     .aviso { background: #fff5e0; border: 1.5px solid var(--artal-yellow); color: #7a5e13; border-radius: 10px; padding: 12px 15px; font-size: 13px; margin-bottom: 16px; line-height: 1.5; }
     .aviso b { color: #6b4f0a; }
     .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
+    .nom-acciones { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 14px; padding: 12px 14px; background: rgba(255,255,255,.7); border: 1px solid #e3e8ee; border-radius: 12px; }
+    .nom-acciones .estado { flex: 1; min-width: 200px; font-size: 13px; font-weight: 700; }
+    .nom-acciones .estado.ok { color: #1e8449; } .nom-acciones .estado.warn { color: #c76a1c; }
     .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
     .btn-y { background: var(--artal-yellow); color: var(--artal-blue); border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .btn-o { background: transparent; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
@@ -141,10 +144,9 @@
                 <option value="tss">Con seguridad social (TSS)</option>
                 <option value="sin">Sin seguridad social</option>
             </select>
-            <button class="btn-y" onclick="generarNomina()">Generar / cargar</button>
-            <button class="btn-o" onclick="guardarNomina()">💾 Guardar</button>
-            <button class="btn-o" onclick="imprimirNomina()">🖨 Nómina completa</button>
+            <button class="btn-y" onclick="generarNomina()" title="Carga la nómina guardada de ese período o crea una nueva">📂 Abrir nómina</button>
         </div>
+        <p class="muted" style="margin:-6px 0 8px;font-size:12px">1) Elige el período y pulsa <b>Abrir nómina</b> · 2) Ajusta extras, deducciones y porcentajes en la tabla · 3) <b>Guarda</b> y luego <b>imprime</b> (botones al pie de la tabla).</p>
         <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad el sueldo y la TSS del mes; el ISR del mes (escala mensual) se retiene completo en la 2da quincena (configurable en Parámetros). Los otros ingresos se pagan completos en su período. Las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
         <div id="nom-cont"><p class="empty">Elige un período y pulsa «Generar / cargar».</p></div>
     </section>
@@ -504,6 +506,7 @@
         if (l) {
             const items = itemsCtx.items.filter(x => n2(x.monto) > 0 || n2(x.cantidad) > 0);
             if (itemsCtx.tipo === 'ing') l.ingresosItems = items; else l.deduccionesItems = items;
+            nominaActual.sucia = true;
         }
         cerrarItems(); renderNomina();
     };
@@ -831,10 +834,13 @@
         if (guardada && Array.isArray(guardada.lineas)) {
             guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId) && periodoDe(l.formaCobro, runTipo).cobra) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', fechaIngreso: l.fechaIngreso || '', fechaSalida: l.fechaSalida || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
-        nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
+        const gInfo = guardada ? { fecha: (guardada.fechaGuardado && guardada.fechaGuardado.toDate) ? guardada.fechaGuardado.toDate() : null, por: guardada.guardadoPor || '' } : null;
+        nominaActual = { periodo, key, tipo: tipoNom(), div, lineas, guardadaInfo: gInfo, sucia: false };
         renderNomina();
     };
 
+    // Cualquier cambio en la tabla (sueldo, %) → la nómina queda con cambios sin guardar.
+    window.nomCambio = function () { if (nominaActual) nominaActual.sucia = true; recalcNom(); };
     window.recalcNom = function () {
         if (!nominaActual) return;
         document.querySelectorAll('#nom-tbody tr[data-id]').forEach(tr => {
@@ -860,11 +866,11 @@
         const rows = calc.map(l => `<tr data-id="${esc(l.empleadoId)}"${l.cobra === false ? ' style="opacity:.6"' : ''}>
             <td class="nom-name">${esc(l.nombre)}${l.cobra === false ? '<div style="font-size:10.5px;color:#c76a1c;font-weight:bold">— cobró todo en la 1ra quincena</div>' : ''}${l.prorrateo && !l.prorrateo.fuera ? `<div style="font-size:10.5px;color:#7d3c98;font-weight:bold" title="Sueldo ÷ ${cfg.diasLabMes} días × días laborables trabajados">Proporcional: ${l.prorrateo.dias} días lab. (${fmtFecha(l.prorrateo.desde)} → ${fmtFecha(l.prorrateo.hasta)})</div>` : ''}</td>
             <td style="text-align:center"><input type="checkbox" ${l.sinTSS ? '' : 'checked'} onchange="toggleTSS('${esc(l.empleadoId)}', this.checked)" title="En seguridad social (TSS)"></td>
-            <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="recalcNom()" title="Sueldo mensual"></td>
+            <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="nomCambio()" title="Sueldo mensual"></td>
             <td>${l.ingMes ? fmt(l.ingMes) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarIngresos('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
-            <td class="neg">${fmt(l.afp)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descafp" value="${l.descAfp}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de AFP a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
-            <td class="neg">${fmt(l.sfs)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descsfs" value="${l.descSfs}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de SFS a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
-            <td class="neg" title="${esc(isrDesglose(l))}">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg">${fmt(l.afp)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descafp" value="${l.descAfp}" ${l.sinTSS ? 'disabled' : ''} onchange="nomCambio()" title="% de AFP a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg">${fmt(l.sfs)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descsfs" value="${l.descSfs}" ${l.sinTSS ? 'disabled' : ''} onchange="nomCambio()" title="% de SFS a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg" title="${esc(isrDesglose(l))}">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="nomCambio()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${l.prestamo ? fmt(l.prestamo) : '—'}</td>
             <td>${l.deducciones ? fmt(l.deducciones) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarDeducciones('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
             <td class="pos"><b>${fmt(l.neto)}</b></td>
@@ -882,11 +888,22 @@
                 <td>${fmt(tot.neto)}</td><td></td>
             </tr></tfoot>
         </table></div>
-        <p class="muted" style="margin-top:8px">Aporte del empleador (informativo, no se descuenta): AFP ${fmt(calc.reduce((a, l) => a + l.afpPat, 0))} · SFS ${fmt(calc.reduce((a, l) => a + l.sfsPat, 0))} · Riesgos Lab. ${fmt(calc.reduce((a, l) => a + l.srlPat, 0))}.</p>`;
+        <p class="muted" style="margin-top:8px">Aporte del empleador (informativo, no se descuenta): AFP ${fmt(calc.reduce((a, l) => a + l.afpPat, 0))} · SFS ${fmt(calc.reduce((a, l) => a + l.sfsPat, 0))} · Riesgos Lab. ${fmt(calc.reduce((a, l) => a + l.srlPat, 0))}.</p>
+        <div class="nom-acciones">
+            <span class="estado ${estadoNomina().cls}">${estadoNomina().txt}</span>
+            <button class="btn-y" onclick="guardarNomina()">💾 Guardar nómina</button>
+            <button class="btn-o" onclick="imprimirNomina()">🖨 Imprimir / PDF</button>
+        </div>`;
+    }
+    function estadoNomina() {
+        const n = nominaActual; if (!n) return { cls: '', txt: '' };
+        if (n.sucia) return { cls: 'warn', txt: '⚠ Cambios sin guardar' };
+        if (n.guardadaInfo) return { cls: 'ok', txt: '✓ Guardada' + (n.guardadaInfo.fecha ? ' el ' + n.guardadaInfo.fecha.toLocaleString('es-DO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '') + (n.guardadaInfo.por ? ' por ' + esc(n.guardadaInfo.por) : '') };
+        return { cls: 'warn', txt: 'Nueva — todavía no guardada' };
     }
 
     window.guardarNomina = async function () {
-        if (!nominaActual) { alert('Primero genera la nómina de un período.'); return; }
+        if (!nominaActual) { alert('Primero abre la nómina de un período.'); return; }
         recalcNom();
         const key = nominaActual.key, div = nominaActual.div || 1;
         const calc = nominaActual.lineas.map(l => calcLinea(l, nominaActual.tipo));
@@ -904,7 +921,9 @@
                     if (d.monto > 0.005) { try { await updateDoc(doc(db, 'rrhhPrestamos', d.id), { ['pagos.' + key]: d.monto }); } catch (e) { console.error('prestamo', d.id, e); } }
                 }
             }
-            if (confirm('✓ Nómina guardada. Cuotas de préstamo aplicadas.\n\n¿Ver / imprimir la nómina completa (PDF)?')) imprimirNomina();
+            nominaActual.sucia = false; nominaActual.guardadaInfo = { fecha: new Date(), por: usuario.nombre };
+            renderNomina();
+            if (confirm('✓ Nómina guardada. Cuotas de préstamo aplicadas.\n\n¿Imprimir / guardar en PDF ahora?')) imprimirNomina();
         } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
     };
 
@@ -962,7 +981,7 @@
     }
     window.toggleTSS = async function (empId, enTSS) {
         const l = nominaActual && nominaActual.lineas.find(x => x.empleadoId === empId);
-        if (l) l.sinTSS = !enTSS;
+        if (l) { l.sinTSS = !enTSS; nominaActual.sucia = true; }
         renderNomina();
         try { await updateDoc(doc(db, 'rrhhEmpleados', empId), { enTSS: enTSS }); } catch (e) { console.error('enTSS', e); }
     };
@@ -1315,7 +1334,8 @@
         </div>`;
     }
     window.imprimirNomina = function () {
-        if (!nominaActual) { alert('Primero genera la nómina de un período.'); return; }
+        if (!nominaActual) { alert('Primero abre la nómina de un período.'); return; }
+        if (nominaActual.sucia && !confirm('Hay cambios sin guardar. ¿Imprimir igual?\n\n(Para que queden registrados pulsa antes «Guardar nómina».)')) return;
         document.body.classList.add('printing-land');
         imprimir(nominaCompletaHTML(), 'Nómina ' + nombrePeriodo(nominaActual.key));
     };
