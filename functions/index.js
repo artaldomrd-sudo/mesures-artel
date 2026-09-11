@@ -623,6 +623,25 @@ async function callerAdmin(req) {
     } catch (_) { return null; }
 }
 
+// Quita la verificación en 2 pasos (factores MFA) a un usuario — solo admin, desde Usuarios y roles.
+// Un cliente web no puede modificar los factores de otra cuenta; el Admin SDK sí.
+exports.mfaReset = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email) { res.status(400).json({ error: 'email' }); return; }
+    try {
+        const u = await getAuth().getUserByEmail(email);
+        await getAuth().updateUser(u.uid, { multiFactor: { enrolledFactors: null } });
+        await db.collection('usuarios').doc(email).set({ mfa: false, mfaReset: FieldValue.serverTimestamp(), mfaResetPor: admin }, { merge: true });
+        res.status(200).json({ ok: true });
+    } catch (e) {
+        console.error('mfaReset', email, e);
+        res.status(500).json({ ok: false, error: String((e && e.message) || e) });
+    }
+});
+
 // Lectura de una entidad de Citrus (extraccionDatos). Solo admin. Devuelve tal cual la respuesta
 // de Citrus (status + JSON) para poder inspeccionarla desde la pantalla de pruebas.
 exports.citrusRead = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true }, async (req, res) => {

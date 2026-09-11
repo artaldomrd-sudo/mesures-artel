@@ -53,9 +53,11 @@ function inyectarEstilos() {
     document.head.appendChild(s);
 }
 
-export async function requirePin(usuario) {
+// opts.siempre = true → pide el PIN en cada entrada a esa página, aunque la sesión ya esté
+// desbloqueada (páginas especialmente sensibles, ej. Usuarios y roles).
+export async function requirePin(usuario, opts) {
     if (!usuario || !usuario.email) return;      // sin usuario no hay a quién pedirle PIN
-    if (desbloqueado()) return;
+    if (!(opts && opts.siempre) && desbloqueado()) return;
 
     const ref = doc(db, 'usuarios', usuario.email);
     let pinHash = null, tieneCred = false;

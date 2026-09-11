@@ -37,7 +37,13 @@ function showLoginScreen() {
     'Iniciar sesión con Google</button>'
   );
   document.getElementById('auth-google-btn').onclick = () => {
-    signInWithPopup(auth, googleProvider).catch((err) => {
+    signInWithPopup(auth, googleProvider).catch(async (err) => {
+      // Cuenta con verificación en 2 pasos: Google ya validó la contraseña; ahora el código.
+      if (err && err.code === 'auth/multi-factor-auth-required') {
+        try { const m = await import('./mfa.js'); await m.resolverMFASignIn(err); }
+        catch (e) { if (e && e.message !== 'cancelado') alert('No se pudo completar la verificación: ' + (e.message || e)); }
+        return;
+      }
       alert('No se pudo iniciar sesión: ' + err.message);
     });
   };
@@ -107,6 +113,12 @@ export function requireAuth(rolesPermitidos) {
         showUnauthorizedScreen(user.email);
         return;
       }
+      // Roles sensibles (admin/contable/comunicaciones): verificación en 2 pasos obligatoria. Si la
+      // cuenta aún no la tiene, se inscribe aquí mismo (QR + código) antes de mostrar la pantalla.
+      try {
+        const m = await import('./mfa.js');
+        if (m.requiere2FA(roles) && !m.tieneMFA(user)) await m.inscribirMFA(user, user.email);
+      } catch (e) { console.warn('2FA', e && e.message ? e.message : e); }
       hideOverlay();
       // Renueva en silencio el token de notificaciones de ESTE dispositivo (si el permiso ya fue
       // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo
