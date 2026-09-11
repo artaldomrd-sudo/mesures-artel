@@ -98,7 +98,8 @@ export async function inscribirMFA(user, email) {
             console.warn('2FA no activado en el proyecto:', e.code, e.message);
             overlay(`<h2 style="margin:0;font-size:20px;">Verificación en 2 pasos pendiente</h2>
                 <p style="max-width:380px;margin:0;opacity:.95;line-height:1.5;">Tu rol requiere 2FA, pero el proyecto aún no lo tiene activado.<br><b>Admin:</b> Firebase Console → Authentication → Sign-in method → <i>Autenticación multifactor</i> → activar <b>TOTP</b> (si pide «Actualizar a Identity Platform», aceptar).</p>
-                <button id="mfa-seguir" style="${btnCss}">Continuar por ahora</button>`);
+                <button id="mfa-seguir" style="${btnCss}">Continuar por ahora</button>
+                <div style="font-size:11px;opacity:.6;">Detalle técnico: ${esc(e.code || '')} ${esc(e.message || '')}</div>`);
             await new Promise(r => { document.getElementById('mfa-seguir').onclick = r; });
             cerrar(); return false;
         }
