@@ -1157,10 +1157,12 @@
         const l = nominaActual.lineas.map(x => calcLinea(x, nominaActual.tipo)).find(x => x.empleadoId === empId);
         if (!l) return;
         volanteHTML = volanteDe(l, nominaActual.key);
+        volanteTitulo = 'Volante ' + l.nombre + ' ' + nombrePeriodo(nominaActual.key);
         document.getElementById('volante-modal-body').innerHTML = volanteHTML;
         document.getElementById('modal-volante').classList.add('show');
     };
-    window.imprimirVolante = function () { imprimir(volanteHTML); };
+    let volanteTitulo = '';
+    window.imprimirVolante = function () { imprimir(volanteHTML, volanteTitulo || 'Volante de pago'); };
 
     // ---------- REGALÍA ----------
     let regaliaData = [];
@@ -1209,7 +1211,7 @@
         let total = 0;
         const rows = regaliaData.map(r => { const reg = r.salario * (r.meses / 12); total += reg; return `<tr><td>${esc(r.nombre)}</td><td class="r">${fmt(reg)}</td></tr>`; }).join('');
         imprimir(`<div class="volante"><h3>ARTAL — Regalía pascual ${anio}</h3><div class="vsub">1/12 del salario ordinario del año</div>
-            <table>${rows}<tr class="vtot"><td>Total</td><td class="r">${fmt(total)}</td></tr></table></div>`);
+            <table>${rows}<tr class="vtot"><td>Total</td><td class="r">${fmt(total)}</td></tr></table></div>`, 'Regalía pascual ' + anio);
     };
 
     // ---------- LIQUIDACIÓN ----------
@@ -1287,7 +1289,7 @@
         imprimir(`<div class="volante"><h3>ARTAL — Cálculo de liquidación</h3>
             <div class="vsub">Ingreso: ${fmtFecha(d.ingreso)} · Salida: ${fmtFecha(d.salida)} · Salario: ${fmt(d.salarioMes)}</div>
             <table>${rows}<tr class="vtot"><td>Total prestaciones</td><td class="r">${fmt(d.total)}</td></tr></table>
-            <p class="muted" style="margin-top:14px">Cálculo orientativo según Ley 16-92 — verificar con la contadora.</p></div>`);
+            <p class="muted" style="margin-top:14px">Cálculo orientativo según Ley 16-92 — verificar con la contadora.</p></div>`, 'Liquidación ' + ((document.getElementById('liq-emp').selectedOptions[0] || {}).textContent || '').trim());
     };
 
     // ---------- Impresión compartida ----------
@@ -1315,18 +1317,24 @@
     window.imprimirNomina = function () {
         if (!nominaActual) { alert('Primero genera la nómina de un período.'); return; }
         document.body.classList.add('printing-land');
-        imprimir(nominaCompletaHTML());
+        imprimir(nominaCompletaHTML(), 'Nómina ' + nombrePeriodo(nominaActual.key));
     };
 
-    function imprimir(html) {
+    // `titulo` pasa a ser el título del documento mientras se imprime: es el nombre que el navegador
+    // propone al «Guardar como PDF» (antes salía siempre "ARTAL — Nómina"). Se restaura al terminar.
+    function imprimir(html, titulo) {
         const z = document.getElementById('print-zone');
         z.innerHTML = html;
         document.body.classList.add('printing');
-        const limpiar = () => { document.body.classList.remove('printing'); document.body.classList.remove('printing-land'); z.innerHTML = ''; window.removeEventListener('afterprint', limpiar); };
+        const tituloOrig = document.title;
+        if (titulo) document.title = String(titulo).replace(/[\/\\:*?"<>|]+/g, '-');
+        const limpiar = () => { document.body.classList.remove('printing'); document.body.classList.remove('printing-land'); z.innerHTML = ''; document.title = tituloOrig; window.removeEventListener('afterprint', limpiar); };
         window.addEventListener('afterprint', limpiar);
         window.print();
         setTimeout(() => { if (document.body.classList.contains('printing')) limpiar(); }, 1500);
     }
+    // Nombre de archivo del período: "2da quincena de agosto de 2026" → "2da quincena agosto 2026".
+    const nombrePeriodo = (key) => fmtPeriodoKey(key).replace(/\bde\b\s*/g, '').replace(/\s+/g, ' ').trim();
 
     // init
     document.getElementById('nom-periodo').value = hoyISO().slice(0, 7);
