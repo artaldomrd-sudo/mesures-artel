@@ -145,7 +145,7 @@
             <button class="btn-o" onclick="guardarNomina()">💾 Guardar</button>
             <button class="btn-o" onclick="imprimirNomina()">🖨 Nómina completa</button>
         </div>
-        <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad sueldo y descuentos (TSS/ISR) del mes; las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
+        <p class="muted" style="margin:2px 0 0">La quincenal reparte a la mitad el sueldo y la TSS del mes; el ISR se calcula con la escala mensual y se regulariza en la 2da quincena. Los otros ingresos se pagan completos en su período. Las cuotas de préstamo se debitan según el monto que fijes por período. Marca la casilla <b>TSS</b> de cada empleado: los que no están en seguridad social no llevan AFP/SFS.</p>
         <div id="nom-cont"><p class="empty">Elige un período y pulsa «Generar / cargar».</p></div>
     </section>
 
@@ -228,17 +228,26 @@
             </div>
         </div>
         <div class="param-card">
-            <div class="sec-title" style="margin-top:0">Escala de ISR (anual)</div>
-            <p class="muted" style="margin-top:0">El ISR mensual se calcula sobre el salario gravable ya menos AFP y SFS: ISR = escala&nbsp;anual(gravable×12) ÷ 12. «Cuota fija» y «Excedente sobre» vienen de la escala oficial de la DGII.</p>
+            <div class="sec-title" style="margin-top:0">Escala de ISR (mensual, DGII)</div>
+            <p class="muted" style="margin-top:0">El ISR se calcula sobre el salario <b>mensual</b> gravable (sueldo + ingresos gravables − AFP − SFS) con esta escala mensual. En la quincenal: la 1ra quincena retiene la mitad del ISR del mes (más el que agreguen sus extras) y la 2da retiene el ISR real del mes menos lo ya retenido en la 1ra.</p>
             <table class="tabla-isr">
-                <thead><tr><th>Tramo</th><th>Hasta (RD$/año)</th><th>Tasa (%)</th><th>Cuota fija (RD$)</th><th>Excedente sobre (RD$)</th></tr></thead>
+                <thead><tr><th>Tramo</th><th>Hasta (RD$/mes)</th><th>Tasa (%)</th><th>Cuota fija (RD$)</th><th>Excedente sobre (RD$)</th></tr></thead>
                 <tbody id="isr-body"></tbody>
             </table>
-            <p class="muted">En el último tramo deja «Hasta» en 0 (o vacío) para indicar «en adelante».</p>
+            <p class="muted">En el último tramo deja «Hasta» en 0 (o vacío) para indicar «en adelante». «Excedente sobre» de cada tramo debe ser el «Hasta» del anterior (el sistema lo valida al guardar).</p>
+            <button class="btn-o" type="button" onclick="restaurarEscalaISR()" style="padding:7px 12px;font-size:12.5px;min-height:0">↺ Restaurar escala oficial DGII</button>
+        </div>
+        <div class="param-card">
+            <div class="sec-title" style="margin-top:0">Valor hora / valor día</div>
+            <p class="muted" style="margin-top:0">Valor día = sueldo mensual ÷ días laborables del mes; valor hora = valor día ÷ horas por día. Se usan para horas/días extra y para el sueldo proporcional de quien entra o sale a mitad de período (lun–vie cuentan 1 día, sábado 0.5).</p>
+            <div class="param-grid">
+                <div><label>Días laborables por mes</label><input type="number" id="p-diasLab" step="0.01"></div>
+                <div><label>Horas por día</label><input type="number" id="p-horasDia" step="0.5"></div>
+            </div>
         </div>
         <div class="param-card">
             <div class="sec-title" style="margin-top:0">Tipos de «otros ingresos»</div>
-            <p class="muted" style="margin-top:0">Marca «gravable» si ese ingreso paga ISR (ej. día feriado, bono). Los no gravables (viático, reembolso) suman al neto pero no al impuesto.</p>
+            <p class="muted" style="margin-top:0">Marca «gravable» si ese ingreso paga ISR (ej. horas extra, bono). Los no gravables (viático, reembolso) suman al neto pero no al impuesto. <b>Cálculo</b>: «por hora» / «por día» = en la nómina se escribe la <b>cantidad</b> y el sistema multiplica valor hora/día × factor (1.35 = 35% de recargo, 2.00 = 100%).</p>
             <div id="cat-ing"></div>
             <button class="btn-y" onclick="catAdd('ing')" style="margin-top:4px;padding:7px 12px;font-size:12.5px;min-height:0">＋ Tipo de ingreso</button>
             <div class="sec-title">Tipos de «otras deducciones»</div>
@@ -285,16 +294,24 @@
     const DEFAULTS = {
         afpEmp: 2.87, afpPat: 7.10, sfsEmp: 3.04, sfsPat: 7.09, srlPat: 1.15,
         topeAfp: 0, topeSfs: 0,
-        isrTramos: [
-            { limite: 416220.00, tasa: 0, fijo: 0, base: 0 },
-            { limite: 624329.00, tasa: 15, fijo: 0, base: 416220.00 },
-            { limite: 867123.00, tasa: 20, fijo: 31216.00, base: 624329.00 },
-            { limite: 0, tasa: 25, fijo: 79776.00, base: 867123.00 }
+        // Escala de ISR MENSUAL oficial de la DGII (la misma tabla que usa la contable; la anual ÷ 12).
+        // 2026-09-11: se pasó de anual a mensual a pedido de la contable — la tabla anual editable
+        // quedó con topes dañados (Hasta 416,220.01 / 624,329.01…) y el ISR salía mal.
+        isrTramosMensual: [
+            { limite: 34685.00, tasa: 0, fijo: 0, base: 0 },
+            { limite: 52027.41, tasa: 15, fijo: 0, base: 34685.00 },
+            { limite: 72260.25, tasa: 20, fijo: 2601.33, base: 52027.42 },
+            { limite: 0, tasa: 25, fijo: 6648.00, base: 72260.25 }
         ],
-        // Catálogos editables (pestaña Parámetros). Ingresos con `gravable` (si afecta ISR).
+        // Base para valor-día y valor-hora (Código de Trabajo: 23.83 días laborables/mes, 8 h/día).
+        diasLabMes: 23.83, horasDia: 8,
+        // Catálogos editables (pestaña Parámetros). Ingresos con `gravable` (si afecta ISR) y, para
+        // horas/días extra, `calc` ('hora' | 'dia') + `factor`: se escribe la CANTIDAD y el sistema
+        // calcula el monto con el valor-hora/valor-día del empleado (pedido de la contable).
         tiposIngreso: [
-            { nombre: 'Día feriado trabajado', gravable: true },
-            { nombre: 'Día / horas extra', gravable: true },
+            { nombre: 'Horas extra (35% recargo)', gravable: true, calc: 'hora', factor: 1.35 },
+            { nombre: 'Horas extra al 100% (más de 68 h/semana)', gravable: true, calc: 'hora', factor: 2.00 },
+            { nombre: 'Día extra (feriado / descanso trabajado)', gravable: true, calc: 'dia', factor: 2.00 },
             { nombre: 'Bono', gravable: true },
             { nombre: 'Comisión', gravable: true },
             { nombre: 'Incentivo', gravable: true },
@@ -314,10 +331,26 @@
         llenarPrestEmpleados();
     });
     // Configuración de nómina.
+    // Normaliza una config guardada con versiones anteriores del módulo.
+    function normalizarCfg() {
+        // Escala: si no hay mensual guardada, se usa la oficial (la anual vieja se IGNORA a propósito:
+        // podía estar dañada — ver DEFAULTS).
+        if (!Array.isArray(cfg.isrTramosMensual) || !cfg.isrTramosMensual.length) cfg.isrTramosMensual = JSON.parse(JSON.stringify(DEFAULTS.isrTramosMensual));
+        if (!(n2(cfg.diasLabMes) > 0)) cfg.diasLabMes = DEFAULTS.diasLabMes;
+        if (!(n2(cfg.horasDia) > 0)) cfg.horasDia = DEFAULTS.horasDia;
+        // Tipos de ingreso: los tipos con cálculo automático (horas/días extra) tienen que existir;
+        // el viejo 'Día / horas extra' (monto a mano) se reemplaza por los nuevos.
+        let tipos = Array.isArray(cfg.tiposIngreso) ? cfg.tiposIngreso.filter(t => t && t.nombre && t.nombre !== 'Día / horas extra' && t.nombre !== 'Día feriado trabajado') : [];
+        const conCalc = DEFAULTS.tiposIngreso.filter(t => t.calc);
+        conCalc.forEach(d => { const ya = tipos.find(t => t.nombre === d.nombre); if (ya) { ya.calc = d.calc; if (!(n2(ya.factor) > 0)) ya.factor = d.factor; } });
+        tipos = [...conCalc.filter(d => !tipos.some(t => t.nombre === d.nombre)), ...tipos];
+        cfg.tiposIngreso = tipos.length ? tipos : JSON.parse(JSON.stringify(DEFAULTS.tiposIngreso));
+    }
     getDoc(doc(db, 'rrhhConfig', 'nomina')).then(s => {
         if (s.exists()) cfg = Object.assign(JSON.parse(JSON.stringify(DEFAULTS)), s.data());
+        normalizarCfg();
         pintarParametros();
-    }).catch(() => pintarParametros());
+    }).catch(() => { normalizarCfg(); pintarParametros(); });
 
     window.setTab = function (t) {
         ['mensual', 'historial', 'prestamos', 'regalia', 'liquidacion', 'parametros'].forEach(k => {
@@ -380,12 +413,20 @@
         const emp = nominaActual.lineas.find(x => x.empleadoId === ctx.empId);
         const tipos = esIng ? (cfg.tiposIngreso || []).map(t => t.nombre) : (cfg.tiposDeduccion || []);
         document.getElementById('items-title').textContent = (esIng ? 'Otros ingresos' : 'Otras deducciones') + ' — ' + (emp ? emp.nombre : '');
-        document.getElementById('items-body').innerHTML = ctx.items.length ? ctx.items.map((it, i) => `<div class="item-row" data-i="${i}">
+        const sueldoMes = emp ? n2(emp.sueldo) : 0;
+        document.getElementById('items-body').innerHTML = ctx.items.length ? ctx.items.map((it, i) => {
+            const def = esIng ? tipoIngresoDef(it.tipo) : null, calc = def && def.calc;
+            const unit = calc ? valorUnitario(sueldoMes, calc) : 0, factor = calc ? (n2(def.factor) || 1) : 1;
+            const monto = calc ? Math.round(unit * factor * n2(it.cantidad) * 100) / 100 : n2(it.monto);
+            return `<div class="item-row" data-i="${i}">
             <select class="it-tipo"${esIng ? ' onchange="ingTipoChange(this)"' : ''}>${tipos.map(t => `<option ${t === it.tipo ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
-            <input class="it-monto" type="number" min="0" step="0.01" value="${it.monto || ''}" placeholder="Monto RD$/mes">
+            ${calc ? `<input class="it-cant" type="number" min="0" step="0.5" value="${it.cantidad || ''}" placeholder="${calc === 'hora' ? 'Horas' : 'Días'}" style="width:74px" oninput="itemsRecalc()">
+                      <span class="it-calc muted" style="min-width:150px;font-size:12px">${n2(it.cantidad) ? `${n2(it.cantidad)} ${calc === 'hora' ? 'h' : 'd'} × ${fmt(unit)} × ${factor} = <b>${fmt(monto)}</b>` : `valor ${calc === 'hora' ? 'hora' : 'día'} ${fmt(unit)} × ${factor}`}</span>`
+                    : `<input class="it-monto" type="number" min="0" step="0.01" value="${it.monto || ''}" placeholder="Monto RD$ (este período)">`}
             ${esIng ? `<label class="it-grav" title="¿Paga ISR? (Viático/Reembolso: no)"><input type="checkbox" class="it-gravable" ${it.gravable !== false ? 'checked' : ''}> ISR</label>` : ''}
             <button class="it-del" onclick="itemsDel(${i})" title="Quitar">✕</button>
-        </div>`).join('') : '<p class="muted">Sin conceptos todavía. Agrega uno abajo.</p>';
+        </div>`; }).join('') : '<p class="muted">Sin conceptos todavía. Agrega uno abajo.</p>';
+        if (esIng) document.getElementById('items-body').insertAdjacentHTML('beforeend', `<p class="muted" style="margin:6px 0 0;font-size:12px">Los montos son de <b>este período</b> (se pagan completos, no se reparten). Horas/días extra: escribe la cantidad; valor hora = sueldo ÷ ${cfg.diasLabMes} ÷ ${cfg.horasDia}.</p>`);
         document.getElementById('items-extra').innerHTML = esIng ? '' :
             `<div class="reparto"><b>Repartir un total en cuotas:</b><br>
              <input id="rep-total" type="number" min="0" step="0.01" placeholder="Total RD$" style="width:120px"> en
@@ -395,12 +436,21 @@
         document.getElementById('modal-items').classList.add('show');
     }
     function leerItemsModal() {
+        const emp = nominaActual && nominaActual.lineas.find(x => x.empleadoId === itemsCtx.empId);
+        const sueldoMes = emp ? n2(emp.sueldo) : 0;
         itemsCtx.items = [...document.querySelectorAll('#items-body .item-row')].map(r => {
-            const o = { tipo: r.querySelector('.it-tipo').value, monto: n2(r.querySelector('.it-monto').value) };
+            const tipo = r.querySelector('.it-tipo').value;
+            const o = { tipo, monto: 0 };
             if (itemsCtx.tipo === 'ing') { const g = r.querySelector('.it-gravable'); o.gravable = g ? g.checked : true; }
+            const def = itemsCtx.tipo === 'ing' ? tipoIngresoDef(tipo) : null;
+            const cant = r.querySelector('.it-cant');
+            if (def && def.calc && cant) { o.cantidad = n2(cant.value); o.calc = def.calc; o.factor = n2(def.factor) || 1; o.monto = montoItem(o, sueldoMes); }
+            else { const m = r.querySelector('.it-monto'); o.monto = m ? n2(m.value) : 0; }
             return o;
         });
     }
+    // Al escribir la cantidad de horas/días se refresca el monto calculado (y al cambiar el tipo, la fila).
+    window.itemsRecalc = function () { leerItemsModal(); renderItemsModal(); };
     window.itemsAdd = function () {
         leerItemsModal();
         const primero = itemsCtx.tipo === 'ing' ? ((cfg.tiposIngreso[0] || {}).nombre || 'Otro') : (cfg.tiposDeduccion[0] || 'Otro');
@@ -411,9 +461,10 @@
     // Al elegir el tipo de ingreso, la casilla ISR se pone según ese tipo (Viático/Reembolso → sin
     // ISR; feriado/horas extra/bono → con ISR). Se puede seguir marcando/desmarcando a mano.
     window.ingTipoChange = function (sel) {
-        const row = sel.closest('.item-row'); const chk = row && row.querySelector('.it-gravable'); if (!chk) return;
+        const row = sel.closest('.item-row'); const chk = row && row.querySelector('.it-gravable');
         const t = (cfg.tiposIngreso || []).find(x => x.nombre === sel.value);
-        chk.checked = t ? (t.gravable !== false) : true;
+        if (chk) chk.checked = t ? (t.gravable !== false) : true;
+        itemsRecalc();   // cambia entre «cantidad» y «monto» según el tipo
     };
     window.repartirCuota = function () {
         const total = n2(document.getElementById('rep-total').value), nn = Math.max(1, parseInt(document.getElementById('rep-n').value) || 1);
@@ -427,7 +478,7 @@
         leerItemsModal();
         const l = nominaActual.lineas.find(x => x.empleadoId === itemsCtx.empId);
         if (l) {
-            const items = itemsCtx.items.filter(x => n2(x.monto) > 0);
+            const items = itemsCtx.items.filter(x => n2(x.monto) > 0 || n2(x.cantidad) > 0);
             if (itemsCtx.tipo === 'ing') l.ingresosItems = items; else l.deduccionesItems = items;
         }
         cerrarItems(); renderNomina();
@@ -443,11 +494,20 @@
     // Catálogo de tipos (editable en Parámetros).
     function renderCatalogos() {
         const ci = document.getElementById('cat-ing'); const cd = document.getElementById('cat-ded');
-        if (ci) ci.innerHTML = (cfg.tiposIngreso || []).map((t, i) => `<div class="cat-row"><input class="ci-nombre" value="${esc(t.nombre)}" style="flex:1"><label class="it-grav"><input type="checkbox" class="ci-grav" ${t.gravable !== false ? 'checked' : ''}> gravable</label><button class="it-del" onclick="catDel('ing',${i})">✕</button></div>`).join('');
+        if (ci) ci.innerHTML = (cfg.tiposIngreso || []).map((t, i) => `<div class="cat-row"><input class="ci-nombre" value="${esc(t.nombre)}" style="flex:1"><label class="it-grav"><input type="checkbox" class="ci-grav" ${t.gravable !== false ? 'checked' : ''}> gravable</label>
+            <select class="ci-calc" title="Cálculo automático"><option value="" ${!t.calc ? 'selected' : ''}>monto fijo</option><option value="hora" ${t.calc === 'hora' ? 'selected' : ''}>por hora</option><option value="dia" ${t.calc === 'dia' ? 'selected' : ''}>por día</option></select>
+            <input class="ci-factor" type="number" step="0.01" min="0" value="${t.calc ? (n2(t.factor) || 1) : ''}" placeholder="factor" title="Multiplicador (1.35 = recargo 35%)" style="width:70px">
+            <button class="it-del" onclick="catDel('ing',${i})">✕</button></div>`).join('');
         if (cd) cd.innerHTML = (cfg.tiposDeduccion || []).map((t, i) => `<div class="cat-row"><input class="cd-nombre" value="${esc(t)}" style="flex:1"><button class="it-del" onclick="catDel('ded',${i})">✕</button></div>`).join('');
     }
     function leerCatalogos() {
-        const ing = []; document.querySelectorAll('#cat-ing .cat-row').forEach(r => { const nom = r.querySelector('.ci-nombre').value.trim(); if (nom) ing.push({ nombre: nom, gravable: r.querySelector('.ci-grav').checked }); });
+        const ing = []; document.querySelectorAll('#cat-ing .cat-row').forEach(r => {
+            const nom = r.querySelector('.ci-nombre').value.trim(); if (!nom) return;
+            const t = { nombre: nom, gravable: r.querySelector('.ci-grav').checked };
+            const calc = (r.querySelector('.ci-calc') || {}).value || '';
+            if (calc) { t.calc = calc; t.factor = n2((r.querySelector('.ci-factor') || {}).value) || 1; }
+            ing.push(t);
+        });
         if (ing.length) cfg.tiposIngreso = ing;
         const ded = []; document.querySelectorAll('#cat-ded .cat-row').forEach(r => { const nom = r.querySelector('.cd-nombre').value.trim(); if (nom) ded.push(nom); });
         if (ded.length) cfg.tiposDeduccion = ded;
@@ -460,7 +520,8 @@
         const g = (id, v) => document.getElementById(id).value = v;
         g('p-afpEmp', cfg.afpEmp); g('p-afpPat', cfg.afpPat); g('p-sfsEmp', cfg.sfsEmp); g('p-sfsPat', cfg.sfsPat);
         g('p-srlPat', cfg.srlPat); g('p-topeAfp', cfg.topeAfp); g('p-topeSfs', cfg.topeSfs);
-        document.getElementById('isr-body').innerHTML = cfg.isrTramos.map((t, i) => `<tr>
+        g('p-diasLab', cfg.diasLabMes); g('p-horasDia', cfg.horasDia);
+        document.getElementById('isr-body').innerHTML = cfg.isrTramosMensual.map((t, i) => `<tr>
             <td style="text-align:left;color:#667">${i + 1}</td>
             <td><input type="number" step="0.01" data-i="${i}" data-k="limite" value="${t.limite}"></td>
             <td><input type="number" step="0.01" data-i="${i}" data-k="tasa" value="${t.tasa}"></td>
@@ -474,12 +535,32 @@
         const v = (id) => n2(document.getElementById(id).value);
         cfg.afpEmp = v('p-afpEmp'); cfg.afpPat = v('p-afpPat'); cfg.sfsEmp = v('p-sfsEmp'); cfg.sfsPat = v('p-sfsPat');
         cfg.srlPat = v('p-srlPat'); cfg.topeAfp = v('p-topeAfp'); cfg.topeSfs = v('p-topeSfs');
+        cfg.diasLabMes = v('p-diasLab') || DEFAULTS.diasLabMes; cfg.horasDia = v('p-horasDia') || DEFAULTS.horasDia;
         document.querySelectorAll('#isr-body input').forEach(inp => {
-            cfg.isrTramos[+inp.dataset.i][inp.dataset.k] = n2(inp.value);
+            cfg.isrTramosMensual[+inp.dataset.i][inp.dataset.k] = n2(inp.value);
         });
     }
+    // Comprueba que la escala tenga sentido (tramos crecientes y «Excedente sobre» = «Hasta» del
+    // anterior). Devuelve el texto del problema o '' si está bien.
+    function validarEscalaISR(tramos) {
+        for (let i = 1; i < tramos.length; i++) {
+            const ant = tramos[i - 1], t = tramos[i];
+            if (ant.limite === 0) return `Tramo ${i}: solo el último tramo puede tener «Hasta» en 0 (en adelante).`;
+            if (t.limite !== 0 && t.limite <= ant.limite) return `Tramo ${i + 1}: «Hasta» (${t.limite}) debe ser mayor que el del tramo anterior (${ant.limite}).`;
+            if (Math.abs(t.base - ant.limite) > 0.02) return `Tramo ${i + 1}: «Excedente sobre» (${t.base}) debe ser igual al «Hasta» del tramo anterior (${ant.limite}).`;
+        }
+        return '';
+    }
+    window.restaurarEscalaISR = function () {
+        if (!confirm('¿Reemplazar la escala por la oficial mensual de la DGII?\n\nExento hasta 34,685 · 15% hasta 52,027.41 · 2,601.33 + 20% hasta 72,260.25 · 6,648 + 25% en adelante.')) return;
+        cfg.isrTramosMensual = JSON.parse(JSON.stringify(DEFAULTS.isrTramosMensual));
+        pintarParametros();
+        document.getElementById('param-msg').textContent = 'Escala restaurada — pulsa «Guardar parámetros» para conservarla.';
+    };
     window.guardarParametros = async function () {
         leerParametros();
+        const err = validarEscalaISR(cfg.isrTramosMensual);
+        if (err) { alert('La escala de ISR tiene un error y no se guardó:\n\n' + err + '\n\nCorrígela o pulsa «Restaurar escala oficial DGII».'); return; }
         try {
             await setDoc(doc(db, 'rrhhConfig', 'nomina'), { ...cfg, actualizadoPor: usuario.nombre, actualizado: serverTimestamp() });
             document.getElementById('param-msg').textContent = '✓ Guardado ' + new Date().toLocaleTimeString('es-DO');
@@ -487,18 +568,60 @@
     };
 
     // ---------- CÁLCULOS ----------
-    function isrAnual(gravableAnual) {
-        // Toma el tramo correcto (limite 0 = "en adelante", último).
-        let tr = cfg.isrTramos[0];
-        for (const t of cfg.isrTramos) {
-            if (t.limite === 0 || gravableAnual <= t.limite) { tr = t; break; }
-            tr = t;
-        }
-        return Math.max(0, tr.fijo + (gravableAnual - tr.base) * (tr.tasa / 100));
+    // ==== CALC PURO INICIO ==== (sin DOM ni Firebase: verify-nomina.mjs extrae este bloque y lo prueba
+    // contra los números reales de la contable — 2da quincena de agosto 2026)
+    function isrMensual(gravableMensual, tramos) {
+        // Escala MENSUAL DGII. Toma el tramo correcto (limite 0 = "en adelante", último).
+        tramos = tramos || cfg.isrTramosMensual;
+        let tr = tramos[0];
+        for (const t of tramos) { if (t.limite === 0 || gravableMensual <= t.limite) { tr = t; break; } tr = t; }
+        return Math.max(0, tr.fijo + (gravableMensual - tr.base) * (tr.tasa / 100));
     }
-    // divisor: 1 mensual, 2 quincenal (reparte el mes a la mitad). El préstamo (cuota por período)
-    // NO se divide — es el monto que el usuario fija por nómina. TSS/ISR se calculan sobre el mes y
-    // se dividen al final; los topes y la escala de ISR quedan correctos (son mensuales/anuales).
+    // Fechas del período: mensual = todo el mes; Q1 = 1–15; Q2 = 16–fin de mes.
+    function rangoPeriodo(periodo, runTipo) {
+        const m = String(periodo || '').match(/^(\d{4})-(\d{2})/); if (!m) return null;
+        const y = +m[1], mo = +m[2] - 1, ult = new Date(y, mo + 1, 0).getDate();
+        if (runTipo === 'q1') return { ini: new Date(y, mo, 1), fin: new Date(y, mo, 15) };
+        if (runTipo === 'q2') return { ini: new Date(y, mo, 16), fin: new Date(y, mo, ult) };
+        return { ini: new Date(y, mo, 1), fin: new Date(y, mo, ult) };
+    }
+    const fechaLocal = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+    // Días laborables entre dos fechas (inclusive): lunes a viernes = 1, sábado = 0.5, domingo = 0.
+    // Coincide con el divisor 23.83 días/mes (52 semanas × 5.5 días ÷ 12) que usa la contable.
+    function diasLaborables(d1, d2) {
+        let n = 0;
+        for (let d = new Date(d1); d <= d2; d.setDate(d.getDate() + 1)) { const wd = d.getDay(); if (wd >= 1 && wd <= 5) n += 1; else if (wd === 6) n += 0.5; }
+        return n;
+    }
+    // Prorrateo por fecha de ingreso/salida dentro del período: null si trabajó el período completo;
+    // {dias, desde, hasta, fuera:true} si no trabajó nada en el período.
+    function prorrateoDe(fechaIngreso, fechaSalida, periodo, runTipo) {
+        const r = rangoPeriodo(periodo, runTipo); if (!r) return null;
+        const fi = fechaLocal(fechaIngreso), fs = fechaLocal(fechaSalida);
+        const desde = (fi && fi > r.ini) ? fi : r.ini;
+        const hasta = (fs && fs < r.fin) ? fs : r.fin;
+        if (desde.getTime() === r.ini.getTime() && hasta.getTime() === r.fin.getTime()) return null;   // período completo
+        if (desde > hasta) return { dias: 0, desde, hasta, fuera: true };
+        return { dias: diasLaborables(desde, hasta), desde, hasta, fuera: false };
+    }
+    // Valor unitario para horas/días extra: valor día = sueldo mensual ÷ días laborables; valor hora = ÷ horas/día.
+    function valorUnitario(sueldoMes, calc, c) {
+        c = c || cfg;
+        const dia = n2(sueldoMes) / (n2(c.diasLabMes) || 23.83);
+        return calc === 'hora' ? dia / (n2(c.horasDia) || 8) : dia;
+    }
+    function tipoIngresoDef(nombre, c) { return ((c || cfg).tiposIngreso || []).find(t => t.nombre === nombre) || null; }
+    // Monto de un ítem de otros ingresos: si su tipo es por hora/día, cantidad × valor unitario × factor.
+    function montoItem(it, sueldoMes, c) {
+        const def = tipoIngresoDef(it.tipo, c);
+        const calc = it.calc || (def && def.calc) || '';
+        if (calc && n2(it.cantidad) > 0) {
+            const factor = n2(it.factor) || (def && n2(def.factor)) || 1;
+            return Math.round(valorUnitario(sueldoMes, calc, c) * factor * n2(it.cantidad) * 100) / 100;
+        }
+        return n2(it.monto);
+    }
+    // divisor: 1 mensual, 2 quincenal. El préstamo (cuota por período) NO se divide.
     // Divisor y si COBRA en este período, según la forma de cobro del empleado y la corrida:
     // - mensual: cobra TODO en la 1ra quincena (Q1); en Q2 no cobra (todo 0). Corrida mensual → full.
     // - quincenal (o sin definir): mitad en cada quincena.
@@ -507,42 +630,100 @@
         if (forma === 'mensual') return { div: 1, cobra: runTipo === 'q1' };   // Q1 completo, Q2 en 0
         return { div: 2, cobra: true };
     }
-    function calcLinea(l, runTipo) {
-        const per = periodoDe(l.formaCobro, runTipo || (nominaActual && nominaActual.tipo) || 'mensual');
-        const div = per.div, cf = per.cobra ? 1 : 0;   // cf=0 → no cobra este período (todo queda en 0)
+    // Cálculo de una línea. ctx = { cfg, periodo ('YYYY-MM'), q1: línea calculada de la 1ra quincena
+    // guardada (para regularizar el ISR en la 2da) o null }.
+    //  · Sueldo del período: mitad del mes (quincena) o completo; si entró/salió a mitad de período,
+    //    sueldo ÷ díasLabMes × días laborables trabajados (regla de la contable, ej. 6.5 días).
+    //  · Otros ingresos: son DEL PERÍODO y se pagan COMPLETOS (antes se dividían a la mitad — error
+    //    reportado por la contable el 2026-09-11).
+    //  · TSS: sobre el sueldo del mes (con topes) repartido por período; si es proporcional, sobre lo
+    //    realmente pagado.
+    //  · ISR: escala MENSUAL sobre (sueldo mes + ingresos gravables − AFP − SFS). Mensual: directo.
+    //    Q1: ISR(mes con las extras de Q1) − ISR(mes sin extras)/2  → mitad del ISR del sueldo + el de
+    //    sus extras. Q2: ISR real del mes (sueldo + extras Q1 + extras Q2) − lo retenido en Q1 (si la
+    //    nómina Q1 está guardada; si no, se asume que Q1 retuvo la mitad del ISR del sueldo).
+    //    Proporcional (entró/salió): ISR sobre lo realmente ganado en el período, sin proyectar.
+    function calcLineaPure(l, runTipo, ctx) {
+        const c = ctx.cfg;
+        const per = periodoDe(l.formaCobro, runTipo);
+        const div = per.div, cf = per.cobra ? 1 : 0;
         const sinTSS = !!l.sinTSS;
-        const sueldo = n2(l.sueldo);
-        // Otros ingresos: lista [{tipo, monto, gravable}]. Compat: número viejo `ingresos` = 1 ítem gravable.
-        const ingItems = Array.isArray(l.ingresosItems) ? l.ingresosItems : (n2(l.ingresos) ? [{ tipo: 'Otro', monto: n2(l.ingresos), gravable: true }] : []);
-        const ingTotalMes = ingItems.reduce((a, x) => a + n2(x.monto), 0);         // total (afecta el neto)
-        const ingGravMes = ingItems.reduce((a, x) => a + (x.gravable !== false ? n2(x.monto) : 0), 0); // solo lo gravable (afecta ISR)
-        const ingresos = ingTotalMes;
-        // Otras deducciones: lista [{tipo, monto}]. Compat: número viejo `deducciones` = 1 ítem.
+        const sueldo = n2(l.sueldo);   // mensual
+        const pr = prorrateoDe(l.fechaIngreso, l.fechaSalida, ctx.periodo, runTipo);
+        const fuera = !!(pr && pr.fuera);
+        const frac = pr ? (pr.dias / (n2(c.diasLabMes) || 23.83)) : null;   // fracción del mes trabajada
+        // Sueldo del período
+        const sueldoP = fuera ? 0 : (pr ? sueldo * frac : sueldo / div) * cf;
+        // Otros ingresos del período (montos ya del período; los de hora/día se calculan por cantidad)
+        const ingItems = (Array.isArray(l.ingresosItems) ? l.ingresosItems : (n2(l.ingresos) ? [{ tipo: 'Otro', monto: n2(l.ingresos), gravable: true }] : []))
+            .map(it => ({ ...it, monto: montoItem(it, sueldo, c) }));
+        const ingTotal = ingItems.reduce((a, x) => a + n2(x.monto), 0);
+        const ingGrav = ingItems.reduce((a, x) => a + (x.gravable !== false ? n2(x.monto) : 0), 0);
+        const ingresosP = ingTotal * cf, ingGravP = ingGrav * cf;
+        // Deducciones
         const dedItems = Array.isArray(l.deduccionesItems) ? l.deduccionesItems : (n2(l.deducciones) ? [{ tipo: 'Otro', monto: n2(l.deducciones) }] : []);
         const dedTotal = dedItems.reduce((a, x) => a + n2(x.monto), 0);
-        const baseAfp = sinTSS ? 0 : (cfg.topeAfp > 0 ? Math.min(sueldo, cfg.topeAfp) : sueldo);
-        const baseSfs = sinTSS ? 0 : (cfg.topeSfs > 0 ? Math.min(sueldo, cfg.topeSfs) : sueldo);
-        const afpM = baseAfp * (cfg.afpEmp / 100);
-        const sfsM = baseSfs * (cfg.sfsEmp / 100);
-        const gravableMensual = (sueldo + ingGravMes) - afpM - sfsM;
-        // Los empleados SIN TSS (no declarados) NO llevan ISR (antes se les calculaba sobre el sueldo).
-        const isrM = sinTSS ? 0 : isrAnual(gravableMensual * 12) / 12;
-        // % que se le RETIENE al empleado de cada concepto, POR SEPARADO (AFP/SFS/ISR). 100 = normal
-        // (paga todo); menos = la empresa asume esa parte de ESE concepto. El aporte del EMPLEADOR
-        // (afpPat/sfsPat/srlPat) NO cambia. Compat: `descPct` viejo (uno solo) sirve de respaldo.
+        // TSS (parte del empleado, al 100%) — mensual y del período
+        const topeA = c.topeAfp > 0 ? c.topeAfp : Infinity, topeS = c.topeSfs > 0 ? c.topeSfs : Infinity;
+        const baseAfpM = sinTSS ? 0 : Math.min(sueldo, topeA), baseSfsM = sinTSS ? 0 : Math.min(sueldo, topeS);
+        const afpM = baseAfpM * (c.afpEmp / 100), sfsM = baseSfsM * (c.sfsEmp / 100);
+        const baseAfpP = fuera ? 0 : (pr ? Math.min(sueldoP, topeA) : baseAfpM / div), baseSfsP = fuera ? 0 : (pr ? Math.min(sueldoP, topeS) : baseSfsM / div);
+        const afpP100 = (sinTSS ? 0 : baseAfpP * (c.afpEmp / 100)) * cf, sfsP100 = (sinTSS ? 0 : baseSfsP * (c.sfsEmp / 100)) * cf;
+        // ISR
+        const tramos = c.isrTramosMensual;
+        let isrP100 = 0, isrDetalle = null;
+        if (!sinTSS && !fuera && cf) {
+            if (pr) {
+                const grav = sueldoP + ingGravP - afpP100 - sfsP100;
+                isrP100 = isrMensual(grav, tramos);
+                isrDetalle = { metodo: 'proporcional', gravable: grav };
+            } else if (div === 1) {
+                const grav = sueldo + ingGravP - afpM - sfsM;
+                isrP100 = isrMensual(grav, tramos);
+                isrDetalle = { metodo: 'mensual', gravable: grav, isrMes: isrP100 };
+            } else {
+                const isrBase = isrMensual(sueldo - afpM - sfsM, tramos);           // mes sin extras
+                if (runTipo === 'q1') {
+                    const isrMes = isrMensual(sueldo + ingGravP - afpM - sfsM, tramos);
+                    isrP100 = isrMes - isrBase / 2;
+                    isrDetalle = { metodo: 'q1', isrMes, mitadBase: isrBase / 2 };
+                } else {
+                    const q1 = ctx.q1 || null;
+                    const ingGravQ1 = q1 ? n2(q1.ingGrav != null ? q1.ingGrav : q1.ingresos) : 0;
+                    const isrMes = isrMensual(sueldo + ingGravQ1 + ingGravP - afpM - sfsM, tramos);
+                    const retQ1 = q1 ? n2(q1.isr) : isrBase / 2;
+                    isrP100 = Math.max(0, isrMes - retQ1);
+                    isrDetalle = { metodo: q1 ? 'q2_regularizado' : 'q2_estimado', isrMes, retenidoQ1: retQ1, ingGravQ1 };
+                }
+            }
+        }
+        // % a cargo del empleado por concepto (100 = normal; menos = la empresa asume esa parte)
         const rp = (v) => (v != null && v !== '') ? n2(v) : null;
         const base = rp(l.descPct);
-        const dAfp = rp(l.descAfp) ?? base ?? 100;
-        const dSfs = rp(l.descSfs) ?? base ?? 100;
-        const dIsr = rp(l.descIsr) ?? base ?? 100;
-        // Reparto por período: mitad en cada quincena.
-        // Todo lo del período se multiplica por cf: si no cobra (mensual en Q2), queda en 0.
-        const sueldoP = (sueldo / div) * cf, ingresosP = (ingresos / div) * cf, afp = (afpM * dAfp / 100 / div) * cf, sfs = (sfsM * dSfs / 100 / div) * cf, isr = (isrM * dIsr / 100 / div) * cf;
-        const deducciones = dedTotal * cf;       // otras deducciones (suma de la lista)
-        const prestamo = n2(l.prestamo) * cf;    // cuota de préstamo de este período
+        const dAfp = rp(l.descAfp) ?? base ?? 100, dSfs = rp(l.descSfs) ?? base ?? 100, dIsr = rp(l.descIsr) ?? base ?? 100;
+        const afp = afpP100 * dAfp / 100, sfs = sfsP100 * dSfs / 100, isr = isrP100 * dIsr / 100;
+        const deducciones = dedTotal * cf, prestamo = n2(l.prestamo) * cf;
         const neto = (sueldoP + ingresosP) - afp - sfs - isr - deducciones - prestamo;
-        const afpPat = (baseAfp * cfg.afpPat / 100 / div) * cf, sfsPat = (baseSfs * cfg.sfsPat / 100 / div) * cf, srlPat = (baseSfs * cfg.srlPat / 100 / div) * cf;
-        return { ...l, sueldo: sueldoP, ingresos: ingresosP, ingMes: ingTotalMes, ingItems, dedItems, sueldoMes: sueldo, descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp, sfs, isr, deducciones, prestamo, neto, afpPat, sfsPat, srlPat, sinTSS, cobra: per.cobra };
+        const afpPat = baseAfpP * c.afpPat / 100 * cf, sfsPat = baseSfsP * c.sfsPat / 100 * cf, srlPat = baseSfsP * c.srlPat / 100 * cf;
+        const r2 = (x) => Math.round(x * 100) / 100;
+        return { ...l, sueldo: r2(sueldoP), ingresos: r2(ingresosP), ingGrav: r2(ingGravP), ingMes: r2(ingTotal), ingItems, dedItems, sueldoMes: sueldo,
+            descAfp: dAfp, descSfs: dSfs, descIsr: dIsr, afp: r2(afp), sfs: r2(sfs), isr: r2(isr), deducciones: r2(deducciones), prestamo: r2(prestamo), neto: r2(neto),
+            afpPat: r2(afpPat), sfsPat: r2(sfsPat), srlPat: r2(srlPat), sinTSS, cobra: per.cobra && !fuera,
+            prorrateo: pr ? { dias: pr.dias, desde: pr.desde.toISOString().slice(0, 10), hasta: pr.hasta.toISOString().slice(0, 10), fuera } : null,
+            isrDetalle };
+    }
+    // ==== CALC PURO FIN ====
+    // Línea de la 1ra quincena GUARDADA del mismo mes (para regularizar el ISR en la 2da).
+    function lineaQ1Guardada(periodo, empleadoId) {
+        const n = (typeof nominasGuardadas !== 'undefined' ? nominasGuardadas : []).find(x => x.key === periodo + '-Q1');
+        if (!n || !Array.isArray(n.calc)) return null;
+        return n.calc.find(x => x.empleadoId === empleadoId) || null;
+    }
+    function calcLinea(l, runTipo, periodo) {
+        runTipo = runTipo || (nominaActual && nominaActual.tipo) || 'mensual';
+        periodo = periodo || (nominaActual && nominaActual.periodo) || '';
+        const q1 = runTipo === 'q2' ? lineaQ1Guardada(periodo, l.empleadoId) : null;
+        return calcLineaPure(l, runTipo, { cfg, periodo, q1 });
     }
 
     // % inicial de un concepto (AFP/SFS/ISR): el guardado específico; si no, el % global viejo de la
@@ -555,7 +736,7 @@
 
     // Ítems iniciales de otros ingresos / deducciones (con compat de los números viejos).
     function itemsIniIng(src) {
-        if (src && Array.isArray(src.ingresosItems)) return src.ingresosItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto), gravable: x.gravable !== false }));
+        if (src && Array.isArray(src.ingresosItems)) return src.ingresosItems.map(x => ({ tipo: x.tipo || 'Otro', monto: n2(x.monto), gravable: x.gravable !== false, ...(x.cantidad != null ? { cantidad: n2(x.cantidad), calc: x.calc, factor: x.factor } : {}) }));
         return (src && n2(src.ingresos)) ? [{ tipo: 'Otro', monto: n2(src.ingresos), gravable: true }] : [];
     }
     function itemsIniDed(src) {
@@ -576,13 +757,17 @@
         // Solo aparecen los que COBRAN en este período: los mensuales cobran todo en la 1ra quincena,
         // así que en la 2da quincena NO aparecen (ya cobraron). En la corrida mensual aparecen todos.
         const runTipo = tipoNom();
-        const lineas = empleados.filter(e => periodoDe(e.formaCobro, runTipo).cobra).map(e => {
+        const lineas = empleados.filter(e => periodoDe(e.formaCobro, runTipo).cobra)
+            // Quien entra después del período (o salió antes) no aparece: no trabajó nada en él.
+            .filter(e => { const pr = prorrateoDe(e.fechaIngreso, e.fechaSalida, periodo, runTipo); return !(pr && pr.fuera); })
+            .map(e => {
             const p = previos[e.id] || {};
             // Los préstamos solo se debitan en el período en que COBRA (mensual no cobra en Q2).
             const cobra = periodoDe(e.formaCobro, runTipo).cobra;
             const prs = cobra ? prestamosDeEmpleado(e.id, key) : [];
             return {
                 empleadoId: e.id, nombre: e.nombre, formaCobro: e.formaCobro || '',
+                fechaIngreso: e.fechaIngreso || '', fechaSalida: e.fechaSalida || '',   // para el sueldo proporcional
                 sueldo: p.sueldo != null ? n2(p.sueldo) : n2(e.sueldoBase),   // mensual
                 ingresosItems: itemsIniIng(p), deduccionesItems: itemsIniDed(p),
                 descAfp: pctIni(p.descAfp, p, e), descSfs: pctIni(p.descSfs, p, e), descIsr: pctIni(p.descIsr, p, e),
@@ -591,7 +776,7 @@
             };
         });
         if (guardada && Array.isArray(guardada.lineas)) {
-            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId) && periodoDe(l.formaCobro, runTipo).cobra) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
+            guardada.lineas.forEach(l => { if (!empleados.some(e => e.id === l.empleadoId) && periodoDe(l.formaCobro, runTipo).cobra) lineas.push({ empleadoId: l.empleadoId, nombre: l.nombre, formaCobro: l.formaCobro || '', fechaIngreso: l.fechaIngreso || '', fechaSalida: l.fechaSalida || '', sueldo: n2(l.sueldo), ingresosItems: itemsIniIng(l), deduccionesItems: itemsIniDed(l), descAfp: pctIni(l.descAfp, l, null), descSfs: pctIni(l.descSfs, l, null), descIsr: pctIni(l.descIsr, l, null), sinTSS: !!l.sinTSS, prestamo: n2(l.prestamo), prestamosDetalle: l.prestamosDetalle || [] }); });
         }
         nominaActual = { periodo, key, tipo: tipoNom(), div, lineas };
         renderNomina();
@@ -620,7 +805,7 @@
         const calc = lineasVis.map(l => calcLinea(l, nominaActual.tipo));
         const tot = calc.reduce((a, l) => ({ sueldo: a.sueldo + l.sueldo, ingresos: a.ingresos + l.ingresos, afp: a.afp + l.afp, sfs: a.sfs + l.sfs, isr: a.isr + l.isr, deducciones: a.deducciones + l.deducciones, prestamo: a.prestamo + l.prestamo, neto: a.neto + l.neto }), { sueldo: 0, ingresos: 0, afp: 0, sfs: 0, isr: 0, deducciones: 0, prestamo: 0, neto: 0 });
         const rows = calc.map(l => `<tr data-id="${esc(l.empleadoId)}"${l.cobra === false ? ' style="opacity:.6"' : ''}>
-            <td class="nom-name">${esc(l.nombre)}${l.cobra === false ? '<div style="font-size:10.5px;color:#c76a1c;font-weight:bold">— cobró todo en la 1ra quincena</div>' : ''}</td>
+            <td class="nom-name">${esc(l.nombre)}${l.cobra === false ? '<div style="font-size:10.5px;color:#c76a1c;font-weight:bold">— cobró todo en la 1ra quincena</div>' : ''}${l.prorrateo && !l.prorrateo.fuera ? `<div style="font-size:10.5px;color:#7d3c98;font-weight:bold" title="Sueldo ÷ ${cfg.diasLabMes} días × días laborables trabajados">Proporcional: ${l.prorrateo.dias} días lab. (${fmtFecha(l.prorrateo.desde)} → ${fmtFecha(l.prorrateo.hasta)})</div>` : ''}</td>
             <td style="text-align:center"><input type="checkbox" ${l.sinTSS ? '' : 'checked'} onchange="toggleTSS('${esc(l.empleadoId)}', this.checked)" title="En seguridad social (TSS)"></td>
             <td><input type="number" data-k="sueldo" value="${l.sueldoMes}" onchange="recalcNom()" title="Sueldo mensual"></td>
             <td>${l.ingMes ? fmt(l.ingMes) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarIngresos('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
@@ -634,7 +819,7 @@
         </tr>`).join('');
         document.getElementById('nom-cont').innerHTML = `
         <div class="sec-title">Nómina — ${fmtPeriodoKey(nominaActual.key)} · ${calc.length} empleados${div === 2 ? ' · <span style="color:#7d3c98">quincenal</span>' : ''}</div>
-        <p class="muted" style="margin:2px 0 6px">Los de cobro <b>mensual</b> aparecen solo en la <b>1ra quincena</b> (cobran todo ahí) y en la corrida mensual; en la 2da quincena no aparecen. Los <b>quincenales</b> van mitad en cada quincena. La forma de cobro se configura en la ficha del empleado.</p>
+        <p class="muted" style="margin:2px 0 6px">Los de cobro <b>mensual</b> aparecen solo en la <b>1ra quincena</b> (cobran todo ahí) y en la corrida mensual. Los <b>quincenales</b> van mitad del sueldo en cada quincena. Los <b>otros ingresos</b> (horas/días extra, bonos…) son de este período y se pagan completos. Quien entra o sale a mitad de período cobra <b>proporcional</b> a los días laborables trabajados (fecha de ingreso en la ficha del empleado).</p>
         <div class="tabla-wrap"><table class="nom">
             <thead><tr><th style="text-align:left">Empleado</th><th>TSS</th><th>Sueldo mes</th><th>Otros ing.</th><th>AFP</th><th>SFS</th><th>ISR</th><th>Préstamo</th><th>Otras ded.</th><th>Neto${div === 2 ? ' quinc.' : ''}</th><th></th></tr></thead>
             <tbody id="nom-tbody">${rows}</tbody>
@@ -814,8 +999,8 @@
     // Texto plano del volante (para enviar por mensajería interna).
     function volanteTexto(l, periodoKey) {
         const L = ['ARTAL DOMINICANA — Volante de pago', l.nombre, 'Período: ' + fmtPeriodoKey(periodoKey), ''];
-        L.push('Sueldo: ' + fmt(l.sueldo));
-        if (l.ingresos) L.push('Otros ingresos: ' + fmt(l.ingresos));
+        L.push('Sueldo: ' + fmt(l.sueldo) + (l.prorrateo && !l.prorrateo.fuera ? ` (proporcional: ${l.prorrateo.dias} días laborables)` : ''));
+        (l.ingItems || []).filter(it => n2(it.monto) > 0).forEach(it => L.push(it.tipo + (n2(it.cantidad) ? ` (${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'd'})` : '') + ': ' + fmt(it.monto)));
         if (!l.sinTSS) { L.push('AFP: - ' + fmt(l.afp)); L.push('SFS: - ' + fmt(l.sfs)); }
         if (l.isr) L.push('ISR: - ' + fmt(l.isr));
         if (l.prestamo) L.push('Cuota de préstamo: - ' + fmt(l.prestamo));
@@ -830,7 +1015,7 @@
         if (!confirm('¿Enviar a cada empleado su volante de «' + fmtPeriodoKey(key) + '» por la mensajería interna?\n\nCada uno lo recibe en su bandeja de Mensajería.')) return;
         let ok = 0; const ids = []; const sinCorreo = [];
         for (const rawL of n.lineas) {
-            const l = calcLinea(rawL, n.tipo);
+            const l = calcLinea(rawL, n.tipo, n.periodo);
             if (l.cobra === false) continue;   // no cobró este período → sin volante
             const emp = empleados.find(e => e.id === l.empleadoId);
             const correo = emp && emp.correo ? emp.correo : '';
@@ -866,17 +1051,26 @@
 
     // ---------- VOLANTE ----------
     let volanteHTML = '';
+    // Nota corta de cómo salió el ISR (para que la contable pueda verificarlo a mano).
+    function isrNota(l) {
+        const d = l.isrDetalle; if (!d) return '';
+        if (d.metodo === 'q1') return `(escala mensual: ½ del ISR del mes ${fmt(d.mitadBase)}${l.ingGrav ? ' + el de las extras' : ''})`;
+        if (d.metodo === 'q2_regularizado') return `(ISR del mes ${fmt(d.isrMes)} − retenido en la 1ra quincena ${fmt(d.retenidoQ1)})`;
+        if (d.metodo === 'q2_estimado') return `(ISR del mes ${fmt(d.isrMes)} − ½ estimada de la 1ra quincena ${fmt(d.retenidoQ1)})`;
+        if (d.metodo === 'proporcional') return '(sobre lo ganado en el período)';
+        return '';
+    }
     function volanteDe(l, periodoKey) {
         const totalDed = l.afp + l.sfs + l.isr + l.deducciones + l.prestamo;
         return `<div class="volante">
             <h3>ARTAL — Volante de pago</h3>
             <div class="vsub">${esc(l.nombre)} · Período: ${esc(fmtPeriodoKey(periodoKey))}</div>
             <table>
-                <tr><td>Sueldo${l.sinTSS ? '' : ''}</td><td class="r">${fmt(l.sueldo)}</td></tr>
-                ${l.ingresos ? `<tr><td>Otros ingresos</td><td class="r">${fmt(l.ingresos)}</td></tr>` : ''}
+                <tr><td>Sueldo${l.prorrateo && !l.prorrateo.fuera ? ` <span class="muted">(proporcional: ${l.prorrateo.dias} días laborables, ${fmtFecha(l.prorrateo.desde)} → ${fmtFecha(l.prorrateo.hasta)})</span>` : ''}</td><td class="r">${fmt(l.sueldo)}</td></tr>
+                ${(l.ingItems || []).filter(it => n2(it.monto) > 0).map(it => `<tr><td>${esc(it.tipo)}${n2(it.cantidad) ? ` <span class="muted">· ${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'd'} × ${fmt(valorUnitario(l.sueldoMes, it.calc))} × ${n2(it.factor) || 1}</span>` : ''}</td><td class="r">${fmt(it.monto)}</td></tr>`).join('')}
                 ${l.sinTSS ? '' : `<tr><td>AFP (${cfg.afpEmp}%)</td><td class="r">- ${fmt(l.afp)}</td></tr>
                 <tr><td>SFS (${cfg.sfsEmp}%)</td><td class="r">- ${fmt(l.sfs)}</td></tr>`}
-                <tr><td>ISR</td><td class="r">- ${fmt(l.isr)}</td></tr>
+                <tr><td>ISR${isrNota(l) ? ` <span class="muted">${isrNota(l)}</span>` : ''}</td><td class="r">- ${fmt(l.isr)}</td></tr>
                 ${l.prestamo ? `<tr><td>Cuota de préstamo</td><td class="r">- ${fmt(l.prestamo)}</td></tr>` : ''}
                 ${l.deducciones ? `<tr><td>Otras deducciones</td><td class="r">- ${fmt(l.deducciones)}</td></tr>` : ''}
                 <tr><td>Total ingresos</td><td class="r">${fmt(l.sueldo + l.ingresos)}</td></tr>
