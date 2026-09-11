@@ -1,9 +1,11 @@
 // Segundo factor (2FA) DENTRO de la plataforma con app autenticadora (Google Authenticator, Authy,
 // 1Password…), usando la autenticación multifactor TOTP de Firebase.
 //
-// · Obligatorio para los roles sensibles (ROLES_2FA): al entrar, si la cuenta no tiene el factor
-//   inscrito, se le obliga a inscribirlo (QR + código) antes de ver nada. Los roles de campo
-//   (chofer, instalador, ayudante, fábrica, contratista) no lo necesitan.
+// · Obligatorio SOLO para admin (ROLES_2FA) — decisión del usuario 2026-09-12: contable y
+//   comunicaciones siguen con PIN / Face-Touch ID en el día a día; el 2FA se reserva para las cuentas
+//   admin y para la pantalla Usuarios y roles, donde se pide el código EN CADA ENTRADA
+//   (`verificar2FA`, verificación reforzada: re-autentica con Google y exige el código TOTP).
+//   Pendiente "eventualmente": endurecer las sesiones admin (caducidad, cierre remoto).
 // · En cada inicio de sesión de una cuenta inscrita, Google pide la contraseña y luego la
 //   plataforma pide el código de 6 dígitos (auth/multi-factor-auth-required → resolverMFASignIn).
 // · Requisito de proyecto (un clic, lo hace el admin en Firebase Console): Authentication →
@@ -14,10 +16,10 @@
 //   mfaReset) y al volver a entrar lo inscribe de nuevo.
 import { auth, googleProvider, db } from './firebase-config.js';
 import { rootPath } from './paths.js';
-import { multiFactor, getMultiFactorResolver, TotpMultiFactorGenerator, reauthenticateWithPopup } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import { multiFactor, getMultiFactorResolver, TotpMultiFactorGenerator, reauthenticateWithPopup, GoogleAuthProvider } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
-export const ROLES_2FA = ['admin', 'contable', 'comunicaciones'];
+export const ROLES_2FA = ['admin'];
 export const requiere2FA = (roles) => (roles || []).some(r => ROLES_2FA.includes(r));
 export const tieneMFA = (user) => { try { return multiFactor(user).enrolledFactors.length > 0; } catch (_) { return false; } };
 
@@ -78,6 +80,28 @@ export function resolverMFASignIn(error) {
         inp.onkeydown = (ev) => { if (ev.key === 'Enter') intentar(); };
         el.querySelector('#mfa-cancel').onclick = () => { cerrar(); reject(new Error('cancelado')); };
     });
+}
+
+// ---- Verificación reforzada (cada entrada a una pantalla crítica) ----
+// Re-autentica con Google (con la cuenta ya iniciada, sin selector) y exige el código TOTP. Si la
+// cuenta aún no tiene 2FA inscrito, la inscribe primero. Devuelve true si pasó; lanza si canceló/falló.
+export async function verificar2FA(user) {
+    if (!user) throw new Error('sin sesión');
+    if (!tieneMFA(user)) {
+        const ok = await inscribirMFA(user, user.email);
+        if (!ok) return false;   // TOTP no activado en el proyecto: se avisó y se deja pasar
+        return true;             // recién inscrito: el código acaba de validarse
+    }
+    const prov = new GoogleAuthProvider();
+    prov.setCustomParameters({ login_hint: user.email });   // la misma cuenta, sin volver a elegir
+    overlay('<h2 style="margin:0;font-size:20px;">Verificación reforzada</h2><p style="opacity:.9;margin:0;max-width:340px;">Esta pantalla pide el código de tu app autenticadora cada vez. Google confirmará tu cuenta primero…</p>');
+    try {
+        await reauthenticateWithPopup(user, prov);
+        cerrar(); return true;   // (sin factor inscrito no debería llegar aquí)
+    } catch (e) {
+        if (e && e.code === 'auth/multi-factor-auth-required') { await resolverMFASignIn(e); return true; }
+        cerrar(); throw e;
+    }
 }
 
 // ---- Inscripción obligatoria (primera vez): QR + código de confirmación ----

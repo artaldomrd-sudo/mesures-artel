@@ -68,7 +68,7 @@
 
     <div class="box" id="box-mfa" style="display:none">
         <h2>🔐 Verificación en 2 pasos (app autenticadora)</h2>
-        <p class="muted" style="margin:0 0 10px">Obligatoria para admin, contable y comunicaciones. La consola de Firebase solo ofrece SMS; el método con app autenticadora (Google Authenticator / Authy) se activa desde aquí. Requiere que el proyecto esté en <b>Identity Platform</b> (Firebase Console → Authentication → «Actualizar»).</p>
+        <p class="muted" style="margin:0 0 10px">Obligatoria para <b>admin</b> al iniciar sesión, y el código se pide <b>cada vez que se entra a esta pantalla</b>. Los demás roles entran con su PIN o Face/Touch ID. La consola de Firebase solo ofrece SMS; el método con app autenticadora (Google Authenticator / Authy) se activa desde aquí.</p>
         <div class="row">
             <span id="mfa-estado" class="muted">Consultando estado…</span>
             <button class="act" id="btn-mfa-on" onclick="activarTotpProyecto()" style="display:none">🔐 Activar TOTP en el proyecto</button>
@@ -106,14 +106,22 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
-    import { requirePin } from './pin-gate.js';
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // requireAuth([]) deja pasar admin y lector: el lector ve la lista, pero solo el admin edita (y las
     // reglas de Firestore lo exigen también del lado del servidor).
     const usuario = await requireAuth([]);
-    await requirePin(usuario, { siempre: true });   // página sensible: PIN en CADA entrada, aunque la sesión ya esté desbloqueada
+    // Pantalla crítica: código de la app autenticadora EN CADA ENTRADA (verificación reforzada), en vez
+    // del PIN. Si se cancela o falla, de vuelta al Panel.
+    try {
+        const mfa = await import('./mfa.js');
+        await mfa.verificar2FA(auth.currentUser);
+    } catch (e) {
+        if (!(e && e.message === 'cancelado')) alert('No se pudo completar la verificación: ' + (e && e.message ? e.message : e));
+        location.replace('index.html');
+        await new Promise(() => { });   // detiene el resto del script mientras redirige
+    }
     const esAdmin = usuario.roles.includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
@@ -130,8 +138,8 @@
     }
     function pintarMfa(j) {
         const est = document.getElementById('mfa-estado'), btn = document.getElementById('btn-mfa-on');
-        if (j.totpActivo) { est.innerHTML = '<b style="color:#1e8449">✓ TOTP activo</b> — los roles sensibles deben inscribirse al entrar.'; est.className = ''; btn.style.display = 'none'; }
-        else { est.innerHTML = '<b style="color:#c0392b">TOTP desactivado</b> — los roles sensibles ven el aviso «pendiente» y pasan sin 2FA.'; est.className = ''; btn.style.display = ''; }
+        if (j.totpActivo) { est.innerHTML = '<b style="color:#1e8449">✓ TOTP activo</b> — los admin se inscriben al entrar y esta pantalla pide el código en cada entrada.'; est.className = ''; btn.style.display = 'none'; }
+        else { est.innerHTML = '<b style="color:#c0392b">TOTP desactivado</b> — los admin ven el aviso «pendiente» y pasan sin 2FA.'; est.className = ''; btn.style.display = ''; }
     }
     window.consultarMfa = async function () {
         const m = document.getElementById('mfa-msg'); m.textContent = ''; m.className = 'msg';
@@ -151,10 +159,10 @@
     // Catálogo de roles de la plataforma (los que reconocen requireAuth() de cada pantalla y las
     // reglas de Firestore). Al agregar un rol nuevo en el código, sumarlo aquí para poder asignarlo.
     const ROLES = [
-        { id: 'admin', nombre: 'Administrador', desc: 'Panel de Control completo: entra a todo y gestiona usuarios.' },
+        { id: 'admin', nombre: 'Administrador', desc: 'Panel de Control completo: entra a todo y gestiona usuarios. Requiere app autenticadora (2FA).' },
         { id: 'lector', nombre: 'Solo lectura', desc: 'Ve todas las pantallas pero no puede modificar nada.' },
         { id: 'cotizaciones', nombre: 'Cotizaciones / Ventas', desc: 'Precio final al cliente, clientes, oportunidades, comisiones, calculador de obra.' },
-        { id: 'contable', nombre: 'Contable (ERP)', desc: 'Bancos, contabilidad, activos, RRHH, nómina, catálogo de cuentas.' },
+        { id: 'contable', nombre: 'Contable (ERP)', desc: 'Bancos, contabilidad, activos, RRHH, nómina, catálogo de cuentas. Entra con PIN / Face ID.' },
         { id: 'comunicaciones', nombre: 'Comunicaciones', desc: 'Puede ENVIAR por la Mensajería ARTAL (comunicados, volantes de pago).' },
         { id: 'capacitador', nombre: 'Capacitador (Academia)', desc: 'Crea y edita cursos y lecciones de la Academia.' },
         { id: 'fabrica', nombre: 'Fábrica (ALUCUFEL)', desc: 'Tablero de fabricación: marcar partes listas, enviar a instalación.' },
