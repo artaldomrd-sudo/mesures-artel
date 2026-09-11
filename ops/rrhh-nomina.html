@@ -714,9 +714,13 @@
     }
     // ==== CALC PURO FIN ====
     // Línea de la 1ra quincena GUARDADA del mismo mes (para regularizar el ISR en la 2da).
+    // Solo se regulariza contra una Q1 calculada con ESTA versión (calcVersion 2). Las guardadas con
+    // el cálculo anterior (escala anual dañada) daban un ISR de Q1 falso y la Q2 salía a "compensar"
+    // (Wilson: 3,486.65 − 674.11 = 2,812.54 en vez de 1,743.32). Para esas, se usa la ½ estimada.
+    const CALC_VERSION = 2;
     function lineaQ1Guardada(periodo, empleadoId) {
         const n = (typeof nominasGuardadas !== 'undefined' ? nominasGuardadas : []).find(x => x.key === periodo + '-Q1');
-        if (!n || !Array.isArray(n.calc)) return null;
+        if (!n || !Array.isArray(n.calc) || n2(n.calcVersion) < CALC_VERSION) return null;
         return n.calc.find(x => x.empleadoId === empleadoId) || null;
     }
     function calcLinea(l, runTipo, periodo) {
@@ -811,7 +815,7 @@
             <td>${l.ingMes ? fmt(l.ingMes) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarIngresos('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
             <td class="neg">${fmt(l.afp)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descafp" value="${l.descAfp}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de AFP a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${fmt(l.sfs)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descsfs" value="${l.descSfs}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de SFS a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
-            <td class="neg">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
+            <td class="neg" title="${esc(isrDesglose(l))}">${fmt(l.isr)}<div class="pct-wrap"><input type="number" class="pct-mini" data-k="descisr" value="${l.descIsr}" ${l.sinTSS ? 'disabled' : ''} onchange="recalcNom()" title="% de ISR a cargo del empleado (100 = normal; baja el % para que la empresa asuma esa parte)"><span>%</span></div></td>
             <td class="neg">${l.prestamo ? fmt(l.prestamo) : '—'}</td>
             <td>${l.deducciones ? fmt(l.deducciones) : '—'}<div class="pct-wrap"><button type="button" class="btn-mini-edit" onclick="editarDeducciones('${esc(l.empleadoId)}')">✎ tipos</button></div></td>
             <td class="pos"><b>${fmt(l.neto)}</b></td>
@@ -840,7 +844,7 @@
         if (!confirm(`¿Guardar la nómina de ${fmtPeriodoKey(key)}?\n\nSe debitarán las cuotas de préstamo de este período a los saldos.`)) return;
         try {
             await setDoc(doc(db, 'rrhhNominas', key), {
-                periodo: nominaActual.periodo, key, tipo: nominaActual.tipo, div,
+                periodo: nominaActual.periodo, key, tipo: nominaActual.tipo, div, calcVersion: CALC_VERSION,
                 lineas: nominaActual.lineas,   // crudo (mensual) para poder recargar y editar
                 calc,                           // valores calculados del período (para registro)
                 parametros: cfg, guardadoPor: usuario.nombre, fechaGuardado: serverTimestamp()
@@ -1059,6 +1063,20 @@
         if (d.metodo === 'q2_estimado') return `(ISR del mes ${fmt(d.isrMes)} − ½ estimada de la 1ra quincena ${fmt(d.retenidoQ1)})`;
         if (d.metodo === 'proporcional') return '(sobre lo ganado en el período)';
         return '';
+    }
+    // Desglose completo del ISR en texto (tooltip de la grilla), para verificarlo a mano.
+    function isrDesglose(l) {
+        const d = l.isrDetalle; if (!d) return l.sinTSS ? 'Sin TSS: no lleva ISR' : 'ISR 0';
+        const c = cfg, sueldo = n2(l.sueldoMes);
+        const afpM = Math.min(sueldo, c.topeAfp > 0 ? c.topeAfp : Infinity) * c.afpEmp / 100, sfsM = Math.min(sueldo, c.topeSfs > 0 ? c.topeSfs : Infinity) * c.sfsEmp / 100;
+        const L = [`Sueldo mes ${fmt(sueldo)} − AFP ${fmt(afpM)} − SFS ${fmt(sfsM)}${l.ingGrav ? ` + ingresos gravables ${fmt(l.ingGrav)}` : ''}`];
+        if (d.metodo === 'mensual') L.push(`Gravable ${fmt(d.gravable)} → ISR del mes ${fmt(d.isrMes)} (escala mensual DGII)`);
+        if (d.metodo === 'q1') L.push(`ISR del mes ${fmt(d.isrMes)} − ½ del ISR sin extras ${fmt(d.mitadBase)} = 1ra quincena`);
+        if (d.metodo === 'q2_regularizado') L.push(`ISR del mes ${fmt(d.isrMes)} − retenido en la 1ra quincena guardada ${fmt(d.retenidoQ1)} = 2da quincena`);
+        if (d.metodo === 'q2_estimado') L.push(`ISR del mes ${fmt(d.isrMes)} − ½ estimada de la 1ra quincena ${fmt(d.retenidoQ1)} = 2da quincena`);
+        if (d.metodo === 'proporcional') L.push(`Proporcional: gravable del período ${fmt(d.gravable)} → escala mensual directa`);
+        if (n2(l.descIsr) !== 100) L.push(`× ${l.descIsr}% a cargo del empleado`);
+        return L.join('\n');
     }
     function volanteDe(l, periodoKey) {
         const totalDed = l.afp + l.sfs + l.isr + l.deducciones + l.prestamo;
