@@ -623,6 +623,22 @@ async function callerAdmin(req) {
     } catch (_) { return null; }
 }
 
+// Notificación de PRUEBA a todos los dispositivos de un usuario (admin, desde Usuarios y roles):
+// sirve para comprobar que le llegan sin esperar a un evento real. Devuelve cuántos dispositivos tenía.
+exports.pushPrueba = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (!email) { res.status(400).json({ error: 'email' }); return; }
+    try {
+        const antes = await tokensDe(email);
+        await enviarPushUsuario(email, 'Prueba de notificación — ARTAL', 'Si ves este aviso, las notificaciones funcionan en este dispositivo. Enviado por ' + admin + '.', 'ops/index.html');
+        const despues = await tokensDe(email);
+        res.status(200).json({ ok: true, dispositivos: antes.length, vivos: despues.length });
+    } catch (e) { console.error('pushPrueba', email, e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
+});
+
 // Directorio `equipo/{email}` = espejo NO sensible de usuarios/{email} (solo nombre, rol, activo).
 // Las pantallas compartidas (instalación, mensajería, fábrica, historial…) leen de aquí; la
 // colección `usuarios` completa (PIN, biometría, tokens, 2FA, ajustes) solo la lee cada quien su

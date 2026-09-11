@@ -75,14 +75,36 @@ function pintarBoton(estado, btn) {
 
 // Silencioso: se llama en cada carga (desde requireAuth). Si el permiso ya fue concedido, renueva y
 // guarda el token de ESTE dispositivo sin preguntar nada. Nunca muestra alertas.
-export async function refrescarNotificaciones() {
+export async function refrescarNotificaciones(opts) {
     try {
         if (!soportado()) return;
         pintarBoton(Notification.permission);
-        if (Notification.permission !== 'granted' || !auth.currentUser || !auth.currentUser.email) return;
+        if (Notification.permission !== 'granted') {
+            // Un admin pidió (desde Usuarios y roles) que esta persona active las notificaciones:
+            // aviso visible con el botón — el permiso solo puede concederlo ella, tocando aquí.
+            if (opts && opts.pedir && auth.currentUser) mostrarAvisoPedido();
+            return;
+        }
         await obtenerYGuardarToken(false);
         pintarBoton('granted');
+        if (opts && opts.pedir) { try { await updateDoc(doc(db, 'usuarios', auth.currentUser.email), { pedirNotificaciones: false }); } catch (_) { } }
     } catch (e) { console.warn('refrescarNotificaciones', e && e.message ? e.message : e); }
+}
+function mostrarAvisoPedido() {
+    if (document.getElementById('aviso-notif-pedido')) return;
+    const bloq = Notification.permission === 'denied';
+    const bar = document.createElement('div');
+    bar.id = 'aviso-notif-pedido';
+    bar.style.cssText = 'position:sticky;top:0;z-index:9000;background:#fff4e5;border-bottom:2px solid #f5c26b;color:#7a4b00;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-family:Arimo,sans-serif;font-size:14px;';
+    bar.innerHTML = '<span style="flex:1;min-width:220px;">🔔 <b>Gerencia te pide activar las notificaciones</b> en este dispositivo para recibir los avisos de trabajo.' + (bloq ? ' Están bloqueadas en tu navegador/teléfono: toca el botón para ver cómo permitirlas.' : '') + '</span>'
+        + '<button id="aviso-notif-btn" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:700;font-family:Arimo;cursor:pointer;min-height:42px;">' + (bloq ? 'Cómo permitirlas' : 'Activar ahora') + '</button>'
+        + '<button id="aviso-notif-x" title="Cerrar" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#7a4b00;">✕</button>';
+    document.body.prepend(bar);
+    bar.querySelector('#aviso-notif-x').onclick = () => bar.remove();
+    bar.querySelector('#aviso-notif-btn').onclick = async () => {
+        await enableNotifications(bar.querySelector('#aviso-notif-btn'));
+        if (Notification.permission === 'granted') { try { await updateDoc(doc(db, 'usuarios', auth.currentUser.email), { pedirNotificaciones: false }); } catch (_) { } bar.remove(); }
+    };
 }
 
 export async function enableNotifications(button) {
