@@ -1652,6 +1652,17 @@ dentro de `ops/` en el futuro, esto evita que se repita el mismo bug.
   (ej. `creadoPorNombre` en citas y compras), sin selectores manuales.
 - La asignación de chofer/instalador a un pedido (`ops/historial.html`) es **informativa**, no
   restringe acceso — cualquier chofer/instalador ve todos los pedidos por si hay que cubrirse.
+- **Usuarios y roles (`ops/usuarios.html`, solo admin, 2FA en cada entrada; 2026-09-13).** Gestiona
+  `usuarios/{email}` (nombre, `rol` string|array, `activo`) y los **permisos por página**:
+  `paginasExtra` / `paginasBloqueadas` (ids del catálogo). El catálogo vive en **`ops/paginas.js`**
+  (`PAGINAS`: id = ruta relativa a `ops/`, título, grupo, `roles` = los del `requireAuth` de esa
+  página; `puedeVer`, `daElRol`, `aplicarPermisosEnlaces`). `requireAuth()` aplica los permisos AL
+  ENTRAR (bloqueada rebota aunque el rol la dé; extra abre aunque no) y esconde los enlaces/mosaicos
+  no permitidos en todos los hubs; `erp.html` ya no usa `TILES_POR_ROL`. **Al crear una pantalla
+  nueva en `ops/`: agregarla a `PAGINAS` con los mismos roles que su `requireAuth`.** Las pantallas
+  compartidas leen el espejo no sensible `equipo/{email}` (nombre, rol, activo), nunca `usuarios`
+  (solo lo lee su dueño o admin). Cloud Functions de apoyo (admin): `usuariosInfo` (último acceso,
+  2FA real), `pushPrueba`, `mfaReset`, `mfaConfig`, `equipoSync`; trigger `sincronizarEquipo`.
 
 ### Instalación (`ops/instalacion.html`) — pantalla única con pestañas
 
