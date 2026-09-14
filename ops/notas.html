@@ -31,6 +31,10 @@
     .edit-bar button:hover { background: #f2f5f8; }
     .edit-bar button.on { color: var(--artal-yellow-deep); }
     #nota-edit { flex: 1; border: none; outline: none; resize: none; padding: 20px 22px; font-family: 'Arimo'; font-size: 16px; line-height: 1.6; color: #2a3742; border-radius: 0 0 var(--radius) var(--radius); }
+    .adjuntos { padding: 8px 22px 16px; border-top: 1px solid #eef1f4; border-radius: 0 0 var(--radius) var(--radius); }
+    .adjuntos .fotos-thumbs { margin-top: 6px; }
+    .adjuntos .foto-add-btn { margin-top: 8px; }
+    .nota-item .adj { font-size: 11px; color: #7a828c; margin-left: 6px; }
     .btn-back-mobile { display: none; }
     .no-sel { flex: 1; display: flex; align-items: center; justify-content: center; color: #b0b8c1; font-size: 14px; padding: 30px; text-align: center; }
 
@@ -76,6 +80,7 @@
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { db } from './firebase-config.js';
     import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
 
     // Personal interno de ARTAL tiene sus notas personales. ALUCUFEL (contratista/fabrica) es
     // contratista externo: no entra a las herramientas internas.
@@ -110,6 +115,8 @@
             const n = notasCache.find(x => x.id === sel);
             if (n && n.contenido !== ta.value) ta.value = n.contenido || '';
         }
+        // Adjuntos: refrescar solo su zona (subida/borrado recién hechos), nunca el textarea.
+        if (sel) { const n = notasCache.find(x => x.id === sel), za = document.getElementById('nota-adjuntos'); if (n && za) { const h = adjuntosHTML(n); if (za.innerHTML !== h) za.innerHTML = h; } }
         if (sel && !notasCache.find(x => x.id === sel)) { sel = null; renderEditor(); }
     }, () => { notasCache = []; renderList(); });
 
@@ -119,7 +126,7 @@
         const cont = document.getElementById('lista');
         if (!items.length) { cont.innerHTML = `<div class="empty">${q ? 'Sin resultados.' : '📝 No tienes notas aún.<br>Toca “＋ Nueva”.'}</div>`; return; }
         cont.innerHTML = items.map(n => `<div class="nota-item ${n.id === sel ? 'sel' : ''}" onclick="abrir('${n.id}')">
-            <div class="t">${n.fijada ? '<span class="pin">📌</span> ' : ''}${esc(tituloDe(n.contenido))}</div>
+            <div class="t">${n.fijada ? '<span class="pin">📌</span> ' : ''}${esc(tituloDe(n.contenido))}${Array.isArray(n.adjuntos) && n.adjuntos.length ? `<span class="adj">📎 ${n.adjuntos.length}</span>` : ''}</div>
             <div class="p">${esc(previewDe(n.contenido))}</div>
             <div class="d">${esc(fCorta(n.actualizada))}</div>
         </div>`).join('');
@@ -137,13 +144,21 @@
                 <button class="${n.fijada ? 'on' : ''}" title="Fijar arriba" onclick="fijar('${n.id}')">📌</button>
                 <button title="Eliminar nota" onclick="borrar('${n.id}')">🗑️</button>
             </div>
-            <textarea id="nota-edit" placeholder="Escribe aquí… La primera línea es el título.">${esc(n.contenido || '')}</textarea>`;
+            <textarea id="nota-edit" placeholder="Escribe aquí… La primera línea es el título.">${esc(n.contenido || '')}</textarea>
+            <div class="adjuntos" id="nota-adjuntos">${adjuntosHTML(n)}</div>`;
         const ta = document.getElementById('nota-edit');
         ta.addEventListener('input', onEdit);
         // Enfocar al abrir (al final del texto) salvo en móvil recién cargado.
         ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
     }
 
+    // Imágenes y documentos adjuntos a la nota (campo `adjuntos`, módulo compartido fotos.js; los
+    // archivos van a Storage bajo notas/{id}/). Se repinta SOLO esta zona cuando llega un cambio,
+    // para no tocar el textarea mientras se escribe.
+    function adjuntosHTML(n) {
+        return fotosThumbsHTML(n.adjuntos, { coleccion: 'notas', id: n.id, campo: 'adjuntos', puedeBorrar: true })
+            + fotoAddBtnHTML({ coleccion: 'notas', id: n.id, campo: 'adjuntos', docs: true, label: '📎 Agregar imagen o documento' });
+    }
     window.abrir = function (id) { sel = id; renderList(); renderEditor(); };
     window.cerrarEditor = function () { sel = null; document.getElementById('layout').classList.remove('editing'); renderList(); renderEditor(); };
 

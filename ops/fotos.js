@@ -93,15 +93,30 @@ async function prepararImagenJpeg(file) {
     try { return await canvasAJpeg(file); } catch (e) { return file; }
 }
 
+// Extensiones de "documento" que se suben tal cual (opt-in `docs:true`, ej. Notas): Word, Excel,
+// PowerPoint, texto, CSV. Tamaño máximo por archivo: 20 MB.
+const DOC_EXT = /\.(docx?|xlsx?|pptx?|txt|csv|rtf|odt|ods|odp|zip)$/i;
+const DOC_MAX_MB = 20;
+const extDe = (n) => { const m = /\.([a-z0-9]+)$/i.exec(n || ''); return m ? m[1].toLowerCase() : ''; };
+
 // Sube una lista de archivos y devuelve [{ url, nombre, tipo }]. Acepta imágenes (se comprimen a
-// JPEG; HEIC del iPhone se convierte primero) y PDFs (se suben tal cual). Ignora cualquier otro tipo.
-export async function subirFotos(fileList, pathPrefix) {
+// JPEG; HEIC del iPhone se convierte primero) y PDFs (se suben tal cual). Con `opts.docs` acepta
+// además documentos (DOC_EXT), tal cual, tipo 'archivo'. Ignora cualquier otro tipo.
+export async function subirFotos(fileList, pathPrefix, opts = {}) {
     const out = [];
     for (const original of Array.from(fileList || [])) {
         const esPdf = original.type === 'application/pdf' || /\.pdf$/i.test(original.name || '');
         const esImg = /^image\//.test(original.type) || esHeic(original);
-        if (!esImg && !esPdf) continue;
-        if (esPdf) {
+        const esDoc = !esImg && !esPdf && opts.docs && DOC_EXT.test(original.name || '');
+        if (!esImg && !esPdf && !esDoc) continue;
+        if (esDoc) {
+            if (original.size > DOC_MAX_MB * 1024 * 1024) throw new Error(`"${original.name}" pesa más de ${DOC_MAX_MB} MB.`);
+            const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.' + extDe(original.name);
+            const r = ref(storage, `${pathPrefix}/${nombre}`);
+            await uploadBytes(r, original, { contentType: original.type || 'application/octet-stream' });
+            const url = await getDownloadURL(r);
+            out.push({ url, nombre: original.name || 'documento', tipo: 'archivo' });
+        } else if (esPdf) {
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.pdf';
             const r = ref(storage, `${pathPrefix}/${nombre}`);
             await uploadBytes(r, original, { contentType: 'application/pdf' });
@@ -121,8 +136,8 @@ export async function subirFotos(fileList, pathPrefix) {
 
 // Agrega fotos al array `campo` de un documento (read-modify-write, para no depender de
 // arrayUnion con objetos, que exige igualdad exacta).
-export async function agregarFotos(coleccion, id, fileList, campo = 'fotos') {
-    const nuevas = await subirFotos(fileList, `${coleccion}/${id}`);
+export async function agregarFotos(coleccion, id, fileList, campo = 'fotos', opts = {}) {
+    const nuevas = await subirFotos(fileList, `${coleccion}/${id}`, opts);
     if (!nuevas.length) return [];
     const snap = await getDoc(doc(db, coleccion, id));
     const prev = (snap.exists() && Array.isArray(snap.data()[campo])) ? snap.data()[campo] : [];
@@ -152,6 +167,11 @@ export function fotosThumbsHTML(fotos, { coleccion, id, campo = 'fotos', puedeBo
             const nom = (f.nombre || 'PDF').replace(/\.pdf$/i, '');
             return `<span class="foto-thumb foto-pdf"><a href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.nombre || 'PDF')}"><span class="pdf-ico">📄</span><span class="pdf-nom">${esc(nom.slice(0, 16))}</span></a>${del}</span>`;
         }
+        if (f.tipo === 'archivo' || DOC_EXT.test(f.nombre || '')) {
+            const ext = extDe(f.nombre), ico = /^docx?$|^odt$|^rtf$|^txt$/.test(ext) ? '📝' : /^xlsx?$|^csv$|^ods$/.test(ext) ? '📊' : /^pptx?$|^odp$/.test(ext) ? '📽️' : '📎';
+            const nom = (f.nombre || 'archivo').replace(/\.[a-z0-9]+$/i, '');
+            return `<span class="foto-thumb foto-pdf foto-doc"><a href="${esc(f.url)}" target="_blank" rel="noopener" title="${esc(f.nombre || 'archivo')}"><span class="pdf-ico">${ico}</span><span class="pdf-nom">${esc(nom.slice(0, 16))}</span></a>${del}</span>`;
+        }
         return `<span class="foto-thumb"><a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" loading="lazy" alt="foto"></a>${del}</span>`;
     }).join('');
     return `<div class="fotos-thumbs">${items}</div>`;
@@ -159,10 +179,10 @@ export function fotosThumbsHTML(fotos, { coleccion, id, campo = 'fotos', puedeBo
 
 // Botón "Agregar fotos": un <label> con un <input file> oculto (accept image/* + capture para
 // que en el celular ofrezca cámara o galería).
-export function fotoAddBtnHTML({ coleccion, id, campo = 'fotos', label, pdf = false } = {}) {
-    const accept = pdf ? 'image/*,application/pdf' : 'image/*';
-    const lbl = label || (pdf ? '📎 Agregar foto/PDF' : '📷 Agregar fotos');
-    return `<label class="foto-add-btn">${esc(lbl)}<input type="file" accept="${accept}" multiple style="display:none" onchange="__subirFotos('${esc(coleccion)}','${esc(id)}','${esc(campo)}',this)"></label>`;
+export function fotoAddBtnHTML({ coleccion, id, campo = 'fotos', label, pdf = false, docs = false } = {}) {
+    const accept = docs ? 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf,.odt,.ods,.odp,.zip' : (pdf ? 'image/*,application/pdf' : 'image/*');
+    const lbl = label || (docs ? '📎 Agregar imagen o documento' : pdf ? '📎 Agregar foto/PDF' : '📷 Agregar fotos');
+    return `<label class="foto-add-btn">${esc(lbl)}<input type="file" accept="${accept}" multiple style="display:none" data-docs="${docs ? '1' : ''}" onchange="__subirFotos('${esc(coleccion)}','${esc(id)}','${esc(campo)}',this)"></label>`;
 }
 
 // Handlers globales (una sola vez por página).
@@ -174,9 +194,9 @@ window.__subirFotos = async function (coleccion, id, campo, input) {
     input.disabled = true;
     if (label && label.firstChild) label.firstChild.textContent = '⏳ Subiendo…';
     try {
-        await agregarFotos(coleccion, id, files, campo || 'fotos');
+        await agregarFotos(coleccion, id, files, campo || 'fotos', { docs: input.dataset.docs === '1' });
     } catch (e) {
-        alert('No se pudieron subir las fotos: ' + (e && e.message ? e.message : e));
+        alert('No se pudieron subir los archivos: ' + (e && e.message ? e.message : e));
     } finally {
         input.value = '';
         input.disabled = false;
@@ -185,7 +205,7 @@ window.__subirFotos = async function (coleccion, id, campo, input) {
 };
 
 window.__borrarFoto = async function (coleccion, id, url, campo) {
-    if (!confirm('¿Quitar esta foto?')) return;
+    if (!confirm('¿Quitar este archivo de la nota/pedido?')) return;
     try {
         await quitarFotoPorUrl(coleccion, id, url, campo || 'fotos');
     } catch (e) {
@@ -207,6 +227,8 @@ if (!document.getElementById('foto-styles')) {
     .foto-pdf a { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 8px; border: 1.5px solid #d9c2c2; background: #fdf3f3; text-decoration: none; color: #b3413a; gap: 2px; padding: 4px; box-sizing: border-box; }
     .foto-pdf .pdf-ico { font-size: 22px; line-height: 1; }
     .foto-pdf .pdf-nom { font-size: 8.5px; font-weight: bold; color: #8a4b47; text-align: center; word-break: break-all; line-height: 1.1; max-height: 20px; overflow: hidden; }
+    .foto-doc a { border-color: #c5d3e3; background: #eef4fb; color: #1f4e7a; }
+    .foto-doc .pdf-nom { color: #1f4e7a; }
     `;
     document.head.appendChild(st);
 }
