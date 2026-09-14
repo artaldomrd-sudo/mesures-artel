@@ -7,6 +7,7 @@ import { auth, googleProvider, db } from './firebase-config.js';
 import { rootPath } from './paths.js';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { paginaActual, aplicarPermisosEnlaces } from './paginas.js';
 
 function showOverlay(innerHTML) {
   let el = document.getElementById('auth-overlay');
@@ -93,7 +94,13 @@ export function requireAuth(rolesPermitidos) {
       const snap = await getDoc(doc(db, 'usuarios', user.email));
       const data = snap.exists() ? snap.data() : null;
       const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
-      const autorizado = roles.includes('admin') || roles.includes('lector') || roles.some((r) => rolesPermitidos.includes(r));
+      // Permisos por página (Usuarios y roles): `paginasBloqueadas` quita lo que el rol da;
+      // `paginasExtra` da lo que el rol no da. Admin nunca se bloquea. Ver ops/paginas.js.
+      const paginasExtra = data && Array.isArray(data.paginasExtra) ? data.paginasExtra : [];
+      const paginasBloqueadas = data && Array.isArray(data.paginasBloqueadas) ? data.paginasBloqueadas : [];
+      const pagId = paginaActual();
+      const porRol = roles.includes('lector') || roles.some((r) => rolesPermitidos.includes(r));
+      const autorizado = roles.includes('admin') || (!paginasBloqueadas.includes(pagId) && (porRol || paginasExtra.includes(pagId)));
       if (!data || data.activo === false || !autorizado) {
         // Blindaje: si es una cuenta válida y activa con un rol de campo conocido, pero esta no
         // es su pantalla, lo mandamos a la pantalla de su rol en vez de dejarlo aquí — así un
@@ -124,7 +131,13 @@ export function requireAuth(rolesPermitidos) {
       // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo
       // activó las suyas. Best-effort: no bloquea la página ni muestra nada si falla.
       import('./notifications.js').then((m) => m.refrescarNotificaciones && m.refrescarNotificaciones({ pedir: data.pedirNotificaciones === true })).catch(() => {});
-      resolve({ email: user.email, nombre: data.nombre || user.email, rol: roles[0], roles });
+      const usuarioObj = { email: user.email, nombre: data.nombre || user.email, rol: roles[0], roles, paginasExtra, paginasBloqueadas };
+      // Esconde mosaicos/enlaces a páginas que no puede ver (hubs). Se repite un momento después por
+      // si la página dibuja sus mosaicos con JS tras cargar.
+      const ocultar = () => { try { aplicarPermisosEnlaces(usuarioObj); } catch (_) {} };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ocultar); else ocultar();
+      setTimeout(ocultar, 800);
+      resolve(usuarioObj);
     });
   });
 }

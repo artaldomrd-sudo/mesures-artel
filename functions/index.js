@@ -623,6 +623,32 @@ async function callerAdmin(req) {
     } catch (_) { return null; }
 }
 
+// Info de Firebase Auth de cada cuenta (solo admin, para Usuarios y roles): último acceso, fecha de
+// creación y si tiene 2FA inscrito de verdad. Un cliente web no puede leer esto de otras cuentas.
+exports.usuariosInfo = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    try {
+        const out = {};
+        let token;
+        do {
+            const page = await getAuth().listUsers(1000, token);
+            page.users.forEach((u) => {
+                if (!u.email) return;
+                out[u.email.toLowerCase()] = {
+                    ultimoAcceso: u.metadata.lastSignInTime || null,
+                    creado: u.metadata.creationTime || null,
+                    mfa: !!(u.multiFactor && u.multiFactor.enrolledFactors && u.multiFactor.enrolledFactors.length),
+                    deshabilitado: !!u.disabled
+                };
+            });
+            token = page.pageToken;
+        } while (token);
+        res.status(200).json({ ok: true, cuentas: out });
+    } catch (e) { console.error('usuariosInfo', e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
+});
+
 // Notificación de PRUEBA a todos los dispositivos de un usuario (admin, desde Usuarios y roles):
 // sirve para comprobar que le llegan sin esperar a un evento real. Devuelve cuántos dispositivos tenía.
 exports.pushPrueba = onRequest({ cors: true }, async (req, res) => {
