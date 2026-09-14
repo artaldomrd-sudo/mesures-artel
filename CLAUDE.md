@@ -1056,7 +1056,14 @@ juntos a pedido del usuario por tener características similares.
     (no se limpian al cambiar de colección, dato muerto inofensivo).
   - `renderCortina` dibuja el mecanismo según `state.mecanismo`: `'manivela'` → varilla+mango al
     costado (lado de `orientacion`, igual que la cadena); `'cadena'` (o vacío) → cuenta colgante
-    de siempre; `'motor'` → **no dibuja nada** (motorizado no tiene mecanismo manual visible).
+    de siempre; `'motor'` → **motor del lado de `orientacion`** (2026-09-14, pedido del usuario:
+    "sentido del motor, igual que en shutters"): mismo tubo con degradado + tapa + chip "MOTOR"
+    que el shutter, dentro del cajón si `cajon==='con_cajon'` o como cabezal sobre el tubo
+    expuesto si no (ahí el chip va justo debajo del tubo, sobre la tela — encima chocaría con la
+    cota de ancho en y=4). El resumen dice "Mecanismo: Motorizado · Lado del motor: Izquierda/
+    Derecha" (antes omitía el lado con motor). En toda la categoría `cortina` el toggle de
+    orientación se etiqueta "MOTOR / MANDO A LA IZQUIERDA/DERECHA" (`orPref` en `addItem`) para que
+    se entienda que es el lado del motor/manivela/cadena, no una apertura.
   - `generateSummary` arma el texto del mecanismo con un mapa (`Motorizada` para exterior vs
     `Motorizado` para interior, `Manual (Manivela)` vs `Cadena Manual`) y agrega
     "Accesorios exterior: Cables Laterales + Ganchos de Sujeción" (solo los que estén marcados,

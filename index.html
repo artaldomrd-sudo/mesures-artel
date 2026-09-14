@@ -541,7 +541,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-07 16:45</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 10:52</div>
         </div>
     </div>
     
@@ -1940,7 +1940,7 @@
                 const esExterior = tt === 'essential';
                 const mecMap = { motor: esExterior ? 'Motorizada' : 'Motorizado', manivela: 'Manual (Manivela)', cadena: 'Cadena Manual' };
                 const mecTxt = mecMap[state.mecanismo] || (esExterior ? mecMap.manivela : mecMap.cadena);
-                const ladoLabel = state.mecanismo === 'manivela' ? 'Lado de manivela' : 'Lado de cadena';
+                const ladoLabel = state.mecanismo === 'motor' ? 'Lado del motor' : (state.mecanismo === 'manivela' ? 'Lado de manivela' : 'Lado de cadena');
                 const cajonTxt = state.cajon === 'con_cajon' ? 'Con Cajón' : 'Sin Cajón';
                 let accesoriosTxt = '';
                 if (esExterior && (state.cables_laterales || state.ganchos)) {
@@ -1948,7 +1948,7 @@
                     accesoriosTxt = `<div>Accesorios exterior: ${acc}</div>`;
                 }
                 tituloTxt = 'CORTINA ENROLLABLE';
-                extraTxt = `<div>Tipo de tela: ${coleccion.label}</div><div>Apertura: ${CORTINA_APERTURA_LABELS[state.tela] || CORTINA_APERTURA_LABELS[coleccion.aperturas[0]]}</div><div>Rollo: ${cajonTxt}</div><div>Mecanismo: ${mecTxt}${state.mecanismo !== 'motor' ? ' · ' + ladoLabel + ': ' + ladoTxt : ''}</div>${accesoriosTxt}`;
+                extraTxt = `<div>Tipo de tela: ${coleccion.label}</div><div>Apertura: ${CORTINA_APERTURA_LABELS[state.tela] || CORTINA_APERTURA_LABELS[coleccion.aperturas[0]]}</div><div>Rollo: ${cajonTxt}</div><div>Mecanismo: ${mecTxt} · ${ladoLabel}: ${ladoTxt}</div>${accesoriosTxt}`;
             }
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>${tituloTxt}</strong> — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
@@ -4047,7 +4047,9 @@
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
             const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina'].includes(cardsState[id].categoria);
-            const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')"> A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">A LA DERECHA </div></div>` : '';
+            // Cortinas: el toggle es el LADO del motor/manivela/cadena (no "apertura") — se etiqueta así.
+            const orPref = cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : '';
+            const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">${orPref}A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">${orPref}A LA DERECHA</div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
                 : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
             const viasCount = !hasVias ? null : cardsState[id].categoria === 'corredera'
@@ -5406,7 +5408,28 @@
                 const cx2 = sideX + sideSign * 6;
                 svg += `<line x1="${sideX}" y1="${cy1.toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${cy2.toFixed(1)}" stroke="#111" stroke-width="1"/>`;
                 svg += `<line x1="${cx2.toFixed(1)}" y1="${(cy2 - 1.5).toFixed(1)}" x2="${cx2.toFixed(1)}" y2="${(cy2 + 1.5).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
-            } else if (state.mecanismo !== 'motor') {
+            } else if (state.mecanismo === 'motor') {
+                // Motorizado (2026-09-14, pedido del usuario: "sentido del motor, igual que en
+                // shutters"): el motor se dibuja del lado de `orientacion` (toggle A LA
+                // IZQUIERDA/DERECHA), con el mismo tubo + tapa + chip "MOTOR" que el shutter —
+                // dentro del cajón si lo hay, o como cabezal sobre el tubo expuesto si no.
+                const motorGradId = `roller-motor-${id}`;
+                svg += `<defs><linearGradient id="${motorGradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7c868d"/><stop offset="50%" stop-color="#3d444a"/><stop offset="100%" stop-color="#1a1d1f"/></linearGradient></defs>`;
+                const conCajon = state.cajon === 'con_cajon';
+                const motorW = 16, motorH = 2.1;
+                const trackX = bx - 1, trackW = bw + 2;
+                const motorY = conCajon ? (by - 4 + 4 - motorH - 0.3) : (by - 2.5 + (3 - motorH) / 2);
+                const motorX = isD ? (trackX + trackW - 1 - motorW) : (trackX + 1);
+                svg += `<rect x="${motorX.toFixed(1)}" y="${motorY.toFixed(1)}" width="${motorW}" height="${motorH.toFixed(1)}" rx="${(motorH / 2).toFixed(1)}" fill="url(#${motorGradId})" stroke="#111" stroke-width="0.4"/>`;
+                const capX = isD ? motorX + motorW - 1.2 : motorX + 1.2;
+                svg += `<circle cx="${capX.toFixed(1)}" cy="${(motorY + motorH / 2).toFixed(1)}" r="${(motorH / 2 - 0.3).toFixed(1)}" fill="#111"/>`;
+                // Chip "MOTOR": dentro del cajón (arriba del tubo) o, sin cajón, justo debajo del
+                // tubo sobre la tela (encima del tubo chocaría con la cota de ancho en y=4).
+                const labelW = motorW, labelH = 1.5;
+                const labelY = conCajon ? motorY - labelH - 0.2 : by + 0.4;
+                svg += `<rect x="${motorX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelW}" height="${labelH}" rx="0.4" fill="#111"/>`;
+                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+            } else {
                 const chainX = isD ? bx + bw - 3 : bx + 3;
                 svg += `<line x1="${chainX}" y1="${(by + bh).toFixed(1)}" x2="${chainX}" y2="${(by + bh + 6).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
                 svg += `<circle cx="${chainX}" cy="${(by + bh + 7).toFixed(1)}" r="1" fill="#111"/>`;
