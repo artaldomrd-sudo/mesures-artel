@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:48</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 23:10</div>
         </div>
     </div>
     
@@ -1082,15 +1082,21 @@
         const projects = getProjects();
         // Reutiliza el cliente existente aunque difiera en mayúsculas/tildes/separadores
         // (Gabor = GABOR, "STEVE Y ALAIN" = "STEVE/ALAIN") — así no se crea un duplicado.
-        let cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente)) || cliente;
+        const cliExistente = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+        let cliKey = cliExistente || cliente;
         if(!projects[cliKey]) projects[cliKey] = {};
         // Igual con el nombre del proyecto dentro del cliente
-        let obraKey = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
+        const obraExistente = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra));
+        let obraKey = obraExistente || obra;
 
-        // Aviso preventivo de posible duplicado: si el cliente es NUEVO (no calzó exacto) pero se
+        // Aviso preventivo de posible duplicado: si el cliente es NUEVO (no calzó ninguno) pero se
         // PARECE mucho a uno existente (prefijo/typo, ej. "Arnaud" vs "Arnaud Peltier"), avisar para
         // que el usuario verifique antes de crear un duplicado sin darse cuenta.
-        if (cliKey === cliente) {
+        // Bug real (usuario 2026-09-14, "tercera vez que me sale este mensaje"): se comprobaba
+        // `cliKey === cliente`, que también es cierto cuando el cliente YA existe con esa misma grafía
+        // (ej. "Yanina" ya guardada, parecida a "Janina") → preguntaba en CADA guardado. Ahora solo
+        // pregunta si de verdad no existe todavía; una vez aceptado y guardado, no vuelve a salir.
+        if (!cliExistente) {
             const similar = Object.keys(projects).find(c => c !== cliente && sonSospechosos(c, cliente));
             if (similar) {
                 if (!confirm(`⚠ OJO: el cliente "${cliente}" se parece mucho a "${similar}", que YA existe.\n\n¿Es el mismo cliente? Si es así, cancela y escríbelo igual que "${similar}".\n\nPulsa Aceptar SOLO si de verdad es un cliente distinto.`)) return;
@@ -1098,7 +1104,7 @@
         }
         // Igual para la obra: si el nombre se parece a uno que el cliente YA tiene (typo), damos
         // 3 opciones en un diálogo: corregir/reemplazar el viejo, crear uno nuevo aparte, o cancelar.
-        if (obraKey === obra) {
+        if (!obraExistente) {   // mismo criterio: solo si la obra no existe todavía en este cliente
             const similarO = Object.keys(projects[cliKey]).find(o => o !== obra && sonSospechosos(o, obra));
             if (similarO) {
                 dialogoObraSimilar(obra, similarO,

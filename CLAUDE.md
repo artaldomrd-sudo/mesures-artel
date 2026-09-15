@@ -1539,6 +1539,11 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
   descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
   confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
   selector sin elegir) no se trata como error.
+- **Aviso "se parece mucho a…" solo la PRIMERA vez (bug real 2026-09-14).** `saveProject()` avisaba
+  si el cliente/obra se parecía a uno existente comprobando `cliKey === cliente` — también cierto
+  cuando ya existe con esa misma grafía ("Yanina" guardada, parecida a "Janina") → preguntaba en
+  cada guardado. Ahora usa `cliExistente`/`obraExistente` (¿calzó alguno por `normNombreKey`?) y
+  solo pregunta cuando de verdad es nuevo; tras aceptar y guardar, no vuelve a salir.
 - **Ofrecer hoja en blanco después de guardar.** Pedido explícito del usuario: la persona
   siguiente que abre la app se encuentra la última tarjeta guardada todavía en pantalla (por el
   autosave `artal_live_progression`) y no sabe si es un proyecto ajeno ya guardado o algo a
