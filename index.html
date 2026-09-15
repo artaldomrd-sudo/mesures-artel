@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:39</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:46</div>
         </div>
     </div>
     
@@ -4154,6 +4154,7 @@
 
         insertarMarcaMedida(id, card);
         if (cardsState[id].categoria === 'cortina') refreshCortinaWarn(id);
+        if (cardsState[id].categoria === 'plegable') refreshPlegHint(id);   // oculta "PLIEGA A…" si es desde el centro
 
         if (savedData) {
             const refEl = card.querySelector('.card-ref-row input');
@@ -4536,7 +4537,13 @@
         if (probs.length) return `<div style="font-size:11.5px;color:#c0392b;font-weight:bold;background:#fdecea;border:1px solid #f5b7b1;border-radius:5px;padding:5px 8px;">⚠ ${probs.join('<br>⚠ ')}</div>`;
         return `<div style="font-size:11.5px;color:#1e7a46;background:#eafaf0;border:1px solid #b7e4c7;border-radius:5px;padding:5px 8px;"><b>${e.n} hojas × ${hoja} mm</b> (máx. ${ser.hojaMaxMm} mm por hoja en ${ser.label})</div>`;
     }
-    function refreshPlegHint(id) { const el = document.getElementById('pleg-hint-' + id); if (el) el.innerHTML = plegHintHtml(id); }
+    function refreshPlegHint(id) {
+        const el = document.getElementById('pleg-hint-' + id); if (el) el.innerHTML = plegHintHtml(id);
+        // toggle "PLIEGA A LA IZQ/DER": sin sentido con hojas desde el centro → oculto
+        const card = document.getElementById('card-' + id), st = cardsState[id];
+        const tg = card && card.querySelector('.orientation-toggle');
+        if (tg && st) tg.style.display = plegEsCentral(st.pleg_esquema || '330') ? 'none' : '';
+    }
     function renderPanoSection(id) {
         const state = cardsState[id];
         if (!state || (state.categoria !== 'ventana' && state.categoria !== 'fachada' && state.categoria !== 'plegable')) return '';
@@ -4936,6 +4943,8 @@
     const PLEG_SERIES = { E63: { hojaMaxMm: 850, altoMaxMm: 3000, vidrioMinMm: 5, vidrioMaxMm: 18, label: 'E63' } };
     function plegSerie(state) { return PLEG_SERIES[state && state.tipo_aluminio] || PLEG_SERIES.E63; }
     function plegEsquema(state) { return PLEG_ESQUEMAS[state && state.pleg_esquema] || PLEG_ESQUEMAS['330']; }
+    // "Desde el centro" (hojas a los dos lados): no tiene lado de plegado → se oculta "Pliega a…" (usuario 2026-09-14).
+    function plegEsCentral(esq) { const e = PLEG_ESQUEMAS[esq] || PLEG_ESQUEMAS['330']; return e.izq > 0 && e.der > 0; }
     // Hojas de izquierda a derecha ya ORIENTADAS: [{ tipo:'pleg'|'puerta', dir:'L'|'R', grupo }].
     function plegHojas(state) {
         const e = plegEsquema(state), mirror = state.orientacion === 'D';
@@ -6040,6 +6049,17 @@
     // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
     const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['gal1', 'Galandaje 1 Hoja'], ['gal2_lat', 'Galandaje 2 Hojas (Lateral)'], ['gal2_cent', 'Galandaje 2 Hojas (Central)'], ['gal3_3v', 'Galandaje 3 Hojas'], ['gal4_2v', 'Galandaje 4 Hojas (Central)'], ['gal4_4v', 'Galandaje 4 Hojas (Lateral)'], ['gal6_3v', 'Galandaje 6 Hojas'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
 
+    // Menú de tipo de celda REDUCIDO (usuario 2026-09-14, "haz lo mismo que con plegable"): el selector
+    // principal muestra FAMILIAS (Corredera, Galandaje, Plegable…) y la variante (nº de hojas) se elige en
+    // una fila "Hojas" aparte, como el plegable. Los valores internos de `celda` (cor2, gal4_2v…) no cambian.
+    const GRID_FAMILIAS = [['pf', 'Paño Fijo'], ['cor', 'Corredera'], ['gal', 'Galandaje'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const COR_VARS = [['cor2', '2 hojas'], ['cor3', '3 hojas'], ['cor4', '4 hojas'], ['cor6_cent', '6 hojas (central)'], ['cor6_lat', '6 hojas (lateral)']];
+    const GAL_VARS = [['gal1', '1 hoja'], ['gal2_lat', '2 hojas (lateral)'], ['gal2_cent', '2 hojas (central)'], ['gal3_3v', '3 hojas'], ['gal4_2v', '4 hojas (central)'], ['gal4_4v', '4 hojas (lateral)'], ['gal6_3v', '6 hojas']];
+    function celdaFamilia(celda) { return ({ cor2: 'cor', cor3: 'cor', cor4: 'cor', cor6_cent: 'cor', cor6_lat: 'cor' })[celda] || (GRID_GAL[celda] ? 'gal' : celda); }
+    // Al elegir una familia en el selector principal: conserva la variante actual si ya era de esa familia,
+    // si no toma la primera (cor2 / gal1).
+    function gridFamCelda(fam, cur) { if (celdaFamilia(cur) === fam) return cur; return fam === 'cor' ? 'cor2' : fam === 'gal' ? 'gal1' : fam; }
+    window.gridFamCelda = gridFamCelda;
     // Tipos de aluminio válidos POR tipo de elemento. El selector "Tipo de aluminio" de la fachada
     // muestra solo la UNIÓN de los que aplican a los elementos presentes (ej. paños fijos + puerta
     // → P40 de ventana / P40 de puerta / Titan; al agregar una corredera se suman P92/E70/E100/E200).
@@ -6647,7 +6667,10 @@
         const opt = (arr, sel) => arr.map(o => `<option value="${o[0]}" ${sel === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('');
         // Tipos de celda disponibles: con fachada de ESQUINA se ocultan los galandajes centrales (pliegan hacia
         // los dos lados, imposible en una esquina) — salvo que la celda ya lo tenga elegido, para no perderlo.
-        const celdaList = cur => GRID_CELDAS.filter(t => !(st.esquinaLado && gridGal(t[0]) && gridGal(t[0]).central && t[0] !== cur));
+        const celdaList = cur => GRID_FAMILIAS;   // familias; la variante va en la fila "Hojas" (cellExtra)
+        // Variantes de galandaje: con fachada de ESQUINA se ocultan las centrales (pliegan a los dos lados,
+        // imposible en una esquina) — salvo la ya elegida, para no perderla.
+        const galVars = cur => GAL_VARS.filter(t => !(st.esquinaLado && gridGal(t[0]).central && t[0] !== cur));
         const inp = 'padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;font-family:Arimo;box-sizing:border-box;width:100%;';
         const gbl = 'font-size:12px;font-weight:bold;color:var(--artal-blue);';
         const lblR = 'font-size:11px;color:#667;text-align:right;align-self:center;';
@@ -6692,9 +6715,9 @@
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (celda === 'osci') return vid + cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
-            if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado'))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
-            if (gridGal(celda)) return vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
-            if (isCor(celda)) return vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
+            if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
+            if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
             return vid;   // pf, proy → al menos el selector de vidrio por paño
         };
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
@@ -6709,7 +6732,7 @@
                     <div style="display:grid;grid-template-columns:auto 72px 1fr auto;gap:5px;align-items:center;">
                         <b style="font-size:11px;color:var(--artal-blue)">Col ${i + 1}</b>
                         <input type="number" value="${sc.w || 0}" min="10" step="5" style="${inp}" title="Ancho (mm)" oninput="gridFajaColW(${id},'${side}',${i},this.value)">
-                        <select style="${inp}" onchange="gridFajaColCfg(${id},'${side}',${i},'celda',this.value)">${celdaList(sc.celda).map(t => `<option value="${t[0]}" ${sc.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                        <select style="${inp}" onchange="gridFajaColCfg(${id},'${side}',${i},'celda',gridFamCelda(this.value,'${sc.celda}'))">${celdaList(sc.celda).map(t => `<option value="${t[0]}" ${celdaFamilia(sc.celda) === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                         ${faja.cols.length > 1 ? `<button onclick="gridFajaDelCol(${id},'${side}',${i})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
                     </div>
                     <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Aluminio</label>${aluSel(sc.celda, sc.alu || '', `gridFajaColCfg(${id},'${side}',${i},'alu',this.value)`)}<span></span></div>
@@ -6721,7 +6744,7 @@
             } else {
                 // faja de un solo elemento (con opción de dividir en columnas)
                 inner = `<div style="display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;">
-                    <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',this.value)">${celdaList(faja.celda).map(t => `<option value="${t[0]}" ${faja.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select><span></span></div>
+                    <select style="${inp}" onchange="gridSetFajaCelda(${id},'${side}',gridFamCelda(this.value,'${faja.celda}'))">${celdaList(faja.celda).map(t => `<option value="${t[0]}" ${celdaFamilia(faja.celda) === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select><span></span></div>
                     <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Aluminio</label>${aluSel(faja.celda, faja.alu || '', `gridSetFajaAlu(${id},'${side}',this.value)`)}<span></span></div>
                     ${manijaRow(faja.celda, faja.manija, `gridSetFajaManija(${id},'${side}',this.value)`)}${cellExtra(faja.celda, faja, key => `gridSetFajaCfg(${id},'${side}','${key}',this.value)`)}${faja.celda === 'pf' ? `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">División</label><select style="${inp}" onchange="gridSetFajaDiv(${id},'${side}',this.value)"><option value="ninguna" ${(faja.division || 'ninguna') === 'ninguna' ? 'selected' : ''}>Sin división (vidrio continuo)</option><option value="perfil" ${faja.division === 'perfil' ? 'selected' : ''}>Con perfil (alineado abajo)</option><option value="tope" ${faja.division === 'tope' ? 'selected' : ''}>Vidrio a tope (alineado abajo)</option></select></div>` : ''}
                     <button onclick="gridFajaAddCol(${id},'${side}')" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">⊞ Dividir en columnas</button>`;
@@ -6793,7 +6816,7 @@
                 h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;">
                     <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;">
                         <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" placeholder="Alto" ${unaFila ? `class="bandh-${id}"` : ''} oninput="gridSetRowH(${id},${ci},${ri},this.value)">
-                        <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},this.value)">${celdaList(r.celda).map(t => `<option value="${t[0]}" ${r.celda === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                        <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},gridFamCelda(this.value,'${r.celda}'))">${celdaList(r.celda).map(t => `<option value="${t[0]}" ${celdaFamilia(r.celda) === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
                         ${(c.rows || []).length > 1 ? `<button onclick="gridDelRow(${id},${ci},${ri})" style="border:1px solid #e2b8b2;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-weight:bold;cursor:pointer;">✕</button>` : '<span></span>'}
                     </div>
                     <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;">
@@ -6961,9 +6984,9 @@
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
     // Al fijar el grosor de un paño, se auto-selecciona su tipo de vidrio (igual que el global).
     const cellCfgEspesor = (o, key, v) => { if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(v)) o.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(v)) o.vidrio = 'templado'; } };
-    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor';   // estos cambian qué campos se muestran
-    window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
-    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
+    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema';   // estos cambian qué campos se muestran
+    window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
+    window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };

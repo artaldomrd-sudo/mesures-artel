@@ -817,6 +817,13 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   haga falta. **La planta de correderas dentro de la fachada respeta `cor_interior`** (I/D, un
   riel por hoja en escalera, hoja interior arriba), misma regla que `correderaPlan` — antes lo
   ignoraba (reportado con foto). Verificado en navegador lado a lado con la puerta suelta.
+- **Selector de tipo de celda REDUCIDO (2026-09-14, "haz lo mismo que con plegable")**: el select
+  principal muestra `GRID_FAMILIAS` (Paño Fijo, Corredera, Galandaje, Plegable, Puerta, Ventana, OB,
+  Proyectada, Louver, Muro) y la variante va en una fila "Hojas" dentro de `cellExtra` (`COR_VARS`
+  / `GAL_VARS`, esta última sin centrales cuando hay esquina). `celdaFamilia(celda)` /
+  `gridFamCelda(fam, cur)` (conserva la variante si ya era de esa familia, si no cor2/gal1). Los
+  valores internos de `celda` no cambian; `cellCfgFull('celda')` y los setters ponen el aluminio
+  por defecto al cambiar de variante. `GRID_CELDAS` sigue siendo la lista completa (`CELDA_NOM`).
 - **UI**: la tarjeta (`.grid-card`, media línea por defecto; `adaptDrawingToContent` recorta el
   viewBox y ajusta el alto con tope 430px) solo muestra el dibujo + botón "✏️ Editar fachada
   compuesta" → `abrirEditorFachada(id)` abre un **pop-up lateral** (drawer `#fachada-editor` a la
@@ -894,6 +901,9 @@ selectores". El usuario mandará más datos/series; por ahora solo E63.
   cosa"): el selector dice "Hojas: 6 hojas a un lado / 3 hojas + puerta de paso / 3 + 3 desde el
   centro", el resumen "6 hojas: 6 plegables a la izquierda · pliega hacia afuera", la fachada
   "Hojas". Los códigos 330/431/… siguen SOLO como claves internas de `pleg_esquema`.
+- **Desde el centro → sin "Pliega a…"** (usuario, mismo día): `plegEsCentral(esq)` (izq y der > 0)
+  oculta el toggle de la tarjeta (`refreshPlegHint`, también al crear/restaurar) y la fila "Pliega"
+  de la fachada (`cellCfgFull('pleg_esquema')` reconstruye el pop-up).
 - **Modelo**: `pleg_esquema` (clave de `PLEG_ESQUEMAS`: `{ n, izq, der, puerta, label }` — el "1"
   final del código es una hoja de PASO abisagrada en el extremo opuesto al plegado), `orientacion`
   = hacia dónde se RECOGEN las hojas (toggle etiquetado "PLIEGA A LA IZQUIERDA/DERECHA"; base
