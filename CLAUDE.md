@@ -49,7 +49,7 @@ un **PDF de Cotización o Fabricación** para el cliente.
 `renderSVG` para todos los `type` en modo normal y CAD, más fixtures dedicados para Vidrio de Ducha,
 Paño Fijo adosado y **Fachada Compuesta** (`fachada_grid`, agregado 2026-09-05: grilla completa con
 todos los tipos de celda, fajas subdivididas, tubos no incluidos, planta de 1 hoja izq/der y 2
-hojas). Debe imprimir `SYNTAX OK`, `GUARDRAIL exportPDF() OK` y `RENDER OK: 130 FAIL: 0`. Corre en
+hojas). Debe imprimir `SYNTAX OK`, `GUARDRAIL exportPDF() OK` y `RENDER OK: 154 FAIL: 0`. Corre en
 un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas APIs va con
 `if (typeof setInterval !== 'undefined')`.
 
@@ -863,6 +863,10 @@ y la **ficha técnica de la serie E63** (ancho máximo **850 mm por hoja**, alto
 5–18 mm). "Para evitar un menú grande como correderas/galandajes: un botón 'Plegables' y varios
 selectores". El usuario mandará más datos/series; por ahora solo E63.
 
+- **Esquemas extra (mismo día, pedido del usuario: "6/7/8/9 para estar tranquilos")**: además de los
+  6 del fabricante, `PLEG_ESQUEMAS` tiene 660/770/880/990 (todas a un lado), 761/871/981 (n-1 +
+  puerta de paso) y 844 (4+4), con el mismo patrón de código. Un hueco ancho con todas las hojas a
+  un lado quedaba bloqueado por la hoja máx. de 850 mm con solo 5 hojas.
 - **Modelo**: `pleg_esquema` (clave de `PLEG_ESQUEMAS`: `{ n, izq, der, puerta, label }` — el "1"
   final del código es una hoja de PASO abisagrada en el extremo opuesto al plegado), `orientacion`
   = hacia dónde se RECOGEN las hojas (toggle etiquetado "PLIEGA A LA IZQUIERDA/DERECHA"; base
@@ -898,7 +902,7 @@ selectores". El usuario mandará más datos/series; por ahora solo E63.
   el resumen dice "esquema 431 (4 hojas + puerta de paso) · pliega a la der. hacia afuera".
 - Partes de fábrica `PARTES_SETS.plegable` (Marco/Riel, Hojas, Vidrios, Bisagras/Carros/Cierres);
   etapas de instalación = las del galandaje (`getStageSetKey`). `verify.mjs`: 6 esquemas × 3
-  combinaciones + regla de hoja máx. + celda de fachada (RENDER OK: 130).
+  combinaciones + regla de hoja máx. + celda de fachada (RENDER OK: 154).
 
 ## Baranda: consumibles de instalación (resina y tornillos, 2026-09-07)
 

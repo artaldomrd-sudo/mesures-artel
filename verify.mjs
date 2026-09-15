@@ -100,7 +100,7 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
 }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
-for (const esq of ['330', '431', '550', '633', '651', '1055']) {
+for (const esq of ['330', '431', '550', '633', '651', '660', '761', '770', '844', '871', '880', '981', '990', '1055']) {
   for (const [o, ap, vista] of [['I', 'afuera', 'afuera'], ['D', 'adentro', 'adentro'], ['D', 'afuera', 'adentro']]) {
     try { ctx.__render('card1', { type: 'pleg', categoria: 'plegable', ancho: 4780, alto: 2500, orientacion: o, pleg_esquema: esq, pleg_apertura: ap, vista, tipo_aluminio: 'E63', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', cerradura: 'llave', cierre: 'multipunto', panoArriba: esq === '550' ? { alto: 400, vidrio: 'louvers', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }
     catch (e) { fail++; console.error(`  plegable ${esq} ${o}/${ap}/${vista}:`, e.message); }
