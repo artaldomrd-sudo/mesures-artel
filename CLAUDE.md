@@ -131,8 +131,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   mitades — ya no hace falta, no hay X que separar por hoja). Cantidad de lamas fija (12) —
   esquemático como el resto de los herrajes de la app, no a escala real de mm.
 - **Ventilación tubos 20x40 (`vidrio === 'tubos2040'`, agregado 2026-09-07 a pedido del usuario)**:
-  segundo "no vidrio" además del louver — `tubosPanel` dibuja tubos horizontales macizos (7, con
-  huecos iguales) dentro del marco, con los placeholders de color que pinta `applyFinish` (toman el
+  segundo "no vidrio" además del louver — `tubosPanel` dibuja tubos horizontales macizos (**de 1 a 7
+  según el alto disponible**, paso mínimo ≈ 3 unidades, tubo 45 % / hueco 55 % — con 7 fijos una faja
+  de 400 mm en una fachada de 2900 salía como banda negra maciza, foto del usuario 2026-09-14; el
+  louver hace lo mismo: 2–12 lamas, paso ≈ 2.2) dentro del marco, con los placeholders de color que pinta `applyFinish` (toman el
   acabado). Helpers comunes: `esNoVidrio(v)` (louver o tubos: sin grosor ni color de vidrio, cajita
   "Color Tubos/Louvers: {color del encabezado}", mosquitera disponible en puerta abisagrada),
   `panelFnFor(vidrio, glassOnly)` (único despacho de panel usado por `renderSVG`,
