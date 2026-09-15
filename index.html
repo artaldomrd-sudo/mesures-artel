@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:26</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:29</div>
         </div>
     </div>
     
@@ -1723,13 +1723,13 @@
             const fbH = fb ? (parseInt(fb.h) || 0) : 0;
             const rangoTxt = info => (info && info.partial) ? ` · sobre col. ${info.i0 + 1}${info.i1 > info.i0 ? ' a ' + (info.i1 + 1) : ''}${info.local ? ' (apoyada, dentro del alto total)' : ''}` : '';
             const gAlto = gridBandAlto(state);   // banda = la columna más alta (cada columna puede tener su alto)
-            // Tubo horizontal (entre columnas) suma su grosor al alto — igual que el dibujo (ver renderFachadaGrid).
+            // Tubo horizontal (entre columnas): NO suma al alto — va centrado en la unión y descuenta la mitad de
+            // su grosor a la faja y la mitad a las columnas (regla del usuario 2026-09-14; igual que el dibujo).
             const tbz = state.tubos || {};
             const tuboG = (() => { const n = String(tbz.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
             const eHtop = (tbz.entreH && fa && !faLocal) ? tuboG : 0;
             const eHbot = (tbz.entreH && fb) ? tuboG : 0;
-            const tuboAltoTotal = eHtop + eHbot;
-            const totalH = faH + gAlto + fbH + tuboAltoTotal;
+            const totalH = faH + gAlto + fbH;
             const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4' || c === 'cor6_cent' || c === 'cor6_lat';
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             // Lista de características (sin la medida, que va aparte y clara) separadas por " · ".
@@ -1802,7 +1802,13 @@
                 const inw = inc ? (arr.length > 1 ? 'incluidos' : 'incluido') : (arr.length > 1 ? 'NO incluidos' : 'NO incluido');
                 tuboLines.push(`${label}: <b>${inw} en la altura total</b>`);
             }
-            if (tbz.entreH) tuboLines.push('Tubo horizontal entre columnas: <b>incluido en la altura total</b>');
+            if (tbz.entreH) {
+                const half = tuboG / 2, fmt = v => (Math.round(v * 10) / 10).toString().replace('.0', '');
+                const partes = [];
+                if (eHtop) partes.push(`faja superior ${faH} → <b>${fmt(faH - half)} mm</b> · columnas ${gAlto} → <b>${fmt(gAlto - half - (eHbot ? half : 0))} mm</b>`);
+                if (eHbot) partes.push(`${eHtop ? '' : `columnas ${gAlto} → <b>${fmt(gAlto - half)} mm</b> · `}faja inferior ${fbH} → <b>${fmt(fbH - half)} mm</b>`);
+                tuboLines.push(`Tubo horizontal entre columnas: <b>incluido en la altura total</b>, centrado en la unión (descuenta ${fmt(half)} mm a cada lado${partes.length ? ': ' + partes.join(' · ') : ''})`);
+            }
             if (tbz.entre) tuboLines.push('Tubo vertical entre columnas: <b>incluido en el ancho total</b>');
             const tubosLine = tuboLines.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos${tbz.medida ? ` (${tbz.medida} mm)` : ''}:</b>${tuboLines.map(t => `<div style="padding-left:12px; color:#444;">${t}</div>`).join('')}</div>` : '';
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
@@ -6298,12 +6304,14 @@
         const faH = faLocal ? 0 : faHReal;   // una faja LOCAL (apoyada sobre columnas más bajas) no suma al alto
         const fbH = fb ? Math.max(1, parseInt(fb.h) || 0) : 0;
         const tb = state.tubos || {};
-        // Grosor real del tubo (2º número de la medida, ej. "100 x 45" → 45). Un tubo HORIZONTAL
-        // ocupa una banda real y SUMA su grosor a la altura total (entre la faja y las columnas).
+        // Grosor real del tubo (2º número de la medida, ej. "100 x 45" → 45). REGLA (usuario 2026-09-14):
+        // el tubo HORIZONTAL entre la faja y las columnas NO suma a la altura total — va CENTRADO en la
+        // unión y se come la mitad de la faja y la mitad de la carpintería de abajo (cada banda conserva
+        // su medida nominal; fábrica descuenta tuboG/2 a cada una). Antes sumaba su grosor (revertido).
         const tuboG = (() => { const n = String(tb.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
-        const eHtop = (tb.entreH && fa && !faLocal) ? tuboG : 0;   // tubo horizontal bajo la faja superior (no con faja local)
-        const eHbot = (tb.entreH && fb) ? tuboG : 0;   // tubo horizontal sobre la faja inferior
-        const totalH = faH + eHtop + gAlto + eHbot + fbH;
+        const eHtop = (tb.entreH && fa && !faLocal) ? tuboG : 0;   // tubo horizontal en la unión faja superior / columnas (no con faja local)
+        const eHbot = (tb.entreH && fb) ? tuboG : 0;   // tubo horizontal en la unión columnas / faja inferior
+        const totalH = faH + gAlto + fbH;
         // Fachada IRREGULAR: cada banda (faja arriba / columnas / faja abajo) puede tener su propio
         // ancho. El ancho total de la fachada = la banda más ancha; las más angostas se ALINEAN
         // (izq/centro/der) dentro de ese ancho. Una faja de un solo elemento ocupa el ancho completo.
@@ -6321,9 +6329,9 @@
         const scaleV = Math.max(minDHt, Math.min(maxDHt, rawDHt)) / totalH;
         const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV;
         const faDHd = faHReal * scaleV;   // alto DIBUJADO de la faja superior (local o no)
-        const eHtopDH = eHtop * scaleV, eHbotDH = eHbot * scaleV;
-        const gy0 = faDH + eHtopDH;              // columnas empujadas hacia abajo por el tubo horizontal superior
-        const fbY = gy0 + gDH + eHbotDH;         // faja inferior
+        const eHtopDH = eHtop * scaleV, eHbotDH = eHbot * scaleV;   // grosor DIBUJADO del tubo (centrado en la unión, no empuja nada)
+        const gy0 = faDH;                        // columnas justo debajo de la faja (el tubo va centrado en la unión)
+        const fbY = gy0 + gDH;                   // faja inferior
         const DHt = fbY + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
@@ -6413,10 +6421,10 @@
         if (fa) body += bandRect(offFa, faY0, bwFa, faDHd);
         colInfo.forEach(ci => { body += bandRect(ci.x, ci.top, ci.w, ci.h); });   // marco por columna (pueden tener altos distintos)
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
-        // Tubo entre columnas HORIZONTAL: banda REAL (su grosor suma a la altura), entre la faja y las
-        // columnas (arriba) y/o entre columnas y faja inferior (abajo).
-        if (eHtop) body += tuboRect(offMain, faDH, bwMain, eHtopDH);
-        if (eHbot) body += tuboRect(offMain, gy0 + gDH, bwMain, eHbotDH);
+        // Tubo entre columnas HORIZONTAL: CENTRADO en la unión faja/columnas (arriba) y/o columnas/faja
+        // inferior (abajo) — tapa media faja y media carpintería, sin sumar a la altura.
+        if (eHtop) body += tuboRect(offMain, faDH - eHtopDH / 2, bwMain, eHtopDH);
+        if (eHbot) body += tuboRect(offMain, fbY - eHbotDH / 2, bwMain, eHbotDH);
         // Tubos perimetrales: si están INCLUIDOS en la medida se dibujan dentro del envolvente
         // (la cota los abarca); si NO están incluidos se dibujan FUERA (más allá de la línea de cota).
         const inc = tb.incluidos !== false;   // por defecto incluidos
@@ -6474,10 +6482,11 @@
         if (fa || fb) {
             const lx = -7 - extL, le = -extL;
             if (fa && !faLocal) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
-            if (eHtop) cotas += dimLineV(faDH, faDH + eHtopDH, lx, le, `${tuboG}`, 3.4);   // banda del tubo horizontal
             cotas += dimLineV(gy0, gy0 + gDH, lx, le, `${gAlto}`, 4.4);
-            if (eHbot) cotas += dimLineV(gy0 + gDH, fbY, lx, le, `${tuboG}`, 3.4);
             if (fb) cotas += dimLineV(fbY, DHt, lx, le, `${fbH}`, 4.4);
+            // grosor del tubo horizontal (centrado en la unión): en una columna de cota más a la izquierda
+            if (eHtop) cotas += dimLineV(faDH - eHtopDH / 2, faDH + eHtopDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
+            if (eHbot) cotas += dimLineV(fbY - eHbotDH / 2, fbY + eHbotDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });

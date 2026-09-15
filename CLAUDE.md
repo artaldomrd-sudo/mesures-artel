@@ -758,10 +758,15 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     **Regla del usuario (fábrica):** los tubos ENTRE columnas (`entre` vertical, `entreH`
     horizontal) siempre van dentro del hueco → siempre incluidos en ancho/alto total. Los
     perimetrales (`sup/inf/izq/der`) pueden estar incluidos o no (`incluidos`, default true): si
-    NO están incluidos se dibujan FUERA del envolvente y la cota se corre más allá del tubo. El
-    tubo horizontal (`entreH`) ocupa una banda REAL: su grosor (2º número de `medida`, ej. 45)
-    **suma al alto total** tanto en el dibujo como en el resumen (`totalH = faH + eHtop + gAlto +
-    eHbot + fbH`). No hay "+45 mm al alto" aparte: el alto total ya lo refleja.
+    NO están incluidos se dibujan FUERA del envolvente y la cota se corre más allá del tubo. **El
+    tubo horizontal (`entreH`) NO suma al alto total** (regla del usuario 2026-09-14, revierte la
+    de antes que sí lo sumaba): va CENTRADO en la unión faja/columnas (y columnas/faja inferior) y
+    se come la mitad de la faja y la mitad de la carpintería de abajo. `totalH = faH + gAlto + fbH`
+    (igual que `gridDeriv`); en el dibujo `tuboRect` va en `faDH ± eHtopDH/2` sobre las bandas, la
+    cota del grosor va en una columna más a la izquierda ("tubo 45"), y el resumen dice
+    "incluido en la altura total, centrado en la unión (descuenta 22.5 mm a cada lado: faja
+    superior 400 → 377.5 mm · columnas 2500 → 2477.5 mm)" — las bandas conservan su medida
+    nominal en las cotas; fábrica descuenta.
   - `verPlanta` (default true): vista en planta debajo cuando hay algún operable (corredera o
     abisagrada). `vidrio`/`espesor` globales son el respaldo del vidrio por celda; `color_vidrio`,
     `herraje_color`, `color_perfil`/`color_ral` son globales.
