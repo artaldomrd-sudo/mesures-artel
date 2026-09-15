@@ -131,10 +131,14 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   mitades — ya no hace falta, no hay X que separar por hoja). Cantidad de lamas fija (12) —
   esquemático como el resto de los herrajes de la app, no a escala real de mm.
 - **Ventilación tubos 20x40 (`vidrio === 'tubos2040'`, agregado 2026-09-07 a pedido del usuario)**:
-  segundo "no vidrio" además del louver — `tubosPanel` dibuja tubos horizontales macizos (**de 1 a 7
-  según el alto disponible**, paso mínimo ≈ 3 unidades, tubo 45 % / hueco 55 % — con 7 fijos una faja
-  de 400 mm en una fachada de 2900 salía como banda negra maciza, foto del usuario 2026-09-14; el
-  louver hace lo mismo: 2–12 lamas, paso ≈ 2.2) dentro del marco, con los placeholders de color que pinta `applyFinish` (toman el
+  segundo "no vidrio" además del louver — `tubosPanel(uid,x,y,w,h,hMm)` dibuja tubos horizontales
+  macizos **A ESCALA REAL** cuando recibe el alto en mm (`TUBO_VENT_MM = {alto:40, hueco:40}`,
+  supuesto propio a confirmar: n = cuántos tubos de 40 + hueco de 40 caben, centrados; una faja de
+  400 → 5 tubos). Todos los llamadores pasan el alto real: celda/faja/sub-columna de la fachada
+  (`cfg.h`), paño adosado (`pano.alto`), tarjeta suelta y plegable (`state.alto`). Sin `hMm` cae al
+  reparto adaptativo (1–7 tubos, tubo 45 % / hueco 55 %). Historia: 7 fijos → banda negra en una
+  faja baja; 1–7 proporcionales → 2 tubos gordos; ambas fotos del usuario 2026-09-14. El louver
+  sigue adaptativo (2–12 lamas, paso ≈ 2.2) dentro del marco, con los placeholders de color que pinta `applyFinish` (toman el
   acabado). Helpers comunes: `esNoVidrio(v)` (louver o tubos: sin grosor ni color de vidrio, cajita
   "Color Tubos/Louvers: {color del encabezado}", mosquitera disponible en puerta abisagrada),
   `panelFnFor(vidrio, glassOnly)` (único despacho de panel usado por `renderSVG`,

@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:46</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:48</div>
         </div>
     </div>
     
@@ -4732,15 +4732,27 @@
     // Ventilación de tubos 20x40: tubos horizontales de aluminio (macizos, en el color del acabado) con
     // huecos entre sí, dentro del marco — como el louver, es un "no vidrio" (sin grosor ni color de vidrio).
     // Placeholders de color (#1c5a85/#0A3D62) para que applyFinish los pinte con el acabado elegido.
-    function tubosPanel(uid, x, y, w, h) {
-        // Cantidad de tubos según el alto disponible: paso mínimo ≈ 3 unidades por tubo (tubo + hueco), de 1
-        // a 7 tubos. Con 7 fijos, una faja baja (400 mm en una fachada de 2900) salía como una banda negra
-        // maciza (foto del usuario 2026-09-14). Tubo = 45 % del paso, hueco = 55 %, borde fino.
-        const n = Math.max(1, Math.min(7, Math.floor(h / 3)));
-        const pitch = h / n, tt = pitch * 0.45;
+    // Tubo 20x40 visto de frente: 40 mm de alto con 40 mm de hueco entre tubos (supuesto propio, a confirmar).
+    const TUBO_VENT_MM = { alto: 40, hueco: 40 };
+    function tubosPanel(uid, x, y, w, h, hMm) {
+        // A ESCALA REAL cuando se conoce el alto en mm (`hMm`: faja/celda de la fachada, paño adosado, tarjeta
+        // suelta): n = cuántos tubos de 40 + hueco de 40 caben, centrados. Antes eran 1–7 tubos "proporcionales"
+        // al alto dibujado y una faja de 400 mm mostraba 2 tubos gordos (foto del usuario 2026-09-14).
+        // Sin `hMm` (o si a esa escala el tubo no se vería) cae al reparto adaptativo de antes.
+        let n, pitch, tt;
+        const paso = TUBO_VENT_MM.alto + TUBO_VENT_MM.hueco;
+        if (hMm > 0 && (h / hMm) * TUBO_VENT_MM.alto >= 0.7) {
+            const sc = h / hMm;
+            n = Math.max(1, Math.min(60, Math.floor((hMm + TUBO_VENT_MM.hueco) / paso)));
+            pitch = paso * sc; tt = TUBO_VENT_MM.alto * sc;
+        } else {
+            n = Math.max(1, Math.min(7, Math.floor(h / 3)));
+            pitch = h / n; tt = pitch * 0.45;
+        }
+        const total = n * pitch, y0 = y + (h - total) / 2;   // grupo centrado en el alto disponible
         let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="#1c5a85" fill-opacity="0.06" stroke="none"/>`;
         for (let i = 0; i < n; i++) {
-            const ty = y + pitch * i + (pitch - tt) / 2;
+            const ty = y0 + pitch * i + (pitch - tt) / 2;
             s += `<rect x="${(x + 1).toFixed(1)}" y="${ty.toFixed(1)}" width="${(w - 2).toFixed(1)}" height="${tt.toFixed(2)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.3"/>`;
         }
         s += `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" fill="none" stroke="#0A3D62" stroke-width="1.4"/>`;
@@ -5022,7 +5034,7 @@
         let s = '';
         // marco perimetral (riel superior e inferior) + hojas
         s += `<rect x="${(g.x0 - 1).toFixed(1)}" y="${(g.y0 - 1.4).toFixed(1)}" width="${(g.W + 2).toFixed(1)}" height="${(g.H + 2.6).toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="1.2"/>`;
-        for (let k = 0; k < g.n; k++) s += panelFn(uid, g.x0 + g.lw * k, g.y0, g.lw, g.H);
+        for (let k = 0; k < g.n; k++) s += panelFn(uid, g.x0 + g.lw * k, g.y0, g.lw, g.H, parseInt(state.alto) || 0);
         s += plegSimbolos(g.x0, g.y0, g.W, g.H, g.hojas, state.pleg_apertura);
         return s;
     }
@@ -5166,7 +5178,7 @@
         // cuando la apertura está "A la derecha" — si no, el paño se ve desde una perspectiva
         // distinta a la ventana (el borde de espesor queda del lado contrario). El texto ("F" y
         // la medida) NUNCA se voltea, para que siga siendo legible.
-        const panelSvg = panelFn(puid, bx, 0, bw, bandH);
+        const panelSvg = panelFn(puid, bx, 0, bw, bandH, parseInt(pano.alto) || 0);   // alto real del paño (tubos a escala)
         frag += isFlipped ? `<g transform="scale(-1, 1) translate(-100, 0)">${panelSvg}</g>` : panelSvg;
         const fFontSize = Math.min(9, bandH * 0.35);
         frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(bandH / 2 + fFontSize * 0.35).toFixed(1)}" font-family="Arimo" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
@@ -6144,7 +6156,7 @@
         // Así se puede tener, por ej., la puerta en Láminas de Louver y la faja en vidrio.
         const cv = cfg.vidrio || gv;
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
-        let s = cv === 'louvers' ? louverPanel(uid, x, y, w, h) : cv === 'tubos2040' ? tubosPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver/tubos + marco 2D
+        let s = cv === 'louvers' ? louverPanel(uid, x, y, w, h) : cv === 'tubos2040' ? tubosPanel(uid, x, y, w, h, parseInt(cfg.h) || 0) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver/tubos + marco 2D (tubos a escala real con el alto en mm)
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
         if (celda === 'pleg') {
             // Plegable (acordeón) en la fachada: mismas hojas con marco y mismos símbolos que la tarjeta suelta.
@@ -6414,7 +6426,7 @@
                 let out = '', fx = xoff;
                 f.cols.forEach((sc, i) => {
                     const sw = (parseInt(sc.w) || 0) / wsum * bw;
-                    out += gridCell(uid, fx, y0, sw, hh, sc.celda, sc, state.vidrio);
+                    out += gridCell(uid, fx, y0, sw, hh, sc.celda, { ...sc, h: f.h }, state.vidrio);   // sub-columna: alto = el de la faja
                     if (i > 0) out += `<line x1="${fx.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${fx.toFixed(1)}" y2="${(y0 + hh).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
                     fx += sw;   // el ancho de cada sub-columna se acota abajo (línea de cota segmentada), no como texto encima
                 });
@@ -8107,7 +8119,7 @@
         const glassOnly = (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio')
             || (state.type === 'fachada_din' && state.fijacion === 'sin_marco');
         const panelFn = panelFnFor(state.vidrio, glassOnly);
-        if (state.categoria !== 'plegable') getPanelRects(state).forEach(r => { glassLayer += panelFn(uid, r[0], r[1], r[2], r[3]); });   // el plegable dibuja sus hojas una por una (plegElev)
+        if (state.categoria !== 'plegable') getPanelRects(state).forEach(r => { glassLayer += panelFn(uid, r[0], r[1], r[2], r[3], parseInt(state.alto) || 0); });   // el plegable dibuja sus hojas una por una (plegElev); el alto en mm es para los tubos a escala
         if (galWallsBehind) glassLayer = galWallsBehind + glassLayer;
 
         const isFlipped = ['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD;
