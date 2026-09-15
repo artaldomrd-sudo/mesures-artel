@@ -102,6 +102,25 @@ async function pushATokens(tokens, title, body, url) {
     }
 }
 
+// Comentarios del instalador (array `comentariosInstalador` en `orders` y en `instalaciones`):
+// devuelve los que se agregaron entre before y after (solo los NUEVOS, para no repetir en cada edición).
+function comentariosNuevos(before, after) {
+    const a = Array.isArray(after && after.comentariosInstalador) ? after.comentariosInstalador : [];
+    const b = Array.isArray(before && before.comentariosInstalador) ? before.comentariosInstalador : [];
+    return a.length > b.length ? a.slice(b.length) : [];
+}
+// Avisa a gerencia (rol admin) de un comentario nuevo del instalador — sin mandárselo a quien lo
+// escribió. El Panel de Control (ops/index.html) lo muestra además en su centro de notificaciones.
+async function avisarComentarioInstalador(nuevos, lugar) {
+    for (const c of nuevos) {
+        const autor = (c && c.email) || '';
+        const tokens = (await tokensPorRol('admin')).filter((t) => t.email !== autor);
+        const titulo = '💬 ' + ((c && c.nombre) || 'Instalador') + ' comentó en obra';
+        const cuerpo = lugar + ': ' + String((c && c.texto) || '').slice(0, 140);
+        await pushATokens(tokens, titulo, cuerpo, 'ops/index.html');
+    }
+}
+
 // Una cita/recordatorio puede tener VARIAS personas asignadas (`asignados: [{email,nombre}]`,
 // ver ops/calendario.html) — antes solo admitía una (`asignadoEmail`/`asignadoNombre`). Se
 // mantiene compatibilidad con citas viejas que todavía tienen solo el campo singular.
@@ -208,6 +227,18 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
         if (interno) await pushATokens(await tokensPorRol('admin'), titulo, cuerpo, 'ops/fabrica-interna.html');
         else await pushATokens(await tokensPorRol('fabrica'), titulo, cuerpo, 'ops/alucufel/index.html');
     }
+
+    // 4) Comentario nuevo del instalador en una obra ("Obras asignadas" de ops/instalacion.html) → gerencia.
+    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar);
+});
+
+// Comentario nuevo del instalador en un trabajo del calendario (colección `instalaciones`) → gerencia.
+exports.enviarNotificacionComentarioInstalacion = onDocumentWritten('instalaciones/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ') || 'Trabajo de instalación';
+    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar);
 });
 
 // Recordatorios programados: cada 5 minutos revisa citas e instalaciones que tengan un
