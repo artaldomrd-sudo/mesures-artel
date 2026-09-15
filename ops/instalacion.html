@@ -253,6 +253,8 @@
         <input type="text" id="tr-gps" placeholder="18.47, -69.89 o link">
         <label>Fecha y hora (opcional)</label>
         <input type="datetime-local" id="tr-fecha">
+        <label>Instaladores asignados</label>
+        <div id="tr-instaladores" class="recordar-group"></div>
         <label>Nota (opcional)</label>
         <textarea id="tr-nota" placeholder="Detalles…"></textarea>
         <div class="modal-acts">
@@ -841,11 +843,15 @@
 
     onSnapshot(collection(db, 'equipo'), (snap) => {
         instaladores = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false).filter(u => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador'); });
-        const cont = document.getElementById('job-instaladores');
-        const marcados = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
-        cont.innerHTML = instaladores.length
-            ? instaladores.map(u => `<label><input type="checkbox" value="${esc(u.email)}"${marcados.includes(u.email) ? ' checked' : ''}> ${esc(u.nombre)}</label>`).join('')
-            : '<span class="hint">No hay instaladores registrados todavía.</span>';
+        // Misma lista en el modal completo (gerencia) y en el "+ Trabajo" rápido: elegir quién va desde
+        // que se crea el trabajo, no después con "Editar" (pedido del usuario 2026-09-15).
+        for (const cid of ['job-instaladores', 'tr-instaladores']) {
+            const cont = document.getElementById(cid);
+            const marcados = Array.from(cont.querySelectorAll('input:checked')).map(c => c.value);
+            cont.innerHTML = instaladores.length
+                ? instaladores.map(u => `<label><input type="checkbox" value="${esc(u.email)}"${marcados.includes(u.email) ? ' checked' : ''}> ${esc(u.nombre)}</label>`).join('')
+                : '<span class="hint">No hay instaladores registrados todavía.</span>';
+        }
         renderPorInstalar();   // redibuja las tarjetas para que el selector de instalador ya tenga la lista
     });
 
@@ -921,18 +927,27 @@
     };
 
     /* ===== Trabajo rápido (instalaciones) ===== */
-    window.abrirModalTrabajo = function () { ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota'].forEach(i => document.getElementById(i).value = ''); document.getElementById('modal-trabajo').classList.add('show'); };
+    window.abrirModalTrabajo = function () {
+        ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota'].forEach(i => document.getElementById(i).value = '');
+        // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
+        document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
+        document.getElementById('modal-trabajo').classList.add('show');
+    };
     window.cerrarModalTrabajo = function () { document.getElementById('modal-trabajo').classList.remove('show'); };
     window.guardarTrabajo = async function () {
         const cliente = document.getElementById('tr-cliente').value.trim();
         if (!cliente) { alert('Escribe el cliente.'); return; }
         const fechaStr = document.getElementById('tr-fecha').value;
+        const trEmails = Array.from(document.querySelectorAll('#tr-instaladores input:checked')).map(c => c.value);
+        const trAsig = trEmails.length
+            ? trEmails.map(em => { const u = instaladores.find(x => x.email === em); return { email: em, nombre: u ? u.nombre : (em === yo.email ? yo.nombre : '') }; })
+            : [yo];
         try {
             await addDoc(collection(db, 'instalaciones'), {
                 cliente, obra: document.getElementById('tr-obra').value.trim(),
                 direccion: document.getElementById('tr-direccion').value.trim(), gps: document.getElementById('tr-gps').value.trim(),
                 modoFecha: fechaStr ? 'unica' : 'sin_fecha', fecha: fechaStr ? Timestamp.fromDate(new Date(fechaStr)) : null, fechaFin: null,
-                asignados: [yo], instaladorEmail: yo.email, instaladorNombre: yo.nombre,
+                asignados: trAsig, instaladorEmail: trAsig[0].email, instaladorNombre: trAsig[0].nombre || '',
                 estado: 'pendiente', notas: document.getElementById('tr-nota').value.trim(),
                 recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
                 orderId: null, origen: 'instalador', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp()
