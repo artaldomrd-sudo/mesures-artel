@@ -754,7 +754,14 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   - **Fachada irregular**: cada banda (faja arriba / columnas / faja abajo) puede tener ancho
     distinto; el ancho total es la banda más ancha y las demás se alinean (`gridAlign`,
     `faja.align` ∈ `izq|centro|der`). La alineación solo se muestra en la banda más angosta.
-  - `tubos: { sup, inf, izq, der, entre, entreH, medida:'100 x 45', incluidos }`.
+  - `tubos: { sup, inf, izq, der, entre, entreH, entreModo, medida:'100 x 45', incluidos }`.
+    **Tubo VERTICAL entre columnas (`entre`), modo con botones (usuario 2026-09-14, "que no sea
+    automático")**: `entreModo` `'integrado'` (default; centrado en la unión, se come la mitad de
+    cada columna vecina, NO suma al ancho — mismo tratamiento que el horizontal) o `'suma'` (banda
+    real de `gridTuboG` mm entre columnas: `gridEntreExtraW` suma (n−1)·grosor al ancho total en
+    `gridDeriv`, el resumen y la cota; en el dibujo `gapDW` separa las columnas, la cota segmentada
+    alterna col/tubo/col, y la planta cierra la línea de pared en los huecos). Botones "Integrado
+    (mitad y mitad)" / "Suma al ancho" bajo las casillas de tubos (`gridSetTuboEntreModo`).
     **Regla del usuario (fábrica):** los tubos ENTRE columnas (`entre` vertical, `entreH`
     horizontal) siempre van dentro del hueco → siempre incluidos en ancho/alto total. Los
     perimetrales (`sup/inf/izq/der`) pueden estar incluidos o no (`incluidos`, default true): si
@@ -778,7 +785,11 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   `gridCell` dibuja cada celda: correderas con montantes + `gridArrow` alternadas; abisagradas con
   el MISMO chevron que el ítem suelto (vértice hacia el lado que abre: `lado:'izq'` → vértice a la
   izquierda; 2 hojas = montante central + 2 chevrones; `adentro` punteado, `afuera` continuo);
-  `osci` vértice arriba, `proy` vértice abajo; `pf` con etiqueta "PF". Cotas: `dimSegH` (línea de
+  `osci` = MISMO símbolo que la tarjeta suelta `win_ob` (chevron de la hoja según `lado` + triángulo
+  de abatir con vértice arriba; antes solo el triángulo — reportado con foto 2026-09-14) y con planta
+  (`planViewAbatible('win_ob')`, abre adentro) y fila "Lado" en el pop-up; `proy` vértice abajo; `pf`
+  con etiqueta "PF". El encabezado del resumen dice "Cant: N" como el resto de las tarjetas (antes
+  "×N" solo si > 1; usuario 2026-09-14). Cotas: `dimSegH` (línea de
   cota SEGMENTADA por banda, un tramo por columna) + `dimLineH` total abajo + `dimLineV` total a la
   derecha + alturas por banda a la izquierda cuando hay fajas. Etiqueta fija "VISTA EXTERIOR".
   `applyFinish` al final como el resto.
