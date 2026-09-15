@@ -761,7 +761,12 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     real de `gridTuboG` mm entre columnas: `gridEntreExtraW` suma (n−1)·grosor al ancho total en
     `gridDeriv`, el resumen y la cota; en el dibujo `gapDW` separa las columnas, la cota segmentada
     alterna col/tubo/col, y la planta cierra la línea de pared en los huecos). Botones "Integrado
-    (mitad y mitad)" / "Suma al ancho" bajo las casillas de tubos (`gridSetTuboEntreModo`).
+    (mitad y mitad)" / "Suma al ancho" bajo las casillas de tubos (`gridSetTuboModo(id, key, v)`).
+    **El tubo HORIZONTAL (`entreH`) tiene el MISMO par de botones** (`entreHModo`, "Integrado" /
+    "Suma al alto" — el usuario preguntó "¿hiciste el arreglo también en horizontales?"): integrado
+    = la regla de abajo (centrado, no suma); suma = `gridEntreHExtraH` agrega el grosor por cada
+    unión al alto (`gridDeriv`, resumen, cota) y en el dibujo la banda empuja las columnas
+    (`gy0 = faDH + eHtopDH`), con su cota en la misma columna que faja/columnas.
     **Regla del usuario (fábrica):** los tubos ENTRE columnas (`entre` vertical, `entreH`
     horizontal) siempre van dentro del hueco → siempre incluidos en ancho/alto total. Los
     perimetrales (`sup/inf/izq/der`) pueden estar incluidos o no (`incluidos`, default true): si

@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:37</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 22:39</div>
         </div>
     </div>
     
@@ -1729,7 +1729,7 @@
             const tuboG = (() => { const n = String(tbz.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
             const eHtop = (tbz.entreH && fa && !faLocal) ? tuboG : 0;
             const eHbot = (tbz.entreH && fb) ? tuboG : 0;
-            const totalH = faH + gAlto + fbH;
+            const totalH = faH + gAlto + fbH + gridEntreHExtraH(state);
             const isCorS = c => c === 'cor2' || c === 'cor3' || c === 'cor4' || c === 'cor6_cent' || c === 'cor6_lat';
             const apMap = { adentro_1: 'apertura adentro 1 hoja', adentro_2: 'apertura adentro 2 hojas', afuera_1: 'apertura afuera 1 hoja', afuera_2: 'apertura afuera 2 hojas' };
             // Lista de características (sin la medida, que va aparte y clara) separadas por " · ".
@@ -1803,7 +1803,10 @@
                 const inw = inc ? (arr.length > 1 ? 'incluidos' : 'incluido') : (arr.length > 1 ? 'NO incluidos' : 'NO incluido');
                 tuboLines.push(`${label}: <b>${inw} en la altura total</b>`);
             }
-            if (tbz.entreH) {
+            if (tbz.entreH && gridEntreHSuma(state)) {
+                const n = (eHtop ? 1 : 0) + (eHbot ? 1 : 0);
+                tuboLines.push(`Tubo horizontal entre columnas: <b>SUMA a la altura total</b> (${n} × ${tuboG} mm = +${n * tuboG} mm; faja y columnas conservan su alto)`);
+            } else if (tbz.entreH) {
                 const half = tuboG / 2, fmt = v => (Math.round(v * 10) / 10).toString().replace('.0', '');
                 const partes = [];
                 if (eHtop) partes.push(`faja superior ${faH} → <b>${fmt(faH - half)} mm</b> · columnas ${gAlto} → <b>${fmt(gAlto - half - (eHbot ? half : 0))} mm</b>`);
@@ -6091,6 +6094,14 @@
     // en la unión y descuenta la mitad a cada columna, sin sumar (regla del usuario 2026-09-14, con botones).
     function gridTuboG(tb) { const n = String((tb || {}).medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; }
     function gridEntreSuma(state) { const tb = state.tubos || {}; return !!(tb.entre && tb.entreModo === 'suma'); }
+    // Tubo HORIZONTAL entre faja y columnas, mismo par de modos con botones (usuario 2026-09-14): 'integrado'
+    // (default, centrado en la unión, no suma) o 'suma' (banda real que sí suma al alto total).
+    function gridEntreHSuma(state) { const tb = state.tubos || {}; return !!(tb.entreH && tb.entreHModo === 'suma'); }
+    function gridEntreHExtraH(state) {
+        if (!gridEntreHSuma(state)) return 0;
+        const g = gridTuboG(state.tubos), iFa = gridFajaInfo(state, state.fajaArriba, 'arriba');
+        return ((state.fajaArriba && !(iFa && iFa.local)) ? g : 0) + (state.fajaAbajo ? g : 0);
+    }
     function gridEntreExtraW(state) { const n = (state.cols || []).length; return gridEntreSuma(state) && n > 1 ? (n - 1) * gridTuboG(state.tubos) : 0; }
     function gridBandAlto(state) { const m = Math.max(0, ...((state.cols || []).map(gridColAlto))); return m || (parseInt(state.gridAlto) || 0); }
     function gridCorCentral(celda) { return celda === 'cor6_cent'; }
@@ -6332,7 +6343,8 @@
         const tuboG = (() => { const n = String(tb.medida || '').match(/\d+/g); return n ? (parseInt(n.length > 1 ? n[1] : n[0]) || 0) : 0; })();
         const eHtop = (tb.entreH && fa && !faLocal) ? tuboG : 0;   // tubo horizontal en la unión faja superior / columnas (no con faja local)
         const eHbot = (tb.entreH && fb) ? tuboG : 0;   // tubo horizontal en la unión columnas / faja inferior
-        const totalH = faH + gAlto + fbH;
+        const entreHSuma = gridEntreHSuma(state);   // modo "suma": banda real que empuja las columnas y suma al alto
+        const totalH = faH + gAlto + fbH + (entreHSuma ? eHtop + eHbot : 0);
         // Fachada IRREGULAR: cada banda (faja arriba / columnas / faja abajo) puede tener su propio
         // ancho. El ancho total de la fachada = la banda más ancha; las más angostas se ALINEAN
         // (izq/centro/der) dentro de ese ancho. Una faja de un solo elemento ocupa el ancho completo.
@@ -6352,8 +6364,8 @@
         const faDH = faH * scaleV, gDH = gAlto * scaleV, fbDH = fbH * scaleV;
         const faDHd = faHReal * scaleV;   // alto DIBUJADO de la faja superior (local o no)
         const eHtopDH = eHtop * scaleV, eHbotDH = eHbot * scaleV;   // grosor DIBUJADO del tubo (centrado en la unión, no empuja nada)
-        const gy0 = faDH;                        // columnas justo debajo de la faja (el tubo va centrado en la unión)
-        const fbY = gy0 + gDH;                   // faja inferior
+        const gy0 = faDH + (entreHSuma ? eHtopDH : 0);   // integrado: columnas justo bajo la faja; suma: empujadas por la banda del tubo
+        const fbY = gy0 + gDH + (entreHSuma ? eHbotDH : 0);   // faja inferior
         const DHt = fbY + fbDH;
         const alignOff = (align, bw) => { align = align || 'centro'; return align === 'izq' ? 0 : align === 'der' ? (DW - bw) : (DW - bw) / 2; };
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
@@ -6446,8 +6458,8 @@
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
         // Tubo entre columnas HORIZONTAL: CENTRADO en la unión faja/columnas (arriba) y/o columnas/faja
         // inferior (abajo) — tapa media faja y media carpintería, sin sumar a la altura.
-        if (eHtop) body += tuboRect(offMain, faDH - eHtopDH / 2, bwMain, eHtopDH);
-        if (eHbot) body += tuboRect(offMain, fbY - eHbotDH / 2, bwMain, eHbotDH);
+        if (eHtop) body += entreHSuma ? tuboRect(offMain, faDH, bwMain, eHtopDH) : tuboRect(offMain, faDH - eHtopDH / 2, bwMain, eHtopDH);
+        if (eHbot) body += entreHSuma ? tuboRect(offMain, gy0 + gDH, bwMain, eHbotDH) : tuboRect(offMain, fbY - eHbotDH / 2, bwMain, eHbotDH);
         // Tubos perimetrales: si están INCLUIDOS en la medida se dibujan dentro del envolvente
         // (la cota los abarca); si NO están incluidos se dibujan FUERA (más allá de la línea de cota).
         const inc = tb.incluidos !== false;   // por defecto incluidos
@@ -6518,9 +6530,10 @@
             if (fa && !faLocal) cotas += dimLineV(0, faDH, lx, le, `${faH}`, 4.4);
             cotas += dimLineV(gy0, gy0 + gDH, lx, le, `${gAlto}`, 4.4);
             if (fb) cotas += dimLineV(fbY, DHt, lx, le, `${fbH}`, 4.4);
-            // grosor del tubo horizontal (centrado en la unión): en una columna de cota más a la izquierda
-            if (eHtop) cotas += dimLineV(faDH - eHtopDH / 2, faDH + eHtopDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
-            if (eHbot) cotas += dimLineV(fbY - eHbotDH / 2, fbY + eHbotDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
+            // grosor del tubo horizontal: integrado → centrado en la unión (columna de cota más a la izquierda);
+            // suma → su propia banda entre las dos cotas, en la misma columna
+            if (eHtop) cotas += entreHSuma ? dimLineV(faDH, gy0, lx, le, `${tuboG}`, 3.4) : dimLineV(faDH - eHtopDH / 2, faDH + eHtopDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
+            if (eHbot) cotas += entreHSuma ? dimLineV(gy0 + gDH, fbY, lx, le, `${tuboG}`, 3.4) : dimLineV(fbY - eHbotDH / 2, fbY + eHbotDH / 2, lx - 7, lx - 1, `tubo ${tuboG}`, 3.2);
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         rowDims.forEach(rd => { cotas += `<text x="${(rd.x + rd.w / 2).toFixed(1)}" y="${((rd.yTop + rd.yBot) / 2 + 1.3).toFixed(1)}" font-family="Arimo" font-size="3.2" fill="#334155" text-anchor="middle" stroke="none">${rd.mm}</text>`; });
@@ -6817,7 +6830,13 @@
                 ${tuboChk('entre', 'Tubo entre columnas (vertical)')}
                 ${tuboChk('entreH', 'Tubo entre columnas (horizontal)')}
             </div>
-            ${tb.entre ? (() => { const modo = tb.entreModo === 'suma' ? 'suma' : 'integrado'; const b = (v, txt, tip) => `<div class="toggle-btn small ${modo === v ? 'active' : ''}" title="${tip}" onclick="gridSetTuboEntreModo(${id},'${v}')">${txt}</div>`; return `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px dashed #d9e2ec;"><label style="${gbl}">Tubo vertical</label><div style="display:flex;gap:6px;">${b('integrado', 'Integrado (mitad y mitad)', 'Centrado en la unión: descuenta la mitad del tubo a cada columna, NO suma al ancho')}${b('suma', 'Suma al ancho', 'Banda propia entre columnas: el ancho total = columnas + tubos')}</div></div>`; })() : ''}
+            ${(tb.entre || tb.entreH) ? (() => {
+                const row = (label, key, modo, txtSuma, tipInt, tipSuma) => { const b = (v, txt, tip) => `<div class="toggle-btn small ${modo === v ? 'active' : ''}" title="${tip}" onclick="gridSetTuboModo(${id},'${key}','${v}')">${txt}</div>`; return `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:6px;"><label style="${gbl}">${label}</label><div style="display:flex;gap:6px;">${b('integrado', 'Integrado (mitad y mitad)', tipInt)}${b('suma', txtSuma, tipSuma)}</div></div>`; };
+                let r = '<div style="margin-top:9px;padding-top:4px;border-top:1px dashed #d9e2ec;">';
+                if (tb.entre) r += row('Tubo vertical', 'entreModo', tb.entreModo === 'suma' ? 'suma' : 'integrado', 'Suma al ancho', 'Centrado en la unión: descuenta la mitad del tubo a cada columna, NO suma al ancho', 'Banda propia entre columnas: el ancho total = columnas + tubos');
+                if (tb.entreH) r += row('Tubo horizontal', 'entreHModo', tb.entreHModo === 'suma' ? 'suma' : 'integrado', 'Suma al alto', 'Centrado en la unión faja/columnas: descuenta la mitad a la faja y la mitad a las columnas, NO suma al alto', 'Banda propia entre faja y columnas: el alto total = faja + tubo + columnas');
+                return r + '</div>';
+            })() : ''}
             ${(tb.sup || tb.inf || tb.izq || tb.der) ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-top:9px;padding-top:8px;border-top:1px dashed #d9e2ec;">
                 <label style="${gbl}">En la medida</label>
                 <select style="${inp}" onchange="gridSetTuboInc(${id},this.value)"><option value="si" ${(tb.incluidos !== false) ? 'selected' : ''}>Tubos incluidos en la medida</option><option value="no" ${(tb.incluidos === false) ? 'selected' : ''}>Tubos NO incluidos (se agregan aparte)</option></select>
@@ -6833,7 +6852,7 @@
         const fbH = st.fajaAbajo ? (parseInt(st.fajaAbajo.h) || 0) : 0;
         st.gridAlto = gridBandAlto(st);
         const iFa = gridFajaInfo(st, st.fajaArriba, 'arriba');
-        st.alto = st.gridAlto + ((iFa && iFa.local) ? 0 : faH) + fbH;
+        st.alto = st.gridAlto + ((iFa && iFa.local) ? 0 : faH) + fbH + gridEntreHExtraH(st);
     }
     window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); };
     window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
@@ -6951,7 +6970,7 @@
     window.gridDelRow = (id, ci, ri) => { const c = cardsState[id].cols[ci]; if (c.rows.length > 1) c.rows.splice(ri, 1); gridFull(id); };
     // Tubos / refuerzos
     window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridFull(id); };
-    window.gridSetTuboEntreModo = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos.entreModo = v; gridFull(id); };
+    window.gridSetTuboModo = (id, key, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = v; gridFull(id); };
     window.gridSetTuboMedida = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = {}; st.tubos.medida = v; gridDraw(id); };
     window.gridSetTuboInc = (id, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = {}; st.tubos.incluidos = (v === 'si'); gridDraw(id); };
 
