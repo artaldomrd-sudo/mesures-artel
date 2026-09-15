@@ -867,6 +867,10 @@ selectores". El usuario mandará más datos/series; por ahora solo E63.
   6 del fabricante, `PLEG_ESQUEMAS` tiene 660/770/880/990 (todas a un lado), 761/871/981 (n-1 +
   puerta de paso) y 844 (4+4), con el mismo patrón de código. Un hueco ancho con todas las hojas a
   un lado quedaba bloqueado por la hoja máx. de 850 mm con solo 5 hojas.
+- **Sin la palabra "esquema" ni su código en la UI** (usuario, mismo día: "nos confunde más que otra
+  cosa"): el selector dice "Hojas: 6 hojas a un lado / 3 hojas + puerta de paso / 3 + 3 desde el
+  centro", el resumen "6 hojas: 6 plegables a la izquierda · pliega hacia afuera", la fachada
+  "Hojas". Los códigos 330/431/… siguen SOLO como claves internas de `pleg_esquema`.
 - **Modelo**: `pleg_esquema` (clave de `PLEG_ESQUEMAS`: `{ n, izq, der, puerta, label }` — el "1"
   final del código es una hoja de PASO abisagrada en el extremo opuesto al plegado), `orientacion`
   = hacia dónde se RECOGEN las hojas (toggle etiquetado "PLIEGA A LA IZQUIERDA/DERECHA"; base
