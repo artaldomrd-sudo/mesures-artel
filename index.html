@@ -494,6 +494,9 @@
         <button class="btn-cat" onclick="addItem('Galandaje 4 Hojas (Lat)', 'gal4_4v', 'galandaje')">Galandaje 4 Hojas (Lateral)</button>
         <button class="btn-cat" onclick="addItem('Galandaje 6 Hojas', 'gal6_3v', 'galandaje')">Galandaje 6 Hojas (Central)</button>
         
+        <h3>Plegables</h3>
+        <button class="btn-cat" onclick="addItem('Plegable (Acordeón)', 'pleg', 'plegable')">Puerta / Ventana Plegable</button>
+
         <h3>Ventanas y Puertas</h3>
         <button class="btn-cat" onclick="addItem('Ventana Abisagrada', 'win_abat', 'ventana')">Ventana Abisagrada</button>
         <button class="btn-cat" onclick="addItem('Oscilobatiente (OB)', 'win_ob', 'ventana')">Oscilobatiente (OB)</button>
@@ -514,7 +517,9 @@
 
         <h3>Especial</h3>
         <button class="btn-cat" style="background:#2f7fd6; color:#fff; text-align: center; font-weight: bold;" onclick="addItem('Fachada Compuesta', 'fachada_grid', 'fachada_grid')">+ FACHADA COMPUESTA</button>
-        <button class="btn-cat" style="background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('Fachada Libre (CAD)', 'draw', 'dibujo')">+ FACHADA LIBRE (CAD)</button>
+        <!-- Fachada Libre (CAD) DESHABILITADA (2026-09-14, pedido del usuario): la Fachada Compuesta la
+             reemplaza. El type 'draw' sigue existiendo para abrir proyectos viejos que lo tengan. -->
+        <button class="btn-cat" style="display:none; background:var(--artal-yellow); color:var(--artal-blue); text-align: center; font-weight: bold;" onclick="addItem('Fachada Libre (CAD)', 'draw', 'dibujo')">+ FACHADA LIBRE (CAD)</button>
         
         <div style="margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.2); padding-bottom: 5px;">
             <div class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V1a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg> Acciones</div>
@@ -541,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 10:52</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 21:39</div>
         </div>
     </div>
     
@@ -716,7 +721,10 @@
         if (state.categoria === 'fachada_grid') {
             (state.cols || []).forEach((c, i) => {
                 chk(c.w, MEDIDA_MIN_MM, `Columna ${i + 1}, ancho`);
-                (c.rows || []).forEach((r, j) => chk(r.h, MEDIDA_MIN_MM, `Columna ${i + 1}${(c.rows || []).length > 1 ? ', fila ' + (j + 1) : ''}, alto`));
+                (c.rows || []).forEach((r, j) => {
+                    chk(r.h, MEDIDA_MIN_MM, `Columna ${i + 1}${(c.rows || []).length > 1 ? ', fila ' + (j + 1) : ''}, alto`);
+                    if (r.celda === 'pleg') plegProblemas({ ancho: c.w, alto: r.h, pleg_esquema: r.pleg_esquema, tipo_aluminio: r.alu }).forEach(m => out.push(`Columna ${i + 1} (plegable): ${m}`));
+                });
             });
             [['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].forEach(([pos, f]) => {
                 if (!f) return;
@@ -729,6 +737,7 @@
         if (state.type === 'draw' || state.categoria === 'baranda') return out;   // medidas derivadas (CAD) / por tramos (baranda)
         chk(state.ancho, MEDIDA_MIN_MM, 'Ancho'); chk(state.alto, MEDIDA_MIN_MM, 'Alto');
         if (state.categoria === 'galandaje') { chk(state.anchoMarco, MEDIDA_MIN_MM, 'Ancho de marco'); if ((parseInt(state.anchoMarco) || 0) > 0 && (parseInt(state.anchoMarco) || 0) < (parseInt(state.ancho) || 0)) out.push(`Ancho de marco (${state.anchoMarco} mm) menor que el hueco (${state.ancho} mm)`); }
+        if (state.categoria === 'plegable') plegProblemas(state).forEach(m => out.push(m));   // hoja > máx. de la serie (E63: 850 mm) / alto > máx.
         if (state.panoArriba) chk(state.panoArriba.alto, PANO_MIN_MM, 'Paño fijo arriba, alto');
         if (state.panoAbajo) chk(state.panoAbajo.alto, PANO_MIN_MM, 'Paño fijo abajo, alto');
         return out;
@@ -1704,7 +1713,7 @@
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'fachada_grid') {
-            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', cor6_cent: 'Corredera 6 Hojas (Central)', cor6_lat: 'Corredera 6 Hojas (Lateral)', gal1: 'Galandaje 1 Hoja', gal2_lat: 'Galandaje 2 Hojas (Lateral)', gal2_cent: 'Galandaje 2 Hojas (Central)', gal3_3v: 'Galandaje 3 Hojas', gal4_2v: 'Galandaje 4 Hojas (Central)', gal4_4v: 'Galandaje 4 Hojas (Lateral)', gal6_3v: 'Galandaje 6 Hojas', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
+            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas', cor6_cent: 'Corredera 6 Hojas (Central)', cor6_lat: 'Corredera 6 Hojas (Lateral)', gal1: 'Galandaje 1 Hoja', gal2_lat: 'Galandaje 2 Hojas (Lateral)', gal2_cent: 'Galandaje 2 Hojas (Central)', gal3_3v: 'Galandaje 3 Hojas', gal4_2v: 'Galandaje 4 Hojas (Central)', gal4_4v: 'Galandaje 4 Hojas (Lateral)', gal6_3v: 'Galandaje 6 Hojas', pleg: 'Plegable (Acordeón)', puerta: 'Puerta Abisagrada', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
             const fa = state.fajaArriba, fb = state.fajaAbajo;
@@ -1736,6 +1745,11 @@
                     p.push((({ templado: 'templado', laminado: 'laminado', louvers: 'láminas de louver', tubos2040: 'ventilación tubos 20x40', sin: 'sin vidrio' })[ev] || ev) + ((ev === 'templado' || ev === 'laminado') && ee ? ' ' + espesorLabel(ee) : ''));
                 }
                 if (isCorS(celda) && o.manija) p.push('manija ' + (o.manija === 'blanco' ? 'blanca' : 'negra'));
+                if (celda === 'pleg') {
+                    const e = PLEG_ESQUEMAS[o.pleg_esquema || '330'] || PLEG_ESQUEMAS['330'];
+                    p.push(`esquema ${o.pleg_esquema || '330'} (${e.n} hojas${e.puerta ? ' + puerta de paso' : ''})`);
+                    p.push('pliega a la ' + ((o.lado || 'izq') === 'der' ? 'der.' : 'izq.') + ' hacia ' + ((o.pleg_apertura || 'afuera') === 'adentro' ? 'adentro' : 'afuera'));
+                }
                 if (gridGal(celda)) {
                     if (!gridGal(celda).central) p.push('bolsillo ' + ((o.gal_pocket || 'izq') === 'der' ? 'der.' : 'izq.'));
                     p.push('instalación por ' + ((o.gal_install || 'dentro') === 'fuera' ? 'fuera' : 'dentro'));
@@ -2045,7 +2059,14 @@
                     specs.push(`Tubos: ${tuboTxt}${largoSup}`);
                 }
             }
-            if(state.categoria === 'corredera' || state.categoria === 'galandaje') specs.push(`Manija: ${state.color_manija === 'blanco' ? 'Blanco' : 'Negro'}`);
+            if (state.categoria === 'plegable') {
+                const e = plegEsquema(state), ser = plegSerie(state), hoja = plegHojaMm(state), mir = state.orientacion === 'D';
+                const ladoPleg = (n, base) => n ? `${n} plegable${n > 1 ? 's' : ''} a la ${base}` : '';
+                const partes = [ladoPleg(e.izq, mir ? 'derecha' : 'izquierda'), ladoPleg(e.der, mir ? 'izquierda' : 'derecha'), e.puerta ? `1 puerta de paso a la ${mir ? 'izquierda' : 'derecha'}` : ''].filter(Boolean).join(' + ');
+                specs.push(`Esquema ${state.pleg_esquema || '330'}: <b>${e.n} hojas</b> (${partes}) · pliega hacia ${(state.pleg_apertura || 'afuera') === 'adentro' ? 'adentro' : 'afuera'}`);
+                if (hoja) specs.push(`Hoja: <b>${hoja} mm</b> de ancho × ${state.alto || 0} mm (máx. ${ser.hojaMaxMm} mm por hoja, serie ${ser.label})`);
+            }
+            if(state.categoria === 'corredera' || state.categoria === 'galandaje' || state.categoria === 'plegable') specs.push(`Manija: ${state.color_manija === 'blanco' ? 'Blanco' : 'Negro'}`);
             if(state.vista) specs.push(`Vista: ${state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
             if (state.perfil) specs.push(`Perfil: ${state.perfil}`);
             
@@ -3396,6 +3417,7 @@
         if(type.startsWith('cort_')) return 'cortina'; // antes del check de 'cor' (corredera) — "cort_" también empieza con "cor"
         if(type.startsWith('cor')) return 'corredera';
         if(type.startsWith('gal')) return 'galandaje';
+        if(type === 'pleg') return 'plegable';
         if(type.startsWith('win') || type === 'door_abat') return 'ventana';
         if(type === 'mamp_fija') return 'mampara';
         if(type === 'door_glass' || type === 'door_slide' || type === 'door_slide_conn') return 'puerta_vidrio';
@@ -3472,8 +3494,8 @@
             // Puerta abatible: sin mosquitera… salvo con Láminas de Louver (puerta jalousie), que sí la lleva
             // (pedido del usuario 2026-09-07). `updateState('vidrio')` regenera estas opciones, así aparece al elegirlo.
             if (esNoVidrio(state.vidrio)) cierresVentana += mosqFijaAmov;
-        } else if (type === 'cor6_lat') {
-            // corredera 6 hojas lateral (6 vías): sin selector de mosquitera
+        } else if (type === 'cor6_lat' || type === 'pleg') {
+            // corredera 6 hojas lateral (6 vías) y plegable: sin selector de mosquitera
         } else {
             cierresVentana += mosqCon;
         }
@@ -3515,6 +3537,18 @@
                 manijaSel = `<select onchange="${fn}, 'color_manija', this.value)" title="Color de la manija"><option value="negro" ${cm === 'negro' ? 'selected' : ''}>Manija: Negro</option><option value="blanco" ${cm === 'blanco' ? 'selected' : ''}>Manija: Blanco</option></select>`;
             }
             return tipoAluminioHtml + extra + vistaOption + cierresVentana + vidriosBasicos + colorPerfilSel + manijaSel;
+        } else if (categoria === 'plegable') {
+            // Plegable: serie (ficha técnica) + esquema del fabricante + apertura + vista + cierre/cerradura
+            // + vidrio + acabado + manija. El lado hacia donde pliega es el toggle IZQ/DER de la tarjeta.
+            const ser = state.tipo_aluminio || 'E63', esq = state.pleg_esquema || '330', ap = state.pleg_apertura || 'afuera';
+            const serieSel = `<select onchange="${fn}, 'tipo_aluminio', this.value)" title="Serie de aluminio (ficha técnica)">${Object.keys(PLEG_SERIES).map(k => `<option value="${k}" ${ser === k ? 'selected' : ''}>Serie: ${PLEG_SERIES[k].label} (hoja máx. ${PLEG_SERIES[k].hojaMaxMm} mm)</option>`).join('')}</select>`;
+            const esqSel = `<select style="grid-column: span 2;" onchange="${fn}, 'pleg_esquema', this.value)" title="Esquema del fabricante: nº de hojas y hacia dónde pliegan">${Object.keys(PLEG_ESQUEMAS).map(k => `<option value="${k}" ${esq === k ? 'selected' : ''}>Esquema ${PLEG_ESQUEMAS[k].label}</option>`).join('')}</select>`;
+            const apSel = `<select onchange="${fn}, 'pleg_apertura', this.value)" title="Hacia dónde pliegan las hojas"><option value="afuera" ${ap === 'afuera' ? 'selected' : ''}>Pliega hacia afuera</option><option value="adentro" ${ap === 'adentro' ? 'selected' : ''}>Pliega hacia adentro</option></select>`;
+            const cer = state.cerradura || '';
+            const cerrSel = `<select onchange="${fn}, 'cerradura', this.value)"><option value="">-- Cerradura --</option><option value="llave" ${cer==='llave'?'selected':''}>Llave</option><option value="mariposa" ${cer==='mariposa'?'selected':''}>Mariposa</option><option value="smartlock" ${cer==='smartlock'?'selected':''}>Smartlock</option></select>`;
+            const cm = state.color_manija || 'negro';
+            const manijaSel = `<select onchange="${fn}, 'color_manija', this.value)" title="Color de la manija"><option value="negro" ${cm === 'negro' ? 'selected' : ''}>Manija: Negro</option><option value="blanco" ${cm === 'blanco' ? 'selected' : ''}>Manija: Blanco</option></select>`;
+            return serieSel + esqSel + apSel + vistaOption + cierresVentana + cerrSel + vidriosBasicos + colorPerfilSel + manijaSel;
         } else if (categoria === 'puerta_vidrio') {
             const tv = state.tirador || '';
             const tiradorSel = `<select style="grid-column: span 2;" onchange="${fn}, 'tirador', this.value)"><option value="" ${tv===''?'selected':''}>-- Sin Tirador --</option><option value="redondo" ${tv==='redondo'?'selected':''}>Tirador Redondo</option><option value="5" ${tv==='5'?'selected':''}>Tirador 5"</option><option value="8" ${tv==='8'?'selected':''}>Tirador 8"</option><option value="12" ${tv==='12'?'selected':''}>Tirador 12"</option><option value="16" ${tv==='16'?'selected':''}>Tirador 16"</option></select>`;
@@ -3840,6 +3874,15 @@
                     cardsState[id].guiaInf = false;
                     cardsState[id].cajonExtra = false;
                 }
+            } else if (categoria === 'plegable') {
+                cardsState[id].tipo_aluminio = 'E63';
+                cardsState[id].pleg_esquema = '330';
+                cardsState[id].pleg_apertura = 'afuera';
+                cardsState[id].vidrio = 'templado';
+                cardsState[id].espesor = '10mm';
+                cardsState[id].vista = 'afuera';
+                cardsState[id].ancho = 2400;
+                cardsState[id].alto = 2400;
             } else if (categoria === 'fachada_grid') {
                 cardsState[id].gridAlto = 2750;
                 cardsState[id].cols = [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }];
@@ -4046,9 +4089,10 @@
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
             const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
-            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina'].includes(cardsState[id].categoria);
+            const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina', 'plegable'].includes(cardsState[id].categoria);
             // Cortinas: el toggle es el LADO del motor/manivela/cadena (no "apertura") — se etiqueta así.
-            const orPref = cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : '';
+            // Plegables: es hacia dónde se RECOGEN las hojas (la puerta de paso queda del otro lado).
+            const orPref = cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : cardsState[id].categoria === 'plegable' ? 'PLIEGA ' : '';
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">${orPref}A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">${orPref}A LA DERECHA</div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
                 : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
@@ -4084,6 +4128,7 @@
                         <div class="measure-field"><label>H:</label><input type="text" inputmode="numeric" id="alto-${id}" value="${cardsState[id].alto || ''}" oninput="updateState(${id}, 'alto', this.value); this.classList.remove('error-pulse');" placeholder="Alto (mm)"></div>
                     </div>
                     ${cardsState[id].categoria === 'galandaje' ? `<div class="measure-inputs" style="margin-top:6px;"><div class="measure-field" title="Ancho total del marco/riel (sobresale del hueco para que las hojas se recojan contra la pared)"><label>Marco (riel):</label><input type="text" inputmode="numeric" id="marco-${id}" value="${cardsState[id].anchoMarco || ''}" placeholder="Ancho total marco (mm)" oninput="updateState(${id}, 'anchoMarco', this.value)"></div></div>` : ''}
+                    ${cardsState[id].categoria === 'plegable' ? `<div id="pleg-hint-${id}" style="margin-top:6px;">${plegHintHtml(id)}</div>` : ''}
                     <div id="shutter-extras-${id}">${renderShutterExtras(id)}</div>
                     ${cardsState[id].categoria === 'cortina' ? `<div id="cortina-warn-${id}"></div>` : ''}
                 </div>
@@ -4246,7 +4291,8 @@
         if (cardsState[id].type !== 'draw') {
             // 'vidrio' y 'espesor' redibujan porque 'Láminas de Louver' cambia el panel (louverPanel) — bug real:
             // en la puerta suelta el select cambiaba el estado pero el dibujo seguía en vidrio (la fachada sí lo hacía).
-            if (['anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
+            if (cardsState[id].categoria === 'plegable' && ['ancho', 'alto', 'pleg_esquema', 'tipo_aluminio'].includes(key)) refreshPlegHint(id);
+            if (['pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -4468,9 +4514,18 @@
         `;
     }
 
+    // Aviso en vivo del plegable: ancho de cada hoja según el esquema y si supera el máximo de la serie.
+    function plegHintHtml(id) {
+        const st = cardsState[id]; if (!st || st.categoria !== 'plegable') return '';
+        const e = plegEsquema(st), ser = plegSerie(st), hoja = plegHojaMm(st), probs = plegProblemas(st);
+        if (!hoja) return `<div style="font-size:11px;color:#667;">Esquema ${e.label}: escribe el ancho para calcular cada hoja (máx. ${ser.hojaMaxMm} mm por hoja en ${ser.label}).</div>`;
+        if (probs.length) return `<div style="font-size:11.5px;color:#c0392b;font-weight:bold;background:#fdecea;border:1px solid #f5b7b1;border-radius:5px;padding:5px 8px;">⚠ ${probs.join('<br>⚠ ')}</div>`;
+        return `<div style="font-size:11.5px;color:#1e7a46;background:#eafaf0;border:1px solid #b7e4c7;border-radius:5px;padding:5px 8px;"><b>${e.n} hojas × ${hoja} mm</b> (máx. ${ser.hojaMaxMm} mm por hoja en ${ser.label})</div>`;
+    }
+    function refreshPlegHint(id) { const el = document.getElementById('pleg-hint-' + id); if (el) el.innerHTML = plegHintHtml(id); }
     function renderPanoSection(id) {
         const state = cardsState[id];
-        if (!state || (state.categoria !== 'ventana' && state.categoria !== 'fachada')) return '';
+        if (!state || (state.categoria !== 'ventana' && state.categoria !== 'fachada' && state.categoria !== 'plegable')) return '';
         const sideBtn = (side, label) => {
             const active = !!state[side === 'arriba' ? 'panoArriba' : 'panoAbajo'];
             return `<div class="toggle-btn ${active ? 'active' : ''}" onclick="togglePano(${id}, '${side}')">${label}</div>`;
@@ -4831,6 +4886,154 @@
     // sobrante del riel) y el marco/hojas por separado para poder decidir el orden de dibujo: con
     // "Instalación: por fuera" la hoja va POR DELANTE de la pared vista desde afuera (paredes detrás del
     // vidrio) y por detrás vista desde adentro (paredes encima) — regla del usuario 2026-09-07.
+    // ===================== PLEGABLES (acordeón) =====================
+    // Módulo nuevo (2026-09-14, pedido del usuario con plano de arquitecto + esquemas del fabricante +
+    // ficha técnica de la serie E63). UN solo botón "Plegable" y varios selectores: esquema (solo los del
+    // fabricante), hacia dónde pliega (toggle izq/der), apertura adentro/afuera, serie, vidrio, cierre.
+    // Esquema = código del fabricante: nº total de hojas + hojas que pliegan a cada lado; el "1" es una
+    // hoja de PASO abisagrada (puerta) en el extremo opuesto al plegado. Base dibujada con el plegado a la
+    // IZQUIERDA (orientacion 'I'); con 'D' se espeja todo (la puerta de paso pasa a la izquierda).
+    const PLEG_ESQUEMAS = {
+        '330':  { n: 3,  izq: 3, der: 0, puerta: 0, label: '330 · 3 hojas a un lado' },
+        '431':  { n: 4,  izq: 3, der: 0, puerta: 1, label: '431 · 3 hojas + puerta de paso' },
+        '550':  { n: 5,  izq: 5, der: 0, puerta: 0, label: '550 · 5 hojas a un lado' },
+        '633':  { n: 6,  izq: 3, der: 3, puerta: 0, label: '633 · 3 + 3 desde el centro' },
+        '651':  { n: 6,  izq: 5, der: 0, puerta: 1, label: '651 · 5 hojas + puerta de paso' },
+        '1055': { n: 10, izq: 5, der: 5, puerta: 0, label: '1055 · 5 + 5 desde el centro' },
+    };
+    // Series de plegable (ficha técnica): ancho MÁXIMO de UNA hoja, alto máximo, vidrio admitido.
+    const PLEG_SERIES = { E63: { hojaMaxMm: 850, altoMaxMm: 3000, vidrioMinMm: 5, vidrioMaxMm: 18, label: 'E63' } };
+    function plegSerie(state) { return PLEG_SERIES[state && state.tipo_aluminio] || PLEG_SERIES.E63; }
+    function plegEsquema(state) { return PLEG_ESQUEMAS[state && state.pleg_esquema] || PLEG_ESQUEMAS['330']; }
+    // Hojas de izquierda a derecha ya ORIENTADAS: [{ tipo:'pleg'|'puerta', dir:'L'|'R', grupo }].
+    function plegHojas(state) {
+        const e = plegEsquema(state), mirror = state.orientacion === 'D';
+        const out = [];
+        for (let k = 0; k < e.izq; k++) out.push({ tipo: 'pleg', dir: 'L', grupo: 0 });
+        for (let k = 0; k < e.der; k++) out.push({ tipo: 'pleg', dir: 'R', grupo: 1 });
+        if (e.puerta) out.push({ tipo: 'puerta', dir: 'R', grupo: 2 });
+        if (mirror) { out.reverse(); out.forEach(h => { h.dir = h.dir === 'L' ? 'R' : 'L'; }); }
+        return out;
+    }
+    // Ancho real de cada hoja (mm) y si supera el máximo de la serie → bloquea (no se permite poner
+    // pocas hojas para un hueco grande: regla del usuario a partir de "ancho máximo 850 mm" de la ficha).
+    function plegHojaMm(state) { const e = plegEsquema(state); const a = parseInt(state.ancho) || 0; return a > 0 ? Math.round(a / e.n) : 0; }
+    function plegProblemas(state) {
+        const out = [], ser = plegSerie(state), e = plegEsquema(state), hoja = plegHojaMm(state);
+        if (hoja > ser.hojaMaxMm) out.push(`Hoja de ${hoja} mm (${state.ancho} mm ÷ ${e.n} hojas) supera el máximo de ${ser.hojaMaxMm} mm de la serie ${ser.label} — elige un esquema con más hojas`);
+        if ((parseInt(state.alto) || 0) > ser.altoMaxMm) out.push(`Alto de ${state.alto} mm supera el máximo de ${ser.altoMaxMm} mm de la serie ${ser.label}`);
+        return out;
+    }
+    function plegLayout(state) {
+        const e = plegEsquema(state);
+        const ancho = parseInt(state.ancho) > 0 ? parseInt(state.ancho) : 3000;
+        const alto = parseInt(state.alto) > 0 ? parseInt(state.alto) : 2400;
+        const box = { maxW: 92, maxH: 40, top: 10 };
+        const sc = Math.min(box.maxW / ancho, box.maxH / alto);
+        const W = Math.max(ancho * sc, box.maxW * 0.25), H = Math.max(alto * sc, box.maxH * 0.25);
+        const x0 = 50 - W / 2, y0 = box.top + (box.maxH - H) / 2;
+        return { n: e.n, x0, y0, W, H, lw: W / e.n, hojas: plegHojas(state) };
+    }
+    // Símbolos de plegado sobre las hojas (compartido: tarjeta suelta y celda de Fachada Compuesta):
+    // zigzag PUNTEADO por grupo de hojas plegables con flecha en la punta hacia el lado donde se recogen
+    // (como en el plano del arquitecto) y chevron de abisagrada para la hoja de paso (vértice hacia el
+    // lado libre, bisagra en la jamba exterior — como en el esquema del fabricante, planta incluida).
+    function plegSimbolos(x, y, w, h, hojas, apertura) {
+        const n = hojas.length, lw = w / n, marca = '#111', my = y + h / 2, amp = Math.min(h * 0.12, lw * 0.35);
+        let s = '';
+        const dash = (apertura || 'afuera') === 'adentro' ? ' stroke-dasharray="3 2"' : '';
+        // agrupar hojas plegables contiguas con la misma dirección
+        let i = 0;
+        while (i < n) {
+            const hj = hojas[i];
+            if (hj.tipo === 'puerta') {
+                const ix = x + lw * i + 1, iw = lw - 2, iy = y + 1, ih = h - 2;
+                // vértice hacia el lado LIBRE (opuesto a la jamba exterior): dir 'R' = puerta en el extremo derecho
+                s += hj.dir === 'R'
+                    ? `<path d="M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`
+                    : `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
+                i++; continue;
+            }
+            let j = i; while (j < n && hojas[j].tipo === 'pleg' && hojas[j].dir === hj.dir && hojas[j].grupo === hj.grupo) j++;
+            const m = j - i, gx0 = x + lw * i, gx1 = x + lw * j;
+            // zigzag: arranca en el lado donde se RECOGEN las hojas (punta con flecha) y va al otro extremo
+            const toL = hj.dir === 'L';
+            const pts = [];
+            for (let k = 0; k <= m; k++) {
+                const px = gx0 + lw * k, py = my + ((k % 2 === 0) ? -amp : amp);
+                pts.push([px, py]);
+            }
+            const path = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
+            s += `<path d="${path}" fill="none" stroke="${marca}" stroke-width="1" stroke-dasharray="3 2"/>`;
+            // flecha en el extremo hacia donde pliega
+            const tip = toL ? pts[0] : pts[m], prev = toL ? pts[1] : pts[m - 1];
+            const ang = Math.atan2(tip[1] - prev[1], tip[0] - prev[0]), ah = Math.min(4, lw * 0.35);
+            const a1 = [tip[0] - ah * Math.cos(ang - 0.5), tip[1] - ah * Math.sin(ang - 0.5)];
+            const a2 = [tip[0] - ah * Math.cos(ang + 0.5), tip[1] - ah * Math.sin(ang + 0.5)];
+            s += `<polygon points="${tip[0].toFixed(1)},${tip[1].toFixed(1)} ${a1[0].toFixed(1)},${a1[1].toFixed(1)} ${a2[0].toFixed(1)},${a2[1].toFixed(1)}" fill="${marca}" stroke="none"/>`;
+            i = j;
+        }
+        return s;
+    }
+    // Elevación completa de la tarjeta suelta: una hoja = un panel con marco (vidrio / louver / tubos).
+    function plegElev(state, uid) {
+        const g = plegLayout(state);
+        const panelFn = panelFnFor(state.vidrio, false);
+        let s = '';
+        // marco perimetral (riel superior e inferior) + hojas
+        s += `<rect x="${(g.x0 - 1).toFixed(1)}" y="${(g.y0 - 1.4).toFixed(1)}" width="${(g.W + 2).toFixed(1)}" height="${(g.H + 2.6).toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="1.2"/>`;
+        for (let k = 0; k < g.n; k++) s += panelFn(uid, g.x0 + g.lw * k, g.y0, g.lw, g.H);
+        s += plegSimbolos(g.x0, g.y0, g.W, g.H, g.hojas, state.pleg_apertura);
+        return s;
+    }
+    // Vista en planta: riel a lo largo del hueco, hojas plegables medio recogidas (zigzag) contra su
+    // jamba, hoja de paso con su giro. Pliegan hacia el EXTERIOR o el INTERIOR (pleg_apertura); el
+    // observador está abajo: "vista de afuera" → exterior abajo (misma regla que galandajePlan).
+    function plegablePlan(state, uid, opts) {
+        opts = opts || {};
+        const g = plegLayout(state), X0 = g.x0, X1 = g.x0 + g.W, PT = 84;
+        const afuera = (state.pleg_apertura || 'afuera') === 'afuera', vistaAfuera = state.vista === 'afuera';
+        const dirY = (afuera === vistaAfuera) ? 1 : -1;   // hacia el observador (+y) o alejándose
+        const Lp = Math.min(g.lw * 0.95, 22 / 0.866), dx = Lp * 0.5, dy = Lp * 0.866 * dirY;
+        let s = `<line x1="${X0.toFixed(1)}" y1="${PT}" x2="${X1.toFixed(1)}" y2="${PT}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+        const hojas = g.hojas, n = hojas.length;
+        let i = 0, depth = 0;
+        while (i < n) {
+            const hj = hojas[i];
+            if (hj.tipo === 'puerta') {
+                // hoja de paso: bisagra en la jamba exterior, abre hacia el mismo lado que las plegables
+                const hingeX = hj.dir === 'R' ? X0 + g.lw * (i + 1) : X0 + g.lw * i;
+                const sgn = hj.dir === 'R' ? -1 : 1, r = g.lw * 0.9;
+                const ex = hingeX + sgn * r * 0.866, ey = PT + r * 0.5 * dirY;
+                s += `<line x1="${hingeX.toFixed(1)}" y1="${PT}" x2="${ex.toFixed(1)}" y2="${ey.toFixed(1)}" stroke="#0A3D62" stroke-width="1.4"/>`;
+                const sweep = ((dirY > 0) === (sgn > 0)) ? 1 : 0;
+                s += `<path d="M ${(hingeX + sgn * r).toFixed(1)} ${PT} A ${r.toFixed(1)} ${r.toFixed(1)} 0 0 ${sweep} ${ex.toFixed(1)} ${ey.toFixed(1)}" stroke-dasharray="2,2" stroke-width="1" fill="none" stroke="#0A3D62"/>`;
+                depth = Math.max(depth, r * 0.5);
+                i++; continue;
+            }
+            let j = i; while (j < n && hojas[j].tipo === 'pleg' && hojas[j].dir === hj.dir && hojas[j].grupo === hj.grupo) j++;
+            const m = j - i, toL = hj.dir === 'L';
+            // el grupo se recoge contra su jamba: arranca en la jamba y cada hoja avanza dx a lo largo del riel
+            let px = toL ? X0 + g.lw * i : X0 + g.lw * j, py = PT;
+            const step = toL ? dx : -dx;
+            let path = `M${px.toFixed(1)} ${py.toFixed(1)}`;
+            for (let k = 1; k <= m; k++) { px += step; py = (k % 2 === 1) ? PT + dy : PT; path += `L${px.toFixed(1)} ${py.toFixed(1)}`; }
+            s += `<path d="${path}" fill="none" stroke="#0A3D62" stroke-width="1.6" stroke-linejoin="round"/>`;
+            // bisagras (puntos) en cada quiebre
+            px = toL ? X0 + g.lw * i : X0 + g.lw * j;
+            for (let k = 0; k <= m; k++) { const cy = (k % 2 === 1) ? PT + dy : PT; s += `<circle cx="${(px + step * k).toFixed(1)}" cy="${cy.toFixed(1)}" r="0.9" fill="#0A3D62" stroke="none"/>`; }
+            depth = Math.max(depth, Math.abs(dy));
+            i = j;
+        }
+        const top = dirY > 0 ? PT : PT - depth, bottom = dirY > 0 ? PT + depth : PT;
+        plegablePlan.lastTop = Math.min(top, PT) - 1; plegablePlan.lastBottom = Math.max(bottom, PT) + 1;
+        let head = `<line x1="-8" y1="${(PT - 14).toFixed(1)}" x2="108" y2="${(PT - 14).toFixed(1)}" stroke="#e1e6ea" stroke-width="0.6"/>`;
+        head += `<text x="0" y="${(PT - 8).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+        // int/ext según la vista (observador abajo): vista de afuera → exterior abajo
+        let labels = `<text x="${(X0 - 6).toFixed(1)}" y="${(PT - 4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'int' : 'ext'}</text>`;
+        labels += `<text x="${(X0 - 6).toFixed(1)}" y="${(PT + 7).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'ext' : 'int'}</text>`;
+        return (opts.noHead ? '' : head) + s + (opts.noLabels ? '' : labels);
+    }
     function galElevParts(state, uid) {
         const g = galLayout(state);
         const yTop = g.y0, yBot = g.y0 + g.H;
@@ -4876,6 +5079,7 @@
             case 'gal1': case 'gal2_lat': case 'gal2_cent': case 'gal3_3v': case 'gal4_2v': case 'gal4_4v': case 'gal6_3v': {
                 const g = galLayout(state); return [[g.opX, g.y0, g.opW, g.H]];   // el vidrio = el hueco (proporcional)
             }
+            case 'pleg': { const g = plegLayout(state); return [[g.x0, g.y0, g.W, g.H]]; }
             case 'win_proy': case 'win_souf': case 'win_abat': case 'win_ob': case 'door_abat': case 'fachada_din':
                 return [fitPropRect(state)];
             case 'mamp_fija': return [[30, 5, 40, 50]];
@@ -5803,12 +6007,12 @@
     // (paño fijo, corredera, puerta, louver, oscilo, vacío). Dibujo 2D plano reusando el motor de
     // panel (extrudedPanel/louverPanel/wallBlock) + símbolos por tipo + cotas. Sin efecto 3D.
     // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
-    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['gal1', 'Galandaje 1 Hoja'], ['gal2_lat', 'Galandaje 2 Hojas (Lateral)'], ['gal2_cent', 'Galandaje 2 Hojas (Central)'], ['gal3_3v', 'Galandaje 3 Hojas'], ['gal4_2v', 'Galandaje 4 Hojas (Central)'], ['gal4_4v', 'Galandaje 4 Hojas (Lateral)'], ['gal6_3v', 'Galandaje 6 Hojas'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['gal1', 'Galandaje 1 Hoja'], ['gal2_lat', 'Galandaje 2 Hojas (Lateral)'], ['gal2_cent', 'Galandaje 2 Hojas (Central)'], ['gal3_3v', 'Galandaje 3 Hojas'], ['gal4_2v', 'Galandaje 4 Hojas (Central)'], ['gal4_4v', 'Galandaje 4 Hojas (Lateral)'], ['gal6_3v', 'Galandaje 6 Hojas'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
 
     // Tipos de aluminio válidos POR tipo de elemento. El selector "Tipo de aluminio" de la fachada
     // muestra solo la UNIÓN de los que aplican a los elementos presentes (ej. paños fijos + puerta
     // → P40 de ventana / P40 de puerta / Titan; al agregar una corredera se suman P92/E70/E100/E200).
-    const ALU_MASTER = [['p40_ventana', 'P40 de ventana'], ['p40_puerta', 'P40 de puerta'], ['titan', 'Titan'], ['P92', 'P92'], ['E70', 'E70'], ['E100', 'E100'], ['E200', 'E200']];
+    const ALU_MASTER = [['p40_ventana', 'P40 de ventana'], ['p40_puerta', 'P40 de puerta'], ['titan', 'Titan'], ['P92', 'P92'], ['E70', 'E70'], ['E100', 'E100'], ['E200', 'E200'], ['E63', 'E63 (plegable)']];
     const ALU_LABEL = Object.fromEntries(ALU_MASTER);
     const ALU_POR_CELDA = {
         pf: ['p40_ventana', 'p40_puerta'],
@@ -5823,6 +6027,7 @@
         cor6_lat: ['P92', 'E70', 'E100', 'E200'],
         gal1: ['P92', 'E70', 'E100', 'E200'], gal2_lat: ['P92', 'E70', 'E100', 'E200'], gal2_cent: ['P92', 'E70', 'E100', 'E200'], gal3_3v: ['P92', 'E70', 'E100', 'E200'],
         gal4_2v: ['P92', 'E70', 'E100', 'E200'], gal4_4v: ['P92', 'E70', 'E100', 'E200'], gal6_3v: ['P92', 'E70', 'E100', 'E200'],
+        pleg: ['E63'],
         louvers: [], vacio: []
     };
     // Opciones de aluminio para UNA celda concreta (según su tipo de elemento) — el selector va por paño.
@@ -5876,6 +6081,16 @@
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
         let s = cv === 'louvers' ? louverPanel(uid, x, y, w, h) : cv === 'tubos2040' ? tubosPanel(uid, x, y, w, h) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver/tubos + marco 2D
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
+        if (celda === 'pleg') {
+            // Plegable (acordeón) en la fachada: mismas hojas con marco y mismos símbolos que la tarjeta suelta.
+            const mini = { pleg_esquema: cfg.pleg_esquema || '330', orientacion: (cfg.lado || 'izq') === 'der' ? 'D' : 'I' };
+            const hojas = plegHojas(mini), n = hojas.length;
+            const pf = cv === 'louvers' ? louverPanel : cv === 'tubos2040' ? tubosPanel : extrudedPanel;
+            s = '';
+            for (let k = 0; k < n; k++) s += pf(uid, x + w * k / n, y, w / n, h);
+            s += plegSimbolos(x, y, w, h, hojas, cfg.pleg_apertura || 'afuera');
+            return s;
+        }
         if (gridGal(celda)) {
             // Galandaje: bloque de pared (bolsillo) donde se recogen las hojas — a un lado (lateral, según
             // `gal_pocket`) o a ambos (central) — y las hojas con su flecha de plegado, como en el ítem suelto.
@@ -5981,10 +6196,24 @@
     }
     function gridColPlan(x, w, col, planY, maxR, uid, corner) {
         const rows = (col && col.rows) || [];
-        const r = rows.find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'puerta' || rr.celda === 'ventana') || rows[0] || { celda: 'pf' };
+        const r = rows.find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'pleg' || rr.celda === 'puerta' || rr.celda === 'ventana') || rows[0] || { celda: 'pf' };
         const celda = r.celda;
         // línea de pared (mismo estilo grueso/gris que drawPlanView)
         let s = `<line x1="${x.toFixed(1)}" y1="${planY}" x2="${(x + w).toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`;
+        if (celda === 'pleg') {
+            // Plegable: EXACTAMENTE la planta del ítem suelto (plegablePlan), escalada al ancho de la columna
+            // y volteada verticalmente (el suelto con vista de afuera lleva exterior abajo… la fachada, vista
+            // exterior, lleva interior arriba: se dibuja el suelto con vista 'adentro' → exterior arriba, y se
+            // voltea para que quede abajo). Sin título ni etiquetas.
+            const k = w / 100;
+            const mini = { ancho: 100 / 0.92 * 1, alto: 1, pleg_esquema: r.pleg_esquema || '330', pleg_apertura: r.pleg_apertura || 'afuera', orientacion: (r.lado || 'izq') === 'der' ? 'D' : 'I', vista: 'adentro' };
+            const g = plegablePlan(mini, uid, { noHead: true, noLabels: true });
+            const gl = plegLayout(mini), PTp = 84;
+            // el suelto dibuja el riel de gl.x0 a gl.x0+gl.W; se lleva a [x, x+w]
+            const kx = w / gl.W;
+            s += `<g transform="matrix(${kx.toFixed(4)} 0 0 ${(-kx).toFixed(4)} ${(x - gl.x0 * kx).toFixed(1)} ${(planY + kx * PTp).toFixed(1)})">${g}</g>`;
+            return s;
+        }
         if (celda === 'puerta' || celda === 'ventana') {
             // MISMA vista en planta que la tarjeta suelta (arco + hojas), con el MISMO radio en proporción
             // al ancho (maxR = w·34/65, ver renderFachadaGrid). Bug real (foto del usuario): antes maxR se
@@ -6243,7 +6472,7 @@
         // ADENTRO (arriba, entre la cota de ancho y la pared) — antes la franja era fija (14) y un
         // giro hacia adentro se montaba sobre la elevación (reportado con foto).
         let planExtra = 0;
-        const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => gridCorN(r.celda) || gridGal(r.celda) || r.celda === 'puerta' || r.celda === 'ventana'));
+        const hayOperable = colInfo.some(ci => (ci.col.rows || []).some(r => gridCorN(r.celda) || gridGal(r.celda) || r.celda === 'pleg' || r.celda === 'puerta' || r.celda === 'ventana'));
         let planLeftExt = 0, planRightExt = 0;   // cuánto sobresale la planta a los costados (ala de esquina)
         if (state.verPlanta !== false && hayOperable) {   // activada por defecto (correderas y puertas/ventanas abisagradas)
             const RATIO_R = 34 / 65;
@@ -6264,13 +6493,19 @@
                     } else if (gridCorN(r.celda)) {
                         const vias = gridCorCentral(r.celda) ? gridCorN(r.celda) / 2 : gridCorN(r.celda);
                         ext = Math.max(ext, (vias - 1) * 2.4 + 1);
+                    } else if (r.celda === 'pleg') {
+                        // profundidad real de la planta del plegable suelto, escalada al ancho de la columna
+                        const mini = { ancho: 100 / 0.92, alto: 1, pleg_esquema: r.pleg_esquema || '330', pleg_apertura: r.pleg_apertura || 'afuera', orientacion: (r.lado || 'izq') === 'der' ? 'D' : 'I', vista: 'adentro' };
+                        plegablePlan(mini, uid, { noHead: true, noLabels: true });
+                        const gl = plegLayout(mini), kx = ci.w / gl.W, d = (plegablePlan.lastBottom - plegablePlan.lastTop) * kx + 1;
+                        if ((r.pleg_apertura || 'afuera') === 'afuera') ext = Math.max(ext, d); else int = Math.max(int, d);
                     }
                 });
                 return { int, ext };
             };
             // Columnas ADYACENTES a la esquina: si las dos son correderas en escalera, sus hojas de esquina
             // deben encontrarse (ver gridColPlan). `cornerOf(ci)` da la instrucción para cada una.
-            const rowOp = ci => ((ci.col.rows || []).find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'puerta' || rr.celda === 'ventana') || (ci.col.rows || [])[0] || { celda: 'pf' });
+            const rowOp = ci => ((ci.col.rows || []).find(rr => gridCorN(rr.celda) || gridGal(rr.celda) || rr.celda === 'pleg' || rr.celda === 'puerta' || rr.celda === 'ventana') || (ci.col.rows || [])[0] || { celda: 'pf' });
             let cornerMap = new Map();
             if (esqLado && wingCols.length && mainCols.length) {
                 const wAdj = esqLado === 'izq' ? wingCols[wingCols.length - 1] : wingCols[0];
@@ -6360,6 +6595,9 @@
         const COR_INT = [['I', 'Hoja interior: Izq.'], ['D', 'Hoja interior: Der.']];
         const LADO = [['der', 'Abre a la derecha'], ['izq', 'Abre a la izquierda']];
         const GAL_POCKET = [['izq', 'Bolsillo a la izquierda'], ['der', 'Bolsillo a la derecha']];
+        const PLEG_ESQ = Object.keys(PLEG_ESQUEMAS).map(k => [k, 'Esquema ' + PLEG_ESQUEMAS[k].label]);
+        const PLEG_LADO = [['izq', 'Pliega a la izquierda'], ['der', 'Pliega a la derecha']];
+        const PLEG_AP = [['afuera', 'Pliega hacia afuera'], ['adentro', 'Pliega hacia adentro']];
         const GAL_INST = [['dentro', 'Instalación: Por dentro'], ['fuera', 'Instalación: Por fuera']];
         const GAL_SHEET = [['si', 'Sheetrock: Sí'], ['no', 'Sheetrock: No']];
         // Vidrio POR CELDA: muestra el valor en efecto (el del paño si se cambió, si no el de la
@@ -6378,6 +6616,7 @@
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (celda === 'osci') return vid + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            if (celda === 'pleg') return vid + cfgRow('Esquema', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado'))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (gridGal(celda)) return vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
             if (isCor(celda)) return vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
             return vid;   // pf, proy → al menos el selector de vidrio por paño
@@ -7527,6 +7766,7 @@
         let bx = 10, by = 5, bw = 80, bh = 50;
         if (state.categoria === 'corredera') { bx = 10; by = 10; bw = 80; bh = 40; }
         else if (state.categoria === 'galandaje') { bx = 5; by = 10; bw = 90; bh = 40; }
+        else if (state.categoria === 'plegable') { const g = plegLayout(state); bx = g.x0; by = g.y0; bw = g.W; bh = g.H; }
         else if (PROP_BOX[state.type]) { [bx, by, bw, bh] = fitPropRect(state); }
         else if (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio') { bx = 30; by = 5; bw = 40; bh = 50; }
 
@@ -7540,7 +7780,7 @@
             viewBox = `${pr[0]} ${pr[1]} ${pr[2]} ${pr[3]}`;
             aspect = 'none';
         } else {
-            viewBox = state.categoria === 'galandaje' ? '-14 -12 144 132' : state.categoria === 'corredera' ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 124' : '-14 -6 144 70');
+            viewBox = state.categoria === 'galandaje' ? '-14 -12 144 132' : state.categoria === 'plegable' ? '-14 -6 144 126' : state.categoria === 'corredera' ? '-14 -6 144 112' : (hasPlan ? '-14 -8 144 124' : '-14 -6 144 70');
             aspect = 'xMidYMid meet';
         }
 
@@ -7609,6 +7849,16 @@
                 const gp = galElevParts(state, uid);
                 if (gp.wallsBehind) galWallsBehind = gp.walls; else drawing += gp.walls;
                 drawing += gp.frame;
+                break;
+            }
+            case 'pleg': {
+                // Plegable (acordeón): dibuja sus propias hojas con marco (no usa glassLayer); la planta
+                // va en su propia capa para que composePanos (paño adosado) la reubique al final.
+                drawing += plegElev(state, uid);
+                const hojaMm = plegHojaMm(state), mal = hojaMm > plegSerie(state).hojaMaxMm;
+                const g = plegLayout(state);
+                if (hojaMm) drawing += `<text x="${(g.x0 + g.W / 2).toFixed(1)}" y="${(g.y0 + g.H + 6).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="${mal ? '#c0392b' : '#4a5560'}" text-anchor="middle" stroke="none">${g.n} hojas × ${hojaMm} mm${mal ? ' ⚠ máx. ' + plegSerie(state).hojaMaxMm : ''}</text>`;
+                drawing += `<g class="plan-view-layer">${plegablePlan(state, uid)}</g>`;
                 break;
             }
 
@@ -7750,7 +8000,7 @@
         const glassOnly = (state.categoria === 'mampara' || state.categoria === 'puerta_vidrio')
             || (state.type === 'fachada_din' && state.fijacion === 'sin_marco');
         const panelFn = panelFnFor(state.vidrio, glassOnly);
-        getPanelRects(state).forEach(r => { glassLayer += panelFn(uid, r[0], r[1], r[2], r[3]); });
+        if (state.categoria !== 'plegable') getPanelRects(state).forEach(r => { glassLayer += panelFn(uid, r[0], r[1], r[2], r[3]); });   // el plegable dibuja sus hojas una por una (plegElev)
         if (galWallsBehind) glassLayer = galWallsBehind + glassLayer;
 
         const isFlipped = ['win_abat', 'win_ob', 'win_souf', 'door_abat'].includes(state.type) && isD;
@@ -8597,6 +8847,7 @@
         if (['win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat'].includes(type)) return 'abisagrada';
         if (['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat', 'door_slide', 'door_slide_conn'].includes(type)) return 'corredera';
         if (['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v'].includes(type)) return 'galandaje';
+        if (type === 'pleg') return 'galandaje';   // mismas etapas de instalación que un galandaje (marco, hojas, graduación, cierres)
         if (['fachada_din', 'mamp_fija', 'door_glass', 'ducha_facade', 'ducha_cab'].includes(type)) return 'panoFijo';
         if (type === 'baranda_bal') return (state && state.fijacion === 'base_u') ? 'barandaLingote' : 'barandaBase';
         return 'generico';
@@ -8610,6 +8861,7 @@
     const PARTES_SETS = {
         corredera: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
         galandaje: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
+        plegable: [{ k: 'marco', l: 'Marco/Riel' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Bisagras/Carros/Cierres' }],
         ventana: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
         puerta_vidrio: [{ k: 'marco', l: 'Marco' }, { k: 'hojas', l: 'Hojas' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],
         fachada: [{ k: 'marco', l: 'Marco' }, { k: 'vidrios', l: 'Vidrios' }, { k: 'accesorios', l: 'Accesorios' }],

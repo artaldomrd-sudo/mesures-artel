@@ -49,7 +49,7 @@ un **PDF de Cotización o Fabricación** para el cliente.
 `renderSVG` para todos los `type` en modo normal y CAD, más fixtures dedicados para Vidrio de Ducha,
 Paño Fijo adosado y **Fachada Compuesta** (`fachada_grid`, agregado 2026-09-05: grilla completa con
 todos los tipos de celda, fajas subdivididas, tubos no incluidos, planta de 1 hoja izq/der y 2
-hojas). Debe imprimir `SYNTAX OK`, `GUARDRAIL exportPDF() OK` y `RENDER OK: 78 FAIL: 0`. Corre en
+hojas). Debe imprimir `SYNTAX OK`, `GUARDRAIL exportPDF() OK` y `RENDER OK: 130 FAIL: 0`. Corre en
 un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas APIs va con
 `if (typeof setInterval !== 'undefined')`.
 
@@ -89,9 +89,12 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
 - **Fachada Compuesta** (`type:'fachada_grid'`, `categoria:'fachada_grid'`, botón "+ FACHADA
   COMPUESTA"): grilla 2D de columnas × filas + fajas + tubos, editada en un pop-up lateral. Es
   la herramienta principal para fachadas desde 2026-08. Ver sección propia más abajo.
+- **Plegables** (`type:'pleg'`, `categoria:'plegable'`, botón único "Puerta / Ventana Plegable",
+  2026-09-14): puertas/ventanas acordeón. Ver sección propia "Plegables (acordeón)" más abajo.
 - **Especial**: dibujo libre / **CAD** ("Fachada Libre (CAD)", `type:'draw'`): lienzo donde se
-  insertan módulos que se pegan con imán (vidrio con vidrio). Sigue en el menú, pero para fachadas
-  normales se usa la Fachada Compuesta de arriba. Cortinas/enrollables NO participan del CAD
+  insertan módulos que se pegan con imán (vidrio con vidrio). **DESHABILITADO en el menú desde
+  2026-09-14** (pedido del usuario: la Fachada Compuesta lo reemplaza; el botón queda con
+  `display:none` y el `type` sigue existiendo para proyectos guardados que lo tengan). Cortinas/enrollables NO participan del CAD
   (mismo criterio que baranda/ducha/cerramiento, que tampoco se insertan ahí).
 
 ## Sistema de dibujo (SVG)
@@ -850,6 +853,52 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   `der` (RENDER OK: 80).
 - **Cotización cliente / `enviarOrden`**: como `type !== 'draw'`, la fachada compuesta sí tiene SVG
   y viaja como cualquier tarjeta (no necesita el caso especial del CAD).
+
+## Plegables (acordeón) — `type:'pleg'`, `categoria:'plegable'` (2026-09-14)
+
+Pedido del usuario con tres referencias: plano de arquitecto ("V2 (2U) Ventana tipo acordeón" de
+4,78 × 2,90 m: 5 hojas + faja de louvers de 0,40 arriba, zigzag punteado con flechas), los
+**esquemas del fabricante** (330, 431, 550, 633, 651, 1055 — "permitir únicamente estas opciones")
+y la **ficha técnica de la serie E63** (ancho máximo **850 mm por hoja**, alto máx. 3000, vidrio
+5–18 mm). "Para evitar un menú grande como correderas/galandajes: un botón 'Plegables' y varios
+selectores". El usuario mandará más datos/series; por ahora solo E63.
+
+- **Modelo**: `pleg_esquema` (clave de `PLEG_ESQUEMAS`: `{ n, izq, der, puerta, label }` — el "1"
+  final del código es una hoja de PASO abisagrada en el extremo opuesto al plegado), `orientacion`
+  = hacia dónde se RECOGEN las hojas (toggle etiquetado "PLIEGA A LA IZQUIERDA/DERECHA"; base
+  dibujada plegando a la izquierda, 'D' espeja todo incluida la puerta de paso), `pleg_apertura`
+  `'afuera'|'adentro'`, `tipo_aluminio` = serie (`PLEG_SERIES`, solo `E63`), vidrio/grosor/color,
+  `cierre`, `cerradura`, `color_manija`, `vista`. Sin mosquitera. Defaults en `addItem`: 330,
+  afuera, E63, templado 10 mm, 2400×2400.
+- **Regla de hoja máxima (bloquea)**: `plegHojaMm(state)` = `ancho / n`; `plegProblemas(state)`
+  devuelve avisos si la hoja supera `hojaMaxMm` de la serie o el alto supera `altoMaxMm`. Entra en
+  `medidasSospechosas` (tarjeta suelta y celdas `pleg` de la fachada) → no deja fijar, guardar ni
+  enviar (misma vía que cm-vs-mm). Aviso en vivo bajo las medidas (`#pleg-hint-${id}`,
+  `plegHintHtml`/`refreshPlegHint`, refrescado desde `updateState` con ancho/alto/esquema/serie)
+  y en rojo bajo el dibujo ("5 hojas × 956 mm ⚠ máx. 850"). Ej. real: 4780 ÷ 5 = 956 → hay que
+  pasar a 633 (797 mm).
+- **Dibujo**: `plegLayout` (proporcional, misma caja 92×40 que el galandaje), `plegHojas` (hojas
+  ya orientadas `{tipo:'pleg'|'puerta', dir:'L'|'R', grupo}`), `plegElev` (marco perimetral + una
+  hoja = un `panelFnFor` con marco → louvers/tubos también) y **`plegSimbolos`** (compartido con la
+  fachada): zigzag PUNTEADO por grupo con flecha en la punta hacia donde pliega (como el plano) y
+  chevron de abisagrada en la hoja de paso (vértice al lado libre, bisagra en la jamba exterior —
+  coherente con la planta del esquema del fabricante). `glassLayer` genérico se salta el plegable.
+  Cotas genéricas (ancho arriba, alto a la derecha); viewBox `-14 -6 144 126`.
+- **Planta** `plegablePlan(state, uid, opts)` (PT=84, sin `<g>` anidados para que `composePanos`
+  pueda moverla): riel gris, cada grupo medio recogido en zigzag contra su jamba (bisagras como
+  puntos), puerta de paso con hoja a 30° + arco punteado. `dirY = (afuera === vista afuera) ? +1 :
+  -1` (observador abajo, misma regla que el galandaje). `plegablePlan.lastTop/lastBottom` para la
+  fachada. Va en `<g class="plan-view-layer">` → el **paño adosado** funciona (`renderPanoSection`
+  admite `plegable`): así se arma el V2 del plano (faja de louvers arriba).
+- **Fachada Compuesta**: celda `pleg` en `GRID_CELDAS`/`CELDA_NOM`, aluminio `E63` (agregado a
+  `ALU_MASTER`, `ALU_POR_CELDA.pleg`), config por celda `pleg_esquema` / `lado` (pliega izq/der) /
+  `pleg_apertura` / cierre / cerradura; `gridCell` dibuja hojas + `plegSimbolos`; `gridColPlan`
+  reusa `plegablePlan` (mini con `vista:'adentro'`, escalado `w/gl.W` y volteado en y); `needs`
+  reserva la profundidad hacia ext/int según `pleg_apertura`; `hayOperable`/`rowOp` lo cuentan;
+  el resumen dice "esquema 431 (4 hojas + puerta de paso) · pliega a la der. hacia afuera".
+- Partes de fábrica `PARTES_SETS.plegable` (Marco/Riel, Hojas, Vidrios, Bisagras/Carros/Cierres);
+  etapas de instalación = las del galandaje (`getStageSetKey`). `verify.mjs`: 6 esquemas × 3
+  combinaciones + regla de hoja máx. + celda de fachada (RENDER OK: 130).
 
 ## Baranda: consumibles de instalación (resina y tornillos, 2026-09-07)
 

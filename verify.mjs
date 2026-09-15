@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'pleg'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -98,6 +98,24 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
     catch (e) { fail++; console.error(`  galandaje ${t} ${inst}/${vista}/${tubo}:`, e.message); }
   }
 }
+// Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
+// paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
+for (const esq of ['330', '431', '550', '633', '651', '1055']) {
+  for (const [o, ap, vista] of [['I', 'afuera', 'afuera'], ['D', 'adentro', 'adentro'], ['D', 'afuera', 'adentro']]) {
+    try { ctx.__render('card1', { type: 'pleg', categoria: 'plegable', ancho: 4780, alto: 2500, orientacion: o, pleg_esquema: esq, pleg_apertura: ap, vista, tipo_aluminio: 'E63', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', cerradura: 'llave', cierre: 'multipunto', panoArriba: esq === '550' ? { alto: 400, vidrio: 'louvers', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }
+    catch (e) { fail++; console.error(`  plegable ${esq} ${o}/${ap}/${vista}:`, e.message); }
+  }
+}
+try {
+  const st = { type: 'pleg', categoria: 'plegable', ancho: 4780, alto: 2500, pleg_esquema: '550', tipo_aluminio: 'E63' };
+  const hoja = ctx.plegHojaMm(st), probs = ctx.plegProblemas(st);
+  if (hoja !== 956 || probs.length !== 1) throw new Error(`hoja=${hoja} problemas=${probs.length} (esperado 956 mm y 1 aviso por > 850)`);
+  const st2 = { ...st, pleg_esquema: '633' };
+  if (ctx.plegProblemas(st2).length !== 0) throw new Error('633 (797 mm por hoja) no debería avisar');
+  ok++;
+} catch (e) { fail++; console.error('  plegable regla hoja máx:', e.message); }
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
+catch (e) { fail++; console.error('  plegable fachada:', e.message); }
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
   try { ctx.__render('card1', { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1000, alto: 2100, orientacion: 'D', vidrio: 'tubos2040', color_perfil: 'negro', panoArriba: t === 'win_abat' ? { alto: 300, vidrio: 'tubos2040', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }
