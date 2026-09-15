@@ -109,15 +109,28 @@ function comentariosNuevos(before, after) {
     const b = Array.isArray(before && before.comentariosInstalador) ? before.comentariosInstalador : [];
     return a.length > b.length ? a.slice(b.length) : [];
 }
-// Avisa a gerencia (rol admin) de un comentario nuevo del instalador — sin mandárselo a quien lo
-// escribió. El Panel de Control (ops/index.html) lo muestra además en su centro de notificaciones.
-async function avisarComentarioInstalador(nuevos, lugar) {
+// Conversación de la obra (instalador ↔ gerencia). Cada mensaje nuevo avisa por push al OTRO lado:
+// si lo escribió gerencia (`deRol:'gerencia'`) → a los instaladores asignados a esa obra (si no hay
+// asignados, a todos los instaladores); si lo escribió un instalador → a gerencia (rol admin).
+// Nunca al autor. El Panel de Control (ops/index.html) muestra además los del instalador en su centro
+// de notificaciones; ops/instalacion.html muestra el hilo completo y los no leídos.
+async function avisarComentarioInstalador(nuevos, lugar, docData) {
     for (const c of nuevos) {
         const autor = (c && c.email) || '';
-        const tokens = (await tokensPorRol('admin')).filter((t) => t.email !== autor);
-        const titulo = '💬 ' + ((c && c.nombre) || 'Instalador') + ' comentó en obra';
-        const cuerpo = lugar + ': ' + String((c && c.texto) || '').slice(0, 140);
-        await pushATokens(tokens, titulo, cuerpo, 'ops/index.html');
+        const texto = String((c && c.texto) || '').slice(0, 140);
+        if (c && c.deRol === 'gerencia') {
+            const d = docData || {};
+            const asig = (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map((a) => a && a.email)
+                : Array.isArray(d.asignadosInstalador) && d.asignadosInstalador.length ? d.asignadosInstalador.map((a) => a && a.email)
+                : [d.instaladorEmail, d.asignadoInstaladorEmail]).filter(Boolean);
+            let tokens = await tokensPorRol('instalador', 'ayudante');
+            if (asig.length) tokens = tokens.filter((t) => asig.includes(t.email));
+            tokens = tokens.filter((t) => t.email !== autor);
+            await pushATokens(tokens, '💬 ' + ((c && c.nombre) || 'Oficina') + ' te escribió', lugar + ': ' + texto, 'ops/instalacion.html');
+        } else {
+            const tokens = (await tokensPorRol('admin')).filter((t) => t.email !== autor);
+            await pushATokens(tokens, '💬 ' + ((c && c.nombre) || 'Instalador') + ' escribió en obra', lugar + ': ' + texto, 'ops/index.html');
+        }
     }
 }
 
@@ -229,7 +242,7 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
     }
 
     // 4) Comentario nuevo del instalador en una obra ("Obras asignadas" de ops/instalacion.html) → gerencia.
-    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar);
+    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar, after);
 });
 
 // Comentario nuevo del instalador en un trabajo del calendario (colección `instalaciones`) → gerencia.
@@ -238,7 +251,7 @@ exports.enviarNotificacionComentarioInstalacion = onDocumentWritten('instalacion
     if (!after) return;
     const before = event.data.before.exists ? event.data.before.data() : {};
     const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ') || 'Trabajo de instalación';
-    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar);
+    await avisarComentarioInstalador(comentariosNuevos(before, after), lugar, after);
 });
 
 // Recordatorios programados: cada 5 minutos revisa citas e instalaciones que tengan un

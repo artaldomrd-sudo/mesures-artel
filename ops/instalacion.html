@@ -105,6 +105,20 @@
     .coment-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
     .coment-item { background: #f6f8fa; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #333; white-space: pre-wrap; }
     .coment-item .coment-meta { font-size: 11px; color: #8a93a0; font-weight: bold; margin-bottom: 2px; }
+    /* Conversación de la obra: burbujas tipo chat — lo mío a la derecha en azul, lo del otro lado a la
+       izquierda; mensajes que aún no vi con borde naranja. */
+    .coment-item.mio { background: #e7f0fb; align-self: flex-end; max-width: 92%; }
+    .coment-item.otro { align-self: flex-start; max-width: 92%; }
+    .coment-item.gerencia .coment-meta { color: var(--artal-blue); }
+    .coment-item.nuevo { box-shadow: inset 0 0 0 2px #f39c12; }
+    .coment-nuevos { display: inline-block; background: #e74c3c; color: #fff; border-radius: 999px; font-size: 11px; padding: 2px 8px; margin-left: 6px; }
+    .btn-leido { margin: 6px 0 0 8px; background: transparent; color: #16a085; border: 1.5px solid #16a085; border-radius: 8px; padding: 9px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    #toasts { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 900; display: flex; flex-direction: column; gap: 8px; width: min(520px, 94vw); pointer-events: none; }
+    .toast { pointer-events: auto; background: #1f2d3d; color: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border-left: 5px solid #f39c12; display: flex; gap: 10px; align-items: flex-start; animation: toastIn .3s ease-out; cursor: pointer; }
+    .toast .t-ic { font-size: 20px; flex: 0 0 auto; } .toast b { display: block; font-size: 13px; margin-bottom: 2px; }
+    .toast .t-txt { font-size: 12.5px; line-height: 1.4; color: #dfe6ee; word-break: break-word; }
+    .toast .t-x { background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; line-height: 1; padding: 0 2px; flex: 0 0 auto; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
     .coment-ta { width: 100%; box-sizing: border-box; min-height: 58px; resize: vertical; border: 1.5px solid #d7dee6; border-radius: 8px; padding: 8px 10px; font-family: 'Arimo'; font-size: 13px; }
     .btn-coment { margin-top: 6px; background: #6c5ce7; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
     .aprobacion-form { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px dashed #ddd; }
@@ -240,6 +254,7 @@
 </div>
 
 <!-- Modal: trabajo rápido (instalaciones) -->
+<div id="toasts"></div>
 <div class="modal-ov" id="modal-trabajo">
     <div class="modal-bx">
         <h2>📌 Nuevo trabajo</h2>
@@ -548,12 +563,7 @@
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
             ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
-            <div class="coment-box">
-                <div class="coment-title">💬 Comentarios del instalador</div>
-                ${(Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length) ? `<div class="coment-list">${j.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
-                <textarea id="jcoment-${j.id}" class="coment-ta" placeholder="Anota cualquier cosa del proceso: por qué no se pudo terminar, faltantes, cliente ausente, daños, etc."></textarea>
-                <button class="btn-coment" onclick="guardarComentarioJob('${j.id}')">Guardar comentario</button>
-            </div>
+            ${hiloHTML('instalaciones', j.id, j)}
             <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>
             ${puedeCambiarEstado ? `
             <div class="admin-row">
@@ -692,12 +702,7 @@
                 </select>
                 <button onclick="asignarInstalador('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:bold;font-size:13px;cursor:pointer;font-family:'Arimo';min-height:40px">Guardar</button>
             </div>` : ''}
-            <div class="coment-box">
-                <div class="coment-title">💬 Comentarios del instalador</div>
-                ${(Array.isArray(o.comentariosInstalador) && o.comentariosInstalador.length) ? `<div class="coment-list">${o.comentariosInstalador.map(cm => `<div class="coment-item"><div class="coment-meta">${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`).join('')}</div>` : ''}
-                <textarea id="coment-${id}" class="coment-ta" placeholder="Anota cualquier cosa del proceso: por qué no se pudo terminar, faltantes, cliente ausente, daños, etc."></textarea>
-                <button class="btn-coment" onclick="guardarComentarioInstalador('${id}')">Guardar comentario</button>
-            </div>
+            ${hiloHTML('orders', id, o)}
             ${esAdmin ? `<div style="margin-top:10px;text-align:right;"><a href="#" onclick="eliminarOrden('${id}');return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;text-decoration:none;">🗑 Eliminar obra</a></div>` : ''}
         </div>`;
     }
@@ -822,7 +827,7 @@
     }
 
     /* ===== Listeners ===== */
-    onSnapshot(collection(db, 'instalaciones'), (snap) => { allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); },
+    onSnapshot(collection(db, 'instalaciones'), (snap) => { allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() })); hiloAvisarNuevos('instalaciones', snap); renderTodo(); },
         (err) => { document.getElementById('jobs-list').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
 
     onSnapshot(query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'])), (snap) => {
@@ -831,6 +836,7 @@
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        hiloAvisarNuevos('orders', snap);
         ordersClientesCache = ordersCache.map(o => o.data);
         refreshClientMap(); renderPorInstalar();
     });
@@ -1133,21 +1139,90 @@
         if (!confirm(`¿Eliminar la instalación "${lugar}"? Esta acción no se puede deshacer.`)) return;
         try { await deleteDoc(doc(db, 'instalaciones', id)); } catch (e) { alert('No se pudo eliminar: ' + e.message); }
     };
-    // Comentario del instalador sobre una obra (se acumulan como historial con nombre + fecha).
-    // Sirve para justificar por qué no se pudo terminar, faltantes, cliente ausente, etc.
-    window.guardarComentarioInstalador = async function (orderId) {
-        const ta = document.getElementById('coment-' + orderId);
+    /* ===== Conversación de la obra (instalador ↔ gerencia) =====
+       Un solo hilo por obra/trabajo en `comentariosInstalador` [{texto, nombre, email, fecha, deRol}].
+       `deRol` = 'gerencia' (admin) o 'instalador'. Lo leído por cada persona va en `leidoPor.{clave}` =
+       cuántos mensajes ya vio (clave = email sin puntos/@). Gerencia además usa
+       `comentariosInstaladorAtendidos` (el Panel de Control lo marca como atendido). La Cloud
+       Function avisa por push al otro lado (gerencia ↔ instaladores asignados), nunca al autor. */
+    const miRol = esAdmin ? 'gerencia' : 'instalador';
+    const claveEmail = (em) => String(em || '').replace(/[.@]/g, '_');
+    const hiloMsgs = (d) => Array.isArray(d.comentariosInstalador) ? d.comentariosInstalador : [];
+    const esGerencia = (cm) => cm && cm.deRol === 'gerencia';
+    // Mensajes de OTROS que yo todavía no vi.
+    function hiloNoLeidos(d) {
+        const arr = hiloMsgs(d), vistos = Number((d.leidoPor || {})[claveEmail(usuario.email)]) || 0;
+        return arr.slice(vistos).filter(cm => cm.email !== usuario.email);
+    }
+    function hiloHTML(col, id, d) {
+        const arr = hiloMsgs(d), vistos = Number((d.leidoPor || {})[claveEmail(usuario.email)]) || 0;
+        const nuevos = hiloNoLeidos(d).length;
+        const items = arr.map((cm, i) => {
+            const mio = cm.email === usuario.email, ger = esGerencia(cm);
+            const cls = 'coment-item ' + (mio ? 'mio' : 'otro') + (ger ? ' gerencia' : '') + (!mio && i >= vistos ? ' nuevo' : '');
+            return `<div class="${cls}"><div class="coment-meta">${ger ? '🏢 ' : '🔧 '}${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`;
+        }).join('');
+        const ph = esAdmin ? 'Escríbele al instalador: instrucciones, preguntas, qué resolver…' : 'Cuéntale a la oficina: cómo va, qué faltó, cliente ausente, daños, preguntas…';
+        return `<div class="coment-box">
+                <div class="coment-title">💬 Conversación de la obra${nuevos ? `<span class="coment-nuevos">${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}</div>
+                ${items ? `<div class="coment-list">${items}</div>` : '<div style="font-size:12px;color:#8a93a0;margin-bottom:6px;">Sin mensajes todavía.</div>'}
+                <textarea id="hilo-${col}-${id}" class="coment-ta" placeholder="${ph}"></textarea>
+                <button class="btn-coment" onclick="hiloEnviar('${col}','${id}')">Enviar</button>${nuevos ? `<button class="btn-leido" onclick="hiloLeido('${col}','${id}')">✓ Marcar leído</button>` : ''}
+            </div>`;
+    }
+    function hiloDoc(col, id) {
+        if (col === 'orders') { const o = ordersCache.find(x => x.id === id); return o ? o.data : null; }
+        return allJobs.find(x => x.id === id) || null;
+    }
+    window.hiloEnviar = async function (col, id) {
+        const ta = document.getElementById(`hilo-${col}-${id}`);
         const texto = (ta && ta.value || '').trim();
-        if (!texto) { alert('Escribe un comentario antes de guardar.'); return; }
+        if (!texto) { alert('Escribe el mensaje antes de enviar.'); return; }
         try {
-            const snap = await getDoc(doc(db, 'orders', orderId));
+            const snap = await getDoc(doc(db, col, id));
             const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
-            await updateDoc(doc(db, 'orders', orderId), {
-                comentariosInstalador: prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString() }])
-            });
+            const nuevo = prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol }]);
+            const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
+            if (esAdmin) upd.comentariosInstaladorAtendidos = nuevo.length;  // contestar = atendido en el Panel
+            await updateDoc(doc(db, col, id), upd);
             if (ta) ta.value = '';
-        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
+        } catch (e) { alert('No se pudo enviar: ' + e.message); }
     };
+    window.hiloLeido = async function (col, id) {
+        const d = hiloDoc(col, id); const n = d ? hiloMsgs(d).length : 0;
+        const upd = { ['leidoPor.' + claveEmail(usuario.email)]: n };
+        if (esAdmin) upd.comentariosInstaladorAtendidos = n;
+        try { await updateDoc(doc(db, col, id), upd); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    // Pop-up cuando llega un mensaje nuevo del otro lado mientras la pantalla está abierta.
+    function toastHilo(cm, lugar) {
+        const box = document.getElementById('toasts'); if (!box) return;
+        const el = document.createElement('div'); el.className = 'toast';
+        el.innerHTML = `<span class="t-ic">💬</span><div style="flex:1;min-width:0;"><b>${esc(cm.nombre || '')} · ${esc(lugar)}</b><div class="t-txt">${esc(cm.texto || '')}</div></div><button class="t-x" title="Cerrar">✕</button>`;
+        el.querySelector('.t-x').onclick = (ev) => { ev.stopPropagation(); el.remove(); };
+        el.onclick = () => el.remove();
+        box.appendChild(el); setTimeout(() => el.remove(), 15000);
+        try { if (navigator.vibrate) navigator.vibrate(120); } catch (_) { }
+    }
+    const hiloPrimera = { orders: true, instalaciones: true };
+    function hiloAvisarNuevos(col, snap) {
+        if (hiloPrimera[col]) { hiloPrimera[col] = false; return; }
+        snap.docChanges().forEach(ch => {
+            if (ch.type !== 'modified' || ch.doc.metadata.hasPendingWrites) return;
+            const d = ch.doc.data(), arr = hiloMsgs(d), ult = arr[arr.length - 1];
+            if (!ult || ult.email === usuario.email) return;
+            const f = Date.parse(ult.fecha || ''); if (!f || Date.now() - f > 3 * 60000) return;
+            // Al instalador solo le salta lo de sus obras (o sin asignar = cualquiera); a gerencia, todo.
+            if (!esAdmin) {
+                const asig = col === 'orders'
+                    ? (Array.isArray(d.asignadosInstalador) ? d.asignadosInstalador.map(a => a && a.email) : [d.asignadoInstaladorEmail])
+                    : (Array.isArray(d.asignados) ? d.asignados.map(a => a && a.email) : [d.instaladorEmail]);
+                const libre = !asig.filter(Boolean).length;
+                if (!libre && !asig.includes(usuario.email)) return;
+            }
+            toastHilo(ult, [d.cliente, d.obra].filter(Boolean).join(' — '));
+        });
+    }
     // Atajo de admin: avanzar un pedido a "Listo para cargar" desde la tarjeta de instalación
     // (para cuando no aparece en el tablero de Fábrica por su destino o por ser directo a
     // instalación). Deja el pedido listo para transporte/instalación.
@@ -1157,20 +1232,6 @@
         try {
             await updateDoc(doc(db, 'orders', orderId), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() });
         } catch (e) { alert('No se pudo cambiar el estado: ' + (e && e.message ? e.message : e)); }
-    };
-    // Comentario del instalador en un trabajo del Calendario (colección instalaciones).
-    window.guardarComentarioJob = async function (jobId) {
-        const ta = document.getElementById('jcoment-' + jobId);
-        const texto = (ta && ta.value || '').trim();
-        if (!texto) { alert('Escribe un comentario antes de guardar.'); return; }
-        try {
-            const snap = await getDoc(doc(db, 'instalaciones', jobId));
-            const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
-            await updateDoc(doc(db, 'instalaciones', jobId), {
-                comentariosInstalador: prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString() }])
-            });
-            if (ta) ta.value = '';
-        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }
     };
     // Asignar (o cambiar) el instalador de una obra desde "Por instalar". Es informativo: no
     // restringe acceso, pero deja claro quién la tiene. Mismos campos que usa Historial.

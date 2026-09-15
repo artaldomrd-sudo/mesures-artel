@@ -216,11 +216,16 @@
     let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [];
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
+    // Solo cuentan los mensajes del INSTALADOR (los de gerencia, `deRol:'gerencia'`, son respuestas nuestras).
     const comentariosSinAtender = (d) => {
         const arr = Array.isArray(d.comentariosInstalador) ? d.comentariosInstalador : [];
         const vistos = Number(d.comentariosInstaladorAtendidos) || 0;
-        return arr.slice(vistos);
+        return arr.slice(vistos).filter(cm => cm && cm.deRol !== 'gerencia');
     };
+    const claveEmail = (em) => String(em || '').replace(/[.@]/g, '_');
+    // Caja de respuesta dentro de la tarjeta: contestar desde el Panel sin ir a Instalación. El
+    // instalador recibe push y ve el mensaje en su hilo; al responder queda atendido.
+    const respuestaHTML = (col, id) => `<div style="display:flex;gap:5px;margin-top:6px;width:100%;"><input type="text" id="resp-${col}-${id}" placeholder="Responder al instalador…" style="flex:1;min-width:0;border:1.5px solid #d7dee6;border-radius:6px;padding:5px 8px;font-family:'Arimo';font-size:12px;" onkeydown="if(event.key==='Enter'){notifResponder('${col}','${id}');}"><button class="n-ver" style="background:#6c5ce7" onclick="notifResponder('${col}','${id}')">Enviar</button></div>`;
     // Recordatorios/citas que ESTE usuario ocultó de SU panel (personal, no afecta a los demás).
     let notifOcultas = [];
 
@@ -260,8 +265,8 @@
             });
             // 2b) Comentarios del instalador en la obra (pestaña "Obras asignadas"), sin atender.
             comentariosSinAtender(o).forEach(cm => {
-                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Comentario de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
-                    acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifAtenderComentarios('orders','${id}')">Marcar atendido</button>` });
+                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
+                    acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><a class="n-ver" href="instalacion.html">Ver conversación</a><button class="n-done" onclick="notifAtenderComentarios('orders','${id}')">Marcar atendido</button>${respuestaHTML('orders', id)}` });
             });
             // 3) Cotización costeada por el contratista → falta armar/enviar el precio al cliente.
             if (o.status === 'costeada') {
@@ -273,8 +278,8 @@
         instCache.forEach(({ id, j }) => {
             const lugar = (j.cliente || 'Sin cliente') + (j.obra ? ' — ' + j.obra : '');
             comentariosSinAtender(j).forEach(cm => {
-                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Comentario de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
-                    acciones: `<a class="n-ver" href="instalacion.html">Ver en Instalación</a><button class="n-done" onclick="notifAtenderComentarios('instalaciones','${id}')">Marcar atendido</button>` });
+                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
+                    acciones: `<a class="n-ver" href="instalacion.html">Ver conversación</a><button class="n-done" onclick="notifAtenderComentarios('instalaciones','${id}')">Marcar atendido</button>${respuestaHTML('instalaciones', id)}` });
             });
         });
         // 4) Solicitudes web nuevas (leads del sitio).
@@ -315,6 +320,16 @@
 
     window.notifVer = (id) => openOrderPreview(id);
     window.notifAtenderComentario = async (id) => { try { await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
+    window.notifResponder = async (col, id) => {
+        const inp = document.getElementById(`resp-${col}-${id}`);
+        const texto = (inp && inp.value || '').trim(); if (!texto) return;
+        try {
+            const snap = await getDoc(doc(db, col, id));
+            const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
+            const nuevo = prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: 'gerencia' }]);
+            await updateDoc(doc(db, col, id), { comentariosInstalador: nuevo, comentariosInstaladorAtendidos: nuevo.length, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length });
+        } catch (e) { alert('No se pudo enviar: ' + e.message); }
+    };
     window.notifAtenderComentarios = async (col, id) => {
         const src = col === 'orders' ? ordersCache.find(x => x.id === id) : instCache.find(x => x.id === id);
         const d = src ? (src.o || src.j) : null;
@@ -341,7 +356,7 @@
             const d = ch.doc.data();
             const arr = Array.isArray(d.comentariosInstalador) ? d.comentariosInstalador : [];
             const ult = arr[arr.length - 1];
-            if (!ult || ult.email === usuario.email) return;
+            if (!ult || ult.email === usuario.email || ult.deRol === 'gerencia') return;
             const f = Date.parse(ult.fecha || '');
             if (!f || Date.now() - f > 3 * 60000) return; // solo lo escrito hace un momento
             toastComentario(ult, getLugar(d));
