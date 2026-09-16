@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Parte diario de obra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 860px; }
+    .tabs { display: flex; gap: 6px; background: #fff; border-radius: 12px; padding: 5px; box-shadow: var(--shadow); margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { flex: 1; min-width: 120px; padding: 11px 8px; border: none; background: transparent; color: var(--artal-blue); border-radius: 9px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .tab.active { background: var(--artal-blue); color: #fff; }
+    .tabpanel { display: none; } .tabpanel.active { display: block; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn { border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-y { background: var(--artal-yellow); color: var(--artal-blue); }
+    .btn-b { background: var(--artal-blue); color: #fff; }
+    .btn-g { background: #2ecc71; color: #fff; }
+    .btn-o { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
+    .btn-r { background: transparent; color: #e74c3c; border: 1.5px solid #e74c3c; }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .estado-linea { font-size: 13px; color: #556; margin: 0 0 10px; }
+    .estado-linea b.ok { color: #1f9d61; } .estado-linea b.warn { color: #c07a12; } .estado-linea b.bad { color: #d9483b; }
+    .aviso { background: #fff2dc; border-left: 4px solid #c07a12; padding: 10px 12px; border-radius: 8px; font-size: 13px; color: #6b4a08; margin-bottom: 12px; }
+    .aviso.rojo { background: #fdeaea; border-left-color: #d9483b; color: #8b1e14; }
+    .aviso.verde { background: #e7f7ee; border-left-color: #1f9d61; color: #145c39; }
+
+    .persona { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px; }
+    .persona .ph { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .persona .ph b { color: var(--artal-blue); font-size: 15px; flex: 1; }
+    .persona .ph .tot { font-size: 13px; font-weight: bold; color: #556; }
+    .persona .ph .tot.mal { color: #d9483b; }
+    .tramo { display: grid; grid-template-columns: 1.1fr 1.6fr 82px 36px; gap: 6px; align-items: center; margin-top: 8px; }
+    .tramo select, .tramo input { padding: 9px 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13.5px; min-height: 42px; width: 100%; box-sizing: border-box; background: #fff; }
+    .tramo select.obra:invalid, .tramo select.obra.falta { border-color: #d9483b; }
+    .tramo .x { background: transparent; border: none; color: #c9ced6; font-size: 20px; cursor: pointer; line-height: 1; }
+    .tramo .x:hover { color: #e74c3c; }
+    @media (max-width: 560px) { .tramo { grid-template-columns: 1fr 1fr; } .tramo select.obra { grid-column: 1 / -1; } }
+    .persona .pa { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .link-btn { background: transparent; border: none; color: var(--artal-blue); font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; padding: 6px 0; text-decoration: underline; }
+    .link-btn.rojo { color: #e74c3c; }
+    textarea.nota { width: 100%; box-sizing: border-box; min-height: 60px; border: 1.5px solid #ddd; border-radius: 9px; padding: 10px; font-family: 'Arimo'; font-size: 14px; resize: vertical; }
+    .footer-acts { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0 30px; position: sticky; bottom: 0; background: rgba(247,249,251,.96); padding: 10px 0; }
+    .hint { font-size: 12px; color: #8a93a0; }
+
+    table.rep { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+    table.rep th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    table.rep td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+    table.rep tr.tot td { font-weight: bold; background: #f4f6f9; }
+    table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
+    .tabla-wrap { overflow-x: auto; margin-bottom: 14px; }
+    .obra-link { color: var(--artal-blue); font-weight: bold; cursor: pointer; text-decoration: underline; }
+    .kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 10px 14px; min-width: 130px; }
+    .kpi .v { font-size: 20px; font-weight: bold; color: var(--artal-blue); } .kpi .l { font-size: 11.5px; color: #8a93a0; }
+    .pend { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .pend .d { background: #fff; border-radius: 9px; box-shadow: var(--shadow); padding: 8px 10px; font-size: 12.5px; }
+    .pend .d.ok { border-left: 4px solid #1f9d61; } .pend .d.no { border-left: 4px solid #d9483b; } .pend .d.libre { opacity: .55; }
+    .enc-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .enc-list label { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 9px; padding: 9px 12px; box-shadow: var(--shadow); font-size: 14px; }
+    .enc-list input { width: 20px; height: 20px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="instalacion.html" title="Volver a Instalación">← Instalación</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Parte diario de obra</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="parte" onclick="setTab('parte')">📝 Parte del día</button>
+        <button class="tab adm" data-tab="obras" onclick="setTab('obras')" style="display:none">🏗️ Costo por obra</button>
+        <button class="tab adm" data-tab="personas" onclick="setTab('personas')" style="display:none">👷 Por persona</button>
+        <button class="tab adm" data-tab="control" onclick="setTab('control')" style="display:none">✅ Control</button>
+    </div>
+
+    <!-- ===== PARTE ===== -->
+    <div class="tabpanel active" id="tab-parte">
+        <div id="aviso-pend"></div>
+        <div class="bar">
+            <label style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">Fecha <input type="date" id="p-fecha" onchange="cargarParte()"></label>
+            <label id="enc-wrap" style="font-size:12.5px;font-weight:bold;color:var(--artal-blue);display:none">Encargado <select id="p-encargado" onchange="cargarParte()"></select></label>
+            <button class="btn btn-o" onclick="igualQueAyer()" title="Copia el último parte que enviaste y solo ajustas lo que cambió">↺ Igual que el último</button>
+        </div>
+        <p class="estado-linea" id="p-estado"></p>
+        <p class="hint" style="margin:0 0 10px">Por cada persona de tu equipo: en qué obra o actividad estuvo y cuántas horas (8 = jornada completa). Si alguien estuvo en dos obras, agrégale otra fila. Quien no estuvo contigo hoy, quítalo del parte.</p>
+        <div id="personas"></div>
+        <div class="bar">
+            <select id="add-persona" style="flex:1;min-width:180px"><option value="">+ Agregar persona al parte…</option></select>
+        </div>
+        <label style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">Nota del día (opcional)</label>
+        <textarea class="nota" id="p-nota" placeholder="Algo que la oficina deba saber: llegó tarde el material, cliente ausente, lluvia…"></textarea>
+        <div class="footer-acts">
+            <button class="btn btn-g" id="btn-enviar" onclick="enviarParte()">📨 Enviar parte</button>
+            <span class="hint" id="p-resumen" style="align-self:center"></span>
+        </div>
+    </div>
+
+    <!-- ===== COSTO POR OBRA (admin) ===== -->
+    <div class="tabpanel" id="tab-obras">
+        <div class="bar">
+            <input type="month" id="o-mes" onchange="renderObras()">
+            <label style="font-size:13px"><input type="checkbox" id="o-todo" onchange="renderObras()"> Todo el histórico</label>
+            <button class="btn btn-o" onclick="exportarCSV('obras')">⬇ CSV</button>
+        </div>
+        <div class="kpis" id="o-kpis"></div>
+        <div class="tabla-wrap" id="o-tabla"></div>
+        <div id="o-detalle"></div>
+        <p class="hint">Costo = horas × (costo laboral real por día del empleado ÷ jornada). Horas por encima de la jornada en un mismo día se pagan al factor de extras. El costo por día viene de RRHH → Empleados (sueldo + cargas). Las actividades que no son obra (taller, almacén, transporte, oficina…) van como costo general.</p>
+    </div>
+
+    <!-- ===== POR PERSONA (admin) ===== -->
+    <div class="tabpanel" id="tab-personas">
+        <div class="bar">
+            <input type="month" id="pe-mes" onchange="renderPersonas()">
+            <button class="btn btn-o" onclick="exportarCSV('personas')">⬇ CSV</button>
+        </div>
+        <div class="tabla-wrap" id="pe-tabla"></div>
+    </div>
+
+    <!-- ===== CONTROL (admin) ===== -->
+    <div class="tabpanel" id="tab-control">
+        <h2 style="font-size:15px;color:var(--artal-blue);margin:0 0 8px">Encargados que deben enviar el parte cada día</h2>
+        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 8:00 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 8:00 pm gerencia recibe la lista de los que faltan.</p>
+        <div class="enc-list" id="enc-list"></div>
+        <div class="bar">
+            <label style="font-size:13px">Jornada (h) <input type="number" id="c-jornada" step="0.5" min="1" max="12" style="width:80px"></label>
+            <label style="font-size:13px">Factor extras <input type="number" id="c-factor" step="0.05" min="1" max="3" style="width:80px"></label>
+            <button class="btn btn-b" onclick="guardarConfig()">Guardar</button>
+        </div>
+        <h2 style="font-size:15px;color:var(--artal-blue);margin:18px 0 8px">Partes de los últimos 14 días</h2>
+        <div id="pend-grid"></div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import './mensajeria-widget.js';
+    import { collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['instalador']);
+    const esAdmin = usuario.roles.includes('admin');
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    if (esAdmin) { document.querySelectorAll('.tab.adm').forEach(t => t.style.display = ''); document.getElementById('enc-wrap').style.display = ''; }
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const claveEmail = (em) => String(em || '').trim().toLowerCase().replace(/[.@]/g, '_');
+    const pad = (n) => String(n).padStart(2, '0');
+    const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const hoyStr = () => ymd(new Date());
+    const addDias = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d); };
+    const fmtFecha = (s) => { try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return s; } };
+    const fmtRD = (n) => 'RD$ ' + (Math.round((+n || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const n2 = (v) => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
+    const normTxt = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+
+    const TIPOS = [
+        ['obra', '🏗️ Obra'], ['taller', '🔧 Taller / fábrica interna'], ['almacen', '📦 Almacén'], ['transporte', '🚚 Transporte / compras'],
+        ['oficina', '🏢 Oficina'], ['capacitacion', '🎓 Capacitación'], ['sin_trabajo', '🌧️ Sin trabajo (lluvia / sin material)'], ['ausente', '🚫 Ausente / permiso']
+    ];
+    const tipoLabel = (t) => (TIPOS.find(x => x[0] === t) || [t, t])[1];
+
+    // ---------------- Datos base ----------------
+    let empleados = [], equipo = {}, ordersCache = [], instCache = [], feriados = new Set(), partes = [];
+    let config = { encargados: [], horasJornada: 8, factorExtra: 1.35 };
+    const ready = { emp: false, eq: false, cfg: false, partes: false };
+    let parteActual = null;   // { fecha, encargadoEmail, encargadoNombre, lineas: [{empleadoId, nombre, tipo, obraKey, obraLabel, horas}], nota }
+    let parteGuardado = null; // el doc tal cual está en Firestore (para saber si hay cambios)
+
+    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.emp = true; arranque(); renderTodo(); });
+    onSnapshot(collection(db, 'equipo'), (s) => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); ready.eq = true; arranque(); renderTodo(); }, () => { ready.eq = true; arranque(); });
+    onSnapshot(collection(db, 'orders'), (s) => { ordersCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'instalaciones'), (s) => { instCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
+    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; ready.cfg = true; arranque(); renderTodo(); }, () => { ready.cfg = true; arranque(); });
+    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.partes = true; arranque(); renderTodo(); }, () => { ready.partes = true; arranque(); });
+
+    // Equipo de instalación = empleados activos cuyo correo (login) tiene rol instalador/ayudante en `equipo`.
+    // Si no hay ninguno mapeado, se muestran todos los activos (para que la pantalla nunca quede vacía).
+    function equipoInstalacion() {
+        const act = empleados.filter(e => (e.estado || 'activo') === 'activo');
+        const conRol = act.filter(e => { const u = equipo[String(e.correo || '').toLowerCase()]; if (!u) return false; const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('ayudante'); });
+        return (conRol.length ? conRol : act).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    }
+    const empPorId = (id) => empleados.find(e => e.id === id);
+    const costoHora = (e) => (e && n2(e.costoDiaReal) > 0) ? n2(e.costoDiaReal) / (n2(config.horasJornada) || 8) : 0;
+
+    // Obras disponibles para el parte: pedidos en flujo de instalación (o completados hace < 45 días),
+    // trabajos del calendario (pendientes o cerrados hace < 45 días). Se agrupan por cliente+obra para
+    // que un pedido y un trabajo del mismo sitio cuenten como UNA obra en el costo.
+    function obraKeyDe(cliente, obra) { return normTxt(cliente) + '|' + normTxt(obra); }
+    function tsMs(v) { return v && v.toDate ? v.toDate().getTime() : (v ? Date.parse(v) || 0 : 0); }
+    function obrasDisponibles() {
+        const lim = Date.now() - 45 * 86400000, map = new Map();
+        const add = (cliente, obra, activa) => {
+            const label = [cliente, obra].filter(Boolean).join(' — '); if (!label.trim()) return;
+            const k = obraKeyDe(cliente, obra); const cur = map.get(k);
+            if (!cur) map.set(k, { key: k, label, activa }); else if (activa) cur.activa = true;
+        };
+        ordersCache.forEach(o => {
+            if (o.docType && String(o.docType).startsWith('COT')) return;
+            const enCurso = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'en_fabrica', 'pendiente_fabrica'].includes(o.status);
+            const reciente = Math.max(tsMs(o.fecha), tsMs(o.fechaListoParaCargar), tsMs(o.fechaCompletado), tsMs(o.instaladoFecha)) > lim;
+            if (enCurso || reciente) add(o.cliente, o.obra, enCurso);
+        });
+        instCache.forEach(j => {
+            const enCurso = j.estado !== 'completado' && j.estado !== 'cancelado';
+            const reciente = Math.max(tsMs(j.fecha), tsMs(j.fechaCreacion), tsMs(j.completadoEn)) > lim;
+            if (enCurso || reciente) add(j.cliente, j.obra, enCurso);
+        });
+        // Obras que ya aparecen en partes (manuales o viejas) siguen disponibles.
+        partes.forEach(p => (p.lineas || []).forEach(l => { if (l.tipo === 'obra' && l.obraKey && !map.has(l.obraKey)) map.set(l.obraKey, { key: l.obraKey, label: l.obraLabel || l.obraKey, activa: false }); }));
+        return [...map.values()].sort((a, b) => (b.activa - a.activa) || a.label.localeCompare(b.label));
+    }
+
+    // ---------------- Pestañas ----------------
+    window.setTab = function (t) {
+        document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+        document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
+        renderTodo();
+    };
+    function tabActiva() { const b = document.querySelector('.tab.active'); return b ? b.dataset.tab : 'parte'; }
+
+    // ---------------- Parte del día ----------------
+    let arrancado = false;
+    function arranque() {
+        if (arrancado || !ready.emp || !ready.eq || !ready.cfg || !ready.partes) return;
+        arrancado = true;
+        const f = document.getElementById('p-fecha');
+        const qf = new URLSearchParams(location.search).get('fecha');
+        f.value = qf || hoyStr(); f.max = hoyStr();
+        if (!esAdmin) f.min = addDias(hoyStr(), -3);   // corrige hasta 3 días atrás; más allá, solo admin
+        const mes = hoyStr().slice(0, 7); document.getElementById('o-mes').value = mes; document.getElementById('pe-mes').value = mes;
+        poblarEncargados();
+        cargarParte();
+    }
+    function poblarEncargados() {
+        const sel = document.getElementById('p-encargado'); if (!esAdmin) return;
+        const lista = [...(config.encargados || [])];
+        if (!lista.some(e => e.email === usuario.email)) lista.push({ email: usuario.email, nombre: usuario.nombre + ' (yo)' });
+        const prev = sel.value;
+        sel.innerHTML = lista.map(e => `<option value="${esc(e.email)}">${esc(e.nombre || e.email)}</option>`).join('');
+        sel.value = lista.some(e => e.email === prev) ? prev : usuario.email;
+    }
+    function encargadoSel() {
+        if (!esAdmin) return { email: usuario.email, nombre: usuario.nombre };
+        const em = document.getElementById('p-encargado').value || usuario.email;
+        const e = (config.encargados || []).find(x => x.email === em);
+        return { email: em, nombre: e ? e.nombre : usuario.nombre };
+    }
+    const parteId = (fecha, email) => fecha + '_' + claveEmail(email);
+
+    window.cargarParte = function () {
+        const fecha = document.getElementById('p-fecha').value || hoyStr(); const enc = encargadoSel();
+        const ex = partes.find(p => p.id === parteId(fecha, enc.email));
+        parteGuardado = ex || null;
+        if (ex) {
+            parteActual = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas: (ex.lineas || []).map(l => ({ ...l })), nota: ex.nota || '' };
+        } else {
+            // Parte nuevo: arranca con todo el equipo, 8 h, obra por elegir (rápido de ajustar).
+            parteActual = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, nota: '',
+                lineas: equipoInstalacion().map(e => ({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || 8 })) };
+        }
+        document.getElementById('p-nota').value = parteActual.nota || '';
+        renderParte();
+    };
+    // Copia el último parte enviado por este encargado (antes de la fecha elegida).
+    window.igualQueAyer = function () {
+        const enc = encargadoSel(), fecha = parteActual ? parteActual.fecha : hoyStr();
+        const prev = partes.filter(p => p.encargadoEmail === enc.email && p.fecha < fecha).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
+        if (!prev) { alert('No hay un parte anterior tuyo para copiar.'); return; }
+        parteActual.lineas = (prev.lineas || []).map(l => ({ ...l }));
+        parteActual.nota = '';
+        document.getElementById('p-nota').value = '';
+        renderParte();
+        document.getElementById('p-estado').innerHTML = `Copiado del parte del <b>${esc(fmtFecha(prev.fecha))}</b>. Ajusta lo que cambió y envía.`;
+    };
+
+    function lineasDe(empId) { return parteActual.lineas.map((l, i) => ({ l, i })).filter(x => x.l.empleadoId === empId); }
+    function renderParte() {
+        if (!parteActual) return;
+        const obras = obrasDisponibles();
+        const opcionesObra = (sel) => `<option value="">— Elige la obra —</option>` +
+            obras.map(o => `<option value="${esc(o.key)}" ${o.key === sel ? 'selected' : ''}>${esc(o.label)}${o.activa ? '' : ' (cerrada)'}</option>`).join('') +
+            `<option value="__manual__">✏️ Otra obra (escribir)…</option>`;
+        const ids = [...new Set(parteActual.lineas.map(l => l.empleadoId))];
+        const jornada = n2(config.horasJornada) || 8;
+        const cont = document.getElementById('personas');
+        cont.innerHTML = ids.map(id => {
+            const ls = lineasDe(id); const emp = empPorId(id); const nombre = (ls[0] && ls[0].l.nombre) || (emp && emp.nombre) || id;
+            const tot = ls.reduce((s, x) => s + (x.l.tipo === 'ausente' ? 0 : n2(x.l.horas)), 0);
+            const filas = ls.map(({ l, i }) => `<div class="tramo">
+                <select onchange="setLinea(${i},'tipo',this.value)">${TIPOS.map(t => `<option value="${t[0]}" ${t[0] === l.tipo ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
+                ${l.tipo === 'obra' ? `<select class="obra ${!l.obraKey ? 'falta' : ''}" onchange="setObra(${i},this)">${opcionesObra(l.obraKey)}</select>` : `<span class="hint" style="padding:0 4px">${esc(tipoLabel(l.tipo).replace(/^\S+\s/, ''))}</span>`}
+                <input type="number" step="0.5" min="0" max="16" value="${l.tipo === 'ausente' ? 0 : n2(l.horas)}" ${l.tipo === 'ausente' ? 'disabled' : ''} onchange="setLinea(${i},'horas',this.value)" title="Horas">
+                <button class="x" title="Quitar esta fila" onclick="quitarLinea(${i})">✕</button>
+            </div>`).join('');
+            return `<div class="persona">
+                <div class="ph"><b>${esc(nombre)}</b><span class="tot ${tot > jornada ? 'mal' : ''}">${tot} h${tot > jornada ? ' (extras: ' + (tot - jornada) + ' h)' : ''}</span>${esAdmin && emp && n2(emp.costoDiaReal) ? `<span class="hint">${fmtRD(costoHora(emp) * Math.min(tot, jornada) + costoHora(emp) * Math.max(0, tot - jornada) * (n2(config.factorExtra) || 1))}</span>` : ''}</div>
+                ${filas}
+                <div class="pa"><button class="link-btn" onclick="agregarLinea('${esc(id)}')">+ otra obra / actividad</button><button class="link-btn rojo" onclick="quitarPersona('${esc(id)}')">Quitar del parte (no estuvo conmigo)</button></div>
+            </div>`;
+        }).join('') || '<p class="hint">Nadie en el parte. Agrega personas abajo.</p>';
+        const fuera = equipoInstalacion().filter(e => !ids.includes(e.id));
+        const otros = empleados.filter(e => (e.estado || 'activo') === 'activo' && !ids.includes(e.id) && !fuera.includes(e));
+        document.getElementById('add-persona').innerHTML = '<option value="">+ Agregar persona al parte…</option>' +
+            fuera.map(e => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('') +
+            (otros.length ? `<optgroup label="Otros empleados">${otros.map(e => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('')}</optgroup>` : '');
+        // Estado
+        const est = document.getElementById('p-estado');
+        if (parteGuardado) est.innerHTML = `<b class="ok">✓ Enviado</b> el ${esc(fmtTs(parteGuardado.actualizado || parteGuardado.creado))} por ${esc(parteGuardado.editadoPor || parteGuardado.encargadoNombre || '')}. Puedes corregirlo y volver a enviar.`;
+        else est.innerHTML = `<b class="${parteActual.fecha < hoyStr() ? 'bad' : 'warn'}">${parteActual.fecha < hoyStr() ? '⚠️ Este parte está pendiente' : 'Sin enviar todavía'}</b> · ${esc(fmtFecha(parteActual.fecha))}`;
+        const horasTot = parteActual.lineas.reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0);
+        document.getElementById('p-resumen').textContent = `${ids.length} persona(s) · ${horasTot} h en total`;
+        renderAvisoPendientes();
+    }
+    const fmtTs = (v) => { const d = v && v.toDate ? v.toDate() : null; return d ? d.toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }) : ''; };
+    window.setLinea = function (i, campo, valor) {
+        const l = parteActual.lineas[i]; if (!l) return;
+        if (campo === 'horas') l.horas = Math.max(0, Math.min(16, n2(valor)));
+        else if (campo === 'tipo') { l.tipo = valor; if (valor !== 'obra') { l.obraKey = ''; l.obraLabel = ''; } if (valor === 'ausente') l.horas = 0; else if (!n2(l.horas)) l.horas = n2(config.horasJornada) || 8; }
+        renderParte();
+    };
+    window.setObra = function (i, sel) {
+        const l = parteActual.lineas[i]; if (!l) return;
+        if (sel.value === '__manual__') {
+            const txt = (prompt('Escribe la obra (cliente — obra):') || '').trim();
+            if (!txt) { renderParte(); return; }
+            const partesTxt = txt.split(/\s+[—-]\s+/); const cliente = partesTxt[0] || txt, obra = partesTxt.slice(1).join(' — ');
+            l.obraKey = obraKeyDe(cliente, obra); l.obraLabel = [cliente, obra].filter(Boolean).join(' — ');
+        } else { const o = obrasDisponibles().find(x => x.key === sel.value); l.obraKey = sel.value; l.obraLabel = o ? o.label : ''; }
+        renderParte();
+    };
+    window.agregarLinea = function (empId) {
+        const emp = empPorId(empId); const base = lineasDe(empId)[0];
+        parteActual.lineas.push({ empleadoId: empId, nombre: (base && base.l.nombre) || (emp && emp.nombre) || empId, tipo: 'obra', obraKey: '', obraLabel: '', horas: 4 });
+        renderParte();
+    };
+    window.quitarLinea = function (i) { parteActual.lineas.splice(i, 1); renderParte(); };
+    window.quitarPersona = function (empId) { parteActual.lineas = parteActual.lineas.filter(l => l.empleadoId !== empId); renderParte(); };
+    document.getElementById('add-persona').addEventListener('change', (e) => {
+        const id = e.target.value; if (!id) return; agregarLinea(id); e.target.value = '';
+    });
+
+    window.enviarParte = async function () {
+        if (!parteActual) return;
+        const fecha = parteActual.fecha, enc = encargadoSel();
+        parteActual.nota = document.getElementById('p-nota').value.trim();
+        const lineas = parteActual.lineas.map(l => ({ empleadoId: l.empleadoId, nombre: l.nombre, tipo: l.tipo, obraKey: l.tipo === 'obra' ? (l.obraKey || '') : '', obraLabel: l.tipo === 'obra' ? (l.obraLabel || '') : '', horas: l.tipo === 'ausente' ? 0 : n2(l.horas) }));
+        if (!lineas.length) { alert('El parte está vacío. Agrega al menos una persona (o quita el día si nadie trabajó).'); return; }
+        const sinObra = lineas.filter(l => l.tipo === 'obra' && !l.obraKey).map(l => l.nombre);
+        if (sinObra.length) { alert('Falta elegir la obra de: ' + [...new Set(sinObra)].join(', ') + '.'); return; }
+        const sinHoras = lineas.filter(l => l.tipo !== 'ausente' && !(l.horas > 0)).map(l => l.nombre);
+        if (sinHoras.length) { alert('Horas en 0 para: ' + [...new Set(sinHoras)].join(', ') + '. Pon las horas o márcalo como ausente.'); return; }
+        // Nadie puede aparecer en el parte de DOS encargados el mismo día (evita contar doble el costo).
+        const otros = partes.filter(p => p.fecha === fecha && p.encargadoEmail !== enc.email);
+        const dup = [];
+        lineas.forEach(l => otros.forEach(p => { if ((p.lineas || []).some(x => x.empleadoId === l.empleadoId)) dup.push(l.nombre + ' (ya lo reportó ' + (p.encargadoNombre || p.encargadoEmail) + ')'); }));
+        if (dup.length) { alert('No se puede enviar: estas personas ya están en otro parte de hoy:\n\n' + [...new Set(dup)].join('\n') + '\n\nQuítalas de tu parte o pídele al otro encargado que las quite del suyo.'); return; }
+        // Costo por hora congelado al momento de enviar (si después cambia el sueldo, la obra ya cerrada no se mueve).
+        lineas.forEach(l => { const e = empPorId(l.empleadoId); l.costoHora = Math.round(costoHora(e) * 100) / 100; });
+        const id = parteId(fecha, enc.email);
+        const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
+        if (!parteGuardado) datos.creado = serverTimestamp();
+        const btn = document.getElementById('btn-enviar'); btn.disabled = true;
+        try {
+            await setDoc(doc(db, 'partesDiarios', id), datos, { merge: true });
+            // Alimenta Asistencia: presente/ausente por persona ese día (una sola captura, dos usos).
+            const porEmp = new Map(); lineas.forEach(l => { const c = porEmp.get(l.empleadoId) || { horas: 0, ausente: true }; c.horas += l.horas; if (l.tipo !== 'ausente') c.ausente = false; porEmp.set(l.empleadoId, c); });
+            for (const [empId, c] of porEmp) {
+                const e = empPorId(empId);
+                try { await setDoc(doc(db, 'rrhhAsistencia', empId + '_' + fecha), { empleadoId: empId, empleadoNombre: e ? e.nombre : '', fecha, estado: c.ausente ? 'ausente' : 'presente', horasParte: c.horas, origen: 'parte_diario', registradoPor: usuario.nombre, actualizado: serverTimestamp() }, { merge: true }); } catch (_) { }
+            }
+            alert('✓ Parte del ' + fmtFecha(fecha) + ' enviado.');
+        } catch (e) { alert('No se pudo enviar: ' + e.message); }
+        btn.disabled = false;
+    };
+
+    // ---------------- Pendientes (para el aviso y para Control) ----------------
+    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
+    function diasPendientes(email, nDias) {
+        const out = []; const ahora = new Date();
+        for (let k = 0; k < nDias; k++) {
+            const f = addDias(hoyStr(), -k);
+            if (!esLaborable(f)) continue;
+            if (k === 0 && ahora.getHours() < 18) continue;   // hoy solo cuenta como pendiente desde las 6 pm
+            if (!partes.some(p => p.id === parteId(f, email))) out.push(f);
+        }
+        return out;
+    }
+    function renderAvisoPendientes() {
+        const box = document.getElementById('aviso-pend'); if (!box) return;
+        const enc = encargadoSel();
+        const soyEncargado = (config.encargados || []).some(e => e.email === enc.email);
+        if (!soyEncargado) { box.innerHTML = ''; return; }
+        const pend = diasPendientes(enc.email, 4).filter(f => f !== (parteActual && parteActual.fecha));
+        box.innerHTML = pend.length ? `<div class="aviso rojo">⚠️ Falta el parte de: ${pend.map(f => `<a href="#" onclick="irFecha('${f}');return false;" style="color:inherit;font-weight:bold">${esc(fmtFecha(f))}</a>`).join(' · ')}</div>` : '';
+    }
+    window.irFecha = function (f) { document.getElementById('p-fecha').value = f; cargarParte(); };
+
+    // ---------------- Cálculo de costo ----------------
+    // Devuelve líneas enriquecidas con costo, respetando la jornada por persona y día (extras al factor).
+    function lineasCosteadas(filtroFecha) {
+        const jornada = n2(config.horasJornada) || 8, factor = n2(config.factorExtra) || 1;
+        const out = [];
+        partes.filter(p => !filtroFecha || filtroFecha(p.fecha)).forEach(p => {
+            const porEmp = new Map();
+            (p.lineas || []).forEach(l => { const a = porEmp.get(l.empleadoId) || []; a.push(l); porEmp.set(l.empleadoId, a); });
+            porEmp.forEach((ls, empId) => {
+                const tot = ls.reduce((s, l) => s + n2(l.horas), 0);
+                const e = empPorId(empId);
+                ls.forEach(l => {
+                    const ch = n2(l.costoHora) || costoHora(e);
+                    const h = n2(l.horas), share = tot > 0 ? h / tot : 0;
+                    const normales = Math.min(tot, jornada) * share, extras = Math.max(0, tot - jornada) * share;
+                    out.push({ ...l, fecha: p.fecha, encargado: p.encargadoNombre || p.encargadoEmail, horasNorm: normales, horasExtra: extras, costo: ch * normales + ch * extras * factor, sinCosto: !(ch > 0) });
+                });
+            });
+        });
+        return out;
+    }
+    const enMes = (mes) => (f) => f.slice(0, 7) === mes;
+
+    let obraAbierta = null;
+    window.renderObras = function () {
+        const todo = document.getElementById('o-todo').checked, mes = document.getElementById('o-mes').value;
+        const L = lineasCosteadas(todo ? null : enMes(mes));
+        const g = new Map();
+        L.forEach(l => {
+            const k = l.tipo === 'obra' ? (l.obraKey || '?') : 'act:' + l.tipo;
+            const label = l.tipo === 'obra' ? (l.obraLabel || l.obraKey) : tipoLabel(l.tipo);
+            const c = g.get(k) || { k, label, esObra: l.tipo === 'obra', horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: l.fecha, hasta: l.fecha, sinCosto: false };
+            c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; c.personas.add(l.nombre); c.dias.add(l.fecha);
+            if (l.fecha < c.desde) c.desde = l.fecha; if (l.fecha > c.hasta) c.hasta = l.fecha; if (l.sinCosto) c.sinCosto = true;
+            g.set(k, c);
+        });
+        const rows = [...g.values()].sort((a, b) => (b.esObra - a.esObra) || (b.costo - a.costo));
+        const jornada = n2(config.horasJornada) || 8;
+        const totObra = rows.filter(r => r.esObra).reduce((s, r) => s + r.costo, 0), totGen = rows.filter(r => !r.esObra).reduce((s, r) => s + r.costo, 0);
+        document.getElementById('o-kpis').innerHTML = `<div class="kpi"><div class="v">${rows.filter(r => r.esObra).length}</div><div class="l">obras con horas</div></div>
+            <div class="kpi"><div class="v">${fmtRD(totObra)}</div><div class="l">mano de obra en obras</div></div>
+            <div class="kpi"><div class="v">${fmtRD(totGen)}</div><div class="l">costo general (taller, almacén, transporte…)</div></div>
+            <div class="kpi"><div class="v">${Math.round(rows.reduce((s, r) => s + r.horas, 0))} h</div><div class="l">horas reportadas</div></div>`;
+        document.getElementById('o-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th>Obra / actividad</th><th class="n">Días-persona</th><th class="n">Horas</th><th class="n">Extras</th><th class="n">Costo</th><th>Personas</th><th>Período</th></tr></thead><tbody>
+            ${rows.map(r => `<tr><td>${r.esObra ? `<span class="obra-link" onclick="verObra('${esc(r.k)}')">${esc(r.label)}</span>` : esc(r.label)}${r.sinCosto ? ' <span class="hint" title="Alguna persona no tiene costo por día en RRHH → Empleados">⚠️ sin costo</span>' : ''}</td><td class="n">${(r.horas / jornada).toFixed(1)}</td><td class="n">${r.horas}</td><td class="n">${r.extras ? r.extras.toFixed(1) : '—'}</td><td class="n">${fmtRD(r.costo)}</td><td>${esc([...r.personas].join(', '))}</td><td style="white-space:nowrap">${esc(fmtFecha(r.desde))}${r.desde !== r.hasta ? ' → ' + esc(fmtFecha(r.hasta)) : ''} · ${r.dias.size} día(s)</td></tr>`).join('')}
+            <tr class="tot"><td>Total</td><td class="n">${(rows.reduce((s, r) => s + r.horas, 0) / jornada).toFixed(1)}</td><td class="n">${rows.reduce((s, r) => s + r.horas, 0)}</td><td class="n">${rows.reduce((s, r) => s + r.extras, 0).toFixed(1)}</td><td class="n">${fmtRD(totObra + totGen)}</td><td></td><td></td></tr></tbody></table>`
+            : '<p class="hint">No hay partes en este período.</p>';
+        // Detalle de la obra abierta
+        const det = document.getElementById('o-detalle');
+        if (!obraAbierta) { det.innerHTML = ''; return; }
+        const D = L.filter(l => l.tipo === 'obra' && l.obraKey === obraAbierta).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
+        if (!D.length) { det.innerHTML = ''; return; }
+        det.innerHTML = `<h2 style="font-size:15px;color:var(--artal-blue);margin:4px 0 8px">Detalle: ${esc(D[0].obraLabel || obraAbierta)} <button class="link-btn" onclick="verObra(null)">cerrar</button></h2>
+            <div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th>Persona</th><th class="n">Horas</th><th class="n">Costo</th><th>Encargado</th></tr></thead><tbody>
+            ${D.map(l => `<tr><td style="white-space:nowrap">${esc(fmtFecha(l.fecha))}</td><td>${esc(l.nombre)}</td><td class="n">${l.horas}${l.horasExtra ? ` <span class="hint">(+${l.horasExtra.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(l.costo)}</td><td>${esc(l.encargado)}</td></tr>`).join('')}</tbody></table></div>`;
+    };
+    window.verObra = function (k) { obraAbierta = k; renderObras(); if (k) document.getElementById('o-detalle').scrollIntoView({ behavior: 'smooth' }); };
+
+    window.renderPersonas = function () {
+        const mes = document.getElementById('pe-mes').value;
+        const L = lineasCosteadas(enMes(mes));
+        const g = new Map();
+        L.forEach(l => {
+            const c = g.get(l.empleadoId) || { nombre: l.nombre, dias: new Set(), horas: 0, extras: 0, costo: 0, obras: new Map(), ausencias: 0 };
+            if (l.tipo === 'ausente') c.ausencias++; else { c.dias.add(l.fecha); c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; }
+            const lab = l.tipo === 'obra' ? (l.obraLabel || l.obraKey) : tipoLabel(l.tipo);
+            if (l.tipo !== 'ausente') c.obras.set(lab, (c.obras.get(lab) || 0) + n2(l.horas));
+            g.set(l.empleadoId, c);
+        });
+        const rows = [...g.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+        document.getElementById('pe-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th>Persona</th><th class="n">Días</th><th class="n">Horas</th><th class="n">Extras</th><th class="n">Ausencias</th><th class="n">Costo</th><th>Dónde estuvo (h)</th></tr></thead><tbody>
+            ${rows.map(r => `<tr><td><b>${esc(r.nombre)}</b></td><td class="n">${r.dias.size}</td><td class="n">${r.horas}</td><td class="n">${r.extras ? r.extras.toFixed(1) : '—'}</td><td class="n">${r.ausencias || '—'}</td><td class="n">${fmtRD(r.costo)}</td><td>${esc([...r.obras.entries()].sort((a, b) => b[1] - a[1]).map(([o, h]) => `${o} (${h})`).join(' · '))}</td></tr>`).join('')}</tbody></table>`
+            : '<p class="hint">No hay partes en este mes.</p>';
+    };
+
+    window.exportarCSV = function (que) {
+        const mes = document.getElementById(que === 'obras' ? 'o-mes' : 'pe-mes').value;
+        const todo = que === 'obras' && document.getElementById('o-todo').checked;
+        const L = lineasCosteadas(todo ? null : enMes(mes));
+        const head = ['Fecha', 'Encargado', 'Persona', 'Tipo', 'Obra', 'Horas', 'Horas extra', 'Costo RD$'];
+        const lines = [head.join(';')].concat(L.map(l => [l.fecha, l.encargado, l.nombre, tipoLabel(l.tipo).replace(/^\S+\s/, ''), l.obraLabel || '', l.horas, l.horasExtra.toFixed(2), l.costo.toFixed(2)].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')));
+        const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `partes-diarios-${todo ? 'todo' : mes}.csv`; a.click();
+    };
+
+    // ---------------- Control (admin) ----------------
+    function renderControl() {
+        const cands = Object.entries(equipo).filter(([, u]) => u.activo !== false).filter(([, u]) => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('admin'); })
+            .map(([email, u]) => ({ email, nombre: u.nombre || email })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+        const sel = new Set((config.encargados || []).map(e => e.email));
+        document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
+        document.getElementById('c-jornada').value = n2(config.horasJornada) || 8;
+        document.getElementById('c-factor').value = n2(config.factorExtra) || 1.35;
+        // Grilla de 14 días × encargado
+        const encs = config.encargados || [];
+        const dias = []; for (let k = 0; k < 14; k++) dias.push(addDias(hoyStr(), -k));
+        document.getElementById('pend-grid').innerHTML = encs.length ? encs.map(e => `<h3 style="font-size:13.5px;color:var(--artal-blue);margin:10px 0 6px">${esc(e.nombre || e.email)}</h3><div class="pend">${dias.map(f => {
+            const lab = esLaborable(f); const p = partes.find(x => x.id === parteId(f, e.email));
+            const cls = !lab ? 'libre' : (p ? 'ok' : (f === hoyStr() && new Date().getHours() < 18 ? '' : 'no'));
+            return `<div class="d ${cls}" ${lab ? `style="cursor:pointer" onclick="verParteDe('${f}','${esc(e.email)}')"` : ''}>${esc(fmtFecha(f))}<br>${!lab ? 'libre' : p ? `✓ ${(p.lineas || []).length} fila(s)` : (cls ? '✗ falta' : 'hoy, aún a tiempo')}</div>`;
+        }).join('')}</div>`).join('') : '<p class="hint">Marca arriba quiénes son los encargados.</p>';
+    }
+    window.verParteDe = function (f, email) {
+        document.getElementById('p-encargado').value = email; document.getElementById('p-fecha').value = f; setTab('parte'); cargarParte();
+    };
+    window.guardarConfig = async function () {
+        const encargados = Array.from(document.querySelectorAll('#enc-list input:checked')).map(c => { const u = equipo[c.value] || {}; return { email: c.value, nombre: u.nombre || c.value }; });
+        const horasJornada = n2(document.getElementById('c-jornada').value) || 8, factorExtra = n2(document.getElementById('c-factor').value) || 1.35;
+        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, horasJornada, factorExtra, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
+        catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+
+    function renderTodo() {
+        if (!arrancado) return;
+        const t = tabActiva();
+        if (t === 'parte') { if (parteActual) { renderParte(); } poblarEncargados(); }
+        else if (t === 'obras') renderObras();
+        else if (t === 'personas') renderPersonas();
+        else if (t === 'control') renderControl();
+    }
+</script>
+</body>
+</html>

@@ -180,6 +180,7 @@
         <!-- Menú desplegable: las secciones que antes ocupaban todo el encabezado (en el celular del
              instalador tapaban media pantalla). Mismos ids de siempre para no tocar el JS que los usa. -->
         <div id="menu-panel" hidden>
+            <a href="parte-diario.html" id="link-parte">📝 Parte diario de obra</a>
             <a href="inventario.html">📦 Inventario</a>
             <a href="rrhh-reuniones.html">🎯 Mis objetivos</a>
             <a href="academia.html" id="link-academia" style="display:none;">🎓 Academia</a>
@@ -192,6 +193,7 @@
 </header>
 
 <main>
+    <div id="aviso-parte"></div>
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
         <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">🏗️ Obras asignadas <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
@@ -825,6 +827,29 @@
         const bInst = document.getElementById('badge-inst');
         bInst.style.display = nInst ? 'inline-block' : 'none'; bInst.textContent = nInst;
     }
+
+    /* ===== Aviso "falta tu parte diario" (solo a los encargados configurados en Parte diario → Control) ===== */
+    (function avisoParteDiario() {
+        let encargados = [], partesIds = new Set(), feriados = new Set();
+        const pad = (n) => String(n).padStart(2, '0'), ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const clave = (em) => String(em || '').toLowerCase().replace(/[.@]/g, '_');
+        function pintar() {
+            const box = document.getElementById('aviso-parte'); if (!box) return;
+            if (!encargados.some(e => e.email === usuario.email)) { box.innerHTML = ''; return; }
+            const pend = []; const ahora = new Date();
+            for (let k = 0; k < 4; k++) {
+                const d = new Date(); d.setDate(d.getDate() - k); const f = ymd(d);
+                if (d.getDay() === 0 || feriados.has(f)) continue;
+                if (k === 0 && ahora.getHours() < 18) continue;
+                if (!partesIds.has(f + '_' + clave(usuario.email))) pend.push(f);
+            }
+            box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Falta tu parte diario</b> de: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
+        }
+        onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { encargados = (s.exists() && s.data().encargados) || []; pintar(); }, () => {});
+        onSnapshot(collection(db, 'partesDiarios'), (s) => { partesIds = new Set(s.docs.map(d => d.id)); pintar(); }, () => {});
+        onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
+        setInterval(pintar, 60000);
+    })();
 
     /* ===== Listeners ===== */
     onSnapshot(collection(db, 'instalaciones'), (snap) => { allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() })); hiloAvisarNuevos('instalaciones', snap); renderTodo(); },

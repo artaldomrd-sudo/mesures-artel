@@ -34,6 +34,7 @@ export const PAGINAS = [
     { id: "fabrica-interna.html", titulo: "Fábrica Interna", grupo: "operaciones", roles: [] },
     { id: "historial.html", titulo: "Historial", grupo: "operaciones", roles: [] },
     { id: "instalacion.html", titulo: "Instalación", grupo: "operaciones", roles: ["instalador", "ayudante"] },
+    { id: "parte-diario.html", titulo: "Parte diario de obra (tiempo por obra)", grupo: "operaciones", roles: ["instalador"] },
     { id: "inventario.html", titulo: "Inventario", grupo: "operaciones", roles: ["chofer", "instalador", "ayudante"] },
     { id: "solicitudes.html", titulo: "Solicitudes web", grupo: "operaciones", roles: [] },
     { id: "instalador.html", titulo: "Trabajo en Obra", grupo: "operaciones", roles: ["instalador", "ayudante"] },

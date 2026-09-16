@@ -334,6 +334,40 @@ async function recordarArqueo(turno, titulo) {
     await pushATokens(tokens, titulo, 'Cuenta el efectivo y registra el arqueo: ' + nombres, 'ops/bancos-caja.html');
 }
 
+// ---------- Parte diario de obra (ops/parte-diario.html) ----------
+// Cada encargado de instalación (rrhhConfig/parteDiario.encargados) debe enviar su parte del día
+// (en qué obras trabajó su equipo y cuántas horas). Aviso a las 6 pm y a las 8 pm si falta;
+// a las 8 pm gerencia (admin) recibe además la lista de los que no lo enviaron. Lunes a sábado,
+// sin feriados (rrhhFeriados.fecha 'YYYY-MM-DD').
+function hoySantoDomingo() {
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date());
+    const g = (t) => (p.find((x) => x.type === t) || {}).value;
+    return { fecha: `${g('year')}-${g('month')}-${g('day')}`, domingo: g('weekday') === 'Sun' };
+}
+async function recordarParteDiario(avisarAdmin) {
+    const { fecha, domingo } = hoySantoDomingo();
+    if (domingo) return;
+    const fer = await db.collection('rrhhFeriados').where('fecha', '==', fecha).limit(1).get();
+    if (!fer.empty) return;
+    const cfg = await db.doc('rrhhConfig/parteDiario').get();
+    const encargados = (cfg.exists && Array.isArray(cfg.data().encargados)) ? cfg.data().encargados : [];
+    if (!encargados.length) return;
+    const faltan = [];
+    for (const e of encargados) {
+        if (!e || !e.email) continue;
+        const id = fecha + '_' + String(e.email).toLowerCase().replace(/[.@]/g, '_');
+        const p = await db.doc('partesDiarios/' + id).get();
+        if (p.exists) continue;
+        faltan.push(e);
+        await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Toma un minuto.', 'ops/parte-diario.html');
+    }
+    if (avisarAdmin && faltan.length) {
+        await pushATokens(await tokensPorRol('admin'), '📝 Partes diarios sin enviar', 'Faltan: ' + faltan.map((e) => e.nombre || e.email).join(', '), 'ops/parte-diario.html');
+    }
+}
+exports.parteDiario18 = onSchedule({ schedule: '0 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(false); });
+exports.parteDiario20 = onSchedule({ schedule: '0 20 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(true); });
+
 exports.arqueoManana = onSchedule({ schedule: '0 8 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
     await recordarArqueo('am', '🧮 Arqueo de la MAÑANA (8:00)');
 });
