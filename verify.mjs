@@ -99,7 +99,7 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
   }
 }
 // Abisagradas de 2 hojas: hoja principal (manija) izq/der × orientación
-for (const t of ['door_abat', 'win_abat']) for (const hp of ['izq', 'der']) for (const o of ['I', 'D']) {
+for (const t of ['door_abat', 'win_abat', 'win_ob']) for (const hp of ['izq', 'der']) for (const o of ['I', 'D']) {
   try { ctx.__render('card1', { type: t, categoria: 'ventana', ancho: 1600, alto: 2200, orientacion: o, apertura: 'adentro_2', hoja_principal: hp, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
   catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }
 }
@@ -119,7 +119,7 @@ try {
   if (ctx.plegProblemas(st2).length !== 0) throw new Error('633 (797 mm por hoja) no debería avisar');
   ok++;
 } catch (e) { fail++; console.error('  plegable regla hoja máx:', e.message); }
-try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }, { w: 1400, rows: [{ h: 1500, celda: 'osci', apertura: 'adentro_2', hoja_principal: 'izq' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
 catch (e) { fail++; console.error('  plegable fachada:', e.message); }
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {

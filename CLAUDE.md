@@ -216,6 +216,12 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   central, del lado de la principal — en la tarjeta suelta con `orientacion 'D'` el dibujo va
   espejado, así que recibe `flipped=isD` para quedar del lado correcto en pantalla. Resumen: "Hoja
   principal (manija): Derecha"; fachada: "hoja principal der. (manija)".
+- **Oscilobatiente de 2 hojas (2026-09-16, "solo interior")**: `win_ob` acepta `apertura`
+  `'adentro_1'` (default) | `'adentro_2'` (select "Hojas"; nunca hacia afuera) y con 2 hojas el
+  mismo `hoja_principal`/`manijaPrincipal`. Dibujo: montante central + chevron y triángulo de
+  abatir POR HOJA + manija; planta = `planViewAbatible` con `is2Hojas` (ya lo soportaba). Fachada:
+  celda `osci` con filas "Hojas" y "Hoja ppal." (2) o "Lado" (1), `gridCell`/`gridColPlan`/`needs`
+  leen `cfg.apertura`. Resumen: "Hojas: 2 (hacia adentro) · Hoja principal (manija): …".
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,

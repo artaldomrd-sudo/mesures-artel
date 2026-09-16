@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-16 16:20</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-16 16:24</div>
         </div>
     </div>
     
@@ -1772,7 +1772,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     p.push('sheetrock ' + ((o.gal_sheetrock || 'si') === 'no' ? 'no' : 'sí'));
                 }
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); else p.push('hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)'); }
-                if (celda === 'osci') p.push('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.'));
+                if (celda === 'osci') p.push((o.apertura || '').includes('2') ? ('2 hojas hacia adentro · hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)') : ('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.')));
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 if (o.cierre) p.push(({ '1punto': 'cierre 1 punto', multipunto: 'cierre multipunto', multipunto_esquina: 'cierre multipunto de esquina', llave: 'cierre con llave' })[o.cierre] || ('cierre ' + o.cierre));
                 if (o.cerradura) p.push('cerradura ' + (({ llave: 'llave', mariposa: 'mariposa', smartlock: 'Smartlock' })[o.cerradura] || o.cerradura));
@@ -2100,7 +2100,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if(state.vista) specs.push(`Vista: ${state.vista === 'afuera' ? 'Afuera' : 'Adentro'}`);
             if (state.perfil) specs.push(`Perfil: ${state.perfil}`);
             
-            if (['win_abat', 'door_abat'].includes(state.type) && state.apertura) {
+            if (state.type === 'win_ob' && (state.apertura || '').includes('2')) {
+                 specs.push('Hojas: 2 (hacia adentro)');
+                 specs.push(`Hoja principal (manija): ${(state.hoja_principal || 'der') === 'izq' ? 'Izquierda' : 'Derecha'}`);
+            } else if (['win_abat', 'door_abat'].includes(state.type) && state.apertura) {
                  specs.push(`Apertura: ${state.apertura.replace('_', ' ').replace('1', '1 hoja').replace('2', '2 hojas')}`);
                  if (state.apertura.includes('2')) specs.push(`Hoja principal (manija): ${(state.hoja_principal || 'der') === 'izq' ? 'Izquierda' : 'Derecha'}`);
             } else {
@@ -3565,6 +3568,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (['cor2', 'cor3', 'cor4_lat', 'cor6_lat'].includes(type)) {
                 const ci = state.cor_interior || 'I';
                 extra += `<select onchange="${fn}, 'cor_interior', this.value)" title="¿Qué hoja va en el riel interior?"><option value="I" ${ci==='I'?'selected':''}>Hoja interior: Izquierda</option><option value="D" ${ci==='D'?'selected':''}>Hoja interior: Derecha</option></select>`;
+            }
+            if (type === 'win_ob') {
+                // Oscilobatiente: 1 o 2 hojas, SIEMPRE hacia adentro (usuario 2026-09-16); con 2 hojas, cuál es la principal.
+                const apo = (state.apertura || 'adentro_1').includes('2') ? 'adentro_2' : 'adentro_1';
+                extra += `<select onchange="${fn}, 'apertura', this.value)" title="Cantidad de hojas (la oscilobatiente siempre abre hacia adentro)"><option value="adentro_1" ${apo === 'adentro_1' ? 'selected' : ''}>1 hoja (hacia adentro)</option><option value="adentro_2" ${apo === 'adentro_2' ? 'selected' : ''}>2 hojas (hacia adentro)</option></select>`;
+                if (apo === 'adentro_2') {
+                    const hp = state.hoja_principal || 'der';
+                    extra += `<select onchange="${fn}, 'hoja_principal', this.value)" title="Hoja principal (lleva la manija)"><option value="der" ${hp === 'der' ? 'selected' : ''}>Hoja principal: Derecha</option><option value="izq" ${hp === 'izq' ? 'selected' : ''}>Hoja principal: Izquierda</option></select>`;
+                }
             }
             if (type === 'door_abat' || type === 'win_abat') {
                 extra = `
@@ -6267,6 +6279,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // (vértice hacia el lado que abre, según `lado`) + triángulo de abatir (bisagra abajo, vértice arriba).
             // Antes solo se dibujaba el triángulo (reportado por el usuario con foto, 2026-09-14).
             const ix = x + 1, iy = y + 1, iw = w - 2, ih = h - 2;
+            if ((cfg.apertura || '').includes('2')) {
+                // 2 hojas (siempre hacia adentro): montante + chevron y abatir por hoja + manija en la principal
+                const hw = iw / 2, mx = ix + hw;
+                s += `<line x1="${mx.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${mx.toFixed(1)}" y2="${(iy + ih).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
+                s += `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${hw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-hw).toFixed(1)} ${(ih / 2).toFixed(1)}M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-hw).toFixed(1)} ${(ih / 2).toFixed(1)}l${hw.toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"/>`;
+                s += `<path d="M${ix.toFixed(1)} ${(iy + ih).toFixed(1)}l${(hw / 2).toFixed(1)} ${(-ih).toFixed(1)}l${(hw / 2).toFixed(1)} ${ih.toFixed(1)}M${mx.toFixed(1)} ${(iy + ih).toFixed(1)}l${(hw / 2).toFixed(1)} ${(-ih).toFixed(1)}l${(hw / 2).toFixed(1)} ${ih.toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"/>`;
+                s += manijaPrincipal(ix, iy, iw, ih, (cfg.hoja_principal || 'der') === 'der', false);
+                return s;
+            }
             const chev = cfg.lado === 'izq'
                 ? `M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}`
                 : `M${ix.toFixed(1)} ${iy.toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}`;
@@ -6364,7 +6385,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         if (celda === 'osci') {
             // oscilobatiente: misma planta que la suelta (win_ob → siempre abre hacia adentro, 1 hoja)
-            return s + planViewAbatible('win_ob', { ...r, apertura: 'adentro_1', vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
+            return s + planViewAbatible('win_ob', { ...r, apertura: (r.apertura || '').includes('2') ? 'adentro_2' : 'adentro_1', vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
         }
         if (gridGal(celda)) {
             // Galandaje: EXACTAMENTE la planta del ítem suelto (galandajePlan: bolsillo, concreto/sheetrock,
@@ -6643,7 +6664,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 let int = 0, ext = 0;
                 (ci.col.rows || []).forEach(r => {
                     if (r.celda === 'osci') {
-                        int = Math.max(int, Math.min(ci.w * 0.875, ci.w * RATIO_R) * 0.5);   // abre adentro, 1 hoja
+                        const dos = (r.apertura || '').includes('2');
+                        int = Math.max(int, (dos ? Math.min(ci.w / 2, ci.w * RATIO_R) : Math.min(ci.w * 0.875, ci.w * RATIO_R)) * 0.5);   // abre adentro, 1 o 2 hojas
                     } else if (r.celda === 'puerta' || r.celda === 'ventana') {
                         const ap = r.apertura || 'adentro_1';
                         const rad = ap.includes('2') ? Math.min(ci.w / 2, ci.w * RATIO_R) : Math.min(ci.w * 0.875, ci.w * RATIO_R);
@@ -6781,7 +6803,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']], mk('hoja_principal')));
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
-            if (celda === 'osci') return vid + cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            if (celda === 'osci') {
+                const dos = (obj.apertura || '').includes('2');
+                const hojasSel = cfgRow('Hojas', cfgSel(dos ? 'adentro_2' : 'adentro_1', [['adentro_1', '1 hoja (hacia adentro)'], ['adentro_2', '2 hojas (hacia adentro)']], mk('apertura')));
+                const ladoOPpal = dos ? cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']], mk('hoja_principal'))) : cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado')));
+                return vid + hojasSel + ladoOPpal + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
+            }
             if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
             if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
@@ -8067,7 +8094,16 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 break;
 
             case 'win_ob':
-                drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}M${bx} ${by + bh}l${bw / 2} ${-bh}l${bw / 2} ${bh}"/>`;
+                if ((state.apertura || '').includes('2')) {
+                    // 2 hojas (hacia adentro): montante central + chevron y triángulo de abatir por hoja + manija en la principal
+                    const hw = bw / 2, mx = bx + hw;
+                    drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><line x1="${mx}" y1="${by}" x2="${mx}" y2="${by + bh}"/>`;
+                    drawing += `<path d="M${bx} ${by}l${hw} ${bh / 2}l${-hw} ${bh / 2}M${bx + bw} ${by}l${-hw} ${bh / 2}l${hw} ${bh / 2}"/>`;
+                    drawing += `<path d="M${bx} ${by + bh}l${hw / 2} ${-bh}l${hw / 2} ${bh}M${mx} ${by + bh}l${hw / 2} ${-bh}l${hw / 2} ${bh}"/>`;
+                    drawing += manijaPrincipal(bx, by, bw, bh, (state.hoja_principal || 'der') === 'der', isD);
+                } else {
+                    drawing += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}"/><path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}M${bx} ${by + bh}l${bw / 2} ${-bh}l${bw / 2} ${bh}"/>`;
+                }
                 drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state, bx, bw)}</g>`;
                 break;
 
