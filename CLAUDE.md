@@ -1539,6 +1539,18 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
   descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
   confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
   selector sin elegir) no se trata como error.
+- **El autoguardado al proyecto abierto se DESENGANCHA si cambia la cabecera (2026-09-16).** Caso
+  real: obras "Villa 11 barandas"/"ALTEA VILLA 11 ventanas" aparecían bajo el cliente "Yess figaro"
+  — la hoja de un proyecto abierto se reutilizó cambiando cliente/nombre en la cabecera y (a) el
+  autosave seguía escribiendo la pantalla nueva dentro del proyecto viejo (`autosaveOpenedProject`
+  usa `openedProjectCli/Obra`) y (b) al Guardar antes de cambiar el nombre quedaba la obra vieja
+  bajo el cliente nuevo. Ahora `openedMatchesHeader()`/`detachIfHeaderChanged()` (en
+  `scheduleProjectAutosave` y `autosaveOpenedProject`): si cliente u obra de la cabecera ya no
+  coinciden (`normNombreKey`) con el proyecto abierto, se pone `openedProject* = null` (badge "sin
+  guardar") y no se escribe nada hasta Guardar. Y `saveProject()` con cliente NUEVO avisa si esa
+  obra ya existe con OTRO cliente (una sola vez). Reparar datos ya mezclados: herramienta de
+  duplicados → "Mover un proyecto al cliente correcto" (`dedupMoverProyecto`, propaga a la nube)
+  o Eliminar (también borra en la nube).
 - **Aviso "se parece mucho a…" solo la PRIMERA vez (bug real 2026-09-14).** `saveProject()` avisaba
   si el cliente/obra se parecía a uno existente comprobando `cliKey === cliente` — también cierto
   cuando ya existe con esa misma grafía ("Yanina" guardada, parecida a "Janina") → preguntaba en

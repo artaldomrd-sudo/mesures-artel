@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-14 23:10</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-16 15:53</div>
         </div>
     </div>
     
@@ -1097,6 +1097,16 @@
         // (ej. "Yanina" ya guardada, parecida a "Janina") → preguntaba en CADA guardado. Ahora solo
         // pregunta si de verdad no existe todavía; una vez aceptado y guardado, no vuelve a salir.
         if (!cliExistente) {
+            // La obra ya existe con OTRO cliente (ej. se abrió "Villa 11 barandas" de Nolwenn y se cambió el
+            // cliente en la cabecera sin cambiar el nombre): casi siempre es un error de cabecera.
+            const dueno = Object.keys(projects).find(c => normNombreKey(c) !== normNombreKey(cliente) && Object.keys(projects[c] || {}).some(o => normNombreKey(o) === normNombreKey(obra)));
+            if (dueno) {
+                if (!confirm(`⚠ El proyecto "${obra}" YA existe con el cliente "${dueno}".
+
+¿De verdad quieres guardarlo como un proyecto de "${cliente}"?
+
+Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambia el nombre del proyecto si es otro trabajo).`)) return;
+            }
             const similar = Object.keys(projects).find(c => c !== cliente && sonSospechosos(c, cliente));
             if (similar) {
                 if (!confirm(`⚠ OJO: el cliente "${cliente}" se parece mucho a "${similar}", que YA existe.\n\n¿Es el mismo cliente? Si es así, cancela y escríbelo igual que "${similar}".\n\nPulsa Aceptar SOLO si de verdad es un cliente distinto.`)) return;
@@ -3254,12 +3264,33 @@
         if (changed) scheduleProjectAutosave(json);   // al proyecto guardado + nube SOLO con cambio real
         updateSavedStatusBadge();
     }
+    // ¿El encabezado (cliente + proyecto) sigue siendo el proyecto abierto? Si el usuario reemplazó el
+    // cliente o el nombre en la cabecera para arrancar OTRO trabajo sobre la misma hoja, el autoguardado
+    // NO debe seguir escribiendo esa pantalla dentro del proyecto viejo (contaminaba un proyecto de otro
+    // cliente con ítems ajenos — caso real 2026-09-16: obras de "Villa 11" bajo "Yess figaro"). Se
+    // desengancha: la hoja pasa a ser "sin guardar" hasta que se pulse Guardar (crea la entrada nueva).
+    function openedMatchesHeader() {
+        if (!openedProjectCli || !openedProjectObra) return false;
+        const hc = (document.getElementById('header-cliente') || {}).value || '', ho = (document.getElementById('header-obra') || {}).value || '';
+        return normNombreKey(hc) === normNombreKey(openedProjectCli) && normNombreKey(ho) === normNombreKey(openedProjectObra);
+    }
+    function detachIfHeaderChanged() {
+        if (openedProjectCli && openedProjectObra && !openedMatchesHeader()) {
+            console.warn('autosave: el encabezado ya no es el proyecto abierto (' + openedProjectCli + ' | ' + openedProjectObra + '); se desengancha para no pisarlo');
+            openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
+            updateSavedStatusBadge();
+            return true;
+        }
+        return false;
+    }
     function scheduleProjectAutosave(json) {
+        if (detachIfHeaderChanged()) return;
         if (!openedProjectCli || !openedProjectObra) return;   // solo si hay un proyecto abierto/guardado
         clearTimeout(_projAutosaveTimer);
         _projAutosaveTimer = setTimeout(() => autosaveOpenedProject(json), 1000);   // debounce
     }
     function autosaveOpenedProject(json) {
+        if (detachIfHeaderChanged()) return;
         if (!openedProjectCli || !openedProjectObra) return;
         try {
             json = json || getAppJSON();
