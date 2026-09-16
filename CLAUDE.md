@@ -209,6 +209,13 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   tocar nada — ya leía `getPanelRects(state)[0]` dinámicamente, así que se ancla solo al nuevo
   borde real del panel (probado: un paño abajo de una ventana angosta queda correctamente igual
   de angosto).
+- **Hoja principal en abisagradas de 2 hojas (2026-09-16)**: `state.hoja_principal` `'der'` (default) |
+  `'izq'` (select "Hoja principal" en `door_abat`/`win_abat`, solo con apertura `_2`; en la fachada,
+  fila "Hoja ppal." de puerta/ventana 2 hojas, `cfg.hoja_principal`). Se materializa con
+  `manijaPrincipal(x, y, w, h, principalDer, flipped)`: barra vertical negra junto al montante
+  central, del lado de la principal — en la tarjeta suelta con `orientacion 'D'` el dibujo va
+  espejado, así que recibe `flipped=isD` para quedar del lado correcto en pantalla. Resumen: "Hoja
+  principal (manija): Derecha"; fachada: "hoja principal der. (manija)".
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,

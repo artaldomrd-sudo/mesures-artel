@@ -98,6 +98,11 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
     catch (e) { fail++; console.error(`  galandaje ${t} ${inst}/${vista}/${tubo}:`, e.message); }
   }
 }
+// Abisagradas de 2 hojas: hoja principal (manija) izq/der × orientación
+for (const t of ['door_abat', 'win_abat']) for (const hp of ['izq', 'der']) for (const o of ['I', 'D']) {
+  try { ctx.__render('card1', { type: t, categoria: 'ventana', ancho: 1600, alto: 2200, orientacion: o, apertura: 'adentro_2', hoja_principal: hp, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
+  catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }
+}
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
 for (const esq of ['330', '431', '550', '633', '651', '660', '761', '770', '844', '871', '880', '981', '990', '1055']) {
