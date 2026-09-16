@@ -66,7 +66,7 @@ function setBadge(n) {
 onAuthStateChanged(auth, (user) => {
     if (!user || !user.email) return;
     inyectar();
-    const miEmail = user.email;
+    const miEmail = String(user.email || '').toLowerCase();
     const miKey = sanitKey(miEmail);
     // Volumen bajo (comunicados internos): traemos los enviados y filtramos en el cliente los que
     // me corresponden y aún no marqué leídos — sin índices compuestos ni consultas combinadas.
@@ -74,7 +74,7 @@ onAuthStateChanged(auth, (user) => {
         let n = 0;
         snap.forEach(d => {
             const m = d.data();
-            const paraMi = m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.includes(miEmail));
+            const paraMi = m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.some(d => String(d || '').trim().toLowerCase() === miEmail));
             if (!paraMi) return;
             if (m.remitenteEmail === miEmail) return;            // lo que yo mismo envié no cuenta como "sin leer"
             const ac = (m.acuses || {})[miKey];
