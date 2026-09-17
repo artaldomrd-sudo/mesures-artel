@@ -779,6 +779,12 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     `gridDeriv`, el resumen y la cota; en el dibujo `gapDW` separa las columnas, la cota segmentada
     alterna col/tubo/col, y la planta cierra la línea de pared en los huecos). Botones "Integrado
     (mitad y mitad)" / "Suma al ancho" bajo las casillas de tubos (`gridSetTuboModo(id, key, v)`).
+    **El tubo horizontal también va ENTRE FILAS apiladas de una columna** (2026-09-17, usuario: no se
+    ponía entre la corredera y el paño fijo de abajo): `gridColAlto(c, state)` suma (filas−1)·grosor en
+    modo "suma" (la columna crece, y con ella la banda/alto total vía `gridBandAlto`); en el dibujo, el
+    bucle de filas de `renderFachadaGrid` intercala la banda (`rowGapDH`, suma) o centra el tubo en la
+    unión (integrado); el resumen agrega "Tubo horizontal entre filas de la columna N: …" con el
+    descuento por fila.
     **El tubo HORIZONTAL (`entreH`) tiene el MISMO par de botones** (`entreHModo`, "Integrado" /
     "Suma al alto" — el usuario preguntó "¿hiciste el arreglo también en horizontales?"): integrado
     = la regla de abajo (centrado, no suma); suma = `gridEntreHExtraH` agrega el grosor por cada
