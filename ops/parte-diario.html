@@ -509,7 +509,10 @@
     function renderControl() {
         const cands = Object.entries(equipo).filter(([, u]) => u.activo !== false).filter(([, u]) => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('admin'); })
             .map(([email, u]) => ({ email, nombre: u.nombre || email })).sort((a, b) => a.nombre.localeCompare(b.nombre));
-        const sel = new Set((config.encargados || []).map(e => e.email));
+        // Si la lista ya está en pantalla, respeta lo que el admin tiene marcado (un snapshot de otra
+        // colección redibuja esta pestaña y antes borraba las casillas antes de darle a Guardar).
+        const encList = document.getElementById('enc-list');
+        const sel = new Set(encList.querySelector('input') ? Array.from(encList.querySelectorAll('input:checked')).map(c => c.value) : (config.encargados || []).map(e => e.email));
         document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
         // Grilla de 14 días × encargado
         const encs = config.encargados || [];
@@ -532,7 +535,11 @@
     function renderTodo() {
         if (!arrancado) return;
         const t = tabActiva();
-        if (t === 'parte') { if (parteActual) { renderParte(); } poblarEncargados(); }
+        if (t === 'parte') {
+            const act = document.activeElement, dentro = act && (document.getElementById('personas').contains(act) || act.id === 'p-nota');
+            if (parteActual && !dentro) renderParte();   // no pisar lo que se está escribiendo
+            poblarEncargados();
+        }
         else if (t === 'obras') renderObras();
         else if (t === 'personas') renderPersonas();
         else if (t === 'control') renderControl();
