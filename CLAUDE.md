@@ -844,7 +844,9 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
 - **Paño Fijo con divisiones dentro de la fachada** (2026-09-17, usuario: "3 paños de 2000 deberían
   ser un solo paño fijo con divisiones, como el Paño Fijo dinámico"): la celda `pf` acepta `panos`
   (1/2/3/4/5/6/8/10, fila "Paños") y `union` (`'T'` perfil | `'tope'`, fila "Unión" solo con >1) —
-  mismos campos que `fachada_din`. `gridCell` dibuja las divisiones (línea gruesa T / fina a tope) y
+  mismos campos que `fachada_din`. `gridCell` dibuja la unión "T" como un marco por paño (cada paño es
+  su propio `extrudedPanel`, doble trazo igual al perímetro — pedido del usuario, la línea sola parecía
+  vidrio a tope) y la unión a tope como línea fina, y
   una "PF" por paño; `fajaDivXs` alinea la división de la faja con esos paños; el resumen dice
   "3 paños iguales de 2000 mm · división \"T\" (perfil)" (specList recibe `w` de la columna/faja).
 - **Encabezado del pop-up con la referencia** (2026-09-17, "ayudará a no equivocarse"): bajo
