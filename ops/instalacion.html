@@ -128,7 +128,8 @@
     .signature-row { display: flex; gap: 8px; margin-top: 6px; }
     .signature-row button { background: transparent; color: #888; border: 1.5px solid #ddd; border-radius: 7px; padding: 7px 12px; font-family: 'Arimo'; font-size: 12px; cursor: pointer; }
     .pill-mia { background: var(--artal-blue); color: #fff; border-radius: 20px; font-size: 10px; padding: 2px 8px; margin-left: 6px; font-weight: bold; }
-    .sin-asignar { color: #e74c3c; font-weight: bold; }
+    .sin-asignar { color: #8a93a0; font-weight: bold; }
+    .btn-tomar { background: #16a085; color: #fff; border: none; border-radius: 8px; padding: 9px 13px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
 
     /* Modales */
     .modal-ov, .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 999; display: none; align-items: center; justify-content: center; padding: 16px; }
@@ -196,7 +197,7 @@
     <div id="aviso-parte"></div>
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
-        <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">🏗️ Obras asignadas <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
+        <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">📋 Por agendar <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
     </div>
 
     <!-- ===== Pestaña: Calendario día a día (agenda + calendario colapsable) ===== -->
@@ -232,7 +233,8 @@
     <div class="tabpanel" id="tab-inst" style="display:none;">
         <div id="sin-agendar-wrap"></div>
         <section>
-            <h2 class="sec-title obra">🏗️ Obras asignadas (listas para instalar)</h2>
+            <h2 class="sec-title obra">📋 Obras listas, pendientes de agendar</h2>
+            <p class="hint" style="margin:-4px 0 10px;">Fábrica marca la obra lista y llega aquí. Al ponerle fecha pasa al <b>Calendario día a día</b>, donde el equipo la trabaja y la cierra. Lo terminado se consulta en el Historial.</p>
             <div id="orders-list"><p class="empty">Cargando…</p></div>
         </section>
     </div>
@@ -319,7 +321,7 @@
         <div id="sin-fecha-nota" style="display:none;">
             <p class="hint" style="margin:6px 0 0;">Se guardará <b>sin fecha</b> y aparecerá en "Por programar", hasta que le pongas una con Editar.</p>
         </div>
-        <label>Instaladores asignados <span class="hint">(puedes marcar varios)</span></label>
+        <label>¿Quién va? <span class="hint">(opcional — si no marcas a nadie lo ve todo el equipo y quien lo tome se apunta solo con "Lo tomo yo")</span></label>
         <div id="job-instaladores" class="recordar-group"></div>
         <div id="recordar-wrap">
             <label>Recordatorios (puedes marcar varios)</label>
@@ -460,7 +462,7 @@
     }
     function asignadoTxt(d) {
         const noms = nombresAsignados(d);
-        if (!noms.length) return '<span class="sin-asignar">⚠ Sin asignar</span>';
+        if (!noms.length) return '<span class="sin-asignar">👥 Todo el equipo</span>';
         return '🔧 ' + noms.map(esc).join(', ') + (asignadaAMi(d) ? '<span class="pill-mia">Para ti</span>' : '');
     }
 
@@ -566,7 +568,7 @@
             ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
             ${puedeCambiarEstado ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
@@ -695,11 +697,11 @@
                 ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'orders', id, campo: 'pedidoVidriosPDF', pdf: true, label: '📎 Subir PDF pedido de vidrios' }) : ''}
             </div>
             ${recInlineHTML(recsCache.filter(c => c.orderId === id))}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecObra('${id}')">🔔 Recordatorio</button></div>
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecObra('${id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && !esCompra && !asignadaAMi({ asignados: o.asignadosInstalador, instaladorEmail: o.asignadoInstaladorEmail })) ? `<button class="btn-tomar" onclick="tomarObra('${id}')">🙋 Lo tomo yo</button>` : ''}</div>
             ${esAdmin ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">
-                <span style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">👷 Instalador:</span>
+                <span style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">👷 Instalador <span style="font-weight:normal;color:#8a93a0">(opcional)</span>:</span>
                 <select id="asig-inst-${id}" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;min-height:40px;background:#fff">
-                    <option value="">(sin asignar — cualquiera)</option>
+                    <option value="">👥 Todo el equipo (sin asignar)</option>
                     ${instaladores.map(u => `<option value="${esc(u.email)}" ${o.asignadoInstaladorEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
                 </select>
                 <button onclick="asignarInstalador('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:bold;font-size:13px;cursor:pointer;font-family:'Arimo';min-height:40px">Guardar</button>
@@ -721,7 +723,7 @@
     function renderTodo() {
         // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
         // "sin fecha" seguía siendo visible únicamente dentro del calendario colapsado ("Por programar")
-        // y desaparecía de Obras asignadas y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
+        // y desaparecía de "Por agendar" y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
         agendadosOrderIds = new Set(allJobs.filter(j => j.orderId && (jobDate(j) || j.estado === 'completado' || j.estado === 'en_proceso')).map(j => j.orderId));
         renderMiDia();
         renderCalendario();
@@ -815,7 +817,7 @@
         // aquí; al agendarlo pasa al Calendario.
         const list = document.getElementById('orders-list');
         const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && !agendadosOrderIds.has(d.id));
-        if (!pendientes.length) { list.innerHTML = '<p class="empty">Nada por instalar sin agendar. Los trabajos agendados están en el Calendario.</p>'; return; }
+        if (!pendientes.length) { list.innerHTML = '<p class="empty">✓ No hay obras pendientes de agendar. Las que ya tienen fecha están en el Calendario día a día.</p>'; return; }
         list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
     }
 
@@ -824,7 +826,7 @@
         const nHoy = allJobs.filter(j => jobDate(j) && jobEnDia(j, hoy) && j.estado !== 'completado').length;
         const bDia = document.getElementById('badge-dia');
         bDia.style.display = nHoy ? 'inline-block' : 'none'; bDia.textContent = nHoy;
-        // Mismo filtro que la lista de "Obras asignadas" (renderPorInstalar): obras listas, no
+        // Mismo filtro que la lista de "Por agendar" (renderPorInstalar): obras listas, no
         // instaladas, no compra directa y SIN agendar. Los agendados viven en el Calendario, no aquí
         // — así el número del badge coincide siempre con las tarjetas que se ven en la pestaña.
         const nInst = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && !agendadosOrderIds.has(d.id)).length;
@@ -1280,6 +1282,27 @@
         try {
             await updateDoc(doc(db, 'orders', id), { asignadoInstaladorEmail: email || null, asignadoInstaladorNombre: u ? u.nombre : null });
         } catch (e) { alert('No se pudo asignar el instalador: ' + (e && e.message ? e.message : e)); }
+    };
+    // "Lo tomo yo": el instalador se apunta él mismo, así gerencia no tiene que repartir cada obra
+    // (pedido del usuario 2026-09-17). La asignación sigue siendo informativa: nadie queda excluido.
+    window.tomarObra = async function (orderId) {
+        const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
+        const prev = Array.isArray(d.asignadosInstalador) ? d.asignadosInstalador.filter(a => a && a.email) : [];
+        if (prev.some(a => a.email === yo.email)) return;
+        const nuevos = prev.concat([yo]);
+        const quien = prev.length ? nombresAsignados({ asignados: prev }).join(', ') : '';
+        if (prev.length && !confirm(`Esta obra ya la tiene ${quien}. ¿Sumarte tú también?`)) return;
+        try { await updateDoc(doc(db, 'orders', orderId), { asignadosInstalador: nuevos, asignadoInstaladorEmail: nuevos[0].email, asignadoInstaladorNombre: nuevos[0].nombre || '' }); }
+        catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.tomarTrabajo = async function (jobId) {
+        const j = allJobs.find(x => x.id === jobId) || {};
+        const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
+        if (prev.some(a => a.email === yo.email)) return;
+        const nuevos = prev.concat([yo]);
+        if (prev.length && !confirm(`Este trabajo ya lo tiene ${prev.map(a => a.nombre || a.email).join(', ')}. ¿Sumarte tú también?`)) return;
+        try { await updateDoc(doc(db, 'instalaciones', jobId), { asignados: nuevos, instaladorEmail: nuevos[0].email, instaladorNombre: nuevos[0].nombre || '' }); }
+        catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };
     window.marcarSinInstalacion = async function (orderId) {
         const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
