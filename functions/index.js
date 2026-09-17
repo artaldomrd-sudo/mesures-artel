@@ -354,11 +354,15 @@ async function recordarParteDiario(avisarAdmin) {
     const encargados = (cfg.exists && Array.isArray(cfg.data().encargados)) ? cfg.data().encargados : [];
     if (!encargados.length) return;
     const faltan = [];
+    const delDia = (await db.collection('partesDiarios').where('fecha', '==', fecha).get()).docs.map((d) => d.data());
     for (const e of encargados) {
         if (!e || !e.email) continue;
-        const id = fecha + '_' + String(e.email).toLowerCase().replace(/[.@]/g, '_');
+        const em = String(e.email).toLowerCase();
+        const id = fecha + '_' + em.replace(/[.@]/g, '_');
         const p = await db.doc('partesDiarios/' + id).get();
         if (p.exists) continue;
+        // Trabajó bajo otro encargado ese día (lo incluyó en su parte) → no le toca enviar el suyo.
+        if (delDia.some((x) => String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em))) continue;
         faltan.push(e);
         await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
     }

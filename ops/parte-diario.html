@@ -134,7 +134,7 @@
     <!-- ===== CONTROL (admin) ===== -->
     <div class="tabpanel" id="tab-control">
         <h2 style="font-size:15px;color:var(--artal-blue);margin:0 0 8px">Encargados que deben enviar el parte cada día</h2>
-        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 6:30 pm gerencia recibe la lista de los que faltan. Mientras tengan un parte pendiente, no pueden usar ninguna otra pantalla de la plataforma.</p>
+        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 6:30 pm gerencia recibe la lista de los que faltan. Mientras tengan un parte pendiente, no pueden usar ninguna otra pantalla de la plataforma. El <b>supervisor</b> manda cuando dos encargados trabajan juntos: él los incluye en su parte y el otro ese día no tiene que enviar el suyo. Gerencia (admin) nunca entra en el cálculo de horas.</p>
         <div class="enc-list" id="enc-list"></div>
         <div class="bar"><button class="btn btn-b" onclick="guardarConfig()">Guardar encargados</button></div>
         <p class="hint">Costo por hora de cada persona = su costo laboral por día (RRHH → Empleados: sueldo + cargas de ley) ÷ 8 h. Si la ficha no tiene ese costo calculado, se usa sueldo ÷ 23.83 días. Las horas por encima de 8 en un día se cuentan al 135 % (recargo legal de horas extra).</p>
@@ -176,7 +176,7 @@
                 i2: { cliente: 'Altea', obra: 'Villa 11 barandas', estado: 'pendiente', fecha: ts(0) }
             },
             rrhhFeriados: {},
-            rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], horasJornada: 8, factorExtra: 1.35 } },
+            rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], jefe: W, horasJornada: 8, factorExtra: 1.35 } },
             partesDiarios: {
                 [dAgo(2) + '_' + W.replace(/[.@]/g, '_')]: { fecha: dAgo(2), encargadoEmail: W, encargadoNombre: 'Wilson', nota: 'Faltó silicona negra', creado: ts(2), actualizado: ts(2), editadoPor: 'Wilson', lineas: [
                     { empleadoId: 'e1', nombre: 'Wilson Eusebio Hernandez Rodriguez', tipo: 'obra', obraKey: 'jade|loma palmar de los nidos', obraLabel: 'Jade — Loma palmar de los nidos', horas: 8, costoHora: 415.5 },
@@ -257,10 +257,24 @@
 
     // Equipo de instalación = empleados activos cuyo correo (login) tiene rol instalador/ayudante en `equipo`.
     // Si no hay ninguno mapeado, se muestran todos los activos (para que la pantalla nunca quede vacía).
-    function equipoInstalacion() {
-        const act = empleados.filter(e => (e.estado || 'activo') === 'activo');
-        const conRol = act.filter(e => { const u = equipo[String(e.correo || '').toLowerCase()]; if (!u) return false; const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('ayudante'); });
-        return (conRol.length ? conRol : act).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+    // Reglas (usuario 2026-09-17): gerencia (rol admin) NUNCA entra en el cálculo de horas; el propio
+    // encargado va de primero (llena su día y luego el de su gente); el supervisor (config.jefe, por
+    // defecto el primer encargado) no aparece en el parte de los otros encargados — si Wilson y Miki
+    // estuvieron juntos, el parte es de Wilson.
+    const rolesDe = (email) => { const u = equipo[String(email || '').toLowerCase()]; return u ? (Array.isArray(u.rol) ? u.rol : [u.rol]) : []; };
+    const jefeEmail = () => (config.jefe || ((config.encargados || [])[0] || {}).email || '').toLowerCase();
+    function equipoInstalacion(paraEmail) {
+        const mio = String(paraEmail || (parteActual && parteActual.encargadoEmail) || encargadoSel().email || '').toLowerCase();
+        const act = empleados.filter(e => (e.estado || 'activo') === 'activo').filter(e => !rolesDe(e.correo).includes('admin'));
+        let conRol = act.filter(e => { const r = rolesDe(e.correo); return r.includes('instalador') || r.includes('ayudante'); });
+        if (!conRol.length) conRol = act;
+        const jefe = jefeEmail();
+        if (jefe && mio !== jefe) conRol = conRol.filter(e => String(e.correo || '').toLowerCase() !== jefe);
+        return conRol.sort((a, b) => {
+            const am = String(a.correo || '').toLowerCase() === mio, bm = String(b.correo || '').toLowerCase() === mio;
+            if (am !== bm) return am ? -1 : 1;
+            return String(a.nombre).localeCompare(String(b.nombre));
+        });
     }
     const empPorId = (id) => empleados.find(e => e.id === id);
     // Base: costo laboral real por día (sueldo + cargas). Si la ficha aún no lo tiene, sueldo ÷ 23.83.
@@ -376,7 +390,9 @@
         const opcionesObra = (sel) => `<option value="">— Elige la obra —</option>` +
             obras.map(o => `<option value="${esc(o.key)}" ${o.key === sel ? 'selected' : ''}>${esc(o.label)}${o.activa ? '' : ' (cerrada)'}</option>`).join('') +
             `<option value="__manual__">✏️ Otra obra (escribir)…</option>`;
-        const ids = [...new Set(parteActual.lineas.map(l => l.empleadoId))];
+        const mioEmail = String(parteActual.encargadoEmail || '').toLowerCase();
+        const esMio = (id) => { const e = empPorId(id); return !!e && String(e.correo || '').toLowerCase() === mioEmail; };
+        const ids = [...new Set(parteActual.lineas.map(l => l.empleadoId))].sort((a, b) => (esMio(b) - esMio(a)));
         const jornada = n2(config.horasJornada) || 8;
         const cont = document.getElementById('personas');
         cont.innerHTML = ids.map(id => {
@@ -401,7 +417,9 @@
             (otros.length ? `<optgroup label="Otros empleados">${otros.map(e => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('')}</optgroup>` : '');
         // Estado
         const est = document.getElementById('p-estado');
-        if (parteGuardado) est.innerHTML = `<b class="ok">✓ Enviado</b> el ${esc(fmtTs(parteGuardado.actualizado || parteGuardado.creado))} por ${esc(parteGuardado.editadoPor || parteGuardado.encargadoNombre || '')}. Puedes corregirlo y volver a enviar.`;
+        const otro = !parteGuardado && partes.find(p => p.fecha === parteActual.fecha && String(p.encargadoEmail || '').toLowerCase() !== String(parteActual.encargadoEmail || '').toLowerCase() && incluidoPorOtro(parteActual.encargadoEmail, parteActual.fecha));
+        if (otro) est.innerHTML = `<b class="ok">✓ Este día ya estás en el parte de ${esc(otro.encargadoNombre || otro.encargadoEmail)}</b> · no tienes que enviar el tuyo, salvo que hayas tenido gente aparte.`;
+        else if (parteGuardado) est.innerHTML = `<b class="ok">✓ Enviado</b> el ${esc(fmtTs(parteGuardado.actualizado || parteGuardado.creado))} por ${esc(parteGuardado.editadoPor || parteGuardado.encargadoNombre || '')}. Puedes corregirlo y volver a enviar.`;
         else est.innerHTML = `<b class="${parteActual.fecha < hoyStr() ? 'bad' : 'warn'}">${parteActual.fecha < hoyStr() ? '⚠️ Este parte está pendiente' : 'Sin enviar todavía'}</b> · ${esc(fmtFecha(parteActual.fecha))}`;
         const horasTot = parteActual.lineas.reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0);
         document.getElementById('p-resumen').textContent = `${ids.length} persona(s) · ${horasTot} h en total`;
@@ -453,7 +471,8 @@
         // Costo por hora congelado al momento de enviar (si después cambia el sueldo, la obra ya cerrada no se mueve).
         lineas.forEach(l => { const e = empPorId(l.empleadoId); l.costoHora = Math.round(costoHora(e) * 100) / 100; });
         const id = parteId(fecha, enc.email);
-        const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
+        const incluidosEmails = [...new Set(lineas.map(l => { const e = empPorId(l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
+        const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, incluidosEmails, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
         if (!parteGuardado) datos.creado = serverTimestamp();
         const btn = document.getElementById('btn-enviar'); btn.disabled = true;
         try {
@@ -473,6 +492,13 @@
 
     // ---------------- Pendientes (para el aviso y para Control) ----------------
     function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
+    // ¿Otro encargado ya reportó a esta persona ese día? (partes nuevos traen incluidosEmails; los
+    // viejos se resuelven por empleadoId → correo).
+    function incluidoPorOtro(email, fecha) {
+        const em = String(email || '').toLowerCase();
+        return partes.some(p => p.fecha === fecha && String(p.encargadoEmail || '').toLowerCase() !== em &&
+            (Array.isArray(p.incluidosEmails) ? p.incluidosEmails.includes(em) : (p.lineas || []).some(l => { const e = empPorId(l.empleadoId); return e && String(e.correo || '').toLowerCase() === em; })));
+    }
     function diasPendientes(email, nDias) {
         const out = []; const ahora = new Date();
         if (!(config.encargados || []).some(e => e.email === email)) return out;
@@ -480,7 +506,9 @@
             const f = addDias(hoyStr(), -k);
             if (!esLaborable(f)) continue;
             if (k === 0 && ahora.getHours() < 18) continue;   // hoy solo cuenta como pendiente desde las 6 pm
-            if (!partes.some(p => p.id === parteId(f, email))) out.push(f);
+            if (partes.some(p => p.id === parteId(f, email))) continue;
+            if (incluidoPorOtro(email, f)) continue;   // ese día trabajó bajo otro encargado (ej. Miki con Wilson)
+            out.push(f);
         }
         return out;
     }
@@ -587,7 +615,8 @@
         // colección redibuja esta pestaña y antes borraba las casillas antes de darle a Guardar).
         const encList = document.getElementById('enc-list');
         const sel = new Set(encList.querySelector('input') ? Array.from(encList.querySelectorAll('input:checked')).map(c => c.value) : (config.encargados || []).map(e => e.email));
-        document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
+        const jefeSel = encList.querySelector('input[name="jefe"]:checked') ? encList.querySelector('input[name="jefe"]:checked').value : jefeEmail();
+        document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span><span style="margin-left:auto;font-size:12px;color:#556;display:flex;align-items:center;gap:4px"><input type="radio" name="jefe" value="${esc(c.email)}" ${jefeSel === c.email ? 'checked' : ''}> supervisor</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
         // Grilla de 14 días × encargado
         const encs = config.encargados || [];
         const dias = []; for (let k = 0; k < 14; k++) dias.push(addDias(hoyStr(), -k));
@@ -601,8 +630,10 @@
         document.getElementById('p-encargado').value = email; document.getElementById('p-fecha').value = f; setTab('parte'); cargarParte();
     };
     window.guardarConfig = async function () {
-        const encargados = Array.from(document.querySelectorAll('#enc-list input:checked')).map(c => { const u = equipo[c.value] || {}; return { email: c.value, nombre: u.nombre || c.value }; });
-        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, horasJornada: 8, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
+        const encargados = Array.from(document.querySelectorAll('#enc-list input[type="checkbox"]:checked')).map(c => { const u = equipo[c.value] || {}; return { email: c.value, nombre: u.nombre || c.value }; });
+        const jefeR = document.querySelector('#enc-list input[name="jefe"]:checked'); const jefe = jefeR ? jefeR.value : (encargados[0] || {}).email || '';
+        if (jefe && !encargados.some(e => e.email === jefe)) { alert('El supervisor debe estar marcado también como encargado.'); return; }
+        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, jefe, horasJornada: 8, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
         catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
 

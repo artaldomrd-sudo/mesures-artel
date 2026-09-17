@@ -830,7 +830,7 @@
 
     /* ===== Aviso "falta tu parte diario" (solo a los encargados configurados en Parte diario → Control) ===== */
     (function avisoParteDiario() {
-        let encargados = [], partesIds = new Set(), feriados = new Set();
+        let encargados = [], partesDocs = [], feriados = new Set();
         const pad = (n) => String(n).padStart(2, '0'), ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
         const clave = (em) => String(em || '').toLowerCase().replace(/[.@]/g, '_');
         function pintar() {
@@ -841,12 +841,15 @@
                 const d = new Date(); d.setDate(d.getDate() - k); const f = ymd(d);
                 if (d.getDay() === 0 || feriados.has(f)) continue;
                 if (k === 0 && ahora.getHours() < 18) continue;
-                if (!partesIds.has(f + '_' + clave(usuario.email))) pend.push(f);
+                const em = usuario.email.toLowerCase();
+                if (partesDocs.some(p => p.id === f + '_' + clave(em))) continue;
+                if (partesDocs.some(p => p.fecha === f && String(p.encargadoEmail || '').toLowerCase() !== em && Array.isArray(p.incluidosEmails) && p.incluidosEmails.includes(em))) continue;
+                pend.push(f);
             }
             box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Falta tu parte diario</b> de: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
         }
         onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { encargados = (s.exists() && s.data().encargados) || []; pintar(); }, () => {});
-        onSnapshot(collection(db, 'partesDiarios'), (s) => { partesIds = new Set(s.docs.map(d => d.id)); pintar(); }, () => {});
+        onSnapshot(collection(db, 'partesDiarios'), (s) => { partesDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); pintar(); }, () => {});
         onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
         setInterval(pintar, 60000);
     })();

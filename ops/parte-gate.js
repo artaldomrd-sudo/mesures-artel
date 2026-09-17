@@ -26,10 +26,15 @@ export async function partesPendientes(email, dias = 7) {
     let feriados = new Set();
     try { const fs = await getDocs(query(collection(db, 'rrhhFeriados'), where('fecha', 'in', candidatas.slice(0, 10)))); feriados = new Set(fs.docs.map((x) => x.data().fecha)); } catch (_) { }
     const pend = [];
+    const em = String(email).toLowerCase();
     for (const f of candidatas) {
         if (feriados.has(f)) continue;
         const p = await getDoc(doc(db, 'partesDiarios', f + '_' + claveEmail(email))).catch(() => null);
-        if (!p || !p.exists()) pend.push(f);
+        if (p && p.exists()) continue;
+        // Si otro encargado ya lo incluyó ese día (trabajaron juntos), no le toca enviar parte.
+        let otro = false;
+        try { const qs = await getDocs(query(collection(db, 'partesDiarios'), where('fecha', '==', f))); otro = qs.docs.some((d) => { const x = d.data(); return String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em); }); } catch (_) { }
+        if (!otro) pend.push(f);
     }
     return pend;
 }
