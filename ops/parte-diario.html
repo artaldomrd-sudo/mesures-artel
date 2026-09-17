@@ -150,7 +150,11 @@
     import { collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['instalador']);
-    const esAdmin = usuario.roles.includes('admin');
+    // Vista previa "como encargado" (solo admin): ?vista=encargado&como=<email> muestra la pantalla
+    // exactamente como la ve Wilson o Miki (sin pestañas de admin ni selector), para revisar/probar.
+    const qsIni = new URLSearchParams(location.search);
+    const previewComo = usuario.roles.includes('admin') && qsIni.get('vista') === 'encargado' ? (qsIni.get('como') || '') : '';
+    const esAdmin = usuario.roles.includes('admin') && !previewComo;
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     if (esAdmin) { document.querySelectorAll('.tab.adm').forEach(t => t.style.display = ''); document.getElementById('enc-wrap').style.display = ''; }
@@ -242,6 +246,11 @@
         arrancado = true;
         const f = document.getElementById('p-fecha');
         const qs = new URLSearchParams(location.search), qf = qs.get('fecha');
+        if (previewComo) {
+            const b = document.createElement('div'); b.className = 'aviso'; b.id = 'aviso-preview';
+            b.innerHTML = '👀 <b>Vista previa como ' + esc(encargadoSel().nombre) + '</b> — así ve esta pantalla el encargado. Lo que envíes aquí se guarda a su nombre.';
+            document.getElementById('tab-parte').prepend(b);
+        }
         if (qs.get('bloqueo') === '1') {
             const b = document.createElement('div'); b.className = 'aviso rojo'; b.id = 'aviso-bloqueo';
             b.innerHTML = '🔒 <b>Tienes partes diarios sin enviar.</b> Hasta que los envíes no puedes usar el resto de la plataforma. Envía el de cada día pendiente (abajo te los marca) y luego vuelve a Instalación.';
@@ -262,6 +271,7 @@
         sel.value = lista.some(e => e.email === prev) ? prev : usuario.email;
     }
     function encargadoSel() {
+        if (previewComo) { const e = (config.encargados || []).find(x => x.email === previewComo); return { email: previewComo, nombre: e ? e.nombre : previewComo }; }
         if (!esAdmin) return { email: usuario.email, nombre: usuario.nombre };
         const em = document.getElementById('p-encargado').value || usuario.email;
         const e = (config.encargados || []).find(x => x.email === em);
