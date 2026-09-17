@@ -358,6 +358,7 @@ async function recordarParteDiario(avisarAdmin) {
     for (const e of encargados) {
         if (!e || !e.email) continue;
         const em = String(e.email).toLowerCase();
+        if (e.desde && fecha < e.desde) continue;   // todavía no se le exige (arranque escalonado)
         const id = fecha + '_' + em.replace(/[.@]/g, '_');
         const p = await db.doc('partesDiarios/' + id).get();
         if (p.exists) continue;

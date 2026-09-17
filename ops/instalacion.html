@@ -835,18 +835,20 @@
         const clave = (em) => String(em || '').toLowerCase().replace(/[.@]/g, '_');
         function pintar() {
             const box = document.getElementById('aviso-parte'); if (!box) return;
-            if (!encargados.some(e => e.email === usuario.email)) { box.innerHTML = ''; return; }
+            const yo = encargados.find(e => e.email === usuario.email);
+            if (!yo) { box.innerHTML = ''; return; }
+            const desde = yo.desde || '0000-00-00';
             const pend = []; const ahora = new Date();
             for (let k = 0; k < 4; k++) {
                 const d = new Date(); d.setDate(d.getDate() - k); const f = ymd(d);
-                if (d.getDay() === 0 || feriados.has(f)) continue;
+                if (d.getDay() === 0 || feriados.has(f) || f < desde) continue;
                 if (k === 0 && ahora.getHours() < 18) continue;
                 const em = usuario.email.toLowerCase();
                 if (partesDocs.some(p => p.id === f + '_' + clave(em))) continue;
                 if (partesDocs.some(p => p.fecha === f && String(p.encargadoEmail || '').toLowerCase() !== em && Array.isArray(p.incluidosEmails) && p.incluidosEmails.includes(em))) continue;
                 pend.push(f);
             }
-            box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Falta tu parte diario</b> de: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
+            box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Primero haz el parte de ${pend.length === 1 && pend[0] === ymd(new Date(Date.now() - 86400000)) ? 'ayer' : 'los días pendientes'}</b> antes del de hoy: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
         }
         onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { encargados = (s.exists() && s.data().encargados) || []; pintar(); }, () => {});
         onSnapshot(collection(db, 'partesDiarios'), (s) => { partesDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); pintar(); }, () => {});

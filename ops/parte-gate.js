@@ -14,7 +14,12 @@ export const claveEmail = (em) => String(em || '').trim().toLowerCase().replace(
 export async function partesPendientes(email, dias = 7) {
     const cfg = await getDoc(doc(db, 'rrhhConfig', 'parteDiario')).catch(() => null);
     const encargados = cfg && cfg.exists() && Array.isArray(cfg.data().encargados) ? cfg.data().encargados : [];
-    if (!encargados.some((e) => e && String(e.email).toLowerCase() === String(email).toLowerCase())) return [];
+    const yo = encargados.find((e) => e && String(e.email).toLowerCase() === String(email).toLowerCase());
+    if (!yo) return [];
+    // Bloqueo activo solo a partir de rrhhConfig/parteDiario.bloqueoDesde (arranque suave del módulo).
+    const bloqueoDesde = cfg.data().bloqueoDesde ? Date.parse(cfg.data().bloqueoDesde) : 0;
+    if (bloqueoDesde && Date.now() < bloqueoDesde) return [];
+    const desde = yo.desde || '0000-00-00';
     const hoy = new Date(); const candidatas = [];
     for (let k = 0; k < dias; k++) {
         const d = new Date(hoy); d.setDate(d.getDate() - k);
@@ -28,7 +33,7 @@ export async function partesPendientes(email, dias = 7) {
     const pend = [];
     const em = String(email).toLowerCase();
     for (const f of candidatas) {
-        if (feriados.has(f)) continue;
+        if (feriados.has(f) || f < desde) continue;
         const p = await getDoc(doc(db, 'partesDiarios', f + '_' + claveEmail(email))).catch(() => null);
         if (p && p.exists()) continue;
         // Si otro encargado ya lo incluyó ese día (trabajaron juntos), no le toca enviar parte.
