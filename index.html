@@ -558,7 +558,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-17 10:03</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-17 10:45</div>
         </div>
     </div>
     
@@ -1892,6 +1892,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (o.cerradura) p.push('cerradura ' + (({ llave: 'llave', mariposa: 'mariposa', smartlock: 'Smartlock' })[o.cerradura] || o.cerradura));
                 if (o.mosquitera) p.push('mosq. ' + (o.mosquitera === 'con' ? 'sí' : o.mosquitera));
                 if (o.division && o.division !== 'ninguna') p.push('división ' + (o.division === 'perfil' ? 'con perfil' : 'a tope'));
+                if (celda === 'pf' && (parseInt(o.panos) || 1) > 1) { const np = parseInt(o.panos), wmm = parseInt(o.w) || 0; p.push(`${np} paños iguales${wmm ? ' de ' + Math.round(wmm / np) + ' mm' : ''} · ${o.union === 'tope' ? 'vidrios a tope' : 'división "T" (perfil)'}`); }
                 return p;
             };
             const nomC = celda => CELDA_NOM[celda] || celda;
@@ -1902,16 +1903,16 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             };
             const fajaLine = (f, pos) => (f.cols && f.cols.length)
                 ? `<div style="margin:3px 0;"><b>Faja ${pos}</b> &nbsp;<span style="color:#e74c3c;">alto ${f.h} mm</span>${f.cols.map(sc => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(sc.celda)}</b> — ancho ${sc.w} mm${specList(sc.celda, sc).length ? ' · ' + specList(sc.celda, sc).join(' · ') : ''}</div>`).join('')}</div>`
-                : detRow(`${nomC(f.celda)} ${pos}`, `ancho completo × ${f.h} mm alto`, specList(f.celda, f));
+                : detRow(`${nomC(f.celda)} ${pos}`, `ancho completo × ${f.h} mm alto`, specList(f.celda, { ...f, w: totalW }));
             let filas = '';
             if (fa) filas += fajaLine(fa, 'superior' + rangoTxt(infoFa));
             cols.forEach((c, ci) => {
                 const rows = c.rows || [];
                 if (rows.length === 1) {
                     const r = rows[0];
-                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm`, specList(r.celda, r));
+                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm`, specList(r.celda, { ...r, w: c.w }));
                 } else {
-                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${specList(r.celda, r).length ? ' · ' + specList(r.celda, r).join(' · ') : ''}</div>`).join('');
+                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
                     filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
@@ -6467,7 +6468,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // proyectada: bisagra arriba, abre afuera abajo → vértice ABAJO (chevron apex inferior)
             s += `<polyline points="${(x + pad).toFixed(1)},${(y + pad).toFixed(1)} ${cx.toFixed(1)},${(y + h - pad).toFixed(1)} ${(x + w - pad).toFixed(1)},${(y + pad).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"/>`;
         } else if (celda === 'pf') {
-            s += `<text x="${(x + w - 2).toFixed(1)}" y="${(y + 6).toFixed(1)}" font-family="Arimo" font-size="4" fill="#7a828a" text-anchor="end" stroke="none">PF</text>`;
+            // Paño Fijo con DIVISIONES (usuario 2026-09-17: "un solo paño fijo con divisiones" en vez de 3
+            // columnas de 2000): misma función que el Paño Fijo dinámico — `panos` paños iguales, unión "T"
+            // (montante, línea gruesa) o "a tope" (junta de vidrio, línea fina), una "PF" por paño.
+            const np = Math.max(1, parseInt(cfg.panos) || 1), tope = cfg.union === 'tope';
+            for (let k = 1; k < np; k++) { const dx = x + w * k / np; s += `<line x1="${dx.toFixed(1)}" y1="${(y + 0.7).toFixed(1)}" x2="${dx.toFixed(1)}" y2="${(y + h - 0.7).toFixed(1)}" stroke="${tope ? '#86a8c4' : '#0A3D62'}" stroke-width="${tope ? 0.9 : 1.6}"${tope ? ' stroke-opacity="0.85"' : ''}/>`; }
+            for (let k = 0; k < np; k++) s += `<text x="${(x + w * (k + 1) / np - 2).toFixed(1)}" y="${(y + 6).toFixed(1)}" font-family="Arimo" font-size="4" fill="#7a828a" text-anchor="end" stroke="none">PF</text>`;
         }
         return s;
     }
@@ -6716,6 +6722,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 // nº de módulos verticales del elemento de abajo (para alinear la división de la faja):
                 // correderas por hojas; puerta/ventana de 2 hojas → 1 división en el centro.
                 const n = gridCorN(rw.celda) ? gridCorN(rw.celda)
+                    : (rw.celda === 'pf' && (parseInt(rw.panos) || 1) > 1) ? parseInt(rw.panos)
                     : ((rw.celda === 'puerta' || rw.celda === 'ventana') && (rw.apertura || '').includes('2')) ? 2 : 1;
                 for (let k = 1; k < n; k++) xs.push(cxd + cw * k / n);
                 cxd += cw + gapDW;
@@ -6983,7 +6990,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
             if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_COR, mk('cierre')));
-            return vid;   // pf, proy → al menos el selector de vidrio por paño
+            if (celda === 'pf') {
+                const np = Math.max(1, parseInt(obj.panos) || 1);
+                const PANOS = [1, 2, 3, 4, 5, 6, 8, 10].map(n => [String(n), n === 1 ? '1 paño (sin división)' : n + ' paños iguales']);
+                return vid + cfgRow('Paños', cfgSel(String(np), PANOS, mk('panos'))) + (np > 1 ? cfgRow('Unión', cfgSel(obj.union || 'T', [['T', 'Con división "T" (perfil)'], ['tope', 'Vidrios a tope']], mk('union'))) : '');
+            }
+            return vid;   // proy → al menos el selector de vidrio por paño
         };
         // Faja de ancho completo (banda que cruza todas las columnas), arriba o abajo.
         const fajaRow = (side, faja) => {
@@ -7249,7 +7261,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
     // Al fijar el grosor de un paño, se auto-selecciona su tipo de vidrio (igual que el global).
     const cellCfgEspesor = (o, key, v) => { if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(v)) o.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(v)) o.vidrio = 'templado'; } };
-    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema';   // estos cambian qué campos se muestran
+    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema' || key === 'panos';   // estos cambian qué campos se muestran
     window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
