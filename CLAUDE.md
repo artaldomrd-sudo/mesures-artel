@@ -917,6 +917,9 @@ selectores". El usuario mandará más datos/series; por ahora solo E63.
   6 del fabricante, `PLEG_ESQUEMAS` tiene 660/770/880/990 (todas a un lado), 761/871/981 (n-1 +
   puerta de paso) y 844 (4+4), con el mismo patrón de código. Un hueco ancho con todas las hojas a
   un lado quedaba bloqueado por la hoja máx. de 850 mm con solo 5 hojas.
+- **Centrales con flechas** (usuario 2026-09-17: "4 + 4 desde el centro" junto a "laminado 5+5" se
+  confundía con un grosor de vidrio): etiquetas `6 hojas ← 3 + 3 → desde el centro`, `8 hojas ← 4 + 4 →…`,
+  `10 hojas ← 5 + 5 →…`; el detalle de la fachada dice "hojas: 8 hojas ← 4 + 4 → (desde el centro)".
 - **Sin la palabra "esquema" ni su código en la UI** (usuario, mismo día: "nos confunde más que otra
   cosa"): el selector dice "Hojas: 6 hojas a un lado / 3 hojas + puerta de paso / 3 + 3 desde el
   centro", el resumen "6 hojas: 6 plegables a la izquierda · pliega hacia afuera", la fachada
