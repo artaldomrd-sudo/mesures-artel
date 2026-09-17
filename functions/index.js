@@ -673,9 +673,15 @@ const citrusTokenProd = defineSecret('CITRUS_TOKEN_PROD');  // token del Citrus 
 // desde el navegador si el default es test).
 const CITRUS_ENV = defineString('CITRUS_ENV', { default: 'test' });
 const CITRUS_BASES = { test: 'https://testapi.citrus.com.do', prod: 'https://api.citrus.com.do' };
-function citrusCtx(req) {
+// `soloLectura` permite pedir explícitamente `entorno:'prod'` para VALIDAR el token de producción
+// sin mover el entorno por defecto (ni desplegar): así se comprueba con un GET inofensivo antes de
+// pasar toda la integración a prod. Bajar a 'test' siempre se permite; ESCALAR a 'prod' solo en
+// lectura — `citrusWrite` nunca lo acepta, para no crear documentos fiscales reales por accidente.
+function citrusCtx(req, soloLectura) {
     let entorno = CITRUS_ENV.value() === 'prod' ? 'prod' : 'test';
-    if (req.body && req.body.entorno === 'test') entorno = 'test';
+    const pedido = req.body && req.body.entorno;
+    if (pedido === 'test') entorno = 'test';
+    else if (pedido === 'prod' && soloLectura) entorno = 'prod';
     const token = (entorno === 'prod' ? citrusTokenProd.value() : citrusToken.value()).trim();
     return { entorno, base: CITRUS_BASES[entorno], token };
 }
@@ -838,7 +844,7 @@ exports.citrusRead = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: 
 
     // Modo diagnóstico: prueba varios formatos de header contra /v5/tienda para descubrir cuál
     // acepta Citrus, sin exponer el token (solo su longitud). Se dispara con { diag: true }.
-    const ctx = citrusCtx(req);
+    const ctx = citrusCtx(req, true);   // lectura: admite { entorno: 'prod' } para validar el token real
     if (req.body && req.body.diag) {
         const t = ctx.token;
         const variantes = {

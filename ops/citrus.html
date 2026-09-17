@@ -54,6 +54,7 @@
         <p style="font-size:13px;color:#666;margin:0 0 10px;">Lee las <b>tiendas</b> del entorno de pruebas. Si responde <b>200</b>, el token y el puente funcionan (aunque la lista venga vacía).</p>
         <div class="row">
             <button class="act ping" id="btn-ping" onclick="probar()">🔌 Probar conexión</button>
+            <button class="act" id="btn-ping-prod" onclick="probarProd()" style="background:#16a085;">🟢 Probar token de PRODUCCIÓN (solo lectura)</button>
             <button class="act" id="btn-diag" onclick="diagnostico()" style="background:#8e44ad;">🩺 Diagnóstico de token</button>
         </div>
         <p style="font-size:12px;color:#888;margin:8px 0 0;">El diagnóstico prueba varios formatos de header y muestra cuál acepta Citrus (no expone el token, solo su longitud).</p>
@@ -171,22 +172,22 @@
         box.style.display = 'block';
     }
 
-    async function llamar(entidad, pagina) {
+    async function llamar(entidad, pagina, entorno) {
         const token = await auth.currentUser.getIdToken();
         const r = await fetch(FN, {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token },
-            body: JSON.stringify({ entidad, pagina })
+            body: JSON.stringify(entorno ? { entidad, pagina, entorno } : { entidad, pagina })
         });
         return { httpStatus: r.status, cuerpo: await r.json().catch(() => null) };
     }
 
-    async function ejecutar(entidad, pagina, btn) {
+    async function ejecutar(entidad, pagina, btn, entorno) {
         btn.disabled = true;
-        setEstado('Consultando Citrus…', '');
+        setEstado(entorno === 'prod' ? 'Probando el token de PRODUCCIÓN (solo lectura)…' : 'Consultando Citrus…', '');
         document.getElementById('out').style.display = 'none';
         try {
-            const { httpStatus, cuerpo } = await llamar(entidad, pagina);
+            const { httpStatus, cuerpo } = await llamar(entidad, pagina, entorno);
             if (httpStatus === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
             if (!cuerpo) { setEstado('Respuesta vacía o no-JSON del puente (HTTP ' + httpStatus + ').', 'err'); return; }
             if (cuerpo.error) { setEstado('Error del puente: ' + cuerpo.error + (cuerpo.detalle ? ' — ' + cuerpo.detalle : ''), 'err'); mostrar(cuerpo); return; }
@@ -271,6 +272,9 @@
     };
 
     window.probar = () => ejecutar('tienda', 0, document.getElementById('btn-ping'));
+    // Valida el token de PRODUCCIÓN con un GET inofensivo, sin mover el entorno por defecto ni
+    // desplegar nada. Escribir en producción sigue bloqueado hasta cambiar CITRUS_ENV.
+    window.probarProd = () => ejecutar('tienda', 0, document.getElementById('btn-ping-prod'), 'prod');
     window.leer = () => ejecutar(
         document.getElementById('entidad').value,
         Number(document.getElementById('pagina').value) || 0,
