@@ -2217,9 +2217,23 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
   gris genérico `#8a8f94`, no es la carta RAL completa. En el resumen/PDF, `ralLabel(r)` (helper
   local de `generateSummary`) antepone "RAL " solo si el texto guardado no empieza ya con esa
   palabra — evita "RAL RAL 7039" cuando el usuario escribe el "RAL" a mano en el encabezado.
-- **Vidrio Laminado 4+4 por defecto en ítems nuevos** (`addItem`, para no tener que elegirlo a
-  mano cada vez) — ducha/cerramiento/baranda pisan este default más abajo en la misma función
-  con su propio vidrio típico (templado 10mm), y no se toca retroactivamente ítems ya creados.
+- **SIN vidrio por defecto en ítems nuevos + "TIPO DE VIDRIO" en el encabezado (2026-09-17,
+  reemplaza el default "Laminado 4+4" / "templado 10mm").** Todo ítem nuevo (suelto, panel de
+  ducha, paño adosado, celda/global de fachada) arranca con `vidrio: ''`/`espesor: ''` y los
+  selectores tienen la opción vacía "-- Tipo de Vidrio --" (baranda y paño adosado incluidos);
+  el resumen de fachada/ducha dice "vidrio sin especificar" en rojo si falta. La casilla
+  `#header-vidrio` (texto libre con datalist: "Laminado 5+5", "Templado 10mm", "Láminas de
+  Louver"…) se interpreta con `headerVidrio()` → `{vidrio, espesor}` y, como el color, es
+  **memoria en vivo**: `triggerGlobalVidrio()` (oninput) lo aplica a TODOS los ítems (paneles,
+  paños adosados, global de la fachada borrando los overrides por celda) y `addItem`/`facadeAddPanel`/
+  paño nuevo lo toman por defecto (`aplicarHeaderVidrio`). Vacío = no toca nada. Viaja en
+  `header.vidrio` (getAppJSON/restoreData/clear/heredar en nueva parte y nuevo proyecto del cliente)
+  y la ficha lo muestra ("Vidrio: …"). Layout del encabezado: 6 columnas, área `vidrio` entre
+  material y color (pantalla y `printing-sheets`).
+- **Notas del proyecto al pie** (`#notas-proyecto-box`/`#notas-proyecto`, antes de las firmas;
+  mismo pedido): `header.notas`; en el PDF `buildPrintSheets` mueve la caja a la última hoja antes
+  de las firmas SOLO si tiene texto (exportPDF ya reemplaza el textarea por un div); en la ficha
+  (`buildReadonlyView`) sale como `.ro-notas-proyecto` debajo de las tarjetas.
 - **El toggle "Medida: Fabricación/Cotización" (`.medida-toggle`) solo tiene sentido en el
   cuaderno de Cotización** (para marcar qué ítems ya tienen medida de fabricación) — en el
   cuaderno de Fabricación es redundante, todo lo que hay ahí ya es medida de fabricación por
