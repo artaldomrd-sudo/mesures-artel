@@ -51,8 +51,25 @@
         <button class="tab-btn" id="tab-ruta" onclick="setTab('ruta')">En ruta</button>
         <button class="tab-btn" id="tab-entregado" onclick="setTab('entregado')">Entregado</button>
     </div>
+    <!-- Solo en "Entregado": filtro por período (últimas entregas primero) -->
+    <div id="entregado-filtros" style="display:none;margin:0 0 12px;">
+        <div class="per-tabs">
+            <button class="per-btn active" data-per="semana" onclick="setPeriodo('semana')">Esta semana</button>
+            <button class="per-btn" data-per="mes" onclick="setPeriodo('mes')">Este mes</button>
+            <button class="per-btn" data-per="anio" onclick="setPeriodo('anio')">Este año</button>
+            <button class="per-btn" data-per="todo" onclick="setPeriodo('todo')">Todo</button>
+        </div>
+        <p class="per-resumen" id="entregado-resumen"></p>
+    </div>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
 </main>
+<style>
+    .per-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .per-btn { border: 1.5px solid #d7dee6; background: #fff; color: var(--artal-blue); border-radius: 999px; padding: 8px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
+    .per-btn.active { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
+    .per-resumen { font-size: 12.5px; color: #667; margin: 8px 0 0; }
+    .dia-sep { font-size: 12px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; padding-left: 4px; }
+</style>
 
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
@@ -150,6 +167,7 @@
         document.getElementById('tab-espera').classList.toggle('active', tab === 'espera');
         document.getElementById('tab-ruta').classList.toggle('active', tab === 'ruta');
         document.getElementById('tab-entregado').classList.toggle('active', tab === 'entregado');
+        document.getElementById('entregado-filtros').style.display = tab === 'entregado' ? '' : 'none';
         render(allDocs);
     };
 
@@ -175,6 +193,32 @@
         </div>`;
     }
 
+    // Pestaña Entregado: últimas entregas primero, filtradas por período (semana/mes/año/todo) y
+    // agrupadas por día — pedido del usuario 2026-09-17 (antes salían sin orden ni filtro).
+    let periodo = 'semana';
+    window.setPeriodo = function (p) {
+        periodo = p;
+        document.querySelectorAll('.per-btn').forEach(b => b.classList.toggle('active', b.dataset.per === p));
+        render(allDocs);
+    };
+    const fechaEntregaMs = (o) => (o.fechaEntregado && o.fechaEntregado.toDate) ? o.fechaEntregado.toDate().getTime() : 0;
+    function inicioPeriodo(p) {
+        const d = new Date(); d.setHours(0, 0, 0, 0);
+        if (p === 'semana') { const dow = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dow); }   // lunes
+        else if (p === 'mes') d.setDate(1);
+        else if (p === 'anio') { d.setMonth(0, 1); }
+        else return 0;
+        return d.getTime();
+    }
+    const diaLabel = (ms) => {
+        if (!ms) return 'Sin fecha de entrega';
+        const d = new Date(ms), hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        const dd = new Date(d); dd.setHours(0, 0, 0, 0);
+        const diff = Math.round((hoy - dd) / 86400000);
+        const txt = d.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long', year: d.getFullYear() !== hoy.getFullYear() ? 'numeric' : undefined });
+        return diff === 0 ? 'Hoy · ' + txt : diff === 1 ? 'Ayer · ' + txt : txt;
+    };
+
     function render(docs) {
         allDocs = docs;
         renderAvisoRuta();
@@ -193,6 +237,23 @@
             filtrados = docs.filter(d => !d.data().entregado && d.data().enRuta !== true);
         }
         signaturePads = {};
+        if (currentTab === 'entregado') {
+            const desde = inicioPeriodo(periodo);
+            const total = filtrados.length;
+            filtrados = filtrados.filter(d => fechaEntregaMs(d.data()) >= desde).sort((a, b) => fechaEntregaMs(b.data()) - fechaEntregaMs(a.data()));
+            const nom = { semana: 'esta semana', mes: 'este mes', anio: 'este año', todo: 'en total' }[periodo];
+            document.getElementById('entregado-resumen').textContent = filtrados.length + ' entrega(s) ' + nom + (periodo !== 'todo' ? ' · ' + total + ' en total' : '') + ' · las más recientes primero';
+            if (!filtrados.length) { list.innerHTML = '<p class="empty">No hay entregas ' + nom + '.</p>'; return; }
+            // Agrupadas por día de entrega.
+            let html = '', ultimo = null;
+            filtrados.forEach(d => {
+                const lab = diaLabel(fechaEntregaMs(d.data()));
+                if (lab !== ultimo) { html += `<div class="dia-sep">${lab}</div>`; ultimo = lab; }
+                html += orderCardHTML(d.id, d.data());
+            });
+            list.innerHTML = html;
+            return;
+        }
         if (!filtrados.length) {
             list.innerHTML = currentTab === 'entregado' ? '<p class="empty">No hay pedidos entregados todavía.</p>'
                 : currentTab === 'ruta' ? '<p class="empty">No hay pedidos en ruta ahora mismo.</p>'
