@@ -144,10 +144,74 @@
 </main>
 
 <script type="module">
-    import { requireAuth, auth, signOut } from './auth-common.js';
-    import { db } from './firebase-config.js';
-    import './mensajeria-widget.js';
-    import { collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    // ===== MODO DEMO (?demo=1 encargado · ?demo=admin gerencia): sin login ni Firebase, con datos de
+    // ejemplo en memoria, para revisar cómo está armada la pantalla. Nada se guarda de verdad. =====
+    const DEMO = new URLSearchParams(location.search).get('demo') || '';
+    let requireAuth, auth, signOut, db, collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp;
+    if (DEMO) {
+        const hoyD = new Date(), ymdD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const dAgo = (n) => { const d = new Date(hoyD); d.setDate(d.getDate() - n); return ymdD(d); };
+        const ts = (n) => ({ toDate: () => { const d = new Date(hoyD); d.setDate(d.getDate() - n); return d; } });
+        const W = 'wilsonhernandezrodriguez81@gmail.com', M = 'ariasvaldezmiki@gmail.com';
+        const store = {
+            rrhhEmpleados: {
+                e1: { nombre: 'Wilson Eusebio Hernandez Rodriguez', correo: W, sueldoBase: 60000, costoDiaReal: 3323.97, estado: 'activo' },
+                e2: { nombre: 'Miki Arias Valdez', correo: M, sueldoBase: 48000, costoDiaReal: 2014.27, estado: 'activo' },
+                e3: { nombre: 'Roosevelt Stephen', correo: 'rooseveltstephen9@gmail.com', sueldoBase: 33000, costoDiaReal: 1543.10, estado: 'activo' },
+                e4: { nombre: 'Emerson Jean', correo: '1932001jean@gmail.com', sueldoBase: 25000, costoDiaReal: 1180.40, estado: 'activo' },
+                e5: { nombre: 'Leydi Faride Pardo Baena', correo: '1015994313leydy@gmail.com', sueldoBase: 30000, costoDiaReal: 1400, estado: 'activo' }
+            },
+            equipo: {
+                [W]: { nombre: 'Wilson', rol: ['chofer', 'instalador'], activo: true }, [M]: { nombre: 'Miki', rol: ['instalador'], activo: true },
+                'rooseveltstephen9@gmail.com': { nombre: 'Roosevelt', rol: ['instalador'], activo: true }, '1932001jean@gmail.com': { nombre: 'Emerson', rol: ['ayudante'], activo: true },
+                'artaldom.rd@gmail.com': { nombre: 'Dylan', rol: ['admin'], activo: true }
+            },
+            orders: {
+                o1: { cliente: 'Jade', obra: 'Loma palmar de los nidos', status: 'listo_para_cargar', docType: 'FAB', fecha: ts(3) },
+                o2: { cliente: 'BETEP FINANCIAL', obra: 'Tienda Woof Woof', status: 'parcialmente_instalado', docType: 'FAB', fecha: ts(10) },
+                o3: { cliente: 'Sienna', obra: 'Villa C-3', status: 'completado', docType: 'FAB', fecha: ts(20) }
+            },
+            instalaciones: {
+                i1: { cliente: 'Val Caoba A21', obra: 'Val caoba A21', estado: 'pendiente', fecha: ts(1) },
+                i2: { cliente: 'Altea', obra: 'Villa 11 barandas', estado: 'pendiente', fecha: ts(0) }
+            },
+            rrhhFeriados: {},
+            rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], horasJornada: 8, factorExtra: 1.35 } },
+            partesDiarios: {
+                [dAgo(2) + '_' + W.replace(/[.@]/g, '_')]: { fecha: dAgo(2), encargadoEmail: W, encargadoNombre: 'Wilson', nota: 'Faltó silicona negra', creado: ts(2), actualizado: ts(2), editadoPor: 'Wilson', lineas: [
+                    { empleadoId: 'e1', nombre: 'Wilson Eusebio Hernandez Rodriguez', tipo: 'obra', obraKey: 'jade|loma palmar de los nidos', obraLabel: 'Jade — Loma palmar de los nidos', horas: 8, costoHora: 415.5 },
+                    { empleadoId: 'e3', nombre: 'Roosevelt Stephen', tipo: 'obra', obraKey: 'jade|loma palmar de los nidos', obraLabel: 'Jade — Loma palmar de los nidos', horas: 5, costoHora: 192.89 },
+                    { empleadoId: 'e3', nombre: 'Roosevelt Stephen', tipo: 'transporte', obraKey: '', obraLabel: '', horas: 3, costoHora: 192.89 },
+                    { empleadoId: 'e4', nombre: 'Emerson Jean', tipo: 'obra', obraKey: 'jade|loma palmar de los nidos', obraLabel: 'Jade — Loma palmar de los nidos', horas: 10, costoHora: 147.55 }
+                ] },
+                [dAgo(2) + '_' + M.replace(/[.@]/g, '_')]: { fecha: dAgo(2), encargadoEmail: M, encargadoNombre: 'Miki', nota: '', creado: ts(2), actualizado: ts(2), editadoPor: 'Miki', lineas: [
+                    { empleadoId: 'e2', nombre: 'Miki Arias Valdez', tipo: 'obra', obraKey: 'betep financial|tienda woof woof', obraLabel: 'BETEP FINANCIAL — Tienda Woof Woof', horas: 8, costoHora: 251.78 }
+                ] },
+                [dAgo(3) + '_' + M.replace(/[.@]/g, '_')]: { fecha: dAgo(3), encargadoEmail: M, encargadoNombre: 'Miki', nota: '', creado: ts(3), actualizado: ts(3), editadoPor: 'Miki', lineas: [
+                    { empleadoId: 'e2', nombre: 'Miki Arias Valdez', tipo: 'taller', obraKey: '', obraLabel: '', horas: 8, costoHora: 251.78 }
+                ] }
+            }
+        };
+        const listeners = [];
+        const snapCol = (col) => ({ docs: Object.entries(store[col] || {}).map(([id, d]) => ({ id, data: () => d })) });
+        const snapDoc = (col, id) => { const d = (store[col] || {})[id]; return { exists: () => !!d, data: () => d, id }; };
+        const fire = () => listeners.forEach(l => { try { l.cb(l.ref.id ? snapDoc(l.ref.col, l.ref.id) : snapCol(l.ref.col)); } catch (_) { } });
+        collection = (_db, col) => ({ col }); doc = (_db, col, id) => ({ col, id });
+        onSnapshot = (ref, cb) => { listeners.push({ ref, cb }); setTimeout(() => cb(ref.id ? snapDoc(ref.col, ref.id) : snapCol(ref.col)), 0); return () => { }; };
+        getDoc = async (ref) => snapDoc(ref.col, ref.id);
+        query = (ref) => ref; where = () => null; getDocs = async (ref) => snapCol(ref.col);
+        setDoc = async (ref, data, opts) => { store[ref.col] = store[ref.col] || {}; const prev = store[ref.col][ref.id] || {}; const merged = (opts && opts.merge) ? { ...prev } : {}; Object.entries(data).forEach(([k, v]) => { if (k.includes('.')) { const [a, b] = k.split('.'); merged[a] = { ...(merged[a] || {}), [b]: v }; } else merged[k] = v; }); store[ref.col][ref.id] = merged; fire(); };
+        serverTimestamp = () => ({ toDate: () => new Date() });
+        auth = {}; signOut = () => alert('Demo: sin sesión real.');
+        requireAuth = async () => DEMO === 'admin' ? { email: 'artaldom.rd@gmail.com', nombre: 'Dylan (demo)', roles: ['admin'] } : { email: W, nombre: 'Wilson (demo)', roles: ['instalador'] };
+        db = {};
+        const bd = document.createElement('div'); bd.style.cssText = 'background:#7d3ac1;color:#fff;text-align:center;font-weight:bold;font-size:13px;padding:6px;'; bd.textContent = '🧪 MODO DEMO — datos de ejemplo, nada se guarda. ' + (DEMO === 'admin' ? 'Vista de gerencia (admin).' : 'Vista de un encargado (Wilson).'); document.body.prepend(bd);
+    } else {
+        ({ requireAuth, auth, signOut } = await import('./auth-common.js'));
+        ({ db } = await import('./firebase-config.js'));
+        await import('./mensajeria-widget.js');
+        ({ collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'));
+    }
 
     const usuario = await requireAuth(['instalador']);
     // Vista previa "como encargado" (solo admin): ?vista=encargado&como=<email> muestra la pantalla
