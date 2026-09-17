@@ -671,7 +671,7 @@
             <div class="order-meta">
                 ${metaLine}
                 · ${asignadoTxt({ asignados: o.asignadosInstalador, instaladorNombre: o.asignadoInstaladorNombre, instaladorEmail: o.asignadoInstaladorEmail })}
-                ${yaAgendado ? '<br>📅 <b style="color:#1f6aa5">Agendado</b> (ver Calendario)' : ''}
+                ${yaAgendado ? '<br>📅 <b style="color:#1f6aa5">Agendado</b> (ver Calendario)' : (allJobs.some(j => j.orderId === id && !jobDate(j) && j.estado !== 'completado') ? '<br>📋 <b style="color:#c07a12">Agendado sin fecha</b> — ponle fecha desde la agenda (Editar)' : '')}
             </div>
             ${c.total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:12px;color:#556;">
                 <span>🔧 Avance: <b>${c.instalados}/${c.total}</b></span>
@@ -719,7 +719,10 @@
     /* ===== Render maestro ===== */
     let agendadosOrderIds = new Set();
     function renderTodo() {
-        agendadosOrderIds = new Set(allJobs.map(j => j.orderId).filter(Boolean));
+        // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
+        // "sin fecha" seguía siendo visible únicamente dentro del calendario colapsado ("Por programar")
+        // y desaparecía de Obras asignadas y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
+        agendadosOrderIds = new Set(allJobs.filter(j => j.orderId && jobDate(j) && j.estado !== 'completado').map(j => j.orderId));
         renderMiDia();
         renderCalendario();
         renderPorInstalar();
@@ -731,7 +734,8 @@
         // (Los recordatorios ya no van sueltos aquí: se marcan por cada trabajo/obra en su tarjeta.)
         const conFecha = allJobs.filter(j => jobDate(j) && j.estado !== 'completado').sort((a, b) => jobDate(a) - jobDate(b));
         const enCurso = allJobs.filter(j => !jobDate(j) && j.estado === 'en_proceso');
-        const lista = enCurso.concat(conFecha);
+        const sinFecha = allJobs.filter(j => !jobDate(j) && (j.estado === 'pendiente' || !j.estado));   // por programar: visibles, no escondidos
+        const lista = enCurso.concat(conFecha, sinFecha);
         document.getElementById('dia-agenda').innerHTML = lista.length
             ? `<div class="day-group">${lista.map(jobCardHTML).join('')}</div>`
             : '<p class="empty">No hay trabajos agendados. Usa “+ Trabajo” o agenda desde el calendario.</p>';
