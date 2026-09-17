@@ -722,7 +722,7 @@
         // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
         // "sin fecha" seguía siendo visible únicamente dentro del calendario colapsado ("Por programar")
         // y desaparecía de Obras asignadas y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
-        agendadosOrderIds = new Set(allJobs.filter(j => j.orderId && jobDate(j) && j.estado !== 'completado').map(j => j.orderId));
+        agendadosOrderIds = new Set(allJobs.filter(j => j.orderId && (jobDate(j) || j.estado === 'completado' || j.estado === 'en_proceso')).map(j => j.orderId));
         renderMiDia();
         renderCalendario();
         renderPorInstalar();
@@ -1151,6 +1151,11 @@
         try {
             await updateDoc(doc(db, 'instalaciones', id), cambios);
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+            // El pedido ligado sigue al trabajo: completado → instalado (como la biometría); reabierto → vuelve a "listo".
+            if (j.orderId) {
+                if (estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
+                else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: false, status: 'listo_para_cargar' });
+            }
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };
     window.toggleReprog = function (id) {
