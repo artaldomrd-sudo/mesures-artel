@@ -1558,15 +1558,20 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
   descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
   confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
   selector sin elegir) no se trata como error.
-- **Desplegable "Abrir otro proyecto de este cliente" y reparación por encabezado (2026-09-17).**
-  Segundo caso real: bajo "Nicolas & Laura Reymondin" salían obras de "Woof Woof" y faltaba su
-  "Sienna Villa D-2" (guardado bajo otra clave). El cliente REAL de un proyecto guardado es el que
-  dice su propio `jsonData.header.cliente` (`clienteDeProyecto`), no la clave del mapa:
-  `fillHeaderObraSel` recorre TODOS los clientes y lista las obras cuyo encabezado normaliza igual
-  que el cliente escrito (value = `clave + OBRA_SEL_SEP + obra`, `abrirProyectoDeCliente` lo parte).
-  `repararProyectosGuardados()` (al arrancar en `loadProgress` y al iniciar sesión en el módulo)
-  mueve cada proyecto a la clave de su encabezado (`repararProyectosPorHeader`, sin pisar si el
-  destino ya tiene esa obra), reescribe el doc en la nube bajo la clave correcta y borra el huérfano.
+- **Desplegable "Abrir otro proyecto de este cliente": REGLA DEFINITIVA = manda la CLAVE (2026-09-17).**
+  Dos rondas de casos reales: (1) obras de "Woof Woof" bajo "Nicolas & Laura Reymondin" y su D-2 bajo
+  otra clave; (2) "Sienna Villa C-3" listado bajo "Yanina". Causa raíz: el fallo viejo del autoguardado
+  (corregido el 16) escribía la pantalla de OTRO trabajo dentro del proyecto abierto, dejando en
+  `jsonData.header.cliente/obra` un cliente ajeno. Una primera reparación (esa mañana) confió en ese
+  encabezado y MOVIÓ proyectos — error: agravó el caso 2. Ahora: `proyectoCoherente(data, cli, obra)`
+  (encabezado interno vacío o igual a la clave); `fillHeaderObraSel` lista solo obras guardadas BAJO
+  LA CLAVE del cliente escrito y coherentes (value = `clave + OBRA_SEL_SEP + obra`);
+  `repararProyectosGuardados()` (arranque + inicio de sesión) YA NO mueve nada: `normalizarHeadersProyectos`
+  corrige el encabezado interno para que diga su clave (`_headerCorregido`) y re-sube a la nube bajo la
+  misma clave. Para lo que ya quedó bajo el cliente equivocado: botón del menú lateral **"↪ Mover a otro
+  cliente"** (`moverProyectoSeleccionado` → modal con datalist de clientes → `moverProyecto`, local +
+  nube, y corrige el encabezado interno). Las versiones en la nube (`…/versiones`) sobreviven al
+  borrado del doc, así que un contenido pisado se recupera con "Versiones anteriores".
 - **El autoguardado al proyecto abierto se DESENGANCHA si cambia la cabecera (2026-09-16).** Caso
   real: obras "Villa 11 barandas"/"ALTEA VILLA 11 ventanas" aparecían bajo el cliente "Yess figaro"
   — la hoja de un proyecto abierto se reutilizó cambiando cliente/nombre en la cabecera y (a) el
