@@ -841,6 +841,9 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   `gridFamCelda(fam, cur)` (conserva la variante si ya era de esa familia, si no cor2/gal1). Los
   valores internos de `celda` no cambian; `cellCfgFull('celda')` y los setters ponen el aluminio
   por defecto al cambiar de variante. `GRID_CELDAS` sigue siendo la lista completa (`CELDA_NOM`).
+- **Encabezado del pop-up con la referencia** (2026-09-17, "ayudará a no equivocarse"): bajo
+  "🧩 Fachada compuesta" va en amarillo `czRefUbiTxt(id)` ("Ref. F2 · Fachada frontal") o, si la
+  tarjeta no tiene ref/ubicación, un aviso gris para escribirlas.
 - **UI**: la tarjeta (`.grid-card`, media línea por defecto; `adaptDrawingToContent` recorta el
   viewBox y ajusta el alto con tope 430px) solo muestra el dibujo + botón "✏️ Editar fachada
   compuesta" → `abrirEditorFachada(id)` abre un **pop-up lateral** (drawer `#fachada-editor` a la
