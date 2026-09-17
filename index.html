@@ -546,7 +546,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-17 09:44</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-17 09:53</div>
         </div>
     </div>
     
@@ -1452,12 +1452,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
     // Desde la página de un proyecto solo tiene sentido cambiar a OTRO PROYECTO del mismo cliente
     // (no cambiar de cliente). Este desplegable abre el proyecto elegido de este cliente.
-    window.abrirProyectoDeCliente = function (obra) {
+    window.abrirProyectoDeCliente = function (val) {
         const sel = document.getElementById('header-obra-sel');
-        if (!obra) return;
-        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        if (!val) return;
+        // value = clave de cliente + OBRA_SEL_SEP + obra (la clave puede no ser la del encabezado, ver fillHeaderObraSel)
+        const sep = val.indexOf(OBRA_SEL_SEP);
+        const cliente = sep >= 0 ? val.slice(0, sep) : (document.getElementById('header-cliente').value || '').trim();
+        const obra = sep >= 0 ? val.slice(sep + OBRA_SEL_SEP.length) : val;
         const projects = getProjects();
-        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
+        const cliKey = projects[cliente] ? cliente : Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
         if (!cliKey || projects[cliKey][obra] === undefined) { alert('No se encontró ese proyecto de este cliente.'); if (sel) sel.value = ''; return; }
         // Aviso si la hoja actual tiene ítems y NO está guardada, para no perderlos sin querer.
         const badge = document.getElementById('saved-status-badge');
@@ -1472,16 +1475,66 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         fillHeaderObraSel();
         if (sel) sel.value = '';
     };
-    // Llena el desplegable de proyecto con las obras guardadas del cliente escrito en el encabezado.
+    // Cliente REAL de un proyecto guardado = el que dice su propio encabezado (jsonData.header.cliente);
+    // la clave del mapa puede haber quedado mal (caso real 2026-09-17: obras de "Woof Woof" bajo
+    // "Nicolas & Laura Reymondin", y el D-2 de ese cliente bajo otra clave). Si el encabezado no trae
+    // cliente (guardados viejos), vale la clave.
+    function clienteDeProyecto(jsonData, cliKey) { const h = jsonData && jsonData.header; const c = h && typeof h.cliente === 'string' ? h.cliente.trim() : ''; return c || cliKey; }
+    // Reubica cada proyecto bajo la clave de cliente que corresponde a su propio encabezado. Devuelve los
+    // movimientos [[cliViejo, obra, cliNuevo]]. No pisa: si el destino ya tiene esa obra, lo deja donde está.
+    function repararProyectosPorHeader(projects) {
+        const moved = [];
+        Object.keys(projects).forEach(cli => {
+            const obras = projects[cli]; if (!obras || typeof obras !== 'object') return;
+            Object.keys(obras).forEach(obra => {
+                const data = obras[obra]; if (!looksLikeProjectData(data)) return;
+                const real = clienteDeProyecto(data, cli);
+                if (normNombreKey(real) === normNombreKey(cli)) return;
+                const dest = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(real)) || real;
+                if (!projects[dest]) projects[dest] = {};
+                if (projects[dest][obra] !== undefined) return;
+                projects[dest][obra] = data; delete obras[obra]; moved.push([cli, obra, dest]);
+            });
+            if (!Object.keys(projects[cli] || {}).length) delete projects[cli];
+        });
+        return moved;
+    }
+    // Se llama al arrancar y al iniciar sesión (ver módulo): guarda local, mueve los documentos en la
+    // nube (escribe bajo la clave correcta y borra el huérfano de la clave equivocada) y avisa en consola.
+    function repararProyectosGuardados() {
+        const projects = getProjects();
+        const moved = repararProyectosPorHeader(projects);
+        if (!moved.length) return 0;
+        try { localStorage.setItem('artal_projects', JSON.stringify(projects)); } catch (e) { console.error('reparar proyectos (local)', e); }
+        moved.forEach(([c, o, d]) => {
+            console.warn(`Proyecto "${o}" estaba bajo el cliente "${c}" y su encabezado dice "${d}": movido.`);
+            if (window.syncProjectToCloud) window.syncProjectToCloud(d, o, projects[d][o]);
+            if (window.deleteProjectFromCloud) window.deleteProjectFromCloud(c, o);
+        });
+        if (openedProjectCli && openedProjectObra) { const m = moved.find(x => x[0] === openedProjectCli && x[1] === openedProjectObra); if (m) { openedProjectCli = m[2]; openedProjectKey = (m[2] + '|' + m[1]).toLowerCase(); } }
+        updateClientList();
+        return moved.length;
+    }
+    window.repararProyectosGuardados = repararProyectosGuardados;
+    const OBRA_SEL_SEP = '¦¦';   // separador clave-cliente / obra en el value del desplegable
+    // Llena el desplegable de proyecto con las obras guardadas del cliente escrito en el encabezado —
+    // por el cliente que dice CADA proyecto guardado (no solo la clave del mapa), para que no se cuelen
+    // obras de otro cliente ni falten las guardadas bajo una clave distinta.
     function fillHeaderObraSel() {
         const sel = document.getElementById('header-obra-sel'); if (!sel) return;
         const cliente = (document.getElementById('header-cliente').value || '').trim();
         const obraActual = (document.getElementById('header-obra').value || '').trim();
         const projects = getProjects();
-        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente));
-        // Solo OTROS proyectos del mismo cliente (excluye el que ya está abierto).
-        const obras = cliKey ? Object.keys(projects[cliKey]).filter(o => normNombreKey(o) !== normNombreKey(obraActual)).sort((a, b) => a.localeCompare(b)) : [];
-        sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        const kCli = normNombreKey(cliente);
+        const obras = [];
+        if (kCli) Object.keys(projects).forEach(cli => {
+            Object.keys(projects[cli] || {}).forEach(o => {
+                if (normNombreKey(o) === normNombreKey(obraActual)) return;   // el que ya está abierto
+                if (normNombreKey(clienteDeProyecto(projects[cli][o], cli)) === kCli) obras.push({ cli, o });
+            });
+        });
+        obras.sort((a, b) => a.o.localeCompare(b.o));
+        sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(x => `<option value="${escAttr(x.cli + OBRA_SEL_SEP + x.o)}">${escHtml(x.o)}</option>`).join('');
     }
 
     function updateClientList() {
@@ -3366,6 +3419,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Cargar la página NO es un cambio: no reescribir el estado en vivo (podría pisar el de otra
         // pestaña). Se escribirá cuando haya un cambio real o cuando el usuario abra otro proyecto.
         _lastLiveOpened = (openedProjectCli || '') + '|' + (openedProjectObra || '');
+        try { repararProyectosGuardados(); } catch (e) { console.error('repararProyectosGuardados', e); }
         updateClientList();
         updateSavedStatusBadge();
     }
@@ -8840,6 +8894,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             startFsClientListeners();
             bulkSyncProjectsUnaVez();
             startFsProjectsListener();
+            try { if (window.repararProyectosGuardados) window.repararProyectosGuardados(); } catch (e) { console.error(e); }   // con sesión: también corrige los documentos en la nube
             try {
                 const snap = await getDoc(doc(db, 'usuarios', user.email));
                 const rol = snap.exists() ? snap.data().rol : null;

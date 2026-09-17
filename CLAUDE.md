@@ -1555,6 +1555,15 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
   descarga de siempre pero con `URL.createObjectURL(blob)` en vez de `data:` URI — más
   confiable para archivos grandes en cualquier navegador. `AbortError` (el usuario cerró el
   selector sin elegir) no se trata como error.
+- **Desplegable "Abrir otro proyecto de este cliente" y reparación por encabezado (2026-09-17).**
+  Segundo caso real: bajo "Nicolas & Laura Reymondin" salían obras de "Woof Woof" y faltaba su
+  "Sienna Villa D-2" (guardado bajo otra clave). El cliente REAL de un proyecto guardado es el que
+  dice su propio `jsonData.header.cliente` (`clienteDeProyecto`), no la clave del mapa:
+  `fillHeaderObraSel` recorre TODOS los clientes y lista las obras cuyo encabezado normaliza igual
+  que el cliente escrito (value = `clave + OBRA_SEL_SEP + obra`, `abrirProyectoDeCliente` lo parte).
+  `repararProyectosGuardados()` (al arrancar en `loadProgress` y al iniciar sesión en el módulo)
+  mueve cada proyecto a la clave de su encabezado (`repararProyectosPorHeader`, sin pisar si el
+  destino ya tiene esa obra), reescribe el doc en la nube bajo la clave correcta y borra el huérfano.
 - **El autoguardado al proyecto abierto se DESENGANCHA si cambia la cabecera (2026-09-16).** Caso
   real: obras "Villa 11 barandas"/"ALTEA VILLA 11 ventanas" aparecían bajo el cliente "Yess figaro"
   — la hoja de un proyecto abierto se reutilizó cambiando cliente/nombre en la cabecera y (a) el
