@@ -732,8 +732,11 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     proporcional a su columna), las columnas más bajas se alinean al PISO (hueco arriba), el
     marco (`bandRect`) va por columna, y una columna de 1 fila con alto ≠ banda muestra su alto
     como etiqueta dentro (`rowDims`). Alto total = faja + tubo + columna más alta.
-  - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4/cor6_cent/cor6_lat` (correderas —
-    `gridCorN(celda)` da el nº de hojas, `gridCorCentral` marca la única central: `cor6_cent` con 3
+  - `celda` ∈ `GRID_CELDAS`: `pf` (Paño Fijo), `cor2/cor3/cor4/cor4_cent/cor6_cent/cor6_lat` (correderas —
+    `gridCorN(celda)` da el nº de hojas, `gridCorCentral` marca las centrales `cor6_cent` y `cor4_cent`
+    (agregada 2026-09-17: faltaba "4 hojas (central)", `cor4` pasa a llamarse "4 hojas (lateral)" y sus
+    flechas van todas hacia "Hoja interior" como cor3/cor6_lat; `cor4_cent` = flechas R L R L de la suelta,
+    2 vías en planta) con 3
     vías simétricas desde el centro y flechas R L L R R L como la suelta, sin "Hoja int."; `cor6_lat`
     en escalera de 6 vías con todas las flechas hacia el lado de "Hoja interior"; agregadas
     2026-09-05 a pedido del usuario), **galandajes** `gal1/gal2_lat/gal2_cent/gal3_3v/gal4_2v/

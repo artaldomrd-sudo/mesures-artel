@@ -119,7 +119,7 @@ try {
   if (ctx.plegProblemas(st2).length !== 0) throw new Error('633 (797 mm por hoja) no debería avisar');
   ok++;
 } catch (e) { fail++; console.error('  plegable regla hoja máx:', e.message); }
-try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }, { w: 1400, rows: [{ h: 1500, celda: 'osci', apertura: 'adentro_2', hoja_principal: 'izq' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }, { w: 1400, rows: [{ h: 1500, celda: 'osci', apertura: 'adentro_2', hoja_principal: 'izq' }] }, { w: 3000, rows: [{ h: 2500, celda: 'cor4_cent', alu: 'P92' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
 catch (e) { fail++; console.error('  plegable fachada:', e.message); }
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
