@@ -915,7 +915,9 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   (faja superior solo sobre el frente). Resumen: "Faja superior solo sobre el frente". Flechas de
   `cor3` en la fachada: todas hacia el lado de "Hoja interior" (como la suelta; antes alternaban).
   **Cierre "Multipunto de Esquina"** (`cierre: 'multipunto_esquina'`, `CIERRE_COR`): SOLO en el
-  select de cierre de las correderas (pedido explícito), no en puertas; el resumen mapea los
+  select de cierre de las correderas (pedido explícito), no en puertas, y **solo cuando la fachada
+  es de esquina** (`st.esquinaLado`; 2026-09-17 — `cierreCorOpts(cur)` conserva la opción si la
+  celda ya la tenía elegida); el resumen mapea los
   valores de cierre a texto legible (antes imprimía el value crudo). `verify.mjs` cubre `izq` y
   `der` (RENDER OK: 80).
 - **Cotización cliente / `enviarOrden`**: como `type !== 'draw'`, la fachada compuesta sí tiene SVG
