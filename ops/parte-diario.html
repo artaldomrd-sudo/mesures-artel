@@ -134,13 +134,10 @@
     <!-- ===== CONTROL (admin) ===== -->
     <div class="tabpanel" id="tab-control">
         <h2 style="font-size:15px;color:var(--artal-blue);margin:0 0 8px">Encargados que deben enviar el parte cada día</h2>
-        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 8:00 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 8:00 pm gerencia recibe la lista de los que faltan.</p>
+        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 6:30 pm gerencia recibe la lista de los que faltan. Mientras tengan un parte pendiente, no pueden usar ninguna otra pantalla de la plataforma.</p>
         <div class="enc-list" id="enc-list"></div>
-        <div class="bar">
-            <label style="font-size:13px">Jornada (h) <input type="number" id="c-jornada" step="0.5" min="1" max="12" style="width:80px"></label>
-            <label style="font-size:13px">Factor extras <input type="number" id="c-factor" step="0.05" min="1" max="3" style="width:80px"></label>
-            <button class="btn btn-b" onclick="guardarConfig()">Guardar</button>
-        </div>
+        <div class="bar"><button class="btn btn-b" onclick="guardarConfig()">Guardar encargados</button></div>
+        <p class="hint">Costo por hora de cada persona = su costo laboral por día (RRHH → Empleados: sueldo + cargas de ley) ÷ 8 h. Si la ficha no tiene ese costo calculado, se usa sueldo ÷ 23.83 días. Las horas por encima de 8 en un día se cuentan al 135 % (recargo legal de horas extra).</p>
         <h2 style="font-size:15px;color:var(--artal-blue);margin:18px 0 8px">Partes de los últimos 14 días</h2>
         <div id="pend-grid"></div>
     </div>
@@ -198,7 +195,9 @@
         return (conRol.length ? conRol : act).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
     }
     const empPorId = (id) => empleados.find(e => e.id === id);
-    const costoHora = (e) => (e && n2(e.costoDiaReal) > 0) ? n2(e.costoDiaReal) / (n2(config.horasJornada) || 8) : 0;
+    // Base: costo laboral real por día (sueldo + cargas). Si la ficha aún no lo tiene, sueldo ÷ 23.83.
+    const costoDia = (e) => e ? (n2(e.costoDiaReal) > 0 ? n2(e.costoDiaReal) : (n2(e.sueldoBase) > 0 ? n2(e.sueldoBase) / 23.83 : 0)) : 0;
+    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || 8);
 
     // Obras disponibles para el parte: pedidos en flujo de instalación (o completados hace < 45 días),
     // trabajos del calendario (pendientes o cerrados hace < 45 días). Se agrupan por cliente+obra para
@@ -242,7 +241,12 @@
         if (arrancado || !ready.emp || !ready.eq || !ready.cfg || !ready.partes) return;
         arrancado = true;
         const f = document.getElementById('p-fecha');
-        const qf = new URLSearchParams(location.search).get('fecha');
+        const qs = new URLSearchParams(location.search), qf = qs.get('fecha');
+        if (qs.get('bloqueo') === '1') {
+            const b = document.createElement('div'); b.className = 'aviso rojo'; b.id = 'aviso-bloqueo';
+            b.innerHTML = '🔒 <b>Tienes partes diarios sin enviar.</b> Hasta que los envíes no puedes usar el resto de la plataforma. Envía el de cada día pendiente (abajo te los marca) y luego vuelve a Instalación.';
+            document.getElementById('tab-parte').prepend(b);
+        }
         f.value = qf || hoyStr(); f.max = hoyStr();
         if (!esAdmin) f.min = addDias(hoyStr(), -3);   // corrige hasta 3 días atrás; más allá, solo admin
         const mes = hoyStr().slice(0, 7); document.getElementById('o-mes').value = mes; document.getElementById('pe-mes').value = mes;
@@ -386,7 +390,9 @@
                 const e = empPorId(empId);
                 try { await setDoc(doc(db, 'rrhhAsistencia', empId + '_' + fecha), { empleadoId: empId, empleadoNombre: e ? e.nombre : '', fecha, estado: c.ausente ? 'ausente' : 'presente', horasParte: c.horas, origen: 'parte_diario', registradoPor: usuario.nombre, actualizado: serverTimestamp() }, { merge: true }); } catch (_) { }
             }
-            alert('✓ Parte del ' + fmtFecha(fecha) + ' enviado.');
+            const quedan = diasPendientes(enc.email, 7).filter(x => x !== fecha);
+            alert('✓ Parte del ' + fmtFecha(fecha) + ' enviado.' + (quedan.length ? '\n\nTodavía faltan: ' + quedan.map(fmtFecha).join(', ') + '.' : ''));
+            if (!quedan.length && new URLSearchParams(location.search).get('bloqueo') === '1') location.replace('instalacion.html');
         } catch (e) { alert('No se pudo enviar: ' + e.message); }
         btn.disabled = false;
     };
@@ -395,6 +401,7 @@
     function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
     function diasPendientes(email, nDias) {
         const out = []; const ahora = new Date();
+        if (!(config.encargados || []).some(e => e.email === email)) return out;
         for (let k = 0; k < nDias; k++) {
             const f = addDias(hoyStr(), -k);
             if (!esLaborable(f)) continue;
@@ -504,8 +511,6 @@
             .map(([email, u]) => ({ email, nombre: u.nombre || email })).sort((a, b) => a.nombre.localeCompare(b.nombre));
         const sel = new Set((config.encargados || []).map(e => e.email));
         document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
-        document.getElementById('c-jornada').value = n2(config.horasJornada) || 8;
-        document.getElementById('c-factor').value = n2(config.factorExtra) || 1.35;
         // Grilla de 14 días × encargado
         const encs = config.encargados || [];
         const dias = []; for (let k = 0; k < 14; k++) dias.push(addDias(hoyStr(), -k));
@@ -520,8 +525,7 @@
     };
     window.guardarConfig = async function () {
         const encargados = Array.from(document.querySelectorAll('#enc-list input:checked')).map(c => { const u = equipo[c.value] || {}; return { email: c.value, nombre: u.nombre || c.value }; });
-        const horasJornada = n2(document.getElementById('c-jornada').value) || 8, factorExtra = n2(document.getElementById('c-factor').value) || 1.35;
-        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, horasJornada, factorExtra, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
+        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, horasJornada: 8, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
         catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
 

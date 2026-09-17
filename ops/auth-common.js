@@ -126,6 +126,21 @@ export function requireAuth(rolesPermitidos) {
         const m = await import('./mfa.js');
         if (m.requiere2FA(roles) && !m.tieneMFA(user)) await m.inscribirMFA(user, user.email);
       } catch (e) { console.warn('2FA', e && e.message ? e.message : e); }
+      // Parte diario pendiente (encargados de instalación): hasta ponerse al día solo pueden usar
+      // ops/parte-diario.html — desde cualquier otra pantalla se les manda ahí (regla del usuario:
+      // "si no rellenan no pueden hacer más nada en la plataforma"). Admin nunca se bloquea.
+      if (!roles.includes('admin') && pagId !== 'parte-diario.html') {
+        try {
+          const g = await import('./parte-gate.js');
+          const pend = await g.partesPendientes(user.email);
+          if (pend.length) {
+            const carpeta = location.pathname.replace(/[^/]*$/, ''), opsIdx = carpeta.indexOf('/ops/');
+            const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
+            location.replace('../'.repeat(prof) + 'parte-diario.html?bloqueo=1&fecha=' + pend[pend.length - 1]);
+            return;
+          }
+        } catch (e) { console.warn('parte-gate', e && e.message ? e.message : e); }
+      }
       hideOverlay();
       // Renueva en silencio el token de notificaciones de ESTE dispositivo (si el permiso ya fue
       // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo

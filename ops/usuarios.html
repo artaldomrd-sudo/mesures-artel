@@ -55,6 +55,11 @@
     .perm-item .tag { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: #eef4fb; color: var(--artal-blue); }
     .perm-item .tag.extra { background: #e8f8ef; color: #1e8449; }
     .perm-item .tag.bloq { background: #fdecea; color: #c0392b; }
+    /* Al pasar el ratón (o tocar) una página: qué es y para qué sirve, sin salir al panel a averiguarlo. */
+    .perm-item { position: relative; }
+    .perm-item .tip { display: none; position: absolute; left: 24px; top: 100%; z-index: 20; width: min(340px, 80vw); background: #1f2d3d; color: #fff; border-radius: 9px; padding: 9px 11px; font-size: 12px; line-height: 1.45; box-shadow: 0 8px 24px rgba(0,0,0,.25); font-weight: normal; pointer-events: none; }
+    .perm-item .tip b { display: block; color: var(--artal-yellow); margin-bottom: 2px; font-size: 12.5px; }
+    .perm-item:hover .tip, .perm-item:focus-within .tip { display: block; }
     .perm-item.dim { color: #99a; }
     .perm-resumen { font-size: 12.5px; color: #556; margin: 8px 0 0; }
     .msg.ok { color: #16a085; } .msg.err { color: #c0392b; }
@@ -227,7 +232,7 @@
             const items = pags.map(p => {
                 const st = estadoPerm(p.id, roles); total++; if (st.checked) puede++;
                 const tag = st.tag === 'admin' ? '' : st.tag === 'rol' ? '<span class="tag">por rol</span>' : st.tag === 'extra' ? '<span class="tag extra">extra</span>' : st.tag === 'bloq' ? '<span class="tag bloq">bloqueada</span>' : '';
-                return `<label class="perm-item ${st.checked ? '' : 'dim'}"><input type="checkbox" data-pid="${esc(p.id)}" ${st.checked ? 'checked' : ''} ${esAdm ? 'disabled' : ''}> ${esc(p.titulo)} ${tag}</label>`;
+                return `<label class="perm-item ${st.checked ? '' : 'dim'}" title="${esc(p.desc || '')}"><input type="checkbox" data-pid="${esc(p.id)}" ${st.checked ? 'checked' : ''} ${esAdm ? 'disabled' : ''}> ${esc(p.titulo)} ${tag}${p.desc ? `<span class="tip"><b>${esc(p.titulo)}</b>${esc(p.desc)}</span>` : ''}</label>`;
             }).join('');
             return `<div class="perm-grupo"><h4>${esc(g.nombre)} ${esAdm ? '' : `<span class="mini" data-g="${g.id}" data-op="todo">dar todo</span><span class="mini" data-g="${g.id}" data-op="rol">solo lo del rol</span><span class="mini" data-g="${g.id}" data-op="nada">quitar todo</span>`}</h4><div class="perm-lista">${items}</div></div>`;
         }).join('');
@@ -387,9 +392,11 @@
     };
     window.pedirNotificacionesTodos = async function () {
         if (!esAdmin) return;
-        const pend = usuarios.filter(u => u.activo !== false && !u.pedirNotificaciones);
-        if (!pend.length) { alert('Todos los usuarios activos ya tienen el aviso pendiente o no hay usuarios.'); return; }
-        if (!confirm('¿Pedir a ' + pend.length + ' usuario(s) activo(s) que activen las notificaciones?\n\nCada uno verá el aviso con el botón al entrar a la plataforma (también quienes ya las tienen en un dispositivo, por si usan otro).')) return;
+        // Solo a quienes NO tienen ningún dispositivo con notificaciones activas (pedido del usuario 2026-09-17).
+        const tieneNotif = (u) => Object.keys(u.fcmTokens || {}).length > 0 || !!u.fcmToken;
+        const pend = usuarios.filter(u => u.activo !== false && !u.pedirNotificaciones && !tieneNotif(u));
+        if (!pend.length) { alert('Todos los usuarios activos ya tienen las notificaciones activas o el aviso pendiente.'); return; }
+        if (!confirm('¿Pedir a ' + pend.length + ' usuario(s) que activen las notificaciones?\n\n' + pend.map(u => '• ' + (u.nombre || u.email)).join('\n') + '\n\nSolo a quienes no las tienen en ningún dispositivo. Cada uno verá el aviso con el botón al entrar a la plataforma.')) return;
         let ok = 0;
         for (const u of pend) { try { await updateDoc(doc(db, 'usuarios', u.email), { pedirNotificaciones: true, pedirNotificacionesPor: usuario.nombre, pedirNotificacionesFecha: serverTimestamp() }); ok++; } catch (_) { } }
         alert('✓ Aviso pedido a ' + ok + ' usuario(s).');

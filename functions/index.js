@@ -336,8 +336,9 @@ async function recordarArqueo(turno, titulo) {
 
 // ---------- Parte diario de obra (ops/parte-diario.html) ----------
 // Cada encargado de instalación (rrhhConfig/parteDiario.encargados) debe enviar su parte del día
-// (en qué obras trabajó su equipo y cuántas horas). Aviso a las 6 pm y a las 8 pm si falta;
-// a las 8 pm gerencia (admin) recibe además la lista de los que no lo enviaron. Lunes a sábado,
+// (en qué obras trabajó su equipo y cuántas horas). Aviso a las 6:00 pm y a las 6:30 pm si falta;
+// a las 6:30 pm gerencia (admin) recibe además la lista de los que no lo enviaron. Mientras haya un
+// parte pendiente, el encargado queda bloqueado en el resto de la plataforma (ops/parte-gate.js). Lunes a sábado,
 // sin feriados (rrhhFeriados.fecha 'YYYY-MM-DD').
 function hoySantoDomingo() {
     const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }).formatToParts(new Date());
@@ -359,14 +360,14 @@ async function recordarParteDiario(avisarAdmin) {
         const p = await db.doc('partesDiarios/' + id).get();
         if (p.exists) continue;
         faltan.push(e);
-        await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Toma un minuto.', 'ops/parte-diario.html');
+        await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
     }
     if (avisarAdmin && faltan.length) {
         await pushATokens(await tokensPorRol('admin'), '📝 Partes diarios sin enviar', 'Faltan: ' + faltan.map((e) => e.nombre || e.email).join(', '), 'ops/parte-diario.html');
     }
 }
 exports.parteDiario18 = onSchedule({ schedule: '0 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(false); });
-exports.parteDiario20 = onSchedule({ schedule: '0 20 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(true); });
+exports.parteDiario1830 = onSchedule({ schedule: '30 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(true); });
 
 exports.arqueoManana = onSchedule({ schedule: '0 8 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
     await recordarArqueo('am', '🧮 Arqueo de la MAÑANA (8:00)');
