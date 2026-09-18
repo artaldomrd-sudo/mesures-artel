@@ -560,7 +560,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:29</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:32</div>
         </div>
     </div>
     
@@ -1890,10 +1890,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); else p.push('hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)'); }
                 if (celda === 'osci') p.push((o.apertura || '').includes('2') ? ('2 hojas hacia adentro · hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)') : ('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.')));
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
-                if ((isCorS(celda) || gridGal(celda)) && o.penetracionRiel && o.penetracionRiel !== 'no') {
-                    const pm = gridPenetracionMm(o), hmm = parseInt(o.h) || 0;
-                    p.push(pm ? `<span style="color:#1e8449;font-weight:bold;">+ ${pm} mm penetración riel suelo (${o.alu}) = ${hmm + pm} mm alto total hueco</span>` : '<span style="color:#c0392b;">penetración riel: elige la serie E70/E100/E200</span>');
-                }
+                // (la penetración del riel va pegada a la MEDIDA del elemento, ver penetracionCelda)
                 if (o.cierre) p.push(({ '1punto': 'cierre 1 punto', multipunto: 'cierre multipunto', multipunto_esquina: 'cierre multipunto de esquina', llave: 'cierre con llave' })[o.cierre] || ('cierre ' + o.cierre));
                 if (o.cerradura) p.push('cerradura ' + (({ llave: 'llave', mariposa: 'mariposa', smartlock: 'Smartlock' })[o.cerradura] || o.cerradura));
                 if (o.mosquitera) p.push('mosq. ' + (o.mosquitera === 'con' ? 'sí' : o.mosquitera));
@@ -1902,6 +1899,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 return p;
             };
             const nomC = celda => CELDA_NOM[celda] || celda;
+            // Penetración del riel junto a la medida — mismo formato que la línea MEDIDAS TOTALES de la corredera/
+            // galandaje suelta: "… × 2640 mm + 55 mm penetración riel (E200) = 2695 mm alto total hueco".
+            const penetracionCelda = o => {
+                if (!(isCorS(o.celda) || gridGal(o.celda)) || !o.penetracionRiel || o.penetracionRiel === 'no') return '';
+                const pm = gridPenetracionMm(o), hmm = parseInt(o.h) || 0;
+                return pm ? ` <span style="color:#1e8449;font-weight:bold;">+ ${pm} mm penetración riel (${o.alu}) = ${hmm + pm} mm alto total hueco</span>` : ' <span style="color:#c0392b;">+ penetración riel (elige la serie E70/E100/E200)</span>';
+            };
             // Una fila de detalle: nombre en negrita, medida en rojo (clara: ancho × alto), specs en gris.
             const detRow = (name, medida, specsArr) => {
                 const s = (specsArr || []).filter(Boolean);
@@ -1916,9 +1920,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const rows = c.rows || [];
                 if (rows.length === 1) {
                     const r = rows[0];
-                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm`, specList(r.celda, { ...r, w: c.w }));
+                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm` + penetracionCelda(r), specList(r.celda, { ...r, w: c.w }));
                 } else {
-                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
+                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${penetracionCelda(r)}${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
                     filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
@@ -6746,9 +6750,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let cy = colTop, tubosFilas = '';
             rows.forEach((r, ri) => {
                 const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio);
-                if (r.penetracionRiel && r.penetracionRiel !== 'no' && (gridCorN(r.celda) || gridGal(r.celda))) {
-                    const pm = gridPenetracionMm(r);
-                    body += `<text x="${(cx + cw / 2).toFixed(1)}" y="${(cy + rh - 1.6).toFixed(1)}" font-family="Arimo" font-size="3" font-weight="bold" fill="#1e8449" text-anchor="middle" stroke="none">${pm ? '+' + pm + ' riel' : 'riel: ¿serie?'}</text>`;   // nota corta (el detalle completo va en el resumen)
+                if (ri === rows.length - 1 && r.penetracionRiel && r.penetracionRiel !== 'no' && (gridCorN(r.celda) || gridGal(r.celda))) {
+                    // Penetración del riel (usuario 2026-09-18): línea de SUELO al pie de la celda y el riel que
+                    // baja por debajo del suelo lo que penetra (a escala, mínimo visible) con su cota.
+                    const pm = gridPenetracionMm(r), yS = cy + rh, penDH = pm ? Math.max(1.6, pm * (colDH / rowSum)) : 1.6;
+                    body += `<rect x="${(cx + 1).toFixed(1)}" y="${yS.toFixed(1)}" width="${(cw - 2).toFixed(1)}" height="${penDH.toFixed(2)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;   // riel empotrado
+                    body += `<line x1="${(cx - 3).toFixed(1)}" y1="${yS.toFixed(1)}" x2="${(cx + cw + 3).toFixed(1)}" y2="${yS.toFixed(1)}" stroke="#7a828a" stroke-width="1.4"/>`;   // suelo
+                    for (let hx = cx - 3; hx < cx + cw + 3; hx += 2.2) body += `<line x1="${hx.toFixed(1)}" y1="${(yS + 0.2).toFixed(1)}" x2="${(hx - 1.4).toFixed(1)}" y2="${(yS + 1.6).toFixed(1)}" stroke="#b0b8c1" stroke-width="0.5"/>`;   // rayado del suelo
+                    body += `<text x="${(cx - 3.5).toFixed(1)}" y="${(yS + 1.2).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="end" stroke="none">suelo</text>`;
+                    body += pm ? dimLineV(yS, yS + penDH, cx + cw + 2.6, cx + cw, `${pm}`, 2.8) : `<text x="${(cx + cw / 2).toFixed(1)}" y="${(yS + penDH + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#c0392b" text-anchor="middle" stroke="none">riel: ¿serie?</text>`;
                 }
                 if (rows.length > 1 || rowSum !== gAlto) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
                 cy += rh;

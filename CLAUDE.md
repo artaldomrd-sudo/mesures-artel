@@ -232,9 +232,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   izquierda. Se usa igual en tarjeta normal y en CAD/fachada.
 - **Penetración de riel en la Fachada Compuesta** (2026-09-18): fila "Riel suelo" en las celdas
   corredera/galandaje (`cfg.penetracionRiel` `'si'|''`), mm por serie con `gridPenetracionMm(cfg)`
-  (`PENETRACION_MM[cfg.alu]`); nota verde al pie de la celda en el dibujo y en el detalle del
-  resumen "+ 55 mm penetración riel suelo (E200) = 2695 mm alto total hueco" (rojo si la serie no
-  tiene dato). No cambia el alto de la fachada (igual que la suelta no cambia `state.alto`). Las
+  (`PENETRACION_MM[cfg.alu]`); en el dibujo (solo la fila de abajo de la columna) línea de SUELO
+  rayada al pie de la celda y el riel dibujado por debajo del suelo (a escala, mín. 1.6) con su cota;
+  en el resumen va PEGADO A LA MEDIDA como en la suelta (`penetracionCelda`: "1900 × 2640 mm + 55 mm
+  penetración riel (E200) = 2695 mm alto total hueco", rojo si la serie no tiene dato). No cambia el alto de la fachada (igual que la suelta no cambia `state.alto`). Las
   correderas dentro de una FAJA (arriba/abajo) no llevan riel de suelo: `cellExtra(..., enFaja=true)`
   omite la fila (usuario, mismo día).
 - **"+ Penetración riel suelo" (correderas y galandajes, 2026-09-07)**: botón `toggle-btn` junto a
