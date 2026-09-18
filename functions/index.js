@@ -1214,10 +1214,54 @@ function mapFacturaClienteCitrus(f, clientePanel) {
         lineas
     };
 }
-const CAMPOS_CITRUS_VENTA = ['fecha', 'monto', 'itbis', 'descuento', 'montoPagado', 'tercero', 'rnc', 'ncf', 'citrusNumero', 'citrusProforma', 'citrusTipoVenta', 'citrusTiendaId', 'citrusVendedorId', 'citrusClienteId', 'citrusEstatus', 'citrusEcf', 'lineas'];
+const CAMPOS_CITRUS_VENTA = ['fecha', 'monto', 'itbis', 'descuento', 'montoPagado', 'tercero', 'rnc', 'ncf', 'citrusNumero', 'citrusProforma', 'citrusTipoVenta', 'citrusTiendaId', 'citrusVendedorId', 'citrusClienteId', 'citrusEstatus', 'citrusEcf', 'lineas', 'citrusCobro'];
+const metodoCobro = (m) => m.citrusEstatus !== 'Cobrada' ? 'Pendiente de cobro'
+    : 'Cobrado (según Citrus)' + (m.citrusCobro && m.citrusCobro.tipoPago ? ' · ' + m.citrusCobro.tipoPago : '') + (m.citrusCobro && m.citrusCobro.como === 'estimada' ? ' · fecha estimada' : '');
 const CAMPOS_RELLENAR_INGRESO = ['itbis', 'tercero', 'rnc', 'ncf', 'montoPagado'];
 
-async function planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas) {
+
+// Fecha de cobro de las ventas a partir de los `recibo` de Citrus (2026-09-17). Los recibos NO referencian la factura
+// (solo ClienteId, Monto, Fecha, TipoPago; 3 de 267 mencionan el número en el texto), así que se deduce por cliente:
+// (1) un recibo con el monto EXACTO de la factura → fecha cierta (`como:'recibo'`); (2) si no, asignación cronológica
+// FIFO por cliente (avances + pago final): la factura queda cobrada en la fecha del recibo que completa su total
+// (`como:'estimada'`). Medido con datos reales: 34 exactas + 113 estimadas de 237 cobradas; 54 sin recibos que
+// cuadren y 36 sin ClienteId quedan sin fecha. Solo se aplica a facturas con Estatus Cobrada.
+function cobrosPorFactura(facturas, recibos) {
+    const activos = recibos.filter(y => y.Estatus !== 'Cancelado' && y.ClienteId);
+    const recPorCliente = new Map();
+    activos.forEach(y => { const k = Number(y.ClienteId); if (!recPorCliente.has(k)) recPorCliente.set(k, []); recPorCliente.get(k).push(y); });
+    recPorCliente.forEach(arr => arr.sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha))));
+    const facPorCliente = new Map();
+    facturas.filter(x => x.Estatus !== 'Cancelada' && x.ClienteId).forEach(x => { const k = Number(x.ClienteId); if (!facPorCliente.has(k)) facPorCliente.set(k, []); facPorCliente.get(k).push(x); });
+    const montoRec = (y) => r2((Number(y.Monto) || 0) * (Number(y.Tasa) || 1));
+    const totalFac = (x) => r2((Number(x.Monto) || 0) - (Number(x.DescuentoTotal) || 0) + (Number(x.Impuesto) || 0));
+    const out = new Map();   // facturaId → { fechaPago, como, reciboId, tipoPago }
+    facPorCliente.forEach((facs, cid) => {
+        facs.sort((a, b) => String(a.Fecha).localeCompare(String(b.Fecha)));
+        const recs = recPorCliente.get(cid) || [];
+        const usados = new Set();
+        for (const x of facs) {
+            const t = totalFac(x);
+            const c = recs.find(y => !usados.has(y.Id) && Math.abs(montoRec(y) - t) < 0.05);
+            if (c) { usados.add(c.Id); out.set(x.Id, { fechaPago: limpio(c.Fecha).slice(0, 10), como: 'recibo', reciboId: c.Id, tipoPago: limpio(c.TipoPago) }); }
+        }
+        const restantes = recs.filter(y => !usados.has(y.Id));
+        let acum = 0, i = 0, ultimo = null;
+        for (const x of facs) {
+            if (out.has(x.Id)) continue;
+            const t = totalFac(x);
+            while (i < restantes.length && acum < t - 1) { acum += montoRec(restantes[i]); ultimo = restantes[i]; i++; }
+            if (acum >= t - 1 && ultimo) { acum = r2(acum - t); out.set(x.Id, { fechaPago: limpio(ultimo.Fecha).slice(0, 10), como: 'estimada', reciboId: ultimo.Id, tipoPago: limpio(ultimo.TipoPago) }); }
+            else acum = 0;
+        }
+    });
+    return out;
+}
+
+async function planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas, ctx) {
+    let cobros = new Map();
+    try { cobros = cobrosPorFactura(registros, await citrusLeerTodo(ctx, 'recibo')); }
+    catch (e) { console.error('recibos Citrus', e); }   // sin recibos se importa igual, solo sin fecha de cobro
     const clientesSnap = await db.collection('clientes').get();
     const clientePorCitrusId = new Map();
     clientesSnap.forEach(d => { const x = d.data(); if (x.citrusId != null) clientePorCitrusId.set(Number(x.citrusId), { id: d.id, nombre: x.nombre || '' }); });
@@ -1236,6 +1280,9 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
         if (!m.fecha) continue;
         if (desde && m.fecha < desde) { plan.omitidas.antesDeDesde++; continue; }
         if (m.citrusProforma && !incluirProformas) { plan.omitidas.proformas++; continue; }
+        const cobro = m.citrusEstatus === 'Cobrada' ? cobros.get(f.Id) : null;
+        m.citrusCobro = cobro ? { como: cobro.como, reciboId: cobro.reciboId, tipoPago: cobro.tipoPago } : null;
+        if (cobro) { m.fechaPago = cobro.fechaPago; plan.conFechaCobro = (plan.conFechaCobro || 0) + 1; }
         const ex = porCitrusId.get(Number(f.Id)) || (m.ncf && porNcf.get(normNcf(m.ncf))) || porFechaMonto.get(`${m.fecha}|${m.monto}`);
         if (ex) {
             const x = ex.data(); const cambios = {};
@@ -1245,6 +1292,9 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
                 CAMPOS_RELLENAR_INGRESO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
             } else {
                 CAMPOS_CITRUS_VENTA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                // La fecha de cobro nunca pisa una escrita a mano: solo se toca si estaba vacía o si la puso Citrus.
+                if (m.fechaPago && (!limpio(x.fechaPago) || x.citrusCobro) && x.fechaPago !== m.fechaPago) cambios.fechaPago = m.fechaPago;
+                if (m.citrusCobro && /^(Cobrado \(según Citrus\)|Pendiente de cobro)/.test(String(x.metodo || ''))) { const met = metodoCobro(m); if (met !== x.metodo) cambios.metodo = met; }
                 if (m.citrusEstatus === 'Cancelada' && x.citrusEstatus !== 'Cancelada') cambios.concepto = '⚠ ANULADA en Citrus · ' + String(x.concepto || '');
             }
             if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
@@ -1262,7 +1312,7 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
                 ...m,
                 concepto: `${etiqueta} · ${concepto}`,
                 categoria: m.citrusProforma ? 'Venta (proforma, sin NCF)' : 'Venta de productos',
-                centroCosto: '', metodo: m.citrusEstatus === 'Cobrada' ? 'Cobrado (según Citrus)' : 'Pendiente de cobro',
+                centroCosto: '', metodo: metodoCobro(m),
                 cuentaBancoId: '', cuentaBancoNombre: '',
                 notas: `Importada de Citrus · ${m.citrusProforma ? 'PROFORMA (sin comprobante fiscal)' : 'factura fiscal' + (m.citrusEcf ? ' · e-CF ' + m.citrusEcf : '')} · ${m.citrusTipoVenta} · estatus ${m.citrusEstatus}`,
                 origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
@@ -1325,7 +1375,7 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
     } else if (entidad === 'factura-suplidor') {
         planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde);
     } else if (entidad === 'factura-cliente') {
-        await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas);
+        await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas, ctx);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1359,7 +1409,8 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         // Muestra: las más recientes primero (las facturas traen `fecha`; el resto conserva el orden de Citrus).
         muestraCrear: plan.crear.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
         porAnio: plan.porAnio || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
-        omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null
+        omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null,
+        conFechaCobro: plan.conFechaCobro != null ? plan.conFechaCobro : null
     };
     if (!aplicar) return resumen;
     try {
@@ -1396,7 +1447,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
     }
 });
 
-// ---- Sincronización automática diaria (6:30 am RD): trae lo nuevo de Citrus y actualiza estados ----
+// ---- Sincronización automática (6:30 am, 12:30 pm y 5:30 pm RD): trae lo nuevo de Citrus y actualiza estados ----
 // Corre las 4 importaciones con las mismas reglas que los botones (nunca borra, nunca duplica, nunca escribe en
 // Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
 // registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
@@ -1425,7 +1476,7 @@ async function sincronizarCitrus(motivo) {
     await db.collection('citrusSync').doc('ultimo').set(registro);
     return registro;
 }
-exports.citrusSincronizarDiario = onSchedule({ schedule: '30 6 * * *', timeZone: 'America/Santo_Domingo', secrets: [citrusToken, citrusTokenProd], timeoutSeconds: 540, memory: '512MiB' }, async () => {
+exports.citrusSincronizarDiario = onSchedule({ schedule: '30 6,12,17 * * *', timeZone: 'America/Santo_Domingo', secrets: [citrusToken, citrusTokenProd], timeoutSeconds: 540, memory: '512MiB' }, async () => {
     await sincronizarCitrus('programada');
 });
 // Mismo proceso a pedido desde la pantalla (solo admin), para no esperar a la mañana siguiente.
