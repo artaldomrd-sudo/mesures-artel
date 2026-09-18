@@ -950,7 +950,9 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // coinciden por nombre (o por documento) se enlazan y solo se les RELLENAN los campos que tenían
 // vacíos; los nuevos se crean con el mismo id que usa clientes.html (nombre en minúsculas). Con
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
-const IMPORT_ENTIDADES = { cliente: 'clientes', item: 'productos' };
+// 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
+// código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
+const IMPORT_ENTIDADES = { cliente: 'clientes' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
