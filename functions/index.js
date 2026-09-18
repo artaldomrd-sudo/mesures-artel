@@ -1295,9 +1295,12 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
                 CAMPOS_RELLENAR_INGRESO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
             } else {
                 CAMPOS_CITRUS_VENTA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                // Cobro confirmado a mano en el Panel (usuario 2026-09-18: 12 facturas "Facturada" en Citrus que en
+                // realidad ya se cobraron): Citrus no vuelve a ponerlas en pendiente hasta que su estatus pase a Cobrada.
+                if (x.cobradoManual && m.citrusEstatus !== 'Cobrada') { delete cambios.montoPagado; delete cambios.fechaPago; delete cambios.metodo; }
                 // La fecha de cobro nunca pisa una escrita a mano: solo se toca si estaba vacía o si la puso Citrus.
                 if (m.fechaPago && (!limpio(x.fechaPago) || x.citrusCobro) && x.fechaPago !== m.fechaPago) cambios.fechaPago = m.fechaPago;
-                if (m.citrusCobro && /^(Cobrado \(según Citrus\)|Pendiente de cobro)/.test(String(x.metodo || ''))) { const met = metodoCobro(m); if (met !== x.metodo) cambios.metodo = met; }
+                if (!x.cobradoManual && m.citrusCobro && /^(Cobrado \(según Citrus\)|Pendiente de cobro)/.test(String(x.metodo || ''))) { const met = metodoCobro(m); if (met !== x.metodo) cambios.metodo = met; }
                 if (m.citrusEstatus === 'Cancelada' && x.citrusEstatus !== 'Cancelada') cambios.concepto = '⚠ ANULADA en Citrus · ' + String(x.concepto || '');
             }
             if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
