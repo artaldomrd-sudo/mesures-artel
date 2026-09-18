@@ -952,7 +952,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
 // 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
 // código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
-const IMPORT_ENTIDADES = { cliente: 'clientes' };
+const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
@@ -1015,6 +1015,151 @@ function mapItemCitrus(it) {
 // (fotos, categoría, unidad, descripción editada en el panel) no se tocan al re-sincronizar.
 const CAMPOS_CITRUS_ITEM = ['nombre', 'codigo', 'tipo', 'precioVenta', 'costo', 'activo', 'citrusTipoItemId', 'citrusCategoriaId'];
 
+// ---- Proveedores (suplidor) y facturas de compra (factura-suplidor) → Panel ----
+// Citrus real (2026-09-17): 28 suplidores (26 RNC / 2 cédula; Ids 1 y 2 son los genéricos "Suplidor Formal/Informal"
+// de Citrus, se traen porque una factura los referencia) y 158 facturas de compra desde 2025-01 (148 Pagada, 4
+// Facturada = pendiente de pago, 6 Cancelada). Sin `Detalles`: Citrus manda solo el encabezado (NCF, suplidor,
+// Monto = base SIN ITBIS, Impuesto = ITBIS, MontoPagado, TipoGasto DGII, MonedaId 24744 = DOP / 24745 = USD con Tasa).
+const normKeyProveedor = normKeyCliente;
+function mapSuplidorCitrus(s) {
+    const doc = limpio(s.RNC);
+    return {
+        nombre: limpio(s.Nombre),
+        tipoDocumento: TIPO_DOC_CITRUS[s.TipoDocumento] || limpio(s.TipoDocumento),
+        rnc: doc.replace(/\D/g, ''),
+        telefono: limpio(s.Telefono1) || limpio(s.Telefono2),
+        correo: limpio(s.Email).toLowerCase(),
+        direccion: [limpio(s.Direccion1), limpio(s.Direccion2)].filter(Boolean).join(', '),
+        contacto: limpio(s.Contacto),
+        tipo: limpio(s.Tipo),                        // Formal / Informal
+        citrusTipoGasto: limpio(s.TipoGasto),        // tipo de gasto DGII por defecto de ese suplidor
+        citrusEstatus: limpio(s.Estatus)
+    };
+}
+const CAMPOS_RELLENAR_PROVEEDOR = ['tipoDocumento', 'rnc', 'telefono', 'correo', 'direccion', 'contacto', 'tipo', 'citrusTipoGasto'];
+// Tipos de gasto del formato 606 de la DGII → categoría del panel (se usan los nombres que ya existen en el
+// datalist de contabilidad-movimientos.html cuando calzan; el código DGII queda aparte en `citrusTipoGasto`).
+const TIPO_GASTO_DGII = {
+    '01': 'Nómina y honorarios', '02': 'Suministros y servicios', '03': 'Alquiler', '04': 'Activos fijos',
+    '05': 'Gastos de representación', '06': 'Otras deducciones', '07': 'Gastos financieros', '08': 'Gastos extraordinarios',
+    '09': 'Materiales / insumos', '10': 'Adquisición de activos', '11': 'Seguros'
+};
+const MONEDA_CITRUS = { 24744: 'DOP', 24745: 'USD' };
+const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+function mapFacturaSuplidorCitrus(f) {
+    const tasa = Number(f.Tasa) || 1;
+    const moneda = MONEDA_CITRUS[Number(f.MonedaId)] || (tasa !== 1 ? 'USD' : 'DOP');
+    const base = Number(f.Monto) || 0, itbis = Number(f.Impuesto) || 0;
+    const fecha = limpio(f.Fecha).slice(0, 10);
+    const ncf = limpio(f.NCF).toUpperCase();
+    const tipoGasto = limpio(f.TipoGasto);
+    const pagado = f.Estatus === 'Pagada' ? (Number(f.MontoPagado) || (base + itbis)) : (Number(f.MontoPagado) || 0);
+    return {
+        tipo: 'gasto',
+        fecha,
+        monto: r2((base + itbis) * tasa),           // el panel guarda el TOTAL con ITBIS, en pesos
+        itbis: r2(itbis * tasa),
+        montoPagado: r2(pagado * tasa),
+        fechaPago: limpio(f.FechaPago).slice(0, 10),
+        tercero: limpio(f.NombreSuplidor),
+        rnc: limpio(f.RNCSuplidor).replace(/\D/g, ''),
+        ncf,
+        moneda, tasa: moneda === 'DOP' ? 1 : tasa, montoMoneda: moneda === 'DOP' ? null : r2(base + itbis),
+        retencionISR: r2((Number(f.MontoRetencionISR) || 0) * tasa),
+        retencionITBIS: r2((Number(f.MontoRetencionITBIS) || 0) * tasa),
+        citrusTipoGasto: tipoGasto,
+        citrusSuplidorId: Number(f.SuplidorId) || null,
+        citrusEstatus: limpio(f.Estatus)
+    };
+}
+// Campos que Citrus MANDA en una factura ya enlazada (se re-sincronizan). concepto/categoria/centroCosto/notas/
+// comprobantes/metodo quedan en manos del panel una vez creado el movimiento.
+const CAMPOS_CITRUS_FACTURA = ['fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'rnc', 'ncf', 'moneda', 'tasa', 'montoMoneda', 'retencionISR', 'retencionITBIS', 'citrusTipoGasto', 'citrusSuplidorId', 'citrusEstatus'];
+const CAMPOS_RELLENAR_GASTO = ['itbis', 'tercero', 'rnc', 'ncf', 'fechaPago', 'montoPagado'];
+const igualJSON = (a, b) => JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+
+function planSuplidores(registros, existentes, ahora, plan, escrituras, coleccion) {
+    const porCitrusId = new Map(), porNombre = new Map(), porRnc = new Map();
+    existentes.forEach(d => {
+        const x = d.data();
+        if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
+        if (x.nombre) porNombre.set(normNombre(x.nombre), d);
+        if (x.rnc) porRnc.set(String(x.rnc).replace(/\D/g, ''), d);
+    });
+    const idsPlaneados = new Set();
+    for (const s of registros) {
+        const m = mapSuplidorCitrus(s);
+        if (!m.nombre) continue;
+        const ex = porCitrusId.get(Number(s.Id)) || (m.rnc && porRnc.get(m.rnc)) || porNombre.get(normNombre(m.nombre));
+        if (ex) {
+            const x = ex.data(); const cambios = {};
+            if (Number(x.citrusId) !== Number(s.Id)) cambios.citrusId = Number(s.Id);
+            CAMPOS_RELLENAR_PROVEEDOR.forEach(k => { if (!limpio(x[k]) && m[k]) cambios[k] = m[k]; });
+            if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: x.nombre || m.nombre, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+            else plan.sinCambios.push(x.nombre || m.nombre);
+        } else {
+            let id = normKeyProveedor(m.nombre);
+            if (!id || idsPlaneados.has(id)) id = `${id || 'proveedor'}-citrus-${s.Id}`;
+            idsPlaneados.add(id);
+            const generico = /^suplidor (formal|informal)$/i.test(m.nombre);
+            plan.crear.push({ id, nombre: m.nombre, documento: m.rnc ? `${m.tipoDocumento} ${m.rnc}` : '' });
+            escrituras.push([db.collection(coleccion).doc(id), {
+                ...m, citrusId: Number(s.Id), estado: s.Estatus === 'Activo' && !generico ? 'activo' : 'inactivo',
+                notas: generico ? 'Registro genérico de Citrus (no es un proveedor real)' : '',
+                origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+            }, true]);
+        }
+    }
+}
+
+function planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde) {
+    // Solo gastos del panel: por citrusId → por NCF → por fecha + monto total (regla #5: no duplicar lo que
+    // Andrea ya registró a mano; un match se ENLAZA, nunca se crea de nuevo).
+    const porCitrusId = new Map(), porNcf = new Map(), porFechaMonto = new Map();
+    existentes.forEach(d => {
+        const x = d.data();
+        if (x.tipo !== 'gasto') return;
+        if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
+        if (limpio(x.ncf)) porNcf.set(limpio(x.ncf).toUpperCase(), d);
+        if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+    });
+    plan.omitidas = { canceladas: 0, antesDeDesde: 0 };
+    plan.totalCrear = 0;
+    for (const f of registros) {
+        const m = mapFacturaSuplidorCitrus(f);
+        if (!m.fecha) continue;
+        if (desde && m.fecha < desde) { plan.omitidas.antesDeDesde++; continue; }
+        const ex = porCitrusId.get(Number(f.Id)) || (m.ncf && porNcf.get(m.ncf)) || porFechaMonto.get(`${m.fecha}|${m.monto}`);
+        if (ex) {
+            const x = ex.data(); const cambios = {};
+            if (Number(x.citrusId) !== Number(f.Id)) {
+                // Enlace de un gasto que ya existía en el panel: se marca y solo se rellenan campos vacíos.
+                cambios.citrusId = Number(f.Id); cambios.citrusEstatus = m.citrusEstatus; cambios.citrusTipoGasto = m.citrusTipoGasto; cambios.citrusSuplidorId = m.citrusSuplidorId;
+                CAMPOS_RELLENAR_GASTO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
+            } else {
+                CAMPOS_CITRUS_FACTURA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                if (m.citrusEstatus === 'Cancelada' && x.citrusEstatus !== 'Cancelada') cambios.concepto = '⚠ ANULADA en Citrus · ' + String(x.concepto || '');
+            }
+            if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+            else plan.sinCambios.push(`${m.fecha} · ${m.tercero}`);
+        } else {
+            if (m.citrusEstatus === 'Cancelada') { plan.omitidas.canceladas++; continue; }
+            const id = `citrus-fs-${f.Id}`;
+            const cat = TIPO_GASTO_DGII[m.citrusTipoGasto] || 'Otro gasto';
+            plan.crear.push({ id, nombre: `${m.fecha} · ${m.tercero}${m.ncf ? ' · ' + m.ncf : ''}`, precio: m.monto });
+            plan.totalCrear = r2(plan.totalCrear + m.monto);
+            escrituras.push([db.collection(coleccion).doc(id), {
+                ...m,
+                concepto: `Factura ${m.ncf || 'sin NCF'} · ${m.tercero}`,
+                categoria: cat, centroCosto: '', metodo: m.citrusEstatus === 'Pagada' ? 'Pagado (según Citrus)' : 'Pendiente de pago',
+                cuentaBancoId: '', cuentaBancoNombre: '', proveedorId: normKeyProveedor(m.tercero),
+                notas: `Importada de Citrus · tipo de gasto DGII ${m.citrusTipoGasto || '—'} · estatus ${m.citrusEstatus}` + (m.moneda !== 'DOP' ? ` · ${m.moneda} ${m.montoMoneda} a tasa ${m.tasa}` : ''),
+                origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+            }, true]);
+        }
+    }
+}
+
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const admin = await callerAdmin(req);
@@ -1068,6 +1213,11 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
                 }, true]);
             }
         }
+    } else if (entidad === 'suplidor') {
+        planSuplidores(registros, existentes, ahora, plan, escrituras, coleccion);
+    } else if (entidad === 'factura-suplidor') {
+        const desde = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.desde) || '')) ? req.body.desde : '';
+        planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1098,7 +1248,8 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
         entidad, coleccion, entorno: ctx.entorno, aplicado: aplicar,
         enCitrus: registros.length, enPanelAntes: existentes.size,
         crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
-        muestraCrear: plan.crear.slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25)
+        muestraCrear: plan.crear.slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
+        omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null
     };
     if (!aplicar) { res.status(200).json(resumen); return; }
     try {

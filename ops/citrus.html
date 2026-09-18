@@ -129,7 +129,7 @@
 
     <div class="box">
         <h2>4) Importar de Citrus al Panel (Etapa 1: clientes y productos)</h2>
-        <p style="font-size:13px;color:#555;margin:0 0 12px;">Trae los <b>clientes</b> de tu Citrus real a la sección Clientes del Panel, guardando el id de Citrus en cada ficha. Solo <b>lee</b> de Citrus; escribe en el Panel. Reglas: ningún cliente del Panel se borra; los que coinciden por nombre o documento se enlazan y solo se les rellenan los campos vacíos; los productos ya importados se actualizan (nombre, precio, costo, estado) sin tocar fotos ni categoría. Primero mira la <b>vista previa</b> (no escribe nada).</p>
+        <p style="font-size:13px;color:#555;margin:0 0 12px;">Trae los <b>clientes</b>, los <b>proveedores</b> y las <b>facturas de compra</b> de tu Citrus real al Panel (Clientes, Proveedores y Gastos), guardando el id de Citrus en cada registro. Solo <b>lee</b> de Citrus; escribe en el Panel. Reglas: ningún cliente del Panel se borra; los que coinciden por nombre o documento se enlazan y solo se les rellenan los campos vacíos; las facturas de compra entran como gastos y NUNCA duplican uno ya registrado a mano (se enlazan por NCF o por fecha + monto); las anuladas en Citrus no se traen. Primero mira la <b>vista previa</b> (no escribe nada).</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
                 <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">👤 Clientes → <code>clientes</code></div>
@@ -139,6 +139,19 @@
             <div style="border:1px dashed #cfd6de;border-radius:10px;padding:12px;background:#f6f7f9;color:#666;">
                 <div style="font-weight:600;color:#666;margin-bottom:6px;">📦 Productos (ítems) — <b>no se importan</b></div>
                 <div style="font-size:12.5px;line-height:1.45;">Decisión 2026-09-17: en Citrus los 1.778 ítems son líneas de cotización sin código, no un catálogo. Se verá más adelante cómo manejar los productos; por ahora el Panel no los trae.</div>
+            </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+            <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
+                <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">🏭 Proveedores (suplidores) → <code>proveedores</code></div>
+                <button class="act" id="btn-imp-suplidor-ver" onclick="importar('suplidor', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+                <button class="act" id="btn-imp-suplidor-ok" onclick="importar('suplidor', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+            </div>
+            <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
+                <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">🧾 Facturas de compra → Gastos (<code>contaMovimientos</code>)</div>
+                <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12.5px;"><label for="imp-desde" style="margin:0;">Desde</label><input type="date" id="imp-desde" style="width:auto;"><span style="color:#777;">(vacío = todas, desde 2025)</span></div>
+                <button class="act" id="btn-imp-factura-ver" onclick="importar('factura-suplidor', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+                <button class="act" id="btn-imp-factura-ok" onclick="importar('factura-suplidor', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
             </div>
         </div>
         <div id="imp-resumen" style="display:none;margin-top:12px;font-size:13.5px;line-height:1.5;"></div>
@@ -295,16 +308,17 @@
     const FN_IMPORT = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusImportar';
     const escI = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     window.importar = async function (entidad, aplicar) {
-        const nom = entidad === 'cliente' ? 'clientes' : 'productos';
+        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra' }[entidad] || entidad;
         if (aplicar && !confirm('Se importarán los ' + nom + ' de tu Citrus real al Panel (no se borra nada del Panel; no se escribe nada en Citrus). ¿Continuar?')) return;
-        const btns = ['btn-imp-cliente-ver', 'btn-imp-cliente-ok'].map(id => document.getElementById(id)).filter(Boolean);
+        const btns = Array.from(document.querySelectorAll('[id^="btn-imp-"]'));
+        const desde = entidad === 'factura-suplidor' ? (document.getElementById('imp-desde').value || '') : '';
         btns.forEach(b => b.disabled = true);
         setEstado((aplicar ? 'Importando ' : 'Calculando vista previa de ') + nom + ' desde Citrus… (puede tardar unos segundos)', '');
         const box = document.getElementById('imp-resumen'); box.style.display = 'none';
         document.getElementById('out').style.display = 'none'; document.getElementById('tabla').style.display = 'none';
         try {
             const token = await auth.currentUser.getIdToken();
-            const r = await fetch(FN_IMPORT, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ entidad, aplicar }) });
+            const r = await fetch(FN_IMPORT, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ entidad, aplicar, desde }) });
             const c = await r.json().catch(() => null);
             if (r.status === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
             if (!c) { setEstado('Respuesta vacía del puente (HTTP ' + r.status + ').', 'err'); return; }
@@ -313,6 +327,8 @@
             const li = (arr, f) => arr.length ? '<ul style="margin:4px 0 10px 18px;padding:0;">' + arr.map(f).join('') + '</ul>' : '';
             box.innerHTML = '<b>' + c.enPanelAntes + '</b> en el Panel antes · <b style="color:#16a085;">' + c.crear + ' nuevos</b> · <b style="color:#2471a3;">' + c.actualizar + ' a enlazar/actualizar</b> · ' + c.sinCambios + ' sin cambios'
                 + (aplicar ? ' · <b>' + c.escritos + ' escritos</b>' : '')
+                + (c.totalCrear != null ? ' · total nuevos <b>RD$ ' + Number(c.totalCrear).toLocaleString('es-DO', { minimumFractionDigits: 2 }) + '</b>' : '')
+                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') : '')
                 + (c.muestraCrear.length ? '<div style="margin-top:8px;color:#16a085;font-weight:600;">Nuevos (primeros ' + c.muestraCrear.length + '):</div>' + li(c.muestraCrear, x => '<li>' + escI(x.nombre) + (x.documento ? ' <span style="color:#777;">· ' + escI(x.documento) + '</span>' : '') + (x.precio ? ' <span style="color:#777;">· RD$ ' + Number(x.precio).toLocaleString('es-DO') + '</span>' : '') + '</li>') : '')
                 + (c.muestraActualizar.length ? '<div style="margin-top:4px;color:#2471a3;font-weight:600;">A enlazar/actualizar (primeros ' + c.muestraActualizar.length + '):</div>' + li(c.muestraActualizar, x => '<li>' + escI(x.nombre) + ' <span style="color:#777;">· ' + escI(x.campos.join(', ')) + '</span></li>') : '');
             box.style.display = 'block';
