@@ -875,9 +875,15 @@ exports.citrusRead = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: 
     const accion = CITRUS_LECTURA_PATH[entidad] || 'extraccionDatos';
     const pagina = Number(req.body && req.body.pagina) || 0;
     const params = new URLSearchParams();
-    if (accion === 'extraccionDatos') {   // /buscar no pagina ni acepta estos params
+    if (accion === 'extraccionDatos') {
         if (pagina > 0) params.set('request.indiceDePagina', String(pagina));
         if (req.body && req.body.detalles) params.set('request.cargarReferencias', 'true');
+    } else if (accion === 'buscar') {
+        // /buscar SÍ pagina (de 25 en 25 por defecto — comprobado 2026-09-17 contra Citrus real: sin
+        // estos params solo llegaban 25 de las 352 cuentas). Los params van con el prefijo `cuentaWhere.`
+        // (doc v5 pág. 229): pedimos 1000 por página para traer el catálogo completo de una vez.
+        params.set('cuentaWhere.cantidadPorPagina', '1000');
+        params.set('cuentaWhere.pagina', String(pagina));
     }
     const qs = params.toString();
     const url = `${ctx.base}/v5/${entidad}/${accion}${qs ? '?' + qs : ''}`;
