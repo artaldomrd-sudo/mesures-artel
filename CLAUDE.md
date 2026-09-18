@@ -898,7 +898,13 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   ala (rieles/arcos) sobresale. Las etiquetas int/ext se mueven al lado derecho del frente cuando
   el ala está a la izquierda. Resumen: línea "Fachada de esquina (en L): ala … + frente …".
   **Giro y ángulo del ala (2026-09-18, usuario: "más opciones de configuración de esquina")**:
-  `esquinaGiro` `'adentro'` (default) | `'afuera'` (fila "Giro") y `esquinaAngulo` (90 default; la
+  **UI simplificada (mismo día, "giro 1, giro 2… no se entiende nada de esa frase")**: select
+  "Esquina" (sin / con), "Giro 1 └ · 2 ┌ · 3 ┘ · 4 ┐" (`ESQ_GIROS` ↔ `esquinaLado`+`esquinaGiro`,
+  `esquinaGiroN`/`esquinaGiroGlifo`, setter `gridSetEsquinaGiroN`), "Ala" (columnas) y "Planta"
+  (`planInterior` `'arriba'` default | `'abajo'`: solo invierte las etiquetas int/ext de la planta, el
+  dibujo no cambia — el usuario dijo que la planta ya salía bien, solo las etiquetas). Resumen:
+  "Fachada de esquina · Giro 4 ┐: ala derecha de 1900 mm (1 columna) + frente de 1090 mm".
+  `esquinaGiro` `'adentro'` (default) | `'afuera'` y `esquinaAngulo` (90 default; la
   lógica admite otros ángulos pero el selector se quitó de la UI a pedido del usuario: "90° es
   suficiente, solo quiero girar en todas las posibilidades" → lado izq/der × giro adentro/afuera). La planta calcula la dirección del ala `dW` y su normal `nW` rotando las del frente
   (`rotV`, φ = 180 − ángulo; izq adentro = +φ, der adentro = −φ, afuera invierte) y arma la matriz

@@ -560,7 +560,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:12</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:18</div>
         </div>
     </div>
     
@@ -1990,7 +1990,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                         const ala = lado === 'izq' ? cols.slice(0, n) : cols.slice(cols.length - n);
                         const frente = lado === 'izq' ? cols.slice(n) : cols.slice(0, cols.length - n);
                         const mm = arr => arr.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
-                        return `<div style="margin-top:2px;"><b>Fachada de esquina (en L):</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}, gira hacia ${state.esquinaGiro === 'afuera' ? 'AFUERA' : 'adentro'}${(parseFloat(state.esquinaAngulo) || 90) !== 90 ? ' a ' + (parseFloat(state.esquinaAngulo) || 90) + '°' : ''}) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.${[['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].filter(([, f]) => f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')).map(([pos, f]) => ` Faja ${pos} solo sobre ${f.esquinaSolo === 'ala' ? 'el ala' : 'el frente'}.`).join('')}</div>`;
+                        return `<div style="margin-top:2px;"><b>Fachada de esquina · Giro ${esquinaGiroN(state)} ${esquinaGiroGlifo(state)}:</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.${state.planInterior === 'abajo' ? ' Planta: exterior arriba, interior abajo.' : ''}${[['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].filter(([, f]) => f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')).map(([pos, f]) => ` Faja ${pos} solo sobre ${f.esquinaSolo === 'ala' ? 'el ala' : 'el frente'}.`).join('')}</div>`;
                     })()}
                 </div>
                 <div style="color:#888; font-size:11px; letter-spacing:.5px; margin-bottom:2px;">DETALLE POR ELEMENTO</div>
@@ -6377,6 +6377,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         return ((state.fajaArriba && !(iFa && iFa.local)) ? g : 0) + (state.fajaAbajo ? g : 0);
     }
     function gridEntreExtraW(state) { const n = (state.cols || []).length; return gridEntreSuma(state) && n > 1 ? (n - 1) * gridTuboG(state.tubos) : 0; }
+    // Giro de la esquina como número (usuario 2026-09-18: "giro 1, giro 2… sin tanta explicación"):
+    // 1 = └ ala izquierda hacia arriba · 2 = ┌ ala izquierda hacia abajo · 3 = ┘ ala derecha hacia arriba ·
+    // 4 = ┐ ala derecha hacia abajo (arriba/abajo en la planta; adentro/afuera internamente).
+    const ESQ_GIROS = [[1, 'izq', 'adentro', '└'], [2, 'izq', 'afuera', '┌'], [3, 'der', 'adentro', '┘'], [4, 'der', 'afuera', '┐']];
+    function esquinaGiroN(state) { const g = ESQ_GIROS.find(x => x[1] === state.esquinaLado && x[2] === (state.esquinaGiro || 'adentro')); return g ? g[0] : 0; }
+    function esquinaGiroGlifo(state) { const g = ESQ_GIROS.find(x => x[0] === esquinaGiroN(state)); return g ? g[3] : ''; }
     function gridBandAlto(state) { const m = Math.max(0, ...((state.cols || []).map(c => gridColAlto(c, state)))); return m || (parseInt(state.gridAlto) || 0); }
     function gridCorCentral(celda) { return celda === 'cor6_cent' || celda === 'cor4_cent'; }
     // Galandajes en la fachada (mismos 7 tipos y nombres que el menú lateral). 'central' = hojas que
@@ -6971,8 +6977,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             }
             // int/ext una sola vez (interior arriba, exterior abajo — vista exterior), como drawPlanView
             const lblX = esqLado === 'izq' ? (mainCols[mainCols.length - 1].x + mainCols[mainCols.length - 1].w + 6) : (offMain - 6);
-            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">int</text>`;
-            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ext</text>`;
+            // Etiquetas int/ext: por defecto interior arriba (vista exterior); el usuario puede invertirlas
+            // (`planInterior: 'abajo'`) para que la planta diga lo correcto en su obra (2026-09-18).
+            const intAbajo = state.planInterior === 'abajo';
+            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'ext' : 'int'}</text>`;
+            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'int' : 'ext'}</text>`;
             planExtra = (planY + Math.max(downNeed, wMaxY, 8) + 4) - anchoBottom;
         }
         const vbY = (esqLado ? -14 : -10) - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
@@ -7128,16 +7137,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         {
             const esq = st.esquinaLado || '';
             const nE = Math.min(Math.max(1, parseInt(st.esquinaCols) || 1), Math.max(1, cols.length - 1));
-            const ESQ = [['', 'Sin esquina (fachada recta)'], ['izq', 'Esquina a la IZQUIERDA (gira el ala izquierda)'], ['der', 'Esquina a la DERECHA (gira el ala derecha)']];
+            const ESQ = [['', 'Sin esquina (fachada recta)'], ['si', 'Con esquina (fachada en L)']];
             const NCOL = Array.from({ length: Math.max(1, cols.length - 1) }, (_, i) => [String(i + 1), (i + 1) + (i ? ' columnas' : ' columna') + ' en el ala']);
+            const GIROS = ESQ_GIROS.map(g => [String(g[0]), `Giro ${g[0]}  ${g[3]}`]);
+            const INTP = [['arriba', 'Interior arriba · exterior abajo'], ['abajo', 'Exterior arriba · interior abajo']];
             // Siempre visible (el usuario no la encontraba con 1 sola columna). Con una sola columna no hay
             // nada que girar: se avisa que hace falta una 2ª columna (una por cada lado de la esquina).
             const aviso = cols.length < 2 ? `<div style="grid-column:1 / -1;font-size:11px;color:#a55;">Para la esquina hacen falta al menos 2 columnas (una a cada lado): agrega otra con "+ Columna".</div>` : '';
             h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 8px;background:#eef6ff;border-radius:6px;padding:6px;">
-                <label style="${gbl}">Esquina</label><select style="${inp}" onchange="gridSetEsquina(${id},this.value)">${opt(ESQ, esq)}</select>
+                <label style="${gbl}">Esquina</label><select style="${inp}" onchange="gridSetEsquina(${id},this.value)">${opt(ESQ, esq ? 'si' : '')}</select>
+                ${esq && cols.length >= 2 ? `<label style="${gbl}">Giro</label><select style="${inp}font-size:14px;" onchange="gridSetEsquinaGiroN(${id},this.value)">${opt(GIROS, String(esquinaGiroN(st) || 1))}</select>` : ''}
                 ${esq && cols.length >= 2 ? `<label style="${gbl}">Ala</label><select style="${inp}" onchange="gridSetEsquinaCols(${id},this.value)">${opt(NCOL, String(nE))}</select>` : ''}
-                ${esq && cols.length >= 2 ? `<label style="${gbl}">Giro</label><select style="${inp}" onchange="gridSetEsquinaGiro(${id},this.value)"><option value="adentro" ${(st.esquinaGiro || 'adentro') === 'adentro' ? 'selected' : ''}>El ala gira hacia ADENTRO (la L cierra hacia el interior)</option><option value="afuera" ${st.esquinaGiro === 'afuera' ? 'selected' : ''}>El ala gira hacia AFUERA (la L abre hacia el exterior)</option></select>` : ''}
-                <!-- Ángulo: fijo a 90° (el usuario no lo necesita, 2026-09-18); la lógica de esquinaAngulo queda por si hiciera falta -->
+                <label style="${gbl}" title="Qué lado de la vista en planta es el interior de la casa">Planta</label><select style="${inp}" onchange="gridSetPlanInterior(${id},this.value)">${opt(INTP, st.planInterior === 'abajo' ? 'abajo' : 'arriba')}</select>
                 ${esq ? aviso : ''}
             </div>`;
         }
@@ -7294,7 +7305,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Alineación de una banda más angosta dentro del ancho total (fachada irregular)
     window.gridSetAlign = (id, v) => { cardsState[id].gridAlign = v; gridDraw(id); };
     window.gridSetVerPlanta = (id, v) => { cardsState[id].verPlanta = !!v; gridDraw(id); };
-    window.gridSetEsquina = (id, v) => { cardsState[id].esquinaLado = v || ''; gridFull(id); };
+    window.gridSetEsquina = (id, v) => { const st = cardsState[id]; st.esquinaLado = v === 'si' ? (st.esquinaLado || 'izq') : (v === 'izq' || v === 'der') ? v : ''; gridFull(id); };
+    window.gridSetEsquinaGiroN = (id, v) => { const g = ESQ_GIROS.find(x => x[0] === parseInt(v)); if (!g) return; cardsState[id].esquinaLado = g[1]; cardsState[id].esquinaGiro = g[2]; gridDraw(id); };
+    window.gridSetPlanInterior = (id, v) => { cardsState[id].planInterior = v === 'abajo' ? 'abajo' : 'arriba'; gridDraw(id); };
     window.gridSetFajaSobre = (id, side, v) => {
         const f = cardsState[id][side === 'arriba' ? 'fajaArriba' : 'fajaAbajo']; if (!f) return;
         delete f.desde; delete f.hasta; f.esquinaSolo = '';
