@@ -1426,6 +1426,14 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 500, resumen });
     }
     console.log('importarDeCitrus', quien, entidad, `crear=${plan.crear.length} actualizar=${plan.actualizar.length}`);
+    // Registro por entidad (lo lee ops/citrus.html para marcar "ya importado" y poner el botón en gris).
+    try {
+        await db.collection('citrusSync').doc('importaciones').set({ [entidad]: {
+            fecha: new Date().toISOString(), quien: String(quien || ''), enCitrus: registros.length,
+            crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
+            totalPanel: existentes.size + plan.crear.length
+        } }, { merge: true });
+    } catch (e) { console.error('citrusSync/importaciones', e); }
     return { ...resumen, escritos: escrituras.length };
 }
 

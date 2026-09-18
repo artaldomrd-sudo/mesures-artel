@@ -135,6 +135,7 @@
                 <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">👤 Clientes → <code>clientes</code></div>
                 <button class="act" id="btn-imp-cliente-ver" onclick="importar('cliente', false)" style="background:#5d6d7e;">👁 Vista previa</button>
                 <button class="act" id="btn-imp-cliente-ok" onclick="importar('cliente', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-cliente" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
             </div>
             <div style="border:1px dashed #cfd6de;border-radius:10px;padding:12px;background:#f6f7f9;color:#666;">
                 <div style="font-weight:600;color:#666;margin-bottom:6px;">📦 Productos (ítems) — <b>no se importan</b></div>
@@ -146,12 +147,14 @@
                 <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">🏭 Proveedores (suplidores) → <code>proveedores</code></div>
                 <button class="act" id="btn-imp-suplidor-ver" onclick="importar('suplidor', false)" style="background:#5d6d7e;">👁 Vista previa</button>
                 <button class="act" id="btn-imp-suplidor-ok" onclick="importar('suplidor', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-suplidor" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
             </div>
             <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
                 <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">🧾 Facturas de compra → Gastos (<code>contaMovimientos</code>)</div>
                 <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12.5px;"><label for="imp-desde" style="margin:0;">Desde</label><input type="date" id="imp-desde" style="width:auto;"><span style="color:#777;">(vacío = todas, desde 2025)</span></div>
                 <button class="act" id="btn-imp-factura-ver" onclick="importar('factura-suplidor', false)" style="background:#5d6d7e;">👁 Vista previa</button>
                 <button class="act" id="btn-imp-factura-ok" onclick="importar('factura-suplidor', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-factura" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
             </div>
         </div>
         <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
@@ -160,6 +163,7 @@
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12.5px;"><label for="imp-desde-diario" style="margin:0;">Desde</label><input type="date" id="imp-desde-diario" style="width:auto;"><span style="color:#777;">(vacío = todo, desde 2025)</span></div>
             <button class="act" id="btn-imp-diario-ver" onclick="importar('diario', false)" style="background:#5d6d7e;">👁 Vista previa</button>
             <button class="act" id="btn-imp-diario-ok" onclick="importar('diario', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-diario" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
         </div>
         <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
             <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">💰 Facturas de venta → Ingresos (<code>contaMovimientos</code>)</div>
@@ -170,6 +174,7 @@
             <div style="font-size:12.5px;color:#666;margin-bottom:8px;">En Citrus hay facturas <b>fiscales</b> (NCF B01/B02/E31/E32) y <b>proformas</b> numeradas sin NCF, ambas marcadas como cobradas. Las proformas entran con la categoría «Venta (proforma, sin NCF)» para poder separarlas en los reportes. Las anuladas no se traen.</div>
             <button class="act" id="btn-imp-venta-ver" onclick="importar('factura-cliente', false)" style="background:#5d6d7e;">👁 Vista previa</button>
             <button class="act" id="btn-imp-venta-ok" onclick="importar('factura-cliente', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-venta" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
         </div>
         <div style="margin-top:14px;padding:12px;border-radius:10px;background:#eef6ff;border:1px solid #cfe0f5;font-size:13px;line-height:1.5;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -382,6 +387,22 @@
         el.innerHTML = 'Última: <b>' + escI(cuando) + '</b> (' + escI(r.motivo || '') + (r.omitida ? ' · omitida: ' + escI(r.omitida) : '') + ')' + (partes.length ? ' · ' + partes.join(' · ') : '') + (r.duracionSeg != null ? ' · ' + r.duracionSeg + ' s' : '');
     }
     onSnapshot(doc(db, 'citrusSync', 'ultimo'), (snap) => pintarSync(snap.exists() ? snap.data() : null), () => {});
+    // ---- "Ya importado": la función guarda en citrusSync/importaciones fecha y cantidades por entidad;
+    //      aquí se marca la tarjeta y el botón pasa a gris "Volver a importar (solo trae lo nuevo)". ----
+    const SUFIJO = { cliente: 'cliente', suplidor: 'suplidor', 'factura-suplidor': 'factura', diario: 'diario', 'factura-cliente': 'venta' };
+    function pintarImportaciones(r) {
+        Object.keys(SUFIJO).forEach(ent => {
+            const suf = SUFIJO[ent], est = document.getElementById('imp-estado-' + suf), btn = document.getElementById('btn-imp-' + suf + '-ok');
+            if (!est || !btn) return;
+            const x = r && r[ent];
+            if (!x) { est.style.display = 'none'; btn.style.background = '#16a085'; btn.textContent = '⬇ Importar al Panel'; return; }
+            const cuando = x.fecha ? new Date(x.fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+            est.innerHTML = '✓ <b>Ya importado</b> el ' + escI(cuando) + ' · ' + x.enCitrus + ' en Citrus · ' + x.crear + ' nuevos, ' + x.actualizar + ' actualizados' + (x.quien && !/^programada/.test(x.quien) ? ' · por ' + escI(x.quien) : '');
+            est.style.display = 'block';
+            btn.style.background = '#95a5a6'; btn.textContent = '↻ Volver a importar (solo trae lo nuevo)';
+        });
+    }
+    onSnapshot(doc(db, 'citrusSync', 'importaciones'), (snap) => pintarImportaciones(snap.exists() ? snap.data() : null), () => {});
     window.sincronizarAhora = async function () {
         const btn = document.getElementById('btn-sync-ahora'); btn.disabled = true;
         setEstado('Sincronizando todo con Citrus… (puede tardar un minuto)', '');
