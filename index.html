@@ -560,7 +560,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:18</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:26</div>
         </div>
     </div>
     
@@ -1890,6 +1890,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if ((celda === 'puerta' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); else p.push('hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)'); }
                 if (celda === 'osci') p.push((o.apertura || '').includes('2') ? ('2 hojas hacia adentro · hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)') : ('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.')));
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
+                if ((isCorS(celda) || gridGal(celda)) && o.penetracionRiel && o.penetracionRiel !== 'no') {
+                    const pm = gridPenetracionMm(o), hmm = parseInt(o.h) || 0;
+                    p.push(pm ? `<span style="color:#1e8449;font-weight:bold;">+ ${pm} mm penetración riel suelo (${o.alu}) = ${hmm + pm} mm alto total hueco</span>` : '<span style="color:#c0392b;">penetración riel: elige la serie E70/E100/E200</span>');
+                }
                 if (o.cierre) p.push(({ '1punto': 'cierre 1 punto', multipunto: 'cierre multipunto', multipunto_esquina: 'cierre multipunto de esquina', llave: 'cierre con llave' })[o.cierre] || ('cierre ' + o.cierre));
                 if (o.cerradura) p.push('cerradura ' + (({ llave: 'llave', mariposa: 'mariposa', smartlock: 'Smartlock' })[o.cerradura] || o.cerradura));
                 if (o.mosquitera) p.push('mosq. ' + (o.mosquitera === 'con' ? 'sí' : o.mosquitera));
@@ -6385,6 +6389,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function esquinaGiroGlifo(state) { const g = ESQ_GIROS.find(x => x[0] === esquinaGiroN(state)); return g ? g[3] : ''; }
     function gridBandAlto(state) { const m = Math.max(0, ...((state.cols || []).map(c => gridColAlto(c, state)))); return m || (parseInt(state.gridAlto) || 0); }
     function gridCorCentral(celda) { return celda === 'cor6_cent' || celda === 'cor4_cent'; }
+    // Penetración del riel en el suelo de una celda corredera/galandaje de la fachada (usuario 2026-09-18,
+    // "igual que en correderas normal"): misma tabla por serie que la tarjeta suelta (PENETRACION_MM:
+    // E70 45 · E100 55 · E200 55). Devuelve mm (0 si no está marcada o la serie no tiene dato).
+    function gridPenetracionMm(cfg) { return (cfg && cfg.penetracionRiel && cfg.penetracionRiel !== 'no') ? (PENETRACION_MM[cfg.alu] || 0) : 0; }
     // Galandajes en la fachada (mismos 7 tipos y nombres que el menú lateral). 'central' = hojas que
     // pliegan hacia los DOS lados (bolsillo a cada lado): no tiene sentido en una esquina, por eso el
     // selector los oculta cuando la fachada es de esquina (pedido explícito del usuario).
@@ -6738,6 +6746,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let cy = colTop, tubosFilas = '';
             rows.forEach((r, ri) => {
                 const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio);
+                if (r.penetracionRiel && r.penetracionRiel !== 'no' && (gridCorN(r.celda) || gridGal(r.celda))) {
+                    const pm = gridPenetracionMm(r);
+                    body += `<text x="${(cx + cw / 2).toFixed(1)}" y="${(cy + rh - 1.6).toFixed(1)}" font-family="Arimo" font-size="3" font-weight="bold" fill="#1e8449" text-anchor="middle" stroke="none">${pm ? '+ ' + pm + ' mm penetración riel suelo' : '+ penetración riel (elige serie E70/E100/E200)'}</text>`;
+                }
                 if (rows.length > 1 || rowSum !== gAlto) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
                 cy += rh;
                 if (rowGapMm && ri < rows.length - 1) {
@@ -7059,8 +7071,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 return vid + hojasSel + ladoOPpal + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             }
             if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
-            if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
-            if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, cierreCorOpts(obj.cierre), mk('cierre')));
+            const rielRow = cfgRow('Riel suelo', cfgSel(obj.penetracionRiel && obj.penetracionRiel !== 'no' ? 'si' : '', [['', 'Sin penetración de riel'], ['si', '+ Penetración riel suelo (E70 45 · E100/E200 55 mm)']], mk('penetracionRiel')));
+            if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + rielRow + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
+            if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + rielRow + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, cierreCorOpts(obj.cierre), mk('cierre')));
             if (celda === 'pf') {
                 const np = Math.max(1, parseInt(obj.panos) || 1);
                 const PANOS = [1, 2, 3, 4, 5, 6, 8, 10].map(n => [String(n), n === 1 ? '1 paño (sin división)' : n + ' paños iguales']);
