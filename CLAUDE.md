@@ -1982,6 +1982,11 @@ edición con los controles escondidos — encabezado de 5 casillas aplastado (no
   📍 ubicación, solo lo que tenga valor) y `.ro-notes` (solo si la nota tiene texto); llama
   `generateSummary` por si acaso; ajusta el alto de `.drawing-area` a la proporción real del
   viewBox (150–460 px, `fitDrawings` + resize). Pone `body.ro-role-{rol}`.
+- **Aviso de riel empotrado en la cabecera de cada tarjeta** (2026-09-18): `avisoRielTarjeta(id)`
+  (script clásico, expuesto en `window`) devuelve "Riel empotrado: +55 mm bajo el suelo (E200) → hueco
+  2695 mm" para correderas/galandajes sueltos con `penetracionRiel` o las celdas con riel de una
+  fachada ("col. 2 …"); `buildReadonlyView` lo pinta como `.ro-riel` (verde, ancho completo) dentro
+  de `.ro-head`. El resumen y el dibujo ya lo traían; esto lo destaca para el instalador.
 - Los 4 recuadros inyectados (`injectFabricaChecklist/Chofer/Instalador/PartesResumen`) llevan
   clase `.ro-checklist`. **El orden lo da CSS con `order` de flex** (`.item-card` ya es flex
   column): `.ro-head` −4 → vías + dibujo −3 → `.ro-checklist` −2 → `.summary-box` −1 → `.ro-notes` 2

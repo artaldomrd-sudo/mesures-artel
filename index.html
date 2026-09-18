@@ -315,6 +315,7 @@
         body.readonly-view:not(.printing-sheets) .item-card > .ro-head .ro-type { font-size: 12px; font-weight: bold; color: #7f8c8d; text-transform: uppercase; }
         body.readonly-view:not(.printing-sheets) .item-card > .ro-head .ro-ubi { width: 100%; font-size: 14px; color: #1c2833; }
         body.readonly-view:not(.printing-sheets) .item-card > .ro-head .ro-ubi::before { content: '📍 '; }
+        body.readonly-view:not(.printing-sheets) .item-card > .ro-head .ro-riel { width: 100%; font-size: 13.5px; font-weight: bold; color: #1e7a46; background: #eafaf0; border: 1px solid #b7e4c7; border-radius: 6px; padding: 5px 8px; }
         /* Orden pedido por el usuario (2026-09-18): dibujo PRIMERO, después la lista de pasos, luego el resumen. */
         body.readonly-view:not(.printing-sheets) .item-card > [id^="vias-"] { order: -3; }
         body.readonly-view:not(.printing-sheets) .item-card > .ro-checklist { order: -2; margin-top: 0 !important; }
@@ -560,7 +561,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:32</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:36</div>
         </div>
     </div>
     
@@ -6396,6 +6397,20 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Penetración del riel en el suelo de una celda corredera/galandaje de la fachada (usuario 2026-09-18,
     // "igual que en correderas normal"): misma tabla por serie que la tarjeta suelta (PENETRACION_MM:
     // E70 45 · E100 55 · E200 55). Devuelve mm (0 si no está marcada o la serie no tiene dato).
+    // Aviso de RIEL EMPOTRADO para la ficha del instalador (usuario 2026-09-18): texto corto por tarjeta —
+    // suelta (corredera/galandaje con penetracionRiel) o fachada (celdas con riel) — o '' si no aplica.
+    function avisoRielTarjeta(id) {
+        const st = cardsState[id]; if (!st) return '';
+        const fmt = (mm, serie, alto) => mm ? `+${mm} mm bajo el suelo (${serie}) → hueco ${alto + mm} mm` : `penetración de riel (serie ${serie || 'sin definir'}: sin dato)`;
+        if ((st.categoria === 'corredera' || st.categoria === 'galandaje') && st.penetracionRiel) return 'Riel empotrado: ' + fmt(penetracionRielMm(st), st.tipo_aluminio, parseInt(st.alto) || 0);
+        if (st.categoria === 'fachada_grid') {
+            const partes = [];
+            (st.cols || []).forEach((c, i) => (c.rows || []).forEach(r => { if ((gridCorN(r.celda) || gridGal(r.celda)) && r.penetracionRiel && r.penetracionRiel !== 'no') partes.push(`col. ${i + 1} ${fmt(gridPenetracionMm(r), r.alu, parseInt(r.h) || 0)}`); }));
+            return partes.length ? 'Riel empotrado: ' + partes.join(' · ') : '';
+        }
+        return '';
+    }
+    window.avisoRielTarjeta = avisoRielTarjeta;
     function gridPenetracionMm(cfg) { return (cfg && cfg.penetracionRiel && cfg.penetracionRiel !== 'no') ? (PENETRACION_MM[cfg.alu] || 0) : 0; }
     // Galandajes en la fachada (mismos 7 tipos y nombres que el menú lateral). 'central' = hojas que
     // pliegan hacia los DOS lados (bolsillo a cada lado): no tiene sentido en una esquina, por eso el
@@ -9686,9 +9701,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const ref = refIn ? refIn.value.trim() : '', tipo = typeSp ? typeSp.textContent.trim() : '', ubi = ubiIn ? ubiIn.value.trim() : '';
             const head = document.createElement('div');
             head.className = 'ro-head';
+            const riel = (typeof avisoRielTarjeta === 'function') ? avisoRielTarjeta(id) : '';
             head.innerHTML = `<span class="ro-ref">${esc(ref || tipo || 'Ítem')}</span>` +
                 (ref && tipo ? `<span class="ro-type">${esc(tipo)}</span>` : '') +
-                (ubi ? `<span class="ro-ubi">${esc(ubi)}</span>` : '');
+                (ubi ? `<span class="ro-ubi">${esc(ubi)}</span>` : '') +
+                (riel ? `<span class="ro-riel">⚠ ${esc(riel)}</span>` : '');
             card.insertBefore(head, card.firstChild);
             if (notes && notes.value.trim()) {
                 const n = document.createElement('div');
