@@ -2169,6 +2169,9 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   cual Citrus; lo usa "📊 Cifras oficiales de Citrus" en `contabilidad-reportes.html` con "📄 Informe PDF"
   (jsPDF+autotable). Los reportes operativos del Panel (`contabilidad-reportes`, `ventas-reportes`) suman SIN ITBIS
   (`monto − itbis`).
+- **Tablero del ERP** (`ops/erp.html`, "Hoy en ARTAL", 2026-09-18): lee `tablero/erp` (lo escribe `tableroErp()` en cada
+  sync: mes en curso, mes anterior, año, dinero disponible por cuenta, pendientes con terceros y 12 meses, todo de los
+  reportes oficiales de Citrus) + conteos en vivo de `orders`/`instalaciones` (cotizaciones, fábrica, listos, agendados).
 - Trampas: `extraccionDatos` pagina de 1000 (`request.indiceDePagina`) — LEER TODAS las páginas (el diario tiene
   3.800+); `cuenta-contable` y `factura-suplidor` `/buscar` paginan de 25 (`xxxWhere.cantidadPorPagina`);
   `hoySantoDomingo()` devuelve `{fecha, domingo}`; un parche python con `assert` fallido no escribe el archivo →
