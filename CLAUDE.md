@@ -631,8 +631,13 @@ estilo simplificado del CAD.
   VISTA EN PLANTA con la "L": lado A horizontal (interior de la ducha arriba, baño abajo) y lado B
   subiendo desde la esquina (se aleja del que mira; exterior a la derecha) — fijo = línea gruesa,
   deslizante = doble línea, puerta = hoja a 30° + arco punteado abriendo hacia el baño. El viewBox
-  crece hacia abajo lo que mida el lado B. Resumen: "(N paneles, en esquina)" + línea "Esquina a
-  90° después del panel k: lado A = paneles 1–k (W mm) · lado B = …". `verify.mjs`: k = 1, 2, 3.
+  crece lo que mida el lado vertical. **Giro** (mismo día, "como en la fachada"): `esquinaGiro`
+  1 └ · 2 ┌ · 3 ┘ (default) · 4 ┐ (`DUCHA_GIROS`, `facadeGiro`, `facadeSetGiro`): con 3/4 el lado
+  horizontal son los paneles 1..k y el vertical (k+1..n) sube/baja a la derecha; con 1/2 el vertical
+  son los paneles 1..k a la izquierda. `sy`/`sx` = hacia dónde abren las puertas (siempre al baño, fuera
+  del rincón de la L); "ducha"/"baño"/"lado A/B" se rotulan según el giro. Resumen: "(N paneles, en
+  esquina)" + "Esquina a 90° · Giro 3 ┘ después del panel k: lado A = … · lado B = …". `verify.mjs`:
+  k = 1..3 × giro 1..4.
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin

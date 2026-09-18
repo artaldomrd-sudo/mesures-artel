@@ -561,7 +561,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 11:50</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 11:53</div>
         </div>
     </div>
     
@@ -2087,7 +2087,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
-            const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90°</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
+            const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90° · Giro ${facadeGiro(state)} ${(DUCHA_GIROS.find(g => g[0] === facadeGiro(state)) || [0, ''])[1]}</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA DE DUCHA</strong> (${paneles.length} panel${paneles.length === 1 ? '' : 'es'}${esqK ? ', en esquina' : ''}) — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
                 ${esqTxt}
@@ -8041,6 +8041,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         refreshFacade(id, true);
     };
     window.facadeSetEsquina = function (id, v) { cardsState[id].esquinaAfter = parseInt(v) || 0; refreshFacade(id, true); };
+    window.facadeSetGiro = function (id, v) { cardsState[id].esquinaGiro = parseInt(v) || 3; refreshFacade(id, false); };
     window.facadeInvertPanel = function (id, i) {
         const p = cardsState[id].paneles[i]; if (!p) return;
         p.orientacion = ((p.orientacion || 'I') === 'D' ? 'I' : 'D');
@@ -8204,6 +8205,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             h += `<div style="display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:center; margin-top:8px; background:#eef6ff; border-radius:6px; padding:6px;">
                 <label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Esquina 90°</label>
                 <select onchange="facadeSetEsquina(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; font-family:Arimo;"><option value="0" ${!k ? 'selected' : ''}>Sin esquina (todo en línea)</option>${paneles.slice(0, -1).map((_, i) => `<option value="${i + 1}" ${k === i + 1 ? 'selected' : ''}>Esquina después del panel ${i + 1} (lado A: ${i + 1} · lado B: ${paneles.length - i - 1})</option>`).join('')}</select>
+                ${k ? `<label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Giro</label><select onchange="facadeSetGiro(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:14px; font-family:Arimo;">${DUCHA_GIROS.map(g => `<option value="${g[0]}" ${facadeGiro(cardsState[id]) === g[0] ? 'selected' : ''}>Giro ${g[0]}  ${g[1]}</option>`).join('')}</select>` : ''}
             </div>`;
         }
         h += `<div style="display:flex; gap:6px; margin-top:8px;">
@@ -8221,6 +8223,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
     // Vidrio de Ducha en ESQUINA a 90° (usuario 2026-09-18): `esquinaAfter` = cuántos paneles van en el
     // primer lado (A); los demás forman el lado B que dobla 90°. 0 = sin esquina. Se acota a 1..n-1.
+    // Giro de la esquina de la ducha (como en la fachada): 1 └ · 2 ┌ · 3 ┘ (default: el lado B sube a la
+    // derecha) · 4 ┐. Con 1/2 el lado vertical es el PRIMERO (paneles 1..k) y el horizontal el resto; con
+    // 3/4 el horizontal es el primero y el vertical (k+1..n) sube (3) o baja (4).
+    const DUCHA_GIROS = [[1, '└'], [2, '┌'], [3, '┘'], [4, '┐']];
+    function facadeGiro(state) { const g = parseInt(state.esquinaGiro) || 3; return DUCHA_GIROS.some(x => x[0] === g) ? g : 3; }
     function facadeEsquinaK(state) { const n = (state.paneles || []).length; const k = parseInt(state.esquinaAfter) || 0; return (n >= 2 && k >= 1 && k <= n - 1) ? k : 0; }
     function renderFacade(state, uid) {
         const paneles = (state.paneles && state.paneles.length) ? state.paneles : [{ tipo: 'fijo', ancho: 800 }];
@@ -8269,42 +8276,50 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const cornerX = layout[esqK].x;
             body += `<line x1="${cornerX.toFixed(2)}" y1="${(headTop - 1).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(headTop + Hd + 3).toFixed(2)}" stroke="#334155" stroke-width="0.8" stroke-dasharray="3 2"/>`;
             body += `<text x="${cornerX.toFixed(2)}" y="${(headTop + Hd + 7).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA 90°</text>`;   // debajo de la elevación (arriba chocaba con las cotas de ancho)
-            // Planta: lado A (paneles 1..k) horizontal, lado B (k+1..n) sube desde la esquina (se aleja del que
-            // mira). El interior de la ducha queda arriba de A y a la izquierda de B; el baño, abajo/derecha.
-            const lenB = layout.slice(esqK).reduce((a, L) => a + L.w, 0);
-            const planY = headTop + Hd + 18 + lenB;
+            // Planta con GIRO (usuario 2026-09-18, "como en la fachada"): lado horizontal + lado vertical que sube
+            // o baja desde la esquina, con la esquina a la derecha (giros 3/4: horizontal = paneles 1..k) o a la
+            // izquierda (giros 1/2: vertical = paneles 1..k). El interior de la ducha es el rincón de la "L";
+            // las puertas abren hacia el baño (exterior).
+            const giro = facadeGiro(state), cornerRight = giro >= 3, vertUp = giro === 1 || giro === 3;
+            const horiz = cornerRight ? layout.slice(0, esqK) : layout.slice(esqK);
+            const vert = cornerRight ? layout.slice(esqK) : layout.slice(0, esqK);
+            const lenV = vert.reduce((a, L) => a + L.w, 0);
+            const sy = vertUp ? 1 : -1;      // hacia dónde abre una puerta del lado horizontal (+1 abajo = baño abajo)
+            const sx = cornerRight ? 1 : -1; // hacia dónde abre una puerta del lado vertical (+1 derecha = baño a la derecha)
+            const planY = headTop + Hd + 18 + (vertUp ? lenV : 0);
             const segGlass = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#0A3D62" stroke-width="2.2"/>`;
             const segSlide = (x1, y1, x2, y2, ox, oy) => segGlass(x1 + ox, y1 + oy, x2 + ox, y2 + oy) + `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#8d99a4" stroke-width="0.8"/>`;
-            body += `<text x="0" y="${(planY - lenB - 3).toFixed(2)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
-            layout.forEach((L, i) => {
+            body += `<text x="0" y="${(planY - (vertUp ? lenV : 0) - 3).toFixed(2)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+            horiz.forEach(L => {
+                const g = 0.8, len = L.w - 2 * g, x1 = L.x + g, x2 = L.x + L.w - g;
+                if (L.p.tipo === 'puerta') {
+                    const hingeLeft = (L.p.orientacion || 'I') !== 'D', hx = hingeLeft ? x1 : x2, sgn = hingeLeft ? 1 : -1, r = len;
+                    body += `<line x1="${hx.toFixed(2)}" y1="${planY.toFixed(2)}" x2="${(hx + sgn * r * 0.5).toFixed(2)}" y2="${(planY + sy * r * 0.866).toFixed(2)}" stroke="#0A3D62" stroke-width="2"/>`;
+                    body += `<path d="M ${(hx + sgn * r).toFixed(2)} ${planY.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${((sgn > 0) === (sy > 0)) ? 1 : 0} ${(hx + sgn * r * 0.5).toFixed(2)} ${(planY + sy * r * 0.866).toFixed(2)}" stroke-dasharray="2,2" stroke-width="1" fill="none" stroke="#0A3D62"/>`;
+                } else if (L.p.tipo === 'deslizante' || L.p.tipo === 'deslizante_conn') body += segSlide(x1, planY, x2, planY, 0, -sy * 2.2);
+                else body += segGlass(x1, planY, x2, planY);
+            });
+            vert.forEach(L => {
+                // distancia a lo largo del lado vertical desde la esquina (el panel más cercano a la esquina primero)
                 const g = 0.8, len = L.w - 2 * g;
-                if (i < esqK) {
-                    // lado A: de izquierda a derecha sobre planY; el exterior (baño) está abajo
-                    const x1 = L.x + g, x2 = L.x + L.w - g;
-                    if (L.p.tipo === 'puerta') {
-                        const hingeLeft = (L.p.orientacion || 'I') !== 'D', hx = hingeLeft ? x1 : x2, sgn = hingeLeft ? 1 : -1, r = len;
-                        body += `<line x1="${hx.toFixed(2)}" y1="${planY.toFixed(2)}" x2="${(hx + sgn * r * 0.5).toFixed(2)}" y2="${(planY + r * 0.866).toFixed(2)}" stroke="#0A3D62" stroke-width="2"/>`;
-                        body += `<path d="M ${(hx + sgn * r).toFixed(2)} ${planY.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${hingeLeft ? 1 : 0} ${(hx + sgn * r * 0.5).toFixed(2)} ${(planY + r * 0.866).toFixed(2)}" stroke-dasharray="2,2" stroke-width="1" fill="none" stroke="#0A3D62"/>`;
-                    } else if (L.p.tipo === 'deslizante' || L.p.tipo === 'deslizante_conn') body += segSlide(x1, planY, x2, planY, 0, -2.2);
-                    else body += segGlass(x1, planY, x2, planY);
-                } else {
-                    // lado B: sube desde la esquina; distancia a lo largo del lado = x − cornerX; el exterior está a la derecha
-                    const d1 = L.x - cornerX + g, d2 = L.x + L.w - cornerX - g;
-                    const y1 = planY - d1, y2 = planY - d2;
-                    if (L.p.tipo === 'puerta') {
-                        const hingeNear = (L.p.orientacion || 'I') !== 'D', hy = hingeNear ? y1 : y2, sgn = hingeNear ? -1 : 1, r = len;
-                        body += `<line x1="${cornerX.toFixed(2)}" y1="${hy.toFixed(2)}" x2="${(cornerX + r * 0.866).toFixed(2)}" y2="${(hy + sgn * r * 0.5).toFixed(2)}" stroke="#0A3D62" stroke-width="2"/>`;
-                        body += `<path d="M ${cornerX.toFixed(2)} ${(hy + sgn * r).toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${hingeNear ? 0 : 1} ${(cornerX + r * 0.866).toFixed(2)} ${(hy + sgn * r * 0.5).toFixed(2)}" stroke-dasharray="2,2" stroke-width="1" fill="none" stroke="#0A3D62"/>`;
-                    } else if (L.p.tipo === 'deslizante' || L.p.tipo === 'deslizante_conn') body += segSlide(cornerX, y1, cornerX, y2, -2.2, 0);
-                    else body += segGlass(cornerX, y1, cornerX, y2);
-                }
+                const d1 = (cornerRight ? (L.x - cornerX) : (cornerX - L.x - L.w)) + g, d2 = d1 + len;
+                const y1 = planY - sy * d1, y2 = planY - sy * d2;   // sube (sy=+1) o baja (sy=−1)
+                if (L.p.tipo === 'puerta') {
+                    // bisagra: 'I' = extremo izquierdo del panel en la elevación desplegada
+                    const hingeAtLowD = cornerRight ? ((L.p.orientacion || 'I') !== 'D') : ((L.p.orientacion || 'I') === 'D');
+                    const hy = hingeAtLowD ? y1 : y2, sgn = (hingeAtLowD ? -1 : 1) * sy, r = len;
+                    body += `<line x1="${cornerX.toFixed(2)}" y1="${hy.toFixed(2)}" x2="${(cornerX + sx * r * 0.866).toFixed(2)}" y2="${(hy + sgn * r * 0.5).toFixed(2)}" stroke="#0A3D62" stroke-width="2"/>`;
+                    body += `<path d="M ${cornerX.toFixed(2)} ${(hy + sgn * r).toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${((sgn > 0) !== (sx < 0)) ? 1 : 0} ${(cornerX + sx * r * 0.866).toFixed(2)} ${(hy + sgn * r * 0.5).toFixed(2)}" stroke-dasharray="2,2" stroke-width="1" fill="none" stroke="#0A3D62"/>`;
+                } else if (L.p.tipo === 'deslizante' || L.p.tipo === 'deslizante_conn') body += segSlide(cornerX, y1, cornerX, y2, -sx * 2.2, 0);
+                else body += segGlass(cornerX, y1, cornerX, y2);
             });
             body += `<circle cx="${cornerX.toFixed(2)}" cy="${planY.toFixed(2)}" r="1.3" fill="#334155"/>`;
-            body += `<text x="${(cornerX / 2).toFixed(2)}" y="${(planY - 4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ducha</text>`;
-            body += `<text x="${(cornerX / 2).toFixed(2)}" y="${(planY + 7).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">baño</text>`;
-            body += `<text x="${(cornerX + 6).toFixed(2)}" y="${(planY - lenB / 2).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="start" stroke="none">lado B</text>`;
-            body += `<text x="${(cornerX / 2).toFixed(2)}" y="${(planY + 12).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">lado A</text>`;
-            vbH = planY + 14;
+            const hxMid = horiz.length ? (horiz[0].x + horiz[horiz.length - 1].x + horiz[horiz.length - 1].w) / 2 : cornerX;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY - sy * 4 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ducha</text>`;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 6 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">baño</text>`;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 11 + 1.4).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">lado ${cornerRight ? 'A' : 'B'}</text>`;
+            body += `<text x="${(cornerX + sx * 5).toFixed(2)}" y="${(planY - sy * lenV / 2).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="${sx > 0 ? 'start' : 'end'}" stroke="none">lado ${cornerRight ? 'B' : 'A'}</text>`;
+            vbH = planY + 14 + (vertUp ? 0 : lenV);
         }
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -3 ${(DW + 24).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
         svg += defs;
