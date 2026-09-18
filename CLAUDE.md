@@ -638,6 +638,16 @@ estilo simplificado del CAD.
   del rincón de la L); "ducha"/"baño"/"lado A/B" se rotulan según el giro. Resumen: "(N paneles, en
   esquina)" + "Esquina a 90° · Giro 3 ┘ después del panel k: lado A = … · lado B = …". `verify.mjs`:
   k = 1..3 × giro 1..4.
+  **Herrajes de la esquina (mismo día, con fotos reales del usuario)**: la unión vidrio/vidrio lleva 2
+  prensas cuadradas 45x45 a 90° — `ESQUINA_KIT` `ALC00152` (cromado) / `ALC00444` (negro), color del
+  panel anterior a la esquina (`facadeEsquinaKit`) — que SUSTITUYEN los 2 conectores de pared de la
+  altura del panel fijo cuyo borde de fijación es la esquina (`facadeCtxPanel(state,i).ladoEnEsquina`
+  → `accesorioKitFor(p, ctx)` deja solo los de abajo, y `mini.sinConectoresLado` hace que `cadTechnical`
+  no los dibuje; las prensas de esquina se dibujan a caballo de la línea de esquina a 1/4 y 3/4 del
+  alto, y en planta un cuadrado sobre el vértice). Una deslizante (conectores o prensas) en una ducha
+  con esquina agrega `ALC00486` (`TUBO_ESQUINA_KIT`, solo cromado por ahora): conexión del tubo
+  ornamental TUB00380 con el panel perpendicular. El resumen y el constructor muestran "Unión de
+  esquina (panel k ↔ k+1): … x2".
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin

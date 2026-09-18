@@ -561,7 +561,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 11:53</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 12:27</div>
         </div>
     </div>
     
@@ -2080,17 +2080,19 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
                 if (p.tipo !== 'fijo') { extras.push('Apertura ' + (p.orientacion === 'D' ? 'Der' : 'Izq')); if (p.tirador) extras.push('Tirador ' + (p.tirador === 'redondo' ? 'redondo' : p.tirador + '"')); if (p.tipo === 'deslizante') extras.push('Kit de prensa'); if (p.tipo === 'deslizante_conn') extras.push('Kit de conectores'); const cerr = [p.cerr_luna && 'Media-Luna', p.cerr_digital && 'Digital', p.cerr_piso && 'Piso'].filter(Boolean); if (cerr.length) extras.push('Cerradura: ' + cerr.join('+')); }
-                { const kit = accesorioKitFor(p); if (kit) extras.push('Accesorios: ' + kit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ')); }
+                { const kit = accesorioKitFor(p, facadeCtxPanel(state, i)); if (kit) extras.push('Accesorios: ' + kit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ')); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
+            const esqKit = facadeEsquinaKit(state);
+            const esqKitTxt = esqK ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Unión de esquina (panel ${esqK} ↔ panel ${esqK + 1}):</b> ${esqKit ? esqKit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ') + ' (prensa cuadrada vidrio/vidrio 45x45, sustituye los conectores de pared de ese borde)' : '<span style="color:#b9770e;">prensa vidrio/vidrio sin referencia para este color todavía</span>'}</div>` : '';
             const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90° · Giro ${facadeGiro(state)} ${(DUCHA_GIROS.find(g => g[0] === facadeGiro(state)) || [0, ''])[1]}</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA DE DUCHA</strong> (${paneles.length} panel${paneles.length === 1 ? '' : 'es'}${esqK ? ', en esquina' : ''}) — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
-                ${esqTxt}
+                ${esqTxt}${esqKitTxt}
                 <div style="color:#555; font-size:12px;">${list}</div>
             </div>`;
             return;
@@ -7968,7 +7970,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const mx = hs * 1.6, my = hs * 1.6;
             const wallLeft = !isD;
             const wallX = wallLeft ? mx : (W - mx);
-            let s = conn(wallX, H * 0.25) + conn(wallX, H * 0.75);
+            // sinConectoresLado: el borde de fijación es una esquina vidrio/vidrio → las prensas de esquina
+            // (dibujadas por renderFacade) sustituyen a los 2 conectores de la altura.
+            let s = state.sinConectoresLado ? '' : conn(wallX, H * 0.25) + conn(wallX, H * 0.75);
             if ((parseInt(state.ancho) || 0) >= 1000) {
                 s += conn(W * 0.3, H - my) + conn(W * 0.7, H - my);
             } else {
@@ -8097,7 +8101,31 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             negro: { recta: [{ ref: 'ALC00004', qty: 1 }], L: [{ ref: 'ALC00445', qty: 1 }] },
         }
     };
-    function accesorioKitFor(p) {
+    // Esquina a 90° vidrio/vidrio (usuario 2026-09-18, con fotos reales): la unión entre el último panel
+    // del lado A y el primero del lado B lleva 2 prensas cuadradas vidrio/vidrio 45x45 — ALC00152 (cromado)
+    // / ALC00444 (negro) — que REEMPLAZAN los conectores de pared que ese panel fijo tendría en el borde de
+    // la esquina. Y una deslizante de conectores en una ducha con esquina agrega ALC00486: la conexión que
+    // une su tubo ornamental (TUB00380) con el panel perpendicular del otro lado de la esquina.
+    const ESQUINA_KIT = { cromado: 'ALC00152', negro: 'ALC00444' };
+    const TUBO_ESQUINA_KIT = { cromado: 'ALC00486' };   // negro: pendiente de confirmar con el usuario
+    // Contexto de un panel dentro de su ducha: ¿hay esquina? ¿su borde de fijación ES la esquina?
+    function facadeCtxPanel(state, i) {
+        const k = state ? facadeEsquinaK(state) : 0;
+        if (!k) return { esquina: false, ladoEnEsquina: false };
+        const p = (state.paneles || [])[i] || {};
+        const fijaDer = (p.orientacion || 'I') === 'D';
+        const ladoEnEsquina = p.tipo === 'fijo' && (p.fijacion || 'conectores') !== 'moldura' && ((i === k && !fijaDer) || (i === k - 1 && fijaDer));
+        return { esquina: true, ladoEnEsquina };
+    }
+    // Prensas de la unión de esquina (color del panel anterior a la esquina), o null si no hay esquina.
+    function facadeEsquinaKit(state) {
+        const k = state ? facadeEsquinaK(state) : 0; if (!k) return null;
+        const pa = (state.paneles || [])[k - 1] || {};
+        const ref = ESQUINA_KIT[pa.herraje_color || 'cromado'];
+        return ref ? [{ ref, qty: 2 }] : null;
+    }
+    function accesorioKitFor(p, ctx) {
+        ctx = ctx || {};
         const porTipo = ACCESORIOS_KIT[p.tipo];
         if (!porTipo) return null;
         const porColor = porTipo[p.herraje_color || 'cromado'];
@@ -8109,8 +8137,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // Regla confirmada por el usuario: hasta 900mm de ancho, 3 conectores (2 en la
             // altura + 1 abajo, como ya se ve en el dibujo); desde 1000mm, 4 (2 en la altura +
             // 2 en el ancho abajo) — la cantidad reemplaza el qty fijo de la tabla.
-            const qty = (parseInt(p.ancho) || 0) >= 1000 ? 4 : 3;
+            // Con el borde de fijación EN LA ESQUINA, los 2 de la altura los sustituyen las prensas
+            // vidrio/vidrio de la esquina (ver facadeEsquinaKit): quedan solo los de abajo.
+            const abajo = (parseInt(p.ancho) || 0) >= 1000 ? 2 : 1;
+            const qty = ctx.ladoEnEsquina ? abajo : abajo + 2;
             return base.map(k => ({ ref: k.ref, qty }));
+        }
+        if ((p.tipo === 'deslizante_conn' || p.tipo === 'deslizante') && ctx.esquina) {
+            const ref = TUBO_ESQUINA_KIT[p.herraje_color || 'cromado'];
+            return ref ? porColor.concat([{ ref, qty: 1 }]) : porColor;
         }
         return porColor;
     }
@@ -8118,14 +8153,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // más abajo) — separado para poder refrescar SOLO esta caja cuando cambia ancho/color/forma,
     // sin reconstruir el resto del formulario del panel (evita perder el foco del campo Ancho,
     // que dispara esto en cada tecla mientras se escribe).
-    function accesoriosBoxInner(p) {
-        const kit = accesorioKitFor(p);
+    function accesoriosBoxInner(p, ctx) {
+        const kit = accesorioKitFor(p, ctx);
         return `<b style="color:#0A3D62;">Accesorios:</b> ${kit ? kit.map(k => `${escHtml(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ') : '<span style="color:#b9770e;">sin definir para este color todavía</span>'}`;
     }
     window.updateAccesoriosBox = function (id, i) {
         const p = cardsState[id] && cardsState[id].paneles[i]; if (!p) return;
         const box = document.getElementById(`acc-box-${id}-${i}`);
-        if (box) box.innerHTML = accesoriosBoxInner(p);
+        if (box) box.innerHTML = accesoriosBoxInner(p, facadeCtxPanel(cardsState[id], i));
     };
     // Resuelve una referencia (ej. "ALC00344") al nombre del ítem en el inventario real, si ya
     // está cargado (window.artalInventarioPorReferencia, ver startFsClientListeners) — si no
@@ -8153,7 +8188,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // solo informativo, no editable (pedido explícito: nada de selección manual). Id fijo
         // para poder refrescar solo esta caja (ver updateAccesoriosBox) sin reconstruir todo el
         // panel cuando cambia ancho/color/forma.
-        const accesorios = `<div id="acc-box-${id}-${i}" style="grid-column: span 2; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px; font-size:11px; color:#333;">${accesoriosBoxInner(p)}</div>`;
+        const accesorios = `<div id="acc-box-${id}-${i}" style="grid-column: span 2; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px; font-size:11px; color:#333;">${accesoriosBoxInner(p, facadeCtxPanel(cardsState[id], i))}</div>`;
         if (p.tipo === 'fijo') {
             const fj = p.fijacion || 'conectores';
             const fijSel = `<select onchange="${u('fijacion', 'this.value')}"><option value="conectores" ${fj === 'conectores' ? 'selected' : ''}>Fijación: Conectores</option><option value="moldura" ${fj === 'moldura' ? 'selected' : ''}>Fijación: Moldura U</option></select>`;
@@ -8205,6 +8240,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             h += `<div style="display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:center; margin-top:8px; background:#eef6ff; border-radius:6px; padding:6px;">
                 <label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Esquina 90°</label>
                 <select onchange="facadeSetEsquina(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; font-family:Arimo;"><option value="0" ${!k ? 'selected' : ''}>Sin esquina (todo en línea)</option>${paneles.slice(0, -1).map((_, i) => `<option value="${i + 1}" ${k === i + 1 ? 'selected' : ''}>Esquina después del panel ${i + 1} (lado A: ${i + 1} · lado B: ${paneles.length - i - 1})</option>`).join('')}</select>
+                ${k ? (() => { const kit = facadeEsquinaKit(cardsState[id]); return `<div style="grid-column: span 2; font-size:11px; color:#333; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px;"><b style="color:#0A3D62;">Unión de esquina (panel ${k} ↔ ${k + 1}):</b> ${kit ? kit.map(x => `${escHtml(resolveAccesorioLabel(x.ref))} x${x.qty}`).join(', ') : '<span style="color:#b9770e;">sin referencia para este color todavía</span>'}</div>`; })() : ''}
                 ${k ? `<label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Giro</label><select onchange="facadeSetGiro(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:14px; font-family:Arimo;">${DUCHA_GIROS.map(g => `<option value="${g[0]}" ${facadeGiro(cardsState[id]) === g[0] ? 'selected' : ''}>Giro ${g[0]}  ${g[1]}</option>`).join('')}</select>` : ''}
             </div>`;
         }
@@ -8242,7 +8278,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         paneles.forEach((p, i) => {
             const wi = widths[i] * scale, puid = `${uid}f${i}`;
             const herrajeCol = p.herraje_color === 'negro' ? '#111111' : '#8d99a4';
-            const mini = { type: tipoMap[p.tipo] || 'mamp_fija', categoria: (p.tipo === 'fijo' ? 'mampara' : 'puerta_vidrio'), orientacion: p.orientacion || 'I', bisagras: p.bisagras || 'botella', tirador: p.tirador || '', cerr_luna: p.cerr_luna, cerr_digital: p.cerr_digital, cerr_piso: p.cerr_piso, herraje_color: p.herraje_color, color_vidrio: p.color_vidrio, fijacion: p.fijacion, moldura_color: p.moldura_color, moldura: p.moldura, ancho: p.ancho };
+            const mini = { type: tipoMap[p.tipo] || 'mamp_fija', categoria: (p.tipo === 'fijo' ? 'mampara' : 'puerta_vidrio'), orientacion: p.orientacion || 'I', bisagras: p.bisagras || 'botella', tirador: p.tirador || '', cerr_luna: p.cerr_luna, cerr_digital: p.cerr_digital, cerr_piso: p.cerr_piso, herraje_color: p.herraje_color, color_vidrio: p.color_vidrio, fijacion: p.fijacion, moldura_color: p.moldura_color, moldura: p.moldura, ancho: p.ancho, sinConectoresLado: facadeCtxPanel(state, i).ladoEnEsquina };
             defs += glassDefs(puid, p.color_vidrio);
             body += `<g transform="translate(${xoff.toFixed(2)}, ${headTop.toFixed(2)})">`;
             body += glassOnlyPanel(puid, 0, 0, wi - 1.8, Hd - 1.8);
@@ -8275,6 +8311,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (esqK && layout[esqK]) {
             const cornerX = layout[esqK].x;
             body += `<line x1="${cornerX.toFixed(2)}" y1="${(headTop - 1).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(headTop + Hd + 3).toFixed(2)}" stroke="#334155" stroke-width="0.8" stroke-dasharray="3 2"/>`;
+            // Prensas vidrio/vidrio de la esquina: 2 (arriba y abajo, a 1/4 y 3/4 del alto) a caballo de la esquina,
+            // del color de herraje del panel anterior a la esquina — sustituyen los conectores de pared de ese borde.
+            { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4', hs2 = Math.max(1.6, Hd * 0.03);
+              [0.25, 0.75].forEach(f => { const y = headTop + Hd * f; body += `<rect x="${(cornerX - hs2).toFixed(2)}" y="${(y - hs2).toFixed(2)}" width="${(hs2 * 2).toFixed(2)}" height="${(hs2 * 2).toFixed(2)}" rx="0.5" fill="${col}" stroke="#000" stroke-width="0.4"/><line x1="${cornerX.toFixed(2)}" y1="${(y - hs2).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(y + hs2).toFixed(2)}" stroke="#fff" stroke-width="0.5"/>`; }); }
             body += `<text x="${cornerX.toFixed(2)}" y="${(headTop + Hd + 7).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA 90°</text>`;   // debajo de la elevación (arriba chocaba con las cotas de ancho)
             // Planta con GIRO (usuario 2026-09-18, "como en la fachada"): lado horizontal + lado vertical que sube
             // o baja desde la esquina, con la esquina a la derecha (giros 3/4: horizontal = paneles 1..k) o a la
@@ -8313,7 +8353,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 } else if (L.p.tipo === 'deslizante' || L.p.tipo === 'deslizante_conn') body += segSlide(cornerX, y1, cornerX, y2, -sx * 2.2, 0);
                 else body += segGlass(cornerX, y1, cornerX, y2);
             });
-            body += `<circle cx="${cornerX.toFixed(2)}" cy="${planY.toFixed(2)}" r="1.3" fill="#334155"/>`;
+            { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4';
+              body += `<rect x="${(cornerX - 2.2).toFixed(2)}" y="${(planY - 2.2).toFixed(2)}" width="4.4" height="4.4" rx="0.5" fill="${col}" stroke="#000" stroke-width="0.4"/>`; }   // prensa de esquina en planta
             const hxMid = horiz.length ? (horiz[0].x + horiz[horiz.length - 1].x + horiz[horiz.length - 1].w) / 2 : cornerX;
             body += `<text x="${hxMid.toFixed(2)}" y="${(planY - sy * 4 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ducha</text>`;
             body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 6 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">baño</text>`;
