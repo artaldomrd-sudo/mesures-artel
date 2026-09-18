@@ -644,7 +644,10 @@ estilo simplificado del CAD.
   altura del panel fijo cuyo borde de fijación es la esquina (`facadeCtxPanel(state,i).ladoEnEsquina`
   → `accesorioKitFor(p, ctx)` deja solo los de abajo, y `mini.sinConectoresLado` hace que `cadTechnical`
   no los dibuje; las prensas de esquina se dibujan a caballo de la línea de esquina a 1/4 y 3/4 del
-  alto, y en planta un cuadrado sobre el vértice). Una deslizante (conectores o prensas) en una ducha
+  alto, y en planta un cuadrado sobre el vértice). Las 2 prensas van DENTRO del kit del panel que hace
+  la unión (`ctx.llevaPrensasEsquina`: el primero después de la esquina si es fijo con conectores, si
+  no el anterior — usuario: "1 ALC00150 en el suelo y 2 ALC00152 en el vertical"); la línea aparte
+  "Unión de esquina" solo aparece si ningún panel puede llevarlas (`ctx.sinDueno`). Una deslizante (conectores o prensas) en una ducha
   con esquina agrega `ALC00486` (`TUBO_ESQUINA_KIT`, solo cromado por ahora): conexión del tubo
   ornamental TUB00380 con el panel perpendicular. El resumen y el constructor muestran "Unión de
   esquina (panel k ↔ k+1): … x2".
