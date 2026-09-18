@@ -1080,7 +1080,10 @@ function mapFacturaSuplidorCitrus(f) {
 // comprobantes/metodo quedan en manos del panel una vez creado el movimiento.
 const CAMPOS_CITRUS_FACTURA = ['fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'rnc', 'ncf', 'moneda', 'tasa', 'montoMoneda', 'retencionISR', 'retencionITBIS', 'citrusTipoGasto', 'citrusSuplidorId', 'citrusEstatus'];
 const CAMPOS_RELLENAR_GASTO = ['itbis', 'tercero', 'rnc', 'ncf', 'fechaPago', 'montoPagado'];
-const igualJSON = (a, b) => JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b);
+// Firestore devuelve los mapas con las claves en orden alfabético: comparar con JSON.stringify directo daba
+// "distinto" en cada sync para todo documento con `lineas`/`citrusCobro` (actualizaciones fantasma, 2026-09-18).
+const canon = (v) => v == null ? null : Array.isArray(v) ? v.map(canon) : (typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = canon(v[k]); return o; }, {}) : v);
+const igualJSON = (a, b) => JSON.stringify(canon(a)) === JSON.stringify(canon(b));
 
 function planSuplidores(registros, existentes, ahora, plan, escrituras, coleccion) {
     const porCitrusId = new Map(), porNombre = new Map(), porRnc = new Map();
@@ -1125,7 +1128,7 @@ function planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, co
         if (x.tipo !== 'gasto') return;
         if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
         if (limpio(x.ncf)) porNcf.set(limpio(x.ncf).toUpperCase(), d);
-        if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+        if (x.citrusId == null && x.origen !== 'citrus' && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
     });
     plan.omitidas = { canceladas: 0, antesDeDesde: 0 };
     plan.totalCrear = 0;
@@ -1271,7 +1274,7 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
         if (x.tipo !== 'ingreso') return;
         if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
         if (normNcf(x.ncf)) porNcf.set(normNcf(x.ncf), d);
-        if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+        if (x.citrusId == null && x.origen !== 'citrus' && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
     });
     plan.omitidas = { canceladas: 0, antesDeDesde: 0, proformas: 0 };
     plan.totalCrear = 0; plan.porAnio = {}; plan.fiscales = 0; plan.proformas = 0;
@@ -1506,7 +1509,7 @@ function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, d
         const x = d.data();
         if (x.tipo !== 'gasto') return;
         if (x.citrusId != null && String(d.id).startsWith('citrus-dj-')) porCitrusId.set(Number(x.citrusId), d);
-        else if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+        else if (x.citrusId == null && x.origen !== 'citrus' && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
     });
     plan.omitidas = { canceladas: 0, antesDeDesde: 0, otrasFuentes: 0, sinCuentaGasto: 0 };
     plan.totalCrear = 0; plan.porAnio = {}; plan.porFuente = {};
@@ -1538,7 +1541,7 @@ function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, d
             plan.porAnio[m.fecha.slice(0, 4)] = (plan.porAnio[m.fecha.slice(0, 4)] || 0) + 1;
             plan.porFuente[m.citrusFuente] = (plan.porFuente[m.citrusFuente] || 0) + 1;
             escrituras.push([db.collection(coleccion).doc(id), {
-                ...m,
+                ...m, citrusId: Number(x.Id),
                 concepto: capitalizar(concepto),
                 categoria: capitalizar(m.cuentaContableNombre) || 'Otro gasto',
                 centroCosto: m.centroCostoCitrus, metodo: m.metodoCitrus, cuentaBancoId: '',
@@ -1576,7 +1579,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
 const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'factura-cliente'];
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
-    const fecha = hoySantoDomingo();
+    const { fecha } = hoySantoDomingo();   // devuelve { fecha, domingo }
     const inicio = Date.now();
     const registro = { fecha, motivo, entorno: ctx.entorno, iniciado: new Date().toISOString(), resultados: {} };
     if (ctx.entorno !== 'prod') {
