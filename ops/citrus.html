@@ -166,6 +166,14 @@
                 <div class="imp-estado" id="imp-estado-diario" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
         </div>
         <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
+            <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">🏛️ Movimientos bancarios → Bancos (<code>bancosMovimientos</code>)</div>
+            <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Libro completo de cada cuenta de banco según la contabilidad de Citrus (transferencias, depósitos, cargos y créditos). Solo entran las cuentas del Panel vinculadas con su código contable de Citrus (Cuenta principal corriente ↔ Banco 001 RD$, Cuenta en dólares ↔ Banco 002 US$). Los importados quedan marcados como conciliados; el saldo del Panel pasa a ser el saldo contable.</div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12.5px;"><label for="imp-desde-banco" style="margin:0;">Desde</label><input type="date" id="imp-desde-banco" style="width:auto;"><span style="color:#777;">(vacío = todo, desde 2025)</span></div>
+            <button class="act" id="btn-imp-banco-ver" onclick="importar('banco', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+            <button class="act" id="btn-imp-banco-ok" onclick="importar('banco', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-banco" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
+        </div>
+        <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
             <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">💰 Facturas de venta → Ingresos (<code>contaMovimientos</code>)</div>
             <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;font-size:12.5px;flex-wrap:wrap;">
                 <span><label for="imp-desde-venta" style="margin:0 6px 0 0;">Desde</label><input type="date" id="imp-desde-venta" style="width:auto;"></span>
@@ -339,10 +347,10 @@
     const FN_IMPORT = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusImportar';
     const escI = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     window.importar = async function (entidad, aplicar) {
-        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra', 'factura-cliente': 'facturas de venta', diario: 'gastos del diario' }[entidad] || entidad;
+        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra', 'factura-cliente': 'facturas de venta', diario: 'gastos del diario', banco: 'movimientos bancarios' }[entidad] || entidad;
         if (aplicar && !confirm('Se importarán los ' + nom + ' de tu Citrus real al Panel (no se borra nada del Panel; no se escribe nada en Citrus). ¿Continuar?')) return;
         const btns = Array.from(document.querySelectorAll('[id^="btn-imp-"]'));
-        const desde = { 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario' }[entidad] ? (document.getElementById({ 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario' }[entidad]).value || '') : '';
+        const desde = { 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario', banco: 'imp-desde-banco' }[entidad] ? (document.getElementById({ 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario', banco: 'imp-desde-banco' }[entidad]).value || '') : '';
         const incluirProformas = entidad === 'factura-cliente' ? document.getElementById('imp-proformas').checked : true;
         btns.forEach(b => b.disabled = true);
         setEstado((aplicar ? 'Importando ' : 'Calculando vista previa de ') + nom + ' desde Citrus… (puede tardar unos segundos)', '');
@@ -364,7 +372,7 @@
                 + (c.conFechaCobro != null ? ' · con fecha de cobro (recibos): ' + c.conFechaCobro : '')
                 + (c.porFuente ? ' · por origen: ' + Object.keys(c.porFuente).map(k => k + ' ' + c.porFuente[k]).join(', ') : '')
                 + (c.porAnio ? ' · por año: ' + Object.keys(c.porAnio).sort().map(a => a + ': ' + c.porAnio[a]).join(', ') : '')
-                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.otrasFuentes ? ', ' + c.omitidas.otrasFuentes + ' de otros módulos (ventas, cobros, depósitos…)' : '') + (c.omitidas.sinCuentaGasto ? ', ' + c.omitidas.sinCuentaGasto + ' sin cuenta de gasto' : '') + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') + (c.omitidas.proformas ? ', ' + c.omitidas.proformas + ' proformas excluidas' : '') : '')
+                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.otrasFuentes ? ', ' + c.omitidas.otrasFuentes + ' de otros módulos (ventas, cobros, depósitos…)' : '') + (c.omitidas.sinCuentaGasto ? ', ' + c.omitidas.sinCuentaGasto + ' sin cuenta de gasto' : '') + (c.omitidas.sinCuentaVinculada ? ', ' + c.omitidas.sinCuentaVinculada + ' líneas de caja/banco sin cuenta vinculada en el Panel' : '') + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') + (c.omitidas.proformas ? ', ' + c.omitidas.proformas + ' proformas excluidas' : '') : '')
                 + (c.muestraCrear.length ? '<div style="margin-top:8px;color:#16a085;font-weight:600;">Nuevos — muestra de ' + c.muestraCrear.length + ' de ' + c.crear + ' (los más recientes primero):</div>' + li(c.muestraCrear, x => '<li>' + escI(x.nombre) + (x.documento ? ' <span style="color:#777;">· ' + escI(x.documento) + '</span>' : '') + (x.precio ? ' <span style="color:#777;">· RD$ ' + Number(x.precio).toLocaleString('es-DO') + '</span>' : '') + '</li>') : '')
                 + (c.muestraActualizar.length ? '<div style="margin-top:4px;color:#2471a3;font-weight:600;">A enlazar/actualizar (primeros ' + c.muestraActualizar.length + '):</div>' + li(c.muestraActualizar, x => '<li>' + escI(x.nombre) + ' <span style="color:#777;">· ' + escI(x.campos.join(', ')) + '</span></li>') : '');
             box.style.display = 'block';
@@ -375,7 +383,7 @@
 
     // ---- Sincronización automática: última corrida + botón "ahora" ----
     const FN_SYNC = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusSincronizarAhora';
-    const NOM_ENT = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'compras a crédito', diario: 'gastos del diario', 'factura-cliente': 'ventas' };
+    const NOM_ENT = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'compras a crédito', diario: 'gastos del diario', banco: 'bancos', 'factura-cliente': 'ventas' };
     function pintarSync(r) {
         const el = document.getElementById('sync-ultimo');
         if (!r) { el.textContent = 'Todavía no ha corrido ninguna sincronización automática.'; return; }
@@ -389,7 +397,7 @@
     onSnapshot(doc(db, 'citrusSync', 'ultimo'), (snap) => pintarSync(snap.exists() ? snap.data() : null), () => {});
     // ---- "Ya importado": la función guarda en citrusSync/importaciones fecha y cantidades por entidad;
     //      aquí se marca la tarjeta y el botón pasa a gris "Volver a importar (solo trae lo nuevo)". ----
-    const SUFIJO = { cliente: 'cliente', suplidor: 'suplidor', 'factura-suplidor': 'factura', diario: 'diario', 'factura-cliente': 'venta' };
+    const SUFIJO = { cliente: 'cliente', suplidor: 'suplidor', 'factura-suplidor': 'factura', diario: 'diario', banco: 'banco', 'factura-cliente': 'venta' };
     function pintarImportaciones(r) {
         Object.keys(SUFIJO).forEach(ent => {
             const suf = SUFIJO[ent], est = document.getElementById('imp-estado-' + suf), btn = document.getElementById('btn-imp-' + suf + '-ok');

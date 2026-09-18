@@ -952,7 +952,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
 // 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
 // código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
-const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos', diario: 'contaMovimientos' };
+const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos', diario: 'contaMovimientos', banco: 'bancosMovimientos' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
@@ -1333,7 +1333,8 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
     const coleccion = IMPORT_ENTIDADES[entidad];
     if (!coleccion) throw Object.assign(new Error('entidad'), { codigo: 400, permitidas: Object.keys(IMPORT_ENTIDADES) });
     let registros;
-    try { registros = await citrusLeerTodo(ctx, entidad, entidad === 'factura-cliente' || entidad === 'diario'); }
+    // 'banco' se alimenta del diario (las cuentas de banco no tienen endpoint propio en Citrus).
+    try { registros = await citrusLeerTodo(ctx, entidad === 'banco' ? 'diario' : entidad, entidad === 'factura-cliente' || entidad === 'diario' || entidad === 'banco'); }
     catch (e) { throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 502 }); }
 
     const ahora = FieldValue.serverTimestamp();
@@ -1384,6 +1385,11 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas, ctx);
     } else if (entidad === 'diario') {
         planDiario(registros, existentes, ahora, plan, escrituras, coleccion, desde);
+    } else if (entidad === 'banco') {
+        const cs = await db.collection('bancosCuentas').get();
+        const cuentas = cs.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.citrusCuenta);
+        if (!cuentas.length) throw Object.assign(new Error('Ninguna cuenta bancaria del Panel tiene el campo citrusCuenta (código contable de Citrus)'), { codigo: 400, permitidas: [] });
+        planBanco(registros, existentes, ahora, plan, escrituras, coleccion, desde, cuentas);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1555,6 +1561,75 @@ function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, d
     }
 }
 
+// ---- Movimientos bancarios desde el diario → bancosMovimientos (2026-09-18, punto 1 de la lista) ----
+// El Panel tenía 1 movimiento cargado a mano; Citrus tiene el libro completo de cada cuenta. Cada cuenta del
+// Panel (`bancosCuentas/{id}`) se vincula con el campo `citrusCuenta` (código contable: 1001050101 = Banco 001 RD$,
+// 1001050201 = Banco 002 US$). Por cada asiento del diario con una línea en esa cuenta se crea un movimiento:
+// débito contable en la cuenta de banco = entra dinero = 'credito' del Panel; crédito contable = sale = 'debito'.
+// `saldoInicial` de la cuenta vinculada se deja en 0 (Citrus trae el asiento de balance inicial), así el saldo
+// del Panel = saldo contable de Citrus. Los movimientos manuales que coincidan en cuenta+fecha+monto se enlazan.
+function descripcionAsientoBanco(x) {
+    const p = parseDescripcionAsiento(x);
+    const f = limpio(x.Fuente);
+    if (f === 'Transferencia Bancaria') return [p.tercero, p.concepto].filter(Boolean).join(' · ') || 'Transferencia';
+    if (f === 'Gasto') return [p.tercero, p.concepto].filter(Boolean).join(' · ') || 'Gasto';
+    if (f === 'Deposito Bancario') { const m = limpio(x.Descripcion).match(/Dep[oó]sito n[uú]mero:\s*(\d+)/i); return 'Depósito' + (m ? ' #' + m[1] : ''); }
+    if (f === 'Cargo Bancario') return 'Cargo bancario' + (p.ncf ? ' · NCF ' + p.ncf : '');
+    if (f === 'Credito Bancario') return 'Crédito bancario';
+    return limpio(x.Descripcion).slice(0, 140) || f;
+}
+function planBanco(registros, existentes, ahora, plan, escrituras, coleccion, desde, cuentas) {
+    // cuentas: [{ id, citrusCuenta, moneda }] — solo las vinculadas
+    const porCodigo = new Map(cuentas.map(c => [String(c.citrusCuenta), c]));
+    const porCitrusKey = new Map(), manual = new Map();
+    existentes.forEach(d => {
+        const x = d.data();
+        if (x.citrusKey) porCitrusKey.set(String(x.citrusKey), d);
+        else if (x.origen !== 'citrus' && x.cuentaId && x.fecha) manual.set(`${x.cuentaId}|${x.fecha}|${x.tipo}|${r2(x.monto)}`, d);
+    });
+    plan.omitidas = { canceladas: 0, antesDeDesde: 0, sinCuentaVinculada: 0 };
+    plan.totalCrear = 0; plan.porAnio = {}; plan.porFuente = {};
+    for (const x of registros) {
+        const fecha = limpio(x.Fecha).slice(0, 10);
+        if (!fecha) continue;
+        const det = Array.isArray(x.Detalles) ? x.Detalles : [];
+        for (const d of det) {
+            const cta = porCodigo.get(String(d.Cuenta));
+            if (!cta) { if (/^10010[15]/.test(String(d.Cuenta))) plan.omitidas.sinCuentaVinculada++; continue; }
+            const monto = r2(d.Monto); if (!(monto > 0)) continue;
+            const tipo = d.Tipo === 'Debito' ? 'credito' : 'debito';   // contable → panel
+            if (desde && fecha < desde) { plan.omitidas.antesDeDesde++; continue; }
+            const key = `${x.Id}-${d.Id}`;
+            const contra = det.filter(o => o !== d && o.Tipo !== d.Tipo).sort((a, b) => (Number(b.Monto) || 0) - (Number(a.Monto) || 0))[0] || {};
+            const m = {
+                cuentaId: cta.id, fecha, tipo, monto,
+                descripcion: descripcionAsientoBanco(x),
+                referencia: `${limpio(x.Fuente)}${x.NumeroReferencia != null ? ' #' + x.NumeroReferencia : ''}`,
+                contraCuenta: limpio(contra.NombreCuenta), citrusFuente: limpio(x.Fuente), citrusId: Number(x.Id), citrusKey: key,
+                citrusEstatus: limpio(x.Estatus), citrusUsuario: limpio(x.CrearUsuario)
+            };
+            const ex = porCitrusKey.get(key) || manual.get(`${cta.id}|${fecha}|${tipo}|${monto}`);
+            if (ex) {
+                const y = ex.data(); const cambios = {};
+                if (!y.citrusKey) { cambios.citrusKey = key; cambios.citrusId = m.citrusId; cambios.citrusFuente = m.citrusFuente; cambios.contraCuenta = m.contraCuenta; cambios.conciliado = true; }
+                else {
+                    ['fecha', 'monto', 'tipo', 'descripcion', 'referencia', 'contraCuenta', 'citrusEstatus'].forEach(k => { if (!igualJSON(y[k], m[k])) cambios[k] = m[k]; });
+                    if (m.citrusEstatus === 'Cancelado' && y.citrusEstatus !== 'Cancelado') cambios.descripcion = '⚠ ANULADO en Citrus · ' + String(y.descripcion || '');
+                }
+                if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${fecha} · ${m.descripcion.slice(0, 40)} · ${monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+                else plan.sinCambios.push(`${fecha} · ${m.descripcion.slice(0, 30)}`);
+            } else {
+                if (m.citrusEstatus === 'Cancelado') { plan.omitidas.canceladas++; continue; }
+                plan.crear.push({ id: `citrus-bk-${key}`, nombre: `${fecha} · ${cta.alias || cta.id} · ${tipo === 'credito' ? '+' : '−'}${monto} · ${m.descripcion.slice(0, 40)}`, precio: monto, fecha });
+                plan.totalCrear = r2(plan.totalCrear + (tipo === 'credito' ? monto : -monto));
+                plan.porAnio[fecha.slice(0, 4)] = (plan.porAnio[fecha.slice(0, 4)] || 0) + 1;
+                plan.porFuente[m.citrusFuente] = (plan.porFuente[m.citrusFuente] || 0) + 1;
+                escrituras.push([db.collection(coleccion).doc(`citrus-bk-${key}`), { ...m, conciliado: true, origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora }, true]);
+            }
+        }
+    }
+}
+
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const admin = await callerAdmin(req);
@@ -1579,7 +1654,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
 // Corre las 4 importaciones con las mismas reglas que los botones (nunca borra, nunca duplica, nunca escribe en
 // Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
 // registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
-const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'factura-cliente'];
+const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'banco', 'factura-cliente'];
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
     const { fecha } = hoySantoDomingo();   // devuelve { fecha, domingo }
