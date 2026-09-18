@@ -952,7 +952,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
 // 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
 // código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
-const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos' };
+const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos', diario: 'contaMovimientos' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
@@ -1327,7 +1327,7 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
     const coleccion = IMPORT_ENTIDADES[entidad];
     if (!coleccion) throw Object.assign(new Error('entidad'), { codigo: 400, permitidas: Object.keys(IMPORT_ENTIDADES) });
     let registros;
-    try { registros = await citrusLeerTodo(ctx, entidad, entidad === 'factura-cliente'); }
+    try { registros = await citrusLeerTodo(ctx, entidad, entidad === 'factura-cliente' || entidad === 'diario'); }
     catch (e) { throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 502 }); }
 
     const ahora = FieldValue.serverTimestamp();
@@ -1376,6 +1376,8 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde);
     } else if (entidad === 'factura-cliente') {
         await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas, ctx);
+    } else if (entidad === 'diario') {
+        planDiario(registros, existentes, ahora, plan, escrituras, coleccion, desde);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1408,7 +1410,7 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
         // Muestra: las más recientes primero (las facturas traen `fecha`; el resto conserva el orden de Citrus).
         muestraCrear: plan.crear.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
-        porAnio: plan.porAnio || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
+        porAnio: plan.porAnio || null, porFuente: plan.porFuente || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
         omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null,
         conFechaCobro: plan.conFechaCobro != null ? plan.conFechaCobro : null
     };
@@ -1425,6 +1427,118 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
     }
     console.log('importarDeCitrus', quien, entidad, `crear=${plan.crear.length} actualizar=${plan.actualizar.length}`);
     return { ...resumen, escritos: escrituras.length };
+}
+
+// ---- Gastos desde el DIARIO de Citrus (banco, módulo Gasto, asientos manuales, cargos bancarios) ----
+// Corrección 2026-09-18 (la contable lo señaló): `factura-suplidor` es SOLO cuentas por pagar a crédito
+// (152). La mayoría de las compras se pagan contra entrega por transferencia y viven en los módulos de
+// banco y de gastos de Citrus, que NO tienen endpoint en la API pero sí aparecen en el diario con
+// `Fuente`. Se importa cada asiento con débito a una cuenta de costo/gasto (5xxx/6xxx) de esas fuentes
+// (2.001 asientos, RD$ ~40 M). Los de Fuente "Factura Suplidor" ya entraron por factura-suplidor
+// (no se duplican), depreciaciones y cierres no son gastos de caja y se omiten.
+const DIARIO_FUENTES_GASTO = new Set(['Transferencia Bancaria', 'Gasto', 'Diario', 'Cargo Bancario']);
+const cuentaEsGasto = (d) => d && d.Tipo === 'Debito' && /^[56]/.test(String(d.Cuenta || ''));
+const cuentaEsItbis = (d) => d && d.Tipo === 'Debito' && /ITBIS/i.test(String(d.NombreCuenta || ''));
+const capitalizar = (s) => { s = limpio(s).toLowerCase(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; };
+function parseDescripcionAsiento(x) {
+    const t = limpio(x.Descripcion), f = limpio(x.Fuente);
+    let m;
+    if (f === 'Transferencia Bancaria' && (m = t.match(/Beneficiario:\s*(.*?)\s*Concepto:\s*(.*)$/s)))
+        return { tercero: limpio(m[1]), concepto: limpio(m[2]), ncf: '' };
+    if (f === 'Gasto' && (m = t.match(/a la empresa\s+(.*?)\s+por:\s*[\d.,]*\s*Impuestos:\s*\$?[\d.,]*\s*NCF:\s*(\S*)\s*(?:Concepto:\s*(.*))?$/s)))
+        return { tercero: limpio(m[1]), concepto: limpio(m[3]), ncf: limpio(m[2]).toUpperCase() };
+    if (f === 'Cargo Bancario') { const n = t.match(/NCF:\s*(\S+)/); const b = t.match(/Cuenta de Banco:\s*(.*?)\s*Número/); return { tercero: b ? limpio(b[1]) : 'Banco', concepto: 'Cargo bancario', ncf: n ? limpio(n[1]).toUpperCase() : '' }; }
+    return { tercero: '', concepto: t, ncf: '' };
+}
+function metodoDeCredito(nombre) {
+    const n = String(nombre || '').toUpperCase();
+    if (/BANCO/.test(n)) return 'Transferencia (banco, según Citrus)';
+    if (/CAJA/.test(n)) return 'Efectivo (caja, según Citrus)';
+    if (/NOMINA|APORTE|RETENCION/.test(n)) return 'Provisión de nómina (Citrus)';
+    if (/POR PAGAR A DYLAN/.test(n)) return 'Pagado por Dylan (CxP socio, Citrus)';
+    return 'Asiento de diario (Citrus)';
+}
+function mapAsientoCitrus(x) {
+    const det = Array.isArray(x.Detalles) ? x.Detalles : [];
+    const gastos = det.filter(cuentaEsGasto).map(d => ({ cuenta: String(d.Cuenta), nombre: limpio(d.NombreCuenta), monto: r2(d.Monto) })).sort((a, b) => b.monto - a.monto);
+    const base = r2(gastos.reduce((s, g) => s + g.monto, 0));
+    const itbis = r2(det.filter(cuentaEsItbis).reduce((s, d) => s + (Number(d.Monto) || 0), 0));
+    const creditos = det.filter(d => d.Tipo === 'Credito').sort((a, b) => (Number(b.Monto) || 0) - (Number(a.Monto) || 0));
+    const credito = creditos[0] || {};
+    const p = parseDescripcionAsiento(x);
+    const centro = (det.find(cuentaEsGasto) || {}).CentroNombre || '';
+    return {
+        tipo: 'gasto',
+        fecha: limpio(x.Fecha).slice(0, 10),
+        monto: r2(base + itbis),
+        itbis,
+        montoPagado: r2(base + itbis),
+        fechaPago: limpio(x.Fecha).slice(0, 10),
+        tercero: p.tercero || (limpio(x.Fuente) === 'Diario' ? '' : ''),
+        rnc: '',
+        ncf: p.ncf,
+        conceptoCitrus: p.concepto,
+        cuentaContable: gastos.length ? gastos[0].cuenta : '',
+        cuentaContableNombre: gastos.length ? gastos[0].nombre : '',
+        lineas: gastos.length > 1 ? gastos : [],
+        metodoCitrus: metodoDeCredito(credito.NombreCuenta),
+        cuentaBancoNombre: /BANCO/i.test(String(credito.NombreCuenta || '')) ? limpio(credito.NombreCuenta) : '',
+        centroCostoCitrus: centro && centro !== 'Principal' ? centro : '',
+        citrusFuente: limpio(x.Fuente),
+        citrusReferencia: x.NumeroReferencia != null ? Number(x.NumeroReferencia) : null,
+        citrusUsuario: limpio(x.CrearUsuario),
+        citrusEstatus: limpio(x.Estatus)
+    };
+}
+const CAMPOS_CITRUS_ASIENTO = ['fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'ncf', 'conceptoCitrus', 'cuentaContable', 'cuentaContableNombre', 'lineas', 'metodoCitrus', 'cuentaBancoNombre', 'citrusFuente', 'citrusReferencia', 'citrusUsuario', 'citrusEstatus'];
+
+function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, desde) {
+    const porCitrusId = new Map(), porFechaMonto = new Map();
+    existentes.forEach(d => {
+        const x = d.data();
+        if (x.tipo !== 'gasto') return;
+        if (x.citrusId != null && String(d.id).startsWith('citrus-dj-')) porCitrusId.set(Number(x.citrusId), d);
+        else if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+    });
+    plan.omitidas = { canceladas: 0, antesDeDesde: 0, otrasFuentes: 0, sinCuentaGasto: 0 };
+    plan.totalCrear = 0; plan.porAnio = {}; plan.porFuente = {};
+    for (const x of registros) {
+        if (!DIARIO_FUENTES_GASTO.has(limpio(x.Fuente))) { plan.omitidas.otrasFuentes++; continue; }
+        if (!(Array.isArray(x.Detalles) && x.Detalles.some(cuentaEsGasto))) { plan.omitidas.sinCuentaGasto++; continue; }
+        const m = mapAsientoCitrus(x);
+        if (!m.fecha || !(m.monto > 0)) continue;
+        if (desde && m.fecha < desde) { plan.omitidas.antesDeDesde++; continue; }
+        const ex = porCitrusId.get(Number(x.Id)) || porFechaMonto.get(`${m.fecha}|${m.monto}`);
+        if (ex) {
+            const d = ex.data(); const cambios = {};
+            if (!String(ex.id).startsWith('citrus-dj-') && Number(d.citrusId) !== Number(x.Id)) {
+                // Gasto registrado a mano en el panel (caja chica, etc.) que coincide en fecha y monto: se enlaza.
+                cambios.citrusId = Number(x.Id); cambios.citrusFuente = m.citrusFuente; cambios.citrusEstatus = m.citrusEstatus; cambios.cuentaContable = m.cuentaContable; cambios.cuentaContableNombre = m.cuentaContableNombre;
+                ['itbis', 'tercero', 'ncf'].forEach(k => { if ((!limpio(d[k]) || Number(d[k]) === 0) && m[k] !== '' && m[k] !== 0) cambios[k] = m[k]; });
+            } else {
+                CAMPOS_CITRUS_ASIENTO.forEach(k => { if (!igualJSON(d[k], m[k])) cambios[k] = m[k]; });
+                if (m.citrusEstatus === 'Cancelado' && d.citrusEstatus !== 'Cancelado') cambios.concepto = '⚠ ANULADO en Citrus · ' + String(d.concepto || '');
+            }
+            if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero || m.conceptoCitrus} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+            else plan.sinCambios.push(`${m.fecha} · ${m.tercero || m.conceptoCitrus}`);
+        } else {
+            if (m.citrusEstatus === 'Cancelado') { plan.omitidas.canceladas++; continue; }
+            const id = `citrus-dj-${x.Id}`;
+            const concepto = [m.conceptoCitrus, m.tercero && !m.conceptoCitrus ? m.tercero : ''].filter(Boolean).join('') || m.cuentaContableNombre || 'Gasto';
+            plan.crear.push({ id, nombre: `${m.fecha} · ${m.tercero || capitalizar(m.cuentaContableNombre)} · ${m.citrusFuente}`, precio: m.monto, fecha: m.fecha });
+            plan.totalCrear = r2(plan.totalCrear + m.monto);
+            plan.porAnio[m.fecha.slice(0, 4)] = (plan.porAnio[m.fecha.slice(0, 4)] || 0) + 1;
+            plan.porFuente[m.citrusFuente] = (plan.porFuente[m.citrusFuente] || 0) + 1;
+            escrituras.push([db.collection(coleccion).doc(id), {
+                ...m,
+                concepto: capitalizar(concepto),
+                categoria: capitalizar(m.cuentaContableNombre) || 'Otro gasto',
+                centroCosto: m.centroCostoCitrus, metodo: m.metodoCitrus, cuentaBancoId: '',
+                notas: `Importado del diario de Citrus · ${m.citrusFuente}${m.citrusReferencia != null ? ' #' + m.citrusReferencia : ''} · cuenta ${m.cuentaContable} ${m.cuentaContableNombre}${m.citrusUsuario ? ' · registró ' + m.citrusUsuario : ''}`,
+                origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+            }, true]);
+        }
+    }
 }
 
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
@@ -1451,7 +1565,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
 // Corre las 4 importaciones con las mismas reglas que los botones (nunca borra, nunca duplica, nunca escribe en
 // Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
 // registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
-const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'factura-cliente'];
+const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'factura-cliente'];
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
     const fecha = hoySantoDomingo();
