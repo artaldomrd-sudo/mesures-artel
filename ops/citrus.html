@@ -129,7 +129,7 @@
 
     <div class="box">
         <h2>4) Importar de Citrus al Panel (Etapa 1: clientes y productos)</h2>
-        <p style="font-size:13px;color:#555;margin:0 0 12px;">Trae los <b>clientes</b>, los <b>proveedores</b> y las <b>facturas de compra</b> de tu Citrus real al Panel (Clientes, Proveedores y Gastos), guardando el id de Citrus en cada registro. Solo <b>lee</b> de Citrus; escribe en el Panel. Reglas: ningún cliente del Panel se borra; los que coinciden por nombre o documento se enlazan y solo se les rellenan los campos vacíos; las facturas de compra entran como gastos y NUNCA duplican uno ya registrado a mano (se enlazan por NCF o por fecha + monto); las anuladas en Citrus no se traen. Primero mira la <b>vista previa</b> (no escribe nada).</p>
+        <p style="font-size:13px;color:#555;margin:0 0 12px;">Trae los <b>clientes</b>, los <b>proveedores</b>, las <b>facturas de compra</b> y las <b>facturas de venta</b> de tu Citrus real al Panel (Clientes, Proveedores, Gastos e Ingresos), guardando el id de Citrus en cada registro. Solo <b>lee</b> de Citrus; escribe en el Panel. Reglas: ningún cliente del Panel se borra; los que coinciden por nombre o documento se enlazan y solo se les rellenan los campos vacíos; las facturas de compra entran como gastos y NUNCA duplican uno ya registrado a mano (se enlazan por NCF o por fecha + monto); las anuladas en Citrus no se traen. Primero mira la <b>vista previa</b> (no escribe nada).</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
                 <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">👤 Clientes → <code>clientes</code></div>
@@ -153,6 +153,16 @@
                 <button class="act" id="btn-imp-factura-ver" onclick="importar('factura-suplidor', false)" style="background:#5d6d7e;">👁 Vista previa</button>
                 <button class="act" id="btn-imp-factura-ok" onclick="importar('factura-suplidor', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
             </div>
+        </div>
+        <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
+            <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">💰 Facturas de venta → Ingresos (<code>contaMovimientos</code>)</div>
+            <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;font-size:12.5px;flex-wrap:wrap;">
+                <span><label for="imp-desde-venta" style="margin:0 6px 0 0;">Desde</label><input type="date" id="imp-desde-venta" style="width:auto;"></span>
+                <label style="display:flex;align-items:center;gap:6px;margin:0;"><input type="checkbox" id="imp-proformas" checked style="width:auto;"> Incluir proformas (ventas sin comprobante fiscal)</label>
+            </div>
+            <div style="font-size:12.5px;color:#666;margin-bottom:8px;">En Citrus hay facturas <b>fiscales</b> (NCF B01/B02/E31/E32) y <b>proformas</b> numeradas sin NCF, ambas marcadas como cobradas. Las proformas entran con la categoría «Venta (proforma, sin NCF)» para poder separarlas en los reportes. Las anuladas no se traen.</div>
+            <button class="act" id="btn-imp-venta-ver" onclick="importar('factura-cliente', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+            <button class="act" id="btn-imp-venta-ok" onclick="importar('factura-cliente', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
         </div>
         <div id="imp-resumen" style="display:none;margin-top:12px;font-size:13.5px;line-height:1.5;"></div>
     </div>
@@ -308,17 +318,18 @@
     const FN_IMPORT = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusImportar';
     const escI = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     window.importar = async function (entidad, aplicar) {
-        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra' }[entidad] || entidad;
+        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra', 'factura-cliente': 'facturas de venta' }[entidad] || entidad;
         if (aplicar && !confirm('Se importarán los ' + nom + ' de tu Citrus real al Panel (no se borra nada del Panel; no se escribe nada en Citrus). ¿Continuar?')) return;
         const btns = Array.from(document.querySelectorAll('[id^="btn-imp-"]'));
-        const desde = entidad === 'factura-suplidor' ? (document.getElementById('imp-desde').value || '') : '';
+        const desde = entidad === 'factura-suplidor' ? (document.getElementById('imp-desde').value || '') : (entidad === 'factura-cliente' ? (document.getElementById('imp-desde-venta').value || '') : '');
+        const incluirProformas = entidad === 'factura-cliente' ? document.getElementById('imp-proformas').checked : true;
         btns.forEach(b => b.disabled = true);
         setEstado((aplicar ? 'Importando ' : 'Calculando vista previa de ') + nom + ' desde Citrus… (puede tardar unos segundos)', '');
         const box = document.getElementById('imp-resumen'); box.style.display = 'none';
         document.getElementById('out').style.display = 'none'; document.getElementById('tabla').style.display = 'none';
         try {
             const token = await auth.currentUser.getIdToken();
-            const r = await fetch(FN_IMPORT, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ entidad, aplicar, desde }) });
+            const r = await fetch(FN_IMPORT, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ entidad, aplicar, desde, incluirProformas }) });
             const c = await r.json().catch(() => null);
             if (r.status === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
             if (!c) { setEstado('Respuesta vacía del puente (HTTP ' + r.status + ').', 'err'); return; }
@@ -328,8 +339,9 @@
             box.innerHTML = '<b>' + c.enPanelAntes + '</b> en el Panel antes · <b style="color:#16a085;">' + c.crear + ' nuevos</b> · <b style="color:#2471a3;">' + c.actualizar + ' a enlazar/actualizar</b> · ' + c.sinCambios + ' sin cambios'
                 + (aplicar ? ' · <b>' + c.escritos + ' escritos</b>' : '')
                 + (c.totalCrear != null ? ' · total nuevos <b>RD$ ' + Number(c.totalCrear).toLocaleString('es-DO', { minimumFractionDigits: 2 }) + '</b>' : '')
+                + (c.fiscales != null ? ' · <b>' + c.fiscales + ' fiscales</b> + <b>' + c.proformas + ' proformas</b>' : '')
                 + (c.porAnio ? ' · por año: ' + Object.keys(c.porAnio).sort().map(a => a + ': ' + c.porAnio[a]).join(', ') : '')
-                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') : '')
+                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') + (c.omitidas.proformas ? ', ' + c.omitidas.proformas + ' proformas excluidas' : '') : '')
                 + (c.muestraCrear.length ? '<div style="margin-top:8px;color:#16a085;font-weight:600;">Nuevos — muestra de ' + c.muestraCrear.length + ' de ' + c.crear + ' (los más recientes primero):</div>' + li(c.muestraCrear, x => '<li>' + escI(x.nombre) + (x.documento ? ' <span style="color:#777;">· ' + escI(x.documento) + '</span>' : '') + (x.precio ? ' <span style="color:#777;">· RD$ ' + Number(x.precio).toLocaleString('es-DO') + '</span>' : '') + '</li>') : '')
                 + (c.muestraActualizar.length ? '<div style="margin-top:4px;color:#2471a3;font-weight:600;">A enlazar/actualizar (primeros ' + c.muestraActualizar.length + '):</div>' + li(c.muestraActualizar, x => '<li>' + escI(x.nombre) + ' <span style="color:#777;">· ' + escI(x.campos.join(', ')) + '</span></li>') : '');
             box.style.display = 'block';

@@ -952,7 +952,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
 // 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
 // código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
-const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos' };
+const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
@@ -962,10 +962,14 @@ const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' 
 const TIPO_ITEM_CITRUS = { 1: 'producto', 2: 'producto', 3: 'servicio', 4: 'producto' };
 const CAT_ITEM_CITRUS = { 2: 'Consumibles', 4: 'Compras varias' };
 
-async function citrusLeerTodo(ctx, entidad) {
+async function citrusLeerTodo(ctx, entidad, conDetalles) {
     const out = [];
     for (let p = 0; p < 100; p++) {
-        const url = `${ctx.base}/v5/${entidad}/extraccionDatos${p ? '?request.indiceDePagina=' + p : ''}`;
+        const params = new URLSearchParams();
+        if (p) params.set('request.indiceDePagina', String(p));
+        if (conDetalles) params.set('request.cargarReferencias', 'true');   // líneas del documento (Detalles[])
+        const qs = params.toString();
+        const url = `${ctx.base}/v5/${entidad}/extraccionDatos${qs ? '?' + qs : ''}`;
         const r = await fetch(url, { headers: { 'Authorization': ctx.token, 'Accept': 'application/json' } });
         const text = await r.text();
         if (!r.ok) throw new Error(`Citrus ${r.status} leyendo ${entidad} (página ${p}): ${text.slice(0, 200)}`);
@@ -1161,6 +1165,112 @@ function planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, co
     }
 }
 
+// ---- Facturas de venta (factura-cliente) → ingresos del Panel ----
+// Citrus real (2026-09-17): 266 facturas 2025-03 → 2026-09 = 148 FISCALES (NCF B01/B02/E31/E32) + 118 PROFORMAS
+// (`EsProForma:'True'`, "NCF" = solo un número correlativo, sin comprobante fiscal; Citrus las marca Cobrada igual).
+// Con `request.cargarReferencias=true` llegan las líneas (`Detalles[].ItemDescripcion/ItemPrecio/ItemCantidad/Nota`),
+// que dan un concepto legible. Total = Monto (suma bruta de líneas) − DescuentoTotal + Impuesto (comprobado con datos).
+// `MontoCobrado`/`FechaCobro` vienen vacíos y los `recibo` no se enlazan a facturas → fechaPago queda vacía.
+const esProforma = (f) => String(f.EsProForma) === 'True' || f.EsProForma === true;
+const normNcf = (s) => String(s || '').toUpperCase().replace(/\s+/g, '').replace(/^FACTURA/, '').replace(/[^A-Z0-9]/g, '');
+function conceptoDeLineas(f) {
+    const det = Array.isArray(f.Detalles) ? f.Detalles : [];
+    const partes = det.map(l => limpio(l.ItemDescripcion)).filter(Boolean);
+    if (!partes.length) return '';
+    const unicas = [...new Set(partes)];
+    const txt = unicas.slice(0, 3).join(' · ');
+    return unicas.length > 3 ? `${txt} (+${unicas.length - 3} líneas)` : txt;
+}
+function mapFacturaClienteCitrus(f, clientePanel) {
+    const bruto = Number(f.Monto) || 0, desc = Number(f.DescuentoTotal) || 0, itbis = Number(f.Impuesto) || 0;
+    const total = r2(bruto - desc + itbis);
+    const proforma = esProforma(f);
+    const fecha = limpio(f.Fecha).slice(0, 10);
+    const numero = limpio(f.NCF);
+    const tercero = limpio(f.NombreCliente) || (clientePanel && clientePanel.nombre) || '';
+    const lineas = (Array.isArray(f.Detalles) ? f.Detalles : []).map(l => ({
+        descripcion: limpio(l.ItemDescripcion), cantidad: Number(l.ItemCantidad) || 0, precio: r2(l.ItemPrecio), nota: limpio(l.Nota), citrusItemId: Number(l.ItemId) || null
+    }));
+    return {
+        tipo: 'ingreso',
+        fecha,
+        monto: total,
+        itbis: r2(itbis),
+        descuento: r2(desc),
+        montoPagado: f.Estatus === 'Cobrada' ? total : 0,
+        fechaPago: '',
+        tercero,
+        rnc: limpio(f.Documento).replace(/\D/g, ''),
+        ncf: proforma ? '' : numero.toUpperCase(),
+        citrusNumero: numero,                 // en proformas es el correlativo; en fiscales repite el NCF
+        citrusProforma: proforma,
+        citrusTipoVenta: limpio(f.Tipo),      // Crédito / Contado
+        citrusTiendaId: Number(f.TiendaId) || null,
+        citrusVendedorId: Number(f.VendedorId) || null,
+        citrusClienteId: Number(f.ClienteId) || null,
+        clienteId: clientePanel ? clientePanel.id : '',
+        citrusEstatus: limpio(f.Estatus),
+        citrusEcf: String(f.EsComprobanteElectronico) === 'True' ? (limpio(f.EstatusComprobanteElectronico) || 'e-CF') : '',
+        lineas
+    };
+}
+const CAMPOS_CITRUS_VENTA = ['fecha', 'monto', 'itbis', 'descuento', 'montoPagado', 'tercero', 'rnc', 'ncf', 'citrusNumero', 'citrusProforma', 'citrusTipoVenta', 'citrusTiendaId', 'citrusVendedorId', 'citrusClienteId', 'citrusEstatus', 'citrusEcf', 'lineas'];
+const CAMPOS_RELLENAR_INGRESO = ['itbis', 'tercero', 'rnc', 'ncf', 'montoPagado'];
+
+async function planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas) {
+    const clientesSnap = await db.collection('clientes').get();
+    const clientePorCitrusId = new Map();
+    clientesSnap.forEach(d => { const x = d.data(); if (x.citrusId != null) clientePorCitrusId.set(Number(x.citrusId), { id: d.id, nombre: x.nombre || '' }); });
+    const porCitrusId = new Map(), porNcf = new Map(), porFechaMonto = new Map();
+    existentes.forEach(d => {
+        const x = d.data();
+        if (x.tipo !== 'ingreso') return;
+        if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
+        if (normNcf(x.ncf)) porNcf.set(normNcf(x.ncf), d);
+        if (x.citrusId == null && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+    });
+    plan.omitidas = { canceladas: 0, antesDeDesde: 0, proformas: 0 };
+    plan.totalCrear = 0; plan.porAnio = {}; plan.fiscales = 0; plan.proformas = 0;
+    for (const f of registros) {
+        const m = mapFacturaClienteCitrus(f, f.ClienteId ? clientePorCitrusId.get(Number(f.ClienteId)) : null);
+        if (!m.fecha) continue;
+        if (desde && m.fecha < desde) { plan.omitidas.antesDeDesde++; continue; }
+        if (m.citrusProforma && !incluirProformas) { plan.omitidas.proformas++; continue; }
+        const ex = porCitrusId.get(Number(f.Id)) || (m.ncf && porNcf.get(normNcf(m.ncf))) || porFechaMonto.get(`${m.fecha}|${m.monto}`);
+        if (ex) {
+            const x = ex.data(); const cambios = {};
+            if (Number(x.citrusId) !== Number(f.Id)) {
+                cambios.citrusId = Number(f.Id); cambios.citrusEstatus = m.citrusEstatus; cambios.citrusProforma = m.citrusProforma; cambios.citrusNumero = m.citrusNumero; cambios.citrusClienteId = m.citrusClienteId; cambios.lineas = m.lineas;
+                if (!limpio(x.clienteId) && m.clienteId) cambios.clienteId = m.clienteId;
+                CAMPOS_RELLENAR_INGRESO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
+            } else {
+                CAMPOS_CITRUS_VENTA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                if (m.citrusEstatus === 'Cancelada' && x.citrusEstatus !== 'Cancelada') cambios.concepto = '⚠ ANULADA en Citrus · ' + String(x.concepto || '');
+            }
+            if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+            else plan.sinCambios.push(`${m.fecha} · ${m.tercero}`);
+        } else {
+            if (m.citrusEstatus === 'Cancelada') { plan.omitidas.canceladas++; continue; }
+            const id = `citrus-fc-${f.Id}`;
+            const etiqueta = m.citrusProforma ? `Proforma ${m.citrusNumero}` : `Factura ${m.ncf}`;
+            const concepto = conceptoDeLineas(f) || 'Venta';
+            plan.crear.push({ id, nombre: `${m.fecha} · ${m.tercero || 'sin cliente'} · ${etiqueta}`, precio: m.monto, fecha: m.fecha });
+            plan.totalCrear = r2(plan.totalCrear + m.monto);
+            plan.porAnio[m.fecha.slice(0, 4)] = (plan.porAnio[m.fecha.slice(0, 4)] || 0) + 1;
+            if (m.citrusProforma) plan.proformas++; else plan.fiscales++;
+            escrituras.push([db.collection(coleccion).doc(id), {
+                ...m,
+                concepto: `${etiqueta} · ${concepto}`,
+                categoria: m.citrusProforma ? 'Venta (proforma, sin NCF)' : 'Venta de productos',
+                centroCosto: '', metodo: m.citrusEstatus === 'Cobrada' ? 'Cobrado (según Citrus)' : 'Pendiente de cobro',
+                cuentaBancoId: '', cuentaBancoNombre: '',
+                notas: `Importada de Citrus · ${m.citrusProforma ? 'PROFORMA (sin comprobante fiscal)' : 'factura fiscal' + (m.citrusEcf ? ' · e-CF ' + m.citrusEcf : '')} · ${m.citrusTipoVenta} · estatus ${m.citrusEstatus}`,
+                origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+            }, true]);
+        }
+    }
+}
+
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const admin = await callerAdmin(req);
@@ -1171,7 +1281,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
     const aplicar = !!(req.body && req.body.aplicar);
     const ctx = citrusCtx(req, true);
     let registros;
-    try { registros = await citrusLeerTodo(ctx, entidad); }
+    try { registros = await citrusLeerTodo(ctx, entidad, entidad === 'factura-cliente'); }
     catch (e) { res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) }); return; }
 
     const ahora = FieldValue.serverTimestamp();
@@ -1219,6 +1329,10 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
     } else if (entidad === 'factura-suplidor') {
         const desde = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.desde) || '')) ? req.body.desde : '';
         planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde);
+    } else if (entidad === 'factura-cliente') {
+        const desde = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.desde) || '')) ? req.body.desde : '';
+        const incluirProformas = !(req.body && req.body.incluirProformas === false);
+        await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1251,7 +1365,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
         crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
         // Muestra: las más recientes primero (las facturas traen `fecha`; el resto conserva el orden de Citrus).
         muestraCrear: plan.crear.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
-        porAnio: plan.porAnio || null,
+        porAnio: plan.porAnio || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
         omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null
     };
     if (!aplicar) { res.status(200).json(resumen); return; }
