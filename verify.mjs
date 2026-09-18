@@ -87,6 +87,16 @@ try {
   ] }); ok++;
 } catch (e) { fail++; console.error('  ducha_facade:', e.message); }
 
+// Vidrio de Ducha en esquina a 90° (lado A + lado B, con puerta/deslizante en cada lado)
+for (const k of [1, 2, 3]) {
+  try { ctx.__render('facade', { type: 'ducha_facade', categoria: 'cerramiento', alto: 2000, esquinaAfter: k, paneles: [
+    { tipo: 'fijo', ancho: 700, color_vidrio: 'natural', herraje_color: 'cromado', fijacion: 'conectores' },
+    { tipo: 'puerta', ancho: 700, orientacion: 'D', color_vidrio: 'natural', herraje_color: 'negro', tirador: '8' },
+    { tipo: 'deslizante', ancho: 900, orientacion: 'I', color_vidrio: 'natural', herraje_color: 'cromado', tirador: 'redondo' },
+    { tipo: 'fijo', ancho: 600, color_vidrio: 'natural', herraje_color: 'cromado', fijacion: 'moldura', moldura_color: 'negro' },
+  ] }); ok++; }
+  catch (e) { fail++; console.error('  ducha esquina k=' + k + ':', e.message); }
+}
 // Paño Fijo adosado (arriba/abajo): tipos con vista de planta (win_abat/win_ob/door_abat,
 // donde la vista de planta se reubica al final) y uno sin ella (win_proy), en las 3
 // combinaciones (solo arriba, solo abajo, ambos) para no repetir la regresión donde el paño

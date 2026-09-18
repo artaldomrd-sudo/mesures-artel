@@ -624,6 +624,15 @@ estilo simplificado del CAD.
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).
+- **Esquina a 90° (2026-09-18, pedido del usuario)**: `state.esquinaAfter` = nº de paneles del lado A
+  (0 = sin esquina; `facadeEsquinaK` lo acota a 1..n−1; `facadeInvert` lo refleja: n−k). Selector
+  "Esquina 90°" en el constructor (solo con 2+ paneles). `renderFacade`: la elevación sigue
+  DESPLEGADA (plana) con la línea punteada "ESQUINA 90°" en el borde del panel k, y debajo una
+  VISTA EN PLANTA con la "L": lado A horizontal (interior de la ducha arriba, baño abajo) y lado B
+  subiendo desde la esquina (se aleja del que mira; exterior a la derecha) — fijo = línea gruesa,
+  deslizante = doble línea, puerta = hoja a 30° + arco punteado abriendo hacia el baño. El viewBox
+  crece hacia abajo lo que mida el lado B. Resumen: "(N paneles, en esquina)" + línea "Esquina a
+  90° después del panel k: lado A = paneles 1–k (W mm) · lado B = …". `verify.mjs`: k = 1, 2, 3.
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin
