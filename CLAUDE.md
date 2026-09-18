@@ -897,6 +897,15 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   cota de ancho y la pared; `planLeftExt`/`planRightExt` ensanchan el viewBox si el exterior del
   ala (rieles/arcos) sobresale. Las etiquetas int/ext se mueven al lado derecho del frente cuando
   el ala está a la izquierda. Resumen: línea "Fachada de esquina (en L): ala … + frente …".
+  **Giro y ángulo del ala (2026-09-18, usuario: "más opciones de configuración de esquina")**:
+  `esquinaGiro` `'adentro'` (default) | `'afuera'` y `esquinaAngulo` (90 default; select 90/100/110/
+  120/135/150). La planta calcula la dirección del ala `dW` y su normal `nW` rotando las del frente
+  (`rotV`, φ = 180 − ángulo; izq adentro = +φ, der adentro = −φ, afuera invierte) y arma la matriz
+  del ala (izq: p = esquina + (wingW − x)·d + y·n; der: p = esquina + x·d + y·n — con adentro/90° salen
+  las matrices de siempre). El espacio de la planta (planY, planExtra, planLeftExt/RightExt) sale de la
+  caja envolvente del ala (`wMinX/wMaxX/wMinY/wMaxY`) y no de "wingW hacia arriba". Si el ángulo no es
+  90° se rotula junto a la esquina; el resumen dice "gira hacia AFUERA a 135°". La elevación desplegada
+  no cambia. `verify.mjs`: 8 combinaciones.
   **Hojas que se encuentran en la esquina (2026-09-05, regla del usuario):** las dos hojas que
   llegan a la esquina — la EXTERIOR de cada columna adyacente — deben cerrar una contra la otra
   (cierre multipunto de esquina, sin poste). Funciona cuando en el ala la hoja exterior queda del

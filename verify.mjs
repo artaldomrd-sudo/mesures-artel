@@ -121,6 +121,11 @@ try {
 } catch (e) { fail++; console.error('  plegable regla hoja máx:', e.message); }
 try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 3000, rows: [{ h: 2500, celda: 'pleg', alu: 'E63', pleg_esquema: '431', lado: 'der', pleg_apertura: 'adentro' }] }, { w: 1000, rows: [{ h: 2500, celda: 'pf' }] }, { w: 1400, rows: [{ h: 1500, celda: 'osci', apertura: 'adentro_2', hoja_principal: 'izq' }] }, { w: 3000, rows: [{ h: 2500, celda: 'cor4_cent', alu: 'P92' }] }], fajaArriba: { h: 400, celda: 'louvers' } }); ok++; }
 catch (e) { fail++; console.error('  plegable fachada:', e.message); }
+// Fachada de esquina: giro hacia afuera y ángulos distintos de 90°, ala izquierda y derecha
+for (const lado of ['izq', 'der']) for (const [giro, ang] of [['adentro', 90], ['afuera', 90], ['adentro', 135], ['afuera', 120]]) {
+  try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', color_vidrio: 'natural', verPlanta: true, esquinaLado: lado, esquinaCols: 1, esquinaGiro: giro, esquinaAngulo: ang, cols: [{ w: 1200, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', cor_interior: 'I' }] }, { w: 2400, rows: [{ h: 2400, celda: 'cor3', alu: 'P92', cor_interior: 'D' }] }, { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1' }] }] }); ok++; }
+  catch (e) { fail++; console.error(`  esquina ${lado}/${giro}/${ang}:`, e.message); }
+}
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
   try { ctx.__render('card1', { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1000, alto: 2100, orientacion: 'D', vidrio: 'tubos2040', color_perfil: 'negro', panoArriba: t === 'win_abat' ? { alto: 300, vidrio: 'tubos2040', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }

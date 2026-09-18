@@ -560,7 +560,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:05</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-18 10:07</div>
         </div>
     </div>
     
@@ -1990,7 +1990,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                         const ala = lado === 'izq' ? cols.slice(0, n) : cols.slice(cols.length - n);
                         const frente = lado === 'izq' ? cols.slice(n) : cols.slice(0, cols.length - n);
                         const mm = arr => arr.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
-                        return `<div style="margin-top:2px;"><b>Fachada de esquina (en L):</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}, gira hacia adentro) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.${[['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].filter(([, f]) => f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')).map(([pos, f]) => ` Faja ${pos} solo sobre ${f.esquinaSolo === 'ala' ? 'el ala' : 'el frente'}.`).join('')}</div>`;
+                        return `<div style="margin-top:2px;"><b>Fachada de esquina (en L):</b> ala ${lado === 'izq' ? 'izquierda' : 'derecha'} de <b style="color:#e74c3c;">${mm(ala)} mm</b> (${n} columna${n > 1 ? 's' : ''}, gira hacia ${state.esquinaGiro === 'afuera' ? 'AFUERA' : 'adentro'}${(parseFloat(state.esquinaAngulo) || 90) !== 90 ? ' a ' + (parseFloat(state.esquinaAngulo) || 90) + '°' : ''}) + frente de <b style="color:#e74c3c;">${mm(frente)} mm</b>. El ancho total de arriba es la fachada desplegada.${[['superior', state.fajaArriba], ['inferior', state.fajaAbajo]].filter(([, f]) => f && (f.esquinaSolo === 'ala' || f.esquinaSolo === 'frente')).map(([pos, f]) => ` Faja ${pos} solo sobre ${f.esquinaSolo === 'ala' ? 'el ala' : 'el frente'}.`).join('')}</div>`;
                     })()}
                 </div>
                 <div style="color:#888; font-size:11px; letter-spacing:.5px; margin-bottom:2px;">DETALLE POR ELEMENTO</div>
@@ -6925,13 +6925,26 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             }
             const cornerOf = ci => cornerMap.get(ci) || null;
             const needsC = ci => { const nn = needs(ci); const c = cornerOf(ci); if (c && c.extend) nn.ext = Math.max(nn.ext, (c.vmax - 1) * 2.4 + 1); return nn; };
-            let upNeed = 0, downNeed = 0, wingExt = 0;
+            let upNeed = 0, downNeed = 0, wingExt = 0, wingInt = 0;
             mainCols.forEach(ci => { const n = needsC(ci); upNeed = Math.max(upNeed, n.int); downNeed = Math.max(downNeed, n.ext); });
-            wingCols.forEach(ci => { const n = needsC(ci); wingExt = Math.max(wingExt, n.ext); });
+            wingCols.forEach(ci => { const n = needsC(ci); wingExt = Math.max(wingExt, n.ext); wingInt = Math.max(wingInt, n.int); });
             const wingW = wingCols.reduce((a, c) => a + c.w, 0);   // largo del ala (a escala, igual que en la elevación)
+            // Giro del ala (usuario 2026-09-18, "más opciones de esquina"): hacia ADENTRO (default, la "L"
+            // cierra hacia el interior) o hacia AFUERA, y con el ÁNGULO real de la esquina (90° por defecto;
+            // 135° = esquina abierta). Se calcula la dirección del ala `dW` (desde la esquina) y su normal `nW`
+            // (hacia donde apunta el "y" local = exterior) rotando la del frente; con eso la matriz del ala y
+            // el espacio que necesita la planta arriba/abajo/a los costados.
+            const giroAfuera = state.esquinaGiro === 'afuera';
+            const angE = Math.min(170, Math.max(20, parseFloat(state.esquinaAngulo) || 90));
+            const phiE = (180 - angE) * Math.PI / 180;
+            const rotV = (v, t) => [v[0] * Math.cos(t) - v[1] * Math.sin(t), v[0] * Math.sin(t) + v[1] * Math.cos(t)];
+            const thetaE = esqLado === 'izq' ? (giroAfuera ? -phiE : phiE) : (giroAfuera ? phiE : -phiE);
+            const dW = rotV(esqLado === 'izq' ? [-1, 0] : [1, 0], thetaE), nW = rotV([0, 1], thetaE);
+            let wMinX = 0, wMaxX = 0, wMinY = 0, wMaxY = 0;
+            if (wingCols.length) [0, wingW].forEach(t => [-wingInt, wingExt].forEach(sN => { const px = t * dW[0] + sN * nW[0], py = t * dW[1] + sN * nW[1]; wMinX = Math.min(wMinX, px); wMaxX = Math.max(wMaxX, px); wMinY = Math.min(wMinY, py); wMaxY = Math.max(wMaxY, py); }));
             const planTop = anchoBottom + 8;            // debajo de la línea de cota del ancho total
-            // Línea de pared del frente: deja arriba el espacio del giro hacia adentro y del ala girada.
-            const planY = planTop + 7 + Math.max(upNeed, wingW ? wingW - 2 : 0);
+            // Línea de pared del frente: deja arriba el espacio del giro hacia adentro y de lo que suba el ala.
+            const planY = planTop + 7 + Math.max(upNeed, -wMinY > 0 ? -wMinY - 2 : 0);
             cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             mainCols.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R, uid, cornerOf(ci)); });
             if (entreSuma) mainCols.forEach((ci, i) => { if (i > 0) cotas += `<line x1="${(ci.x - gapDW).toFixed(1)}" y1="${planY}" x2="${ci.x.toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`; });
@@ -6941,19 +6954,26 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 // gira con una matriz: ala izquierda → su exterior queda a la izquierda del dibujo; ala
                 // derecha → a la derecha. El extremo lejano del ala queda arriba, la esquina abajo.
                 const x0 = wingCols[0].x;
-                const m = esqLado === 'izq' ? `matrix(0 1 -1 0 ${cornerX.toFixed(1)} ${(planY - wingW).toFixed(1)})` : `matrix(0 -1 1 0 ${cornerX.toFixed(1)} ${planY.toFixed(1)})`;
+                // Ala izquierda: su extremo pegado a la esquina es x = wingW (p = esquina + (wingW − x)·d + y·n);
+                // ala derecha: arranca en la esquina (p = esquina + x·d + y·n). Con giro adentro a 90° da las
+                // mismas matrices de siempre: izq matrix(0 1 -1 0 …), der matrix(0 -1 1 0 …).
+                const f6 = v => v.toFixed(4);
+                const m = esqLado === 'izq'
+                    ? `matrix(${f6(-dW[0])} ${f6(-dW[1])} ${f6(nW[0])} ${f6(nW[1])} ${(cornerX + wingW * dW[0]).toFixed(2)} ${(planY + wingW * dW[1]).toFixed(2)})`
+                    : `matrix(${f6(dW[0])} ${f6(dW[1])} ${f6(nW[0])} ${f6(nW[1])} ${cornerX.toFixed(2)} ${planY.toFixed(2)})`;
                 let ala = '';
                 wingCols.forEach(ci => { ala += gridColPlan(ci.x - x0, ci.w, ci.col, 0, ci.w * RATIO_R, uid, cornerOf(ci)); });
                 cotas += `<g transform="${m}">${ala}</g>`;
-                // remate de la esquina (une la pared del ala con la del frente)
+                // remate de la esquina (une la pared del ala con la del frente) + ángulo si no es recto
                 cotas += `<circle cx="${cornerX.toFixed(1)}" cy="${planY.toFixed(1)}" r="1.3" fill="#bdc3c7"/>`;
-                if (esqLado === 'izq') planLeftExt = Math.max(0, wingExt + 3 - cornerX); else planRightExt = Math.max(0, cornerX + wingExt + 3 - DW);
+                if (angE !== 90) cotas += `<text x="${(cornerX + (esqLado === 'izq' ? 4 : -4)).toFixed(1)}" y="${(planY + (giroAfuera ? -3 : 6)).toFixed(1)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="${esqLado === 'izq' ? 'start' : 'end'}" stroke="none">${angE}°</text>`;
+                planLeftExt = Math.max(0, 3 - (cornerX + wMinX)); planRightExt = Math.max(0, cornerX + wMaxX + 3 - DW);
             }
             // int/ext una sola vez (interior arriba, exterior abajo — vista exterior), como drawPlanView
             const lblX = esqLado === 'izq' ? (mainCols[mainCols.length - 1].x + mainCols[mainCols.length - 1].w + 6) : (offMain - 6);
             cotas += `<text x="${lblX.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">int</text>`;
             cotas += `<text x="${lblX.toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ext</text>`;
-            planExtra = (planY + Math.max(downNeed, 8) + 4) - anchoBottom;
+            planExtra = (planY + Math.max(downNeed, wMaxY, 8) + 4) - anchoBottom;
         }
         const vbY = (esqLado ? -14 : -10) - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
         const vbX = -22 - Math.max(0, planLeftExt - 22), vbW = (DW + 26 + (rowDims.length ? 9 : 0) + Math.max(0, planRightExt - 26)) - vbX;   // +9: cota del alto total corrida por las cotas de filas
@@ -7108,7 +7128,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         {
             const esq = st.esquinaLado || '';
             const nE = Math.min(Math.max(1, parseInt(st.esquinaCols) || 1), Math.max(1, cols.length - 1));
-            const ESQ = [['', 'Sin esquina (fachada recta)'], ['izq', 'Esquina a la IZQUIERDA (el ala izquierda gira hacia adentro)'], ['der', 'Esquina a la DERECHA (el ala derecha gira hacia adentro)']];
+            const ESQ = [['', 'Sin esquina (fachada recta)'], ['izq', 'Esquina a la IZQUIERDA (gira el ala izquierda)'], ['der', 'Esquina a la DERECHA (gira el ala derecha)']];
             const NCOL = Array.from({ length: Math.max(1, cols.length - 1) }, (_, i) => [String(i + 1), (i + 1) + (i ? ' columnas' : ' columna') + ' en el ala']);
             // Siempre visible (el usuario no la encontraba con 1 sola columna). Con una sola columna no hay
             // nada que girar: se avisa que hace falta una 2ª columna (una por cada lado de la esquina).
@@ -7116,6 +7136,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 8px;background:#eef6ff;border-radius:6px;padding:6px;">
                 <label style="${gbl}">Esquina</label><select style="${inp}" onchange="gridSetEsquina(${id},this.value)">${opt(ESQ, esq)}</select>
                 ${esq && cols.length >= 2 ? `<label style="${gbl}">Ala</label><select style="${inp}" onchange="gridSetEsquinaCols(${id},this.value)">${opt(NCOL, String(nE))}</select>` : ''}
+                ${esq && cols.length >= 2 ? `<label style="${gbl}">Giro</label><select style="${inp}" onchange="gridSetEsquinaGiro(${id},this.value)"><option value="adentro" ${(st.esquinaGiro || 'adentro') === 'adentro' ? 'selected' : ''}>El ala gira hacia ADENTRO (la L cierra hacia el interior)</option><option value="afuera" ${st.esquinaGiro === 'afuera' ? 'selected' : ''}>El ala gira hacia AFUERA (la L abre hacia el exterior)</option></select>` : ''}
+                ${esq && cols.length >= 2 ? `<label style="${gbl}">Ángulo</label><select style="${inp}" onchange="gridSetEsquinaAngulo(${id},this.value)">${[90, 100, 110, 120, 135, 150].map(a => `<option value="${a}" ${(parseFloat(st.esquinaAngulo) || 90) === a ? 'selected' : ''}>${a}°${a === 90 ? ' (esquina recta)' : a === 135 ? ' (esquina abierta)' : ''}</option>`).join('')}</select>` : ''}
                 ${esq ? aviso : ''}
             </div>`;
         }
@@ -7281,6 +7303,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         gridFull(id);
     };
     window.gridSetEsquinaCols = (id, v) => { cardsState[id].esquinaCols = parseInt(v) || 1; gridDraw(id); };
+    window.gridSetEsquinaGiro = (id, v) => { cardsState[id].esquinaGiro = v === 'afuera' ? 'afuera' : 'adentro'; gridDraw(id); };
+    window.gridSetEsquinaAngulo = (id, v) => { cardsState[id].esquinaAngulo = parseFloat(v) || 90; gridDraw(id); };
     window.gridFajaAlign = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].align = v; gridDraw(id); };
     // Al cambiar el tipo de elemento de una celda/faja, su aluminio se resetea al que aplica a ese tipo.
     window.gridSetCelda = (id, ci, ri, v) => { const r = cardsState[id].cols[ci].rows[ri]; r.celda = v; r.alu = celdaAluDefault(v); gridFull(id); };
