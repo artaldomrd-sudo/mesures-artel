@@ -1960,7 +1960,8 @@ edición con los controles escondidos — encabezado de 5 casillas aplastado (no
   viewBox (150–460 px, `fitDrawings` + resize). Pone `body.ro-role-{rol}`.
 - Los 4 recuadros inyectados (`injectFabricaChecklist/Chofer/Instalador/PartesResumen`) llevan
   clase `.ro-checklist`. **El orden lo da CSS con `order` de flex** (`.item-card` ya es flex
-  column): `.ro-head` −3 → `.ro-checklist` −2 → `.summary-box` −1 → dibujo 1 → `.ro-notes` 2.
+  column): `.ro-head` −4 → vías + dibujo −3 → `.ro-checklist` −2 → `.summary-box` −1 → `.ro-notes` 2
+  (2026-09-18, usuario: "primero el dibujo y después la lista de pasos"; antes el dibujo iba al final).
   No se tocó ninguna plantilla de tarjeta.
 - CSS bajo **`body.readonly-view:not(.printing-sheets)`** (importante: "Imprimir / PDF" de la
   ficha usa el mismo body → sin el `:not` el PDF perdería encabezado/ref/notas): oculta
