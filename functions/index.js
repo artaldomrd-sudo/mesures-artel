@@ -943,6 +943,176 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
     }
 });
 
+// ---------- Importar de Citrus al Panel: clientes e ítems (Etapa 1) ----------
+// Lee TODO el catálogo de Citrus (extraccionDatos paginado de 1000) y hace upsert en las colecciones
+// del Panel guardando el id de Citrus en cada documento, para poder mapear después (facturas, etc.).
+// Reglas acordadas con el usuario (2026-09-17): NO se borra ningún cliente del Panel; los que
+// coinciden por nombre (o por documento) se enlazan y solo se les RELLENAN los campos que tenían
+// vacíos; los nuevos se crean con el mismo id que usa clientes.html (nombre en minúsculas). Con
+// { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
+const IMPORT_ENTIDADES = { cliente: 'clientes', item: 'productos' };
+const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
+const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
+// TipoItemId de Citrus (inferido de los datos reales, no documentado en la API): 3 = servicio /
+// concepto facturable (1713 ítems: las descripciones de cotización), 2 = producto de inventario
+// (silicones, urethano…), 4 = compras varias (mercancías, muebles, vehículo), 1 = un solo ítem.
+const TIPO_ITEM_CITRUS = { 1: 'producto', 2: 'producto', 3: 'servicio', 4: 'producto' };
+const CAT_ITEM_CITRUS = { 2: 'Consumibles', 4: 'Compras varias' };
+
+async function citrusLeerTodo(ctx, entidad) {
+    const out = [];
+    for (let p = 0; p < 100; p++) {
+        const url = `${ctx.base}/v5/${entidad}/extraccionDatos${p ? '?request.indiceDePagina=' + p : ''}`;
+        const r = await fetch(url, { headers: { 'Authorization': ctx.token, 'Accept': 'application/json' } });
+        const text = await r.text();
+        if (!r.ok) throw new Error(`Citrus ${r.status} leyendo ${entidad} (página ${p}): ${text.slice(0, 200)}`);
+        let j; try { j = JSON.parse(text); } catch (_) { throw new Error(`Citrus devolvió algo que no es JSON en ${entidad}`); }
+        const arr = Array.isArray(j) ? j : (j && (j.Data || j.data || j.Items || j.items || j.Resultado || j.resultado || j.lista));
+        if (!Array.isArray(arr)) throw new Error(`No reconocí la lista de ${entidad} en la respuesta de Citrus`);
+        out.push(...arr);
+        if (arr.length < 1000) break;
+    }
+    return out;
+}
+const limpio = (v) => String(v == null ? '' : v).trim();
+function mapClienteCitrus(c) {
+    return {
+        nombre: limpio(c.Nombre),
+        tipoDocumento: TIPO_DOC_CITRUS[c.TipoDocumento] || limpio(c.TipoDocumento),
+        documento: limpio(c.Documento),
+        telefono: limpio(c.Telefono1) || limpio(c.Telefono2),
+        correo: limpio(c.Email).toLowerCase(),
+        direccion: [limpio(c.Direccion1), limpio(c.Direccion2)].filter(Boolean).join(', '),
+        contacto: limpio(c.Contacto),
+        citrusTipoFactura: limpio(c.Tipo),           // "Factura de Consumo" / "Factura crédito fiscal"
+        citrusEstatus: limpio(c.Estatus)
+    };
+}
+// Campos que se RELLENAN en un cliente ya existente solo si estaban vacíos (nunca se pisa lo que el panel ya tiene).
+const CAMPOS_RELLENAR_CLIENTE = ['tipoDocumento', 'documento', 'telefono', 'correo', 'direccion', 'contacto'];
+
+function mapItemCitrus(it) {
+    const precio = Number(it.Precio1) || 0;
+    const costo = Number(it.CostoUltimoDeCompra) || Number(it.CostoEstandar) || 0;
+    const nombre = limpio(it.Nombre);
+    const desc = limpio(it.Descripcion);
+    return {
+        nombre,
+        descripcion: desc && desc !== nombre ? desc : '',
+        codigo: limpio(it.Referencia) || limpio(it.CodigoBarra),
+        tipo: TIPO_ITEM_CITRUS[it.TipoItemId] || 'producto',
+        precioVenta: precio,
+        costo,
+        activo: it.Estatus === 'Activo',
+        citrusTipoItemId: Number(it.TipoItemId) || 0,
+        citrusCategoriaId: it.CategoriaId == null ? null : Number(it.CategoriaId)
+    };
+}
+// Campos que Citrus MANDA en un producto ya importado (se actualizan en cada sync). Los demás
+// (fotos, categoría, unidad, descripción editada en el panel) no se tocan al re-sincronizar.
+const CAMPOS_CITRUS_ITEM = ['nombre', 'codigo', 'tipo', 'precioVenta', 'costo', 'activo', 'citrusTipoItemId', 'citrusCategoriaId'];
+
+exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'solo admin' }); return; }
+    const entidad = String((req.body && req.body.entidad) || '').trim();
+    const coleccion = IMPORT_ENTIDADES[entidad];
+    if (!coleccion) { res.status(400).json({ error: 'entidad', permitidas: Object.keys(IMPORT_ENTIDADES) }); return; }
+    const aplicar = !!(req.body && req.body.aplicar);
+    const ctx = citrusCtx(req, true);
+    let registros;
+    try { registros = await citrusLeerTodo(ctx, entidad); }
+    catch (e) { res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) }); return; }
+
+    const ahora = FieldValue.serverTimestamp();
+    const existentes = await db.collection(coleccion).get();
+    const plan = { crear: [], actualizar: [], sinCambios: [] };
+    const escrituras = [];   // [ref, data, merge]
+
+    if (entidad === 'cliente') {
+        const porCitrusId = new Map(), porNombre = new Map(), porDocumento = new Map();
+        existentes.forEach(d => {
+            const x = d.data();
+            if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
+            if (x.nombre) porNombre.set(normNombre(x.nombre), d);
+            if (x.documento) porDocumento.set(String(x.documento).replace(/\D/g, ''), d);
+        });
+        const idsPlaneados = new Set();
+        for (const c of registros) {
+            const m = mapClienteCitrus(c);
+            if (!m.nombre) continue;
+            const docNum = m.documento.replace(/\D/g, '');
+            const ex = porCitrusId.get(Number(c.Id)) || (docNum && porDocumento.get(docNum)) || porNombre.get(normNombre(m.nombre));
+            if (ex) {
+                const x = ex.data();
+                const cambios = {};
+                if (Number(x.citrusId) !== Number(c.Id)) cambios.citrusId = Number(c.Id);
+                CAMPOS_RELLENAR_CLIENTE.forEach(k => { if (!limpio(x[k]) && m[k]) cambios[k] = m[k]; });
+                if (x.citrusTipoFactura !== m.citrusTipoFactura) cambios.citrusTipoFactura = m.citrusTipoFactura;
+                if (Object.keys(cambios).length) {
+                    plan.actualizar.push({ id: ex.id, nombre: x.nombre || m.nombre, campos: Object.keys(cambios) });
+                    escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]);
+                } else plan.sinCambios.push(x.nombre || m.nombre);
+            } else {
+                let id = normKeyCliente(m.nombre);
+                if (!id || idsPlaneados.has(id)) id = `${id || 'cliente'}-citrus-${c.Id}`;
+                idsPlaneados.add(id);
+                plan.crear.push({ id, nombre: m.nombre, documento: m.documento ? `${m.tipoDocumento} ${m.documento}` : '' });
+                escrituras.push([db.collection(coleccion).doc(id), {
+                    ...m, citrusId: Number(c.Id), estado: c.Estatus === 'Activo' ? 'activo' : 'inactivo',
+                    origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+                }, true]);
+            }
+        }
+    } else {
+        const porCitrusId = new Map();
+        existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
+        for (const it of registros) {
+            const m = mapItemCitrus(it);
+            if (!m.nombre) continue;
+            const ex = porCitrusId.get(Number(it.Id));
+            if (ex) {
+                const x = ex.data();
+                const cambios = {};
+                CAMPOS_CITRUS_ITEM.forEach(k => { if (JSON.stringify(x[k] == null ? null : x[k]) !== JSON.stringify(m[k] == null ? null : m[k])) cambios[k] = m[k]; });
+                if (Object.keys(cambios).length) {
+                    plan.actualizar.push({ id: ex.id, nombre: x.nombre || m.nombre, campos: Object.keys(cambios) });
+                    escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]);
+                } else plan.sinCambios.push(x.nombre || m.nombre);
+            } else {
+                const id = `citrus-${it.Id}`;
+                plan.crear.push({ id, nombre: m.nombre, precio: m.precioVenta });
+                escrituras.push([db.collection(coleccion).doc(id), {
+                    ...m, citrusId: Number(it.Id), categoria: CAT_ITEM_CITRUS[it.TipoItemId] || '', unidad: 'unidad', fotos: [],
+                    origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+                }, true]);
+            }
+        }
+    }
+
+    const resumen = {
+        entidad, coleccion, entorno: ctx.entorno, aplicado: aplicar,
+        enCitrus: registros.length, enPanelAntes: existentes.size,
+        crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
+        muestraCrear: plan.crear.slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25)
+    };
+    if (!aplicar) { res.status(200).json(resumen); return; }
+    try {
+        for (let i = 0; i < escrituras.length; i += 400) {
+            const batch = db.batch();
+            escrituras.slice(i, i + 400).forEach(([ref, data, merge]) => batch.set(ref, data, { merge }));
+            await batch.commit();
+        }
+        console.log('citrusImportar', admin, entidad, `crear=${plan.crear.length} actualizar=${plan.actualizar.length}`);
+        res.status(200).json({ ...resumen, escritos: escrituras.length });
+    } catch (e) {
+        console.error('citrusImportar', entidad, e);
+        res.status(500).json({ error: 'firestore', detalle: String((e && e.message) || e), ...resumen });
+    }
+});
+
 // redeploy 1786120000 (arqueo caja chica: push 8:00 / 4:55)
 
 // --- Precios de combustible (MICM) ---------------------------------------------------------------

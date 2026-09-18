@@ -127,6 +127,24 @@
         <button class="act" id="btn-crear" onclick="crearCliente()" style="background:#16a085;margin-top:14px;">➕ Crear cliente en Citrus</button>
     </div>
 
+    <div class="box">
+        <h2>4) Importar de Citrus al Panel (Etapa 1: clientes y productos)</h2>
+        <p style="font-size:13px;color:#555;margin:0 0 12px;">Trae los <b>clientes</b> y los <b>ítems</b> de tu Citrus real a las secciones Clientes y Productos del Panel, guardando el id de Citrus en cada ficha. Solo <b>lee</b> de Citrus; escribe en el Panel. Reglas: ningún cliente del Panel se borra; los que coinciden por nombre o documento se enlazan y solo se les rellenan los campos vacíos; los productos ya importados se actualizan (nombre, precio, costo, estado) sin tocar fotos ni categoría. Primero mira la <b>vista previa</b> (no escribe nada).</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
+                <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">👤 Clientes → <code>clientes</code></div>
+                <button class="act" id="btn-imp-cliente-ver" onclick="importar('cliente', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+                <button class="act" id="btn-imp-cliente-ok" onclick="importar('cliente', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+            </div>
+            <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;">
+                <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">📦 Productos (ítems) → <code>productos</code></div>
+                <button class="act" id="btn-imp-item-ver" onclick="importar('item', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+                <button class="act" id="btn-imp-item-ok" onclick="importar('item', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+            </div>
+        </div>
+        <div id="imp-resumen" style="display:none;margin-top:12px;font-size:13.5px;line-height:1.5;"></div>
+    </div>
+
     <div id="estado" class="estado" style="display:none;"></div>
     <!-- Tabla compacta (aparece cuando la respuesta es una lista): para leer de un vistazo
          códigos/letras sin desplegar el JSON completo. -->
@@ -271,6 +289,36 @@
         } catch (e) {
             setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err');
         } finally { btn.disabled = false; }
+    };
+
+
+    // ---- 4) Importar de Citrus al Panel ----
+    const FN_IMPORT = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusImportar';
+    const escI = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    window.importar = async function (entidad, aplicar) {
+        const nom = entidad === 'cliente' ? 'clientes' : 'productos';
+        if (aplicar && !confirm('Se importarán los ' + nom + ' de tu Citrus real al Panel (no se borra nada del Panel; no se escribe nada en Citrus). ¿Continuar?')) return;
+        const btns = ['btn-imp-cliente-ver', 'btn-imp-cliente-ok', 'btn-imp-item-ver', 'btn-imp-item-ok'].map(id => document.getElementById(id));
+        btns.forEach(b => b.disabled = true);
+        setEstado((aplicar ? 'Importando ' : 'Calculando vista previa de ') + nom + ' desde Citrus… (puede tardar unos segundos)', '');
+        const box = document.getElementById('imp-resumen'); box.style.display = 'none';
+        document.getElementById('out').style.display = 'none'; document.getElementById('tabla').style.display = 'none';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const r = await fetch(FN_IMPORT, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ entidad, aplicar }) });
+            const c = await r.json().catch(() => null);
+            if (r.status === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
+            if (!c) { setEstado('Respuesta vacía del puente (HTTP ' + r.status + ').', 'err'); return; }
+            if (c.error) { setEstado('Error: ' + c.error + (c.detalle ? ' — ' + c.detalle : ''), 'err'); mostrar(c); return; }
+            setEstado((aplicar ? '✅ Importación aplicada · ' : '👁 Vista previa (nada escrito) · ') + c.enCitrus + ' ' + nom + ' en Citrus (' + (c.entorno === 'prod' ? 'PRODUCCIÓN' : 'pruebas') + ')', 'ok');
+            const li = (arr, f) => arr.length ? '<ul style="margin:4px 0 10px 18px;padding:0;">' + arr.map(f).join('') + '</ul>' : '';
+            box.innerHTML = '<b>' + c.enPanelAntes + '</b> en el Panel antes · <b style="color:#16a085;">' + c.crear + ' nuevos</b> · <b style="color:#2471a3;">' + c.actualizar + ' a enlazar/actualizar</b> · ' + c.sinCambios + ' sin cambios'
+                + (aplicar ? ' · <b>' + c.escritos + ' escritos</b>' : '')
+                + (c.muestraCrear.length ? '<div style="margin-top:8px;color:#16a085;font-weight:600;">Nuevos (primeros ' + c.muestraCrear.length + '):</div>' + li(c.muestraCrear, x => '<li>' + escI(x.nombre) + (x.documento ? ' <span style="color:#777;">· ' + escI(x.documento) + '</span>' : '') + (x.precio ? ' <span style="color:#777;">· RD$ ' + Number(x.precio).toLocaleString('es-DO') + '</span>' : '') + '</li>') : '')
+                + (c.muestraActualizar.length ? '<div style="margin-top:4px;color:#2471a3;font-weight:600;">A enlazar/actualizar (primeros ' + c.muestraActualizar.length + '):</div>' + li(c.muestraActualizar, x => '<li>' + escI(x.nombre) + ' <span style="color:#777;">· ' + escI(x.campos.join(', ')) + '</span></li>') : '');
+            box.style.display = 'block';
+        } catch (e) { setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err'); }
+        finally { btns.forEach(b => b.disabled = false); }
     };
 
     window.probar = () => ejecutar('tienda', 0, document.getElementById('btn-ping'));
