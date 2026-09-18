@@ -2134,6 +2134,13 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
   cantidad de pedidos que necesitan atención *ahora* en cada sección (no un historial de todo lo
   pasado) — ALUCUFEL y Cotizaciones cuentan `status==='costeada'`, comentarios de fábrica sin
   atender, etc.
+- **Centro de notificaciones del Panel: ✕ en TODAS las tarjetas (2026-09-18).** Cada tarjeta de
+  `buildNotifs()` lleva una `key` estable (`cf:`/`it:`/`cm:`/`cot:`/`sw:` + id del documento + huella
+  del texto; los recordatorios usan el id de la cita, compatible con lo ya guardado) y la ✕ la agrega a
+  `usuarios/{email}.notifOcultas` (`notifOcultar`): se esconde SOLO para ese usuario (Andrea quita los
+  mensajes de obra, Dylan las cotizaciones por enviar…), la tarea sigue pendiente para los demás. Si
+  llega un comentario nuevo en el mismo pedido cambia la huella y vuelve a salir. Pie "N ocultas por ti ·
+  volver a mostrar" (`notifMostrarOcultas`); al guardar se podan las claves de tarjetas que ya no existen.
 
 ### Calendario (`ops/calendario.html`) — secciones por persona de gerencia
 

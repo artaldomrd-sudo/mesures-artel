@@ -48,6 +48,7 @@
     .notif-x { background: transparent; border: none; color: #c0392b; font-size: 17px; cursor: pointer; line-height: 1; padding: 0 3px; flex: 0 0 auto; font-weight: bold; }
     .notif-x:hover { color: #e74c3c; }
     .notif-empty { color: #16a085; font-size: 12px; padding: 6px 2px; font-weight: bold; }
+    .notif-ocultas { color: #889; font-size: 11.5px; padding: 4px 2px 0; } .notif-ocultas a { color: var(--artal-blue); }
     /* Pop-up de comentario recién llegado (aparece aunque el centro de notificaciones esté fuera de vista). */
     #toasts { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 900; display: flex; flex-direction: column; gap: 8px; width: min(520px, 94vw); pointer-events: none; }
     .toast { pointer-events: auto; background: #1f2d3d; color: #fff; border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border-left: 5px solid #f39c12; display: flex; gap: 10px; align-items: flex-start; animation: toastIn .3s ease-out; cursor: pointer; }
@@ -243,13 +244,18 @@
         return asigns.some(a => a && ((a.email && a.email === usuario.email) || nombreNorm(a.nombre) === miNombre));
     }
 
+    // Clave estable por tarjeta (para poder ocultarla con la ✕): tipo + documento + huella del texto,
+    // así una tarjeta oculta NO vuelve a salir por un refresco, pero SÍ reaparece si llega un
+    // comentario/problema nuevo en el mismo pedido (cambia la huella).
+    const huella = (t) => { let h = 0; const str = String(t || ''); for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    const oculta = (k) => notifOcultas.includes(k);
     function buildNotifs() {
         const N = [];
         ordersCache.forEach(({ id, o }) => {
             const lugar = (o.cliente || 'Sin cliente') + (o.obra ? ' — ' + o.obra : '');
             // 1) Comentario de fábrica → oficina, sin atender.
             if (o.comentarioFabrica && o.comentarioFabricaAtendido !== true) {
-                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Comentario de fábrica', sub: lugar, txt: o.comentarioFabrica,
+                N.push({ key: `cf:${id}:${huella(o.comentarioFabrica)}`, tipo: 'tarea', ic: '💬', titulo: 'Comentario de fábrica', sub: lugar, txt: o.comentarioFabrica,
                     acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifAtenderComentario('${id}')">Marcar atendido</button>` });
             }
             // 2) Problemas reportados por chofer / instalador (por ítem), sin atender.
@@ -258,19 +264,19 @@
                 Object.keys(map).forEach(iid => {
                     const s = map[iid];
                     if (s && s.estado === 'problema' && s.atendido !== true) {
-                        N.push({ tipo: 'tarea', ic, titulo, sub: lugar, txt: s.comentario || '',
+                        N.push({ key: `it:${id}:${field}:${iid}:${huella(s.comentario)}`, tipo: 'tarea', ic, titulo, sub: lugar, txt: s.comentario || '',
                             acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifAtenderItem('${id}','${field}','${iid}')">Marcar atendido</button>` });
                     }
                 });
             });
             // 2b) Comentarios del instalador en la obra (pestaña "Por agendar"), sin atender.
             comentariosSinAtender(o).forEach(cm => {
-                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
+                N.push({ key: `cm:orders:${id}:${cm.fecha || huella(cm.texto)}`, tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
                     acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><a class="n-ver" href="instalacion.html">Ver conversación</a><button class="n-done" onclick="notifAtenderComentarios('orders','${id}')">Marcar atendido</button>${respuestaHTML('orders', id)}` });
             });
             // 3) Cotización costeada por el contratista → falta armar/enviar el precio al cliente.
             if (o.status === 'costeada') {
-                N.push({ tipo: 'tarea', ic: '💵', titulo: 'Cotización costeada — falta enviar al cliente', sub: lugar, txt: '',
+                N.push({ key: `cot:${id}`, tipo: 'tarea', ic: '💵', titulo: 'Cotización costeada — falta enviar al cliente', sub: lugar, txt: '',
                     acciones: `<a class="n-ver" href="cotizaciones.html">Ir a Cotizaciones</a>` });
             }
         });
@@ -278,13 +284,13 @@
         instCache.forEach(({ id, j }) => {
             const lugar = (j.cliente || 'Sin cliente') + (j.obra ? ' — ' + j.obra : '');
             comentariosSinAtender(j).forEach(cm => {
-                N.push({ tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
+                N.push({ key: `cm:instalaciones:${id}:${cm.fecha || huella(cm.texto)}`, tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
                     acciones: `<a class="n-ver" href="instalacion.html">Ver conversación</a><button class="n-done" onclick="notifAtenderComentarios('instalaciones','${id}')">Marcar atendido</button>${respuestaHTML('instalaciones', id)}` });
             });
         });
         // 4) Solicitudes web nuevas (leads del sitio).
         solicitudesCache.forEach(({ id, s }) => {
-            N.push({ tipo: 'tarea', ic: '📥', titulo: 'Solicitud web: ' + (s.nombre || 'sin nombre'), sub: s.tipo || '', txt: [s.telefono, s.email, s.mensaje].filter(Boolean).join(' · '),
+            N.push({ key: `sw:${id}`, tipo: 'tarea', ic: '📥', titulo: 'Solicitud web: ' + (s.nombre || 'sin nombre'), sub: s.tipo || '', txt: [s.telefono, s.email, s.mensaje].filter(Boolean).join(' · '),
                 acciones: `<a class="n-ver" href="solicitudes.html">Ver solicitudes</a>` });
         });
         // 5) Citas / recordatorios pendientes (vencidos o dentro de las próximas 24 h) — SOLO los
@@ -296,17 +302,22 @@
             if (notifOcultas.includes(id)) return;
             const f = (c.fecha && c.fecha.toDate) ? c.fecha.toDate().getTime() : null;
             if (f != null && f > limite) return; // futuras lejanas todavía no molestan
-            N.push({ tipo: 'recordatorio', ic: c.tipo === 'recordatorio' ? '🔔' : '📅', titulo: c.titulo || 'Recordatorio', sub: fFecha(c.fecha), txt: [c.cliente, c.obra, c.descripcion].filter(Boolean).join(' · '),
-                dismiss: `notifDismissCita('${id}')` });
+            N.push({ key: id, tipo: 'recordatorio', ic: c.tipo === 'recordatorio' ? '🔔' : '📅', titulo: c.titulo || 'Recordatorio', sub: fFecha(c.fecha), txt: [c.cliente, c.obra, c.descripcion].filter(Boolean).join(' · ') });
         });
-        return N;
+        // Toda tarjeta lleva ✕: cada persona quita de SU panel lo que no le compete (Andrea no
+        // necesita ver los mensajes de obra, Dylan no las cotizaciones por enviar…). Solo se
+        // esconde para ese usuario; la tarea sigue pendiente para los demás y en su pantalla.
+        notifOcultasCount = N.filter(n => n.key && oculta(n.key)).length;
+        return N.filter(n => !(n.key && oculta(n.key)));
     }
+    let notifOcultasCount = 0;
 
     function renderNotifs() {
         const list = document.getElementById('notif-list'); if (!list) return;
         const N = buildNotifs();
         document.getElementById('notif-count').textContent = N.length ? '(' + N.length + ')' : '';
-        if (!N.length) { list.innerHTML = '<div class="notif-empty">✓ No hay notificaciones pendientes.</div>'; return; }
+        const pie = notifOcultasCount ? `<div class="notif-ocultas">${notifOcultasCount} oculta${notifOcultasCount > 1 ? 's' : ''} por ti · <a href="#" onclick="notifMostrarOcultas();return false;">volver a mostrar</a></div>` : '';
+        if (!N.length) { list.innerHTML = '<div class="notif-empty">✓ No hay notificaciones pendientes.</div>' + pie; return; }
         list.innerHTML = N.map(n => `<div class="notif-card ${n.tipo}">
             <span class="notif-ic">${n.ic}</span>
             <div class="notif-body">
@@ -314,8 +325,8 @@
                 ${n.txt ? `<div class="txt">${esc(n.txt)}</div>` : ''}
                 ${n.acciones ? `<div class="notif-actions">${n.acciones}</div>` : ''}
             </div>
-            ${n.dismiss ? `<button class="notif-x" title="Descartar" onclick="${n.dismiss}">✕</button>` : ''}
-        </div>`).join('');
+            ${n.key ? `<button class="notif-x" title="Quitar de mi pantalla (solo para mí)" onclick="notifOcultar('${esc(n.key)}')">✕</button>` : ''}
+        </div>`).join('') + pie;
     }
 
     window.notifVer = (id) => openOrderPreview(id);
@@ -365,11 +376,23 @@
     window.notifAtenderItem = async (id, field, iid) => { try { await updateDoc(doc(db, 'orders', id), { [`${field}.${iid}.atendido`]: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
     // ✕ en un recordatorio = ocultarlo de MI panel (personal). No lo completa ni afecta a Anny/
     // Andrea — cada quien lo quita de su vista cuando quiera. Se guarda en usuarios/{email}.notifOcultas.
-    window.notifDismissCita = async (id) => {
-        if (!notifOcultas.includes(id)) notifOcultas.push(id);
+    // (2026-09-18: generalizado a TODAS las tarjetas — antes solo recordatorios.) Las claves de
+    // tarjetas que ya no existen se podan al guardar, para que la lista no crezca sin fin.
+    window.notifOcultar = async (key) => {
+        if (!notifOcultas.includes(key)) notifOcultas.push(key);
         renderNotifs();
+        const vivas = new Set(buildNotifsTodas().map(n => n.key).filter(Boolean));
+        notifOcultas = notifOcultas.filter(k => vivas.has(k));
         try { await setDoc(doc(db, 'usuarios', usuario.email), { notifOcultas }, { merge: true }); } catch (e) { /* best-effort */ }
     };
+    window.notifDismissCita = window.notifOcultar;
+    window.notifMostrarOcultas = async () => {
+        notifOcultas = [];
+        renderNotifs();
+        try { await setDoc(doc(db, 'usuarios', usuario.email), { notifOcultas: [] }, { merge: true }); } catch (e) { /* best-effort */ }
+    };
+    // Todas las tarjetas sin aplicar el filtro de ocultas (para podar claves viejas).
+    function buildNotifsTodas() { const guardadas = notifOcultas; notifOcultas = []; try { return buildNotifs(); } finally { notifOcultas = guardadas; } }
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, o: d.data() }));
