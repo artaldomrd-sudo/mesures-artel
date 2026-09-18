@@ -164,6 +164,13 @@
             <button class="act" id="btn-imp-venta-ver" onclick="importar('factura-cliente', false)" style="background:#5d6d7e;">👁 Vista previa</button>
             <button class="act" id="btn-imp-venta-ok" onclick="importar('factura-cliente', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
         </div>
+        <div style="margin-top:14px;padding:12px;border-radius:10px;background:#eef6ff;border:1px solid #cfe0f5;font-size:13px;line-height:1.5;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+                <div><b>🔄 Sincronización automática</b> — todos los días a las 6:30 am el Panel trae solo lo nuevo de Citrus (clientes, proveedores, compras y ventas) y actualiza estados (pagado, cobrado, anulado). Mismas reglas: nunca borra ni duplica, nunca escribe en Citrus.</div>
+                <button class="act" id="btn-sync-ahora" onclick="sincronizarAhora()" style="background:#2471a3;">🔄 Sincronizar ahora</button>
+            </div>
+            <div id="sync-ultimo" style="margin-top:8px;color:#444;">Todavía no ha corrido ninguna sincronización automática.</div>
+        </div>
         <div id="imp-resumen" style="display:none;margin-top:12px;font-size:13.5px;line-height:1.5;"></div>
     </div>
 
@@ -176,6 +183,8 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // Solo gerencia/admin (o lector) — es una herramienta de integración/configuración.
     const usuario = await requireAuth([]);
@@ -347,6 +356,35 @@
             box.style.display = 'block';
         } catch (e) { setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err'); }
         finally { btns.forEach(b => b.disabled = false); }
+    };
+
+
+    // ---- Sincronización automática: última corrida + botón "ahora" ----
+    const FN_SYNC = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusSincronizarAhora';
+    const NOM_ENT = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'compras', 'factura-cliente': 'ventas' };
+    function pintarSync(r) {
+        const el = document.getElementById('sync-ultimo');
+        if (!r) { el.textContent = 'Todavía no ha corrido ninguna sincronización automática.'; return; }
+        const cuando = r.terminado ? new Date(r.terminado).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : r.fecha;
+        const partes = Object.keys(r.resultados || {}).map(k => {
+            const x = r.resultados[k];
+            return '<b>' + (NOM_ENT[k] || k) + '</b>: ' + (x.error ? '<span style="color:#b03a2e;">error</span>' : '+' + x.crear + ' nuevos, ' + x.actualizar + ' actualizados');
+        });
+        el.innerHTML = 'Última: <b>' + escI(cuando) + '</b> (' + escI(r.motivo || '') + (r.omitida ? ' · omitida: ' + escI(r.omitida) : '') + ')' + (partes.length ? ' · ' + partes.join(' · ') : '') + (r.duracionSeg != null ? ' · ' + r.duracionSeg + ' s' : '');
+    }
+    onSnapshot(doc(db, 'citrusSync', 'ultimo'), (snap) => pintarSync(snap.exists() ? snap.data() : null), () => {});
+    window.sincronizarAhora = async function () {
+        const btn = document.getElementById('btn-sync-ahora'); btn.disabled = true;
+        setEstado('Sincronizando todo con Citrus… (puede tardar un minuto)', '');
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const r = await fetch(FN_SYNC, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: '{}' });
+            const c = await r.json().catch(() => null);
+            if (r.status === 403) { setEstado('⛔ No autorizado (¿tu usuario es admin?).', 'err'); return; }
+            if (!c || c.error) { setEstado('Error: ' + (c && c.error || 'HTTP ' + r.status), 'err'); return; }
+            setEstado('✅ Sincronización completa', 'ok'); pintarSync(c);
+        } catch (e) { setEstado('No se pudo llamar al puente: ' + (e.message || e), 'err'); }
+        finally { btn.disabled = false; }
     };
 
     window.probar = () => ejecutar('tienda', 0, document.getElementById('btn-ping'));

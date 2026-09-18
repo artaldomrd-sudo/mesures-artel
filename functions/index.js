@@ -1271,18 +1271,14 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
     }
 }
 
-exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
-    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
-    const admin = await callerAdmin(req);
-    if (!admin) { res.status(403).json({ error: 'solo admin' }); return; }
-    const entidad = String((req.body && req.body.entidad) || '').trim();
+// Núcleo reutilizable: lo usan el endpoint `citrusImportar` (botones de ops/citrus.html) y la sincronización
+// programada `citrusSincronizarDiario`. Lanza Error con `codigo` 400 (entidad) / 502 (Citrus) / 500 (Firestore).
+async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx, quien }) {
     const coleccion = IMPORT_ENTIDADES[entidad];
-    if (!coleccion) { res.status(400).json({ error: 'entidad', permitidas: Object.keys(IMPORT_ENTIDADES) }); return; }
-    const aplicar = !!(req.body && req.body.aplicar);
-    const ctx = citrusCtx(req, true);
+    if (!coleccion) throw Object.assign(new Error('entidad'), { codigo: 400, permitidas: Object.keys(IMPORT_ENTIDADES) });
     let registros;
     try { registros = await citrusLeerTodo(ctx, entidad, entidad === 'factura-cliente'); }
-    catch (e) { res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) }); return; }
+    catch (e) { throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 502 }); }
 
     const ahora = FieldValue.serverTimestamp();
     const existentes = await db.collection(coleccion).get();
@@ -1327,11 +1323,8 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
     } else if (entidad === 'suplidor') {
         planSuplidores(registros, existentes, ahora, plan, escrituras, coleccion);
     } else if (entidad === 'factura-suplidor') {
-        const desde = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.desde) || '')) ? req.body.desde : '';
         planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, coleccion, desde);
     } else if (entidad === 'factura-cliente') {
-        const desde = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body && req.body.desde) || '')) ? req.body.desde : '';
-        const incluirProformas = !(req.body && req.body.incluirProformas === false);
         await planFacturasCliente(registros, existentes, ahora, plan, escrituras, coleccion, desde, incluirProformas);
     } else {
         const porCitrusId = new Map();
@@ -1368,19 +1361,80 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
         porAnio: plan.porAnio || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
         omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null
     };
-    if (!aplicar) { res.status(200).json(resumen); return; }
+    if (!aplicar) return resumen;
     try {
         for (let i = 0; i < escrituras.length; i += 400) {
             const batch = db.batch();
             escrituras.slice(i, i + 400).forEach(([ref, data, merge]) => batch.set(ref, data, { merge }));
             await batch.commit();
         }
-        console.log('citrusImportar', admin, entidad, `crear=${plan.crear.length} actualizar=${plan.actualizar.length}`);
-        res.status(200).json({ ...resumen, escritos: escrituras.length });
     } catch (e) {
-        console.error('citrusImportar', entidad, e);
-        res.status(500).json({ error: 'firestore', detalle: String((e && e.message) || e), ...resumen });
+        console.error('importarDeCitrus', entidad, e);
+        throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 500, resumen });
     }
+    console.log('importarDeCitrus', quien, entidad, `crear=${plan.crear.length} actualizar=${plan.actualizar.length}`);
+    return { ...resumen, escritos: escrituras.length };
+}
+
+exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'solo admin' }); return; }
+    const b = req.body || {};
+    const desde = /^\d{4}-\d{2}-\d{2}$/.test(String(b.desde || '')) ? b.desde : '';
+    try {
+        const r = await importarDeCitrus({
+            entidad: String(b.entidad || '').trim(), aplicar: !!b.aplicar, desde,
+            incluirProformas: b.incluirProformas !== false, ctx: citrusCtx(req, true), quien: admin
+        });
+        res.status(200).json(r);
+    } catch (e) {
+        const codigo = e && e.codigo;
+        if (codigo === 400) res.status(400).json({ error: 'entidad', permitidas: e.permitidas });
+        else if (codigo === 502) res.status(502).json({ error: 'citrus', detalle: e.message });
+        else res.status(500).json({ error: 'firestore', detalle: String((e && e.message) || e), ...(e && e.resumen || {}) });
+    }
+});
+
+// ---- Sincronización automática diaria (6:30 am RD): trae lo nuevo de Citrus y actualiza estados ----
+// Corre las 4 importaciones con las mismas reglas que los botones (nunca borra, nunca duplica, nunca escribe en
+// Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
+// registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
+const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'factura-cliente'];
+async function sincronizarCitrus(motivo) {
+    const ctx = citrusCtx({ body: {} }, true);
+    const fecha = hoySantoDomingo();
+    const inicio = Date.now();
+    const registro = { fecha, motivo, entorno: ctx.entorno, iniciado: new Date().toISOString(), resultados: {} };
+    if (ctx.entorno !== 'prod') {
+        registro.omitida = 'entorno de pruebas';
+    } else {
+        for (const entidad of SYNC_ENTIDADES) {
+            try {
+                const r = await importarDeCitrus({ entidad, aplicar: true, desde: '', incluirProformas: true, ctx, quien: motivo });
+                registro.resultados[entidad] = { enCitrus: r.enCitrus, crear: r.crear, actualizar: r.actualizar, sinCambios: r.sinCambios, escritos: r.escritos || 0 };
+            } catch (e) {
+                registro.resultados[entidad] = { error: String((e && e.message) || e) };
+                console.error('sincronizarCitrus', entidad, e);
+            }
+        }
+    }
+    registro.duracionSeg = Math.round((Date.now() - inicio) / 1000);
+    registro.terminado = new Date().toISOString();
+    await db.collection('citrusSync').doc(fecha).set(registro, { merge: true });
+    await db.collection('citrusSync').doc('ultimo').set(registro);
+    return registro;
+}
+exports.citrusSincronizarDiario = onSchedule({ schedule: '30 6 * * *', timeZone: 'America/Santo_Domingo', secrets: [citrusToken, citrusTokenProd], timeoutSeconds: 540, memory: '512MiB' }, async () => {
+    await sincronizarCitrus('programada');
+});
+// Mismo proceso a pedido desde la pantalla (solo admin), para no esperar a la mañana siguiente.
+exports.citrusSincronizarAhora = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 540, memory: '512MiB' }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'solo admin' }); return; }
+    try { res.status(200).json(await sincronizarCitrus('manual · ' + admin)); }
+    catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
 });
 
 // redeploy 1786120000 (arqueo caja chica: push 8:00 / 4:55)
