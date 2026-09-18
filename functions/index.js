@@ -1146,8 +1146,9 @@ function planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, co
             if (m.citrusEstatus === 'Cancelada') { plan.omitidas.canceladas++; continue; }
             const id = `citrus-fs-${f.Id}`;
             const cat = TIPO_GASTO_DGII[m.citrusTipoGasto] || 'Otro gasto';
-            plan.crear.push({ id, nombre: `${m.fecha} · ${m.tercero}${m.ncf ? ' · ' + m.ncf : ''}`, precio: m.monto });
+            plan.crear.push({ id, nombre: `${m.fecha} · ${m.tercero}${m.ncf ? ' · ' + m.ncf : ''}`, precio: m.monto, fecha: m.fecha });
             plan.totalCrear = r2(plan.totalCrear + m.monto);
+            plan.porAnio = plan.porAnio || {}; plan.porAnio[m.fecha.slice(0, 4)] = (plan.porAnio[m.fecha.slice(0, 4)] || 0) + 1;
             escrituras.push([db.collection(coleccion).doc(id), {
                 ...m,
                 concepto: `Factura ${m.ncf || 'sin NCF'} · ${m.tercero}`,
@@ -1248,7 +1249,9 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
         entidad, coleccion, entorno: ctx.entorno, aplicado: aplicar,
         enCitrus: registros.length, enPanelAntes: existentes.size,
         crear: plan.crear.length, actualizar: plan.actualizar.length, sinCambios: plan.sinCambios.length,
-        muestraCrear: plan.crear.slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
+        // Muestra: las más recientes primero (las facturas traen `fecha`; el resto conserva el orden de Citrus).
+        muestraCrear: plan.crear.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
+        porAnio: plan.porAnio || null,
         omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null
     };
     if (!aplicar) { res.status(200).json(resumen); return; }
