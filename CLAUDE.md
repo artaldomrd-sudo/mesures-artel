@@ -2142,6 +2142,38 @@ lo decodifica de vuelta al texto original sin que el código tenga que escaparlo
 en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Firestore
 (`onSnapshot` → `renderCarpetas()`) nunca saca al usuario de la obra que está mirando.
 
+### Integración con Citrus ERP (solo lectura; 2026-09-17/18)
+
+Citrus es el sistema fiscal (facturación, NCF, contabilidad). **Decisión del usuario: Citrus factura, el Panel LEE;
+nada del Panel escribe en Citrus** (la casilla "Enviar a Citrus" de CxP está escondida con `CITRUS_ESCRITURA=false`).
+Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (sección 4 "Importar de Citrus al Panel").
+- `citrusRead`/`citrusWrite`: puente genérico (token en secretos `CITRUS_TOKEN`/`CITRUS_TOKEN_PROD`, entorno
+  `CITRUS_ENV` en `functions/.env`, hoy `prod`). Token JWT directo en `Authorization`, sin "Bearer".
+- `importarDeCitrus({entidad, aplicar, desde, …})` (núcleo) ← `citrusImportar` (botones, admin) y
+  `citrusSincronizarDiario` (6:30/12:30/17:30 RD, solo en prod; registro en `citrusSync/{fecha}` y `/ultimo`;
+  `citrusSincronizarAhora` a pedido). Entidades → colección: `cliente`→`clientes/{nombre}` (enlace por
+  citrusId/documento/nombre, solo rellena vacíos), `suplidor`→`proveedores`, `factura-suplidor`→`contaMovimientos/
+  citrus-fs-{Id}` (solo CxP a crédito), `diario`→`contaMovimientos/citrus-dj-{Id}` (gastos de banco/Gasto/asientos/
+  cargos con débito 5xxx-6xxx; concepto/beneficiario/NCF parseados del texto; categoría = cuenta contable),
+  `banco`→`bancosMovimientos/citrus-bk-{asiento}-{línea}` (cuentas vinculadas por `bancosCuentas.citrusCuenta`;
+  saldoInicial 0 → saldo = contable), `factura-cliente`→`contaMovimientos/citrus-fc-{Id}` (ingresos; fiscales vs
+  proformas; líneas; fecha de cobro deducida de `recibo` por cliente: exacta o 'estimada' FIFO), `cxc`→`contaCuentas/
+  citrus-cxc-{Id}` (facturas 'Facturada'; se saldan solas al cobrarse). `resumenClientesCitrus` escribe
+  `clientes/{id}.citrusResumen` (ventas, última, por cobrar, anticipo) que muestra `clientes.html`.
+  Ítems/productos NO se importan (decisión: son líneas de cotización sin código).
+- Reglas fijas: nunca borra; nunca duplica (citrusId → NCF → fecha+monto solo contra registros MANUALES, nunca entre
+  importados); anuladas no se crean y si se anulan después el concepto recibe "⚠ ANULADA en Citrus"; Citrus manda en
+  los campos fiscales, el Panel conserva concepto/categoría/notas/comprobantes editados; `cobradoManual:true` en un
+  ingreso protege un cobro confirmado a mano; `igualJSON` compara con claves ordenadas (Firestore reordena mapas).
+- `citrusReportes` (admin o contable): estado de resultados + detalle + balance + serie mensual de un periodo, tal
+  cual Citrus; lo usa "📊 Cifras oficiales de Citrus" en `contabilidad-reportes.html` con "📄 Informe PDF"
+  (jsPDF+autotable). Los reportes operativos del Panel (`contabilidad-reportes`, `ventas-reportes`) suman SIN ITBIS
+  (`monto − itbis`).
+- Trampas: `extraccionDatos` pagina de 1000 (`request.indiceDePagina`) — LEER TODAS las páginas (el diario tiene
+  3.800+); `cuenta-contable` y `factura-suplidor` `/buscar` paginan de 25 (`xxxWhere.cantidadPorPagina`);
+  `hoySantoDomingo()` devuelve `{fecha, domingo}`; un parche python con `assert` fallido no escribe el archivo →
+  verificar con grep antes de desplegar. Detalle histórico en la memoria `artal-citrus-erp-integracion`.
+
 ### Notificaciones y badges
 
 - Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada

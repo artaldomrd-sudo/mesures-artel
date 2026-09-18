@@ -174,6 +174,13 @@
                 <div class="imp-estado" id="imp-estado-banco" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
         </div>
         <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
+            <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">📬 Cuentas por cobrar → Contabilidad · Por cobrar (<code>contaCuentas</code>)</div>
+            <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Una cuenta por cobrar por cada factura que Citrus tenga pendiente («Facturada»). Se salda sola cuando Citrus la marque cobrada o cuando gerencia la confirme cobrada en el Panel. Las ya cobradas o anuladas no se crean.</div>
+            <button class="act" id="btn-imp-cxc-ver" onclick="importar('cxc', false)" style="background:#5d6d7e;">👁 Vista previa</button>
+            <button class="act" id="btn-imp-cxc-ok" onclick="importar('cxc', true)" style="background:#16a085;margin-left:6px;">⬇ Importar al Panel</button>
+                <div class="imp-estado" id="imp-estado-cxc" style="display:none;margin-top:7px;font-size:12px;color:#16a085;"></div>
+        </div>
+        <div style="border:1px solid #e3e8ee;border-radius:10px;padding:12px;background:#fafcff;margin-top:12px;">
             <div style="font-weight:600;color:var(--artal-blue);margin-bottom:8px;">💰 Facturas de venta → Ingresos (<code>contaMovimientos</code>)</div>
             <div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;font-size:12.5px;flex-wrap:wrap;">
                 <span><label for="imp-desde-venta" style="margin:0 6px 0 0;">Desde</label><input type="date" id="imp-desde-venta" style="width:auto;"></span>
@@ -347,7 +354,7 @@
     const FN_IMPORT = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusImportar';
     const escI = v => String(v == null ? '' : v).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     window.importar = async function (entidad, aplicar) {
-        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra', 'factura-cliente': 'facturas de venta', diario: 'gastos del diario', banco: 'movimientos bancarios' }[entidad] || entidad;
+        const nom = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'facturas de compra', 'factura-cliente': 'facturas de venta', diario: 'gastos del diario', banco: 'movimientos bancarios', cxc: 'cuentas por cobrar' }[entidad] || entidad;
         if (aplicar && !confirm('Se importarán los ' + nom + ' de tu Citrus real al Panel (no se borra nada del Panel; no se escribe nada en Citrus). ¿Continuar?')) return;
         const btns = Array.from(document.querySelectorAll('[id^="btn-imp-"]'));
         const desde = { 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario', banco: 'imp-desde-banco' }[entidad] ? (document.getElementById({ 'factura-suplidor': 'imp-desde', 'factura-cliente': 'imp-desde-venta', diario: 'imp-desde-diario', banco: 'imp-desde-banco' }[entidad]).value || '') : '';
@@ -369,10 +376,10 @@
                 + (aplicar ? ' · <b>' + c.escritos + ' escritos</b>' : '')
                 + (c.totalCrear != null ? ' · total nuevos <b>RD$ ' + Number(c.totalCrear).toLocaleString('es-DO', { minimumFractionDigits: 2 }) + '</b>' : '')
                 + (c.fiscales != null ? ' · <b>' + c.fiscales + ' fiscales</b> + <b>' + c.proformas + ' proformas</b>' : '')
-                + (c.conFechaCobro != null ? ' · con fecha de cobro (recibos): ' + c.conFechaCobro : '')
+                + (c.conFechaCobro != null ? ' · con fecha de cobro (recibos): ' + c.conFechaCobro : '') + (c.saldadas ? ' · <b>' + c.saldadas + ' saldadas</b>' : '')
                 + (c.porFuente ? ' · por origen: ' + Object.keys(c.porFuente).map(k => k + ' ' + c.porFuente[k]).join(', ') : '')
                 + (c.porAnio ? ' · por año: ' + Object.keys(c.porAnio).sort().map(a => a + ': ' + c.porAnio[a]).join(', ') : '')
-                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.otrasFuentes ? ', ' + c.omitidas.otrasFuentes + ' de otros módulos (ventas, cobros, depósitos…)' : '') + (c.omitidas.sinCuentaGasto ? ', ' + c.omitidas.sinCuentaGasto + ' sin cuenta de gasto' : '') + (c.omitidas.sinCuentaVinculada ? ', ' + c.omitidas.sinCuentaVinculada + ' líneas de caja/banco sin cuenta vinculada en el Panel' : '') + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') + (c.omitidas.proformas ? ', ' + c.omitidas.proformas + ' proformas excluidas' : '') : '')
+                + (c.omitidas ? ' · omitidas: ' + c.omitidas.canceladas + ' anuladas en Citrus' + (c.omitidas.otrasFuentes ? ', ' + c.omitidas.otrasFuentes + ' de otros módulos (ventas, cobros, depósitos…)' : '') + (c.omitidas.sinCuentaGasto ? ', ' + c.omitidas.sinCuentaGasto + ' sin cuenta de gasto' : '') + (c.omitidas.sinCuentaVinculada ? ', ' + c.omitidas.sinCuentaVinculada + ' líneas de caja/banco sin cuenta vinculada en el Panel' : '') + (c.omitidas.antesDeDesde ? ', ' + c.omitidas.antesDeDesde + ' anteriores a la fecha' : '') + (c.omitidas.cobradas ? ', ' + c.omitidas.cobradas + ' ya cobradas' : '') + (c.omitidas.proformas ? ', ' + c.omitidas.proformas + ' proformas excluidas' : '') : '')
                 + (c.muestraCrear.length ? '<div style="margin-top:8px;color:#16a085;font-weight:600;">Nuevos — muestra de ' + c.muestraCrear.length + ' de ' + c.crear + ' (los más recientes primero):</div>' + li(c.muestraCrear, x => '<li>' + escI(x.nombre) + (x.documento ? ' <span style="color:#777;">· ' + escI(x.documento) + '</span>' : '') + (x.precio ? ' <span style="color:#777;">· RD$ ' + Number(x.precio).toLocaleString('es-DO') + '</span>' : '') + '</li>') : '')
                 + (c.muestraActualizar.length ? '<div style="margin-top:4px;color:#2471a3;font-weight:600;">A enlazar/actualizar (primeros ' + c.muestraActualizar.length + '):</div>' + li(c.muestraActualizar, x => '<li>' + escI(x.nombre) + ' <span style="color:#777;">· ' + escI(x.campos.join(', ')) + '</span></li>') : '');
             box.style.display = 'block';
@@ -383,21 +390,21 @@
 
     // ---- Sincronización automática: última corrida + botón "ahora" ----
     const FN_SYNC = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusSincronizarAhora';
-    const NOM_ENT = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'compras a crédito', diario: 'gastos del diario', banco: 'bancos', 'factura-cliente': 'ventas' };
+    const NOM_ENT = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'compras a crédito', diario: 'gastos del diario', banco: 'bancos', 'factura-cliente': 'ventas', cxc: 'por cobrar', 'resumen-clientes': 'fichas de clientes' };
     function pintarSync(r) {
         const el = document.getElementById('sync-ultimo');
         if (!r) { el.textContent = 'Todavía no ha corrido ninguna sincronización automática.'; return; }
         const cuando = r.terminado ? new Date(r.terminado).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : r.fecha;
         const partes = Object.keys(r.resultados || {}).map(k => {
             const x = r.resultados[k];
-            return '<b>' + (NOM_ENT[k] || k) + '</b>: ' + (x.error ? '<span style="color:#b03a2e;">error</span>' : '+' + x.crear + ' nuevos, ' + x.actualizar + ' actualizados');
+            return '<b>' + (NOM_ENT[k] || k) + '</b>: ' + (x.error ? '<span style="color:#b03a2e;">error</span>' : (x.clientes != null ? x.clientes + ' actualizadas' : '+' + x.crear + ' nuevos, ' + x.actualizar + ' actualizados'));
         });
         el.innerHTML = 'Última: <b>' + escI(cuando) + '</b> (' + escI(r.motivo || '') + (r.omitida ? ' · omitida: ' + escI(r.omitida) : '') + ')' + (partes.length ? ' · ' + partes.join(' · ') : '') + (r.duracionSeg != null ? ' · ' + r.duracionSeg + ' s' : '');
     }
     onSnapshot(doc(db, 'citrusSync', 'ultimo'), (snap) => pintarSync(snap.exists() ? snap.data() : null), () => {});
     // ---- "Ya importado": la función guarda en citrusSync/importaciones fecha y cantidades por entidad;
     //      aquí se marca la tarjeta y el botón pasa a gris "Volver a importar (solo trae lo nuevo)". ----
-    const SUFIJO = { cliente: 'cliente', suplidor: 'suplidor', 'factura-suplidor': 'factura', diario: 'diario', banco: 'banco', 'factura-cliente': 'venta' };
+    const SUFIJO = { cliente: 'cliente', suplidor: 'suplidor', 'factura-suplidor': 'factura', diario: 'diario', banco: 'banco', 'factura-cliente': 'venta', cxc: 'cxc' };
     function pintarImportaciones(r) {
         Object.keys(SUFIJO).forEach(ent => {
             const suf = SUFIJO[ent], est = document.getElementById('imp-estado-' + suf), btn = document.getElementById('btn-imp-' + suf + '-ok');

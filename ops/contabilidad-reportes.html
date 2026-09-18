@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared.css?v=20260806">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
     main { max-width: 960px; }
     .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
@@ -18,6 +20,8 @@
     .kpi .l { font-size: 10.5px; color: #778; text-transform: uppercase; letter-spacing: .03em; margin-top: 4px; }
     .sec { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 14px; }
     .sec h3 { color: var(--artal-blue); font-size: 14px; margin: 0 0 12px; }
+    .cz table { border-collapse: collapse; width: 100%; font-size: 12.5px; } .cz th { text-align: left; background: #eef4fb; color: var(--artal-blue); padding: 6px 8px; } .cz td { padding: 5px 8px; border-top: 1px solid #eef1f4; } .cz td.n, .cz th.n { text-align: right; white-space: nowrap; } .cz tr.t1 td { font-weight: bold; } .cz .neg { color: #d9483b; }
+    .cz .kpi .n.neg { color: #d9483b; }
     .empty-mini { color: #8a93a0; font-size: 13px; }
     .nota-citrus { background: #eef3ff; border: 1.5px solid #ccd9f5; color: #33518f; border-radius: 10px; padding: 10px 14px; font-size: 12.5px; margin: 0 0 14px; line-height: 1.5; }
 
@@ -56,7 +60,21 @@
 </header>
 
 <main>
-    <div class="nota-citrus">ℹ️ Reporte <b>operativo</b>: se arma con lo registrado en Ingresos y Gastos. Los estados financieros <b>formales</b> (para DGII, ISR/ITBIS, e-CF) son los de <b>Citrus</b> — estas cifras son para gestión interna y complementan las de Citrus, no las reemplazan.</div>
+    <div class="sec cz" id="sec-citrus">
+        <h3>📊 Cifras oficiales de Citrus (estado de resultados y balance)</h3>
+        <div class="bar" style="margin-bottom:8px;">
+            <label style="font-size:13px;color:#556;font-weight:bold">Periodo:</label>
+            <select id="cz-preset" onchange="czPreset()"></select>
+            <input type="date" id="cz-desde" style="padding:9px 10px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:13px;">
+            <span style="color:#778">a</span>
+            <input type="date" id="cz-hasta" style="padding:9px 10px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:13px;">
+            <button class="act" id="cz-btn" onclick="czCargar()" style="background:var(--artal-blue);color:#fff;border:none;border-radius:9px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Consultar Citrus</button>
+            <button class="act" id="cz-pdf" onclick="czPDF()" disabled style="background:#16a085;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;opacity:.5;">📄 Informe PDF</button>
+        </div>
+        <div id="cz-estado" style="font-size:12.5px;color:#778;margin-bottom:8px;">Cifras tal cual las calcula la contabilidad de Citrus (sin ITBIS). Elige el periodo y pulsa «Consultar Citrus».</div>
+        <div id="cz-out"></div>
+    </div>
+    <div class="nota-citrus">ℹ️ Lo de abajo es el reporte <b>operativo</b> del Panel: se arma con lo registrado en Ingresos y Gastos (importados de Citrus y manuales), <b>sin ITBIS</b>. Los estados financieros formales (DGII, ISR/ITBIS, e-CF) son los de Citrus, arriba.</div>
     <div class="bar">
         <label style="font-size:13px;color:#556;font-weight:bold">Año:</label>
         <select id="f-anio" onchange="render()"></select>
@@ -87,6 +105,8 @@
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const n2 = (x) => (Number(x) || 0);
+    // Base sin ITBIS: el Panel guarda `monto` = total con impuesto e `itbis` aparte (2026-09-18, punto 5).
+    const base = (m) => Math.max(0, n2(m.monto) - n2(m.itbis));
     const fmt0 = (x) => 'RD$ ' + n2(x).toLocaleString('es-DO', { maximumFractionDigits: 0 });
     const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -131,8 +151,8 @@
     function render() {
         const anio = document.getElementById('f-anio').value || String(new Date().getFullYear());
         const delAnio = movs.filter(m => anioDe(m) === anio);
-        const ingTot = delAnio.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + n2(m.monto), 0);
-        const gasTot = delAnio.filter(m => m.tipo === 'gasto').reduce((a, m) => a + n2(m.monto), 0);
+        const ingTot = delAnio.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + base(m), 0);
+        const gasTot = delAnio.filter(m => m.tipo === 'gasto').reduce((a, m) => a + base(m), 0);
         const util = ingTot - gasTot;
         const margen = ingTot > 0 ? Math.round(util / ingTot * 100) : 0;
         document.getElementById('kpis').innerHTML = [
@@ -142,7 +162,7 @@
 
         // Flujo mensual
         const ing = new Array(12).fill(0), gas = new Array(12).fill(0);
-        delAnio.forEach(m => { const mi = mesDe(m); if (mi >= 0 && mi < 12) { if (m.tipo === 'ingreso') ing[mi] += n2(m.monto); else if (m.tipo === 'gasto') gas[mi] += n2(m.monto); } });
+        delAnio.forEach(m => { const mi = mesDe(m); if (mi >= 0 && mi < 12) { if (m.tipo === 'ingreso') ing[mi] += base(m); else if (m.tipo === 'gasto') gas[mi] += base(m); } });
         const maxAbs = Math.max(1, ...ing.map((v, i) => Math.max(v, gas[i], Math.abs(v - gas[i]))));
         let filas = '';
         for (let i = 0; i < 12; i++) {
@@ -178,19 +198,88 @@
              ${filasIt ? `<tfoot><tr><td class="l">Total ${anio}</td><td class="ing">${fmt0(itbCobTot)}</td><td class="gas">${fmt0(itbPagTot)}</td><td class="${(itbCobTot - itbPagTot) >= 0 ? 'pos' : 'neg'}">${fmt0(itbCobTot - itbPagTot)}</td></tr></tfoot>` : ''}`;
 
         // Gastos por categoría (con código de cuenta si existe en el catálogo)
-        const porCatG = {}; delAnio.filter(m => m.tipo === 'gasto').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatG[k] = (porCatG[k] || 0) + n2(m.monto); });
+        const porCatG = {}; delAnio.filter(m => m.tipo === 'gasto').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatG[k] = (porCatG[k] || 0) + base(m); });
         document.getElementById('c-gastos').innerHTML = barsH(Object.entries(porCatG).map(([l, v]) => ({ label: etiquetaCat(l), value: v, color: '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
 
         // Ingresos por categoría
-        const porCatI = {}; delAnio.filter(m => m.tipo === 'ingreso').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatI[k] = (porCatI[k] || 0) + n2(m.monto); });
+        const porCatI = {}; delAnio.filter(m => m.tipo === 'ingreso').forEach(m => { const k = (m.categoria || '').trim() || '(sin categoría)'; porCatI[k] = (porCatI[k] || 0) + base(m); });
         document.getElementById('c-ingresos').innerHTML = barsH(Object.entries(porCatI).map(([l, v]) => ({ label: etiquetaCat(l), value: v, color: '#2ecc71' })).sort((a, b) => b.value - a.value).slice(0, 12), { money: true });
 
         // Rentabilidad por centro de costo (balance = ingresos − gastos por centro)
         const porCentro = {};
-        delAnio.forEach(m => { const k = (m.centroCosto || '').trim(); if (!k) return; if (!porCentro[k]) porCentro[k] = 0; porCentro[k] += (m.tipo === 'ingreso' ? n2(m.monto) : -n2(m.monto)); });
+        delAnio.forEach(m => { const k = (m.centroCosto || '').trim(); if (!k) return; if (!porCentro[k]) porCentro[k] = 0; porCentro[k] += (m.tipo === 'ingreso' ? base(m) : -base(m)); });
         const filasC = Object.entries(porCentro).map(([l, v]) => ({ label: l, value: v, color: v >= 0 ? '#1f9d61' : '#e74c3c' })).sort((a, b) => b.value - a.value).slice(0, 12);
         document.getElementById('c-centros').innerHTML = filasC.length ? barsH(filasC, { money: true }) : '<p class="empty-mini">No hay movimientos con centro de costo asignado en ' + anio + '.</p>';
     }
+
+    // ---------- Cifras oficiales de Citrus + informe PDF ----------
+    const FN_REP = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusReportes';
+    const money = (v) => { v = Number(v) || 0; const t = Math.abs(v).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return v < 0 ? '(' + t + ')' : t; };
+    const pctTxt = (a, b) => b ? (a / b * 100).toFixed(1) + ' %' : '—';
+    let czData = null;
+    (function () {
+        const hoy = new Date(); const y = hoy.getFullYear(); const sel = document.getElementById('cz-preset');
+        const ultimoCierre = new Date(y, hoy.getMonth(), 0); const uc = ultimoCierre.toISOString().slice(0, 10);
+        const ops = [[`${y}-01-01|${uc}`, `${y} hasta el último cierre de mes (${uc.split('-').reverse().join('/')})`], [`${y}-01-01|${hoy.toISOString().slice(0, 10)}`, `${y} hasta hoy`], [`${y - 1}-01-01|${y - 1}-12-31`, `${y - 1} completo`], [`${y - 1}-01-01|${uc}`, `Desde ${y - 1} hasta el último cierre`], ['custom', 'Otro periodo…']];
+        sel.innerHTML = ops.map(([v, l]) => `<option value="${v}">${l}</option>`).join(''); czPreset();
+    })();
+    window.czPreset = function () {
+        const v = document.getElementById('cz-preset').value; if (v === 'custom') return;
+        const [d, h] = v.split('|'); document.getElementById('cz-desde').value = d; document.getElementById('cz-hasta').value = h;
+    };
+    window.czCargar = async function () {
+        const desde = document.getElementById('cz-desde').value, hasta = document.getElementById('cz-hasta').value;
+        if (!desde || !hasta || desde > hasta) { alert('Elige un periodo válido.'); return; }
+        const btn = document.getElementById('cz-btn'); btn.disabled = true; document.getElementById('cz-estado').textContent = 'Consultando Citrus…';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const r = await fetch(FN_REP, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ desde, hasta }) });
+            const c = await r.json().catch(() => null);
+            if (!r.ok || !c || c.error) { document.getElementById('cz-estado').textContent = 'No se pudo: ' + (c && (c.detalle || c.error) || 'HTTP ' + r.status); return; }
+            czData = c; czPintar(c); document.getElementById('cz-pdf').disabled = false; document.getElementById('cz-pdf').style.opacity = '1';
+            document.getElementById('cz-estado').textContent = `Citrus (${c.entorno === 'prod' ? 'producción' : 'pruebas'}) · periodo ${desde.split('-').reverse().join('/')} a ${hasta.split('-').reverse().join('/')} · consultado ${new Date(c.generado).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' })} · cifras sin ITBIS`;
+        } catch (e) { document.getElementById('cz-estado').textContent = 'Error: ' + (e.message || e); }
+        finally { btn.disabled = false; }
+    };
+    function czPintar(c) {
+        const r = c.resultado, mb = r.ingresos - r.costos;
+        const kpi = (l, v, cls) => `<div class="kpi"><div class="n ${cls || ''}">${money(v)}</div><div class="l">${l}</div></div>`;
+        let h = `<div class="kpis">${kpi('Ingresos', r.ingresos, 'ing')}${kpi('Costos de venta', r.costos, 'gas')}${kpi('Margen bruto ' + pctTxt(mb, r.ingresos), mb, 'mar')}${kpi('Gastos', r.gastos, 'gas')}${kpi('Utilidad / (pérdida) ' + pctTxt(r.utilidad, r.ingresos), r.utilidad, r.utilidad < 0 ? 'neg' : 'bal')}</div>`;
+        h += `<details open><summary style="cursor:pointer;font-weight:bold;color:var(--artal-blue);margin:6px 0;">Estado de resultados detallado</summary><table><thead><tr><th>Cuenta</th><th class="n">RD$</th><th class="n">% ingresos</th></tr></thead><tbody>`
+            + c.detalle.map(d => `<tr class="${d.nivel === 1 ? 't1' : ''}"><td style="padding-left:${8 + (d.nivel - 1) * 14}px">${esc(d.nombre)}</td><td class="n ${d.balance < 0 ? 'neg' : ''}">${money(d.balance)}</td><td class="n">${pctTxt(d.balance, r.ingresos)}</td></tr>`).join('')
+            + `<tr class="t1"><td>Utilidad / (pérdida) del periodo</td><td class="n ${r.utilidad < 0 ? 'neg' : ''}">${money(r.utilidad)}</td><td class="n">${pctTxt(r.utilidad, r.ingresos)}</td></tr></tbody></table></details>`;
+        h += `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:bold;color:var(--artal-blue);margin:6px 0;">Evolución mensual</summary><table><thead><tr><th>Mes</th><th class="n">Ingresos</th><th class="n">Costos</th><th class="n">Gastos</th><th class="n">Utilidad</th></tr></thead><tbody>`
+            + c.mensual.map(m => `<tr><td>${m.mes}</td><td class="n">${money(m.ingresos)}</td><td class="n">${money(m.costos)}</td><td class="n">${money(m.gastos)}</td><td class="n ${m.utilidad < 0 ? 'neg' : ''}">${money(m.utilidad)}</td></tr>`).join('') + '</tbody></table></details>';
+        const b = c.balance; const cta = (k) => { const x = b.cuentas.find(q => q.cuenta === k); return x ? x.balance : 0; };
+        const filasB = [['ACTIVOS', b.activos, 1], ['Efectivo en caja y bancos', cta('1001'), 2], ['Cuentas por cobrar clientes', cta('1002'), 2], ['Inventarios', cta('1003'), 2], ['ITBIS a favor y anticipos de impuestos', cta('1004'), 2], ['Activos fijos', cta('12'), 2], ['Otros activos', cta('13'), 2],
+            ['PASIVOS', b.pasivos, 1], ['Cuentas por pagar suplidores', cta('20020101'), 2], ['Anticipos de clientes', cta('200204'), 2], ['Préstamos y documentos a largo plazo', cta('21'), 2], ['CAPITAL', b.capital, 1], ['Capital social', cta('30'), 2], ['Resultados acumulados y del periodo', cta('33'), 2]];
+        h += `<details style="margin-top:10px;"><summary style="cursor:pointer;font-weight:bold;color:var(--artal-blue);margin:6px 0;">Balance general al ${c.hasta.split('-').reverse().join('/')}</summary><table><thead><tr><th>Cuenta</th><th class="n">RD$</th></tr></thead><tbody>`
+            + filasB.map(([l, v, n]) => `<tr class="${n === 1 ? 't1' : ''}"><td style="padding-left:${8 + (n - 1) * 14}px">${l}</td><td class="n ${v < 0 ? 'neg' : ''}">${money(v)}</td></tr>`).join('') + '</tbody></table></details>';
+        document.getElementById('cz-out').innerHTML = h;
+    }
+    window.czPDF = function () {
+        const c = czData; if (!c) return;
+        if (!window.jspdf || !window.jspdf.jsPDF) { alert('No cargó la librería de PDF. Revisa tu conexión.'); return; }
+        const { jsPDF } = window.jspdf; const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+        const AZ = [10, 61, 98]; const f = (s) => s.split('-').reverse().join('/');
+        const pie = () => { const n = doc.getNumberOfPages(); for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(`ARTAL Dominicana SRL · Cifras oficiales de Citrus · ${f(c.desde)} – ${f(c.hasta)} · generado ${new Date().toLocaleDateString('es-DO')} · RD$ sin ITBIS`, 15, 290); doc.text(`Página ${i}`, 195, 290, { align: 'right' }); } };
+        doc.setTextColor(...AZ); doc.setFontSize(18); doc.text('ARTAL Dominicana SRL', 15, 20); doc.setFontSize(13); doc.setTextColor(93, 109, 126); doc.text('Informe financiero · ' + f(c.desde) + ' a ' + f(c.hasta), 15, 28);
+        doc.setFontSize(9); doc.setTextColor(60); doc.text('Fuente: contabilidad oficial en Citrus ERP (estado de resultados, balance general), consultada por API. Cifras en RD$ sin ITBIS; los paréntesis indican valores negativos.', 15, 35, { maxWidth: 180 });
+        const r = c.resultado, mb = r.ingresos - r.costos;
+        doc.autoTable({ startY: 42, head: [['Concepto', 'RD$', '% ingresos']], body: [['Ingresos', money(r.ingresos), '100 %'], ['Costos de venta', money(r.costos), pctTxt(r.costos, r.ingresos)], ['Margen bruto', money(mb), pctTxt(mb, r.ingresos)], ['Gastos', money(r.gastos), pctTxt(r.gastos, r.ingresos)], ['Utilidad / (pérdida)', money(r.utilidad), pctTxt(r.utilidad, r.ingresos)]], styles: { fontSize: 9 }, headStyles: { fillColor: AZ }, columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }, didParseCell: (d) => { if (d.section === 'body' && (d.row.index === 2 || d.row.index === 4)) d.cell.styles.fontStyle = 'bold'; } });
+        doc.setFontSize(12); doc.setTextColor(...AZ); doc.text('Estado de resultados detallado', 15, doc.lastAutoTable.finalY + 10);
+        doc.autoTable({ startY: doc.lastAutoTable.finalY + 13, head: [['Cuenta', 'RD$', '% ingresos']], body: c.detalle.map(d => [' '.repeat((d.nivel - 1) * 4) + d.nombre, money(d.balance), pctTxt(d.balance, r.ingresos)]).concat([['Utilidad / (pérdida) del periodo', money(r.utilidad), pctTxt(r.utilidad, r.ingresos)]]), styles: { fontSize: 8.2 }, headStyles: { fillColor: AZ }, columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }, didParseCell: (d) => { if (d.section === 'body' && (c.detalle[d.row.index] ? c.detalle[d.row.index].nivel === 1 : true)) d.cell.styles.fontStyle = 'bold'; } });
+        doc.addPage(); doc.setFontSize(12); doc.setTextColor(...AZ); doc.text('Evolución mensual', 15, 20);
+        doc.autoTable({ startY: 23, head: [['Mes', 'Ingresos', 'Costos', 'Gastos', 'Utilidad / (pérdida)']], body: c.mensual.map(m => [m.mes, money(m.ingresos), money(m.costos), money(m.gastos), money(m.utilidad)]), styles: { fontSize: 8.5 }, headStyles: { fillColor: AZ }, columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } } });
+        const b = c.balance; const cta = (k) => { const x = b.cuentas.find(q => q.cuenta === k); return x ? x.balance : 0; };
+        const filasB = [['ACTIVOS', b.activos, 1], ['Efectivo en caja y bancos', cta('1001'), 2], ['Cuentas por cobrar clientes', cta('1002'), 2], ['Inventarios', cta('1003'), 2], ['ITBIS a favor y anticipos de impuestos', cta('1004'), 2], ['Activos fijos', cta('12'), 2], ['Otros activos', cta('13'), 2], ['PASIVOS', b.pasivos, 1], ['Cuentas por pagar suplidores', cta('20020101'), 2], ['Anticipos de clientes (obras cobradas por adelantado)', cta('200204'), 2], ['Préstamos y documentos a largo plazo', cta('21'), 2], ['CAPITAL', b.capital, 1], ['Capital social', cta('30'), 2], ['Resultados acumulados y del periodo', cta('33'), 2]];
+        doc.setFontSize(12); doc.setTextColor(...AZ); doc.text('Balance general al ' + f(c.hasta), 15, doc.lastAutoTable.finalY + 10);
+        doc.autoTable({ startY: doc.lastAutoTable.finalY + 13, head: [['Cuenta', 'RD$']], body: filasB.map(([l, v, n]) => [(n === 1 ? '' : '    ') + l, money(v)]), styles: { fontSize: 8.8 }, headStyles: { fillColor: AZ }, columnStyles: { 1: { halign: 'right' } }, didParseCell: (d) => { if (d.section === 'body' && filasB[d.row.index][2] === 1) d.cell.styles.fontStyle = 'bold'; } });
+        const notas = ['Cifras contables, no de caja: ingresos, costos y gastos según el estado de resultados oficial de Citrus, en RD$ sin ITBIS.', 'Los ingresos se reconocen al facturar la obra, no al cobrar el anticipo: los meses con obras grandes facturadas concentran ingresos. Los anticipos de clientes en el pasivo son obras cobradas por adelantado que aún no se han facturado.', 'Citrus reconoce como ingreso las proformas (ventas sin NCF) igual que las facturas fiscales.'];
+        doc.setFontSize(11); doc.setTextColor(...AZ); doc.text('Notas de lectura', 15, doc.lastAutoTable.finalY + 10); doc.setFontSize(8.5); doc.setTextColor(60);
+        let yy = doc.lastAutoTable.finalY + 15; notas.forEach(n => { const lines = doc.splitTextToSize('• ' + n, 180); doc.text(lines, 15, yy); yy += lines.length * 4 + 2; });
+        pie(); doc.save(`ARTAL_Informe_Citrus_${c.desde}_a_${c.hasta}.pdf`);
+    };
 
     render();
 </script>

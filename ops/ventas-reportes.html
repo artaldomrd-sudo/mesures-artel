@@ -94,6 +94,8 @@
     }
 
     let oport = [], cotiz = [], comis = [], conta = [], orders = [], clientes = [];
+    // Ingresos sin ITBIS (el Panel guarda monto = total con impuesto e itbis aparte; 2026-09-18).
+    const baseSinItbis = (m) => Math.max(0, (Number(m.monto) || 0) - (Number(m.itbis) || 0));
     const sub = (col, set) => onSnapshot(collection(db, col), (s) => { set(s.docs.map(d => d.data())); render(); }, () => { set([]); render(); });
     sub('ventasOportunidades', v => oport = v);
     sub('ventasCotizaciones', v => cotiz = v);
@@ -113,9 +115,9 @@
         const ganadas = oport.filter(o => o.etapa === 'ganada');
         const comPend = comis.filter(c => (c.estado || 'pendiente') !== 'pagada').reduce((a, c) => a + n2(c.comision), 0);
         const now = new Date();
-        const ingMes = conta.filter(m => m.tipo === 'ingreso').filter(m => { const d = new Date((m.fecha || '') + 'T00:00:00'); return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).reduce((a, m) => a + n2(m.monto), 0);
+        const ingMes = conta.filter(m => m.tipo === 'ingreso').filter(m => { const d = new Date((m.fecha || '') + 'T00:00:00'); return !isNaN(d) && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth(); }).reduce((a, m) => a + baseSinItbis(m), 0);
         document.getElementById('kpis').innerHTML = [
-            ['Ingresos del mes', fmt0(ingMes)], ['Pipeline abierto', fmt0(pipeline)], ['Oport. ganadas', ganadas.length], ['Cotizaciones', cotiz.length], ['Comisión pendiente', fmt0(comPend)], ['Clientes', clientes.length]
+            ['Ingresos del mes (sin ITBIS)', fmt0(ingMes)], ['Pipeline abierto', fmt0(pipeline)], ['Oport. ganadas', ganadas.length], ['Cotizaciones', cotiz.length], ['Comisión pendiente', fmt0(comPend)], ['Clientes', clientes.length]
         ].map(([l, n]) => `<div class="kpi"><div class="n">${n}</div><div class="l">${l}</div></div>`).join('');
 
         // Pipeline por etapa (valor)
@@ -124,7 +126,7 @@
         // Ingresos por mes (últimos 12)
         const meses = [];
         for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); meses.push({ key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: MESES[d.getMonth()] + (d.getMonth() === 0 || i === 11 ? ' ' + String(d.getFullYear()).slice(2) : '') }); }
-        const ingPorMes = {}; conta.filter(m => m.tipo === 'ingreso').forEach(m => { const k = String(m.fecha || '').slice(0, 7); ingPorMes[k] = (ingPorMes[k] || 0) + n2(m.monto); });
+        const ingPorMes = {}; conta.filter(m => m.tipo === 'ingreso').forEach(m => { const k = String(m.fecha || '').slice(0, 7); ingPorMes[k] = (ingPorMes[k] || 0) + baseSinItbis(m); });
         document.getElementById('c-ingresos').innerHTML = barsV(meses.map(m => ({ label: m.label, value: ingPorMes[m.key] || 0 })));
 
         // Cotizaciones por estado (count)

@@ -952,7 +952,7 @@ exports.citrusWrite = onRequest({ secrets: [citrusToken, citrusTokenProd], cors:
 // { aplicar: false } devuelve solo el plan (vista previa), sin escribir nada.
 // 'item' → 'productos' queda DESACTIVADO (decisión del usuario 2026-09-17: los ítems de Citrus son líneas de cotización sin
 // código, no un catálogo; el manejo de productos se verá más adelante). El mapeo de ítems sigue abajo por si se retoma.
-const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos', diario: 'contaMovimientos', banco: 'bancosMovimientos' };
+const IMPORT_ENTIDADES = { cliente: 'clientes', suplidor: 'proveedores', 'factura-suplidor': 'contaMovimientos', 'factura-cliente': 'contaMovimientos', diario: 'contaMovimientos', banco: 'bancosMovimientos', cxc: 'contaCuentas' };
 const normNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 const normKeyCliente = (s) => String(s || '').trim().toLowerCase();   // id de clientes/{id}: misma clave que clientes.html y el cuaderno
 const TIPO_DOC_CITRUS = { Cedula: 'Cédula', RNC: 'RNC', Pasaporte: 'Pasaporte' };
@@ -1334,7 +1334,8 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
     if (!coleccion) throw Object.assign(new Error('entidad'), { codigo: 400, permitidas: Object.keys(IMPORT_ENTIDADES) });
     let registros;
     // 'banco' se alimenta del diario (las cuentas de banco no tienen endpoint propio en Citrus).
-    try { registros = await citrusLeerTodo(ctx, entidad === 'banco' ? 'diario' : entidad, entidad === 'factura-cliente' || entidad === 'diario' || entidad === 'banco'); }
+    const fuente = entidad === 'banco' ? 'diario' : (entidad === 'cxc' ? 'factura-cliente' : entidad);
+    try { registros = await citrusLeerTodo(ctx, fuente, entidad === 'factura-cliente' || entidad === 'diario' || entidad === 'banco'); }
     catch (e) { throw Object.assign(new Error(String((e && e.message) || e)), { codigo: 502 }); }
 
     const ahora = FieldValue.serverTimestamp();
@@ -1390,6 +1391,8 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         const cuentas = cs.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.citrusCuenta);
         if (!cuentas.length) throw Object.assign(new Error('Ninguna cuenta bancaria del Panel tiene el campo citrusCuenta (código contable de Citrus)'), { codigo: 400, permitidas: [] });
         planBanco(registros, existentes, ahora, plan, escrituras, coleccion, desde, cuentas);
+    } else if (entidad === 'cxc') {
+        await planCxC(registros, existentes, ahora, plan, escrituras, coleccion);
     } else {
         const porCitrusId = new Map();
         existentes.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); });
@@ -1424,7 +1427,7 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         muestraCrear: plan.crear.slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || ''))).slice(0, 25), muestraActualizar: plan.actualizar.slice(0, 25),
         porAnio: plan.porAnio || null, porFuente: plan.porFuente || null, fiscales: plan.fiscales != null ? plan.fiscales : null, proformas: plan.proformas != null ? plan.proformas : null,
         omitidas: plan.omitidas || null, totalCrear: plan.totalCrear != null ? plan.totalCrear : null,
-        conFechaCobro: plan.conFechaCobro != null ? plan.conFechaCobro : null
+        conFechaCobro: plan.conFechaCobro != null ? plan.conFechaCobro : null, saldadas: plan.saldadas != null ? plan.saldadas : null
     };
     if (!aplicar) return resumen;
     try {
@@ -1630,6 +1633,152 @@ function planBanco(registros, existentes, ahora, plan, escrituras, coleccion, de
     }
 }
 
+// ---- Cuentas por cobrar (punto 2): facturas de Citrus pendientes de cobro → contaCuentas (tipo 'cobrar') ----
+// Se crea una cuenta por cada factura no anulada con Estatus 'Facturada' (pendiente). Cuando Citrus la pasa a
+// 'Cobrada' —o gerencia la marcó cobrada a mano en el Panel (`cobradoManual` en el ingreso citrus-fc-{Id})— la
+// cuenta se salda sola con un abono "según Citrus"/"confirmado en el Panel". Anuladas: se saldan con nota.
+async function planCxC(registros, existentes, ahora, plan, escrituras, coleccion) {
+    const manualSnap = await db.collection('contaMovimientos').where('cobradoManual', '==', true).get();
+    const cobradasManual = new Set(); manualSnap.forEach(d => { if (d.data().citrusId != null) cobradasManual.add(Number(d.data().citrusId)); });
+    const clientesSnap = await db.collection('clientes').get();
+    const clientePorCitrusId = new Map(); clientesSnap.forEach(d => { const x = d.data(); if (x.citrusId != null) clientePorCitrusId.set(Number(x.citrusId), { id: d.id, nombre: x.nombre || '' }); });
+    const porCitrusId = new Map(); existentes.forEach(d => { const x = d.data(); if (x.citrusId != null && x.tipo === 'cobrar') porCitrusId.set(Number(x.citrusId), d); });
+    const hoy = hoySantoDomingo().fecha;
+    plan.omitidas = { canceladas: 0, cobradas: 0 }; plan.totalCrear = 0; plan.saldadas = 0;
+    for (const f of registros) {
+        const id = Number(f.Id); const ex = porCitrusId.get(id);
+        const total = r2((Number(f.Monto) || 0) - (Number(f.DescuentoTotal) || 0) + (Number(f.Impuesto) || 0));
+        const pendiente = f.Estatus === 'Facturada' && !cobradasManual.has(id);
+        const cli = f.ClienteId ? clientePorCitrusId.get(Number(f.ClienteId)) : null;
+        const proforma = esProforma(f);
+        if (!ex) {
+            if (!pendiente) { plan.omitidas[f.Estatus === 'Cancelada' ? 'canceladas' : 'cobradas']++; continue; }
+            const cid = `citrus-cxc-${id}`;
+            plan.crear.push({ id: cid, nombre: `${limpio(f.Fecha).slice(0, 10)} · ${limpio(f.NombreCliente) || (cli && cli.nombre) || 'sin cliente'} · ${proforma ? 'Proforma ' : 'Factura '}${limpio(f.NCF)}`, precio: total, fecha: limpio(f.Fecha).slice(0, 10) });
+            plan.totalCrear = r2(plan.totalCrear + total);
+            escrituras.push([db.collection(coleccion).doc(cid), {
+                tipo: 'cobrar', tercero: limpio(f.NombreCliente) || (cli && cli.nombre) || '', clienteId: cli ? cli.id : '',
+                referencia: `${proforma ? 'Proforma' : 'Factura'} ${limpio(f.NCF)}`, emision: limpio(f.Fecha).slice(0, 10), vencimiento: '',
+                monto: total, abonos: [], notas: `Importada de Citrus (${f.Tipo || ''}${proforma ? ', proforma sin NCF' : ''}). Se salda sola cuando Citrus la marque cobrada.`,
+                citrusId: id, citrusEstatus: limpio(f.Estatus), citrusProforma: proforma, origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
+            }, true]);
+        } else {
+            const x = ex.data(); const abonos = Array.isArray(x.abonos) ? x.abonos : [];
+            const pagado = abonos.reduce((a, b) => a + (Number(b.monto) || 0), 0);
+            const saldo = r2((Number(x.monto) || 0) - pagado);
+            const cambios = {};
+            if (x.citrusEstatus !== limpio(f.Estatus)) cambios.citrusEstatus = limpio(f.Estatus);
+            if (!pendiente && saldo > 0.001) {
+                const motivo = f.Estatus === 'Cancelada' ? 'Anulada en Citrus' : (cobradasManual.has(id) ? 'Cobro confirmado en el Panel' : 'Cobrada según Citrus');
+                cambios.abonos = abonos.concat([{ fecha: hoy, monto: saldo, nota: motivo, origen: 'citrus' }]);
+                cambios.notas = String(x.notas || '') + ` · ${motivo} (${hoy})`;
+                plan.saldadas++;
+            }
+            if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${x.emision} · ${x.tercero} · RD$ ${x.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
+            else plan.sinCambios.push(`${x.emision} · ${x.tercero}`);
+        }
+    }
+}
+
+// ---- Resumen de Citrus por cliente (punto 4): ventas, última venta, pendiente y anticipos → clientes/{id}.citrusResumen ----
+// Ventas por ClienteId (factura-cliente); anticipos y saldo por cobrar por NOMBRE (el diario solo trae el nombre en
+// la descripción: "Cliente: X"), normalizado igual que el enlace de clientes. Corre en la sync programada.
+async function resumenClientesCitrus(ctx, quien) {
+    const facturas = await citrusLeerTodo(ctx, 'factura-cliente');
+    const diario = await citrusLeerTodo(ctx, 'diario', true);
+    const clientesSnap = await db.collection('clientes').get();
+    const manualSnap = await db.collection('contaMovimientos').where('cobradoManual', '==', true).get();
+    const cobradasManual = new Set(); manualSnap.forEach(d => { if (d.data().citrusId != null) cobradasManual.add(Number(d.data().citrusId)); });
+    const porCitrusId = new Map(), porNombre = new Map();
+    clientesSnap.forEach(d => { const x = d.data(); if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d); if (x.nombre) porNombre.set(normNombre(x.nombre), d); });
+    const res = new Map();   // docId → resumen
+    const get = (d) => { if (!res.has(d.id)) res.set(d.id, { nVentas: 0, ventasTotal: 0, ultimaVenta: '', porCobrar: 0, anticipo: 0, saldoCxC: 0 }); return res.get(d.id); };
+    for (const f of facturas) {
+        if (f.Estatus === 'Cancelada' || !f.ClienteId) continue;
+        const d = porCitrusId.get(Number(f.ClienteId)); if (!d) continue;
+        const r = get(d); const total = r2((Number(f.Monto) || 0) - (Number(f.DescuentoTotal) || 0) + (Number(f.Impuesto) || 0));
+        r.nVentas++; r.ventasTotal = r2(r.ventasTotal + total); const fe = limpio(f.Fecha).slice(0, 10); if (fe > r.ultimaVenta) r.ultimaVenta = fe;
+        if (f.Estatus === 'Facturada' && !cobradasManual.has(Number(f.Id))) r.porCobrar = r2(r.porCobrar + total);
+    }
+    for (const x of diario) {
+        if (x.Estatus === 'Cancelado') continue;
+        const m = String(x.Descripcion || '').match(/Cliente:\s*(.*?)(?:\s+NCF|\s+Concepto|\s*$)/); if (!m) continue;
+        const d = porNombre.get(normNombre(m[1])); if (!d) continue;
+        for (const l of (Array.isArray(x.Detalles) ? x.Detalles : [])) {
+            const c = String(l.Cuenta || ''); const v = Number(l.Monto) || 0;
+            if (c.startsWith('200204')) get(d).anticipo = r2(get(d).anticipo + (l.Tipo === 'Credito' ? v : -v));
+            if (c.startsWith('100201')) get(d).saldoCxC = r2(get(d).saldoCxC + (l.Tipo === 'Debito' ? v : -v));
+        }
+    }
+    const ahora = FieldValue.serverTimestamp(); let escritos = 0;
+    const docs = Array.from(res.entries());
+    for (let i = 0; i < docs.length; i += 400) {
+        const batch = db.batch();
+        docs.slice(i, i + 400).forEach(([id, r]) => batch.set(db.collection('clientes').doc(id), { citrusResumen: { ...r, actualizado: new Date().toISOString() }, citrusSync: ahora }, { merge: true }));
+        await batch.commit(); escritos += Math.min(400, docs.length - i);
+    }
+    console.log('resumenClientesCitrus', quien, `clientes=${escritos}`);
+    return { clientes: escritos };
+}
+
+// ---- Cifras oficiales de Citrus (punto 3): estado de resultados + balance + serie mensual de un periodo ----
+// Solo lectura, para Contabilidad → Reportes (admin o contable). Devuelve los reportes tal cual los calcula Citrus.
+async function callerConRol(req, roles) {
+    const h = req.headers.authorization || ''; const m = h.match(/^Bearer (.+)$/); if (!m) return null;
+    try {
+        const decoded = await getAuth().verifyIdToken(m[1]); const email = decoded.email; if (!email) return null;
+        const s = await db.collection('usuarios').doc(email).get(); if (!s.exists) return null;
+        const rol = s.data().rol; const rs = Array.isArray(rol) ? rol : [rol];
+        return rs.some(r => r === 'admin' || roles.includes(r)) ? email : null;
+    } catch (_) { return null; }
+}
+async function citrusGet(ctx, path, params) {
+    const qs = new URLSearchParams(params).toString();
+    const r = await fetch(`${ctx.base}/v5/${path}${qs ? '?' + qs : ''}`, { headers: { 'Authorization': ctx.token, 'Accept': 'application/json' } });
+    const t = await r.text(); if (!r.ok) throw new Error(`Citrus ${r.status} en ${path}: ${t.slice(0, 200)}`);
+    try { return JSON.parse(t); } catch (_) { throw new Error(`Citrus devolvió algo que no es JSON en ${path}`); }
+}
+const fechaOk = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+exports.citrusReportes = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 120 }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const quien = await callerConRol(req, ['contable']);
+    if (!quien) { res.status(403).json({ error: 'solo admin o contable' }); return; }
+    const b = req.body || {};
+    if (!fechaOk(b.desde) || !fechaOk(b.hasta) || b.desde > b.hasta) { res.status(400).json({ error: 'desde/hasta (YYYY-MM-DD)' }); return; }
+    const ctx = citrusCtx(req, true);
+    try {
+        const [er, erd, bg] = await Promise.all([
+            citrusGet(ctx, 'contabilidad/estado-resultado/buscar', { 'request.fechaInicio': b.desde, 'request.fechaFin': b.hasta }),
+            citrusGet(ctx, 'contabilidad/estado-resultado/buscar-por-centro-detallado', { 'request.fechaInicio': b.desde, 'request.fechaFin': b.hasta }),
+            citrusGet(ctx, 'contabilidad/balance-general/buscar', { 'request.fechaInicio': '2000-01-01', 'request.fechaFin': b.hasta })
+        ]);
+        // Serie mensual del periodo (una llamada por mes, en paralelo).
+        const meses = []; let d = new Date(b.desde.slice(0, 7) + '-01T00:00:00Z');
+        const fin = new Date(b.hasta + 'T00:00:00Z');
+        while (d <= fin && meses.length < 60) {
+            const y = d.getUTCFullYear(), m = d.getUTCMonth();
+            const ini = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+            const ult = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+            meses.push({ mes: ini.slice(0, 7), desde: ini < b.desde ? b.desde : ini, hasta: ult > b.hasta ? b.hasta : ult });
+            d = new Date(Date.UTC(y, m + 1, 1));
+        }
+        const mensual = await Promise.all(meses.map(async (mm) => {
+            const r = await citrusGet(ctx, 'contabilidad/estado-resultado/buscar', { 'request.fechaInicio': mm.desde, 'request.fechaFin': mm.hasta });
+            const x = (Array.isArray(r) && r[0]) || {};
+            return { mes: mm.mes, ingresos: Number(x.TotalIngresos) || 0, costos: Number(x.TotalCostos) || 0, gastos: Number(x.TotalGastos) || 0, utilidad: Number(x.UtilidadOPerdida) || 0 };
+        }));
+        const e = (Array.isArray(er) && er[0]) || {};
+        res.status(200).json({
+            entorno: ctx.entorno, desde: b.desde, hasta: b.hasta, generado: new Date().toISOString(),
+            resultado: { ingresos: Number(e.TotalIngresos) || 0, costos: Number(e.TotalCostos) || 0, gastos: Number(e.TotalGastos) || 0, utilidad: Number(e.UtilidadOPerdida) || 0 },
+            detalle: (Array.isArray(erd) ? erd : []).map(c => ({ cuenta: c.IdentificadorCuenta, nombre: c.CuentaNombre, nivel: c.CuentaNivel, grupo: c.CuentaGrupo, balance: Number(c.Balance) || 0 })),
+            balance: { activos: Number(bg.TotalActivos) || 0, pasivos: Number(bg.TotalPasivos) || 0, capital: Number(bg.TotalCapital) || 0,
+                cuentas: (bg.Cuentas || []).map(c => ({ cuenta: c.IdentificadorCuenta, nombre: c.Nombre, nivel: c.Nivel, balance: Number(c.BalancePeriodoActual != null ? c.BalancePeriodoActual : c.Balance) || 0 })) },
+            mensual
+        });
+    } catch (e) { res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) }); }
+});
+
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const admin = await callerAdmin(req);
@@ -1654,7 +1803,7 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
 // Corre las 4 importaciones con las mismas reglas que los botones (nunca borra, nunca duplica, nunca escribe en
 // Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
 // registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
-const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'banco', 'factura-cliente'];
+const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'banco', 'factura-cliente', 'cxc'];
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
     const { fecha } = hoySantoDomingo();   // devuelve { fecha, domingo }
@@ -1672,6 +1821,10 @@ async function sincronizarCitrus(motivo) {
                 console.error('sincronizarCitrus', entidad, e);
             }
         }
+    }
+    if (ctx.entorno === 'prod') {
+        try { registro.resultados['resumen-clientes'] = await resumenClientesCitrus(ctx, motivo); }
+        catch (e) { registro.resultados['resumen-clientes'] = { error: String((e && e.message) || e) }; console.error('resumenClientesCitrus', e); }
     }
     registro.duracionSeg = Math.round((Date.now() - inicio) / 1000);
     registro.terminado = new Date().toISOString();

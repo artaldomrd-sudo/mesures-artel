@@ -252,6 +252,19 @@
         cont.innerHTML = lista.map(cardHTML).join('');
     }
 
+    // Resumen de Citrus por cliente (lo escribe la sincronización automática en clientes/{id}.citrusResumen):
+    // ventas, última venta, pendiente de cobro y anticipos vigentes. Solo aparece en clientes enlazados a Citrus.
+    const fmtRD = (v) => 'RD$ ' + (Number(v) || 0).toLocaleString('es-DO', { maximumFractionDigits: 0 });
+    function citrusLinea(c) {
+        const r = c.citrusResumen; if (!r || !c.citrusId) return '';
+        const partes = [
+            r.nVentas ? `${r.nVentas} venta${r.nVentas > 1 ? 's' : ''} · ${fmtRD(r.ventasTotal)}` : 'sin ventas',
+            r.ultimaVenta ? 'última ' + esc(r.ultimaVenta.split('-').reverse().join('/')) : '',
+            r.porCobrar > 0 ? `<span style="color:#d9483b;font-weight:bold;">por cobrar ${fmtRD(r.porCobrar)}</span>` : '',
+            r.anticipo > 0 ? `<span style="color:#7d3ac1;font-weight:bold;">anticipo vigente ${fmtRD(r.anticipo)}</span>` : ''
+        ].filter(Boolean).join('  ·  ');
+        return `<div class="meta" title="Según la contabilidad de Citrus (actualizado ${esc((r.actualizado || '').slice(0, 16).replace('T', ' '))})">🍊 Citrus: ${partes}</div>`;
+    }
     function cardHTML(c) {
         const est = estadoDe(c), tipo = tipoDe(c);
         const badges = [
@@ -274,6 +287,7 @@
                 <b>${esc(c.nombre) || 'Sin nombre'}</b> <span class="badges">${badges}</span>
                 ${linea2 ? `<div class="meta">${linea2}</div>` : ''}
                 ${c.correo ? `<div class="meta">✉ ${esc(c.correo)}</div>` : ''}
+                ${citrusLinea(c)}
             </div>
             <div class="row-actions">
                 <button class="b-editar" onclick="editar('${c.id}')">✏ Editar</button>
