@@ -1779,6 +1779,39 @@ exports.citrusReportes = onRequest({ secrets: [citrusToken, citrusTokenProd], co
     } catch (e) { res.status(502).json({ error: 'citrus', detalle: String((e && e.message) || e) }); }
 });
 
+// ---- Tablero del ERP (ops/erp.html): cifras del día en `tablero/erp`, recalculadas en cada sync ----
+// Mes en curso (1 → hoy), mes anterior completo, año en curso, dinero disponible y pendientes con terceros
+// (balance general a hoy) y la serie de los últimos 12 meses. Todo sale de los reportes oficiales de Citrus.
+async function tableroErp(ctx, quien) {
+    const hoy = hoySantoDomingo().fecha;
+    const [y, m] = [Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7))];
+    const ultimoDia = (yy, mm) => new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+    const mesIni = `${y}-${String(m).padStart(2, '0')}-01`;
+    const antY = m === 1 ? y - 1 : y, antM = m === 1 ? 12 : m - 1;
+    const antIni = `${antY}-${String(antM).padStart(2, '0')}-01`, antFin = ultimoDia(antY, antM);
+    const er = async (desde, hasta) => { const r = await citrusGet(ctx, 'contabilidad/estado-resultado/buscar', { 'request.fechaInicio': desde, 'request.fechaFin': hasta }); const x = (Array.isArray(r) && r[0]) || {}; return { ingresos: Number(x.TotalIngresos) || 0, costos: Number(x.TotalCostos) || 0, gastos: Number(x.TotalGastos) || 0, utilidad: Number(x.UtilidadOPerdida) || 0 }; };
+    const meses = [];
+    for (let i = 11; i >= 0; i--) { const d = new Date(Date.UTC(y, m - 1 - i, 1)); const yy = d.getUTCFullYear(), mm = d.getUTCMonth() + 1; const ini = `${yy}-${String(mm).padStart(2, '0')}-01`; meses.push({ mes: ini.slice(0, 7), desde: ini, hasta: (yy === y && mm === m) ? hoy : ultimoDia(yy, mm) }); }
+    const [mes, mesAnterior, anio, bg, ...serie] = await Promise.all([
+        er(mesIni, hoy), er(antIni, antFin), er(`${y}-01-01`, hoy),
+        citrusGet(ctx, 'contabilidad/balance-general/buscar', { 'request.fechaInicio': '2000-01-01', 'request.fechaFin': hoy }),
+        ...meses.map(mm => er(mm.desde, mm.hasta))
+    ]);
+    const cta = (k) => { const c = (bg.Cuentas || []).find(q => String(q.IdentificadorCuenta) === k); return c ? (Number(c.BalancePeriodoActual != null ? c.BalancePeriodoActual : c.Balance) || 0) : 0; };
+    const ventasMes = await db.collection('contaMovimientos').where('tipo', '==', 'ingreso').where('origen', '==', 'citrus').where('fecha', '>=', mesIni).get();
+    const nVentas = ventasMes.docs.filter(d => d.data().citrusEstatus !== 'Cancelada' && String(d.data().fecha || '') <= hoy).length;
+    const doc = {
+        actualizado: new Date().toISOString(), hasta: hoy, quien: String(quien || ''),
+        mes: { ...mes, nombre: mesIni.slice(0, 7), nVentas }, mesAnterior: { ...mesAnterior, nombre: antIni.slice(0, 7) }, anio: { ...anio, nombre: String(y) },
+        dinero: { bancoRD: r2(cta('1001050101')), bancoUSD: r2(cta('1001050201')), caja: r2(cta('10010101')), efectivoYBancos: r2(cta('1001')) },
+        terceros: { porCobrar: r2(cta('100201')), anticipos: r2(cta('200204')), porPagar: r2(cta('20020101')), prestamos: r2(cta('21')) },
+        mensual: meses.map((mm, i) => ({ mes: mm.mes, ...serie[i] }))
+    };
+    await db.collection('tablero').doc('erp').set(doc);
+    console.log('tableroErp', quien, hoy);
+    return { hasta: hoy };
+}
+
 exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 300, memory: '512MiB' }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const admin = await callerAdmin(req);
@@ -1825,6 +1858,8 @@ async function sincronizarCitrus(motivo) {
     if (ctx.entorno === 'prod') {
         try { registro.resultados['resumen-clientes'] = await resumenClientesCitrus(ctx, motivo); }
         catch (e) { registro.resultados['resumen-clientes'] = { error: String((e && e.message) || e) }; console.error('resumenClientesCitrus', e); }
+        try { registro.resultados['tablero'] = await tableroErp(ctx, motivo); }
+        catch (e) { registro.resultados['tablero'] = { error: String((e && e.message) || e) }; console.error('tableroErp', e); }
     }
     registro.duracionSeg = Math.round((Date.now() - inicio) / 1000);
     registro.terminado = new Date().toISOString();
