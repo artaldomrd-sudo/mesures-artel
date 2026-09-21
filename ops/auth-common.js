@@ -27,6 +27,49 @@ function showOverlay(innerHTML) {
 function hideOverlay() {
   const el = document.getElementById('auth-overlay');
   if (el) el.style.display = 'none';
+  clearTimeout(vigilante);
+}
+
+// --- Blindaje contra el cuelgue en "Verificando acceso…" (visto en iPad Safari, 2026-09-21) ---
+// En iOS, Firestore con caché persistente multi-pestaña puede quedarse esperando a otra pestaña
+// suspendida (la app del Dock, otra pestaña de Safari) y `getDoc` no responde nunca; también puede
+// colgarse la sesión de 2FA o la red. Antes eso dejaba la pantalla azul para siempre. Ahora:
+//  - la lectura del usuario tiene tiempo límite (`conTiempo`);
+//  - la primera vez que vence, la página se recarga sola UNA vez (arregla el bloqueo de pestañas);
+//  - si vuelve a fallar, o pasan 30 s sin salir de "Verificando", aparece una pantalla con
+//    "Reintentar" y "Cerrar sesión" en vez del cuelgue.
+const CLAVE_REINTENTO = 'artal_auth_reintento';
+let vigilante = null;
+function conTiempo(promesa, ms, etiqueta) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('Sin respuesta en ' + Math.round(ms / 1000) + ' s (' + etiqueta + ')')), ms);
+    promesa.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+function showRetryScreen(detalle) {
+  clearTimeout(vigilante);
+  const el = showOverlay(
+    '<img src="' + rootPath('logo.png') + '" alt="ARTAL" style="height:56px;width:auto;object-fit:contain;">' +
+    '<h2 style="margin:0;font-size:20px;">La verificación está tardando demasiado</h2>' +
+    '<p style="max-width:380px;margin:0;opacity:.9;line-height:1.45;">Suele pasar cuando hay otra pestaña o la app del Dock abierta con la plataforma, o con mala señal. Cierra las otras pestañas de ARTAL y vuelve a intentar.</p>' +
+    '<button id="auth-reintentar" style="background:#fff;color:#0A3D62;border:none;border-radius:10px;padding:12px 22px;font-size:16px;font-weight:700;cursor:pointer;">Reintentar</button>' +
+    '<button id="auth-salir" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);border-radius:10px;padding:10px 18px;font-size:14px;cursor:pointer;">Cerrar sesión y volver a entrar</button>' +
+    '<div style="font-size:11px;opacity:.6;max-width:380px;">' + String(detalle || '').replace(/[<>&]/g, '') + '</div>'
+  );
+  el.querySelector('#auth-reintentar').onclick = () => { try { sessionStorage.removeItem(CLAVE_REINTENTO); } catch (_) {} location.reload(); };
+  el.querySelector('#auth-salir').onclick = async () => {
+    try { sessionStorage.removeItem(CLAVE_REINTENTO); } catch (_) {}
+    try { await conTiempo(signOut(auth), 5000, 'cerrar sesión'); } catch (_) {}
+    location.reload();
+  };
+}
+// Primera vez: recarga sola. Segunda: pantalla de reintento.
+function fallaVerificacion(detalle) {
+  let ya = false;
+  try { ya = sessionStorage.getItem(CLAVE_REINTENTO) === '1'; if (!ya) sessionStorage.setItem(CLAVE_REINTENTO, '1'); } catch (_) { ya = true; }
+  console.warn('requireAuth:', detalle);
+  if (!ya) { location.reload(); return; }
+  showRetryScreen(detalle);
 }
 
 function showLoginScreen() {
@@ -85,13 +128,22 @@ export function requireAuth(rolesPermitidos) {
     '<img src="' + rootPath('logo.png') + '" alt="ARTAL" style="height:56px;width:auto;object-fit:contain;">' +
     '<p style="opacity:.85;margin:0;">Verificando acceso…</p>'
   );
+  clearTimeout(vigilante);
+  vigilante = setTimeout(() => {
+    const el = document.getElementById('auth-overlay');
+    const sigueVerificando = el && el.style.display !== 'none' && /Verificando acceso/.test(el.textContent || '');
+    if (sigueVerificando && !document.getElementById('mfa-overlay')) fallaVerificacion('30 s en "Verificando acceso…"');
+  }, 30000);
   return new Promise((resolve) => {
     onAuthStateChanged(auth, async (user) => {
       if (!user || !user.email) {
+        clearTimeout(vigilante);
         showLoginScreen();
         return;
       }
-      const snap = await getDoc(doc(db, 'usuarios', user.email));
+      let snap;
+      try { snap = await conTiempo(getDoc(doc(db, 'usuarios', user.email)), 15000, 'leer usuario'); }
+      catch (e) { fallaVerificacion(e && e.message ? e.message : String(e)); return; }
       const data = snap.exists() ? snap.data() : null;
       const roles = data ? (Array.isArray(data.rol) ? data.rol : [data.rol]) : [];
       // Permisos por página (Usuarios y roles): `paginasBloqueadas` quita lo que el rol da;
@@ -142,6 +194,7 @@ export function requireAuth(rolesPermitidos) {
         } catch (e) { console.warn('parte-gate', e && e.message ? e.message : e); }
       }
       hideOverlay();
+      try { sessionStorage.removeItem(CLAVE_REINTENTO); } catch (_) {}
       // Renueva en silencio el token de notificaciones de ESTE dispositivo (si el permiso ya fue
       // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo
       // activó las suyas. Best-effort: no bloquea la página ni muestra nada si falla.
