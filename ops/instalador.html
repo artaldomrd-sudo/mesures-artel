@@ -493,7 +493,7 @@
 
     window.regresarAFabrica = async function (id) {
         if (!confirm('¿Regresar este pedido a fábrica? Desaparecerá de la lista de instalación y de la del chofer hasta que fábrica lo vuelva a dejar listo.')) return;
-        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica' });
+        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', enRuta: false, fechaEnRuta: null });
     };
 
     /* ===== Recordatorios: crear / marcar hecho / borrar (el instalador se los pone a sí mismo) ===== */
@@ -615,6 +615,13 @@
                 instalacionId: id, cliente: j.cliente || '', obra: j.obra || '',
                 estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora
             });
+            // El pedido ligado sigue al trabajo (igual que en instalacion.html): completado → instalado;
+            // reabierto → vuelve a "listo". Faltaba aquí: un trabajo cerrado desde esta pantalla dejaba
+            // el pedido en "Listo para cargar" para siempre (bug real, Woof Woof 2026-09-21).
+            if (j.orderId) {
+                if (estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
+                else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: false, status: 'listo_para_cargar' });
+            }
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };
 
