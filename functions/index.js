@@ -1993,3 +1993,55 @@ exports.academiaRedactar = onRequest({ secrets: [anthropicKey], cors: true }, as
         res.status(500).json({ error: 'server' });
     }
 });
+
+// ===================== Tasa de cambio USD → RD$ (Banco Central, diaria) =====================
+// Fuente automática: "Tasas de Cambio del dólar de Referencia del Mercado Spot" del BCRD (xlsx público,
+// hoja 'Diaria': Año/Mes/Día/Compra/Venta; el Banco Popular no publica su tasa en formato legible —
+// su web está detrás de un bloqueo anti-robots). Se guarda en `tasas/USD`:
+//   { hoy:{fecha,compra,venta}, porFecha:{ 'YYYY-MM-DD': {compra, venta} } (últimos ~120 días), fuente, actualizado,
+//     popular:{ fecha, venta, quien } (tasa del Popular escrita a mano desde Gastos fijos, opcional) }
+// Los gastos fijos en USD se registran cada mes en RD$ con la tasa de su fecha de pago (Popular si se anotó
+// para ese día, si no la de referencia del BCRD). Corre a las 7:00 am RD y a pedido (`tasaCambioAhora`).
+const BCRD_XLSX = 'https://cdn.bancentral.gov.do/documents/estadisticas/mercado-cambiario/documents/TASA_DOLAR_REFERENCIA_MC.xlsx';
+const MESES_BCRD = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, oct: 10, nov: 11, dic: 12 };
+async function actualizarTasaCambio(motivo) {
+    const XLSX = require('xlsx');
+    const r = await fetch(BCRD_XLSX, { headers: { 'User-Agent': 'Mozilla/5.0 (ARTAL Panel)' } });
+    if (!r.ok) throw new Error(`BCRD ${r.status}`);
+    const buf = Buffer.from(await r.arrayBuffer());
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const sh = wb.Sheets['Diaria'] || wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(sh, { header: 1, raw: true });
+    const porFecha = {}; let ultima = null;
+    for (const f of filas) {
+        const y = Number(f[0]), m = MESES_BCRD[String(f[1] || '').toLowerCase().slice(0, 3)], d = Number(f[2]);
+        const compra = Number(f[3]), venta = Number(f[4]);
+        if (!y || !m || !d || !(venta > 0)) continue;
+        const fecha = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        porFecha[fecha] = { compra: Math.round(compra * 10000) / 10000, venta: Math.round(venta * 10000) / 10000 };
+        if (!ultima || fecha > ultima) ultima = fecha;
+    }
+    if (!ultima) throw new Error('No se encontraron filas de tasa en el archivo del BCRD');
+    const fechas = Object.keys(porFecha).sort(); const recientes = {};
+    fechas.slice(-120).forEach(k => { recientes[k] = porFecha[k]; });
+    const doc = { hoy: { fecha: ultima, ...porFecha[ultima] }, porFecha: recientes, fuente: 'Banco Central RD · dólar de referencia del mercado spot', actualizado: new Date().toISOString(), motivo: String(motivo || '') };
+    await db.collection('tasas').doc('USD').set(doc, { merge: true });
+    console.log('tasaCambio', motivo, ultima, porFecha[ultima]);
+    return doc.hoy;
+}
+exports.tasaCambioDiaria = onSchedule({ schedule: '0 7 * * *', timeZone: 'America/Santo_Domingo', timeoutSeconds: 120, memory: '512MiB' }, async () => {
+    try { await actualizarTasaCambio('programada'); } catch (e) { console.error('tasaCambioDiaria', e); }
+});
+exports.tasaCambioAhora = onRequest({ cors: true, timeoutSeconds: 120, memory: '512MiB' }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const quien = await callerConRol(req, ['contable']);
+    if (!quien) { res.status(403).json({ error: 'solo admin o contable' }); return; }
+    const pop = req.body && req.body.popular;
+    if (pop && fechaOk(pop.fecha) && Number(pop.venta) > 30 && Number(pop.venta) < 200) {
+        // Tasa del Banco Popular anotada a mano (no se puede leer de su web): manda sobre la del BCRD ese día.
+        await db.collection('tasas').doc('USD').set({ popular: { fecha: pop.fecha, venta: Math.round(Number(pop.venta) * 100) / 100, quien, anotado: new Date().toISOString() } }, { merge: true });
+        res.status(200).json({ ok: true, popular: pop }); return;
+    }
+    try { res.status(200).json(await actualizarTasaCambio('manual · ' + quien)); }
+    catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
+});

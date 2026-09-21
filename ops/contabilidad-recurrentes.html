@@ -58,6 +58,13 @@
     <div class="bar">
         <button class="btn-add" onclick="abrir()">+ Gasto fijo</button>
         <button class="btn-todos" onclick="registrarTodos()" id="btn-todos">✅ Registrar todos los pendientes del mes</button>
+        <div id="tasa-box" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:10px;background:#fff;border-radius:10px;box-shadow:var(--shadow);padding:8px 12px;font-size:12.5px;color:#556;">
+            <span>💱 <b>Tasa US$</b> <span id="tasa-bcrd">cargando…</span></span>
+            <span style="color:#aab">·</span>
+            <label style="margin:0;font-size:12.5px;">Popular hoy</label><input type="number" id="tasa-popular" step="0.01" min="0" placeholder="ej. 59.95" style="width:88px;padding:5px 7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+            <button class="b-ed" onclick="guardarTasaPopular()" title="Anota la tasa de venta del Banco Popular de hoy: los gastos fijos en US$ que se registren hoy usarán esta tasa en vez de la del Banco Central">Guardar</button>
+            <span id="tasa-popular-txt" style="color:#7d3ac1;"></span>
+        </div>
     </div>
     <div id="lista"><p class="empty">Cargando…</p></div>
 </main>
@@ -74,8 +81,13 @@
             <div><label>Día del mes</label><input type="number" id="r-dia" min="1" max="28" value="1"></div>
         </div>
         <div class="grid2">
-            <div><label>Monto (RD$) *</label><input type="number" id="r-monto" min="0" step="0.01"></div>
-            <div><label>ITBIS incluido <span class="lbl-opt">— opcional</span></label><input type="number" id="r-itbis" min="0" step="0.01"></div>
+            <div><label>Moneda</label><select id="r-moneda" onchange="onMoneda()"><option value="DOP">RD$ (pesos)</option><option value="USD">US$ (dólares)</option></select></div>
+            <div><label id="lbl-monto">Monto (RD$) *</label><input type="number" id="r-monto" min="0" step="0.01"></div>
+        </div>
+        <div id="r-usd-nota" style="display:none;font-size:12px;color:#7d3ac1;background:#f4eefb;border-radius:8px;padding:7px 10px;margin:-4px 0 8px;">Se registrará cada mes en pesos con la tasa de su fecha de pago: la del Banco Popular si se anotó ese día, si no la de referencia del Banco Central. <span id="r-usd-preview"></span></div>
+        <div class="grid2">
+            <div><label>ITBIS incluido <span class="lbl-opt">— opcional, misma moneda</span></label><input type="number" id="r-itbis" min="0" step="0.01"></div>
+            <div></div>
         </div>
         <div class="grid2">
             <div><label>Método</label><select id="r-metodo"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select></div>
@@ -126,6 +138,61 @@
 
     const pendiente = (r) => r.activo !== false && r.ultimoRegistro !== mesActual();
 
+    // ---------- Tasa de cambio US$ → RD$ (tasas/USD, la actualiza la Cloud Function tasaCambioDiaria) ----------
+    const FN_TASA = 'https://us-central1-artal-operaciones.cloudfunctions.net/tasaCambioAhora';
+    let tasas = null;
+    const hoyISO = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+    const fUsd = (x) => 'US$ ' + n2(x).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fD = (iso) => String(iso || '').split('-').reverse().join('/');
+    // Tasa para una fecha: Popular anotada ese mismo día > BCRD de ese día > BCRD del último día hábil anterior > BCRD más reciente.
+    function tasaPara(fecha) {
+        if (!tasas) return null;
+        if (tasas.popular && tasas.popular.fecha === fecha && n2(tasas.popular.venta) > 0) return { venta: n2(tasas.popular.venta), fuente: 'Banco Popular (anotada)', fecha };
+        const pf = tasas.porFecha || {}; const claves = Object.keys(pf).filter(k => k <= fecha).sort();
+        const k = claves.length ? claves[claves.length - 1] : (tasas.hoy && tasas.hoy.fecha);
+        if (!k || !pf[k] && !(tasas.hoy && tasas.hoy.fecha === k)) return null;
+        const v = pf[k] || tasas.hoy; return { venta: n2(v.venta), fuente: 'Banco Central (referencia)', fecha: k };
+    }
+    function pintarTasa() {
+        const el = document.getElementById('tasa-bcrd'), pt = document.getElementById('tasa-popular-txt');
+        if (!tasas || !tasas.hoy) { el.textContent = 'sin datos todavía'; return; }
+        el.innerHTML = `Banco Central venta <b>${n2(tasas.hoy.venta).toFixed(2)}</b> <span style="color:#889">(${fD(tasas.hoy.fecha)})</span>`;
+        pt.textContent = (tasas.popular && tasas.popular.fecha === hoyISO()) ? `✓ Popular hoy ${n2(tasas.popular.venta).toFixed(2)}` : (tasas.popular ? `última Popular ${n2(tasas.popular.venta).toFixed(2)} (${fD(tasas.popular.fecha)})` : '');
+        render(); previewUsd();
+    }
+    onSnapshot(doc(db, 'tasas', 'USD'), (s) => { tasas = s.exists() ? s.data() : null; pintarTasa(); }, () => {});
+    window.guardarTasaPopular = async function () {
+        const v = n2(document.getElementById('tasa-popular').value);
+        if (!(v > 30 && v < 200)) { alert('Escribe la tasa de venta del Popular (ej. 59.95).'); return; }
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const r = await fetch(FN_TASA, { method: 'POST', headers: { 'content-type': 'application/json', 'Authorization': 'Bearer ' + token }, body: JSON.stringify({ popular: { fecha: hoyISO(), venta: v } }) });
+            const c = await r.json().catch(() => null);
+            if (!r.ok) { alert('No se pudo guardar: ' + (c && c.error || 'HTTP ' + r.status)); return; }
+            document.getElementById('tasa-popular').value = '';
+        } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
+    };
+    const esUsd = (r) => r.moneda === 'USD';
+    const fechaPagoMes = (r) => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(Math.min(28, Math.max(1, n2(r.dia) || 1))); };
+    // Monto en RD$ que se registraría este mes (para USD: monto × tasa de la fecha de pago).
+    function montoRD(r) {
+        if (!esUsd(r)) return { monto: n2(r.monto), itbis: n2(r.itbis), tasa: null };
+        const t = tasaPara(fechaPagoMes(r)); if (!t) return { monto: 0, itbis: 0, tasa: null };
+        return { monto: Math.round(n2(r.monto) * t.venta * 100) / 100, itbis: Math.round(n2(r.itbis) * t.venta * 100) / 100, tasa: t };
+    }
+    window.onMoneda = function () {
+        const usd = document.getElementById('r-moneda').value === 'USD';
+        document.getElementById('lbl-monto').textContent = usd ? 'Monto (US$) *' : 'Monto (RD$) *';
+        document.getElementById('r-usd-nota').style.display = usd ? 'block' : 'none'; previewUsd();
+    };
+    function previewUsd() {
+        const el = document.getElementById('r-usd-preview'); if (!el) return;
+        const usd = document.getElementById('r-moneda').value === 'USD', v = n2(document.getElementById('r-monto').value);
+        const t = tasaPara(hoyISO());
+        el.textContent = (usd && v > 0 && t) ? `Hoy serían ${fmt(v * t.venta)} a ${t.venta.toFixed(2)} (${t.fuente}).` : '';
+    }
+    document.getElementById('r-monto').addEventListener('input', previewUsd);
+
     function render() {
         const cont = document.getElementById('lista');
         if (!recs.length) { cont.innerHTML = '<p class="empty">Sin gastos fijos. Agrega el primero (alquiler, internet…).</p>'; document.getElementById('btn-todos').style.display = 'none'; return; }
@@ -135,6 +202,11 @@
         cont.innerHTML = ord.map(cardHTML).join('');
     }
 
+    function montoUsdHTML(r) {
+        const m = montoRD(r);
+        const eq = m.tasa ? `<span style="font-size:12.5px;color:#1e2a35;font-weight:normal"> ≈ ${fmt(m.monto)} <span style="color:#778;font-size:11px">a ${m.tasa.venta.toFixed(2)} · ${esc(m.tasa.fuente)} ${fD(m.tasa.fecha)}</span></span>` : ' <span style="font-size:11px;color:#d9483b;font-weight:normal">sin tasa disponible</span>';
+        return `<span style="color:#7d3ac1">${fUsd(r.monto)}</span>${eq}${r.itbis ? ` <span style="font-size:11px;color:#778;font-weight:normal">ITBIS ${fUsd(r.itbis)}</span>` : ''}`;
+    }
     function cardHTML(r) {
         const badge = r.activo === false ? '<span class="badge-off">Inactivo</span>'
             : (pendiente(r) ? '<span class="badge-pend">⏳ Pendiente este mes</span>' : '<span class="badge-ok">✓ Registrado este mes</span>');
@@ -143,7 +215,7 @@
         return `<div class="order-card rec-card">
             <div class="rec-info">
                 <b>${esc(r.concepto)}</b> ${badge}
-                <div class="monto">${fmt(r.monto)}${r.itbis ? ` <span style="font-size:11px;color:#778;font-weight:normal">ITBIS ${fmt(r.itbis)}</span>` : ''}</div>
+                <div class="monto">${esUsd(r) ? montoUsdHTML(r) : fmt(r.monto) + (r.itbis ? ` <span style="font-size:11px;color:#778;font-weight:normal">ITBIS ${fmt(r.itbis)}</span>` : '')}</div>
                 ${sub ? `<div class="l">${sub}</div>` : ''}
             </div>
             <div class="acts">
@@ -157,6 +229,7 @@
     window.abrir = function () {
         editId = null; document.getElementById('modal-title').textContent = 'Nuevo gasto fijo';
         ['r-concepto', 'r-categoria', 'r-monto', 'r-itbis', 'r-tercero'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('r-moneda').value = 'DOP'; onMoneda();
         document.getElementById('r-dia').value = '1'; document.getElementById('r-metodo').value = 'Transferencia';
         document.getElementById('r-cuenta').value = ''; document.getElementById('r-activo').checked = true;
         document.getElementById('modal').classList.add('show');
@@ -167,6 +240,7 @@
         document.getElementById('r-concepto').value = r.concepto || '';
         document.getElementById('r-categoria').value = r.categoria || '';
         document.getElementById('r-dia').value = r.dia || 1;
+        document.getElementById('r-moneda').value = r.moneda === 'USD' ? 'USD' : 'DOP'; onMoneda();
         document.getElementById('r-monto').value = r.monto != null ? r.monto : '';
         document.getElementById('r-itbis').value = r.itbis != null ? r.itbis : '';
         document.getElementById('r-metodo').value = r.metodo || 'Transferencia';
@@ -183,6 +257,7 @@
         const datos = {
             concepto, categoria: document.getElementById('r-categoria').value.trim(),
             dia: Math.min(28, Math.max(1, parseInt(document.getElementById('r-dia').value, 10) || 1)),
+            moneda: document.getElementById('r-moneda').value === 'USD' ? 'USD' : 'DOP',
             monto: n2(document.getElementById('r-monto').value), itbis: n2(document.getElementById('r-itbis').value),
             metodo: document.getElementById('r-metodo').value,
             cuentaBancoId: document.getElementById('r-cuenta').value, cuentaBancoNombre: c ? c.alias : '',
@@ -208,12 +283,16 @@
         const d = new Date();
         const dia = Math.min(28, Math.max(1, n2(r.dia) || 1));
         const fecha = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(dia);
+        // En US$: se registra en pesos con la tasa de la fecha de pago (Popular anotada ese día, si no BCRD).
+        const m = montoRD(r);
+        if (esUsd(r) && !m.tasa) throw new Error('No hay tasa de cambio disponible todavía. Pulsa «Guardar» con la tasa del Popular o espera la actualización diaria (7:00 am).');
+        const extraUsd = esUsd(r) ? { moneda: 'USD', montoMoneda: n2(r.monto), itbisMoneda: n2(r.itbis), tasa: m.tasa.venta, tasaFuente: m.tasa.fuente, tasaFecha: m.tasa.fecha } : {};
         await addDoc(collection(db, 'contaMovimientos'), {
             tipo: 'gasto', fecha, concepto: r.concepto, categoria: r.categoria || '',
-            monto: n2(r.monto), itbis: n2(r.itbis), metodo: r.metodo || 'Transferencia',
+            monto: m.monto, itbis: m.itbis, metodo: r.metodo || 'Transferencia', ...extraUsd,
             cuentaBancoId: r.cuentaBancoId || '', cuentaBancoNombre: r.cuentaBancoNombre || '',
             centroCosto: '', tercero: r.tercero || '', rnc: '', ncf: '',
-            notas: 'Gasto fijo recurrente', recurrenteId: r.id,
+            notas: 'Gasto fijo recurrente' + (esUsd(r) ? ` · ${fUsd(r.monto)} × ${m.tasa.venta.toFixed(2)} (${m.tasa.fuente}, ${fD(m.tasa.fecha)})` : ''), recurrenteId: r.id,
             creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
         });
         await updateDoc(doc(db, 'contaRecurrentes', r.id), { ultimoRegistro: mesActual() });
@@ -222,7 +301,8 @@
     window.registrar = async function (id) {
         const r = recs.find(x => x.id === id); if (!r) return;
         if (!pendiente(r)) { alert('Este gasto ya se registró este mes.'); return; }
-        if (!confirm('¿Registrar "' + r.concepto + '" (' + fmt(r.monto) + ') como gasto de este mes?')) return;
+        const m = montoRD(r);
+        if (!confirm('¿Registrar "' + r.concepto + '" (' + (esUsd(r) ? fUsd(r.monto) + ' ≈ ' + fmt(m.monto) + (m.tasa ? ' a ' + m.tasa.venta.toFixed(2) : '') : fmt(r.monto)) + ') como gasto de este mes?')) return;
         try { await crearMovimiento(r); } catch (e) { alert('No se pudo registrar: ' + e.message); }
     };
     window.registrarTodos = async function () {
