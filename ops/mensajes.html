@@ -32,6 +32,13 @@
     .msg-row .chip { display: inline-block; font-size: 10.5px; font-weight: bold; border-radius: 20px; padding: 2px 9px; margin-left: 6px; }
     .chip-firma { background: #fef0e6; color: #c76a1c; }
     .chip-leidos { background: #eaf1f9; color: var(--artal-blue); }
+    .row-acts { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; justify-content: center; }
+    .btn-row-leido { background: #2ecc71; color: #fff; border: none; border-radius: 9px; padding: 9px 12px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 40px; white-space: nowrap; }
+    .btn-row-abrir { background: transparent; color: var(--artal-blue); border: 1.5px solid #cfd6dd; border-radius: 9px; padding: 8px 12px; font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; white-space: nowrap; }
+    table.hist { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+    table.hist th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    table.hist td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+    .hist-wrap { overflow-x: auto; }
     .empty { color: #8a93a0; font-size: 13px; padding: 18px 4px; text-align: center; }
 
     .detalle .asunto { color: var(--artal-blue); font-size: 21px; margin: 4px 0 3px; font-weight: bold; }
@@ -152,7 +159,8 @@
     const nombreDe = (email) => { const u = usuariosCache.find(x => mismoEmail(x.email, email)); return u ? (u.nombre || email) : email; };
 
     function bandejaMsgs() { return mensajesCache.filter(m => esParaMi(m) && !yoLoEnvie(m)); }
-    function noLeidos() { return bandejaMsgs().filter(m => { const a = miAcuse(m); return !a || a.leido !== true; }).length; }
+    const esNoLeido = (m) => { const a = miAcuse(m); return !a || a.leido !== true; };
+    function noLeidos() { return bandejaMsgs().filter(esNoLeido).length; }
 
     // ---------------- Render ----------------
     function render() {
@@ -160,12 +168,16 @@
         const nl = noLeidos();
         const enviadosTab = puedeEnviar ? `<button class="tab ${vista === 'enviados' ? 'active' : ''}" onclick="irA('enviados')">📤 Enviados</button>` : '';
         const nuevoBtn = puedeEnviar ? `<button class="btn-y" onclick="irA('nuevo')">✏️ Nuevo mensaje</button>` : '';
-        const tabs = (vista === 'bandeja' || vista === 'enviados') ? `<div class="tabs">
-            <button class="tab ${vista === 'bandeja' ? 'active' : ''}" onclick="irA('bandeja')">📥 Recibidos${nl ? ` <span class="dot">${nl}</span>` : ''}</button>
-            ${enviadosTab}${nuevoBtn}</div>` : '';
+        const histTab = puedeEnviar ? `<button class="tab ${vista === 'historial' ? 'active' : ''}" onclick="irA('historial')">🕘 Historial de lecturas</button>` : '';
+        const tabs = (vista === 'bandeja' || vista === 'leidos' || vista === 'enviados' || vista === 'historial') ? `<div class="tabs">
+            <button class="tab ${vista === 'bandeja' ? 'active' : ''}" onclick="irA('bandeja')">📥 Nuevos${nl ? ` <span class="dot">${nl}</span>` : ''}</button>
+            <button class="tab ${vista === 'leidos' ? 'active' : ''}" onclick="irA('leidos')">✓ Leídos</button>
+            ${enviadosTab}${histTab}${nuevoBtn}</div>` : '';
 
         let html = tabs;
-        if (vista === 'bandeja') html += renderBandeja();
+        if (vista === 'bandeja') html += renderBandeja(true);
+        else if (vista === 'leidos') html += renderBandeja(false);
+        else if (vista === 'historial') html += renderHistorial();
         else if (vista === 'enviados') html += renderEnviados();
         else if (vista === 'nuevo') html += renderNuevo();
         else if (vista === 'detalle') html += renderDetalle();
@@ -175,13 +187,17 @@
 
     window.irA = function (v, id) { vista = v; if (id !== undefined) msgSel = id; if (v === 'nuevo') resetCompose(); render(); window.scrollTo(0, 0); };
 
-    function renderBandeja() {
-        const msgs = bandejaMsgs();
-        if (!msgs.length) return `<p class="intro">Aquí verás los comunicados, avisos y documentos que la empresa te envíe.</p><div class="empty">📭 No tienes mensajes por ahora.</div>`;
-        return `<p class="intro">Comunicados y documentos de ARTAL para ti. Los no leídos están marcados en rojo.</p>
+    // nuevos=true → bandeja de NUEVOS (sin leer, con botón "✓ Leído" en la fila); false → LEÍDOS (con la fecha en
+    // que lo marcaste). Al marcar, el mensaje pasa solo de una a la otra (pedido del usuario 2026-09-22).
+    function renderBandeja(nuevos) {
+        const msgs = bandejaMsgs().filter(m => esNoLeido(m) === nuevos);
+        if (!msgs.length) return nuevos
+            ? `<p class="intro">Aquí llegan los comunicados, avisos y documentos que la empresa te envía. Cuando lo leas, toca <b>✓ Leído</b> y pasa a la bandeja de Leídos.</p><div class="empty">📭 No tienes mensajes nuevos.</div>`
+            : `<p class="intro">Mensajes que ya marcaste como leídos, con la fecha en que lo hiciste.</p><div class="empty">Todavía no has marcado ninguno como leído.</div>`;
+        return `<p class="intro">${nuevos ? 'Mensajes nuevos. Ábrelo para leerlo completo; cuando termines, toca <b>✓ Leído</b> y pasará a Leídos.' : 'Ya leídos. Puedes volver a abrir cualquiera.'}</p>
             <div class="msg-list">${msgs.map(m => {
-            const a = miAcuse(m); const unread = !a || a.leido !== true;
-            return `<div class="msg-row ${unread ? 'unread' : ''}" onclick="irA('detalle','${m.id}')">
+            const a = miAcuse(m);
+            return `<div class="msg-row ${nuevos ? 'unread' : ''}" onclick="irA('detalle','${m.id}')">
                 <span class="ic">${m.requiereFirma ? '✍️' : '📣'}</span>
                 <div class="body">
                     <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
@@ -190,10 +206,28 @@
                         ${m.requiereFirma ? `<span class="chip chip-firma">Requiere aceptación</span>` : ''}
                         ${(m.enlace && m.enlace.url) ? `<span class="chip chip-leidos">📄 Documento</span>` : ''}
                         ${(Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<span class="chip chip-leidos">📎 ${m.adjuntos.length}</span>` : ''}
+                        ${!nuevos && a ? `<span class="chip chip-leidos">${m.requiereFirma ? '✅ Aceptado' : '✓ Leído'} el ${esc(fFecha(a.fecha))}</span>` : ''}
                     </div>
                 </div>
+                ${nuevos ? `<div class="row-acts">${m.requiereFirma ? `<button class="btn-row-abrir" onclick="event.stopPropagation();irA('detalle','${m.id}')">✍️ Abrir y aceptar</button>` : `<button class="btn-row-leido" onclick="event.stopPropagation();marcarLeido('${m.id}')">✓ Leído</button>`}</div>` : ''}
             </div>`;
         }).join('')}</div>`;
+    }
+
+    // Historial de lecturas (quien envía / gerencia): cuándo marcó leído cada persona cada mensaje.
+    function renderHistorial() {
+        const esAdmin = usuario.roles.includes('admin');
+        const msgs = mensajesCache.filter(m => esAdmin || yoLoEnvie(m));
+        const filas = [];
+        msgs.forEach(m => Object.values(m.acuses || {}).forEach(a => { if (a && a.leido) filas.push({ fecha: a.fecha || '', persona: a.nombre || a.email || '', asunto: m.asunto || '(sin asunto)', remitente: m.remitenteNombre || '', firma: !!m.requiereFirma, id: m.id }); }));
+        filas.sort((x, y) => String(y.fecha).localeCompare(String(x.fecha)));
+        const pend = [];
+        msgs.forEach(m => destinatariosDe(m).forEach(e => { const a = (m.acuses || {})[sanitKey(e)]; if (!a || !a.leido) pend.push({ persona: nombreDe(e), asunto: m.asunto || '(sin asunto)', fecha: m.fecha, id: m.id }); }));
+        return `<p class="intro">Registro de cuándo cada persona marcó <b>Leído</b> (o aceptó) cada comunicado${esAdmin ? ', de todos los remitentes' : ' que enviaste'}. Abajo, lo que sigue sin leer.</p>
+            ${filas.length ? `<div class="hist-wrap"><table class="hist"><thead><tr><th>Leído el</th><th>Persona</th><th>Mensaje</th><th>De</th></tr></thead><tbody>
+                ${filas.map(f => `<tr><td style="white-space:nowrap">${esc(fFecha(f.fecha))}</td><td>${esc(f.persona)}</td><td><a onclick="irA('detalle','${f.id}')" style="color:var(--artal-blue);cursor:pointer;text-decoration:underline">${esc(f.asunto)}</a>${f.firma ? ' <span class="chip chip-firma">aceptado</span>' : ''}</td><td>${esc(f.remitente)}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Todavía nadie ha marcado un mensaje como leído.</div>'}
+            ${pend.length ? `<h3 style="font-size:14px;color:#c0392b;margin:18px 0 6px">⏳ Sin leer (${pend.length})</h3><div class="hist-wrap"><table class="hist"><thead><tr><th>Persona</th><th>Mensaje</th><th>Enviado</th></tr></thead><tbody>
+                ${pend.map(f => `<tr><td>${esc(f.persona)}</td><td><a onclick="irA('detalle','${f.id}')" style="color:var(--artal-blue);cursor:pointer;text-decoration:underline">${esc(f.asunto)}</a></td><td style="white-space:nowrap">${esc(fFecha(f.fecha))}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
     }
 
     function renderEnviados() {
@@ -218,8 +252,10 @@
 
     function renderDetalle() {
         const m = mensajesCache.find(x => x.id === msgSel);
-        const volver = (vista, txt) => `<div class="crumbs"><a onclick="irA('${yoLoEnvie(m || {}) ? 'enviados' : 'bandeja'}')">← ${(m && yoLoEnvie(m)) ? 'Enviados' : 'Recibidos'}</a></div>`;
-        if (!m) return `<div class="crumbs"><a onclick="irA('bandeja')">← Recibidos</a></div><div class="empty">Este mensaje ya no está disponible.</div>`;
+        const bandejaDe = (x) => yoLoEnvie(x) ? 'enviados' : (esNoLeido(x) ? 'bandeja' : 'leidos');
+        const nombreBandeja = { enviados: 'Enviados', bandeja: 'Nuevos', leidos: 'Leídos' };
+        const volver = () => `<div class="crumbs"><a onclick="irA('${bandejaDe(m)}')">← ${nombreBandeja[bandejaDe(m)]}</a></div>`;
+        if (!m) return `<div class="crumbs"><a onclick="irA('bandeja')">← Nuevos</a></div><div class="empty">Este mensaje ya no está disponible.</div>`;
         const adj = (Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<div class="adj-tit">📎 Documentos adjuntos</div>
             <div class="adj-wrap">${m.adjuntos.map(f => {
             const esPdf = f.tipo === 'pdf' || /\.pdf(\?|$)/i.test(f.url || '');
@@ -240,10 +276,10 @@
             // Vista del receptor: acuse.
             const a = miAcuse(m);
             if (a && a.leido) {
-                extra = `<div class="acuse-box done"><div class="acuse-msg">${m.requiereFirma ? '✅ Aceptado' : '✓ Leído'} el ${esc(fFecha(a.fecha))}</div></div>`;
+                extra = `<div class="acuse-box done"><div class="acuse-msg">${m.requiereFirma ? '✅ Aceptado' : '✓ Leído'} el ${esc(fFecha(a.fecha))} · está en tu bandeja de Leídos</div></div>`;
             } else {
-                extra = `<div class="acuse-box"><div class="acuse-msg">${m.requiereFirma ? 'Confirma que leíste y aceptas este documento:' : 'Marca este mensaje como leído:'}</div>
-                    <button class="btn-acuse ${m.requiereFirma ? 'firma' : ''}" onclick="marcarLeido('${m.id}')">${m.requiereFirma ? '✍️ He leído y acepto' : '✓ Marcar como leído'}</button></div>`;
+                extra = `<div class="acuse-box"><div class="acuse-msg">${m.requiereFirma ? 'Confirma que leíste y aceptas este documento:' : 'Cuando termines de leerlo, márcalo: pasará a tu bandeja de Leídos.'}</div>
+                    <button class="btn-acuse ${m.requiereFirma ? 'firma' : ''}" onclick="marcarLeido('${m.id}', true)">${m.requiereFirma ? '✍️ He leído y acepto' : '✓ Leído'}</button></div>`;
             }
         }
 
@@ -258,12 +294,13 @@
     }
 
     // ---------------- Acuse de recibo (receptor) ----------------
-    window.marcarLeido = async function (id) {
+    window.marcarLeido = async function (id, desdeDetalle) {
         const m = mensajesCache.find(x => x.id === id); if (!m) return;
         try {
             await updateDoc(doc(db, 'mensajes', id), {
                 ['acuses.' + miKey]: { leido: true, aceptado: !!m.requiereFirma, fecha: new Date().toISOString(), nombre: usuario.nombre, email: usuario.email }
             });
+            if (desdeDetalle) irA('leidos');   // el mensaje sale de Nuevos y queda en Leídos
         } catch (e) { alert('No se pudo registrar: ' + (e && e.message ? e.message : e)); }
     };
 
