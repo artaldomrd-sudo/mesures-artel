@@ -2045,3 +2045,170 @@ exports.tasaCambioAhora = onRequest({ cors: true, timeoutSeconds: 120, memory: '
     try { res.status(200).json(await actualizarTasaCambio('manual · ' + quien)); }
     catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
 });
+
+// ============================================================================================
+// GASTOS FIJOS DE PAGO AUTOMÁTICO (contaRecurrentes.pago === 'automatico'): el banco los debita
+// solo, así que el Panel los registra solo en Ingresos y Gastos el día de pago (7:30 am, después
+// de que tasaCambioDiaria trajo la tasa del día). Misma lógica que "Registrar este mes" en
+// ops/contabilidad-recurrentes.html (US$ → RD$ con la tasa de la fecha de pago). 2026-09-22.
+// ============================================================================================
+function tasaParaFecha(tasas, fecha) {
+    if (!tasas) return null;
+    const n = (x) => Number(x) || 0;
+    if (tasas.popular && tasas.popular.fecha === fecha && n(tasas.popular.venta) > 0) return { venta: n(tasas.popular.venta), fuente: 'Banco Popular (anotada)', fecha };
+    const pf = tasas.porFecha || {}; const claves = Object.keys(pf).filter((k) => k <= fecha).sort();
+    const k = claves.length ? claves[claves.length - 1] : (tasas.hoy && tasas.hoy.fecha);
+    const v = k ? (pf[k] || (tasas.hoy && tasas.hoy.fecha === k ? tasas.hoy : null)) : null;
+    return v && n(v.venta) > 0 ? { venta: n(v.venta), fuente: 'Banco Central (referencia)', fecha: k } : null;
+}
+async function registrarGastosFijosAutomaticos() {
+    const { fecha } = hoySantoDomingo();
+    const mes = fecha.slice(0, 7), diaHoy = Number(fecha.slice(8, 10));
+    const snap = await db.collection('contaRecurrentes').get();
+    let tasas = null, hechos = [];
+    for (const d of snap.docs) {
+        const r = d.data();
+        if (r.pago !== 'automatico' || r.activo === false || r.ultimoRegistro === mes) continue;
+        const dia = Math.min(28, Math.max(1, Number(r.dia) || 1));
+        if (diaHoy < dia) continue;
+        const fechaPago = mes + '-' + String(dia).padStart(2, '0');
+        const r2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+        let monto = r2(r.monto), itbis = r2(r.itbis), extra = {}, notaTasa = '';
+        if (r.moneda === 'USD') {
+            if (!tasas) tasas = (await db.doc('tasas/USD').get()).data() || null;
+            const t = tasaParaFecha(tasas, fechaPago);
+            if (!t) { console.warn('gastosFijosAutomaticos: sin tasa para', r.concepto); continue; }
+            monto = r2(monto * t.venta); itbis = r2(itbis * t.venta);
+            extra = { moneda: 'USD', montoMoneda: r2(r.monto), itbisMoneda: r2(r.itbis), tasa: t.venta, tasaFuente: t.fuente, tasaFecha: t.fecha };
+            notaTasa = ` · US$ ${r2(r.monto).toFixed(2)} × ${t.venta.toFixed(2)} (${t.fuente}, ${t.fecha.split('-').reverse().join('/')})`;
+        }
+        await db.collection('contaMovimientos').add({
+            tipo: 'gasto', fecha: fechaPago, concepto: r.concepto || '', categoria: r.categoria || '',
+            monto, itbis, metodo: r.metodo || 'Transferencia', ...extra,
+            cuentaBancoId: r.cuentaBancoId || '', cuentaBancoNombre: r.cuentaBancoNombre || '',
+            centroCosto: '', tercero: r.tercero || '', rnc: '', ncf: '',
+            notas: 'Gasto fijo recurrente · pago automático (registrado solo por el sistema)' + notaTasa,
+            recurrenteId: d.id, registradoAuto: true,
+            creadoPor: 'Sistema (pago automático)', fechaCreacion: FieldValue.serverTimestamp()
+        });
+        await d.ref.update({ ultimoRegistro: mes, ultimoRegistroAuto: fecha });
+        hechos.push(r.concepto);
+    }
+    if (hechos.length) console.log('gastosFijosAutomaticos', fecha, hechos);
+    return hechos;
+}
+exports.gastosFijosAutomaticos = onSchedule({ schedule: '30 7 * * *', timeZone: 'America/Santo_Domingo', timeoutSeconds: 120 }, async () => {
+    try { await registrarGastosFijosAutomaticos(); } catch (e) { console.error('gastosFijosAutomaticos', e); }
+});
+
+// ============================================================================================
+// INFORME DE COSTO DE OBRA al completar un trabajo de instalación (2026-09-22, pedido del usuario:
+// "cuando una obra se marque como terminada… un correo en mensajería interna con el costo de
+// realización de la instalación, y que aparezca en Historial → carpeta por obra").
+// Fuente: partesDiarios (horas × costo/hora, extras al factor) + viajes (Transportes: costo del
+// camión repartido entre las obras que salieron en el mismo viaje). Cada trabajo completado genera
+// SU informe con lo registrado desde el informe anterior de esa misma obra (o desde siempre si es
+// el primero) y muestra el acumulado; gerencia suma al final si hubo varios trabajos.
+// ============================================================================================
+const normTxtObra = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+const obraKeyDe = (cliente, obra) => normTxtObra(cliente) + '|' + normTxtObra(obra);
+const fmtRD = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtF = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
+
+async function generarInformeObra(instId, inst) {
+    const cliente = String(inst.cliente || '').trim(), obra = String(inst.obra || '').trim();
+    const obraKey = obraKeyDe(cliente, obra);
+    const { fecha: hoy } = hoySantoDomingo();
+    // Informe anterior de la misma obra → este cubre desde ahí.
+    const previos = (await db.collection('informesObra').where('obraKey', '==', obraKey).get()).docs.map((d) => d.data());
+    const desde = previos.reduce((m, p) => (p.fechaCierre > m ? p.fechaCierre : m), '');
+    const acumPrevio = previos.reduce((s, p) => s + (Number(p.total) || 0), 0);
+
+    const cfg = (await db.doc('rrhhConfig/parteDiario').get()).data() || {};
+    const jornada = Number(cfg.horasJornada) || 8, factor = Number(cfg.factorExtra) || 1.35;
+    const empleados = {}; (await db.collection('rrhhEmpleados').get()).docs.forEach((d) => { empleados[d.id] = d.data(); });
+    const costoHoraEmp = (e) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return dia / jornada; };
+
+    // Mano de obra: líneas de partes de esta obra, con la jornada por persona y día (extras al factor).
+    const partes = (await db.collection('partesDiarios').get()).docs.map((d) => d.data()).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
+    const personas = {}, dias = {}; let horas = 0, horasExtra = 0, costoMO = 0, sinCosto = [];
+    partes.forEach((p) => {
+        const porEmp = {};
+        (p.lineas || []).forEach((l) => { (porEmp[l.empleadoId] = porEmp[l.empleadoId] || []).push(l); });
+        Object.entries(porEmp).forEach(([empId, ls]) => {
+            const tot = ls.reduce((s, l) => s + (Number(l.horas) || 0), 0);
+            ls.forEach((l) => {
+                if (l.tipo !== 'obra' || l.obraKey !== obraKey) return;
+                const ch = Number(l.costoHora) || costoHoraEmp(empleados[empId]);
+                const h = Number(l.horas) || 0, share = tot > 0 ? h / tot : 0;
+                const norm = Math.min(tot, jornada) * share, ext = Math.max(0, tot - jornada) * share;
+                const c = ch * norm + ch * ext * factor;
+                horas += h; horasExtra += ext; costoMO += c;
+                if (!(ch > 0)) sinCosto.push(l.nombre);
+                const per = personas[l.nombre] = personas[l.nombre] || { nombre: l.nombre, horas: 0, costo: 0, dias: new Set() };
+                per.horas += h; per.costo += c; per.dias.add(p.fecha);
+                dias[p.fecha] = (dias[p.fecha] || 0) + h;
+            });
+        });
+    });
+    // Transporte: viajes del camión con esta obra a bordo (costo ya repartido entre las obras del viaje).
+    const viajesSnap = await db.collection('viajes').where('obrasKeys', 'array-contains', obraKey).get();
+    const viajes = viajesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((v) => v.fecha && v.fecha > desde && v.fecha <= hoy).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const detViajes = viajes.map((v) => { const o = (v.obras || []).find((x) => x.obraKey === obraKey) || {}; return { viajeId: v.id, fecha: v.fecha, vehiculo: v.vehiculoNombre || v.vehiculoId || '', ruta: v.rutaNombre || '', kmTot: v.kmTot || 0, costoViaje: v.costoTotal || 0, obrasEnViaje: (v.obras || []).length, costo: Number(o.costo) || 0, chofer: v.choferNombre || '' }; });
+    const costoTransporte = detViajes.reduce((s, v) => s + v.costo, 0);
+    const total = costoMO + costoTransporte;
+    const diasPersona = horas / jornada;
+    const listaPersonas = Object.values(personas).sort((a, b) => b.horas - a.horas).map((p) => ({ nombre: p.nombre, horas: Math.round(p.horas * 10) / 10, costo: Math.round(p.costo * 100) / 100, dias: p.dias.size }));
+    const listaDias = Object.keys(dias).sort().map((f) => ({ fecha: f, horas: dias[f] }));
+    // Pedidos de la obra (para el enlace y para saber qué se entregó).
+    const pedidos = (await db.collection('orders').get()).docs.filter((d) => obraKeyDe(d.data().cliente, d.data().obra) === obraKey).map((d) => ({ id: d.id, docType: d.data().docType || '', status: d.data().status || '' }));
+
+    const informe = {
+        instalacionId: instId, cliente, obra, obraKey, obraLabel: [cliente, obra].filter(Boolean).join(' — '),
+        fechaCierre: hoy, cerradoPor: inst.validadoPor || inst.estadoPor || '', desde: desde || null, esPrimero: !previos.length, numero: previos.length + 1,
+        manoObra: { horas: Math.round(horas * 10) / 10, horasExtra: Math.round(horasExtra * 10) / 10, diasPersona: Math.round(diasPersona * 10) / 10, costo: Math.round(costoMO * 100) / 100, personas: listaPersonas, dias: listaDias, sinCosto: [...new Set(sinCosto)] },
+        transporte: { viajes: detViajes.length, costo: Math.round(costoTransporte * 100) / 100, detalle: detViajes },
+        total: Math.round(total * 100) / 100, acumuladoObra: Math.round((acumPrevio + total) * 100) / 100,
+        pedidos, generado: FieldValue.serverTimestamp()
+    };
+    await db.doc('informesObra/' + instId).set(informe);
+
+    // Mensaje interno a gerencia (admins activos).
+    const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
+    const lugar = informe.obraLabel || 'Obra';
+    const L = [];
+    L.push(`Obra: ${lugar}`);
+    L.push(`Trabajo de instalación completado el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}.${desde ? ' Este informe cubre desde el ' + fmtF(desde) + ' (informe nº ' + informe.numero + ' de esta obra).' : ''}`);
+    L.push('');
+    L.push(`MANO DE OBRA (partes diarios): ${informe.manoObra.horas} h en ${listaDias.length} día(s) · ${informe.manoObra.diasPersona} días-persona${horasExtra ? ' · ' + informe.manoObra.horasExtra + ' h extra' : ''} → ${fmtRD(costoMO)}`);
+    listaPersonas.forEach((p) => L.push(`  • ${p.nombre}: ${p.horas} h en ${p.dias} día(s) → ${fmtRD(p.costo)}`));
+    if (!listaPersonas.length) L.push('  • Sin horas registradas en los partes diarios para esta obra.');
+    if (informe.manoObra.sinCosto.length) L.push(`  ⚠ Sin costo por hora en RRHH: ${informe.manoObra.sinCosto.join(', ')} (sus horas están, su costo no).`);
+    L.push('');
+    L.push(`TRANSPORTE: ${detViajes.length} viaje(s) del camión → ${fmtRD(costoTransporte)}`);
+    detViajes.forEach((v) => L.push(`  • ${fmtF(v.fecha)} ${v.vehiculo}${v.ruta ? ' · ' + v.ruta : ''}${v.kmTot ? ' · ' + Math.round(v.kmTot) + ' km' : ''} → ${fmtRD(v.costo)}${v.obrasEnViaje > 1 ? ' (viaje de ' + fmtRD(v.costoViaje) + ' repartido entre ' + v.obrasEnViaje + ' obras)' : ''}`));
+    if (!detViajes.length) L.push('  • Ningún viaje registrado con esta obra a bordo (el chofer elige vehículo y ruta al marcar "En ruta").');
+    L.push('');
+    L.push(`COSTO TOTAL DE REALIZACIÓN: ${fmtRD(total)}`);
+    if (previos.length) L.push(`Acumulado de la obra (${informe.numero} informes): ${fmtRD(informe.acumuladoObra)}`);
+    L.push('');
+    L.push('Compáralo con lo cotizado de transporte e instalación en la factura para ver si el precio fue correcto.');
+    const url = BASE_URL + 'ops/historial.html?cliente=' + encodeURIComponent(cliente) + '&obra=' + encodeURIComponent(obra);
+    await db.collection('mensajes').add({
+        estado: 'enviado', asunto: '💰 Costo de realización — ' + lugar, cuerpo: L.join('\n'),
+        remitenteEmail: 'sistema@artal', remitenteNombre: 'Sistema ARTAL (informe automático)',
+        fecha: FieldValue.serverTimestamp(), paraTodos: false, destinatarios: admins, requiereFirma: false, adjuntos: [],
+        enlace: { titulo: 'Ver carpeta de la obra en Historial', url }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
+    });
+    await db.doc('instalaciones/' + instId).update({ informeObraId: instId, informeObraFecha: hoy });
+    for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
+    return informe;
+}
+exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    if (after.estado !== 'completado' || before.estado === 'completado' || after.informeObraId) return;
+    try { await generarInformeObra(event.params.id, after); }
+    catch (e) { console.error('informeObraAlCompletar', event.params.id, e); }
+});

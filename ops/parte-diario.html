@@ -13,7 +13,9 @@
     .tabs { display: flex; gap: 6px; background: #fff; border-radius: 12px; padding: 5px; box-shadow: var(--shadow); margin-bottom: 14px; flex-wrap: wrap; }
     .tab { flex: 1; min-width: 120px; padding: 11px 8px; border: none; background: transparent; color: var(--artal-blue); border-radius: 9px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .tab.active { background: var(--artal-blue); color: #fff; }
-    .tabpanel { display: none; } .tabpanel.active { display: block; }
+    .tabpanel { display: block; }
+    .adm-links { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .adm-links a { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 9px 12px; font-weight: bold; font-size: 13px; text-decoration: none; }
     .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
     .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
     .btn { border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
@@ -85,11 +87,11 @@
 </header>
 
 <main>
-    <div class="tabs" id="tabs">
-        <button class="tab active" data-tab="parte" onclick="setTab('parte')">📝 Parte del día</button>
-        <button class="tab adm" data-tab="obras" onclick="setTab('obras')" style="display:none">🏗️ Costo por obra</button>
-        <button class="tab adm" data-tab="personas" onclick="setTab('personas')" style="display:none">👷 Por persona</button>
-        <button class="tab adm" data-tab="control" onclick="setTab('control')" style="display:none">✅ Control</button>
+    <!-- Gerencia (admin): el seguimiento (quién envió hoy, 14 días, encargados) y los costos por obra
+         viven en sus propias pantallas desde 2026-09-22; esta página es SOLO el formulario del encargado. -->
+    <div class="adm-links" id="adm-links" style="display:none">
+        <a href="parte-diario-seguimiento.html">📊 Seguimiento de los partes (gerencia)</a>
+        <a href="contabilidad-obras.html">💰 Costo de obras (Contabilidad)</a>
     </div>
 
     <!-- ===== PARTE ===== -->
@@ -115,40 +117,6 @@
     </div>
 
     <!-- ===== COSTO POR OBRA (admin) ===== -->
-    <div class="tabpanel" id="tab-obras">
-        <div class="bar">
-            <input type="month" id="o-mes" onchange="renderObras()">
-            <label style="font-size:13px"><input type="checkbox" id="o-todo" onchange="renderObras()"> Todo el histórico</label>
-            <button class="btn btn-o" onclick="exportarCSV('obras')">⬇ CSV</button>
-        </div>
-        <div class="kpis" id="o-kpis"></div>
-        <div class="tabla-wrap" id="o-tabla"></div>
-        <div id="o-detalle"></div>
-        <p class="hint">Costo = horas × (costo laboral real por día del empleado ÷ jornada). Horas por encima de la jornada en un mismo día se pagan al factor de extras. El costo por día viene de RRHH → Empleados (sueldo + cargas). Las actividades que no son obra (taller, almacén, transporte, oficina…) van como costo general.</p>
-    </div>
-
-    <!-- ===== POR PERSONA (admin) ===== -->
-    <div class="tabpanel" id="tab-personas">
-        <div class="bar">
-            <input type="month" id="pe-mes" onchange="renderPersonas()">
-            <button class="btn btn-o" onclick="exportarCSV('personas')">⬇ CSV</button>
-        </div>
-        <div class="tabla-wrap" id="pe-tabla"></div>
-    </div>
-
-    <!-- ===== CONTROL (admin) ===== -->
-    <div class="tabpanel" id="tab-control">
-        <h2 style="font-size:15px;color:var(--artal-blue);margin:0 0 8px">Encargados que deben enviar el parte cada día</h2>
-        <p class="hint" style="margin:0 0 8px">Reciben el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo enviaron (lunes a sábado, sin feriados). A las 6:30 pm gerencia recibe la lista de los que faltan. Mientras tengan un parte pendiente, no pueden usar ninguna otra pantalla de la plataforma. El <b>supervisor</b> manda cuando dos encargados trabajan juntos: él los incluye en su parte y el otro ese día no tiene que enviar el suyo. Gerencia (admin) nunca entra en el cálculo de horas.</p>
-        <div class="enc-list" id="enc-list"></div>
-        <div class="bar">
-            <label style="font-size:13px">Bloqueo activo desde <input type="datetime-local" id="c-bloqueo" oninput="this.dataset.tocado='1'" title="Antes de esta fecha/hora no se bloquea a nadie (solo se le avisa)"></label>
-            <button class="btn btn-b" onclick="guardarConfig()">Guardar encargados</button>
-        </div>
-        <p class="hint">Costo por hora de cada persona = su costo laboral por día (RRHH → Empleados: sueldo + cargas de ley) ÷ 8 h. Si la ficha no tiene ese costo calculado, se usa sueldo ÷ 23.83 días. Las horas por encima de 8 en un día se cuentan al 135 % (recargo legal de horas extra).</p>
-        <h2 style="font-size:15px;color:var(--artal-blue);margin:18px 0 8px">Partes de los últimos 14 días</h2>
-        <div id="pend-grid"></div>
-    </div>
 </main>
 
 <script type="module">
@@ -229,7 +197,7 @@
     const esAdmin = usuario.roles.includes('admin') && !previewComo;
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
-    if (esAdmin) { document.querySelectorAll('.tab.adm').forEach(t => t.style.display = ''); document.getElementById('enc-wrap').style.display = ''; }
+    if (esAdmin) { document.getElementById('adm-links').style.display = ''; document.getElementById('enc-wrap').style.display = ''; }
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const claveEmail = (em) => String(em || '').trim().toLowerCase().replace(/[.@]/g, '_');
@@ -317,14 +285,6 @@
         return [...map.values()].sort((a, b) => (b.activa - a.activa) || a.label.localeCompare(b.label));
     }
 
-    // ---------------- Pestañas ----------------
-    window.setTab = function (t) {
-        document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
-        document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
-        renderTodo();
-    };
-    function tabActiva() { const b = document.querySelector('.tab.active'); return b ? b.dataset.tab : 'parte'; }
-
     // ---------------- Parte del día ----------------
     let arrancado = false;
     function arranque() {
@@ -344,7 +304,6 @@
         }
         f.value = qf || hoyStr(); f.max = hoyStr();
         if (!esAdmin) f.min = addDias(hoyStr(), -3);   // corrige hasta 3 días atrás; más allá, solo admin
-        const mes = hoyStr().slice(0, 7); document.getElementById('o-mes').value = mes; document.getElementById('pe-mes').value = mes;
         poblarEncargados();
         cargarParte();
     }
@@ -535,135 +494,12 @@
     }
     window.irFecha = function (f) { document.getElementById('p-fecha').value = f; cargarParte(); };
 
-    // ---------------- Cálculo de costo ----------------
-    // Devuelve líneas enriquecidas con costo, respetando la jornada por persona y día (extras al factor).
-    function lineasCosteadas(filtroFecha) {
-        const jornada = n2(config.horasJornada) || 8, factor = n2(config.factorExtra) || 1;
-        const out = [];
-        partes.filter(p => !filtroFecha || filtroFecha(p.fecha)).forEach(p => {
-            const porEmp = new Map();
-            (p.lineas || []).forEach(l => { const a = porEmp.get(l.empleadoId) || []; a.push(l); porEmp.set(l.empleadoId, a); });
-            porEmp.forEach((ls, empId) => {
-                const tot = ls.reduce((s, l) => s + n2(l.horas), 0);
-                const e = empPorId(empId);
-                ls.forEach(l => {
-                    const ch = n2(l.costoHora) || costoHora(e);
-                    const h = n2(l.horas), share = tot > 0 ? h / tot : 0;
-                    const normales = Math.min(tot, jornada) * share, extras = Math.max(0, tot - jornada) * share;
-                    out.push({ ...l, fecha: p.fecha, encargado: p.encargadoNombre || p.encargadoEmail, horasNorm: normales, horasExtra: extras, costo: ch * normales + ch * extras * factor, sinCosto: !(ch > 0) });
-                });
-            });
-        });
-        return out;
-    }
-    const enMes = (mes) => (f) => f.slice(0, 7) === mes;
-
-    let obraAbierta = null;
-    window.renderObras = function () {
-        const todo = document.getElementById('o-todo').checked, mes = document.getElementById('o-mes').value;
-        const L = lineasCosteadas(todo ? null : enMes(mes));
-        const g = new Map();
-        L.forEach(l => {
-            const k = l.tipo === 'obra' ? (l.obraKey || '?') : 'act:' + l.tipo;
-            const label = l.tipo === 'obra' ? (l.obraLabel || l.obraKey) : tipoLabel(l.tipo);
-            const c = g.get(k) || { k, label, esObra: l.tipo === 'obra', horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: l.fecha, hasta: l.fecha, sinCosto: false };
-            c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; c.personas.add(l.nombre); c.dias.add(l.fecha);
-            if (l.fecha < c.desde) c.desde = l.fecha; if (l.fecha > c.hasta) c.hasta = l.fecha; if (l.sinCosto) c.sinCosto = true;
-            g.set(k, c);
-        });
-        const rows = [...g.values()].sort((a, b) => (b.esObra - a.esObra) || (b.costo - a.costo));
-        const jornada = n2(config.horasJornada) || 8;
-        const totObra = rows.filter(r => r.esObra).reduce((s, r) => s + r.costo, 0), totGen = rows.filter(r => !r.esObra).reduce((s, r) => s + r.costo, 0);
-        document.getElementById('o-kpis').innerHTML = `<div class="kpi"><div class="v">${rows.filter(r => r.esObra).length}</div><div class="l">obras con horas</div></div>
-            <div class="kpi"><div class="v">${fmtRD(totObra)}</div><div class="l">mano de obra en obras</div></div>
-            <div class="kpi"><div class="v">${fmtRD(totGen)}</div><div class="l">costo general (taller, almacén, transporte…)</div></div>
-            <div class="kpi"><div class="v">${Math.round(rows.reduce((s, r) => s + r.horas, 0))} h</div><div class="l">horas reportadas</div></div>`;
-        document.getElementById('o-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Obra / actividad</th><th class="n">Días-persona</th><th class="n">Horas</th><th class="n">Extras</th><th class="n">Costo</th><th class="txt">Personas</th><th class="per">Período</th></tr></thead><tbody>
-            ${rows.map(r => `<tr><td class="txt">${r.esObra ? `<span class="obra-link" onclick="verObra('${esc(r.k)}')">${esc(r.label)}</span>` : esc(r.label)}${r.sinCosto ? ' <span class="hint" title="Alguna persona no tiene costo por día en RRHH → Empleados">⚠️ sin costo</span>' : ''}</td><td class="n">${(r.horas / jornada).toFixed(1)}</td><td class="n">${r.horas}</td><td class="n">${r.extras ? r.extras.toFixed(1) : '—'}</td><td class="n">${fmtRD(r.costo)}</td><td class="txt">${esc([...r.personas].join(', '))}</td><td class="per"><span style="white-space:nowrap">${esc(fmtFecha(r.desde))}${r.desde !== r.hasta ? ' → ' + esc(fmtFecha(r.hasta)) : ''}</span> · ${r.dias.size} día(s)</td></tr>`).join('')}
-            <tr class="tot"><td>Total</td><td class="n">${(rows.reduce((s, r) => s + r.horas, 0) / jornada).toFixed(1)}</td><td class="n">${rows.reduce((s, r) => s + r.horas, 0)}</td><td class="n">${rows.reduce((s, r) => s + r.extras, 0).toFixed(1)}</td><td class="n">${fmtRD(totObra + totGen)}</td><td></td><td></td></tr></tbody></table>`
-            : '<p class="hint">No hay partes en este período.</p>';
-        // Detalle de la obra abierta
-        const det = document.getElementById('o-detalle');
-        if (!obraAbierta) { det.innerHTML = ''; return; }
-        const D = L.filter(l => l.tipo === 'obra' && l.obraKey === obraAbierta).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
-        if (!D.length) { det.innerHTML = ''; return; }
-        det.innerHTML = `<h2 style="font-size:15px;color:var(--artal-blue);margin:4px 0 8px">Detalle: ${esc(D[0].obraLabel || obraAbierta)} <button class="link-btn" onclick="verObra(null)">cerrar</button></h2>
-            <div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th class="txt">Persona</th><th class="n">Horas</th><th class="n">Costo</th><th class="txt">Encargado</th></tr></thead><tbody>
-            ${D.map(l => `<tr><td style="white-space:nowrap">${esc(fmtFecha(l.fecha))}</td><td class="txt">${esc(l.nombre)}</td><td class="n">${l.horas}${l.horasExtra ? ` <span class="hint">(+${l.horasExtra.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(l.costo)}</td><td class="txt">${esc(l.encargado)}</td></tr>`).join('')}</tbody></table></div>`;
-    };
-    window.verObra = function (k) { obraAbierta = k; renderObras(); if (k) document.getElementById('o-detalle').scrollIntoView({ behavior: 'smooth' }); };
-
-    window.renderPersonas = function () {
-        const mes = document.getElementById('pe-mes').value;
-        const L = lineasCosteadas(enMes(mes));
-        const g = new Map();
-        L.forEach(l => {
-            const c = g.get(l.empleadoId) || { nombre: l.nombre, dias: new Set(), horas: 0, extras: 0, costo: 0, obras: new Map(), ausencias: 0 };
-            if (l.tipo === 'ausente') c.ausencias++; else { c.dias.add(l.fecha); c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; }
-            const lab = l.tipo === 'obra' ? (l.obraLabel || l.obraKey) : tipoLabel(l.tipo);
-            if (l.tipo !== 'ausente') c.obras.set(lab, (c.obras.get(lab) || 0) + n2(l.horas));
-            g.set(l.empleadoId, c);
-        });
-        const rows = [...g.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
-        document.getElementById('pe-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Persona</th><th class="n">Días</th><th class="n">Horas</th><th class="n">Extras</th><th class="n">Ausencias</th><th class="n">Costo</th><th class="txt" style="min-width:260px">Dónde estuvo (h)</th></tr></thead><tbody>
-            ${rows.map(r => `<tr><td class="txt"><b>${esc(r.nombre)}</b></td><td class="n">${r.dias.size}</td><td class="n">${r.horas}</td><td class="n">${r.extras ? r.extras.toFixed(1) : '—'}</td><td class="n">${r.ausencias || '—'}</td><td class="n">${fmtRD(r.costo)}</td><td class="txt">${esc([...r.obras.entries()].sort((a, b) => b[1] - a[1]).map(([o, h]) => `${o} (${h})`).join(' · '))}</td></tr>`).join('')}</tbody></table>`
-            : '<p class="hint">No hay partes en este mes.</p>';
-    };
-
-    window.exportarCSV = function (que) {
-        const mes = document.getElementById(que === 'obras' ? 'o-mes' : 'pe-mes').value;
-        const todo = que === 'obras' && document.getElementById('o-todo').checked;
-        const L = lineasCosteadas(todo ? null : enMes(mes));
-        const head = ['Fecha', 'Encargado', 'Persona', 'Tipo', 'Obra', 'Horas', 'Horas extra', 'Costo RD$'];
-        const lines = [head.join(';')].concat(L.map(l => [l.fecha, l.encargado, l.nombre, tipoLabel(l.tipo).replace(/^\S+\s/, ''), l.obraLabel || '', l.horas, l.horasExtra.toFixed(2), l.costo.toFixed(2)].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')));
-        const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `partes-diarios-${todo ? 'todo' : mes}.csv`; a.click();
-    };
-
-    // ---------------- Control (admin) ----------------
-    function renderControl() {
-        const cands = Object.entries(equipo).filter(([, u]) => u.activo !== false).filter(([, u]) => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('admin'); })
-            .map(([email, u]) => ({ email, nombre: u.nombre || email })).sort((a, b) => a.nombre.localeCompare(b.nombre));
-        // Si la lista ya está en pantalla, respeta lo que el admin tiene marcado (un snapshot de otra
-        // colección redibuja esta pestaña y antes borraba las casillas antes de darle a Guardar).
-        const encList = document.getElementById('enc-list');
-        const sel = new Set(encList.querySelector('input') ? Array.from(encList.querySelectorAll('input:checked')).map(c => c.value) : (config.encargados || []).map(e => e.email));
-        const jefeSel = encList.querySelector('input[name="jefe"]:checked') ? encList.querySelector('input[name="jefe"]:checked').value : jefeEmail();
-        const desdeAct = (em) => { const i = encList.querySelector(`input[data-desde="${em}"]`); return i ? i.value : (((config.encargados || []).find(x => x.email === em) || {}).desde || ''); };
-        document.getElementById('enc-list').innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span><span style="margin-left:auto;font-size:12px;color:#556;display:flex;align-items:center;gap:6px;flex-wrap:wrap">desde <input type="date" data-desde="${esc(c.email)}" value="${esc(desdeAct(c.email))}" title="Se le exige el parte a partir de esta fecha" style="padding:4px 6px;border:1.5px solid #ddd;border-radius:6px;font-family:'Arimo';font-size:12px"> <input type="radio" name="jefe" value="${esc(c.email)}" ${jefeSel === c.email ? 'checked' : ''}> supervisor</span></label>`).join('') || '<p class="hint">No hay usuarios con rol instalador.</p>';
-        const bd = document.getElementById('c-bloqueo'); if (bd && !bd.dataset.tocado) { const v = config.bloqueoDesde ? new Date(config.bloqueoDesde) : null; bd.value = v && !isNaN(v) ? `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}T${pad(v.getHours())}:${pad(v.getMinutes())}` : ''; }
-        // Grilla de 14 días × encargado
-        const encs = config.encargados || [];
-        const dias = []; for (let k = 0; k < 14; k++) dias.push(addDias(hoyStr(), -k));
-        document.getElementById('pend-grid').innerHTML = encs.length ? encs.map(e => `<h3 style="font-size:13.5px;color:var(--artal-blue);margin:10px 0 6px">${esc(e.nombre || e.email)}</h3><div class="pend">${dias.map(f => {
-            const lab = esLaborable(f); const p = partes.find(x => x.id === parteId(f, e.email));
-            const cls = !lab ? 'libre' : (p ? 'ok' : (f === hoyStr() && new Date().getHours() < 18 ? '' : 'no'));
-            return `<div class="d ${cls}" ${lab ? `style="cursor:pointer" onclick="verParteDe('${f}','${esc(e.email)}')"` : ''}>${esc(fmtFecha(f))}<br>${!lab ? 'libre' : p ? `✓ ${(p.lineas || []).length} fila(s)` : (cls ? '✗ falta' : 'hoy, aún a tiempo')}</div>`;
-        }).join('')}</div>`).join('') : '<p class="hint">Marca arriba quiénes son los encargados.</p>';
-    }
-    window.verParteDe = function (f, email) {
-        document.getElementById('p-encargado').value = email; document.getElementById('p-fecha').value = f; setTab('parte'); cargarParte();
-    };
-    window.guardarConfig = async function () {
-        const encargados = Array.from(document.querySelectorAll('#enc-list input[type="checkbox"]:checked')).map(c => { const u = equipo[c.value] || {}; const d = document.querySelector(`#enc-list input[data-desde="${c.value}"]`); return { email: c.value, nombre: u.nombre || c.value, desde: d && d.value ? d.value : '' }; });
-        const bdv = (document.getElementById('c-bloqueo') || {}).value || ''; const bloqueoDesde = bdv ? new Date(bdv).toISOString() : '';
-        const jefeR = document.querySelector('#enc-list input[name="jefe"]:checked'); const jefe = jefeR ? jefeR.value : (encargados[0] || {}).email || '';
-        if (jefe && !encargados.some(e => e.email === jefe)) { alert('El supervisor debe estar marcado también como encargado.'); return; }
-        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, jefe, bloqueoDesde, horasJornada: 8, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
-        catch (e) { alert('No se pudo guardar: ' + e.message); }
-    };
-
     function renderTodo() {
         if (!arrancado) return;
-        const t = tabActiva();
-        if (t === 'parte') {
-            const act = document.activeElement, dentro = act && (document.getElementById('personas').contains(act) || act.id === 'p-nota');
-            if (parteActual && !dentro) renderParte();   // no pisar lo que se está escribiendo
-            poblarEncargados();
-        }
-        else if (t === 'obras') renderObras();
-        else if (t === 'personas') renderPersonas();
-        else if (t === 'control') renderControl();
+        const act = document.activeElement, dentro = act && (document.getElementById('personas').contains(act) || act.id === 'p-nota');
+        if (parteActual && !dentro) renderParte();   // no pisar lo que se está escribiendo
+        poblarEncargados();
+        renderAvisoPendientes();
     }
 </script>
 </body>

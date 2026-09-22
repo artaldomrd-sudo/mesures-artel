@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Seguimiento del parte diario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 960px; }
+    h2.sec { font-size: 15px; color: var(--artal-blue); margin: 18px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    h2.sec .hint { font-weight: normal; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn { border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-b { background: var(--artal-blue); color: #fff; }
+    .btn-o { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
+    .links { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .links a { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 9px 12px; font-weight: bold; font-size: 13px; text-decoration: none; }
+    .hint { font-size: 12px; color: #8a93a0; }
+    /* Hoy: una tarjeta por encargado */
+    .hoy { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+    .enc { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; border-left: 5px solid #cfd6dd; }
+    .enc.ok { border-left-color: #1f9d61; } .enc.no { border-left-color: #d9483b; } .enc.espera { border-left-color: #f0b429; } .enc.libre { opacity: .6; }
+    .enc .n { font-size: 16px; font-weight: bold; color: var(--artal-blue); }
+    .enc .e { font-size: 13.5px; margin: 4px 0 8px; }
+    .enc .e.ok { color: #1f9d61; font-weight: bold; } .enc .e.no { color: #d9483b; font-weight: bold; } .enc .e.espera { color: #c07a12; font-weight: bold; }
+    .enc .det { font-size: 12.5px; color: #556; line-height: 1.5; }
+    .enc a.ver { display: inline-block; margin-top: 8px; font-size: 12.5px; font-weight: bold; color: var(--artal-blue); }
+    /* Qué hizo el equipo */
+    table.rep { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+    table.rep th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    table.rep td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+    table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
+    table.rep td.txt, table.rep th.txt { min-width: 200px; }
+    .tabla-wrap { overflow-x: auto; margin-bottom: 14px; }
+    /* 14 días */
+    .pend { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .pend .d { background: #fff; border-radius: 9px; box-shadow: var(--shadow); padding: 8px 10px; font-size: 12.5px; }
+    .pend .d.ok { border-left: 4px solid #1f9d61; } .pend .d.no { border-left: 4px solid #d9483b; } .pend .d.libre { opacity: .55; } .pend .d.cub { border-left: 4px solid #3498db; }
+    /* Configuración (plegada) */
+    details.cfg { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 4px 14px 12px; margin-top: 18px; }
+    details.cfg summary { cursor: pointer; font-weight: bold; color: var(--artal-blue); font-size: 15px; padding: 10px 0; }
+    .enc-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
+    .enc-list label { display: flex; align-items: center; gap: 8px; background: var(--artal-light); border-radius: 9px; padding: 9px 12px; font-size: 14px; flex-wrap: wrap; }
+    .enc-list input[type="checkbox"], .enc-list input[type="radio"] { width: 20px; height: 20px; }
+    .enc-list .opts { margin-left: auto; font-size: 12px; color: #556; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .enc-list .opts input[type="date"] { padding: 5px 6px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 12px; }
+    .aviso { background: #fff2dc; border-left: 4px solid #c07a12; padding: 10px 12px; border-radius: 8px; font-size: 13px; color: #6b4a08; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="instalacion.html" title="Volver a Instalación">← Instalación</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Seguimiento del parte diario</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="links">
+        <a href="parte-diario.html">📝 Formulario del parte (como encargado)</a>
+        <a href="contabilidad-obras.html">💰 Costo de obras (Contabilidad)</a>
+    </div>
+
+    <h2 class="sec">📅 Estado del día <span class="hint">— elige otra fecha para revisar días anteriores</span></h2>
+    <div class="bar">
+        <input type="date" id="f-dia" onchange="renderTodo()">
+        <button class="btn btn-o" onclick="irHoy()">Hoy</button>
+    </div>
+    <div class="hoy" id="hoy"></div>
+
+    <h2 class="sec">🏗️ Qué hizo el equipo ese día</h2>
+    <div class="tabla-wrap" id="dia-tabla"></div>
+
+    <h2 class="sec">🗓️ Últimos 14 días <span class="hint">— clic en un día para ver o corregir ese parte</span></h2>
+    <div id="pend-grid"></div>
+
+    <details class="cfg" id="cfg">
+        <summary>⚙️ Encargados que deben enviar el parte, supervisor y bloqueo</summary>
+        <p class="hint" style="margin:0 0 6px">Cada encargado recibe el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo envió (lunes a sábado, sin feriados); a las 6:30 pm gerencia recibe la lista de los que faltan. Con un parte pendiente no pueden usar el resto de la plataforma. <b>Desde</b>: fecha a partir de la cual se le exige. <b>Supervisor</b>: cuando dos encargados trabajan juntos, él los incluye en su parte y el otro ese día no envía el suyo. Gerencia (admin) nunca entra en el cálculo de horas.</p>
+        <div class="enc-list" id="enc-list"></div>
+        <div class="bar">
+            <label style="font-size:13px">Bloqueo activo desde <input type="datetime-local" id="c-bloqueo" oninput="this.dataset.tocado='1'" title="Antes de esta fecha/hora no se bloquea a nadie (solo se le avisa)"></label>
+            <button class="btn btn-b" onclick="guardarConfig()">Guardar</button>
+        </div>
+        <p class="hint">Costo por hora de cada persona = su costo laboral por día (RRHH → Empleados: sueldo + cargas de ley) ÷ 8 h; sin ese dato, sueldo ÷ 23.83 días. Las horas por encima de 8 en un día se cuentan al 135 %.</p>
+    </details>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import './mensajeria-widget.js';
+    import { collection, onSnapshot, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth([]);   // solo gerencia (admin)
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const claveEmail = (em) => String(em || '').trim().toLowerCase().replace(/[.@]/g, '_');
+    const pad = (n) => String(n).padStart(2, '0');
+    const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const hoyStr = () => ymd(new Date());
+    const addDias = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d); };
+    const fmtFecha = (s) => { try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return s; } };
+    const fmtFechaL = (s) => { try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (_) { return s; } };
+    const n2 = (v) => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
+    const parteId = (fecha, email) => fecha + '_' + claveEmail(email);
+    const TIPOS = { obra: '🏗️ Obra', taller: '🔧 Taller / fábrica interna', almacen: '📦 Almacén', transporte: '🚚 Transporte / compras', oficina: '🏢 Oficina', capacitacion: '🎓 Capacitación', sin_trabajo: '🌧️ Sin trabajo', ausente: '🚫 Ausente / permiso' };
+
+    let equipo = {}, empleados = [], feriados = new Set(), partes = [];
+    let config = { encargados: [], horasJornada: 8, factorExtra: 1.35 };
+    onSnapshot(collection(db, 'equipo'), (s) => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
+    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+
+    document.getElementById('f-dia').value = hoyStr(); document.getElementById('f-dia').max = hoyStr();
+    window.irHoy = function () { document.getElementById('f-dia').value = hoyStr(); renderTodo(); };
+    const fechaSel = () => document.getElementById('f-dia').value || hoyStr();
+
+    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
+    const empPorId = (id) => empleados.find(e => e.id === id);
+    // ¿Otro encargado lo incluyó en su parte ese día? (trabajaron juntos → no le toca enviar el suyo)
+    function cubiertoPor(email, fecha) {
+        const em = String(email || '').toLowerCase();
+        const p = partes.find(x => x.fecha === fecha && String(x.encargadoEmail || '').toLowerCase() !== em &&
+            (Array.isArray(x.incluidosEmails) ? x.incluidosEmails.includes(em) : (x.lineas || []).some(l => { const e = empPorId(l.empleadoId); return e && String(e.correo || '').toLowerCase() === em; })));
+        return p ? (p.encargadoNombre || p.encargadoEmail) : '';
+    }
+    const desdeDe = (e) => (e && e.desde) || '0000-00-00';
+    const horaDe = (v) => { const d = v && v.toDate ? v.toDate() : null; return d ? d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : ''; };
+
+    function estadoEncargado(e, fecha) {
+        const p = partes.find(x => x.id === parteId(fecha, e.email));
+        if (p) { const personas = new Set((p.lineas || []).map(l => l.empleadoId)).size; const horas = (p.lineas || []).reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0); return { cls: 'ok', txt: '✓ Enviado' + (horaDe(p.actualizado || p.creado) ? ' a las ' + horaDe(p.actualizado || p.creado) : ''), det: `${personas} persona(s) · ${horas} h${p.nota ? '<br>📝 ' + esc(p.nota) : ''}`, p }; }
+        if (!esLaborable(fecha)) return { cls: 'libre', txt: 'Día libre', det: feriados.has(fecha) ? 'Feriado' : 'Domingo' };
+        if (fecha < desdeDe(e)) return { cls: 'libre', txt: 'Aún no se le exigía', det: 'Empieza el ' + fmtFecha(desdeDe(e)) };
+        const cub = cubiertoPor(e.email, fecha); if (cub) return { cls: 'cub', txt: '👥 Incluido en el parte de ' + esc(cub), det: 'Trabajaron juntos; no le toca enviar el suyo.' };
+        if (fecha === hoyStr() && new Date().getHours() < 18) return { cls: 'espera', txt: '⏳ Aún a tiempo', det: 'Se le avisa a las 6:00 pm; a las 6:30 pm se le bloquea la plataforma si no lo envía.' };
+        return { cls: 'no', txt: '✗ Falta', det: 'No envió el parte de este día. Mientras tanto no puede usar el resto de la plataforma.' };
+    }
+
+    function renderHoy() {
+        const fecha = fechaSel(); const encs = config.encargados || [];
+        document.querySelector('h2.sec').firstChild.textContent = '📅 ' + (fecha === hoyStr() ? 'Hoy, ' : '') + fmtFechaL(fecha) + ' ';
+        document.getElementById('hoy').innerHTML = encs.length ? encs.map(e => {
+            const st = estadoEncargado(e, fecha);
+            const url = `parte-diario.html?vista=encargado&como=${encodeURIComponent(e.email)}&fecha=${fecha}`;
+            return `<div class="enc ${st.cls}"><div class="n">${esc(e.nombre || e.email)}</div><div class="e ${st.cls}">${st.txt}</div><div class="det">${st.det}</div><a class="ver" href="${url}">${st.p ? '✏️ Ver / corregir el parte' : '➕ Hacer el parte por él'}</a></div>`;
+        }).join('') : '<p class="hint">No hay encargados configurados (abajo, en ⚙️).</p>';
+    }
+    function renderDia() {
+        const fecha = fechaSel(); const L = [];
+        partes.filter(p => p.fecha === fecha).forEach(p => (p.lineas || []).forEach(l => L.push({ ...l, enc: p.encargadoNombre || p.encargadoEmail })));
+        const g = new Map();
+        L.forEach(l => {
+            const k = l.tipo === 'obra' ? (l.obraLabel || l.obraKey || '(obra sin nombre)') : (TIPOS[l.tipo] || l.tipo);
+            const c = g.get(k) || { label: k, horas: 0, personas: new Map(), encs: new Set() };
+            if (l.tipo !== 'ausente') c.horas += n2(l.horas);
+            c.personas.set(l.nombre, (c.personas.get(l.nombre) || 0) + (l.tipo === 'ausente' ? 0 : n2(l.horas)));
+            c.encs.add(l.enc); g.set(k, c);
+        });
+        const rows = [...g.values()].sort((a, b) => b.horas - a.horas);
+        document.getElementById('dia-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Obra / actividad</th><th class="n">Horas</th><th class="txt">Personas (h)</th><th>Parte de</th></tr></thead><tbody>
+            ${rows.map(r => `<tr><td class="txt"><b>${esc(r.label)}</b></td><td class="n">${r.horas}</td><td class="txt">${esc([...r.personas.entries()].map(([n, h]) => `${n} (${h})`).join(', '))}</td><td>${esc([...r.encs].join(', '))}</td></tr>`).join('')}
+            <tr><td><b>Total</b></td><td class="n"><b>${rows.reduce((s, r) => s + r.horas, 0)}</b></td><td colspan="2"></td></tr></tbody></table>`
+            : '<p class="hint">Sin partes enviados para ese día todavía.</p>';
+    }
+    function render14() {
+        const encs = config.encargados || [];
+        const dias = []; for (let k = 0; k < 14; k++) dias.push(addDias(hoyStr(), -k));
+        document.getElementById('pend-grid').innerHTML = encs.length ? encs.map(e => `<h3 style="font-size:13.5px;color:var(--artal-blue);margin:10px 0 6px">${esc(e.nombre || e.email)}</h3><div class="pend">${dias.map(f => {
+            const st = estadoEncargado(e, f); const cls = st.cls === 'espera' ? '' : st.cls;
+            const url = `parte-diario.html?vista=encargado&como=${encodeURIComponent(e.email)}&fecha=${f}`;
+            const txt = st.p ? `✓ ${(st.p.lineas || []).length} fila(s)` : (st.cls === 'libre' ? 'libre' : st.cls === 'cub' ? 'con ' + esc(cubiertoPor(e.email, f)) : st.cls === 'espera' ? 'hoy, aún a tiempo' : '✗ falta');
+            return `<a class="d ${cls}" style="display:block;color:inherit;text-decoration:none" href="${url}">${esc(fmtFecha(f))}<br>${txt}</a>`;
+        }).join('')}</div>`).join('') : '';
+    }
+    function renderConfig() {
+        const cands = Object.entries(equipo).filter(([, u]) => u.activo !== false).filter(([, u]) => { const r = Array.isArray(u.rol) ? u.rol : [u.rol]; return r.includes('instalador') || r.includes('admin'); })
+            .map(([email, u]) => ({ email, nombre: u.nombre || email })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+        const encList = document.getElementById('enc-list');
+        // Respeta lo que ya está marcado en pantalla (un snapshot de otra colección no debe borrar lo no guardado).
+        const sel = new Set(encList.querySelector('input') ? Array.from(encList.querySelectorAll('input[type="checkbox"]:checked')).map(c => c.value) : (config.encargados || []).map(e => e.email));
+        const jefeEmail = () => (config.jefe || ((config.encargados || [])[0] || {}).email || '').toLowerCase();
+        const jefeSel = encList.querySelector('input[name="jefe"]:checked') ? encList.querySelector('input[name="jefe"]:checked').value : jefeEmail();
+        const desdeAct = (em) => { const i = encList.querySelector(`input[data-desde="${em}"]`); return i ? i.value : (((config.encargados || []).find(x => x.email === em) || {}).desde || ''); };
+        encList.innerHTML = cands.map(c => `<label><input type="checkbox" value="${esc(c.email)}" ${sel.has(c.email) ? 'checked' : ''}> ${esc(c.nombre)} <span class="hint">${esc(c.email)}</span>
+            <span class="opts">Desde <input type="date" data-desde="${esc(c.email)}" value="${esc(desdeAct(c.email))}" title="Fecha desde la que se le exige el parte"> <input type="radio" name="jefe" value="${esc(c.email)}" ${jefeSel === c.email ? 'checked' : ''} title="Supervisor: cuando trabajan juntos, el parte es el suyo"> supervisor</span></label>`).join('');
+        const bd = document.getElementById('c-bloqueo'); if (bd && !bd.dataset.tocado) { const v = config.bloqueoDesde ? new Date(config.bloqueoDesde) : null; bd.value = v && !isNaN(v) ? `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}T${pad(v.getHours())}:${pad(v.getMinutes())}` : ''; }
+    }
+    window.guardarConfig = async function () {
+        const encargados = Array.from(document.querySelectorAll('#enc-list input[type="checkbox"]:checked')).map(c => { const u = equipo[c.value] || {}; const d = document.querySelector(`#enc-list input[data-desde="${c.value}"]`); return { email: c.value, nombre: u.nombre || c.value, desde: d && d.value ? d.value : '' }; });
+        const bdv = (document.getElementById('c-bloqueo') || {}).value || ''; const bloqueoDesde = bdv ? new Date(bdv).toISOString() : '';
+        const jefeR = document.querySelector('#enc-list input[name="jefe"]:checked'); const jefe = jefeR ? jefeR.value : (encargados[0] || {}).email || '';
+        if (jefe && !encargados.some(e => e.email === jefe)) { alert('El supervisor debe estar marcado también como encargado.'); return; }
+        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, jefe, bloqueoDesde, horasJornada: 8, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
+        catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+    window.renderTodo = function () { renderHoy(); renderDia(); render14(); renderConfig(); };
+    setInterval(renderTodo, 60 * 1000);   // "aún a tiempo" → "falta" al pasar las 6 pm sin recargar
+</script>
+</body>
+</html>

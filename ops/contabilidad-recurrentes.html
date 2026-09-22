@@ -54,7 +54,7 @@
 </header>
 
 <main>
-    <div class="nota-citrus">ℹ️ Gastos que se repiten cada mes (alquiler, internet, nómina…). Regístralos una vez aquí y cada mes los pasas a Ingresos y Gastos con un toque en <b>“Registrar este mes”</b> — así no se te olvida ninguno. No se registran solos, tú confirmas.</div>
+    <div class="nota-citrus">ℹ️ Gastos que se repiten cada mes (alquiler, internet, nómina…). Regístralos una vez aquí y cada mes los pasas a Ingresos y Gastos con un toque en <b>“Registrar este mes”</b> — así no se te olvida ninguno. Los de <b>pago manual</b> los confirmas tú; los de <b>pago automático</b> (débito del banco) se registran solos en Ingresos y Gastos el día de pago, a las 7:30 am.</div>
     <div class="bar">
         <button class="btn-add" onclick="abrir()">+ Gasto fijo</button>
         <button class="btn-todos" onclick="registrarTodos()" id="btn-todos">✅ Registrar todos los pendientes del mes</button>
@@ -87,7 +87,7 @@
         <div id="r-usd-nota" style="display:none;font-size:12px;color:#7d3ac1;background:#f4eefb;border-radius:8px;padding:7px 10px;margin:-4px 0 8px;">Se registrará cada mes en pesos con la tasa de su fecha de pago: la del Banco Popular si se anotó ese día, si no la de referencia del Banco Central. <span id="r-usd-preview"></span></div>
         <div class="grid2">
             <div><label>ITBIS incluido <span class="lbl-opt">— opcional, misma moneda</span></label><input type="number" id="r-itbis" min="0" step="0.01"></div>
-            <div></div>
+            <div><label>Forma de pago</label><select id="r-pago"><option value="manual">✋ Pago manual (yo lo registro cada mes)</option><option value="automatico">🔁 Pago automático (el banco lo debita solo)</option></select></div>
         </div>
         <div class="grid2">
             <div><label>Método</label><select id="r-metodo"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select></div>
@@ -208,8 +208,10 @@
         return `<span style="color:#7d3ac1">${fUsd(r.monto)}</span>${eq}${r.itbis ? ` <span style="font-size:11px;color:#778;font-weight:normal">ITBIS ${fUsd(r.itbis)}</span>` : ''}`;
     }
     function cardHTML(r) {
-        const badge = r.activo === false ? '<span class="badge-off">Inactivo</span>'
-            : (pendiente(r) ? '<span class="badge-pend">⏳ Pendiente este mes</span>' : '<span class="badge-ok">✓ Registrado este mes</span>');
+        const auto = r.pago === 'automatico';
+        const badge = (r.activo === false ? '<span class="badge-off">Inactivo</span>'
+            : (pendiente(r) ? (auto ? '<span class="badge-pend" style="background:#eef3fb;color:#2b5aa0">🔁 Se registra solo el día ' + (r.dia || 1) + '</span>' : '<span class="badge-pend">⏳ Pendiente este mes</span>') : '<span class="badge-ok">✓ Registrado este mes' + (r.ultimoRegistroAuto ? ' (automático)' : '') + '</span>'))
+            + (auto ? ' <span class="badge-off" style="background:#eef3fb;color:#2b5aa0">🔁 Automático</span>' : ' <span class="badge-off">✋ Manual</span>');
         const sub = [r.categoria ? esc(r.categoria) : '', 'Día ' + (r.dia || 1), r.metodo ? esc(r.metodo) : '', r.tercero ? esc(r.tercero) : '', r.cuentaBancoNombre ? '🏦 ' + esc(r.cuentaBancoNombre) : ''].filter(Boolean).join('  ·  ');
         const puedeReg = pendiente(r);
         return `<div class="order-card rec-card">
@@ -231,6 +233,7 @@
         ['r-concepto', 'r-categoria', 'r-monto', 'r-itbis', 'r-tercero'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('r-moneda').value = 'DOP'; onMoneda();
         document.getElementById('r-dia').value = '1'; document.getElementById('r-metodo').value = 'Transferencia';
+        document.getElementById('r-pago').value = 'manual';
         document.getElementById('r-cuenta').value = ''; document.getElementById('r-activo').checked = true;
         document.getElementById('modal').classList.add('show');
     };
@@ -244,6 +247,7 @@
         document.getElementById('r-monto').value = r.monto != null ? r.monto : '';
         document.getElementById('r-itbis').value = r.itbis != null ? r.itbis : '';
         document.getElementById('r-metodo').value = r.metodo || 'Transferencia';
+        document.getElementById('r-pago').value = r.pago === 'automatico' ? 'automatico' : 'manual';
         document.getElementById('r-cuenta').value = r.cuentaBancoId || '';
         document.getElementById('r-tercero').value = r.tercero || '';
         document.getElementById('r-activo').checked = r.activo !== false;
@@ -260,6 +264,7 @@
             moneda: document.getElementById('r-moneda').value === 'USD' ? 'USD' : 'DOP',
             monto: n2(document.getElementById('r-monto').value), itbis: n2(document.getElementById('r-itbis').value),
             metodo: document.getElementById('r-metodo').value,
+            pago: document.getElementById('r-pago').value === 'automatico' ? 'automatico' : 'manual',
             cuentaBancoId: document.getElementById('r-cuenta').value, cuentaBancoNombre: c ? c.alias : '',
             tercero: document.getElementById('r-tercero').value.trim(),
             activo: document.getElementById('r-activo').checked,

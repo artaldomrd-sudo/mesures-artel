@@ -699,6 +699,32 @@
 
     // Todas las obras (cliente+obra), sin filtrar — se repuebla en cada renderCarpetas().
     let carpetasArr = [];
+    // Informes de costo real de instalación (los genera la Cloud Function informeObraAlCompletar al
+    // completar un trabajo; se muestran dentro de la carpeta de su obra). 2026-09-22.
+    let informesArr = [];
+    const claveObra = (c, o) => normTexto(c).replace(/\s+/g, ' ') + '|||' + normTexto(o).replace(/\s+/g, ' ');
+    onSnapshot(collection(db, 'informesObra'), (snap) => { informesArr = snap.docs.map(d => ({ id: d.id, ...d.data() })); if (carpetaNivel === 'docs') renderCarpetas(); }, () => {});
+    const fmtRDh = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fDh = (s) => String(s || '').slice(0, 10).split('-').reverse().join('/');
+    function informesHTML(proyecto) {
+        const keys = new Set(proyecto.obras.map(g => g.key));
+        const I = informesArr.filter(i => keys.has(claveObra(i.cliente, i.obra))).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
+        if (!I.length) return '';
+        const acum = I.reduce((s, i) => s + (Number(i.total) || 0), 0);
+        return `<div class="carpeta-doc" style="background:#f2faf5;border-left:4px solid #1f9d61;">
+            <div class="doc-head"><span class="doc-tag" style="background:#1f9d61;color:#fff;">💰 Costo real de instalación</span><span style="font-size:12.5px;color:#555;">${I.length} informe(s) · total ${fmtRDh(acum)}</span></div>
+            ${I.map(i => { const mo = i.manoObra || {}, tr = i.transporte || {}; return `<div style="font-size:12.5px;color:#334;margin-top:6px;line-height:1.5;">
+                <b>Informe nº ${i.numero || 1}</b> · cierre ${fDh(i.fechaCierre)}${i.cerradoPor ? ' · ' + esc(i.cerradoPor) : ''}${i.desde ? ' · desde el ' + fDh(i.desde) : ''}<br>
+                👷 Mano de obra ${fmtRDh(mo.costo)} (${mo.horas || 0} h · ${mo.diasPersona || 0} días-persona${(mo.personas || []).length ? ': ' + esc(mo.personas.map(p => p.nombre.split(' ')[0] + ' ' + p.horas + 'h').join(', ')) : ''}) ·
+                🚚 Transporte ${fmtRDh(tr.costo)} (${tr.viajes || 0} viaje(s)) · <b>Total ${fmtRDh(i.total)}</b>${(mo.sinCosto || []).length ? ' · ⚠️ sin costo/hora: ' + esc(mo.sinCosto.join(', ')) : ''}
+            </div>`; }).join('')}
+            <div class="doc-links" style="margin-top:6px"><a href="contabilidad-obras.html">Ver en Contabilidad → Costo de obras</a></div>
+        </div>`;
+    }
+    // Apertura directa de una carpeta desde un enlace: historial.html?cliente=…&obra=…
+    const qsIni = new URLSearchParams(location.search);
+    let pendienteURL = qsIni.get('cliente') ? { cliente: qsIni.get('cliente'), obra: qsIni.get('obra') || '' } : null;
+    if (pendienteURL) setVista('carpetas');   // la carpeta se abre sola cuando lleguen los pedidos
 
     // Navegación de 3 niveles (como el Panel de Control → Cliente → Obra → Documentos), en vez
     // de una sola lista larga. `carpetaClienteSel`/`carpetaObraSel` guardan la clave normalizada
@@ -759,6 +785,16 @@
             g.docs.push({ id, o });
         });
         carpetasArr = Array.from(grupos.values());
+        if (pendienteURL && carpetasArr.length) {
+            const k = claveObra(pendienteURL.cliente, pendienteURL.obra);
+            const g = carpetasArr.find(x => x.key === k) || carpetasArr.find(x => normTexto(x.cliente) === normTexto(pendienteURL.cliente));
+            pendienteURL = null;
+            if (g) {
+                carpetaClienteSel = normTexto(g.cliente); carpetaResidencialSel = null;
+                const proy = agruparPorProyecto(carpetasArr.filter(x => normTexto(x.cliente) === carpetaClienteSel)).find(p => p.obras.includes(g));
+                if (proy) { carpetaObraSel = proy.rootKey; carpetaNivel = 'docs'; } else carpetaNivel = 'obras';
+            }
+        }
 
         const search = document.getElementById('carpeta-search');
         const list = document.getElementById('carpetas-list');
@@ -1051,6 +1087,7 @@
                         ${cliente && cliente.toLowerCase() !== proyecto.rootTitulo.toLowerCase() ? `<div class="cliente">${esc(cliente)}</div>` : ''}
                     </div>
                 </div>
+                ${informesHTML(proyecto)}
                 ${docsOrdenados.map(({ id, o, obraTexto }) => {
                     const t = docTag(o);
                     const links = [];

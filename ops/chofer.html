@@ -27,6 +27,24 @@
     .aviso-ruta .t b { color: #c0392b; }
     .aviso-ruta .lst { font-size: 12.5px; line-height: 1.6; }
     .aviso-ruta button { margin-top: 9px; background: #e67e22; color: #fff; border: none; border-radius: 8px; padding: 9px 14px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 40px; }
+    /* Modal "Salir en ruta": vehículo + recorrido + qué más va en el camión (costo del viaje por obra) */
+    .vj-ov { position: fixed; inset: 0; background: rgba(10,61,98,.55); display: none; align-items: flex-end; justify-content: center; z-index: 9000; padding: 10px; }
+    .vj-ov.show { display: flex; }
+    .vj-box { background: #fff; border-radius: 16px; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; padding: 18px 16px 14px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+    .vj-box h2 { margin: 0 0 4px; font-size: 18px; color: var(--artal-blue); }
+    .vj-box .sub { font-size: 13px; color: #667; margin: 0 0 12px; }
+    .vj-box label { display: block; font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin: 10px 0 4px; }
+    .vj-box select, .vj-box input[type="number"] { width: 100%; box-sizing: border-box; padding: 11px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 15px; min-height: 46px; background: #fff; }
+    .vj-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .vj-chk { display: flex; align-items: center; gap: 10px; background: var(--artal-light); border-radius: 9px; padding: 10px 12px; margin-top: 6px; font-size: 14px; }
+    .vj-chk input { width: 20px; height: 20px; }
+    .vj-otros { max-height: 200px; overflow: auto; }
+    .vj-costo { margin-top: 12px; background: #eef6ff; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #1e2a35; }
+    .vj-costo b { color: var(--artal-blue); }
+    .vj-acts { display: flex; gap: 10px; margin-top: 14px; }
+    .vj-acts button { flex: 1; border: none; border-radius: 10px; padding: 13px; font-weight: bold; font-size: 15px; cursor: pointer; font-family: 'Arimo'; min-height: 48px; }
+    .vj-acts .ok { background: #3498db; color: #fff; } .vj-acts .no { background: #eef1f4; color: #556; }
+    .vj-info { font-size: 12px; color: #3498db; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -63,6 +81,30 @@
     </div>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
 </main>
+
+<!-- Salir en ruta: el costo del viaje (combustible, desgaste, peajes y fijos del vehículo) se
+     reparte entre las obras que van en el camión y alimenta el informe de costo de cada obra. -->
+<div class="vj-ov" id="viaje-modal">
+    <div class="vj-box">
+        <h2>🚚 Salir en ruta</h2>
+        <p class="sub" id="vj-sub"></p>
+        <div class="vj-row">
+            <div><label>Vehículo</label><select id="vj-veh"></select></div>
+            <div><label>Recorrido</label><select id="vj-ruta" onchange="viajeRuta()"></select></div>
+        </div>
+        <div class="vj-row">
+            <div><label>Km de ida</label><input type="number" id="vj-km" min="0" step="1" oninput="viajeRecalc()"></div>
+            <div><label>&nbsp;</label><div class="vj-chk" style="margin-top:0"><input type="checkbox" id="vj-iv" checked onchange="viajeRecalc()"> Ida y vuelta</div></div>
+        </div>
+        <label>¿Qué más va en este mismo viaje?</label>
+        <div class="vj-otros" id="vj-otros"></div>
+        <div class="vj-costo" id="vj-costo"></div>
+        <div class="vj-acts">
+            <button class="no" onclick="viajeCerrar()">Cancelar</button>
+            <button class="ok" id="vj-ok" onclick="viajeConfirmar()">Confirmar salida</button>
+        </div>
+    </div>
+</div>
 <style>
     .per-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
     .per-btn { border: 1.5px solid #d7dee6; background: #fff; color: var(--artal-blue); border-radius: 999px; padding: 8px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; min-height: 38px; }
@@ -76,7 +118,7 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
-    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
@@ -139,7 +181,7 @@
             </div>
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
-            ${enRuta ? '<div class="enruta-badge">🚚 En ruta</div>' : ''}
+            ${enRuta ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
             <div class="actions">
                 ${enRuta ? '' : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
                 <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
@@ -279,9 +321,105 @@
 
     // El chofer marca "En ruta" apenas recoge el pedido — puramente informativo (no bloquea ni
     // exige nada para llegar a "Entregado"), solo para que se sepa que ya salió a la calle.
-    window.marcarEnRuta = async function (id) {
-        if (!confirm('¿Marcar este pedido como "En ruta"?')) return;
-        await updateDoc(doc(db, 'orders', id), { enRuta: true, fechaEnRuta: serverTimestamp() });
+    // ---- Viaje: vehículo + recorrido; el costo se reparte entre las obras que van en el camión ----
+    // (mismos catálogos y fórmula que el calculador de obra: ops/calculador-obra.html / index.html —
+    // si cambian tarifas allá, cambiarlas aquí también). El precio del galón llega en vivo del MICM
+    // (config/preciosCombustible); si no hay dato, se usa el de respaldo del vehículo.
+    const CALC_VEHICULOS = [
+        { id: 'F-01', nombre: 'Camión Kia K2700', precioKey: 'Gasoil Óptimo', rendKmGal: 36, precioGal: 293.10, mantCadaKm: 5000, mantCosto: 10000, seguroAnual: 69500, depreAnual: 197997 },
+        { id: 'F-02', nombre: 'Minivan KYC V3', precioKey: 'Gasolina Premium', rendKmGal: 40, precioGal: 341.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 69500, depreAnual: 186225 },
+        { id: 'F-03', nombre: 'Camioneta Hilux', precioKey: 'Gasoil Óptimo', rendKmGal: 45, precioGal: 293.10, mantCadaKm: 0, mantCosto: 0, seguroAnual: 100000, depreAnual: 0 },
+    ];
+    const CALC_RUTAS = [
+        { id: 'local-terrenas', nombre: 'Local — Las Terrenas y alrededores', km: 8, peaje: 0 },
+        { id: 'terrenas-samana', nombre: 'Las Terrenas ↔ Samaná / Las Galeras', km: 45, peaje: 0 },
+        { id: 'sd-terrenas', nombre: 'Santo Domingo ↔ Las Terrenas', km: 163, peaje: 1700 },
+        { id: 'sd-romana', nombre: 'Santo Domingo ↔ La Romana', km: 123, peaje: 400 },
+        { id: 'sd-puntacana', nombre: 'Santo Domingo ↔ Punta Cana', km: 200, peaje: 600 },
+        { id: 'sd-santiago', nombre: 'Santo Domingo ↔ Santiago', km: 155, peaje: 400 },
+        { id: 'terrenas-romana', nombre: 'Las Terrenas ↔ La Romana', km: 214, peaje: 2100 },
+        { id: 'terrenas-puntacana', nombre: 'Las Terrenas ↔ Punta Cana', km: 287, peaje: 2300 },
+        { id: 'terrenas-santiago', nombre: 'Las Terrenas ↔ Santiago', km: 176, peaje: 800 },
+    ];
+    let PRECIOS = null;
+    onSnapshot(doc(db, 'config', 'preciosCombustible'), (s) => { PRECIOS = s.exists() ? (s.data().precios || null) : null; }, () => {});
+    const fmtRD = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const normTxt = (x) => String(x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+    const obraKeyDe = (c, o) => normTxt(c) + '|' + normTxt(o);
+    let viajePedidoId = null;
+
+    window.marcarEnRuta = function (id) {
+        viajePedidoId = id;
+        const d = allDocs.find(x => x.id === id); const o = d ? d.data() : {};
+        document.getElementById('vj-sub').textContent = (o.cliente || 'Sin cliente') + ' — ' + (o.obra || '');
+        const vsel = document.getElementById('vj-veh'), rsel = document.getElementById('vj-ruta');
+        let ultimo = {}; try { ultimo = JSON.parse(localStorage.getItem('artal_viaje_ultimo') || '{}'); } catch (_) { }
+        vsel.innerHTML = CALC_VEHICULOS.map(v => `<option value="${v.id}">${v.id} · ${esc(v.nombre)}</option>`).join('');
+        vsel.value = ultimo.vehiculoId && CALC_VEHICULOS.some(v => v.id === ultimo.vehiculoId) ? ultimo.vehiculoId : 'F-01';
+        rsel.innerHTML = CALC_RUTAS.map(r => `<option value="${r.id}">${esc(r.nombre)} — ${r.km} km ida</option>`).join('') + '<option value="__manual__">Otro recorrido (escribo los km)</option>';
+        rsel.value = ultimo.rutaId && CALC_RUTAS.some(r => r.id === ultimo.rutaId) ? ultimo.rutaId : 'local-terrenas';
+        viajeRuta();
+        // Otros pedidos en espera (no en ruta, no entregados) que pueden ir en el mismo camión.
+        const otros = allDocs.filter(x => x.id !== id && !x.data().entregado && x.data().enRuta !== true && x.data().directoInstalacion !== true);
+        document.getElementById('vj-otros').innerHTML = otros.length ? otros.map(x => `<label class="vj-chk"><input type="checkbox" data-oid="${x.id}" onchange="viajeRecalc()"> ${esc(x.data().cliente || 'Sin cliente')} — ${esc(x.data().obra || '')}</label>`).join('')
+            : '<p class="vj-info">No hay otros pedidos en espera. Este viaje va solo con esta obra.</p>';
+        document.getElementById('vj-ok').disabled = false;
+        document.getElementById('viaje-modal').classList.add('show');
+        viajeRecalc();
+    };
+    window.viajeCerrar = function () { document.getElementById('viaje-modal').classList.remove('show'); viajePedidoId = null; };
+    window.viajeRuta = function () {
+        const r = CALC_RUTAS.find(x => x.id === document.getElementById('vj-ruta').value);
+        document.getElementById('vj-km').value = r ? r.km : '';
+        viajeRecalc();
+    };
+    function viajeLeer() {
+        const veh = CALC_VEHICULOS.find(v => v.id === document.getElementById('vj-veh').value) || CALC_VEHICULOS[0];
+        const rutaId = document.getElementById('vj-ruta').value; const ruta = CALC_RUTAS.find(x => x.id === rutaId) || null;
+        const kmIda = Math.max(0, Number(document.getElementById('vj-km').value) || 0);
+        const idaVuelta = document.getElementById('vj-iv').checked;
+        const kmTot = kmIda * (idaVuelta ? 2 : 1);
+        const precioLive = PRECIOS && typeof PRECIOS[veh.precioKey] === 'number' && PRECIOS[veh.precioKey] > 0 ? PRECIOS[veh.precioKey] : 0;
+        const precioGal = precioLive || veh.precioGal;
+        const combustible = veh.rendKmGal > 0 ? (kmTot / veh.rendKmGal) * precioGal : 0;
+        const mantenimiento = veh.mantCadaKm > 0 ? kmTot * (veh.mantCosto / veh.mantCadaKm) : 0;
+        const peajes = ruta ? (idaVuelta ? ruta.peaje : ruta.peaje / 2) : 0;
+        const fijoVehiculo = ((veh.seguroAnual || 0) + (veh.depreAnual || 0)) / 365;
+        const costoTotal = combustible + mantenimiento + peajes + fijoVehiculo;
+        const ids = [viajePedidoId].concat(Array.from(document.querySelectorAll('#vj-otros input:checked')).map(i => i.dataset.oid));
+        const pedidos = ids.map(id => { const d = allDocs.find(x => x.id === id); const o = d ? d.data() : {}; return { id, cliente: o.cliente || '', obra: o.obra || '', obraKey: obraKeyDe(o.cliente, o.obra) }; });
+        const obrasMap = new Map(); pedidos.forEach(p => { if (!obrasMap.has(p.obraKey)) obrasMap.set(p.obraKey, { obraKey: p.obraKey, cliente: p.cliente, obra: p.obra, pedidos: [] }); obrasMap.get(p.obraKey).pedidos.push(p.id); });
+        const obras = Array.from(obrasMap.values()); const porObra = obras.length ? costoTotal / obras.length : costoTotal;
+        obras.forEach(o => o.costo = Math.round(porObra * 100) / 100);
+        return { veh, ruta, rutaId, kmIda, idaVuelta, kmTot, precioGal, precioFuente: precioLive ? 'MICM (en vivo)' : 'respaldo', combustible, mantenimiento, peajes, fijoVehiculo, costoTotal, pedidos, obras };
+    }
+    window.viajeRecalc = function () {
+        if (!viajePedidoId) return;
+        const v = viajeLeer();
+        document.getElementById('vj-costo').innerHTML = `Costo del viaje: <b>${fmtRD(v.costoTotal)}</b> — ${Math.round(v.kmTot)} km · combustible ${fmtRD(v.combustible)}${v.mantenimiento ? ' · desgaste ' + fmtRD(v.mantenimiento) : ''}${v.peajes ? ' · peajes ' + fmtRD(v.peajes) : ''} · fijos del día ${fmtRD(v.fijoVehiculo)}<br>` +
+            (v.obras.length > 1 ? `Repartido entre <b>${v.obras.length} obras</b>: <b>${fmtRD(v.obras[0].costo)}</b> a cada una.` : `Va <b>una sola obra</b>: se le carga el viaje completo.`);
+    };
+    window.viajeConfirmar = async function () {
+        if (!viajePedidoId) return;
+        const v = viajeLeer();
+        if (!(v.kmIda > 0)) { alert('Escribe los km de ida del recorrido.'); return; }
+        const btn = document.getElementById('vj-ok'); btn.disabled = true;
+        const hoy = new Date(), pad = (n) => String(n).padStart(2, '0'), fecha = hoy.getFullYear() + '-' + pad(hoy.getMonth() + 1) + '-' + pad(hoy.getDate());
+        try {
+            const ref = await addDoc(collection(db, 'viajes'), {
+                fecha, salida: serverTimestamp(), choferEmail: usuario.email, choferNombre: usuario.nombre,
+                vehiculoId: v.veh.id, vehiculoNombre: v.veh.id + ' · ' + v.veh.nombre, rutaId: v.rutaId, rutaNombre: v.ruta ? v.ruta.nombre : 'Otro recorrido',
+                kmIda: v.kmIda, idaVuelta: v.idaVuelta, kmTot: v.kmTot, precioGal: v.precioGal, precioFuente: v.precioFuente,
+                combustible: Math.round(v.combustible * 100) / 100, mantenimiento: Math.round(v.mantenimiento * 100) / 100, peajes: v.peajes, fijoVehiculo: Math.round(v.fijoVehiculo * 100) / 100,
+                costoTotal: Math.round(v.costoTotal * 100) / 100, pedidos: v.pedidos, obras: v.obras, obrasKeys: v.obras.map(o => o.obraKey), pedidosIds: v.pedidos.map(p => p.id)
+            });
+            for (const p of v.pedidos) {
+                const ob = v.obras.find(o => o.obraKey === p.obraKey) || {};
+                await updateDoc(doc(db, 'orders', p.id), { enRuta: true, fechaEnRuta: serverTimestamp(), viajeId: ref.id, viajeVehiculo: v.veh.id, viajeRuta: v.ruta ? v.ruta.nombre : 'Otro recorrido', viajeCosto: ob.costo || 0, viajeObras: v.obras.length });
+            }
+            try { localStorage.setItem('artal_viaje_ultimo', JSON.stringify({ vehiculoId: v.veh.id, rutaId: v.rutaId })); } catch (_) { }
+            viajeCerrar();
+        } catch (e) { alert('No se pudo registrar la salida: ' + (e && e.message ? e.message : e)); btn.disabled = false; }
     };
 
     window.abrirRecepcion = function (id) {

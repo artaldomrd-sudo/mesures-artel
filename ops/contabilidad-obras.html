@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Costo de obras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 1100px; }
+    .tabs { display: flex; gap: 6px; background: #fff; border-radius: 12px; padding: 5px; box-shadow: var(--shadow); margin-bottom: 14px; flex-wrap: wrap; }
+    .tab { flex: 1; min-width: 140px; padding: 11px 8px; border: none; background: transparent; color: var(--artal-blue); border-radius: 9px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .tab.active { background: var(--artal-blue); color: #fff; }
+    .tabpanel { display: none; } .tabpanel.active { display: block; }
+    .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
+    .bar input, .bar select { padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; background: #fff; }
+    .btn { border: none; border-radius: 9px; padding: 11px 16px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .btn-o { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
+    .hint { font-size: 12px; color: #8a93a0; }
+    .kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .kpi { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 10px 14px; min-width: 130px; }
+    .kpi .v { font-size: 20px; font-weight: bold; color: var(--artal-blue); } .kpi .l { font-size: 11.5px; color: #8a93a0; }
+    table.rep { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+    table.rep th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    table.rep td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+    table.rep tr.tot td { font-weight: bold; background: #f4f6f9; }
+    table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
+    table.rep th.n { white-space: normal; }
+    table.rep td.txt, table.rep th.txt { min-width: 200px; }
+    table.rep td.per, table.rep th.per { min-width: 190px; }
+    .tabla-wrap { overflow-x: auto; margin-bottom: 14px; }
+    .obra-link { color: var(--artal-blue); font-weight: bold; cursor: pointer; text-decoration: underline; }
+    .link-btn { background: transparent; border: none; color: var(--artal-blue); font-weight: bold; font-size: 12.5px; cursor: pointer; font-family: 'Arimo'; padding: 6px 0; text-decoration: underline; }
+    h2.sec { font-size: 15px; color: var(--artal-blue); margin: 14px 0 8px; }
+    /* Informes de cierre */
+    .inf { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; margin-bottom: 10px; border-left: 5px solid #1f9d61; }
+    .inf .t { font-weight: bold; color: var(--artal-blue); font-size: 15px; }
+    .inf .m { font-size: 13px; color: #556; margin-top: 4px; line-height: 1.5; }
+    .inf .tot { font-size: 16px; font-weight: bold; color: #1f9d61; margin-top: 6px; }
+    .inf details { margin-top: 6px; font-size: 12.5px; color: #445; } .inf summary { cursor: pointer; color: var(--artal-blue); font-weight: bold; }
+    .inf ul { margin: 6px 0 0; padding-left: 18px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad.html" title="Volver a Contabilidad">← Contabilidad</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Costo de obras</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="tabs">
+        <button class="tab active" data-tab="obras" onclick="setTab('obras')">🏗️ Por obra</button>
+        <button class="tab" data-tab="personas" onclick="setTab('personas')">👷 Por persona</button>
+        <button class="tab" data-tab="informes" onclick="setTab('informes')">📋 Informes de cierre</button>
+    </div>
+    <div class="bar">
+        <input type="month" id="mes" onchange="renderTodo()">
+        <label style="font-size:13px"><input type="checkbox" id="todo" onchange="renderTodo()"> Todo el histórico</label>
+        <button class="btn btn-o" onclick="exportarCSV()">⬇ CSV</button>
+        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (RRHH; extras al 135 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
+    </div>
+
+    <div class="tabpanel active" id="tab-obras">
+        <div class="kpis" id="o-kpis"></div>
+        <div class="tabla-wrap" id="o-tabla"></div>
+        <div id="o-detalle"></div>
+    </div>
+    <div class="tabpanel" id="tab-personas">
+        <div class="tabla-wrap" id="pe-tabla"></div>
+    </div>
+    <div class="tabpanel" id="tab-informes">
+        <p class="hint" style="margin:0 0 10px">Cada vez que un trabajo de instalación se marca completado, el sistema genera un informe con el costo real de esa obra (partes diarios + viajes) y lo envía por Mensajería a gerencia. Aquí queda el archivo completo; en Historial → carpeta por obra aparece también.</p>
+        <div id="inf-lista"></div>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import './mensajeria-widget.js';
+    import { collection, onSnapshot, doc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const pad = (n) => String(n).padStart(2, '0');
+    const hoyStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+    const fmtFecha = (s) => { try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return s; } };
+    const fD = (s) => String(s || '').slice(0, 10).split('-').reverse().join('/');
+    const fmtRD = (n) => 'RD$ ' + (Math.round((+n || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const n2 = (v) => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
+    const TIPOS = { obra: '🏗️ Obra', taller: '🔧 Taller / fábrica interna', almacen: '📦 Almacén', transporte: '🚚 Transporte / compras', oficina: '🏢 Oficina', capacitacion: '🎓 Capacitación', sin_trabajo: '🌧️ Sin trabajo (lluvia / sin material)', ausente: '🚫 Ausente / permiso' };
+    const tipoLabel = (t) => TIPOS[t] || t;
+
+    let empleados = [], partes = [], viajes = [], informes = [];
+    let config = { horasJornada: 8, factorExtra: 1.35 };
+    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'viajes'), (s) => { viajes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'informesObra'), (s) => { informes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+
+    document.getElementById('mes').value = hoyStr().slice(0, 7);
+    window.setTab = function (t) {
+        document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+        document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));
+        renderTodo();
+    };
+    const filtro = () => { const todo = document.getElementById('todo').checked, mes = document.getElementById('mes').value; return todo ? (() => true) : ((f) => String(f || '').slice(0, 7) === mes); };
+
+    const empPorId = (id) => empleados.find(e => e.id === id);
+    const costoDia = (e) => e ? (n2(e.costoDiaReal) > 0 ? n2(e.costoDiaReal) : (n2(e.sueldoBase) > 0 ? n2(e.sueldoBase) / 23.83 : 0)) : 0;
+    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || 8);
+    // Líneas con costo: jornada por persona y día, extras al factor (misma regla que el informe automático).
+    function lineasCosteadas(enPeriodo) {
+        const jornada = n2(config.horasJornada) || 8, factor = n2(config.factorExtra) || 1;
+        const out = [];
+        partes.filter(p => enPeriodo(p.fecha)).forEach(p => {
+            const porEmp = new Map();
+            (p.lineas || []).forEach(l => { const a = porEmp.get(l.empleadoId) || []; a.push(l); porEmp.set(l.empleadoId, a); });
+            porEmp.forEach((ls, empId) => {
+                const tot = ls.reduce((s, l) => s + n2(l.horas), 0), e = empPorId(empId);
+                ls.forEach(l => {
+                    const ch = n2(l.costoHora) || costoHora(e), h = n2(l.horas), share = tot > 0 ? h / tot : 0;
+                    const normales = Math.min(tot, jornada) * share, extras = Math.max(0, tot - jornada) * share;
+                    out.push({ ...l, fecha: p.fecha, encargado: p.encargadoNombre || p.encargadoEmail, horasNorm: normales, horasExtra: extras, costo: ch * normales + ch * extras * factor, sinCosto: !(ch > 0) });
+                });
+            });
+        });
+        return out;
+    }
+    // Transporte por obra en el período: parte del costo de cada viaje que le tocó a esa obra.
+    function transportePorObra(enPeriodo) {
+        const m = new Map();
+        viajes.filter(v => enPeriodo(v.fecha)).forEach(v => (v.obras || []).forEach(o => { const c = m.get(o.obraKey) || { costo: 0, viajes: 0, label: [o.cliente, o.obra].filter(Boolean).join(' — ') }; c.costo += n2(o.costo); c.viajes++; m.set(o.obraKey, c); }));
+        return m;
+    }
+
+    let obraAbierta = null;
+    function renderObras() {
+        const enP = filtro(), L = lineasCosteadas(enP), jornada = n2(config.horasJornada) || 8, T = transportePorObra(enP);
+        const g = new Map();
+        L.forEach(l => {
+            const k = l.tipo === 'obra' ? (l.obraKey || '(sin obra)') : ('__' + l.tipo);
+            const c = g.get(k) || { k, esObra: l.tipo === 'obra', label: l.tipo === 'obra' ? (l.obraLabel || l.obraKey || '(obra sin nombre)') : tipoLabel(l.tipo), horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: l.fecha, hasta: l.fecha, sinCosto: false };
+            if (l.tipo === 'ausente') { g.set(k, c); return; }
+            c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; c.personas.add(l.nombre); c.dias.add(l.fecha);
+            if (l.fecha < c.desde) c.desde = l.fecha; if (l.fecha > c.hasta) c.hasta = l.fecha; if (l.sinCosto) c.sinCosto = true; g.set(k, c);
+        });
+        // Obras con viajes pero sin horas también cuentan.
+        T.forEach((t, k) => { if (!g.has(k)) g.set(k, { k, esObra: true, label: t.label, horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: '', hasta: '', sinCosto: false }); });
+        const rows = [...g.values()].map(r => { const t = r.esObra ? (T.get(r.k) || { costo: 0, viajes: 0 }) : { costo: 0, viajes: 0 }; return { ...r, transporte: t.costo, viajes: t.viajes, total: r.costo + t.costo }; })
+            .filter(r => r.horas > 0 || r.transporte > 0).sort((a, b) => (b.esObra - a.esObra) || (b.total - a.total));
+        const totObra = rows.filter(r => r.esObra).reduce((s, r) => s + r.costo, 0), totGen = rows.filter(r => !r.esObra).reduce((s, r) => s + r.costo, 0), totTr = rows.reduce((s, r) => s + r.transporte, 0);
+        document.getElementById('o-kpis').innerHTML = `<div class="kpi"><div class="v">${rows.filter(r => r.esObra).length}</div><div class="l">obras con horas o viajes</div></div>
+            <div class="kpi"><div class="v">${fmtRD(totObra)}</div><div class="l">mano de obra en obras</div></div>
+            <div class="kpi"><div class="v">${fmtRD(totTr)}</div><div class="l">transporte (${rows.reduce((s, r) => s + r.viajes, 0)} viaje(s))</div></div>
+            <div class="kpi"><div class="v">${fmtRD(totGen)}</div><div class="l">costo general (taller, almacén, transporte de compras…)</div></div>
+            <div class="kpi"><div class="v">${Math.round(rows.reduce((s, r) => s + r.horas, 0))} h</div><div class="l">horas reportadas</div></div>`;
+        document.getElementById('o-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Obra / actividad</th><th class="n">Días-persona</th><th class="n">Horas</th><th class="n">Mano de obra</th><th class="n">Transporte</th><th class="n">Total</th><th class="txt">Personas</th><th class="per">Período</th></tr></thead><tbody>
+            ${rows.map(r => `<tr><td class="txt">${r.esObra ? `<span class="obra-link" onclick="verObra('${esc(r.k)}')">${esc(r.label)}</span>` : esc(r.label)}${r.sinCosto ? ' <span class="hint" title="Alguna persona no tiene costo por día en RRHH → Empleados">⚠️ sin costo</span>' : ''}</td><td class="n">${(r.horas / jornada).toFixed(1)}</td><td class="n">${r.horas}${r.extras ? ` <span class="hint">(+${r.extras.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(r.costo)}</td><td class="n">${r.transporte ? fmtRD(r.transporte) + ` <span class="hint">(${r.viajes})</span>` : '—'}</td><td class="n"><b>${fmtRD(r.total)}</b></td><td class="txt">${esc([...r.personas].join(', '))}</td><td class="per">${r.desde ? `<span style="white-space:nowrap">${esc(fmtFecha(r.desde))}${r.desde !== r.hasta ? ' → ' + esc(fmtFecha(r.hasta)) : ''}</span> · ${r.dias.size} día(s)` : '—'}</td></tr>`).join('')}
+            <tr class="tot"><td>Total</td><td class="n">${(rows.reduce((s, r) => s + r.horas, 0) / jornada).toFixed(1)}</td><td class="n">${rows.reduce((s, r) => s + r.horas, 0)}</td><td class="n">${fmtRD(totObra + totGen)}</td><td class="n">${fmtRD(totTr)}</td><td class="n">${fmtRD(totObra + totGen + totTr)}</td><td></td><td></td></tr></tbody></table>`
+            : '<p class="hint">No hay partes ni viajes en este período.</p>';
+        const det = document.getElementById('o-detalle');
+        if (!obraAbierta) { det.innerHTML = ''; return; }
+        const D = L.filter(l => l.tipo === 'obra' && l.obraKey === obraAbierta).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
+        const V = viajes.filter(v => enP(v.fecha) && (v.obrasKeys || []).includes(obraAbierta)).sort((a, b) => a.fecha.localeCompare(b.fecha));
+        const I = informes.filter(i => i.obraKey === obraAbierta).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
+        const label = (D[0] && D[0].obraLabel) || (V[0] && (V[0].obras || []).find(o => o.obraKey === obraAbierta) && [(V[0].obras.find(o => o.obraKey === obraAbierta)).cliente, (V[0].obras.find(o => o.obraKey === obraAbierta)).obra].join(' — ')) || obraAbierta;
+        det.innerHTML = `<h2 class="sec">Detalle: ${esc(label)} <button class="link-btn" onclick="verObra(null)">cerrar</button></h2>
+            ${D.length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th class="txt">Persona</th><th class="n">Horas</th><th class="n">Costo</th><th class="txt">Encargado</th></tr></thead><tbody>
+            ${D.map(l => `<tr><td style="white-space:nowrap">${esc(fmtFecha(l.fecha))}</td><td class="txt">${esc(l.nombre)}</td><td class="n">${l.horas}${l.horasExtra ? ` <span class="hint">(+${l.horasExtra.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(l.costo)}</td><td class="txt">${esc(l.encargado)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">Sin horas en este período.</p>'}
+            <h2 class="sec">🚚 Viajes del camión con esta obra a bordo</h2>
+            ${V.length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th class="txt">Vehículo · recorrido</th><th class="n">Km</th><th class="n">Costo del viaje</th><th class="n">Obras a bordo</th><th class="n">Le toca a esta obra</th><th>Chofer</th></tr></thead><tbody>
+            ${V.map(v => { const o = (v.obras || []).find(x => x.obraKey === obraAbierta) || {}; return `<tr><td style="white-space:nowrap">${esc(fmtFecha(v.fecha))}</td><td class="txt">${esc(v.vehiculoNombre || v.vehiculoId)} · ${esc(v.rutaNombre || '')}</td><td class="n">${Math.round(n2(v.kmTot))}</td><td class="n">${fmtRD(v.costoTotal)}</td><td class="n">${(v.obras || []).length}</td><td class="n"><b>${fmtRD(o.costo)}</b></td><td>${esc(v.choferNombre || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="hint">Sin viajes registrados en este período.</p>'}
+            ${I.length ? `<h2 class="sec">📋 Informes de cierre de esta obra</h2>${I.map(informeHTML).join('')}` : ''}`;
+    }
+    window.verObra = function (k) { obraAbierta = k; renderObras(); if (k) document.getElementById('o-detalle').scrollIntoView({ behavior: 'smooth' }); };
+
+    function renderPersonas() {
+        const L = lineasCosteadas(filtro());
+        const g = new Map();
+        L.forEach(l => {
+            const c = g.get(l.empleadoId) || { nombre: l.nombre, dias: new Set(), horas: 0, extras: 0, costo: 0, obras: new Map(), ausencias: 0 };
+            if (l.tipo === 'ausente') c.ausencias++; else { c.dias.add(l.fecha); c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; }
+            const lab = l.tipo === 'obra' ? (l.obraLabel || l.obraKey) : tipoLabel(l.tipo);
+            if (l.tipo !== 'ausente') c.obras.set(lab, (c.obras.get(lab) || 0) + n2(l.horas));
+            g.set(l.empleadoId, c);
+        });
+        const rows = [...g.values()].sort((a, b) => a.nombre.localeCompare(b.nombre));
+        document.getElementById('pe-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Persona</th><th class="n">Días</th><th class="n">Horas</th><th class="n">Extras</th><th class="n">Ausencias</th><th class="n">Costo</th><th class="txt" style="min-width:260px">Dónde estuvo (h)</th></tr></thead><tbody>
+            ${rows.map(r => `<tr><td class="txt"><b>${esc(r.nombre)}</b></td><td class="n">${r.dias.size}</td><td class="n">${r.horas}</td><td class="n">${r.extras ? r.extras.toFixed(1) : '—'}</td><td class="n">${r.ausencias || '—'}</td><td class="n">${fmtRD(r.costo)}</td><td class="txt">${esc([...r.obras.entries()].sort((a, b) => b[1] - a[1]).map(([o, h]) => `${o} (${h})`).join(' · '))}</td></tr>`).join('')}</tbody></table>`
+            : '<p class="hint">No hay partes en este período.</p>';
+    }
+
+    function informeHTML(i) {
+        const mo = i.manoObra || {}, tr = i.transporte || {};
+        return `<div class="inf"><div class="t">${esc(i.obraLabel || [i.cliente, i.obra].filter(Boolean).join(' — '))} <span class="hint">· informe nº ${i.numero || 1} · cierre ${fD(i.fechaCierre)}${i.cerradoPor ? ' · ' + esc(i.cerradoPor) : ''}</span></div>
+            <div class="m">👷 Mano de obra: <b>${fmtRD(mo.costo)}</b> — ${mo.horas || 0} h · ${mo.diasPersona || 0} días-persona${mo.horasExtra ? ' · ' + mo.horasExtra + ' h extra' : ''}${(mo.sinCosto || []).length ? ' · ⚠️ sin costo: ' + esc(mo.sinCosto.join(', ')) : ''}<br>🚚 Transporte: <b>${fmtRD(tr.costo)}</b> — ${tr.viajes || 0} viaje(s)${i.desde ? '<br><span class="hint">Cubre desde el ' + fD(i.desde) + ' (después del informe anterior)</span>' : ''}</div>
+            <div class="tot">Total: ${fmtRD(i.total)}${i.numero > 1 ? ` <span class="hint">· acumulado de la obra ${fmtRD(i.acumuladoObra)}</span>` : ''}</div>
+            <details><summary>Ver detalle</summary>
+                ${(mo.personas || []).length ? `<ul>${mo.personas.map(p => `<li>${esc(p.nombre)}: ${p.horas} h en ${p.dias} día(s) → ${fmtRD(p.costo)}</li>`).join('')}</ul>` : '<div class="hint">Sin horas en los partes diarios.</div>'}
+                ${(tr.detalle || []).length ? `<ul>${tr.detalle.map(v => `<li>${fD(v.fecha)} ${esc(v.vehiculo)}${v.ruta ? ' · ' + esc(v.ruta) : ''} → ${fmtRD(v.costo)}${v.obrasEnViaje > 1 ? ' (viaje de ' + fmtRD(v.costoViaje) + ' entre ' + v.obrasEnViaje + ' obras)' : ''}</li>`).join('')}</ul>` : '<div class="hint">Sin viajes con esta obra a bordo.</div>'}
+                <div style="margin-top:6px"><a href="historial.html?cliente=${encodeURIComponent(i.cliente || '')}&obra=${encodeURIComponent(i.obra || '')}">📁 Ver carpeta de la obra en Historial</a></div>
+            </details></div>`;
+    }
+    function renderInformes() {
+        const enP = filtro();
+        const I = informes.filter(i => enP(i.fechaCierre)).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
+        document.getElementById('inf-lista').innerHTML = I.length ? I.map(informeHTML).join('') : '<p class="hint">No hay informes de cierre en este período. Se generan solos cuando un trabajo de instalación se marca completado.</p>';
+    }
+
+    window.exportarCSV = function () {
+        const L = lineasCosteadas(filtro());
+        const head = ['Fecha', 'Encargado', 'Persona', 'Tipo', 'Obra', 'Horas', 'Horas extra', 'Costo RD$'];
+        const lines = [head.join(';')].concat(L.map(l => [l.fecha, l.encargado, l.nombre, tipoLabel(l.tipo).replace(/^\S+\s/, ''), l.obraLabel || '', l.horas, l.horasExtra.toFixed(2), l.costo.toFixed(2)].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(';')));
+        const V = viajes.filter(v => filtro()(v.fecha));
+        if (V.length) { lines.push(''); lines.push(['Fecha', 'Chofer', 'Vehículo', 'Recorrido', 'Km', 'Costo viaje', 'Obras a bordo', 'Costo por obra'].join(';')); V.forEach(v => (v.obras || []).forEach(o => lines.push([v.fecha, v.choferNombre || '', v.vehiculoNombre || v.vehiculoId, v.rutaNombre || '', Math.round(n2(v.kmTot)), n2(v.costoTotal).toFixed(2), [o.cliente, o.obra].filter(Boolean).join(' — '), n2(o.costo).toFixed(2)].map(x => '"' + String(x).replace(/"/g, '""') + '"').join(';')))); }
+        const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `costo-obras-${document.getElementById('todo').checked ? 'todo' : document.getElementById('mes').value}.csv`; a.click();
+    };
+    window.renderTodo = function () {
+        const t = (document.querySelector('.tab.active') || {}).dataset ? document.querySelector('.tab.active').dataset.tab : 'obras';
+        if (t === 'obras') renderObras(); else if (t === 'personas') renderPersonas(); else renderInformes();
+    };
+</script>
+</body>
+</html>
