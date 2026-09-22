@@ -181,7 +181,10 @@ export function requireAuth(rolesPermitidos) {
       // Parte diario pendiente (encargados de instalación): hasta ponerse al día solo pueden usar
       // ops/parte-diario.html — desde cualquier otra pantalla se les manda ahí (regla del usuario:
       // "si no rellenan no pueden hacer más nada en la plataforma"). Admin nunca se bloquea.
-      if (!roles.includes('admin') && pagId !== 'parte-diario.html') {
+      // Pantallas que NO se bloquean por un parte pendiente: el propio parte y Transportes (Wilson es
+      // chofer además de encargado; entregar material no puede esperar al parte — pedido del usuario 2026-09-22).
+      const SIN_BLOQUEO_PARTE = ['parte-diario.html', 'chofer.html'];
+      if (!roles.includes('admin') && !SIN_BLOQUEO_PARTE.includes(pagId)) {
         try {
           const g = await import('./parte-gate.js');
           const pend = await g.partesPendientes(user.email);

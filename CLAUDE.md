@@ -2195,6 +2195,10 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   obra + viajes + total + acumulado), manda un mensaje interno (`mensajes`, remitente "Sistema ARTAL") a los admins
   activos con push y enlace `historial.html?cliente=&obra=` (Historial abre la carpeta sola y muestra los informes
   dentro). `obraKey` = norm(cliente)|norm(obra) (misma normalización en parte-diario, chofer y la función).
+- **Bloqueo por parte pendiente** (`ops/parte-gate.js` desde `requireAuth`): ventana de 7 días laborables, hoy cuenta
+  desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
+  `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige hasta 3 días atrás, pero un día pendiente de esa ventana
+  siempre se puede cargar (`ajustarMinFecha`); los avisos del formulario e Instalación usan la misma ventana de 7 días.
 - **Gastos fijos de pago automático**: `contaRecurrentes.pago === 'automatico'` → la función
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".

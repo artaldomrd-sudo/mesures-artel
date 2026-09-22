@@ -303,7 +303,7 @@
             document.getElementById('tab-parte').prepend(b);
         }
         f.value = qf || hoyStr(); f.max = hoyStr();
-        if (!esAdmin) f.min = addDias(hoyStr(), -3);   // corrige hasta 3 días atrás; más allá, solo admin
+        ajustarMinFecha();
         poblarEncargados();
         cargarParte();
     }
@@ -483,12 +483,22 @@
         }
         return out;
     }
+    // El encargado corrige hasta 3 días atrás; pero un día PENDIENTE (misma ventana de 7 días que el
+    // bloqueo de parte-gate.js) siempre se puede cargar, si no quedaría bloqueado sin poder resolverlo.
+    function ajustarMinFecha() {
+        const f = document.getElementById('p-fecha'); if (esAdmin) { f.min = ''; return; }
+        const pend = diasPendientes(usuario.email, 7);
+        const masViejo = pend.length ? pend[pend.length - 1] : '';
+        const lim = addDias(hoyStr(), -3);
+        f.min = masViejo && masViejo < lim ? masViejo : lim;
+    }
     function renderAvisoPendientes() {
         const box = document.getElementById('aviso-pend'); if (!box) return;
+        ajustarMinFecha();
         const enc = encargadoSel();
         const soyEncargado = (config.encargados || []).some(e => e.email === enc.email);
         if (!soyEncargado) { box.innerHTML = ''; return; }
-        const pend = diasPendientes(enc.email, 4).filter(f => f !== (parteActual && parteActual.fecha));
+        const pend = diasPendientes(enc.email, 7).filter(f => f !== (parteActual && parteActual.fecha));
         const enlaces = pend.map(f => `<a href="#" onclick="irFecha('${f}');return false;" style="color:inherit;font-weight:bold">${esc(fmtFecha(f))}</a>`).join(' · ');
         box.innerHTML = pend.length ? `<div class="aviso rojo">⚠️ <b>Primero haz el parte de ${pend.length === 1 && pend[0] === addDias(hoyStr(), -1) ? 'ayer' : 'los días pendientes'}:</b> ${enlaces} — antes de realizar el de hoy. De hoy en adelante, cada día a las 6:00 pm se abre esta pantalla y no podrás usar el resto hasta enviarlo.</div>` : '';
     }
