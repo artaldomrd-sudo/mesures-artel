@@ -193,6 +193,11 @@
     window.aprobarYEnviarFabrica = async function (id, destino) {
         const o = (ordersCache.find(x => x.id === id) || {}).data;
         if (!o) return;
+        // Evita el pedido de fábrica duplicado (caso real: Riviera Coson 4 dos veces en Instalación).
+        const yaEnFabrica = ordersCache.filter(x => x.id !== id && x.data && (x.data.docType || '').indexOf('FAB') === 0 && x.data.status !== 'completado' && String(x.data.cliente || '').trim().toLowerCase() === String(o.cliente || '').trim().toLowerCase() && String(x.data.obra || '').trim().toLowerCase() === String(o.obra || '').trim().toLowerCase());
+        if (o.enviadaAFabrica || yaEnFabrica.length) {
+            if (!confirm(`⚠ "${o.cliente} — ${o.obra}" YA fue enviada a fábrica${o.fechaEnviadaFabrica && o.fechaEnviadaFabrica.toDate ? ' el ' + o.fechaEnviadaFabrica.toDate().toLocaleDateString('es-DO') : ''}${o.enviadaFabricaPor ? ' por ' + o.enviadaFabricaPor : ''}.\n\nSi aceptas se creará un SEGUNDO pedido de fábrica igual (aparecerá duplicado en fábrica, Transportes e Instalación).\n\n¿Crear el duplicado de todos modos?`)) return;
+        }
         if (!confirm(`⚠ IMPORTANTE: ¿confirmas que las medidas de "${o.cliente} — ${o.obra}" son de FABRICACIÓN (no de cotización)?\n\nAl aceptar se crea el pedido de fábrica con esta ficha, destino: ${destino === 'interno' ? 'Oficina interna' : 'ALUCUFEL'}.`)) return;
         try {
             await addDoc(collection(db, 'orders'), {

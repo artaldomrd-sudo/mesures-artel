@@ -3,7 +3,7 @@
 // tal cual, como un envío nuevo). Compartido por todas las pantallas de ops/.
 import { db } from './firebase-config.js';
 import { rootPath } from './paths.js';
-import { collection, addDoc, doc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { collection, addDoc, doc, getDoc, getDocs, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 function closePreview() {
     const el = document.getElementById('order-preview-overlay');
@@ -69,7 +69,21 @@ async function reenviarOrden(orderId) {
     const o = snap.data();
     const isFab = (o.docType || '').indexOf('FAB') === 0;
     const destino = isFab ? 'fábrica' : 'el contratista';
-    if (!confirm(`¿Reenviar "${o.cliente} — ${o.obra}" tal cual, como un pedido nuevo a ${destino}?`)) return;
+    // Reenviar CREA UN PEDIDO NUEVO (un duplicado), no reemplaza el existente. Caso real 2026-09-22: "Gregory —
+    // Riviera Coson 4" apareció dos veces en Instalación porque alguien reenvió la ficha el 07/09 sin querer.
+    // Si ya hay pedidos abiertos de la misma obra, se avisa con nombre y estado antes de duplicar.
+    const ETAPA = { solicitada: 'cotización pendiente', costeada: 'cotización costeada', enviada_cliente: 'cotización enviada al cliente', pendiente_fabrica: 'pendiente en fábrica', en_fabrica: 'en fábrica', parcialmente_listo: 'parcialmente listo', listo_para_cargar: 'listo para cargar', parcialmente_instalado: 'parcialmente instalado', completado: 'completado' };
+    let abiertos = [];
+    try {
+        const qs = await getDocs(query(collection(db, 'orders'), where('cliente', '==', o.cliente || ''), where('obra', '==', o.obra || '')));
+        abiertos = qs.docs.filter(d => d.id !== orderId && ((d.data().docType || '').indexOf('FAB') === 0) === isFab && d.data().status !== 'completado').map(d => d.data());
+        if (!isFab || o.status !== 'completado') abiertos.push(o);   // el propio pedido también sigue vivo
+    } catch (_) { abiertos = [o]; }
+    const lista = abiertos.map(x => `• ${x.docType || ''} · ${ETAPA[x.status] || x.status || ''}${x.entregado ? ' · entregado' : ''}`).join('\n');
+    const msg = abiertos.length
+        ? `⚠ ATENCIÓN: "${o.cliente} — ${o.obra}" YA tiene ${abiertos.length} pedido(s) en curso:\n${lista}\n\nReenviar crea OTRO pedido igual (un duplicado que aparecerá dos veces en fábrica, Transportes e Instalación). Solo hazlo si ${destino} perdió la ficha y necesita una nueva.\n\n¿Crear el pedido duplicado de todos modos?`
+        : `¿Reenviar "${o.cliente} — ${o.obra}" tal cual, como un pedido nuevo a ${destino}?`;
+    if (!confirm(msg)) return;
 
     const btn = document.getElementById('preview-resend-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
@@ -84,6 +98,8 @@ async function reenviarOrden(orderId) {
             items: o.items,
             totalItems: o.totalItems,
             appJSON: o.appJSON,
+            destino: o.destino || 'alucufel',
+            reenvioDe: orderId, reenviadoEn: serverTimestamp(),
             ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
         });
         alert('Reenviado correctamente.');
