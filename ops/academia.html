@@ -249,7 +249,12 @@
     let vista = 'cursos', cursoSelId = null, leccionSelId = null;
     let editandoCursoId = null, editandoLeccionId = null;
 
-    onSnapshot(collection(db, 'academiaCursos'), (s) => { cursos = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => {});
+    let cursoURL = new URLSearchParams(location.search).get('curso') || '';   // academia.html?curso=ID (enlace desde Mensajería)
+    onSnapshot(collection(db, 'academiaCursos'), (s) => { cursos = s.docs.map(d => ({ id: d.id, ...d.data() })); if (cursoURL && cursos.some(c => c.id === cursoURL)) { const id = cursoURL; cursoURL = ''; irA('curso', id); return; } render(); }, () => {});
+    // Equipo (espejo no sensible usuarios → equipo/{email}): destinatarios de "Enviar curso a…".
+    let equipo = [];
+    onSnapshot(collection(db, 'equipo'), (s) => { equipo = s.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false); }, () => {});
+    const puedeEnviar = usuario.roles.includes('admin') || usuario.roles.includes('comunicaciones');
     onSnapshot(collection(db, 'academiaLecciones'), (s) => {
         lecciones = s.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
@@ -340,7 +345,7 @@
     function renderCurso(cont) {
         const c = cursoById(cursoSelId); if (!c) { irA('cursos'); return; }
         const lecs = leccionesDe(c.id), done = completadasDe(c.id);
-        const admCurso = esAutor ? `<button class="btn-ghost" onclick="abrirEditarCurso('${c.id}')">✏ Editar curso</button>
+        const admCurso = esAutor ? `${puedeEnviar ? `<button class="btn-ghost" style="border-color:var(--artal-blue)" onclick="abrirEnviarCurso('${c.id}')">📨 Enviar curso a…</button>` : ''}<button class="btn-ghost" onclick="abrirEditarCurso('${c.id}')">✏ Editar curso</button>
             <button class="btn-ghost" onclick="togglePublicado('${c.id}')">${c.publicado === false ? '👁 Publicar' : '🚫 Despublicar'}</button>
             <button class="btn-ghost" style="color:#c0392b;border-color:#f0c9c4" onclick="borrarCurso('${c.id}')">🗑 Eliminar</button>` : '';
         let html = `<div class="crumbs"><a onclick="irA('cursos')">← Cursos</a></div>
@@ -803,6 +808,52 @@
 
     // ---------------- Examen: editor (autor) ----------------
     let examenDraft = null, examenCursoId = null;
+    // ---------------- Enviar curso a personas (Mensajería) ----------------
+    let enviarCursoId = null;
+    window.abrirEnviarCurso = function (cursoId) {
+        const c = cursoById(cursoId); if (!c) return;
+        enviarCursoId = cursoId;
+        let m = document.getElementById('modal-enviar');
+        if (!m) { m = document.createElement('div'); m.id = 'modal-enviar'; m.className = 'modal-overlay'; document.body.appendChild(m); }
+        const rolesTxt = (u) => (Array.isArray(u.rol) ? u.rol : [u.rol]).filter(Boolean).join(', ');
+        const veCurso = (u) => !Array.isArray(c.roles) || !c.roles.length || (Array.isArray(u.rol) ? u.rol : [u.rol]).some(r => c.roles.includes(r) || r === 'admin' || r === 'capacitador' || r === 'lector');
+        const lista = equipo.filter(u => u.email !== usuario.email).sort((a, b) => String(a.nombre || a.email).localeCompare(String(b.nombre || b.email)));
+        m.innerHTML = `<div class="modal-box">
+            <h2>📨 Enviar «${esc(c.titulo || 'Curso')}» a…</h2>
+            <p style="font-size:13px;color:#556;margin:0 0 6px">Cada persona marcada recibe un comunicado en Mensajería con un botón que abre este curso.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 4px"><button class="btn-ghost" style="padding:6px 10px" onclick="enviarMarcar(true)">Todos</button><button class="btn-ghost" style="padding:6px 10px" onclick="enviarMarcar(false)">Ninguno</button></div>
+            <div id="env-lista" style="max-height:260px;overflow:auto;border:1.5px solid #eef1f4;border-radius:10px;padding:6px 10px">
+                ${lista.length ? lista.map(u => `<label class="chk-line" style="margin:6px 0"><input type="checkbox" value="${esc(u.email)}"> ${esc(u.nombre || u.email)} <span style="font-size:11.5px;color:#889">${esc(rolesTxt(u))}${veCurso(u) ? '' : ' · ⚠ no ve este curso (Para quién)'}</span></label>`).join('') : '<p style="color:#889;font-size:13px">No hay personas en el equipo.</p>'}
+            </div>
+            <label>Mensaje (opcional)</label>
+            <textarea id="env-nota" style="min-height:80px" placeholder="Ej. Léelo hoy, por favor: explica cómo llenar el parte diario paso a paso."></textarea>
+            <div class="modal-actions"><button class="btn-ghost" onclick="cerrar('modal-enviar')">Cancelar</button><button class="btn-y btn-guardar" onclick="enviarCurso()">📨 Enviar</button></div>
+        </div>`;
+        m.classList.add('show');
+    };
+    window.enviarMarcar = (v) => document.querySelectorAll('#env-lista input').forEach(i => i.checked = v);
+    window.enviarCurso = async function () {
+        const c = cursoById(enviarCursoId); if (!c) return;
+        const dest = Array.from(document.querySelectorAll('#env-lista input:checked')).map(i => i.value);
+        if (!dest.length) { alert('Marca al menos una persona.'); return; }
+        const nota = document.getElementById('env-nota').value.trim();
+        const lecs = leccionesDe(c.id);
+        const url = location.origin + location.pathname + '?curso=' + encodeURIComponent(c.id);
+        const cuerpo = [nota, nota ? '' : null, `📚 Curso: ${c.titulo || ''}`, c.descripcion ? c.descripcion : null, lecs.length ? `Temas (${lecs.length}): ` + lecs.map(l => l.titulo).join(' · ') : null, '', 'Toca «Abrir el curso en la Academia» para leerlo. Puedes volver a consultarlo cuando quieras desde 🎓 Academia.'].filter(x => x !== null).join('\n');
+        const btn = document.querySelector('#modal-enviar .btn-guardar'); btn.disabled = true; btn.textContent = 'Enviando…';
+        try {
+            await addDoc(collection(db, 'mensajes'), {
+                estado: 'enviado', asunto: '📚 ' + (c.titulo || 'Curso') + ' — léelo en la Academia', cuerpo,
+                remitenteEmail: usuario.email, remitenteNombre: usuario.nombre, fecha: serverTimestamp(),
+                paraTodos: false, destinatarios: dest, requiereFirma: false, adjuntos: [],
+                enlace: { titulo: 'Abrir el curso en la Academia', url }, acuses: {}, tipo: 'curso', cursoId: c.id
+            });
+            cerrar('modal-enviar');
+            alert('✓ Enviado a ' + dest.length + ' persona(s). Lo verán en Mensajería (✉️) con el botón para abrir el curso.');
+        } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = '📨 Enviar'; }
+    };
+
     window.abrirExamen = function (cursoId) {
         const c = cursoById(cursoId); if (!c) return;
         examenCursoId = cursoId;
