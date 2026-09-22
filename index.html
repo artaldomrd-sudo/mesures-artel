@@ -532,6 +532,7 @@
         <h3>Cortinas/Enrollables</h3>
         <button class="btn-cat" onclick="addItem('Cortina Enrollable', 'cort_roller', 'cortina')">Cortina Enrollable (Roller)</button>
         <button class="btn-cat" onclick="addItem('Shutter', 'cort_shutter', 'cortina')">Shutter</button>
+        <button class="btn-cat" onclick="addItem('Cortina Ondas Perfectas', 'cort_ondas', 'cortina')">Cortina Ondas Perfectas</button>
 
         <h3>Especial</h3>
         <button class="btn-cat" style="background:#2f7fd6; color:#fff; text-align: center; font-weight: bold;" onclick="addItem('Fachada Compuesta', 'fachada_grid', 'fachada_grid')">+ FACHADA COMPUESTA</button>
@@ -564,7 +565,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 14:31</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 15:03</div>
         </div>
     </div>
     
@@ -686,7 +687,7 @@
             'gal3_3v': 'Galandaje 3 Hojas', 'gal4_2v': 'Galandaje 4 Hojas (Cent)', 'gal4_4v': 'Galandaje 4 Hojas (Lat)', 'gal6_3v': 'Galandaje 6 Hojas',
             'win_abat': 'Ventana Abisagrada', 'win_ob': 'Oscilobatiente (OB)', 'win_proy': 'Ventana Proyectada', 'win_souf': 'Ventana Soufflet',
             'door_abat': 'Puerta Abisagrada', 'mamp_fija': 'Mampara Fija', 'door_glass': 'Puerta Vidrio', 'door_slide': 'Puerta Deslizante Prensas', 'door_slide_conn': 'Puerta Deslizante Conectores', 'fachada_din': 'Paño Fijo',
-            'ducha_cab': 'Cabina de Ducha', 'ducha_facade': 'Vidrio de Ducha', 'baranda_bal': 'Baranda de Vidrio', 'mosq': 'Mosquitera'
+            'ducha_cab': 'Cabina de Ducha', 'ducha_facade': 'Vidrio de Ducha', 'baranda_bal': 'Baranda de Vidrio', 'mosq': 'Mosquitera', 'cort_roller': 'Cortina Enrollable', 'cort_shutter': 'Shutter', 'cort_ondas': 'Cortina Ondas Perfectas'
         };
         return names[type] || 'Elemento';
     }
@@ -2126,12 +2127,24 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // Roller: catálogo real por colección (TELA_COLECCIONES, ver CLAUDE.md — fuente
             // única compartida con getMenuOpciones/renderCortina). Shutter: paleta acotada
             // (blanco/negro/marrón, ver CORTINA_COLORS).
-            const instTxt = state.type === 'cort_shutter'
+            const instTxt = state.type === 'cort_ondas'
+                ? ((state.ondas_riel || 'techo') === 'pared' ? 'A la pared (soportes)' : 'Al techo')
+                : state.type === 'cort_shutter'
                 ? (state.instalacion_cortina === 'fuera' ? 'Por Fuera' : 'Por Dentro')
                 : (state.instalacion_cortina === 'fuera' ? 'Sobre el marco' : 'Dentro del marco');
+            const instLabel = state.type === 'cort_ondas' ? 'Riel' : 'Instalación';
             const ladoTxt = state.orientacion === 'D' ? 'Derecha' : 'Izquierda';
             let tituloTxt, colorTxt, extraTxt;
-            if (state.type === 'cort_shutter') {
+            if (state.type === 'cort_ondas') {
+                const ot = ondasTipo(state), ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
+                const cols = [];
+                if (ot !== 'visillo') cols.push(`Blackout ${ondasColorLabel('blackout', state.color_cortina || 'taupe', state.color_cortina_texto)}`);
+                if (ot !== 'blackout') cols.push(`Visillo ${ondasColorLabel('visillo', state.color_visillo || 'blanco', state.color_visillo_texto)}`);
+                tituloTxt = 'CORTINA ONDAS PERFECTAS';
+                colorTxt = cols.join(' · ');
+                const mecMap = { manual: 'A mano / varilla', cordon: `Cordón · lado: ${ladoTxt}`, motor: `Motorizada · lado del motor: ${ladoTxt}` };
+                extraTxt = `<div>Tipo: ${ONDAS_TIPO_NOM[ot]}</div><div>Apertura: ${ap === 'central' ? 'Central (2 paños, abren al centro)' : `Lateral (1 paño, se recoge a la ${ladoTxt.toLowerCase()})`}</div><div>Mecanismo: ${mecMap[mec] || mecMap.manual}</div>`;
+            } else if (state.type === 'cort_shutter') {
                 const colMapShutter = { blanco: 'Blanco', negro: 'Negro', marron: 'Marrón', beige: 'Beige', gris: 'Gris', madera: 'Madera', personalizado: (state.color_cortina_texto || 'Personalizado') };
                 const motorMap = { motorizado: '#1 Motorizado', manual: '#2 Manual (Manivela)', motor_manivela: '#3 Motorizado c/ Manivela de Emergencia', motor_inteligente: '#4 Motorizado + Sistema Inteligente', motor_solar: '#5 Motorizado Solar' };
                 colorTxt = colMapShutter[state.color_cortina || 'blanco'] || colMapShutter.blanco;
@@ -2164,7 +2177,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>${tituloTxt}</strong> — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
                 <div>Color: ${colorTxt}</div>
                 ${extraTxt}
-                <div>Instalación: ${instTxt}</div>
+                <div>${instLabel}: ${instTxt}</div>
             </div>`;
             return;
         }
@@ -3884,6 +3897,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     <option value="personalizado" ${cc==='personalizado'?'selected':''}>Ref./Color: Personalizado</option>
                 </select>`;
                 colorSel = telaTipoSel + refColorSel;
+            } else if (type === 'cort_ondas') {
+                // Ondas Perfectas: tipo (blackout / visillo / doble) y un color por capa, de las paletas
+                // provisionales ONDAS_COLORES (a reemplazar cuando lleguen las referencias reales).
+                const ot = ondasTipo(state);
+                colorSel = `<select style="grid-column: span 2;" onchange="${fn}, 'ondas_tipo', this.value)" title="Tipo de cortina">${ONDAS_TIPOS.map(([v, l]) => `<option value="${v}" ${ot === v ? 'selected' : ''}>Tipo: ${l}</option>`).join('')}</select>`;
+                if (ot !== 'visillo') colorSel += `<select onchange="${fn}, 'color_cortina', this.value)" title="Color de la tela blackout">${ONDAS_COLORES.blackout.map(([v, l]) => `<option value="${v}" ${cc === v ? 'selected' : ''}>Blackout: ${l}</option>`).join('')}<option value="personalizado" ${cc === 'personalizado' ? 'selected' : ''}>Blackout: Personalizado</option></select>`;
+                if (ot !== 'blackout') { const cv = state.color_visillo || 'blanco'; colorSel += `<select onchange="${fn}, 'color_visillo', this.value)" title="Color del visillo">${ONDAS_COLORES.visillo.map(([v, l]) => `<option value="${v}" ${cv === v ? 'selected' : ''}>Visillo: ${l}</option>`).join('')}<option value="personalizado" ${cv === 'personalizado' ? 'selected' : ''}>Visillo: Personalizado</option></select>`; if (cv === 'personalizado') colorSel += `<input type="text" value="${state.color_visillo_texto || ''}" placeholder="Especificar color/tela del visillo" oninput="${fn}, 'color_visillo_texto', this.value)" style="grid-column: span 2; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:11px;">`; }
             } else if (type === 'cort_shutter') {
                 // Shutter (persiana de seguridad enrollable): por ahora solo 3 colores reales
                 // (blanco/negro/marrón) — el resto de CORTINA_COLORS queda solo por compatibilidad
@@ -3892,10 +3912,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else {
                 colorSel = `<select onchange="${fn}, 'color_cortina', this.value)"><option value="blanco" ${cc==='blanco'?'selected':''}>Color: Blanco</option><option value="beige" ${cc==='beige'?'selected':''}>Color: Beige</option><option value="gris" ${cc==='gris'?'selected':''}>Color: Gris</option><option value="negro" ${cc==='negro'?'selected':''}>Color: Negro</option><option value="madera" ${cc==='madera'?'selected':''}>Color: Madera</option><option value="personalizado" ${cc==='personalizado'?'selected':''}>Color: Personalizado</option></select>`;
             }
-            if (cc === 'personalizado') colorSel += `<input type="text" value="${state.color_cortina_texto || ''}" placeholder="Especificar color/tela" oninput="${fn}, 'color_cortina_texto', this.value)" style="grid-column: span 2; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:11px;">`;
+            if (cc === 'personalizado' && !(type === 'cort_ondas' && ondasTipo(state) === 'visillo')) colorSel += `<input type="text" value="${state.color_cortina_texto || ''}" placeholder="Especificar color/tela" oninput="${fn}, 'color_cortina_texto', this.value)" style="grid-column: span 2; padding:5px; border:1px solid #ccc; border-radius:3px; font-size:11px;">`;
 
             const instC = state.instalacion_cortina || 'dentro';
-            const instSel = type === 'cort_shutter'
+            const instSel = type === 'cort_ondas'
+                ? (() => { const r = state.ondas_riel || 'techo'; return `<select onchange="${fn}, 'ondas_riel', this.value)" title="Fijación del riel de ondas"><option value="techo" ${r === 'techo' ? 'selected' : ''}>Riel: Al techo</option><option value="pared" ${r === 'pared' ? 'selected' : ''}>Riel: A la pared (soportes)</option></select>`; })()
+                : type === 'cort_shutter'
                 ? `<select onchange="${fn}, 'instalacion_cortina', this.value)" title="Instalación por dentro o por fuera"><option value="dentro" ${instC==='dentro'?'selected':''}>Instalación: Por Dentro</option><option value="fuera" ${instC==='fuera'?'selected':''}>Instalación: Por Fuera</option></select>`
                 : `<select onchange="${fn}, 'instalacion_cortina', this.value)" title="Tipo de instalación"><option value="dentro" ${instC==='dentro'?'selected':''}>Instalación: Dentro del marco</option><option value="fuera" ${instC==='fuera'?'selected':''}>Instalación: Sobre el marco</option></select>`;
 
@@ -3946,6 +3968,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 </select>`;
                 const instTipo = state.instalacion_tipo || 'hueco';
                 tipoSel += `<select onchange="${fn}, 'instalacion_tipo', this.value)" title="Montaje dentro del hueco o en aplique"><option value="hueco" ${instTipo==='hueco'?'selected':''}>Montaje: Dentro del Hueco</option><option value="aplique" ${instTipo==='aplique'?'selected':''}>Montaje: En Aplique</option></select>`;
+            } else if (type === 'cort_ondas') {
+                // Apertura (lateral = 1 paño que se recoge al lado del toggle; central = 2 paños que abren al
+                // centro) + mecanismo. El lado del toggle IZQ/DER es hacia dónde se recoge / lado del mando.
+                const ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
+                tipoSel += `<select onchange="${fn}, 'ondas_apertura', this.value)" title="Cómo abre la cortina"><option value="lateral" ${ap === 'lateral' ? 'selected' : ''}>Apertura: Lateral (1 paño)</option><option value="central" ${ap === 'central' ? 'selected' : ''}>Apertura: Central (2 paños)</option></select>`;
+                tipoSel += `<select onchange="${fn}, 'mecanismo', this.value)" title="Mecanismo de accionamiento"><option value="manual" ${mec === 'manual' ? 'selected' : ''}>Mecanismo: A mano / varilla</option><option value="cordon" ${mec === 'cordon' ? 'selected' : ''}>Mecanismo: Cordón</option><option value="motor" ${mec === 'motor' ? 'selected' : ''}>Mecanismo: Motorizada</option></select>`;
             }
             return colorSel + tipoSel + instSel;
         }
@@ -4169,6 +4197,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     cardsState[id].cables_laterales = false;
                     cardsState[id].ganchos = false;
                     cardsState[id].cajon = 'sin_cajon';
+                } else if (type === 'cort_ondas') {
+                    cardsState[id].ondas_tipo = 'blackout';
+                    cardsState[id].color_cortina = 'taupe';
+                    cardsState[id].color_visillo = 'blanco';
+                    cardsState[id].ondas_apertura = 'lateral';
+                    cardsState[id].mecanismo = 'manual';
+                    cardsState[id].ondas_riel = 'techo';
                 } else if (type === 'cort_shutter') {
                     cardsState[id].color_cortina = 'blanco';
                     cardsState[id].tipo_motor = 'manual';
@@ -4408,7 +4443,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina', 'plegable', 'mosquitera'].includes(cardsState[id].categoria);
             // Cortinas: el toggle es el LADO del motor/manivela/cadena (no "apertura") — se etiqueta así.
             // Plegables: es hacia dónde se RECOGEN las hojas (la puerta de paso queda del otro lado).
-            const orPref = cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : cardsState[id].categoria === 'plegable' ? 'PLIEGA ' : cardsState[id].categoria === 'mosquitera' ? 'HOJA ' : '';
+            const orPref = cardsState[id].type === 'cort_ondas' ? 'RECOGE / MANDO ' : cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : cardsState[id].categoria === 'plegable' ? 'PLIEGA ' : cardsState[id].categoria === 'mosquitera' ? 'HOJA ' : '';
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">${orPref}A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">${orPref}A LA DERECHA</div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
                 : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
@@ -4625,7 +4660,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // 'vidrio' y 'espesor' redibujan porque 'Láminas de Louver' cambia el panel (louverPanel) — bug real:
             // en la puerta suelta el select cambiaba el estado pero el dibujo seguía en vidrio (la fachada sí lo hacía).
             if (cardsState[id].categoria === 'plegable' && ['ancho', 'alto', 'pleg_esquema', 'tipo_aluminio'].includes(key)) refreshPlegHint(id);
-            if (['mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo'].includes(key)) {
+            if (['mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -4634,7 +4669,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
             if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             // 'apertura' también regenera: con 2 hojas aparece el select "Hoja principal" (y con 1 hoja se va).
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo') {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || key === 'ondas_tipo' || key === 'color_visillo') {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -5683,6 +5718,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // enrollable) por ahora; beige/gris/madera quedan solo por compatibilidad con proyectos
     // guardados de antes del rediseño (dato muerto inofensivo, ya no aparecen en el selector).
     const CORTINA_COLORS = { blanco: '#f2f0ea', beige: '#d9c9a8', gris: '#9aa1a6', negro: '#1a1a1a', marron: '#4a2e1a', madera: '#7a5330', personalizado: '#c9c9c9' };
+    // Cortina Ondas Perfectas (tipo hotelera, 2026-09-22): paletas PROVISIONALES a ojo de las fotos de
+    // referencia — el usuario mandará las referencias/colores reales como con las demás telas; entonces
+    // se reemplazan estas listas (mismo patrón que TELA_COLECCIONES: solo tocar acá).
+    const ONDAS_COLORES = {
+        blackout: [['blanco', 'Blanco', '#f0ede6'], ['crudo', 'Crudo', '#e6dcc8'], ['beige', 'Beige', '#d2c1a3'], ['taupe', 'Taupe / Camel', '#8b7a66'], ['gris', 'Gris', '#8f959a'], ['gris_oscuro', 'Gris Oscuro', '#4f555a'], ['azul_noche', 'Azul Noche', '#2f3b55'], ['negro', 'Negro', '#1e1e1e']],
+        visillo: [['blanco', 'Blanco', '#f5f3ee'], ['crudo', 'Crudo', '#ece6d8'], ['lino', 'Lino', '#e2d9c6'], ['gris_claro', 'Gris Claro', '#d6d9dc']]
+    };
+    const ONDAS_TIPOS = [['blackout', 'Blackout (opaca)'], ['visillo', 'Visillo (translúcida)'], ['doble', 'Blackout + Visillo (doble riel)']];
+    const ONDAS_TIPO_NOM = { blackout: 'Blackout (opaca)', visillo: 'Visillo (translúcida)', doble: 'Blackout + Visillo (doble riel)' };
+    function ondasTipo(state) { return ONDAS_TIPO_NOM[state.ondas_tipo] ? state.ondas_tipo : 'blackout'; }
+    function ondasColor(capa, key) { const e = ONDAS_COLORES[capa].find(c => c[0] === key); return e ? e[2] : (key === 'personalizado' ? '#c9c9c9' : ONDAS_COLORES[capa][0][2]); }
+    function ondasColorLabel(capa, key, texto) { if (key === 'personalizado') return texto || 'Personalizado'; const e = ONDAS_COLORES[capa].find(c => c[0] === key); return e ? e[1] : ONDAS_COLORES[capa][0][1]; }
 
     // Catálogos reales de tela para Roller, uno por colección — el usuario va mandando fotos de
     // catálogos físicos y se van agregando acá (ver CLAUDE.md "Cortinas/Enrollables"). Cada
@@ -6052,6 +6099,66 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             notes.forEach((n, i) => {
                 svg += `<text x="${bx}" y="${(by + bh + 4 + i * 3.3).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#2c3742" stroke="none">${n}</text>`;
             });
+        } else if (state.type === 'cort_ondas') {
+            // Cortina Ondas Perfectas (tipo hotelera, fotos de referencia del usuario 2026-09-22): riel
+            // arriba, tela con ONDAS verticales (cada onda = banda con degradado horizontal que la hace
+            // cilíndrica, y el borde superior/inferior en "S"). Blackout = opaca; Visillo = translúcida
+            // (se ve la ventana detrás); Doble = visillo a todo lo ancho detrás + blackout medio recogida
+            // delante (ondas más apretadas). Flecha negra hacia donde se recoge; motor = chip "MOTOR".
+            const ot = ondasTipo(state), ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
+            const f = n => (+n).toFixed(2);
+            const colB = ondasColor('blackout', state.color_cortina || 'taupe'), colV = ondasColor('visillo', state.color_visillo || 'blanco');
+            const railY = by - 2.4, railH = ot === 'doble' ? 3 : 2;
+            let defs = '', body = '';
+            let pk = 0;
+            // una capa de ondas: n ondas de ancho fw; degradado por onda (pattern) + contorno en S arriba/abajo
+            const capa = (x, w, col, opacity, nFold) => {
+                const n = Math.max(2, nFold), fw = w / n, a = 1.1, pid = `onda-${id}-${pk++}`;
+                defs += `<linearGradient id="${pid}g" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="${shade(col, -22)}"/><stop offset="0.32" stop-color="${towardWhite(col, 0.4)}"/><stop offset="0.68" stop-color="${col}"/><stop offset="1" stop-color="${shade(col, -30)}"/></linearGradient>`;
+                defs += `<pattern id="${pid}" x="${f(x)}" y="0" width="${f(fw)}" height="1" patternUnits="userSpaceOnUse"><rect x="0" y="0" width="${f(fw)}" height="1" fill="url(#${pid}g)" stroke="none"/></pattern>`;
+                let d = `M${f(x)} ${f(by + a)}`;
+                for (let i = 0; i < n; i++) d += ` q${f(fw / 4)} ${f(-2 * a)} ${f(fw / 2)} 0 q${f(fw / 4)} ${f(2 * a)} ${f(fw / 2)} 0`;
+                d += ` L${f(x + w)} ${f(by + bh - a)}`;
+                for (let i = 0; i < n; i++) d += ` q${f(-fw / 4)} ${f(2 * a)} ${f(-fw / 2)} 0 q${f(-fw / 4)} ${f(-2 * a)} ${f(-fw / 2)} 0`;
+                d += ' Z';
+                return `<path d="${d}" fill="url(#${pid})" fill-opacity="${opacity}" stroke="${shade(col, -35)}" stroke-opacity="${opacity}" style="stroke-width:0.7px"/>`;
+            };
+            const arrow = (x1, x2, y) => { const dd = x2 > x1 ? 1 : -1; return `<g style="stroke:#111111;stroke-width:2px" fill="none"><line x1="${f(x1)}" y1="${f(y)}" x2="${f(x2)}" y2="${f(y)}"/><polyline points="${f(x2 - dd * 3)},${f(y - 3)} ${f(x2)},${f(y)} ${f(x2 - dd * 3)},${f(y + 3)}"/></g>`; };
+            // ventana detrás (solo se ve a través del visillo)
+            if (ot !== 'blackout') {
+                const wx = bx + 14, wy = by + 6, ww = bw - 28, wh = bh - 13;
+                body += `<rect x="${wx}" y="${wy}" width="${ww}" height="${wh}" fill="#e9f1f7" stroke="#b9c5ce" style="stroke-width:1px"/><line x1="${f(wx + ww / 2)}" y1="${wy}" x2="${f(wx + ww / 2)}" y2="${f(wy + wh)}" stroke="#b9c5ce" style="stroke-width:1px"/>`;
+            }
+            const nAll = Math.round(bw / 6);
+            const cy = by + bh * 0.5, L = 14;
+            if (ot === 'visillo' || ot === 'doble') body += capa(bx, bw, colV, 0.62, nAll);
+            if (ot === 'blackout') {
+                body += capa(bx, bw, colB, 1, nAll);
+            } else if (ot === 'doble') {
+                // blackout medio recogida (mismas ondas en menos ancho → más apretadas), delante del visillo
+                if (ap === 'central') { const w2 = bw * 0.3; body += capa(bx, w2, colB, 1, Math.round(nAll / 2)) + capa(bx + bw - w2, w2, colB, 1, Math.round(nAll / 2)); }
+                else { const w1 = bw * 0.55; body += capa(isD ? bx + bw - w1 : bx, w1, colB, 1, nAll); }
+            }
+            // apertura: línea de encuentro (central) y flechas hacia donde se recoge
+            if (ap === 'central') {
+                if (ot !== 'doble') body += `<line x1="${f(bx + bw / 2)}" y1="${f(by)}" x2="${f(bx + bw / 2)}" y2="${f(by + bh)}" stroke="#2c3742" stroke-opacity="0.55" style="stroke-width:1px"/>`;
+                body += arrow(bx + bw / 2 - 3, bx + bw / 2 - 3 - L, cy) + arrow(bx + bw / 2 + 3, bx + bw / 2 + 3 + L, cy);
+            } else {
+                body += isD ? arrow(bx + bw * 0.5 - L / 2, bx + bw * 0.5 + L / 2, cy) : arrow(bx + bw * 0.5 + L / 2, bx + bw * 0.5 - L / 2, cy);
+            }
+            // riel arriba (gris metálico) con separación de vías si es doble
+            body += `<rect x="${f(bx - 1)}" y="${f(railY)}" width="${f(bw + 2)}" height="${f(railH)}" rx="0.5" fill="#8d99a4" stroke="#5f6b76" style="stroke-width:0.6px"/>`;
+            if (ot === 'doble') body += `<line x1="${f(bx - 1)}" y1="${f(railY + railH / 2)}" x2="${f(bx + bw + 1)}" y2="${f(railY + railH / 2)}" stroke="#5f6b76" style="stroke-width:0.5px"/>`;
+            // mecanismo: motor (chip) o cordón, del lado del toggle
+            if (mec === 'motor') {
+                const mx = isD ? bx + bw - 13 : bx + 1;
+                body += `<rect x="${f(mx)}" y="${f(railY - 0.4)}" width="12" height="${f(railH + 0.8)}" rx="0.6" fill="#111" stroke="none"/><text x="${f(mx + 6)}" y="${f(railY + railH / 2 + 1)}" font-family="Arimo" font-size="2.6" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+            } else if (mec === 'cordon') {
+                const cx = isD ? bx + bw + 1.5 : bx - 1.5;
+                body += `<line x1="${f(cx)}" y1="${f(by)}" x2="${f(cx)}" y2="${f(by + bh * 0.7)}" stroke="#5f6b76" style="stroke-width:0.8px"/><circle cx="${f(cx)}" cy="${f(by + bh * 0.7 + 1)}" r="1" fill="#5f6b76" stroke="none"/>`;
+            }
+            svg += `<defs>${defs}</defs>` + body;
+            svg += `<text x="${f(bx + bw / 2)}" y="${f(by + bh + 5)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">Ondas Perfectas · ${ONDAS_TIPO_NOM[ot]}${ap === 'central' ? ' · 2 paños' : ''}</text>`;
         } else {
             // Roller: tubo superior (o cajón) + tela (una sola pieza continua, sin costuras) +
             // cadena del lado indicado. Con cajón: caja con un poco de 3D (cara superior +

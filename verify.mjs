@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'pleg', 'mosq'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'cort_ondas', 'pleg', 'mosq'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -112,6 +112,11 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
 for (const t of ['door_abat', 'win_abat', 'win_ob']) for (const hp of ['izq', 'der']) for (const o of ['I', 'D']) {
   try { ctx.__render('card1', { type: t, categoria: 'ventana', ancho: 1600, alto: 2200, orientacion: o, apertura: 'adentro_2', hoja_principal: hp, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
   catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }
+}
+// Cortina Ondas Perfectas: blackout / visillo / doble × lateral / central × izq / der × mecanismo
+for (const ot of ['blackout', 'visillo', 'doble']) for (const ap of ['lateral', 'central']) for (const [o, mec] of [['I', 'motor'], ['D', 'cordon'], ['I', 'manual']]) {
+  try { ctx.__render('card1', { type: 'cort_ondas', categoria: 'cortina', ancho: 3000, alto: 2600, orientacion: o, ondas_tipo: ot, ondas_apertura: ap, mecanismo: mec, color_cortina: 'taupe', color_visillo: 'crudo', ondas_riel: 'pared' }); ok++; }
+  catch (e) { fail++; console.error(`  ondas ${ot} ${ap} ${o}/${mec}:`, e.message); }
 }
 // Mosquiteras: 4 tipos × 1/2 hojas × izq/der, más una sin medidas (caja completa)
 for (const t of ['tela', 'fija', 'corredera', 'deslizante']) for (const h of [1, 2]) for (const o of ['I', 'D']) {

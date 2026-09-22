@@ -79,7 +79,8 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
 - **Barandas**: `baranda_bal` (baranda con constructor de tramos). *(`ducha_cab` "Cabina de
   Ducha" ya NO está en el menú; el `type` sigue existiendo para proyectos guardados que ya
   la tengan.)*
-- **Cortinas/Enrollables** (`categoria: 'cortina'`): `cort_roller` (cortina enrollable) y
+- **Cortinas/Enrollables** (`categoria: 'cortina'`): `cort_roller` (cortina enrollable),
+  `cort_ondas` (Cortina Ondas Perfectas, tipo hotelera, 2026-09-22 — ver subsección propia) y
   `cort_shutter` (persiana de seguridad enrollable — rediseñado 2026-07-30 a partir de una foto
   real, ver detalle en la sección "Cortinas/Enrollables" más abajo) — arrancó solo con estos dos
   por pedido explícito del usuario ("sus características son bien similares"); los otros tipos
@@ -1329,6 +1330,32 @@ juntos a pedido del usuario por tener características similares.
   dedicado (resetea color/apertura si hace falta + regenera opciones + redibuja, todo junto,
   igual que hace "espesor" con "vidrio"). `guiaIzq`/`guiaDer`/`cajonExtra` (ver "Shutter") NO
   pasan por `updateState` — tienen su propio toggle dedicado, `toggleShutterExtra(id, key)`.
+
+### Cortina Ondas Perfectas (`type: 'cort_ondas'`) — tipo hotelera (2026-09-22)
+
+Pedido del usuario con dos fotos de referencia (una blackout taupe, un visillo blanco sobre una
+ventana): "vienen opción Blackout y Visillo (translúcidas), son las cortinas tipo hoteleras; luego te
+subiré las referencias y colores como con las demás cortinas". Botón "Cortina Ondas Perfectas".
+
+- **Modelo**: `ondas_tipo` (`ONDAS_TIPOS`: `blackout` default | `visillo` | `doble` = Blackout +
+  Visillo en doble riel — supuesto propio, el usuario solo nombró las dos telas), `color_cortina`
+  (capa blackout) y `color_visillo` (capa visillo) con `_texto` para "Personalizado", `ondas_apertura`
+  `'lateral'` (1 paño, se recoge al lado del toggle) | `'central'` (2 paños), `mecanismo`
+  `'manual'` (a mano/varilla) | `'cordon'` | `'motor'`, `ondas_riel` `'techo'` | `'pared'`. El toggle
+  IZQ/DER se etiqueta "RECOGE / MANDO A LA…" (`orPref` por `type`). **Paletas PROVISIONALES**
+  `ONDAS_COLORES.blackout/visillo` (a ojo de las fotos) → reemplazar por las referencias reales cuando
+  el usuario las mande (solo tocar esa tabla: `ondasColor`/`ondasColorLabel` la leen).
+- **Dibujo** (rama `cort_ondas` de `renderCortina`, misma caja 80×40 del roller): riel gris arriba
+  (dos vías si es doble), y cada capa es `capa(x, w, col, opacity, n)`: n ondas (`bw/6`) con un
+  `<pattern>` de degradado horizontal por onda (sombra-luz-sombra = cilindro) y contorno en "S" arriba y
+  abajo. Visillo = `fill-opacity 0.62` con una ventana dibujada detrás; doble = visillo a todo lo ancho
+  + blackout medio recogida delante (mismas ondas en 55 % del ancho, o 30 % a cada lado si es central).
+  Flechas negras hacia donde se recoge (central: dos desde el centro + línea de encuentro), chip
+  "MOTOR" en el riel del lado del toggle, cordón colgando al costado si `cordon`.
+- **Resumen**: "CORTINA ONDAS PERFECTAS — A × H | Cant", Color por capa ("Blackout Taupe · Visillo
+  Blanco"), Tipo, Apertura ("Lateral, se recoge a la izquierda" / "Central (2 paños)"), Mecanismo con
+  lado, y la línea final dice "Riel: Al techo / A la pared" en vez de "Instalación". `verify.mjs`:
+  3 tipos × 2 aperturas × 3 combinaciones lado/mecanismo (RENDER OK: 225).
 
 ### Shutter (`type: 'cort_shutter'`) — persiana de seguridad enrollable
 
