@@ -2203,6 +2203,15 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Academia: guías de la plataforma (2026-09-22)
+
+`ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La
+portada agrupa por categoría: las categorías que empiezan por "Guías" van primero, en verde y sin progreso (consulta
+libre); el resto son cursos con avance/examen. Buscador de dudas (busca en títulos y texto de lecciones). Hay 22 guías
+(una por módulo, ids `guia-*` en `academiaCursos`, lecciones `guia-*-NN`) redactadas desde el código: **al cambiar el
+comportamiento de una pantalla, actualizar su guía** (desde la Academia como capacitador, o re-corriendo el script
+`guias.py` de la sesión con el texto nuevo).
+
 ### Notificaciones y badges
 
 - Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada
@@ -2407,3 +2416,28 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `espesorLabel`/`ralLabel`) mapea los 3 valores reales (`con`→Integrada, `fija`→Fija,
   `amovible`→Amovible), usado en los dos `specs.push('Mosquitera: ...')`. Verificado en vivo con
   los 4 casos (`fija`, `amovible`, `con` en corredera, vacío → no se muestra la línea).
+
+## Inbox omnicanal (WhatsApp Cloud API, multiusuario) — 2026-09-22
+
+Bandeja compartida sobre el número de WhatsApp de la empresa con varios agentes, CRM, notas
+internas, asignación, presencia, plantillas, reglas, IA, SLA, dashboard y auditoría. **Diseño
+completo y decisiones en `ops/inbox-DISEÑO.md`** (leerlo antes de tocar el módulo). Piezas:
+- `functions/inbox.js` (fábrica, montada al final de `functions/index.js` con
+  `Object.assign(exports, require('./inbox')({ anthropicKey }))`): `inboxWebhookMeta` (WhatsApp +
+  Instagram, firma X-Hub-Signature-256), `inboxEnviar`, `inboxMarcarLeido`,
+  `inboxIniciarConversacion`, `inboxSincronizarPlantillas`, `inboxProbarCanal`,
+  `inboxMensajeNuevo` (reglas + push + IA), `inboxVigilanteSla` (cada 5 min),
+  `inboxFusionarContactos`. Secretos obligatorios antes de desplegar: `WHATSAPP_TOKEN`,
+  `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`. El token NUNCA va a Firestore.
+- Pantallas: `ops/inbox.html` (bandeja 4 paneles; `?demo=1` = datos en memoria sin auth ni Meta,
+  `?c=<id>` abre una conversación), `ops/inbox-contactos.html`, `ops/inbox-config.html`,
+  `ops/inbox-dashboard.html`, `ops/inbox-auditoria.html`; módulo común `ops/inbox-core.js`
+  (constantes, permisos, `llamar()` a funciones con idToken, presencia, timeline+auditoría).
+- Roles nuevos en `usuarios.html`/`paginas.js`/`auth-common.js`: `inbox_admin`, `inbox_supervisor`,
+  `inbox_agente`, `inbox_lector` (admin = Owner). Reglas en `firestore.rules` (bloque INBOX):
+  los mensajes reales solo los escribe el servidor; desde el navegador solo notas internas.
+- Los mensajes usan el modelo unificado en inglés (`direction`, `sender_type`, `is_internal_note`…);
+  el resto del módulo va en español como la plataforma. Nunca simular WhatsApp: si la API no lo
+  permite (foto de perfil, borrar/editar enviados, grupos, "escribiendo" del cliente) se dice.
+- `verify.mjs` no cubre nada de esto. Comprobar sintaxis con `node --check functions/inbox.js` y el
+  extractor de `<script type="module">` (scratch `check-html.mjs`); probar la UI con `?demo=1`.
