@@ -2275,4 +2275,7 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 // fusión de contactos. Vive en ./inbox.js como fábrica para compartir el secreto ANTHROPIC_API_KEY
 // (declararlo dos veces con defineSecret rompería el deploy). Secretos propios que hay que crear
 // antes de desplegar: WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN.
-Object.assign(exports, require('./inbox')({ anthropicKey }));
+// PENDIENTE (usuario 2026-09-22: "no voy a desplegar lo del WhatsApp, que no afecte el resto de la app"):
+// el Inbox solo se monta con INBOX_ACTIVO=1 en functions/.env. Apagado, sus funciones no existen, no se
+// despliegan y el deploy no pide los secretos WHATSAPP_* ni la versión de Graph.
+if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));
