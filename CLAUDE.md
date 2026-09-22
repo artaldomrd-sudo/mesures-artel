@@ -2177,6 +2177,28 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `hoySantoDomingo()` devuelve `{fecha, domingo}`; un parche python con `assert` fallido no escribe el archivo →
   verificar con grep antes de desplegar. Detalle histórico en la memoria `artal-citrus-erp-integracion`.
 
+### Parte diario: seguimiento, costo de obras e informe de cierre (2026-09-22)
+
+- **Tres pantallas, tres públicos.** `ops/parte-diario.html` es SOLO el formulario del encargado (Wilson/Miki;
+  admin puede hacerlo "como" alguien con `?vista=encargado&como=EMAIL&fecha=`). Gerencia usa
+  `ops/parte-diario-seguimiento.html` (admin: estado del día por encargado, qué hizo el equipo, 14 días,
+  ⚙️ encargados/supervisor/desde/bloqueo plegado; `rrhhConfig/parteDiario`). Los costos viven en Contabilidad:
+  `ops/contabilidad-obras.html` (por obra = mano de obra + transporte, por persona, informes de cierre, CSV).
+- **Viajes del camión** (`viajes/{id}`): en Transportes, "En ruta" abre un modal con vehículo, recorrido (rutas
+  del calculador + locales, km editables, ida y vuelta) y qué otros pedidos van en el mismo camión. Costo =
+  combustible (`config/preciosCombustible`, MICM) + desgaste + peajes + fijos del día (seguro+depreciación/365),
+  repartido a partes iguales entre las obras a bordo (`obras[].costo`, `obrasKeys`); cada pedido guarda
+  `viajeId/viajeCosto/viajeObras`. Catálogos duplicados de `ops/calculador-obra.html`: si cambian tarifas, cambiar
+  los tres archivos. Regla del usuario: solo cuentan los viajes del camión cargado con material.
+- **Informe de cierre**: Cloud Function `informeObraAlCompletar` (trigger `instalaciones`, `estado` pasa a
+  `completado`) escribe `informesObra/{instalacionId}` (partes con ese `obraKey` desde el informe anterior de la
+  obra + viajes + total + acumulado), manda un mensaje interno (`mensajes`, remitente "Sistema ARTAL") a los admins
+  activos con push y enlace `historial.html?cliente=&obra=` (Historial abre la carpeta sola y muestra los informes
+  dentro). `obraKey` = norm(cliente)|norm(obra) (misma normalización en parte-diario, chofer y la función).
+- **Gastos fijos de pago automático**: `contaRecurrentes.pago === 'automatico'` → la función
+  `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
+  "Registrar este mes".
+
 ### Notificaciones y badges
 
 - Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada
