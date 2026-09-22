@@ -565,7 +565,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 15:03</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 15:20</div>
         </div>
     </div>
     
@@ -2136,14 +2136,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const ladoTxt = state.orientacion === 'D' ? 'Derecha' : 'Izquierda';
             let tituloTxt, colorTxt, extraTxt;
             if (state.type === 'cort_ondas') {
-                const ot = ondasTipo(state), ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
+                const ot = ondasTipo(state), ap = ondasApertura(state), mec = state.mecanismo === 'motor' ? 'motor' : 'manual', ml = ondasMotorLado(state);
                 const cols = [];
                 if (ot !== 'visillo') cols.push(`Blackout ${ondasColorLabel('blackout', state.color_cortina || 'taupe', state.color_cortina_texto)}`);
                 if (ot !== 'blackout') cols.push(`Visillo ${ondasColorLabel('visillo', state.color_visillo || 'blanco', state.color_visillo_texto)}`);
                 tituloTxt = 'CORTINA ONDAS PERFECTAS';
                 colorTxt = cols.join(' · ');
-                const mecMap = { manual: 'A mano / varilla', cordon: `Cordón · lado: ${ladoTxt}`, motor: `Motorizada · lado del motor: ${ladoTxt}` };
-                extraTxt = `<div>Tipo: ${ONDAS_TIPO_NOM[ot]}</div><div>Apertura: ${ap === 'central' ? 'Central (2 paños, abren al centro)' : `Lateral (1 paño, se recoge a la ${ladoTxt.toLowerCase()})`}</div><div>Mecanismo: ${mecMap[mec] || mecMap.manual}</div>`;
+                extraTxt = `<div>Tipo: ${ONDAS_TIPO_NOM[ot]}</div><div>Apertura: <b>${ONDAS_AP_NOM[ap]}</b>${ap === 'central' ? ' · 2 paños' : ' · 1 paño'}</div><div>Mecanismo: ${mec === 'motor' ? `Motorizada · <b>motor a la ${ml === 'der' ? 'derecha' : 'izquierda'}</b>` : 'Manual'}</div>`;
             } else if (state.type === 'cort_shutter') {
                 const colMapShutter = { blanco: 'Blanco', negro: 'Negro', marron: 'Marrón', beige: 'Beige', gris: 'Gris', madera: 'Madera', personalizado: (state.color_cortina_texto || 'Personalizado') };
                 const motorMap = { motorizado: '#1 Motorizado', manual: '#2 Manual (Manivela)', motor_manivela: '#3 Motorizado c/ Manivela de Emergencia', motor_inteligente: '#4 Motorizado + Sistema Inteligente', motor_solar: '#5 Motorizado Solar' };
@@ -3971,9 +3970,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else if (type === 'cort_ondas') {
                 // Apertura (lateral = 1 paño que se recoge al lado del toggle; central = 2 paños que abren al
                 // centro) + mecanismo. El lado del toggle IZQ/DER es hacia dónde se recoge / lado del mando.
-                const ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
-                tipoSel += `<select onchange="${fn}, 'ondas_apertura', this.value)" title="Cómo abre la cortina"><option value="lateral" ${ap === 'lateral' ? 'selected' : ''}>Apertura: Lateral (1 paño)</option><option value="central" ${ap === 'central' ? 'selected' : ''}>Apertura: Central (2 paños)</option></select>`;
-                tipoSel += `<select onchange="${fn}, 'mecanismo', this.value)" title="Mecanismo de accionamiento"><option value="manual" ${mec === 'manual' ? 'selected' : ''}>Mecanismo: A mano / varilla</option><option value="cordon" ${mec === 'cordon' ? 'selected' : ''}>Mecanismo: Cordón</option><option value="motor" ${mec === 'motor' ? 'selected' : ''}>Mecanismo: Motorizada</option></select>`;
+                const ap = ondasApertura(state), mec = state.mecanismo === 'motor' ? 'motor' : 'manual', ml = ondasMotorLado(state);
+                tipoSel += `<select style="grid-column: span 2;" onchange="${fn}, 'ondas_apertura', this.value)" title="Hacia dónde se recoge la cortina">${ONDAS_APERTURAS.map(([v, l]) => `<option value="${v}" ${ap === v ? 'selected' : ''}>Apertura: ${l}</option>`).join('')}</select>`;
+                tipoSel += `<select onchange="${fn}, 'mecanismo', this.value)" title="Mecanismo de accionamiento"><option value="manual" ${mec === 'manual' ? 'selected' : ''}>Mecanismo: Manual</option><option value="motor" ${mec === 'motor' ? 'selected' : ''}>Mecanismo: Motorizada</option></select>`;
+                if (mec === 'motor') tipoSel += `<select onchange="${fn}, 'motor_lado', this.value)" title="Lado donde va el motor"><option value="izq" ${ml === 'izq' ? 'selected' : ''}>Motor a la izquierda</option><option value="der" ${ml === 'der' ? 'selected' : ''}>Motor a la derecha</option></select>`;
             }
             return colorSel + tipoSel + instSel;
         }
@@ -4201,8 +4201,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     cardsState[id].ondas_tipo = 'blackout';
                     cardsState[id].color_cortina = 'taupe';
                     cardsState[id].color_visillo = 'blanco';
-                    cardsState[id].ondas_apertura = 'lateral';
+                    cardsState[id].ondas_apertura = 'central';
                     cardsState[id].mecanismo = 'manual';
+                    cardsState[id].motor_lado = 'izq';
                     cardsState[id].ondas_riel = 'techo';
                 } else if (type === 'cort_shutter') {
                     cardsState[id].color_cortina = 'blanco';
@@ -4439,11 +4440,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         } else {
             let schematic = `<div class="drawing-area" id="schematic-${id}">${renderSVG(id)}</div>`;
             const opcionesHtml = getMenuOpciones(id, cardsState[id].categoria, cardsState[id].type, false);
-            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';
+            const hideOrientation = ['cor2', 'cor4_cent', 'cor6_cent', 'gal4_2v', 'gal6_3v', 'win_proy', 'win_souf', 'cort_ondas'].includes(cardsState[id].type) || cardsState[id].categoria === 'fachada' || cardsState[id].categoria === 'mampara';   // ondas: apertura y lado del motor van en selects propios
             const showOrientation = !hideOrientation && ['corredera', 'galandaje', 'ventana', 'puerta_vidrio', 'cortina', 'plegable', 'mosquitera'].includes(cardsState[id].categoria);
             // Cortinas: el toggle es el LADO del motor/manivela/cadena (no "apertura") — se etiqueta así.
             // Plegables: es hacia dónde se RECOGEN las hojas (la puerta de paso queda del otro lado).
-            const orPref = cardsState[id].type === 'cort_ondas' ? 'RECOGE / MANDO ' : cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : cardsState[id].categoria === 'plegable' ? 'PLIEGA ' : cardsState[id].categoria === 'mosquitera' ? 'HOJA ' : '';
+            const orPref = cardsState[id].categoria === 'cortina' ? 'MOTOR / MANDO ' : cardsState[id].categoria === 'plegable' ? 'PLIEGA ' : cardsState[id].categoria === 'mosquitera' ? 'HOJA ' : '';
             const orientationHtml = showOrientation ? `<div class="orientation-toggle"><div class="toggle-btn ${cardsState[id].orientacion==='I'?'active':''}" id="btn-i-${id}" onclick="setOrientation(${id}, 'I')">${orPref}A LA IZQUIERDA</div><div class="toggle-btn ${cardsState[id].orientacion==='D'?'active':''}" id="btn-d-${id}" onclick="setOrientation(${id}, 'D')">${orPref}A LA DERECHA</div></div>` : '';
             const hasVias = cardsState[id].categoria === 'corredera' ? correderaVias(cardsState[id].type) !== null
                 : cardsState[id].categoria === 'galandaje' ? galandajeVias(cardsState[id].type) !== null : false;
@@ -4660,7 +4661,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // 'vidrio' y 'espesor' redibujan porque 'Láminas de Louver' cambia el panel (louverPanel) — bug real:
             // en la puerta suelta el select cambiaba el estado pero el dibujo seguía en vidrio (la fachada sí lo hacía).
             if (cardsState[id].categoria === 'plegable' && ['ancho', 'alto', 'pleg_esquema', 'tipo_aluminio'].includes(key)) refreshPlegHint(id);
-            if (['mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel'].includes(key)) {
+            if (['mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel', 'motor_lado'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -4669,7 +4670,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
             if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             // 'apertura' también regenera: con 2 hojas aparece el select "Hoja principal" (y con 1 hoja se va).
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || key === 'ondas_tipo' || key === 'color_visillo') {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -5728,6 +5729,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     const ONDAS_TIPOS = [['blackout', 'Blackout (opaca)'], ['visillo', 'Visillo (translúcida)'], ['doble', 'Blackout + Visillo (doble riel)']];
     const ONDAS_TIPO_NOM = { blackout: 'Blackout (opaca)', visillo: 'Visillo (translúcida)', doble: 'Blackout + Visillo (doble riel)' };
     function ondasTipo(state) { return ONDAS_TIPO_NOM[state.ondas_tipo] ? state.ondas_tipo : 'blackout'; }
+    // Apertura: 'central' (mitad/mitad ← →) | 'izq' (← hacia la izquierda) | 'der' (→ hacia la derecha).
+    // Compat: el valor viejo 'lateral' usaba el toggle IZQ/DER de la tarjeta (`orientacion`).
+    const ONDAS_APERTURAS = [['central', 'Mitad / mitad ← → (desde el centro)'], ['izq', 'Hacia la izquierda ←'], ['der', 'Hacia la derecha →']];
+    const ONDAS_AP_NOM = Object.fromEntries(ONDAS_APERTURAS);
+    function ondasApertura(state) { const a = state.ondas_apertura; if (ONDAS_AP_NOM[a]) return a; if (a === 'lateral') return state.orientacion === 'D' ? 'der' : 'izq'; return 'central'; }
+    function ondasMotorLado(state) { return state.motor_lado === 'der' || (!state.motor_lado && state.orientacion === 'D') ? 'der' : 'izq'; }
     function ondasColor(capa, key) { const e = ONDAS_COLORES[capa].find(c => c[0] === key); return e ? e[2] : (key === 'personalizado' ? '#c9c9c9' : ONDAS_COLORES[capa][0][2]); }
     function ondasColorLabel(capa, key, texto) { if (key === 'personalizado') return texto || 'Personalizado'; const e = ONDAS_COLORES[capa].find(c => c[0] === key); return e ? e[1] : ONDAS_COLORES[capa][0][1]; }
 
@@ -6105,7 +6112,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // cilíndrica, y el borde superior/inferior en "S"). Blackout = opaca; Visillo = translúcida
             // (se ve la ventana detrás); Doble = visillo a todo lo ancho detrás + blackout medio recogida
             // delante (ondas más apretadas). Flecha negra hacia donde se recoge; motor = chip "MOTOR".
-            const ot = ondasTipo(state), ap = state.ondas_apertura || 'lateral', mec = state.mecanismo || 'manual';
+            const ot = ondasTipo(state), ap = ondasApertura(state), mec = state.mecanismo === 'motor' ? 'motor' : 'manual';
+            const recogeDer = ap === 'der', motorDer = ondasMotorLado(state) === 'der';
             const f = n => (+n).toFixed(2);
             const colB = ondasColor('blackout', state.color_cortina || 'taupe'), colV = ondasColor('visillo', state.color_visillo || 'blanco');
             const railY = by - 2.4, railH = ot === 'doble' ? 3 : 2;
@@ -6137,28 +6145,25 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else if (ot === 'doble') {
                 // blackout medio recogida (mismas ondas en menos ancho → más apretadas), delante del visillo
                 if (ap === 'central') { const w2 = bw * 0.3; body += capa(bx, w2, colB, 1, Math.round(nAll / 2)) + capa(bx + bw - w2, w2, colB, 1, Math.round(nAll / 2)); }
-                else { const w1 = bw * 0.55; body += capa(isD ? bx + bw - w1 : bx, w1, colB, 1, nAll); }
+                else { const w1 = bw * 0.55; body += capa(recogeDer ? bx + bw - w1 : bx, w1, colB, 1, nAll); }
             }
             // apertura: línea de encuentro (central) y flechas hacia donde se recoge
             if (ap === 'central') {
                 if (ot !== 'doble') body += `<line x1="${f(bx + bw / 2)}" y1="${f(by)}" x2="${f(bx + bw / 2)}" y2="${f(by + bh)}" stroke="#2c3742" stroke-opacity="0.55" style="stroke-width:1px"/>`;
                 body += arrow(bx + bw / 2 - 3, bx + bw / 2 - 3 - L, cy) + arrow(bx + bw / 2 + 3, bx + bw / 2 + 3 + L, cy);
             } else {
-                body += isD ? arrow(bx + bw * 0.5 - L / 2, bx + bw * 0.5 + L / 2, cy) : arrow(bx + bw * 0.5 + L / 2, bx + bw * 0.5 - L / 2, cy);
+                body += recogeDer ? arrow(bx + bw * 0.5 - L / 2, bx + bw * 0.5 + L / 2, cy) : arrow(bx + bw * 0.5 + L / 2, bx + bw * 0.5 - L / 2, cy);
             }
             // riel arriba (gris metálico) con separación de vías si es doble
             body += `<rect x="${f(bx - 1)}" y="${f(railY)}" width="${f(bw + 2)}" height="${f(railH)}" rx="0.5" fill="#8d99a4" stroke="#5f6b76" style="stroke-width:0.6px"/>`;
             if (ot === 'doble') body += `<line x1="${f(bx - 1)}" y1="${f(railY + railH / 2)}" x2="${f(bx + bw + 1)}" y2="${f(railY + railH / 2)}" stroke="#5f6b76" style="stroke-width:0.5px"/>`;
-            // mecanismo: motor (chip) o cordón, del lado del toggle
+            // mecanismo motorizado: chip "MOTOR" en el extremo del riel del lado elegido (motor_lado)
             if (mec === 'motor') {
-                const mx = isD ? bx + bw - 13 : bx + 1;
+                const mx = motorDer ? bx + bw - 13 : bx + 1;
                 body += `<rect x="${f(mx)}" y="${f(railY - 0.4)}" width="12" height="${f(railH + 0.8)}" rx="0.6" fill="#111" stroke="none"/><text x="${f(mx + 6)}" y="${f(railY + railH / 2 + 1)}" font-family="Arimo" font-size="2.6" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
-            } else if (mec === 'cordon') {
-                const cx = isD ? bx + bw + 1.5 : bx - 1.5;
-                body += `<line x1="${f(cx)}" y1="${f(by)}" x2="${f(cx)}" y2="${f(by + bh * 0.7)}" stroke="#5f6b76" style="stroke-width:0.8px"/><circle cx="${f(cx)}" cy="${f(by + bh * 0.7 + 1)}" r="1" fill="#5f6b76" stroke="none"/>`;
             }
             svg += `<defs>${defs}</defs>` + body;
-            svg += `<text x="${f(bx + bw / 2)}" y="${f(by + bh + 5)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">Ondas Perfectas · ${ONDAS_TIPO_NOM[ot]}${ap === 'central' ? ' · 2 paños' : ''}</text>`;
+            svg += `<text x="${f(bx + bw / 2)}" y="${f(by + bh + 5)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">Ondas Perfectas · ${ONDAS_TIPO_NOM[ot]}${ap === 'central' ? ' · mitad / mitad' : ap === 'der' ? ' · hacia la derecha' : ' · hacia la izquierda'}</text>`;
         } else {
             // Roller: tubo superior (o cajón) + tela (una sola pieza continua, sin costuras) +
             // cadena del lado indicado. Con cajón: caja con un poco de 3D (cara superior +

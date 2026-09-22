@@ -1340,9 +1340,13 @@ subiré las referencias y colores como con las demás cortinas". Botón "Cortina
 - **Modelo**: `ondas_tipo` (`ONDAS_TIPOS`: `blackout` default | `visillo` | `doble` = Blackout +
   Visillo en doble riel — supuesto propio, el usuario solo nombró las dos telas), `color_cortina`
   (capa blackout) y `color_visillo` (capa visillo) con `_texto` para "Personalizado", `ondas_apertura`
-  `'lateral'` (1 paño, se recoge al lado del toggle) | `'central'` (2 paños), `mecanismo`
-  `'manual'` (a mano/varilla) | `'cordon'` | `'motor'`, `ondas_riel` `'techo'` | `'pared'`. El toggle
-  IZQ/DER se etiqueta "RECOGE / MANDO A LA…" (`orPref` por `type`). **Paletas PROVISIONALES**
+  (`ONDAS_APERTURAS`, select propio pedido por el usuario el mismo día: `'central'` default "Mitad /
+  mitad ← → (desde el centro)" | `'izq'` "Hacia la izquierda ←" | `'der'` "Hacia la derecha →";
+  `ondasApertura(state)` traduce el valor viejo `'lateral'` + `orientacion`), `mecanismo` `'manual'` |
+  `'motor'` (el `'cordon'` de la primera versión cae a manual) y, solo con motor, `motor_lado`
+  `'izq'`|`'der'` ("Motor a la izquierda/derecha", `ondasMotorLado`; regenera opciones al cambiar
+  `mecanismo`), `ondas_riel` `'techo'` | `'pared'`. **Sin toggle IZQ/DER** en la tarjeta (`cort_ondas`
+  está en `hideOrientation`): apertura y lado del motor van en sus selects. **Paletas PROVISIONALES**
   `ONDAS_COLORES.blackout/visillo` (a ojo de las fotos) → reemplazar por las referencias reales cuando
   el usuario las mande (solo tocar esa tabla: `ondasColor`/`ondasColorLabel` la leen).
 - **Dibujo** (rama `cort_ondas` de `renderCortina`, misma caja 80×40 del roller): riel gris arriba
@@ -1351,11 +1355,12 @@ subiré las referencias y colores como con las demás cortinas". Botón "Cortina
   abajo. Visillo = `fill-opacity 0.62` con una ventana dibujada detrás; doble = visillo a todo lo ancho
   + blackout medio recogida delante (mismas ondas en 55 % del ancho, o 30 % a cada lado si es central).
   Flechas negras hacia donde se recoge (central: dos desde el centro + línea de encuentro), chip
-  "MOTOR" en el riel del lado del toggle, cordón colgando al costado si `cordon`.
+  "MOTOR" en el extremo del riel del lado de `motor_lado`.
 - **Resumen**: "CORTINA ONDAS PERFECTAS — A × H | Cant", Color por capa ("Blackout Taupe · Visillo
-  Blanco"), Tipo, Apertura ("Lateral, se recoge a la izquierda" / "Central (2 paños)"), Mecanismo con
-  lado, y la línea final dice "Riel: Al techo / A la pared" en vez de "Instalación". `verify.mjs`:
-  3 tipos × 2 aperturas × 3 combinaciones lado/mecanismo (RENDER OK: 225).
+  Blanco"), Tipo, "Apertura: Hacia la izquierda ← · 1 paño" / "Mitad / mitad ← → · 2 paños",
+  "Mecanismo: Manual" / "Motorizada · motor a la derecha", y la línea final dice "Riel: Al techo / A la
+  pared" en vez de "Instalación". `verify.mjs`: 3 tipos × 4 aperturas (incl. `lateral` viejo) × 3
+  combinaciones motor/lado (RENDER OK: 243).
 
 ### Shutter (`type: 'cort_shutter'`) — persiana de seguridad enrollable
 

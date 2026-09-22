@@ -114,9 +114,9 @@ for (const t of ['door_abat', 'win_abat', 'win_ob']) for (const hp of ['izq', 'd
   catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }
 }
 // Cortina Ondas Perfectas: blackout / visillo / doble × lateral / central × izq / der × mecanismo
-for (const ot of ['blackout', 'visillo', 'doble']) for (const ap of ['lateral', 'central']) for (const [o, mec] of [['I', 'motor'], ['D', 'cordon'], ['I', 'manual']]) {
-  try { ctx.__render('card1', { type: 'cort_ondas', categoria: 'cortina', ancho: 3000, alto: 2600, orientacion: o, ondas_tipo: ot, ondas_apertura: ap, mecanismo: mec, color_cortina: 'taupe', color_visillo: 'crudo', ondas_riel: 'pared' }); ok++; }
-  catch (e) { fail++; console.error(`  ondas ${ot} ${ap} ${o}/${mec}:`, e.message); }
+for (const ot of ['blackout', 'visillo', 'doble']) for (const ap of ['central', 'izq', 'der', 'lateral']) for (const [ml, mec] of [['izq', 'motor'], ['der', 'motor'], ['izq', 'manual']]) {
+  try { ctx.__render('card1', { type: 'cort_ondas', categoria: 'cortina', ancho: 3000, alto: 2600, orientacion: 'D', ondas_tipo: ot, ondas_apertura: ap, mecanismo: mec, motor_lado: ml, color_cortina: 'taupe', color_visillo: 'crudo', ondas_riel: 'pared' }); ok++; }
+  catch (e) { fail++; console.error(`  ondas ${ot} ${ap} ${ml}/${mec}:`, e.message); }
 }
 // Mosquiteras: 4 tipos × 1/2 hojas × izq/der, más una sin medidas (caja completa)
 for (const t of ['tela', 'fija', 'corredera', 'deslizante']) for (const h of [1, 2]) for (const o of ['I', 'D']) {
