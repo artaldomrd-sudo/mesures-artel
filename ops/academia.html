@@ -15,7 +15,8 @@
     .btn-ghost { background: transparent; border: 1.5px solid #cfd6dd; color: var(--artal-blue); border-radius: 9px; padding: 9px 14px; font-weight: bold; font-size: 13px; cursor: pointer; font-family: 'Arimo'; }
     .intro { font-size: 13px; color: #667; margin: 0 0 14px; line-height: 1.5; }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; margin-bottom: 18px; }
+    .sec-cat { font-size: 13px; color: var(--artal-blue); text-transform: uppercase; letter-spacing: .05em; margin: 6px 0 10px; }
     .curso-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; cursor: pointer; border-top: 4px solid var(--artal-blue); transition: transform .08s, box-shadow .12s; position: relative; }
     .curso-card:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -10px rgba(0,0,0,.35); }
     .curso-card .emoji { font-size: 30px; }
@@ -212,11 +213,10 @@
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { fotoAddBtnHTML, fotosThumbsHTML } from './fotos.js';
 
-    // Todo el equipo puede VER la academia (admin/lector siempre pasan). Editar el contenido queda
-    // gateado en la UI a admin/capacitador (esAutor).
-    // BETA: Academia todavía en desarrollo — solo admin y 'capacitador' entran por ahora. Cuando
-    // esté lista para el equipo, volver a agregar los roles operativos (instalador, chofer, etc.).
-    const usuario = await requireAuth(['capacitador']);
+    // Todo el equipo interno puede VER la academia (2026-09-22: abierta a instalador/ayudante/chofer/
+    // cotizaciones/contable/comunicaciones; ALUCUFEL queda fuera). Editar el contenido queda gateado en
+    // la UI a admin/capacitador (esAutor). No se bloquea por parte diario pendiente (auth-common.js).
+    const usuario = await requireAuth(['capacitador', 'instalador', 'ayudante', 'chofer', 'cotizaciones', 'contable', 'comunicaciones']);
     wireBackButton(usuario.roles);
     // "Volver" contextual: dentro de la Academia navega atrás por vista (lección→curso→cursos);
     // solo desde la lista de cursos sale al inicio (Panel/ERP) con su enlace normal.
@@ -290,23 +290,38 @@
         vista = 'cursos'; renderCursos(cont);
     }
 
+    // Buscador: filtra cursos por título/descripción/categoría Y por el título o texto de sus lecciones
+    // (para resolver una duda concreta: "firma", "en ruta", "parte"…).
+    let buscaTxt = '';
+    window.buscarAcademia = function (v) { buscaTxt = String(v || '').trim().toLowerCase(); render(); const i = document.getElementById('buscador'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } };
+    const coincide = (c) => {
+        if (!buscaTxt) return true;
+        const t = (s) => String(s || '').toLowerCase().includes(buscaTxt);
+        return t(c.titulo) || t(c.descripcion) || t(c.categoria) || leccionesDe(c.id).some(l => t(l.titulo) || t(l.contenido));
+    };
     function renderCursos(cont) {
-        const list = cursosVisibles();
+        const list = cursosVisibles().filter(coincide);
         const nuevo = esAutor ? `<button class="btn-y" onclick="abrirCurso()">+ Nuevo curso</button><button class="btn-ghost" onclick="irA('progreso')">📊 Progreso del equipo</button>` : '';
-        let html = `<p class="intro">Clases para aprender a instalar, la mentalidad de trabajo de ARTAL y todo lo necesario para integrarte al equipo. Ve tu avance en cada curso.</p><div class="bar">${nuevo}</div>`;
-        if (!list.length) { cont.innerHTML = html + '<p class="empty">Aún no hay cursos. ' + (esAutor ? 'Crea el primero con «+ Nuevo curso».' : 'Pronto habrá contenido.') + '</p>'; return; }
-        html += '<div class="grid">' + list.map(c => {
+        let html = `<p class="intro">📘 <b>Guías de la plataforma</b>: cómo usar cada pantalla, paso a paso — consúltalas cuando tengas una duda. 🎓 <b>Cursos</b>: clases para aprender a instalar y la forma de trabajar de ARTAL, con tu avance en cada uno.</p>
+            <div class="bar"><input type="search" id="buscador" value="${esc(buscaTxt)}" oninput="buscarAcademia(this.value)" placeholder="🔎 ¿Tienes una duda? Busca: parte diario, en ruta, firma, gastos fijos…" style="flex:1;min-width:220px;padding:11px 12px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:14px;min-height:44px;">${nuevo}</div>`;
+        if (!list.length) { cont.innerHTML = html + '<p class="empty">' + (buscaTxt ? 'Nada coincide con «' + esc(buscaTxt) + '».' : 'Aún no hay cursos. ' + (esAutor ? 'Crea el primero con «+ Nuevo curso».' : 'Pronto habrá contenido.')) + '</p>'; return; }
+        // Agrupado por categoría: las "Guías · …" primero (en su orden), después el resto.
+        const grupos = new Map();
+        list.forEach(c => { const k = c.categoria || 'Cursos'; if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(c); });
+        const cats = [...grupos.keys()].sort((a, b) => { const ga = /^gu[ií]a/i.test(a), gb = /^gu[ií]a/i.test(b); if (ga !== gb) return ga ? -1 : 1; return a.localeCompare(b, 'es'); });
+        const card = (c) => {
             const total = leccionesDe(c.id).length, hechas = completadasDe(c.id).size;
             const pct = total ? Math.round(hechas / total * 100) : 0;
-            return `<div class="curso-card" onclick="irA('curso','${c.id}')" style="border-top-color:${c.publicado === false ? '#c9ced6' : 'var(--artal-blue)'}">
+            const esGuia = /^gu[ií]a/i.test(c.categoria || '');
+            return `<div class="curso-card" onclick="irA('curso','${c.id}')" style="border-top-color:${c.publicado === false ? '#c9ced6' : (esGuia ? '#1f9d61' : 'var(--artal-blue)')}">
                 ${c.publicado === false ? '<span class="badge-draft">Borrador</span>' : ''}
                 <div class="emoji">${esc(c.emoji || '🎓')}</div>
                 <div class="ttl">${esc(c.titulo || 'Curso')}</div>
                 ${c.descripcion ? `<div class="desc">${esc(c.descripcion)}</div>` : ''}
-                ${c.categoria ? `<span class="cat">${esc(c.categoria)}</span>` : ''}
-                <div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div><div class="prog-txt">${hechas}/${total} lecciones${pct === 100 && total ? ' · completado ✓' : ''}</div></div>
+                ${esGuia ? `<div class="prog-txt" style="margin-top:8px">${total} tema(s)</div>` : `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div><div class="prog-txt">${hechas}/${total} lecciones${pct === 100 && total ? ' · completado ✓' : ''}</div></div>`}
             </div>`;
-        }).join('') + '</div>';
+        };
+        html += cats.map(k => `<h2 class="sec-cat">${esc(k)}</h2><div class="grid">${grupos.get(k).map(card).join('')}</div>`).join('');
         cont.innerHTML = html;
     }
 

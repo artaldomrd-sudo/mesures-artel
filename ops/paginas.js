@@ -23,7 +23,8 @@ export const GRUPOS = [
     { id: "ventas", nombre: "Ventas y CRM" },
     { id: "productos", nombre: "Productos y servicios" },
     { id: "activos", nombre: "Activos fijos" },
-    { id: "equipo", nombre: "Equipo, mensajería y academia" }
+    { id: "equipo", nombre: "Equipo, mensajería y academia" },
+    { id: "inbox", nombre: "Inbox omnicanal (WhatsApp, Instagram…)" }
 ];
 export const PAGINAS = [
     { id: "index.html", titulo: "Panel de Control", grupo: "panel", roles: [], desc: "Inicio del panel: mosaicos a cada módulo, badges con lo pendiente y centro de notificaciones (comentarios, problemas, solicitudes, recordatorios)." },
@@ -98,9 +99,14 @@ export const PAGINAS = [
     { id: "activos.html", titulo: "Activos Fijos", grupo: "activos", roles: ["contable"], desc: "Hub de activos fijos." },
     { id: "activos-depreciacion.html", titulo: "Depreciación DR", grupo: "activos", roles: ["contable"], desc: "Depreciación de activos según normas de la DGII." },
     { id: "activos-prestamos.html", titulo: "Préstamo y Renta", grupo: "activos", roles: ["contable"], desc: "Préstamo y renta de activos (a quién se prestó, hasta cuándo)." },
-    { id: "academia.html", titulo: "Academia", grupo: "equipo", roles: ["capacitador"], desc: "Academia ARTAL: cursos, lecciones, exámenes y certificados; el capacitador crea el contenido." },
+    { id: "academia.html", titulo: "Academia", grupo: "equipo", roles: ["capacitador", "instalador", "ayudante", "chofer", "cotizaciones", "contable", "comunicaciones"], desc: "Academia ARTAL: cursos, lecciones, exámenes y certificados; el capacitador crea el contenido." },
     { id: "mensajes.html", titulo: "Mensajería", grupo: "equipo", roles: ["cotizaciones", "chofer", "instalador", "ayudante", "contable", "comunicaciones"], desc: "Mensajería interna: comunicados, volantes de pago y mensajes con acuse de lectura." },
     { id: "notas.html", titulo: "Mis Notas", grupo: "equipo", roles: ["cotizaciones", "chofer", "instalador", "ayudante", "contable", "comunicaciones"], desc: "Notas personales con imágenes y documentos adjuntos; solo las ve su dueño." },
+    { id: "inbox.html", titulo: "Inbox omnicanal", grupo: "inbox", roles: ["inbox_admin", "inbox_supervisor", "inbox_agente", "inbox_lector"], desc: "Bandeja compartida de WhatsApp (e Instagram): varios agentes sobre el mismo número, asignación, notas internas, presencia, plantillas, respuestas rápidas." },
+    { id: "inbox-contactos.html", titulo: "Inbox: Contactos (CRM)", grupo: "inbox", roles: ["inbox_admin", "inbox_supervisor", "inbox_agente", "inbox_lector"], desc: "Contactos del inbox: una persona con varias identidades (WhatsApp, Instagram, email), tags, notas, historial y fusión de duplicados con deshacer." },
+    { id: "inbox-dashboard.html", titulo: "Inbox: Dashboard", grupo: "inbox", roles: ["inbox_admin", "inbox_supervisor", "inbox_lector"], desc: "Métricas del inbox: abiertas, cerradas, mensajes, tiempos de primera respuesta y resolución, por agente, por canal, por día, SLA." },
+    { id: "inbox-config.html", titulo: "Inbox: Configuración", grupo: "inbox", roles: ["inbox_admin"], desc: "Canales (WhatsApp Cloud API, Instagram), equipos, etiquetas, respuestas rápidas, plantillas, reglas de automatización, SLA, IA y roles." },
+    { id: "inbox-auditoria.html", titulo: "Inbox: Auditoría", grupo: "inbox", roles: ["inbox_admin"], desc: "Registro inalterable de acciones del inbox: accesos, envíos, notas, asignaciones, estados, configuración, canales." },
     { id: "usuarios.html", titulo: "Usuarios y roles", grupo: "equipo", roles: [], desc: "Usuarios y roles: cuentas, roles, permisos por página, notificaciones y verificación en 2 pasos. Solo administradores." },
 ];
 const POR_ID = new Map(PAGINAS.map(p => [p.id, p]));

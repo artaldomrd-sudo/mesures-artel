@@ -183,7 +183,7 @@ export function requireAuth(rolesPermitidos) {
       // "si no rellenan no pueden hacer más nada en la plataforma"). Admin nunca se bloquea.
       // Pantallas que NO se bloquean por un parte pendiente: el propio parte y Transportes (Wilson es
       // chofer además de encargado; entregar material no puede esperar al parte — pedido del usuario 2026-09-22).
-      const SIN_BLOQUEO_PARTE = ['parte-diario.html', 'chofer.html'];
+      const SIN_BLOQUEO_PARTE = ['parte-diario.html', 'chofer.html', 'academia.html'];   // Academia: las guías se consultan siempre
       if (!roles.includes('admin') && !SIN_BLOQUEO_PARTE.includes(pagId)) {
         try {
           const g = await import('./parte-gate.js');
@@ -224,6 +224,8 @@ export function homePorRol(roles) {
   if (roles.includes('chofer')) return 'chofer.html';
   if (roles.includes('contratista') || roles.includes('fabrica')) return 'alucufel/index.html';
   if (roles.includes('cotizaciones')) return 'cotizaciones.html';
+  // Roles del inbox omnicanal (WhatsApp): su inicio es la bandeja compartida.
+  if (roles.some((r) => ['inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector'].includes(r))) return 'inbox.html';
   return 'index.html';
 }
 
