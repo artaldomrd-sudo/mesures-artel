@@ -91,6 +91,9 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   la herramienta principal para fachadas desde 2026-08. Ver sección propia más abajo.
 - **Plegables** (`type:'pleg'`, `categoria:'plegable'`, botón único "Puerta / Ventana Plegable",
   2026-09-14): puertas/ventanas acordeón. Ver sección propia "Plegables (acordeón)" más abajo.
+- **Mosquiteras** (`type:'mosq'`, `categoria:'mosquitera'`, botón único "Mosquitera", 2026-09-22):
+  solo tela / fija P92 / corredera P92-E70 / deslizante plisada (Zacundo Systems). Ver sección
+  propia "Mosquiteras" más abajo.
 - **Especial**: dibujo libre / **CAD** ("Fachada Libre (CAD)", `type:'draw'`): lienzo donde se
   insertan módulos que se pegan con imán (vidrio con vidrio). **DESHABILITADO en el menú desde
   2026-09-14** (pedido del usuario: la Fachada Compuesta lo reemplaza; el botón queda con
@@ -1033,6 +1036,51 @@ selectores". El usuario mandará más datos/series; por ahora solo E63.
 - Partes de fábrica `PARTES_SETS.plegable` (Marco/Riel, Hojas, Vidrios, Bisagras/Carros/Cierres);
   etapas de instalación = las del galandaje (`getStageSetKey`). `verify.mjs`: 6 esquemas × 3
   combinaciones + regla de hoja máx. + celda de fachada (RENDER OK: 154).
+
+## Mosquiteras — `type:'mosq'`, `categoria:'mosquitera'` (2026-09-22)
+
+Pedido del usuario: "un módulo llamado mosquiteras: mosquitera (solo tela), mosquitera fija (perfil
+P92), mosquitera (corredera) P92 o E70 y mosquitera deslizante (Zacundo Systems)". Mismo patrón que el
+plegable: UN botón "Mosquitera" en el menú lateral y el tipo se elige en el menú de la tarjeta. Sin
+vidrio (los campos `vidrio`/`espesor` quedan vacíos y no se leen). Todo vive en el bloque
+"MOSQUITERAS" del `<script>` clásico (justo antes de `renderCortina`); `verify.mjs` lo cubre.
+
+- **Modelo**: `mosq_tipo` ∈ `MOSQ_TIPOS` (`tela` default | `fija` | `corredera` | `deslizante`),
+  `mosq_tela` (`MOSQ_TELAS`: fibra de vidrio / malla de aluminio / Pet Screen / plisada — la plisada
+  SOLO en deslizante y las otras tres solo en los demás), `mosq_tela_color` (gris/negro/blanco; da el
+  color de la rejilla del dibujo), `mosq_hojas` 1|2 (solo corredera/deslizante), `mosq_fijacion`
+  (`MOSQ_FIJACION`: tela → velcro/imán/cinta adhesiva; fija → clips/tornillos/imán; los móviles no
+  llevan), `tipo_aluminio` = serie (`P92`/`E70` solo en corredera; `mosqSerie(state)` devuelve P92 en
+  fija y "Zacundo Systems" en deslizante), `color_perfil`/`color_ral` (acabado; oculto en solo tela),
+  `orientacion` = lado de la HOJA (corredera) o hacia dónde se RECOGE (deslizante). Helpers:
+  `mosqTipo`, `mosqMovil`, `mosqHojas`, `mosqSerie`, `mosqLayout` (caja proporcional 80×44, top 8,
+  centrada en x=50, como el resto de los ítems a escala).
+- **Cambiar el tipo** (`updateState('mosq_tipo')`, bloque dedicado antes del genérico): ajusta serie,
+  tela y fijación a lo que admite el tipo nuevo y regenera el menú (`mosq_tipo` está en la lista de
+  claves que regeneran opciones). `refreshMosqUI(id)` (al crear y al cambiar tipo) oculta el toggle
+  IZQ/DER en tela/fija y le pone el texto "HOJA A LA…" (corredera) o "RECOGE A LA…" (deslizante).
+- **Dibujo `renderMosquitera(state, uid)`** (despachado en `renderSVG` antes del CAD, con
+  `applyFinish` para el perfil): la tela es un `<pattern>` de rejilla (`mesh-${uid}`, color de la tela)
+  sobre fondo claro; el perfil es una banda maciza `evenodd` con los placeholders `#0A3D62/#0d3f5f`.
+  Solo tela = malla con ribete gris oscuro (velcro = línea punteada interior; imán = cuadraditos en el
+  perímetro). Fija = perfil P92 + marcas de clips (cuadrados) / tornillos (círculos) / imán. Corredera
+  = marco con riel arriba/abajo, hoja(s) de MEDIO marco con perfil propio, ruedas y flecha hacia donde
+  corre (1 hoja del lado de `orientacion`; 2 hojas se cruzan al centro) + planta con 2 rieles (ventana
+  punteado, mosquitera exterior). Deslizante = guías/postes + tela plisada en zigzag (líneas verticales
+  alternadas) con barra de tiro en el borde libre y flecha hacia donde se recoge (2 hojas = dos
+  paquetes que cierran al centro) + planta con una guía y la tela en zigzag. Cotas `dimLineH`/`dimLineV`
+  como el resto; etiqueta del tipo bajo la elevación; la planta va en `PT = y0+H+22` (título en
+  PT−11.5, para no pisar la etiqueta). **Supuestos propios a confirmar con el usuario**: la corredera
+  se mide como MARCO y cada hoja es ≈ ancho/2; la deslizante Zacundo se dibuja como plisada lateral
+  sin riel de suelo (no hay ficha técnica todavía).
+- **Resumen/PDF** (`generateSummary`, rama propia con `return` temprano, como cortina): "MOSQUITERA —
+  A × H | Cant" + Tipo (y serie), Tela · color, Acabado del perfil (no en tela), Hojas/lado (corredera:
+  "hoja a la derecha, corre hacia la izquierda · cada hoja ≈ 450 × 1400 mm (medio marco) · va en el riel
+  exterior"; deslizante: "se recoge a la izquierda · guías arriba/abajo, sin riel de suelo"), Fijación.
+- Partes de fábrica `PARTES_SETS.mosquitera` (Marco/Perfil, Tela, Accesorios); etapas de instalación
+  `STAGE_SETS.mosquitera` (`getStageSetKey('mosq')`). `getCatName('mosq')` = "Mosquitera". No está en
+  la Fachada Compuesta ni en el CAD. `verify.mjs`: 4 tipos × 1/2 hojas × izq/der + sin medidas
+  (RENDER OK: 205).
 
 ## Baranda: consumibles de instalación (resina y tornillos, 2026-09-07)
 
@@ -2439,5 +2487,11 @@ completo y decisiones en `ops/inbox-DISEÑO.md`** (leerlo antes de tocar el mód
 - Los mensajes usan el modelo unificado en inglés (`direction`, `sender_type`, `is_internal_note`…);
   el resto del módulo va en español como la plataforma. Nunca simular WhatsApp: si la API no lo
   permite (foto de perfil, borrar/editar enviados, grupos, "escribiendo" del cliente) se dice.
+- **Coexistencia (decisión 2026-09-22)**: el número sigue en la app del teléfono. Webhook: `smb_message_echoes`
+  → `ecoWA` (saliente «📱 App del teléfono», sin reglas/IA), `history` → `historialWA` (set+merge por trozos,
+  `metadata.historial=true` → `inboxMensajeNuevo` lo ignora), `smb_app_state_sync` → `agendaWA`.
+  `inboxSincronizarApp` (solo Owner) pide historial/agenda a Meta; botón en Configuración → Canales.
+- Canales: WhatsApp e Instagram implementados (Instagram requiere App Review). Email/Messenger/web
+  chat/SMS SOLO diseñados, no funcionan todavía.
 - `verify.mjs` no cubre nada de esto. Comprobar sintaxis con `node --check functions/inbox.js` y el
   extractor de `<script type="module">` (scratch `check-html.mjs`); probar la UI con `?demo=1`.

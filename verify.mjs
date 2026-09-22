@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'pleg'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'pleg', 'mosq'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -113,6 +113,12 @@ for (const t of ['door_abat', 'win_abat', 'win_ob']) for (const hp of ['izq', 'd
   try { ctx.__render('card1', { type: t, categoria: 'ventana', ancho: 1600, alto: 2200, orientacion: o, apertura: 'adentro_2', hoja_principal: hp, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
   catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }
 }
+// Mosquiteras: 4 tipos × 1/2 hojas × izq/der, más una sin medidas (caja completa)
+for (const t of ['tela', 'fija', 'corredera', 'deslizante']) for (const h of [1, 2]) for (const o of ['I', 'D']) {
+  try { ctx.__render('card1', { type: 'mosq', categoria: 'mosquitera', ancho: h === 2 ? 1800 : 900, alto: 1400, orientacion: o, mosq_tipo: t, mosq_hojas: h, mosq_tela: t === 'deslizante' ? 'plisada' : 'fibra', mosq_tela_color: 'negro', mosq_fijacion: t === 'tela' ? 'iman' : 'clips', tipo_aluminio: 'E70', color_perfil: 'negro' }); ok++; }
+  catch (e) { fail++; console.error(`  mosquitera ${t} ${h}h/${o}:`, e.message); }
+}
+try { ctx.__render('card1', { type: 'mosq', categoria: 'mosquitera', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  mosquitera sin medidas:', e.message); }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
 for (const esq of ['330', '431', '550', '633', '651', '660', '761', '770', '844', '871', '880', '981', '990', '1055']) {
