@@ -145,6 +145,16 @@
         <input type="text" id="c-titulo" placeholder="Ej. Inducción del instalador">
         <label>Descripción</label>
         <textarea id="c-desc" style="min-height:70px" placeholder="De qué trata este curso…"></textarea>
+        <label>Para quién <span style="font-weight:normal;color:#889">— sin marcar = todo el equipo</span></label>
+        <div id="c-roles" style="display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0 8px;font-size:13.5px;">
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="instalador"> Instaladores</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="ayudante"> Ayudantes</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="chofer"> Chofer</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="cotizaciones"> Cotizaciones / oficina</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="contable"> Contable</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="comunicaciones"> Comunicaciones</label>
+            <label class="chk-line" style="margin:0"><input type="checkbox" value="admin"> Solo gerencia</label>
+        </div>
         <div class="chk-line"><input type="checkbox" id="c-publicado" checked><label for="c-publicado">Publicado (visible para el equipo)</label></div>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar('modal-curso')">Cancelar</button>
@@ -251,7 +261,8 @@
     const cursoById = (id) => cursos.find(c => c.id === id) || null;
     const leccionById = (id) => lecciones.find(l => l.id === id) || null;
     const leccionesDe = (cursoId) => lecciones.filter(l => l.cursoId === cursoId).sort((a, b) => (a.orden || 0) - (b.orden || 0));
-    const cursosVisibles = () => cursos.filter(c => esAutor || c.publicado !== false).sort((a, b) => (a.orden || 0) - (b.orden || 0) || String(a.titulo || '').localeCompare(String(b.titulo || ''), 'es'));
+    const paraMi = (c) => !Array.isArray(c.roles) || !c.roles.length || c.roles.some(r => usuario.roles.includes(r)) || usuario.roles.includes('lector');
+    const cursosVisibles = () => cursos.filter(c => esAutor || (c.publicado !== false && paraMi(c))).sort((a, b) => (a.orden || 0) - (b.orden || 0) || String(a.titulo || '').localeCompare(String(b.titulo || ''), 'es'));
     // Mi progreso de un curso: Set de leccionId completadas.
     function completadasDe(cursoId) {
         const p = progreso.find(x => x.id === miClave + '__' + cursoId);
@@ -318,6 +329,7 @@
                 <div class="emoji">${esc(c.emoji || '🎓')}</div>
                 <div class="ttl">${esc(c.titulo || 'Curso')}</div>
                 ${c.descripcion ? `<div class="desc">${esc(c.descripcion)}</div>` : ''}
+                ${esAutor && Array.isArray(c.roles) && c.roles.length ? `<span class="cat">👥 ${esc(c.roles.join(', '))}</span>` : ''}
                 ${esGuia ? `<div class="prog-txt" style="margin-top:8px">${total} tema(s)</div>` : `<div class="prog"><div class="prog-bar"><span style="width:${pct}%"></span></div><div class="prog-txt">${hechas}/${total} lecciones${pct === 100 && total ? ' · completado ✓' : ''}</div></div>`}
             </div>`;
         };
@@ -576,6 +588,7 @@
         document.getElementById('c-titulo').value = '';
         document.getElementById('c-desc').value = '';
         document.getElementById('c-publicado').checked = true;
+        document.querySelectorAll('#c-roles input').forEach(i => i.checked = false);
         document.getElementById('modal-curso').classList.add('show');
     };
     window.abrirEditarCurso = function (id) {
@@ -587,6 +600,7 @@
         document.getElementById('c-titulo').value = c.titulo || '';
         document.getElementById('c-desc').value = c.descripcion || '';
         document.getElementById('c-publicado').checked = c.publicado !== false;
+        document.querySelectorAll('#c-roles input').forEach(i => i.checked = Array.isArray(c.roles) && c.roles.includes(i.value));
         document.getElementById('modal-curso').classList.add('show');
     };
     window.guardarCurso = async function () {
@@ -596,7 +610,8 @@
             titulo, emoji: document.getElementById('c-emoji').value.trim() || '🎓',
             categoria: document.getElementById('c-categoria').value.trim(),
             descripcion: document.getElementById('c-desc').value.trim(),
-            publicado: document.getElementById('c-publicado').checked
+            publicado: document.getElementById('c-publicado').checked,
+            roles: Array.from(document.querySelectorAll('#c-roles input:checked')).map(i => i.value)
         };
         const btn = document.querySelector('#modal-curso .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
         try {
