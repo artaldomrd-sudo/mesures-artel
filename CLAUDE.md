@@ -2275,6 +2275,17 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   obra + viajes + total + acumulado), manda un mensaje interno (`mensajes`, remitente "Sistema ARTAL") a los admins
   activos con push y enlace `historial.html?cliente=&obra=` (Historial abre la carpeta sola y muestra los informes
   dentro). `obraKey` = norm(cliente)|norm(obra) (misma normalización en parte-diario, chofer y la función).
+- **Regla única de "misma obra"** (`ops/obras-util.js` ↔ `mismaObra()` en functions/index.js; si cambia una, cambiar la
+  otra): mismo cliente y nombre igual / prefijo / ≥ 2 palabras significativas en común con el mismo número si lo hay.
+  La usan el informe de cierre (partes, viajes, informes previos, pedidos), Historial (`mismoProyecto`, regla 3) y
+  Costo de obras (filas por proyecto, "incluye: …"). Caso real 2026-09-22: "Villa 11 barandas" vs "ALTEA VILLA 11
+  barandas/ventanas" dejaba el informe en 0. **Presentación**: el mensaje a gerencia es un resumen de 6 líneas con
+  enlace a `ops/informe-obra.html?id={instalacionId}` (tiles mano de obra / transporte / total, tablas por persona,
+  día, viaje y pedidos, avisos de qué faltó y "↻ Recalcular" → `informeObraRecalcular`, admin/contable; borra el
+  mensaje anterior y regenera). `informesObra` guarda `obrasIncluidas`, `otrasObrasCliente`, `resumen`, `detalleTexto`.
+  **Deploy de functions**: el módulo Inbox exige los secretos `WHATSAPP_*` (creados con valor `PENDIENTE` el
+  2026-09-22 hasta que se configure Meta) y `WHATSAPP_GRAPH_VERSION` en `functions/.env`; sin eso el deploy
+  no-interactivo aborta — leer el log y confirmar `EXIT 0` antes de depender de un deploy.
 - **Bloqueo por parte pendiente** (`ops/parte-gate.js` desde `requireAuth`): ventana de 7 días laborables, hoy cuenta
   desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
   `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige hasta 3 días atrás, pero un día pendiente de esa ventana

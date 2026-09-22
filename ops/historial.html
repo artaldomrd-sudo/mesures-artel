@@ -117,6 +117,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
     import { collection, doc, deleteDoc, updateDoc, writeBatch, onSnapshot, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { mismaObra } from './obras-util.js';   // regla única de "misma obra" (igual que el informe de cierre y Costo de obras)
     import { openOrderPreview } from './order-preview.js';
     import { buildClientMap, clientList } from './clients.js';
     window.openOrderPreview = openOrderPreview;
@@ -718,7 +719,7 @@
                 👷 Mano de obra ${fmtRDh(mo.costo)} (${mo.horas || 0} h · ${mo.diasPersona || 0} días-persona${(mo.personas || []).length ? ': ' + esc(mo.personas.map(p => p.nombre.split(' ')[0] + ' ' + p.horas + 'h').join(', ')) : ''}) ·
                 🚚 Transporte ${fmtRDh(tr.costo)} (${tr.viajes || 0} viaje(s)) · <b>Total ${fmtRDh(i.total)}</b>${(mo.sinCosto || []).length ? ' · ⚠️ sin costo/hora: ' + esc(mo.sinCosto.join(', ')) : ''}
             </div>`; }).join('')}
-            <div class="doc-links" style="margin-top:6px"><a href="contabilidad-obras.html">Ver en Contabilidad → Costo de obras</a></div>
+            <div class="doc-links" style="margin-top:6px">${I.map(i => `<a href="informe-obra.html?id=${encodeURIComponent(i.id)}">📄 Informe nº ${i.numero || 1} completo</a>`).join('')}<a href="contabilidad-obras.html">Ver en Contabilidad → Costo de obras</a></div>
         </div>`;
     }
     // Apertura directa de una carpeta desde un enlace: historial.html?cliente=…&obra=…
@@ -993,10 +994,15 @@
         const larga = wa.length <= wb.length ? wb : wa;
         if (corta.every((palabra, i) => palabra === larga[i])) return true;
         if (wa.length === wb.length && wa.length >= 3) {
-            for (let i = 0; i < wa.length - 1; i++) if (wa[i] !== wb[i]) return false;
-            return true;
+            let ok = true;
+            for (let i = 0; i < wa.length - 1; i++) if (wa[i] !== wb[i]) { ok = false; break; }
+            if (ok) return true;
         }
-        return false;
+        //  3. Regla compartida con el informe de cierre y Costo de obras (obras-util.js): ≥ 2 palabras
+        //     significativas en común y, si ambas traen número, el mismo — "Villa 11 barandas" +
+        //     "ALTEA VILLA 11 ventanas" son la misma villa (caso real 2026-09-22). Así la carpeta de
+        //     Historial, el informe y el costo agrupan exactamente igual.
+        return mismaObra('x', wa.join(' '), 'x', wb.join(' '));
     }
 
     // Junta, DENTRO de un mismo cliente, las obras que son el mismo proyecto según

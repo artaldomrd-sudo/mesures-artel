@@ -75,6 +75,7 @@ export const PAGINAS = [
     { id: "contabilidad-presupuesto.html", titulo: "Presupuesto vs Real", grupo: "contabilidad", roles: ["contable"], desc: "Presupuesto por categoría comparado con lo real del período." },
     { id: "contabilidad-reportes.html", titulo: "Reportes de Contabilidad", grupo: "contabilidad", roles: ["contable"], desc: "Reportes de gestión: resultados, por categoría, por centro de costo." },
     { id: "contabilidad-obras.html", titulo: "Costo de obras", grupo: "contabilidad", roles: ["contable"], desc: "Costo real de cada obra: horas y mano de obra de los partes diarios, viajes del camión e informes de cierre por trabajo; por persona." },
+    { id: "informe-obra.html", titulo: "Informe de costo de obra", grupo: "contabilidad", roles: ["contable"], desc: "Informe de costo real de una obra al completar la instalación: mano de obra por persona y día, viajes del camión, total; recalcular." },
     { id: "rrhh-asistencia.html", titulo: "Asistencia y Permisos", grupo: "rrhh", roles: [], desc: "Asistencia diaria (presente, tarde, ausente, permiso), solicitudes de permiso, turnos y feriados." },
     { id: "rrhh-catalogos.html", titulo: "Catálogos RRHH", grupo: "rrhh", roles: [], desc: "Departamentos, cargos y sucursales para las fichas de empleados." },
     { id: "rrhh-ciclo.html", titulo: "Ciclo del empleado", grupo: "rrhh", roles: [], desc: "Ciclo del empleado: promociones, amonestaciones, salidas y su historial." },

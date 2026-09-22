@@ -89,6 +89,7 @@
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
     import { collection, onSnapshot, doc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { mismaObra, agruparObras } from './obras-util.js';   // misma regla que el informe de cierre e Historial
 
     const usuario = await requireAuth(['contable']);
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -141,27 +142,38 @@
         });
         return out;
     }
-    // Transporte por obra en el período: parte del costo de cada viaje que le tocó a esa obra.
-    function transportePorObra(enPeriodo) {
-        const m = new Map();
-        viajes.filter(v => enPeriodo(v.fecha)).forEach(v => (v.obras || []).forEach(o => { const c = m.get(o.obraKey) || { costo: 0, viajes: 0, label: [o.cliente, o.obra].filter(Boolean).join(' — ') }; c.costo += n2(o.costo); c.viajes++; m.set(o.obraKey, c); }));
-        return m;
+    // Proyectos del período: une con la regla compartida ("misma obra") los nombres distintos de una misma
+    // obra en partes y viajes — "Villa 11 barandas" + "ALTEA VILLA 11 ventanas" son una sola fila.
+    const clienteDeKey = (k) => String(k || '').split('|')[0];
+    function proyectosDe(enP) {
+        const vistos = new Map();
+        lineasCosteadas(enP).forEach(l => { if (l.tipo === 'obra' && l.obraKey && !vistos.has(l.obraKey)) { const lab = l.obraLabel || l.obraKey; const i = lab.indexOf(' — '); vistos.set(l.obraKey, { key: l.obraKey, cliente: i > 0 ? lab.slice(0, i) : clienteDeKey(l.obraKey), obra: i > 0 ? lab.slice(i + 3) : String(l.obraKey).split('|')[1] || '' }); } });
+        viajes.filter(v => enP(v.fecha)).forEach(v => (v.obras || []).forEach(o => { if (o.obraKey && !vistos.has(o.obraKey)) vistos.set(o.obraKey, { key: o.obraKey, cliente: o.cliente || '', obra: o.obra || '' }); }));
+        const grupos = agruparObras([...vistos.values()]);
+        const deKey = new Map(); grupos.forEach((g, gi) => { g.id = 'p' + gi; g.keys = new Set(g.items.map(x => x.key)); g.label = [g.cliente, g.obra].filter(Boolean).join(' — '); g.items.forEach(x => deKey.set(x.key, g)); });
+        return { grupos, deKey };
     }
-
-    let obraAbierta = null;
+    let obraAbierta = null;   // id del proyecto abierto
+    let proyectosCache = { grupos: [], deKey: new Map() };
     function renderObras() {
-        const enP = filtro(), L = lineasCosteadas(enP), jornada = n2(config.horasJornada) || 8, T = transportePorObra(enP);
+        const enP = filtro(), L = lineasCosteadas(enP), jornada = n2(config.horasJornada) || 8;
+        proyectosCache = proyectosDe(enP); const { grupos, deKey } = proyectosCache;
         const g = new Map();
         L.forEach(l => {
-            const k = l.tipo === 'obra' ? (l.obraKey || '(sin obra)') : ('__' + l.tipo);
-            const c = g.get(k) || { k, esObra: l.tipo === 'obra', label: l.tipo === 'obra' ? (l.obraLabel || l.obraKey || '(obra sin nombre)') : tipoLabel(l.tipo), horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: l.fecha, hasta: l.fecha, sinCosto: false };
+            const proy = l.tipo === 'obra' ? deKey.get(l.obraKey) : null;
+            const k = l.tipo === 'obra' ? (proy ? proy.id : '(sin obra)') : ('__' + l.tipo);
+            const c = g.get(k) || { k, esObra: l.tipo === 'obra', label: l.tipo === 'obra' ? (proy ? proy.label : '(obra sin nombre)') : tipoLabel(l.tipo), nombres: proy ? proy.nombres : [], horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: l.fecha, hasta: l.fecha, sinCosto: false, transporte: 0, viajes: 0 };
             if (l.tipo === 'ausente') { g.set(k, c); return; }
             c.horas += n2(l.horas); c.extras += l.horasExtra; c.costo += l.costo; c.personas.add(l.nombre); c.dias.add(l.fecha);
             if (l.fecha < c.desde) c.desde = l.fecha; if (l.fecha > c.hasta) c.hasta = l.fecha; if (l.sinCosto) c.sinCosto = true; g.set(k, c);
         });
-        // Obras con viajes pero sin horas también cuentan.
-        T.forEach((t, k) => { if (!g.has(k)) g.set(k, { k, esObra: true, label: t.label, horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: '', hasta: '', sinCosto: false }); });
-        const rows = [...g.values()].map(r => { const t = r.esObra ? (T.get(r.k) || { costo: 0, viajes: 0 }) : { costo: 0, viajes: 0 }; return { ...r, transporte: t.costo, viajes: t.viajes, total: r.costo + t.costo }; })
+        // Transporte: la parte de cada viaje que le tocó a cada proyecto (con la misma regla de "misma obra").
+        viajes.filter(v => enP(v.fecha)).forEach(v => (v.obras || []).forEach(o => {
+            const proy = deKey.get(o.obraKey); if (!proy) return;
+            const c = g.get(proy.id) || { k: proy.id, esObra: true, label: proy.label, nombres: proy.nombres, horas: 0, extras: 0, costo: 0, personas: new Set(), dias: new Set(), desde: '', hasta: '', sinCosto: false, transporte: 0, viajes: 0 };
+            c.transporte += n2(o.costo); c.viajes++; g.set(proy.id, c);
+        }));
+        const rows = [...g.values()].map(r => ({ ...r, total: r.costo + r.transporte }))
             .filter(r => r.horas > 0 || r.transporte > 0).sort((a, b) => (b.esObra - a.esObra) || (b.total - a.total));
         const totObra = rows.filter(r => r.esObra).reduce((s, r) => s + r.costo, 0), totGen = rows.filter(r => !r.esObra).reduce((s, r) => s + r.costo, 0), totTr = rows.reduce((s, r) => s + r.transporte, 0);
         document.getElementById('o-kpis').innerHTML = `<div class="kpi"><div class="v">${rows.filter(r => r.esObra).length}</div><div class="l">obras con horas o viajes</div></div>
@@ -170,21 +182,23 @@
             <div class="kpi"><div class="v">${fmtRD(totGen)}</div><div class="l">costo general (taller, almacén, transporte de compras…)</div></div>
             <div class="kpi"><div class="v">${Math.round(rows.reduce((s, r) => s + r.horas, 0))} h</div><div class="l">horas reportadas</div></div>`;
         document.getElementById('o-tabla').innerHTML = rows.length ? `<table class="rep"><thead><tr><th class="txt">Obra / actividad</th><th class="n">Días-persona</th><th class="n">Horas</th><th class="n">Mano de obra</th><th class="n">Transporte</th><th class="n">Total</th><th class="txt">Personas</th><th class="per">Período</th></tr></thead><tbody>
-            ${rows.map(r => `<tr><td class="txt">${r.esObra ? `<span class="obra-link" onclick="verObra('${esc(r.k)}')">${esc(r.label)}</span>` : esc(r.label)}${r.sinCosto ? ' <span class="hint" title="Alguna persona no tiene costo por día en RRHH → Empleados">⚠️ sin costo</span>' : ''}</td><td class="n">${(r.horas / jornada).toFixed(1)}</td><td class="n">${r.horas}${r.extras ? ` <span class="hint">(+${r.extras.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(r.costo)}</td><td class="n">${r.transporte ? fmtRD(r.transporte) + ` <span class="hint">(${r.viajes})</span>` : '—'}</td><td class="n"><b>${fmtRD(r.total)}</b></td><td class="txt">${esc([...r.personas].join(', '))}</td><td class="per">${r.desde ? `<span style="white-space:nowrap">${esc(fmtFecha(r.desde))}${r.desde !== r.hasta ? ' → ' + esc(fmtFecha(r.hasta)) : ''}</span> · ${r.dias.size} día(s)` : '—'}</td></tr>`).join('')}
+            ${rows.map(r => `<tr><td class="txt">${r.esObra ? `<span class="obra-link" onclick="verObra('${esc(r.k)}')">${esc(r.label)}</span>` : esc(r.label)}${r.sinCosto ? ' <span class="hint" title="Alguna persona no tiene costo por día en RRHH → Empleados">⚠️ sin costo</span>' : ''}${(r.nombres || []).length > 1 ? `<div class="hint">incluye: ${esc(r.nombres.join(' · '))}</div>` : ''}</td><td class="n">${(r.horas / jornada).toFixed(1)}</td><td class="n">${r.horas}${r.extras ? ` <span class="hint">(+${r.extras.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(r.costo)}</td><td class="n">${r.transporte ? fmtRD(r.transporte) + ` <span class="hint">(${r.viajes})</span>` : '—'}</td><td class="n"><b>${fmtRD(r.total)}</b></td><td class="txt">${esc([...r.personas].join(', '))}</td><td class="per">${r.desde ? `<span style="white-space:nowrap">${esc(fmtFecha(r.desde))}${r.desde !== r.hasta ? ' → ' + esc(fmtFecha(r.hasta)) : ''}</span> · ${r.dias.size} día(s)` : '—'}</td></tr>`).join('')}
             <tr class="tot"><td>Total</td><td class="n">${(rows.reduce((s, r) => s + r.horas, 0) / jornada).toFixed(1)}</td><td class="n">${rows.reduce((s, r) => s + r.horas, 0)}</td><td class="n">${fmtRD(totObra + totGen)}</td><td class="n">${fmtRD(totTr)}</td><td class="n">${fmtRD(totObra + totGen + totTr)}</td><td></td><td></td></tr></tbody></table>`
             : '<p class="hint">No hay partes ni viajes en este período.</p>';
         const det = document.getElementById('o-detalle');
         if (!obraAbierta) { det.innerHTML = ''; return; }
-        const D = L.filter(l => l.tipo === 'obra' && l.obraKey === obraAbierta).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
-        const V = viajes.filter(v => enP(v.fecha) && (v.obrasKeys || []).includes(obraAbierta)).sort((a, b) => a.fecha.localeCompare(b.fecha));
-        const I = informes.filter(i => i.obraKey === obraAbierta).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
-        const label = (D[0] && D[0].obraLabel) || (V[0] && (V[0].obras || []).find(o => o.obraKey === obraAbierta) && [(V[0].obras.find(o => o.obraKey === obraAbierta)).cliente, (V[0].obras.find(o => o.obraKey === obraAbierta)).obra].join(' — ')) || obraAbierta;
+        const proy = grupos.find(x => x.id === obraAbierta); if (!proy) { det.innerHTML = ''; return; }
+        const D = L.filter(l => l.tipo === 'obra' && proy.keys.has(l.obraKey)).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre));
+        const V = viajes.filter(v => enP(v.fecha) && (v.obras || []).some(o => proy.keys.has(o.obraKey))).sort((a, b) => a.fecha.localeCompare(b.fecha));
+        const I = informes.filter(i => mismaObra(i.cliente, i.obra, proy.cliente, proy.obra)).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
+        const label = proy.label;
         det.innerHTML = `<h2 class="sec">Detalle: ${esc(label)} <button class="link-btn" onclick="verObra(null)">cerrar</button></h2>
+            ${proy.nombres.length > 1 ? `<p class="hint">Agrupa los partes y viajes registrados como: ${esc(proy.nombres.join(' · '))}</p>` : ''}
             ${D.length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th class="txt">Persona</th><th class="n">Horas</th><th class="n">Costo</th><th class="txt">Encargado</th></tr></thead><tbody>
-            ${D.map(l => `<tr><td style="white-space:nowrap">${esc(fmtFecha(l.fecha))}</td><td class="txt">${esc(l.nombre)}</td><td class="n">${l.horas}${l.horasExtra ? ` <span class="hint">(+${l.horasExtra.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(l.costo)}</td><td class="txt">${esc(l.encargado)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">Sin horas en este período.</p>'}
+            ${D.map(l => `<tr><td style="white-space:nowrap">${esc(fmtFecha(l.fecha))}</td><td class="txt">${esc(l.nombre)}${proy.nombres.length > 1 ? `<div class="hint">${esc((l.obraLabel || '').split(' — ').slice(1).join(' — ') || l.obraLabel)}</div>` : ''}</td><td class="n">${l.horas}${l.horasExtra ? ` <span class="hint">(+${l.horasExtra.toFixed(1)} extra)</span>` : ''}</td><td class="n">${fmtRD(l.costo)}</td><td class="txt">${esc(l.encargado)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">Sin horas en este período.</p>'}
             <h2 class="sec">🚚 Viajes del camión con esta obra a bordo</h2>
             ${V.length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th class="txt">Vehículo · recorrido</th><th class="n">Km</th><th class="n">Costo del viaje</th><th class="n">Obras a bordo</th><th class="n">Le toca a esta obra</th><th>Chofer</th></tr></thead><tbody>
-            ${V.map(v => { const o = (v.obras || []).find(x => x.obraKey === obraAbierta) || {}; return `<tr><td style="white-space:nowrap">${esc(fmtFecha(v.fecha))}</td><td class="txt">${esc(v.vehiculoNombre || v.vehiculoId)} · ${esc(v.rutaNombre || '')}</td><td class="n">${Math.round(n2(v.kmTot))}</td><td class="n">${fmtRD(v.costoTotal)}</td><td class="n">${(v.obras || []).length}</td><td class="n"><b>${fmtRD(o.costo)}</b></td><td>${esc(v.choferNombre || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="hint">Sin viajes registrados en este período.</p>'}
+            ${V.map(v => { const o = (v.obras || []).find(x => proy.keys.has(x.obraKey)) || {}; return `<tr><td style="white-space:nowrap">${esc(fmtFecha(v.fecha))}</td><td class="txt">${esc(v.vehiculoNombre || v.vehiculoId)} · ${esc(v.rutaNombre || '')}</td><td class="n">${Math.round(n2(v.kmTot))}</td><td class="n">${fmtRD(v.costoTotal)}</td><td class="n">${(v.obras || []).length}</td><td class="n"><b>${fmtRD(o.costo)}</b></td><td>${esc(v.choferNombre || '')}</td></tr>`; }).join('')}</tbody></table></div>` : '<p class="hint">Sin viajes registrados en este período.</p>'}
             ${I.length ? `<h2 class="sec">📋 Informes de cierre de esta obra</h2>${I.map(informeHTML).join('')}` : ''}`;
     }
     window.verObra = function (k) { obraAbierta = k; renderObras(); if (k) document.getElementById('o-detalle').scrollIntoView({ behavior: 'smooth' }); };
@@ -213,7 +227,7 @@
             <details><summary>Ver detalle</summary>
                 ${(mo.personas || []).length ? `<ul>${mo.personas.map(p => `<li>${esc(p.nombre)}: ${p.horas} h en ${p.dias} día(s) → ${fmtRD(p.costo)}</li>`).join('')}</ul>` : '<div class="hint">Sin horas en los partes diarios.</div>'}
                 ${(tr.detalle || []).length ? `<ul>${tr.detalle.map(v => `<li>${fD(v.fecha)} ${esc(v.vehiculo)}${v.ruta ? ' · ' + esc(v.ruta) : ''} → ${fmtRD(v.costo)}${v.obrasEnViaje > 1 ? ' (viaje de ' + fmtRD(v.costoViaje) + ' entre ' + v.obrasEnViaje + ' obras)' : ''}</li>`).join('')}</ul>` : '<div class="hint">Sin viajes con esta obra a bordo.</div>'}
-                <div style="margin-top:6px"><a href="historial.html?cliente=${encodeURIComponent(i.cliente || '')}&obra=${encodeURIComponent(i.obra || '')}">📁 Ver carpeta de la obra en Historial</a></div>
+                <div style="margin-top:6px"><a href="informe-obra.html?id=${encodeURIComponent(i.id)}"><b>📄 Ver informe completo</b></a> · <a href="historial.html?cliente=${encodeURIComponent(i.cliente || '')}&obra=${encodeURIComponent(i.obra || '')}">📁 Carpeta de la obra en Historial</a></div>
             </details></div>`;
     }
     function renderInformes() {

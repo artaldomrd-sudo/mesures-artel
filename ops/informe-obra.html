@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Informe de costo de obra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 820px; }
+    .cab { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 12px; }
+    .cab h2 { margin: 0; font-size: 20px; color: var(--artal-blue); }
+    .cab .sub { font-size: 13.5px; color: #556; margin-top: 4px; line-height: 1.5; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .tile { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; border-top: 4px solid var(--artal-blue); }
+    .tile.total { border-top-color: #1f9d61; background: #f2faf5; }
+    .tile.warn { border-top-color: #e67e22; }
+    .tile .v { font-size: 22px; font-weight: bold; color: var(--artal-blue); }
+    .tile.total .v { color: #1f9d61; }
+    .tile .l { font-size: 12px; color: #667; margin-top: 2px; line-height: 1.4; }
+    .aviso { background: #fff2dc; border-left: 4px solid #e67e22; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; color: #6b4a08; margin-bottom: 10px; line-height: 1.5; }
+    .aviso.rojo { background: #fdeaea; border-left-color: #d9483b; color: #8b1e14; }
+    .aviso.verde { background: #e7f7ee; border-left-color: #1f9d61; color: #145c39; }
+    h3.sec { font-size: 14px; color: var(--artal-blue); margin: 16px 0 6px; }
+    table.rep { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13.5px; }
+    table.rep th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    table.rep td { padding: 8px 10px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+    table.rep tr.tot td { font-weight: bold; background: #f4f6f9; }
+    table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
+    .tabla-wrap { overflow-x: auto; }
+    .acts { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 30px; }
+    .acts a, .acts button { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; text-decoration: none; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
+    .acts button.b { background: var(--artal-blue); color: #fff; }
+    .hint { font-size: 12px; color: #8a93a0; }
+    .empty { color: #8a93a0; font-size: 13.5px; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="contabilidad-obras.html" title="Volver">← Costo de obras</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Informe de costo de obra</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div id="cont"><p class="empty">Cargando informe…</p></div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import './mensajeria-widget.js';
+    import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['contable']);   // gerencia (admin) siempre entra
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (x) => Number(x) || 0;
+    const fmtRD = (n) => 'RD$ ' + (Math.round(n2(n) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fD = (s) => String(s || '').slice(0, 10).split('-').reverse().join('/');
+    const fmtFecha = (s) => { try { return new Date(s + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return s; } };
+    const FN = 'https://us-central1-artal-operaciones.cloudfunctions.net/informeObraRecalcular';
+
+    const id = new URLSearchParams(location.search).get('id') || '';
+    const cont = document.getElementById('cont');
+    if (!id) cont.innerHTML = '<p class="empty">Falta el informe (abre este enlace desde Mensajería, Historial o Costo de obras).</p>';
+    else onSnapshot(doc(db, 'informesObra', id), (s) => { if (!s.exists()) { cont.innerHTML = '<p class="empty">Este informe no existe (o todavía se está generando).</p>'; return; } pintar({ id: s.id, ...s.data() }); }, (e) => { cont.innerHTML = '<p class="empty">Error: ' + esc(e.message) + '</p>'; });
+
+    function pintar(i) {
+        const mo = i.manoObra || {}, tr = i.transporte || {};
+        const sinMO = !n2(mo.horas), sinTr = !n2(tr.viajes);
+        const avisos = [];
+        if (sinMO) avisos.push(`<div class="aviso rojo"><b>⚠ Sin partes diarios para esta obra.</b> No se encontraron horas registradas con el nombre "${esc(i.obra)}" de este cliente${(i.otrasObrasCliente || []).length ? `, pero sí con otros nombres: <b>${esc(i.otrasObrasCliente.map(o => o.nombre + ' (' + o.horas + ' h)').join(' · '))}</b>. Si son la misma obra, corrige el nombre en el parte o en el trabajo y pulsa «Recalcular»` : ''}.</div>`);
+        if (sinTr) avisos.push(`<div class="aviso"><b>⚠ Sin viajes registrados.</b> El costo del camión solo se conoce si el chofer marca "🚚 En ruta" en Transportes eligiendo vehículo y recorrido (y qué obras van a bordo). Cuando registre viajes con esta obra, pulsa «Recalcular».</div>`);
+        if ((mo.sinCosto || []).length) avisos.push(`<div class="aviso"><b>⚠ Personas sin costo por hora en RRHH:</b> ${esc(mo.sinCosto.join(', '))}. Sus horas cuentan, su costo sale en 0 hasta que la ficha tenga sueldo o costo por día.</div>`);
+        const incl = (i.obrasIncluidas || []);
+        cont.innerHTML = `
+            <div class="cab">
+                <h2>🏠 ${esc(i.obraLabel || [i.cliente, i.obra].filter(Boolean).join(' — '))}</h2>
+                <div class="sub">✅ Instalación completada el <b>${fD(i.fechaCierre)}</b>${i.cerradoPor ? ' por <b>' + esc(i.cerradoPor) + '</b>' : ''} · informe nº ${i.numero || 1} de esta obra${i.desde ? ' · cubre desde el ' + fD(i.desde) + ' (después del informe anterior)' : ' · cubre desde el inicio de la obra'}</div>
+            </div>
+            <div class="tiles">
+                <div class="tile ${sinMO ? 'warn' : ''}"><div class="v">${fmtRD(mo.costo)}</div><div class="l">👷 Mano de obra<br>${n2(mo.horas)} h · ${(mo.personas || []).length} persona(s) · ${(mo.dias || []).length} día(s)${n2(mo.horasExtra) ? ' · ' + mo.horasExtra + ' h extra' : ''}</div></div>
+                <div class="tile ${sinTr ? 'warn' : ''}"><div class="v">${fmtRD(tr.costo)}</div><div class="l">🚚 Transporte<br>${n2(tr.viajes)} viaje(s) del camión</div></div>
+                <div class="tile total"><div class="v">${fmtRD(i.total)}</div><div class="l">💰 Total de realización${i.numero > 1 ? '<br>acumulado de la obra ' + fmtRD(i.acumuladoObra) : ''}</div></div>
+            </div>
+            ${avisos.join('')}
+            ${incl.length ? `<div class="aviso verde">Incluye los partes registrados como: <b>${esc(incl.map(o => o.nombre + ' (' + o.horas + ' h)').join(' · '))}</b>.</div>` : ''}
+
+            <h3 class="sec">👷 Por persona</h3>
+            ${(mo.personas || []).length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Persona</th><th class="n">Días</th><th class="n">Horas</th><th class="n">Costo</th></tr></thead><tbody>
+                ${mo.personas.map(p => `<tr><td>${esc(p.nombre)}</td><td class="n">${p.dias}</td><td class="n">${p.horas}</td><td class="n">${fmtRD(p.costo)}</td></tr>`).join('')}
+                <tr class="tot"><td>Total</td><td class="n">${(mo.dias || []).length}</td><td class="n">${n2(mo.horas)}</td><td class="n">${fmtRD(mo.costo)}</td></tr></tbody></table></div>` : '<p class="empty">Sin horas.</p>'}
+
+            <h3 class="sec">📅 Por día</h3>
+            ${(mo.dias || []).length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Día</th><th class="n">Horas del equipo</th></tr></thead><tbody>
+                ${mo.dias.map(d => `<tr><td>${esc(fmtFecha(d.fecha))}</td><td class="n">${d.horas}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Sin días registrados.</p>'}
+
+            <h3 class="sec">🚚 Viajes del camión con esta obra a bordo</h3>
+            ${(tr.detalle || []).length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th>Vehículo · recorrido</th><th class="n">Km</th><th class="n">Costo del viaje</th><th class="n">Obras a bordo</th><th class="n">Le toca a esta obra</th></tr></thead><tbody>
+                ${tr.detalle.map(v => `<tr><td>${esc(fmtFecha(v.fecha))}</td><td>${esc(v.vehiculo)}${v.ruta ? ' · ' + esc(v.ruta) : ''}${v.chofer ? '<br><span class="hint">' + esc(v.chofer) + '</span>' : ''}</td><td class="n">${Math.round(n2(v.kmTot))}</td><td class="n">${fmtRD(v.costoViaje)}</td><td class="n">${v.obrasEnViaje}</td><td class="n"><b>${fmtRD(v.costo)}</b></td></tr>`).join('')}
+                <tr class="tot"><td colspan="5">Total transporte de esta obra</td><td class="n">${fmtRD(tr.costo)}</td></tr></tbody></table></div>` : '<p class="empty">Ningún viaje registrado.</p>'}
+
+            ${(i.pedidos || []).length ? `<h3 class="sec">📦 Pedidos de esta obra</h3><div class="tabla-wrap"><table class="rep"><thead><tr><th>Obra (nombre en el pedido)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
+                ${i.pedidos.map(p => `<tr><td>${esc(p.obra || '')}</td><td>${esc(p.docType)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+
+            <p class="hint" style="margin-top:12px">Mano de obra = horas de los partes diarios × costo por hora de RRHH (horas por encima de 8 al día al 135 %). Transporte = costo del viaje del camión (combustible, desgaste, peajes y fijos del vehículo) repartido a partes iguales entre las obras que iban a bordo. Compara el total con lo cotizado de transporte e instalación en la factura.</p>
+            <div class="acts">
+                <button class="b" id="btn-recalc">↻ Recalcular</button>
+                <a href="historial.html?cliente=${encodeURIComponent(i.cliente || '')}&obra=${encodeURIComponent(i.obra || '')}">📁 Carpeta de la obra en Historial</a>
+                <a href="contabilidad-obras.html">💰 Costo de obras</a>
+            </div>`;
+        document.getElementById('btn-recalc').onclick = recalcular;
+    }
+    async function recalcular() {
+        const btn = document.getElementById('btn-recalc'); btn.disabled = true; btn.textContent = 'Recalculando…';
+        try {
+            const tok = await auth.currentUser.getIdToken();
+            const r = await fetch(FN, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok }, body: JSON.stringify({ instalacionId: id }) });
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || r.status);
+            alert('✓ Informe recalculado y mensaje actualizado en Mensajería.');
+        } catch (e) { alert('No se pudo recalcular: ' + (e && e.message ? e.message : e)); }
+        finally { btn.disabled = false; btn.textContent = '↻ Recalcular'; }
+    }
+</script>
+</body>
+</html>

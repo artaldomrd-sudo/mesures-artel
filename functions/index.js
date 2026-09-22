@@ -2112,6 +2112,25 @@ exports.gastosFijosAutomaticos = onSchedule({ schedule: '30 7 * * *', timeZone: 
 // ============================================================================================
 const normTxtObra = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
 const obraKeyDe = (cliente, obra) => normTxtObra(cliente) + '|' + normTxtObra(obra);
+// ¿Son la misma obra aunque el nombre difiera? (caso real: el trabajo se llamaba "Villa 11 barandas" y los partes
+// "ALTEA VILLA 11 barandas" / "ALTEA VILLA 11 ventanas" → el informe salía en 0). Mismo cliente y, además:
+// nombre igual, o uno es prefijo del otro (regla de Historial), o comparten ≥ 2 palabras significativas y, si los
+// dos traen un número (Villa 11 / Villa 12), el mismo número.
+const STOP_OBRA = new Set(['y', 'de', 'del', 'la', 'el', 'los', 'las', 'en', 'a', 'al', 'con', '—', '-', '–', 'obra', 'proyecto']);
+const palabrasObra = (o) => normTxtObra(o).split(/[^a-z0-9]+/).filter((w) => w && !STOP_OBRA.has(w));
+function mismaObra(cliA, obraA, cliB, obraB) {
+    if (normTxtObra(cliA) !== normTxtObra(cliB)) return false;
+    const a = palabrasObra(obraA), b = palabrasObra(obraB);
+    if (!a.length || !b.length) return a.join(' ') === b.join(' ');
+    if (a.join(' ') === b.join(' ')) return true;
+    const [c, l] = a.length <= b.length ? [a, b] : [b, a];
+    if (c.every((w, i) => l[i] === w)) return true;                       // prefijo
+    const na = a.filter((w) => /^\d+$/.test(w)), nb = b.filter((w) => /^\d+$/.test(w));
+    if (na.length && nb.length && !na.some((n) => nb.includes(n))) return false;   // Villa 11 ≠ Villa 12
+    const comunes = a.filter((w) => b.includes(w));
+    return new Set(comunes).size >= 2;
+}
+const fmtMiles = (n) => Math.round(Number(n) || 0).toLocaleString('es-DO');
 const fmtRD = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtF = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
 
@@ -2119,8 +2138,9 @@ async function generarInformeObra(instId, inst) {
     const cliente = String(inst.cliente || '').trim(), obra = String(inst.obra || '').trim();
     const obraKey = obraKeyDe(cliente, obra);
     const { fecha: hoy } = hoySantoDomingo();
-    // Informe anterior de la misma obra → este cubre desde ahí.
-    const previos = (await db.collection('informesObra').where('obraKey', '==', obraKey).get()).docs.map((d) => d.data());
+    const esMia = (c, o) => mismaObra(cliente, obra, c, o);
+    // Informe anterior de la misma obra (con tolerancia de nombre) → este cubre desde ahí.
+    const previos = (await db.collection('informesObra').get()).docs.map((d) => d.data()).filter((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra));
     const desde = previos.reduce((m, p) => (p.fechaCierre > m ? p.fechaCierre : m), '');
     const acumPrevio = previos.reduce((s, p) => s + (Number(p.total) || 0), 0);
 
@@ -2131,14 +2151,18 @@ async function generarInformeObra(instId, inst) {
 
     // Mano de obra: líneas de partes de esta obra, con la jornada por persona y día (extras al factor).
     const partes = (await db.collection('partesDiarios').get()).docs.map((d) => d.data()).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
-    const personas = {}, dias = {}; let horas = 0, horasExtra = 0, costoMO = 0, sinCosto = [];
+    const personas = {}, dias = {}, obrasIncluidas = {}; let horas = 0, horasExtra = 0, costoMO = 0, sinCosto = [];
+    const otrasObrasCliente = {};   // partes del mismo cliente que NO calzaron (para explicar un 0)
     partes.forEach((p) => {
         const porEmp = {};
         (p.lineas || []).forEach((l) => { (porEmp[l.empleadoId] = porEmp[l.empleadoId] || []).push(l); });
         Object.entries(porEmp).forEach(([empId, ls]) => {
             const tot = ls.reduce((s, l) => s + (Number(l.horas) || 0), 0);
             ls.forEach((l) => {
-                if (l.tipo !== 'obra' || l.obraKey !== obraKey) return;
+                if (l.tipo !== 'obra' || !l.obraKey) return;
+                const [cliL, obraL] = String(l.obraKey).split('|');
+                if (!esMia(cliL, obraL)) { if (normTxtObra(cliL) === normTxtObra(cliente)) otrasObrasCliente[l.obraLabel || l.obraKey] = (otrasObrasCliente[l.obraLabel || l.obraKey] || 0) + (Number(l.horas) || 0); return; }
+                obrasIncluidas[l.obraLabel || l.obraKey] = (obrasIncluidas[l.obraLabel || l.obraKey] || 0) + (Number(l.horas) || 0);
                 const ch = Number(l.costoHora) || costoHoraEmp(empleados[empId]);
                 const h = Number(l.horas) || 0, share = tot > 0 ? h / tot : 0;
                 const norm = Math.min(tot, jornada) * share, ext = Math.max(0, tot - jornada) * share;
@@ -2152,16 +2176,16 @@ async function generarInformeObra(instId, inst) {
         });
     });
     // Transporte: viajes del camión con esta obra a bordo (costo ya repartido entre las obras del viaje).
-    const viajesSnap = await db.collection('viajes').where('obrasKeys', 'array-contains', obraKey).get();
-    const viajes = viajesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((v) => v.fecha && v.fecha > desde && v.fecha <= hoy).sort((a, b) => a.fecha.localeCompare(b.fecha));
-    const detViajes = viajes.map((v) => { const o = (v.obras || []).find((x) => x.obraKey === obraKey) || {}; return { viajeId: v.id, fecha: v.fecha, vehiculo: v.vehiculoNombre || v.vehiculoId || '', ruta: v.rutaNombre || '', kmTot: v.kmTot || 0, costoViaje: v.costoTotal || 0, obrasEnViaje: (v.obras || []).length, costo: Number(o.costo) || 0, chofer: v.choferNombre || '' }; });
+    const viajesSnap = await db.collection('viajes').get();
+    const viajes = viajesSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((v) => v.fecha && v.fecha > desde && v.fecha <= hoy && (v.obras || []).some((o) => esMia(o.cliente, o.obra))).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const detViajes = viajes.map((v) => { const o = (v.obras || []).find((x) => esMia(x.cliente, x.obra)) || {}; return { viajeId: v.id, fecha: v.fecha, vehiculo: v.vehiculoNombre || v.vehiculoId || '', ruta: v.rutaNombre || '', kmTot: v.kmTot || 0, costoViaje: v.costoTotal || 0, obrasEnViaje: (v.obras || []).length, costo: Number(o.costo) || 0, chofer: v.choferNombre || '' }; });
     const costoTransporte = detViajes.reduce((s, v) => s + v.costo, 0);
     const total = costoMO + costoTransporte;
     const diasPersona = horas / jornada;
     const listaPersonas = Object.values(personas).sort((a, b) => b.horas - a.horas).map((p) => ({ nombre: p.nombre, horas: Math.round(p.horas * 10) / 10, costo: Math.round(p.costo * 100) / 100, dias: p.dias.size }));
     const listaDias = Object.keys(dias).sort().map((f) => ({ fecha: f, horas: dias[f] }));
     // Pedidos de la obra (para el enlace y para saber qué se entregó).
-    const pedidos = (await db.collection('orders').get()).docs.filter((d) => obraKeyDe(d.data().cliente, d.data().obra) === obraKey).map((d) => ({ id: d.id, docType: d.data().docType || '', status: d.data().status || '' }));
+    const pedidos = (await db.collection('orders').get()).docs.filter((d) => esMia(d.data().cliente, d.data().obra)).map((d) => ({ id: d.id, obra: d.data().obra || '', docType: d.data().docType || '', status: d.data().status || '' }));
 
     const informe = {
         instalacionId: instId, cliente, obra, obraKey, obraLabel: [cliente, obra].filter(Boolean).join(' — '),
@@ -2169,6 +2193,8 @@ async function generarInformeObra(instId, inst) {
         manoObra: { horas: Math.round(horas * 10) / 10, horasExtra: Math.round(horasExtra * 10) / 10, diasPersona: Math.round(diasPersona * 10) / 10, costo: Math.round(costoMO * 100) / 100, personas: listaPersonas, dias: listaDias, sinCosto: [...new Set(sinCosto)] },
         transporte: { viajes: detViajes.length, costo: Math.round(costoTransporte * 100) / 100, detalle: detViajes },
         total: Math.round(total * 100) / 100, acumuladoObra: Math.round((acumPrevio + total) * 100) / 100,
+        obrasIncluidas: Object.entries(obrasIncluidas).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
+        otrasObrasCliente: Object.entries(otrasObrasCliente).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
         pedidos, generado: FieldValue.serverTimestamp()
     };
     await db.doc('informesObra/' + instId).set(informe);
@@ -2176,34 +2202,65 @@ async function generarInformeObra(instId, inst) {
     // Mensaje interno a gerencia (admins activos).
     const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
     const lugar = informe.obraLabel || 'Obra';
+    const urlInforme = BASE_URL + 'ops/informe-obra.html?id=' + encodeURIComponent(instId);
     const L = [];
-    L.push(`Obra: ${lugar}`);
-    L.push(`Trabajo de instalación completado el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}.${desde ? ' Este informe cubre desde el ' + fmtF(desde) + ' (informe nº ' + informe.numero + ' de esta obra).' : ''}`);
+    L.push(`🏠 ${lugar}`);
+    L.push(`✅ Instalación completada el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}`);
     L.push('');
-    L.push(`MANO DE OBRA (partes diarios): ${informe.manoObra.horas} h en ${listaDias.length} día(s) · ${informe.manoObra.diasPersona} días-persona${horasExtra ? ' · ' + informe.manoObra.horasExtra + ' h extra' : ''} → ${fmtRD(costoMO)}`);
-    listaPersonas.forEach((p) => L.push(`  • ${p.nombre}: ${p.horas} h en ${p.dias} día(s) → ${fmtRD(p.costo)}`));
+    L.push(`👷 Mano de obra: RD$ ${fmtMiles(costoMO)}` + (horas ? ` — ${informe.manoObra.horas} h · ${listaPersonas.length} persona(s) · ${listaDias.length} día(s)` : ' — ⚠ sin partes diarios de esta obra'));
+    L.push(`🚚 Transporte: RD$ ${fmtMiles(costoTransporte)}` + (detViajes.length ? ` — ${detViajes.length} viaje(s)` : ' — ⚠ sin viajes registrados'));
+    L.push(`💰 TOTAL: RD$ ${fmtMiles(total)}` + (previos.length ? ` · acumulado de la obra RD$ ${fmtMiles(informe.acumuladoObra)}` : ''));
+    if (informe.obrasIncluidas.length > 1 || (informe.obrasIncluidas.length === 1 && normTxtObra(informe.obrasIncluidas[0].nombre) !== normTxtObra(lugar))) L.push('Incluye los partes registrados como: ' + informe.obrasIncluidas.map((o) => `${o.nombre} (${o.horas} h)`).join(' · '));
+    if (!horas && informe.otrasObrasCliente.length) L.push(`⚠ Este cliente tiene partes con otros nombres de obra que NO se incluyeron: ${informe.otrasObrasCliente.map((o) => `${o.nombre} (${o.horas} h)`).join(' · ')}. Si son la misma obra, corrige el nombre y recalcula desde el informe.`);
+    if (informe.manoObra.sinCosto.length) L.push(`⚠ Sin costo por hora en RRHH: ${informe.manoObra.sinCosto.join(', ')}.`);
+    L.push('');
+    L.push('Toca "Ver informe completo" para el detalle por persona, por día y por viaje.');
+    const cuerpoNuevo = L.join('\n');
+    // (el detalle largo de abajo queda solo como respaldo dentro del documento, no en el mensaje)
+    const D = [];
+    D.push(`Obra: ${lugar}`);
+    D.push(`Trabajo de instalación completado el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}.${desde ? ' Este informe cubre desde el ' + fmtF(desde) + ' (informe nº ' + informe.numero + ' de esta obra).' : ''}`);
+    D.push('');
+    D.push(`MANO DE OBRA (partes diarios): ${informe.manoObra.horas} h en ${listaDias.length} día(s) · ${informe.manoObra.diasPersona} días-persona${horasExtra ? ' · ' + informe.manoObra.horasExtra + ' h extra' : ''} → ${fmtRD(costoMO)}`);
+    listaPersonas.forEach((p) => D.push(`  • ${p.nombre}: ${p.horas} h en ${p.dias} día(s) → ${fmtRD(p.costo)}`));
     if (!listaPersonas.length) L.push('  • Sin horas registradas en los partes diarios para esta obra.');
     if (informe.manoObra.sinCosto.length) L.push(`  ⚠ Sin costo por hora en RRHH: ${informe.manoObra.sinCosto.join(', ')} (sus horas están, su costo no).`);
-    L.push('');
-    L.push(`TRANSPORTE: ${detViajes.length} viaje(s) del camión → ${fmtRD(costoTransporte)}`);
-    detViajes.forEach((v) => L.push(`  • ${fmtF(v.fecha)} ${v.vehiculo}${v.ruta ? ' · ' + v.ruta : ''}${v.kmTot ? ' · ' + Math.round(v.kmTot) + ' km' : ''} → ${fmtRD(v.costo)}${v.obrasEnViaje > 1 ? ' (viaje de ' + fmtRD(v.costoViaje) + ' repartido entre ' + v.obrasEnViaje + ' obras)' : ''}`));
+    D.push('');
+    D.push(`TRANSPORTE: ${detViajes.length} viaje(s) del camión → ${fmtRD(costoTransporte)}`);
+    detViajes.forEach((v) => D.push(`  • ${fmtF(v.fecha)} ${v.vehiculo}${v.ruta ? ' · ' + v.ruta : ''}${v.kmTot ? ' · ' + Math.round(v.kmTot) + ' km' : ''} → ${fmtRD(v.costo)}${v.obrasEnViaje > 1 ? ' (viaje de ' + fmtRD(v.costoViaje) + ' repartido entre ' + v.obrasEnViaje + ' obras)' : ''}`));
     if (!detViajes.length) L.push('  • Ningún viaje registrado con esta obra a bordo (el chofer elige vehículo y ruta al marcar "En ruta").');
-    L.push('');
-    L.push(`COSTO TOTAL DE REALIZACIÓN: ${fmtRD(total)}`);
+    D.push('');
+    D.push(`COSTO TOTAL DE REALIZACIÓN: ${fmtRD(total)}`);
     if (previos.length) L.push(`Acumulado de la obra (${informe.numero} informes): ${fmtRD(informe.acumuladoObra)}`);
-    L.push('');
-    L.push('Compáralo con lo cotizado de transporte e instalación en la factura para ver si el precio fue correcto.');
-    const url = BASE_URL + 'ops/historial.html?cliente=' + encodeURIComponent(cliente) + '&obra=' + encodeURIComponent(obra);
+    D.push('');
+    D.push('Compáralo con lo cotizado de transporte e instalación en la factura para ver si el precio fue correcto.');
+    await db.doc('informesObra/' + instId).update({ resumen: cuerpoNuevo, detalleTexto: D.join('\n') });
     await db.collection('mensajes').add({
-        estado: 'enviado', asunto: '💰 Costo de realización — ' + lugar, cuerpo: L.join('\n'),
+        estado: 'enviado', asunto: '💰 Costo de realización — ' + lugar, cuerpo: cuerpoNuevo,
         remitenteEmail: 'sistema@artal', remitenteNombre: 'Sistema ARTAL (informe automático)',
         fecha: FieldValue.serverTimestamp(), paraTodos: false, destinatarios: admins, requiereFirma: false, adjuntos: [],
-        enlace: { titulo: 'Ver carpeta de la obra en Historial', url }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
+        enlace: { titulo: 'Ver informe completo', url: urlInforme }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
     });
     await db.doc('instalaciones/' + instId).update({ informeObraId: instId, informeObraFecha: hoy });
     for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
     return informe;
 }
+exports.informeObraRecalcular = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const quien = await callerConRol(req, ['contable']);
+    if (!quien) { res.status(403).json({ error: 'solo admin o contable' }); return; }
+    const instId = String((req.body || {}).instalacionId || '').trim();
+    if (!instId) { res.status(400).json({ error: 'instalacionId' }); return; }
+    try {
+        const inst = (await db.doc('instalaciones/' + instId).get()).data();
+        if (!inst) { res.status(404).json({ error: 'trabajo no encontrado' }); return; }
+        // Borra el mensaje anterior de este informe para no dejar dos versiones en Mensajería.
+        const viejos = await db.collection('mensajes').where('informeObraId', '==', instId).get();
+        for (const m of viejos.docs) await m.ref.delete();
+        const inf = await generarInformeObra(instId, inst);
+        res.status(200).json({ ok: true, total: inf.total, horas: inf.manoObra.horas, viajes: inf.transporte.viajes });
+    } catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
+});
 exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
@@ -2212,3 +2269,10 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
     try { await generarInformeObra(event.params.id, after); }
     catch (e) { console.error('informeObraAlCompletar', event.params.id, e); }
 });
+
+// ---------------------------------------------------------------------------------------------
+// INBOX OMNICANAL (WhatsApp Cloud API + Instagram): webhook, envío, plantillas, reglas, SLA, IA y
+// fusión de contactos. Vive en ./inbox.js como fábrica para compartir el secreto ANTHROPIC_API_KEY
+// (declararlo dos veces con defineSecret rompería el deploy). Secretos propios que hay que crear
+// antes de desplegar: WHATSAPP_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN.
+Object.assign(exports, require('./inbox')({ anthropicKey }));
