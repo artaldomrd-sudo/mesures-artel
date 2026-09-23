@@ -2306,7 +2306,7 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   cierre, sin sumarle el de extras. Regla nueva `rrhhFeriadosTrabajados` (publicar a mano).
 - **Bloqueo por parte pendiente** (`ops/parte-gate.js` desde `requireAuth`): ventana de 7 días laborables, hoy cuenta
   desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
-  `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige hasta 3 días atrás, pero un día pendiente de esa ventana
+  `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige sus partes hasta 6 días laborables atrás; un día pendiente de la ventana del bloqueo
   siempre se puede cargar (`ajustarMinFecha`); los avisos del formulario e Instalación usan la misma ventana de 7 días.
 - **Gastos fijos de pago automático**: `contaRecurrentes.pago === 'automatico'` → la función
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
