@@ -265,28 +265,48 @@
     // que un pedido y un trabajo del mismo sitio cuenten como UNA obra en el costo.
     function obraKeyDe(cliente, obra) { return normTxt(cliente) + '|' + normTxt(obra); }
     function tsMs(v) { return v && v.toDate ? v.toDate().getTime() : (v ? Date.parse(v) || 0 : 0); }
+    // Lista de obras del parte, en tres grupos (usuario 2026-09-22: Wilson no encontró "Riviera 9" porque el
+    // trabajo se validó minutos antes y quedó al final como "(cerrada)"):
+    //   ⭐ TUS OBRAS: trabajos asignados al encargado o donde reportó horas en los últimos 7 días, y trabajos
+    //      terminados en los últimos 3 días (se suele llenar el parte DESPUÉS de validar el trabajo).
+    //   🏗️ EN CURSO: el resto de pedidos/trabajos abiertos.
+    //   ✅ TERMINADAS (últimos 45 días): con la fecha en que se terminó.
     function obrasDisponibles() {
-        const lim = Date.now() - 45 * 86400000, map = new Map();
-        const add = (cliente, obra, activa) => {
+        const lim = Date.now() - 45 * 86400000, hace3d = Date.now() - 3 * 86400000, hace7d = addDias(hoyStr(), -7), map = new Map();
+        const mio = String((parteActual && parteActual.encargadoEmail) || encargadoSel().email || '').toLowerCase();
+        const add = (cliente, obra, activa, extra) => {
             const label = [cliente, obra].filter(Boolean).join(' — '); if (!label.trim()) return;
-            const k = obraKeyDe(cliente, obra); const cur = map.get(k);
-            if (!cur) map.set(k, { key: k, label, activa }); else if (activa) cur.activa = true;
+            const k = obraKeyDe(cliente, obra); const cur = map.get(k) || { key: k, label, activa: false, mia: false, fin: 0 };
+            if (activa) cur.activa = true;
+            if (extra && extra.mia) cur.mia = true;
+            if (extra && extra.fin && extra.fin > cur.fin) cur.fin = extra.fin;
+            map.set(k, cur);
         };
         ordersCache.forEach(o => {
             if (o.docType && String(o.docType).startsWith('COT')) return;
             const enCurso = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'en_fabrica', 'pendiente_fabrica'].includes(o.status);
-            const reciente = Math.max(tsMs(o.fecha), tsMs(o.fechaListoParaCargar), tsMs(o.fechaCompletado), tsMs(o.instaladoFecha)) > lim;
-            if (enCurso || reciente) add(o.cliente, o.obra, enCurso);
+            const fin = Math.max(tsMs(o.fechaInstalado), tsMs(o.fechaCompletado), tsMs(o.instaladoFecha), tsMs(o.fechaEntregado));
+            const reciente = Math.max(tsMs(o.fecha), tsMs(o.fechaListoParaCargar), fin) > lim;
+            if (enCurso || reciente) add(o.cliente, o.obra, enCurso, { mia: String(o.asignadoInstaladorEmail || '').toLowerCase() === mio, fin });
         });
         instCache.forEach(j => {
             const enCurso = j.estado !== 'completado' && j.estado !== 'cancelado';
-            const reciente = Math.max(tsMs(j.fecha), tsMs(j.fechaCreacion), tsMs(j.completadoEn)) > lim;
-            if (enCurso || reciente) add(j.cliente, j.obra, enCurso);
+            const fin = Math.max(tsMs(j.validadoFecha), tsMs(j.estadoFecha), tsMs(j.completadoEn));
+            const reciente = Math.max(tsMs(j.fecha), tsMs(j.fechaCreacion), fin) > lim;
+            const mia = (Array.isArray(j.asignados) ? j.asignados.some(a => String(a.email || '').toLowerCase() === mio) : String(j.instaladorEmail || '').toLowerCase() === mio);
+            if (enCurso || reciente) add(j.cliente, j.obra, enCurso, { mia, fin: enCurso ? 0 : fin });
         });
-        // Obras que ya aparecen en partes (manuales o viejas) siguen disponibles.
-        partes.forEach(p => (p.lineas || []).forEach(l => { if (l.tipo === 'obra' && l.obraKey && !map.has(l.obraKey)) map.set(l.obraKey, { key: l.obraKey, label: l.obraLabel || l.obraKey, activa: false }); }));
-        return [...map.values()].sort((a, b) => (b.activa - a.activa) || a.label.localeCompare(b.label));
+        // Obras que ya aparecen en partes (manuales o viejas) siguen disponibles; las de este encargado en los
+        // últimos 7 días cuentan como "suyas".
+        partes.forEach(p => (p.lineas || []).forEach(l => {
+            if (l.tipo !== 'obra' || !l.obraKey) return;
+            if (!map.has(l.obraKey)) map.set(l.obraKey, { key: l.obraKey, label: l.obraLabel || l.obraKey, activa: false, mia: false, fin: 0 });
+            if (String(p.encargadoEmail || '').toLowerCase() === mio && p.fecha >= hace7d) map.get(l.obraKey).mia = true;
+        }));
+        map.forEach(o => { o.grupo = (o.mia || (!o.activa && o.fin > hace3d)) ? 0 : (o.activa ? 1 : 2); });
+        return [...map.values()].sort((a, b) => (a.grupo - b.grupo) || a.label.localeCompare(b.label));
     }
+    const finTxt = (o) => o.activa ? '' : (o.fin ? ' (terminada ' + new Date(o.fin).toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) + ')' : ' (cerrada)');
 
     // ---------------- Parte del día ----------------
     let arrancado = false;
@@ -359,8 +379,9 @@
     function renderParte() {
         if (!parteActual) return;
         const obras = obrasDisponibles();
+        const GRUPOS = ['⭐ Tus obras (asignadas, recientes o terminadas hace poco)', '🏗️ En curso', '✅ Terminadas (últimos 45 días)'];
         const opcionesObra = (sel) => `<option value="">— Elige la obra —</option>` +
-            obras.map(o => `<option value="${esc(o.key)}" ${o.key === sel ? 'selected' : ''}>${esc(o.label)}${o.activa ? '' : ' (cerrada)'}</option>`).join('') +
+            [0, 1, 2].map(g => { const L = obras.filter(o => o.grupo === g); return L.length ? `<optgroup label="${GRUPOS[g]}">` + L.map(o => `<option value="${esc(o.key)}" ${o.key === sel ? 'selected' : ''}>${esc(o.label)}${finTxt(o)}</option>`).join('') + '</optgroup>' : ''; }).join('') +
             `<option value="__manual__">✏️ Otra obra (escribir)…</option>`;
         const mioEmail = String(parteActual.encargadoEmail || '').toLowerCase();
         const esMio = (id) => { const e = empPorId(id); return !!e && String(e.correo || '').toLowerCase() === mioEmail; };
