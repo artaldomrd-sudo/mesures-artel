@@ -2286,6 +2286,10 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   **Deploy de functions**: el módulo Inbox exige los secretos `WHATSAPP_*` (creados con valor `PENDIENTE` el
   2026-09-22 hasta que se configure Meta) y `WHATSAPP_GRAPH_VERSION` en `functions/.env`; sin eso el deploy
   no-interactivo aborta — leer el log y confirmar `EXIT 0` antes de depender de un deploy.
+- **Jornada de instalación = 9 h** (usuario 2026-09-22; antes 8): `rrhhConfig/parteDiario.horasJornada = 9` manda y
+  `JORNADA_H = 9` es el respaldo en parte-diario, seguimiento, costo de obras y `generarInformeObra`. Costo por hora =
+  costo por día de RRHH ÷ 9; extras = horas por encima de 9 al 135 %; el parte nuevo carga 9 h por persona. Los partes
+  enviados antes del cambio se recalcularon (`jornadaRecalculada`) con el costo por día vigente en RRHH ese día.
 - **Bloqueo por parte pendiente** (`ops/parte-gate.js` desde `requireAuth`): ventana de 7 días laborables, hoy cuenta
   desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
   `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige hasta 3 días atrás, pero un día pendiente de esa ventana

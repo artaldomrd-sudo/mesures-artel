@@ -2145,7 +2145,7 @@ async function generarInformeObra(instId, inst) {
     const acumPrevio = previos.reduce((s, p) => s + (Number(p.total) || 0), 0);
 
     const cfg = (await db.doc('rrhhConfig/parteDiario').get()).data() || {};
-    const jornada = Number(cfg.horasJornada) || 8, factor = Number(cfg.factorExtra) || 1.35;
+    const jornada = Number(cfg.horasJornada) || 9, factor = Number(cfg.factorExtra) || 1.35;   // jornada de instalación 9 h (usuario 2026-09-22)
     const empleados = {}; (await db.collection('rrhhEmpleados').get()).docs.forEach((d) => { empleados[d.id] = d.data(); });
     const costoHoraEmp = (e) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return dia / jornada; };
 

@@ -103,7 +103,7 @@
             <button class="btn btn-o" onclick="igualQueAyer()" title="Copia el último parte que enviaste y solo ajustas lo que cambió">↺ Igual que el último</button>
         </div>
         <p class="estado-linea" id="p-estado"></p>
-        <p class="hint" style="margin:0 0 10px">Por cada persona de tu equipo: en qué obra o actividad estuvo y cuántas horas (8 = jornada completa). Si alguien estuvo en dos obras, agrégale otra fila. Quien no estuvo contigo hoy, quítalo del parte.</p>
+        <p class="hint" style="margin:0 0 10px">Por cada persona de tu equipo: en qué obra o actividad estuvo y cuántas horas (9 = jornada completa). Si alguien estuvo en dos obras, agrégale otra fila. Quien no estuvo contigo hoy, quítalo del parte.</p>
         <div id="personas"></div>
         <div class="bar">
             <select id="add-persona" style="flex:1;min-width:180px"><option value="">+ Agregar persona al parte…</option></select>
@@ -152,7 +152,7 @@
                 i2: { cliente: 'Altea', obra: 'Villa 11 barandas', estado: 'pendiente', fecha: ts(0) }
             },
             rrhhFeriados: {},
-            rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], jefe: W, horasJornada: 8, factorExtra: 1.35 } },
+            rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], jefe: W, horasJornada: 9, factorExtra: 1.35 } },
             partesDiarios: {
                 [dAgo(2) + '_' + W.replace(/[.@]/g, '_')]: { fecha: dAgo(2), encargadoEmail: W, encargadoNombre: 'Wilson', nota: 'Faltó silicona negra', creado: ts(2), actualizado: ts(2), editadoPor: 'Wilson', lineas: [
                     { empleadoId: 'e1', nombre: 'Wilson Eusebio Hernandez Rodriguez', tipo: 'obra', obraKey: 'jade|loma palmar de los nidos', obraLabel: 'Jade — Loma palmar de los nidos', horas: 8, costoHora: 415.5 },
@@ -218,7 +218,8 @@
 
     // ---------------- Datos base ----------------
     let empleados = [], equipo = {}, ordersCache = [], instCache = [], feriados = new Set(), partes = [];
-    let config = { encargados: [], horasJornada: 8, factorExtra: 1.35 };
+    const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22); rrhhConfig/parteDiario.horasJornada manda
+    let config = { encargados: [], horasJornada: JORNADA_H, factorExtra: 1.35 };
     const ready = { emp: false, eq: false, cfg: false, partes: false };
     let parteActual = null;   // { fecha, encargadoEmail, encargadoNombre, lineas: [{empleadoId, nombre, tipo, obraKey, obraLabel, horas}], nota }
     let parteGuardado = null; // el doc tal cual está en Firestore (para saber si hay cambios)
@@ -255,7 +256,7 @@
     const empPorId = (id) => empleados.find(e => e.id === id);
     // Base: costo laboral real por día (sueldo + cargas). Si la ficha aún no lo tiene, sueldo ÷ 23.83.
     const costoDia = (e) => e ? (n2(e.costoDiaReal) > 0 ? n2(e.costoDiaReal) : (n2(e.sueldoBase) > 0 ? n2(e.sueldoBase) / 23.83 : 0)) : 0;
-    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || 8);
+    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || JORNADA_H);
 
     // Obras disponibles para el parte: pedidos en flujo de instalación (o completados hace < 45 días),
     // trabajos del calendario (pendientes o cerrados hace < 45 días). Se agrupan por cliente+obra para
@@ -333,7 +334,7 @@
         } else {
             // Parte nuevo: arranca con todo el equipo, 8 h, obra por elegir (rápido de ajustar).
             parteActual = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, nota: '',
-                lineas: equipoInstalacion().map(e => ({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || 8 })) };
+                lineas: equipoInstalacion().map(e => ({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || JORNADA_H })) };
         }
         document.getElementById('p-nota').value = parteActual.nota || '';
         renderParte();
@@ -360,7 +361,7 @@
         const mioEmail = String(parteActual.encargadoEmail || '').toLowerCase();
         const esMio = (id) => { const e = empPorId(id); return !!e && String(e.correo || '').toLowerCase() === mioEmail; };
         const ids = [...new Set(parteActual.lineas.map(l => l.empleadoId))].sort((a, b) => (esMio(b) - esMio(a)));
-        const jornada = n2(config.horasJornada) || 8;
+        const jornada = n2(config.horasJornada) || JORNADA_H;
         const cont = document.getElementById('personas');
         cont.innerHTML = ids.map(id => {
             const ls = lineasDe(id); const emp = empPorId(id); const nombre = (ls[0] && ls[0].l.nombre) || (emp && emp.nombre) || id;
@@ -396,7 +397,7 @@
     window.setLinea = function (i, campo, valor) {
         const l = parteActual.lineas[i]; if (!l) return;
         if (campo === 'horas') l.horas = Math.max(0, Math.min(16, n2(valor)));
-        else if (campo === 'tipo') { l.tipo = valor; if (valor !== 'obra') { l.obraKey = ''; l.obraLabel = ''; } if (valor === 'ausente') l.horas = 0; else if (!n2(l.horas)) l.horas = n2(config.horasJornada) || 8; }
+        else if (campo === 'tipo') { l.tipo = valor; if (valor !== 'obra') { l.obraKey = ''; l.obraLabel = ''; } if (valor === 'ausente') l.horas = 0; else if (!n2(l.horas)) l.horas = n2(config.horasJornada) || JORNADA_H; }
         renderParte();
     };
     window.setObra = function (i, sel) {

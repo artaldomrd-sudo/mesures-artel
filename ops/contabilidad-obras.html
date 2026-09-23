@@ -67,7 +67,7 @@
         <input type="month" id="mes" onchange="renderTodo()">
         <label style="font-size:13px"><input type="checkbox" id="todo" onchange="renderTodo()"> Todo el histórico</label>
         <button class="btn btn-o" onclick="exportarCSV()">⬇ CSV</button>
-        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (RRHH; extras al 135 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
+        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (costo por día de RRHH ÷ 9 h de jornada; las horas por encima de 9 al 135 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
     </div>
 
     <div class="tabpanel active" id="tab-obras">
@@ -106,7 +106,8 @@
     const tipoLabel = (t) => TIPOS[t] || t;
 
     let empleados = [], partes = [], viajes = [], informes = [];
-    let config = { horasJornada: 8, factorExtra: 1.35 };
+    const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22)
+    let config = { horasJornada: JORNADA_H, factorExtra: 1.35 };
     onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
     onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
@@ -123,10 +124,10 @@
 
     const empPorId = (id) => empleados.find(e => e.id === id);
     const costoDia = (e) => e ? (n2(e.costoDiaReal) > 0 ? n2(e.costoDiaReal) : (n2(e.sueldoBase) > 0 ? n2(e.sueldoBase) / 23.83 : 0)) : 0;
-    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || 8);
+    const costoHora = (e) => costoDia(e) / (n2(config.horasJornada) || JORNADA_H);
     // Líneas con costo: jornada por persona y día, extras al factor (misma regla que el informe automático).
     function lineasCosteadas(enPeriodo) {
-        const jornada = n2(config.horasJornada) || 8, factor = n2(config.factorExtra) || 1;
+        const jornada = n2(config.horasJornada) || JORNADA_H, factor = n2(config.factorExtra) || 1;
         const out = [];
         partes.filter(p => enPeriodo(p.fecha)).forEach(p => {
             const porEmp = new Map();
@@ -156,7 +157,7 @@
     let obraAbierta = null;   // id del proyecto abierto
     let proyectosCache = { grupos: [], deKey: new Map() };
     function renderObras() {
-        const enP = filtro(), L = lineasCosteadas(enP), jornada = n2(config.horasJornada) || 8;
+        const enP = filtro(), L = lineasCosteadas(enP), jornada = n2(config.horasJornada) || JORNADA_H;
         proyectosCache = proyectosDe(enP); const { grupos, deKey } = proyectosCache;
         const g = new Map();
         L.forEach(l => {
