@@ -2290,6 +2290,12 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `JORNADA_H = 9` es el respaldo en parte-diario, seguimiento, costo de obras y `generarInformeObra`. Costo por hora =
   costo por día de RRHH ÷ 9; extras = horas por encima de 9 al 135 %; el parte nuevo carga 9 h por persona. Los partes
   enviados antes del cambio se recalcularon (`jornadaRecalculada`) con el costo por día vigente en RRHH ese día.
+- **Feriado que SÍ se trabaja** (usuario 2026-09-22, ej. jueves 24/09 Las Mercedes): gerencia lo avisa en el comunicado de
+  Mensajería marcando «🗓️ se trabaja un feriado» + fecha (lista de `rrhhFeriados`); el mensaje guarda `feriadoTrabajado` y
+  se escribe `rrhhFeriadosTrabajados/{fecha}`. Todas las piezas lo leen: `parte-gate.js` (bloqueo), `parte-diario.html`
+  (se exige el parte, aviso «Feriado trabajado»), seguimiento, aviso de Instalación, `recordarParteDiario` (push 6:00/6:30),
+  y el COSTO: ese día todas las horas al `factorFeriado` (2 = 200 %, recargo legal) en Costo de obras y en el informe de
+  cierre, sin sumarle el de extras. Regla nueva `rrhhFeriadosTrabajados` (publicar a mano).
 - **Bloqueo por parte pendiente** (`ops/parte-gate.js` desde `requireAuth`): ventana de 7 días laborables, hoy cuenta
   desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
   `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige hasta 3 días atrás, pero un día pendiente de esa ventana

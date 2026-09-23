@@ -102,7 +102,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { subirFotos } from './fotos.js';
 
     // Personal interno de ARTAL puede ENTRAR (para leer lo que le toca). ALUCUFEL (contratista/
@@ -132,6 +132,13 @@
     let composeModo = 'todos';     // 'todos' | 'personas'
     let composeSel = new Set();
     let composeFirma = false;
+    // Feriado que SÍ se trabaja (usuario 2026-09-22): Anny lo avisa en el comunicado marcando la casilla y la fecha;
+    // se guarda en rrhhFeriadosTrabajados/{fecha} y el parte diario (bloqueo, avisos, costos al 200 %) lo lee de ahí.
+    let composeFeriado = false, composeFeriadoFecha = '';
+    let feriadosCache = [];
+    onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriadosCache = s.docs.map(d => d.data()).filter(f => f.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha)); }, () => {});
+    const hoyISO = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    const fFer = (f) => f.split('-').reverse().join('/');
 
     onSnapshot(collection(db, 'equipo'), (snap) => {
         usuariosCache = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false);
@@ -204,6 +211,7 @@
                     <div class="prev">${esc(m.cuerpo || '')}</div>
                     <div class="meta">De ${esc(m.remitenteNombre || 'ARTAL')} · ${esc(fFecha(m.fecha))}
                         ${m.requiereFirma ? `<span class="chip chip-firma">Requiere aceptación</span>` : ''}
+                        ${m.feriadoTrabajado ? `<span class="chip chip-firma">🗓️ Se trabaja el feriado ${esc(fFer(m.feriadoTrabajado))}</span>` : ''}
                         ${(m.enlace && m.enlace.url) ? `<span class="chip chip-leidos">📄 Documento</span>` : ''}
                         ${(Array.isArray(m.adjuntos) && m.adjuntos.length) ? `<span class="chip chip-leidos">📎 ${m.adjuntos.length}</span>` : ''}
                         ${!nuevos && a ? `<span class="chip chip-leidos">${m.requiereFirma ? '✅ Aceptado' : '✓ Leído'} el ${esc(fFecha(a.fecha))}</span>` : ''}
@@ -288,6 +296,7 @@
         return `${volver()}<div class="detalle">
             <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
             <div class="from">De <b>${esc(m.remitenteNombre || 'ARTAL')}</b> · ${esc(fFecha(m.fecha))}${m.paraTodos ? ' · A todo el equipo' : ''}</div>
+            ${m.feriadoTrabajado ? `<div style="background:#fff2dc;border-left:4px solid #e67e22;border-radius:8px;padding:9px 12px;font-size:13.5px;color:#6b4a08;margin:10px 0">🗓️ <b>Se trabaja el feriado del ${esc(fFer(m.feriadoTrabajado))}.</b> Ese día el parte diario es obligatorio como un día normal y las horas se pagan al 200 %.</div>` : ''}
             <div class="cuerpo">${esc(m.cuerpo || '')}</div>
             ${adj}${enlaceBtn}${extra}
         </div>`;
@@ -311,7 +320,7 @@
     };
 
     // ---------------- Nuevo mensaje (remitente) ----------------
-    function resetCompose() { composeAdjuntos = []; composeModo = 'todos'; composeSel = new Set(); composeFirma = false; }
+    function resetCompose() { composeAdjuntos = []; composeModo = 'todos'; composeSel = new Set(); composeFirma = false; composeFeriado = false; composeFeriadoFecha = ''; }
 
     function renderNuevo() {
         const roles = [...new Set(usuariosCache.map(u => Array.isArray(u.rol) ? u.rol : [u.rol]).flat().filter(Boolean))].sort();
@@ -337,6 +346,9 @@
         </div>
 
         <label class="check-firma"><input type="checkbox" id="c-firma" ${composeFirma ? 'checked' : ''} onchange="composeFirma=this.checked"><span>📄 Requiere aceptación / firma de recibido (documento para firmar)</span></label>
+        <label class="check-firma"><input type="checkbox" id="c-feriado" ${composeFeriado ? 'checked' : ''} onchange="composeFeriado=this.checked; render()"><span>🗓️ Este comunicado avisa que se TRABAJA un día feriado (el parte diario de ese día se exige como uno normal y las horas se pagan al 200 %)</span></label>
+        ${composeFeriado ? (() => { const prox = feriadosCache.filter(f => f.fecha >= hoyISO()).slice(0, 6); if (!composeFeriadoFecha && prox.length) composeFeriadoFecha = prox[0].fecha; return `<div class="field" style="margin-top:-4px"><label>¿Qué feriado se trabaja?</label>
+            <select onchange="composeFeriadoFecha=this.value">${prox.map(f => `<option value="${esc(f.fecha)}" ${f.fecha === composeFeriadoFecha ? 'selected' : ''}>${esc(fFer(f.fecha))} — ${esc(f.nombre || 'feriado')}</option>`).join('')}${prox.length ? '' : '<option value="">No hay feriados próximos en RRHH → Asistencia → Feriados</option>'}</select></div>`; })() : ''}
 
         <div class="field"><label>Adjuntar documento (PDF o imagen)</label>
             <div class="adj-wrap" id="adj-wrap"></div>
@@ -396,6 +408,8 @@
         const enlaceTitulo = (document.getElementById('c-enlace-titulo').value || '').trim();
         const enlace = enlaceUrl ? { url: enlaceUrl, titulo: enlaceTitulo || 'Abrir documento' } : null;
         if (!asunto && !cuerpo && !enlace) { alert('Escribe al menos un asunto o mensaje.'); return; }
+        if (composeFeriado && !composeFeriadoFecha) { alert('Elige qué feriado se trabaja (si no aparece, agrégalo primero en RRHH → Asistencia → Feriados).'); return; }
+        const feriadoTrabajado = composeFeriado ? composeFeriadoFecha : '';
         let paraTodos = composeModo === 'todos';
         let destinatarios = [];
         if (!paraTodos) {
@@ -410,10 +424,15 @@
                 fecha: serverTimestamp(),
                 paraTodos, destinatarios,
                 requiereFirma: !!composeFirma,
+                feriadoTrabajado: feriadoTrabajado || null,
                 adjuntos: composeAdjuntos,
                 enlace: enlace,
                 acuses: {}
             });
+            if (feriadoTrabajado) {
+                const fer = feriadosCache.find(f => f.fecha === feriadoTrabajado) || {};
+                await setDoc(doc(db, 'rrhhFeriadosTrabajados', feriadoTrabajado), { fecha: feriadoTrabajado, nombreFeriado: fer.nombre || '', por: usuario.nombre, porEmail: usuario.email, marcado: serverTimestamp(), origen: 'comunicado' }, { merge: true });
+            }
             resetCompose();
             irA('enviados');
         } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); btn.disabled = false; btn.textContent = t0; }

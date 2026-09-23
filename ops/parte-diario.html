@@ -151,7 +151,7 @@
                 i1: { cliente: 'Val Caoba A21', obra: 'Val caoba A21', estado: 'pendiente', fecha: ts(1) },
                 i2: { cliente: 'Altea', obra: 'Villa 11 barandas', estado: 'pendiente', fecha: ts(0) }
             },
-            rrhhFeriados: {},
+            rrhhFeriados: {}, rrhhFeriadosTrabajados: {},
             rrhhConfig: { parteDiario: { encargados: [{ email: W, nombre: 'Wilson' }, { email: M, nombre: 'Miki' }], jefe: W, horasJornada: 9, factorExtra: 1.35 } },
             partesDiarios: {
                 [dAgo(2) + '_' + W.replace(/[.@]/g, '_')]: { fecha: dAgo(2), encargadoEmail: W, encargadoNombre: 'Wilson', nota: 'Faltó silicona negra', creado: ts(2), actualizado: ts(2), editadoPor: 'Wilson', lineas: [
@@ -217,7 +217,7 @@
     const tipoLabel = (t) => (TIPOS.find(x => x[0] === t) || [t, t])[1];
 
     // ---------------- Datos base ----------------
-    let empleados = [], equipo = {}, ordersCache = [], instCache = [], feriados = new Set(), partes = [];
+    let empleados = [], equipo = {}, ordersCache = [], instCache = [], feriados = new Set(), feriadosTrab = new Map(), partes = [];
     const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22); rrhhConfig/parteDiario.horasJornada manda
     let config = { encargados: [], horasJornada: JORNADA_H, factorExtra: 1.35 };
     const ready = { emp: false, eq: false, cfg: false, partes: false };
@@ -229,6 +229,8 @@
     onSnapshot(collection(db, 'orders'), (s) => { ordersCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'instalaciones'), (s) => { instCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
+    // Feriados que SÍ se trabajan (avisados por comunicado en Mensajería): cuentan como día normal, horas al 200 %.
+    onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Map(s.docs.map(d => [d.data().fecha, d.data()])); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; ready.cfg = true; arranque(); renderTodo(); }, () => { ready.cfg = true; arranque(); });
     onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.partes = true; arranque(); renderTodo(); }, () => { ready.partes = true; arranque(); });
 
@@ -337,6 +339,8 @@
                 lineas: equipoInstalacion().map(e => ({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || JORNADA_H })) };
         }
         document.getElementById('p-nota').value = parteActual.nota || '';
+        const ft = feriadosTrab.get(fecha);
+        document.getElementById('p-estado').innerHTML = ft ? `🗓️ <b>Feriado trabajado</b> (${esc(ft.nombreFeriado || 'feriado')}, avisado por ${esc(ft.por || 'gerencia')}): el parte de este día es obligatorio y las horas se pagan al 200 %.` : (feriados.has(fecha) ? '🗓️ Este día es feriado: no se exige parte (salvo aviso de gerencia por comunicado).' : '');
         renderParte();
     };
     // Copia el último parte enviado por este encargado (antes de la fecha elegida).
@@ -459,7 +463,7 @@
     };
 
     // ---------------- Pendientes (para el aviso y para Control) ----------------
-    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
+    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && (!feriados.has(f) || feriadosTrab.has(f)); }
     // ¿Otro encargado ya reportó a esta persona ese día? (partes nuevos traen incluidosEmails; los
     // viejos se resuelven por empleadoId → correo).
     function incluidoPorOtro(email, fecha) {

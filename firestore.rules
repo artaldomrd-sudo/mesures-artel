@@ -130,6 +130,7 @@ service cloud.firestore {
     match /rrhhPermisos/{id}      { allow write: if puedeEscribir(); }
     match /rrhhTurnos/{id}        { allow write: if puedeEscribir(); }
     match /rrhhFeriados/{id}      { allow write: if puedeEscribir(); }
+    match /rrhhFeriadosTrabajados/{fecha} { allow write: if puedeEscribir(); }   // feriado que SÍ se trabaja (lo marca gerencia en el comunicado de Mensajería)
     match /rrhhEventos/{id}       { allow write: if puedeEscribir(); }
     match /rrhhVacaciones/{id}    { allow write: if puedeEscribir(); }
     match /rrhhVacantes/{id}      { allow write: if puedeEscribir(); }
@@ -197,5 +198,49 @@ service cloud.firestore {
       allow update, delete: if puedeEscribir();
       allow create: if solicitudWebValida();
     }
+
+    // ---------------------------------------------------------------------------------------
+    // INBOX OMNICANAL (WhatsApp Cloud API + Instagram). Niveles: admin de la plataforma = Owner;
+    // inbox_admin = Admin; inbox_supervisor; inbox_agente; inbox_lector/lector = solo lectura.
+    // La LECTURA la cubre el match general (todo usuario con sesión). Los mensajes reales
+    // (entrantes y salientes) los escribe SOLO el servidor (Cloud Functions con Admin SDK, que se
+    // salta estas reglas): desde el navegador solo se pueden crear NOTAS INTERNAS. Así ningún
+    // cliente web puede fabricar un "mensaje del cliente" ni marcar como enviado algo que no salió.
+    function esInboxAdmin() {
+      return request.auth != null && ('admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario());
+    }
+    function puedeInbox() {
+      return request.auth != null && (
+        'admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario()
+        || 'inbox_supervisor' in rolesDelUsuario() || 'inbox_agente' in rolesDelUsuario());
+    }
+    match /inboxConversaciones/{id} {
+      allow update: if puedeInbox();          // asignar, estado, prioridad, tags, leídos…
+      allow create, delete: if false;         // solo el servidor crea; nunca se borran (historial)
+    }
+    match /inboxConversaciones/{id}/mensajes/{m} {
+      allow create: if puedeInbox()
+        && request.resource.data.is_internal_note == true
+        && request.resource.data.sender_id == request.auth.token.email;
+      allow update, delete: if false;
+    }
+    match /inboxConversaciones/{id}/eventos/{e} { allow create: if puedeInbox(); }   // timeline: solo crear
+    match /inboxAuditoria/{id}                  { allow create: if request.auth != null && request.resource.data.actorEmail == request.auth.token.email; }   // nadie edita ni borra
+    match /inboxContactos/{id}                  { allow create, update: if puedeInbox(); allow delete: if false; }
+    match /inboxPresencia/{email}               { allow write: if request.auth != null && request.auth.token.email == email; }
+    match /inboxEquipos/{id}                    { allow write: if esInboxAdmin(); }
+    match /inboxTags/{id}                       { allow create: if puedeInbox(); allow update, delete: if esInboxAdmin(); }
+    match /inboxReglas/{id}                     { allow write: if esInboxAdmin(); }
+    match /inboxConfig/{id}                     { allow write: if esInboxAdmin(); }
+    match /inboxCanales/{id}                    { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }   // solo Owner
+    match /inboxRespuestasRapidas/{id} {
+      allow create: if puedeInbox() && request.resource.data.email == request.auth.token.email && (request.resource.data.global == false || esInboxAdmin());
+      allow update, delete: if esInboxAdmin() || (puedeInbox() && resource.data.email == request.auth.token.email && resource.data.global == false);
+    }
+    match /inboxPlantillas/{id}                 { allow write: if false; }   // las sincroniza el servidor desde Meta
+    match /inboxFusiones/{id}                   { allow write: if false; }   // las escribe el servidor (fusión/deshacer)
+    match /inboxEstadisticas/{id}               { allow write: if false; }
+    match /inboxIndiceMensajes/{id}             { allow write: if false; }
+    match /inboxContador/{id}                   { allow write: if false; }
   }
 }

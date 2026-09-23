@@ -118,12 +118,13 @@
     const parteId = (fecha, email) => fecha + '_' + claveEmail(email);
     const TIPOS = { obra: '🏗️ Obra', taller: '🔧 Taller / fábrica interna', almacen: '📦 Almacén', transporte: '🚚 Transporte / compras', oficina: '🏢 Oficina', capacitacion: '🎓 Capacitación', sin_trabajo: '🌧️ Sin trabajo', ausente: '🚫 Ausente / permiso' };
 
-    let equipo = {}, empleados = [], feriados = new Set(), partes = [];
+    let equipo = {}, empleados = [], feriados = new Set(), feriadosTrab = new Map(), partes = [];
     const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22)
     let config = { encargados: [], horasJornada: JORNADA_H, factorExtra: 1.35 };
     onSnapshot(collection(db, 'equipo'), (s) => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Map(s.docs.map(d => [d.data().fecha, d.data()])); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
     onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
 
@@ -131,7 +132,7 @@
     window.irHoy = function () { document.getElementById('f-dia').value = hoyStr(); renderTodo(); };
     const fechaSel = () => document.getElementById('f-dia').value || hoyStr();
 
-    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && !feriados.has(f); }
+    function esLaborable(f) { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && (!feriados.has(f) || feriadosTrab.has(f)); }
     const empPorId = (id) => empleados.find(e => e.id === id);
     // ¿Otro encargado lo incluyó en su parte ese día? (trabajaron juntos → no le toca enviar el suyo)
     function cubiertoPor(email, fecha) {
@@ -145,8 +146,8 @@
 
     function estadoEncargado(e, fecha) {
         const p = partes.find(x => x.id === parteId(fecha, e.email));
-        if (p) { const personas = new Set((p.lineas || []).map(l => l.empleadoId)).size; const horas = (p.lineas || []).reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0); return { cls: 'ok', txt: '✓ Enviado' + (horaDe(p.actualizado || p.creado) ? ' a las ' + horaDe(p.actualizado || p.creado) : ''), det: `${personas} persona(s) · ${horas} h${p.nota ? '<br>📝 ' + esc(p.nota) : ''}`, p }; }
-        if (!esLaborable(fecha)) return { cls: 'libre', txt: 'Día libre', det: feriados.has(fecha) ? 'Feriado' : 'Domingo' };
+        if (p) { const personas = new Set((p.lineas || []).map(l => l.empleadoId)).size; const horas = (p.lineas || []).reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0); return { cls: 'ok', txt: '✓ Enviado' + (horaDe(p.actualizado || p.creado) ? ' a las ' + horaDe(p.actualizado || p.creado) : ''), det: `${personas} persona(s) · ${horas} h${feriadosTrab.has(fecha) ? ' · 🗓️ feriado trabajado (200 %)' : ''}${p.nota ? '<br>📝 ' + esc(p.nota) : ''}`, p }; }
+        if (!esLaborable(fecha)) return { cls: 'libre', txt: 'Día libre', det: feriados.has(fecha) ? 'Feriado (si se trabaja, Anny lo avisa por comunicado marcando la casilla del feriado)' : 'Domingo' };
         if (fecha < desdeDe(e)) return { cls: 'libre', txt: 'Aún no se le exigía', det: 'Empieza el ' + fmtFecha(desdeDe(e)) };
         const cub = cubiertoPor(e.email, fecha); if (cub) return { cls: 'cub', txt: '👥 Incluido en el parte de ' + esc(cub), det: 'Trabajaron juntos; no le toca enviar el suyo.' };
         if (fecha === hoyStr() && new Date().getHours() < 18) return { cls: 'espera', txt: '⏳ Aún a tiempo', det: 'Desde las 6:00 pm cuenta como pendiente (aviso a las 6:00 y 6:30 pm) y queda bloqueado hasta enviarlo.' };

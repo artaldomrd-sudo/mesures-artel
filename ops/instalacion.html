@@ -837,7 +837,7 @@
 
     /* ===== Aviso "falta tu parte diario" (solo a los encargados configurados en Parte diario → Control) ===== */
     (function avisoParteDiario() {
-        let encargados = [], partesDocs = [], feriados = new Set();
+        let encargados = [], partesDocs = [], feriados = new Set(), feriadosTrab = new Set();
         const pad = (n) => String(n).padStart(2, '0'), ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
         const clave = (em) => String(em || '').toLowerCase().replace(/[.@]/g, '_');
         function pintar() {
@@ -848,7 +848,7 @@
             const pend = []; const ahora = new Date();
             for (let k = 0; k < 7; k++) {   // misma ventana que el bloqueo (parte-gate.js)
                 const d = new Date(); d.setDate(d.getDate() - k); const f = ymd(d);
-                if (d.getDay() === 0 || feriados.has(f) || f < desde) continue;
+                if (d.getDay() === 0 || (feriados.has(f) && !feriadosTrab.has(f)) || f < desde) continue;
                 if (k === 0 && ahora.getHours() < 18) continue;
                 const em = usuario.email.toLowerCase();
                 if (partesDocs.some(p => p.id === f + '_' + clave(em))) continue;
@@ -860,6 +860,7 @@
         onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { encargados = (s.exists() && s.data().encargados) || []; pintar(); }, () => {});
         onSnapshot(collection(db, 'partesDiarios'), (s) => { partesDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); pintar(); }, () => {});
         onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
+        onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
         setInterval(pintar, 60000);
     })();
 

@@ -30,6 +30,8 @@ export async function partesPendientes(email, dias = 7) {
     if (!candidatas.length) return [];
     let feriados = new Set();
     try { const fs = await getDocs(query(collection(db, 'rrhhFeriados'), where('fecha', 'in', candidatas.slice(0, 10)))); feriados = new Set(fs.docs.map((x) => x.data().fecha)); } catch (_) { }
+    // Un feriado que gerencia avisó por comunicado que SE TRABAJA (rrhhFeriadosTrabajados/{fecha}) cuenta como día normal.
+    try { const ft = await getDocs(query(collection(db, 'rrhhFeriadosTrabajados'), where('fecha', 'in', candidatas.slice(0, 10)))); ft.docs.forEach((x) => feriados.delete(x.data().fecha)); } catch (_) { }
     const pend = [];
     const em = String(email).toLowerCase();
     for (const f of candidatas) {

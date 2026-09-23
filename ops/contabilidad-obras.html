@@ -67,7 +67,7 @@
         <input type="month" id="mes" onchange="renderTodo()">
         <label style="font-size:13px"><input type="checkbox" id="todo" onchange="renderTodo()"> Todo el histórico</label>
         <button class="btn btn-o" onclick="exportarCSV()">⬇ CSV</button>
-        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (costo por día de RRHH ÷ 9 h de jornada; las horas por encima de 9 al 135 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
+        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (costo por día de RRHH ÷ 9 h de jornada; las horas por encima de 9 al 135 %; un feriado trabajado, al 200 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
     </div>
 
     <div class="tabpanel active" id="tab-obras">
@@ -105,12 +105,13 @@
     const TIPOS = { obra: '🏗️ Obra', taller: '🔧 Taller / fábrica interna', almacen: '📦 Almacén', transporte: '🚚 Transporte / compras', oficina: '🏢 Oficina', capacitacion: '🎓 Capacitación', sin_trabajo: '🌧️ Sin trabajo (lluvia / sin material)', ausente: '🚫 Ausente / permiso' };
     const tipoLabel = (t) => TIPOS[t] || t;
 
-    let empleados = [], partes = [], viajes = [], informes = [];
+    let empleados = [], partes = [], viajes = [], informes = [], feriadosTrab = new Set();
     const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22)
     let config = { horasJornada: JORNADA_H, factorExtra: 1.35 };
     onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
     onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'viajes'), (s) => { viajes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'informesObra'), (s) => { informes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
 
@@ -137,7 +138,10 @@
                 ls.forEach(l => {
                     const ch = n2(l.costoHora) || costoHora(e), h = n2(l.horas), share = tot > 0 ? h / tot : 0;
                     const normales = Math.min(tot, jornada) * share, extras = Math.max(0, tot - jornada) * share;
-                    out.push({ ...l, fecha: p.fecha, encargado: p.encargadoNombre || p.encargadoEmail, horasNorm: normales, horasExtra: extras, costo: ch * normales + ch * extras * factor, sinCosto: !(ch > 0) });
+                    // Feriado trabajado (avisado por comunicado): todas las horas al 200 % (recargo legal), sin sumarle el de extras.
+                    const feriado = feriadosTrab.has(p.fecha), factorFer = n2(config.factorFeriado) || 2;
+                    const costo = feriado ? ch * h * factorFer : ch * normales + ch * extras * factor;
+                    out.push({ ...l, fecha: p.fecha, encargado: p.encargadoNombre || p.encargadoEmail, horasNorm: normales, horasExtra: extras, feriado, costo, sinCosto: !(ch > 0) });
                 });
             });
         });

@@ -349,7 +349,8 @@ async function recordarParteDiario(avisarAdmin) {
     const { fecha, domingo } = hoySantoDomingo();
     if (domingo) return;
     const fer = await db.collection('rrhhFeriados').where('fecha', '==', fecha).limit(1).get();
-    if (!fer.empty) return;
+    // Feriado que gerencia avisó por comunicado que se trabaja → se exige el parte como un día normal.
+    if (!fer.empty && !(await db.doc('rrhhFeriadosTrabajados/' + fecha).get()).exists) return;
     const cfg = await db.doc('rrhhConfig/parteDiario').get();
     const encargados = (cfg.exists && Array.isArray(cfg.data().encargados)) ? cfg.data().encargados : [];
     if (!encargados.length) return;
@@ -2146,6 +2147,8 @@ async function generarInformeObra(instId, inst) {
 
     const cfg = (await db.doc('rrhhConfig/parteDiario').get()).data() || {};
     const jornada = Number(cfg.horasJornada) || 9, factor = Number(cfg.factorExtra) || 1.35;   // jornada de instalación 9 h (usuario 2026-09-22)
+    const factorFer = Number(cfg.factorFeriado) || 2;   // feriado trabajado (avisado por comunicado): todas las horas al 200 %
+    const feriadosTrab = new Set((await db.collection('rrhhFeriadosTrabajados').get()).docs.map((d) => d.data().fecha).filter(Boolean));
     const empleados = {}; (await db.collection('rrhhEmpleados').get()).docs.forEach((d) => { empleados[d.id] = d.data(); });
     const costoHoraEmp = (e) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return dia / jornada; };
 
@@ -2166,7 +2169,7 @@ async function generarInformeObra(instId, inst) {
                 const ch = Number(l.costoHora) || costoHoraEmp(empleados[empId]);
                 const h = Number(l.horas) || 0, share = tot > 0 ? h / tot : 0;
                 const norm = Math.min(tot, jornada) * share, ext = Math.max(0, tot - jornada) * share;
-                const c = ch * norm + ch * ext * factor;
+                const c = feriadosTrab.has(p.fecha) ? ch * h * factorFer : ch * norm + ch * ext * factor;
                 horas += h; horasExtra += ext; costoMO += c;
                 if (!(ch > 0)) sinCosto.push(l.nombre);
                 const per = personas[l.nombre] = personas[l.nombre] || { nombre: l.nombre, horas: 0, costo: 0, dias: new Set() };
