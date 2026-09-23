@@ -360,7 +360,8 @@
         }
         document.getElementById('p-nota').value = parteActual.nota || '';
         const ft = feriadosTrab.get(fecha);
-        document.getElementById('p-estado').innerHTML = ft ? `🗓️ <b>Feriado trabajado</b> (${esc(ft.nombreFeriado || 'feriado')}, avisado por ${esc(ft.por || 'gerencia')}): el parte de este día es obligatorio y las horas se pagan al 200 %.` : (feriados.has(fecha) ? '🗓️ Este día es feriado: no se exige parte (salvo aviso de gerencia por comunicado).' : '');
+        const yaEnviado = ex && fecha !== hoyStr() ? `✏️ <b>Estás corrigiendo el parte del ${esc(fmtFecha(fecha))}</b> (ya enviado). Cambia lo que haga falta y vuelve a tocar <b>Enviar parte</b>: reemplaza al anterior. ` : '';
+        document.getElementById('p-estado').innerHTML = yaEnviado + (ft ? `🗓️ <b>Feriado trabajado</b> (${esc(ft.nombreFeriado || 'feriado')}, avisado por ${esc(ft.por || 'gerencia')}): el parte de este día es obligatorio y las horas se pagan al 200 %.` : (feriados.has(fecha) ? '🗓️ Este día es feriado: no se exige parte (salvo aviso de gerencia por comunicado).' : ''));
         renderParte();
     };
     // Copia el último parte enviado por este encargado (antes de la fecha elegida).
@@ -509,13 +510,14 @@
         }
         return out;
     }
-    // El encargado corrige hasta 3 días atrás; pero un día PENDIENTE (misma ventana de 7 días que el
-    // bloqueo de parte-gate.js) siempre se puede cargar, si no quedaría bloqueado sin poder resolverlo.
+    // El encargado corrige sus propios partes hasta 30 días atrás (usuario 2026-09-23: "que Wilson lo corrija él
+    // mismo"); un día PENDIENTE (misma ventana de 7 días que el bloqueo de parte-gate.js) siempre se puede cargar.
+    const LIMITE_CORRECCION_DIAS = 30;
     function ajustarMinFecha() {
         const f = document.getElementById('p-fecha'); if (esAdmin) { f.min = ''; return; }
         const pend = diasPendientes(usuario.email, 7);
         const masViejo = pend.length ? pend[pend.length - 1] : '';
-        const lim = addDias(hoyStr(), -3);
+        const lim = addDias(hoyStr(), -LIMITE_CORRECCION_DIAS);
         f.min = masViejo && masViejo < lim ? masViejo : lim;
     }
     function renderAvisoPendientes() {
