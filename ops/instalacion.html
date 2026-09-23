@@ -199,6 +199,20 @@
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
         <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">📋 Por agendar <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
+        <button class="tab" id="tabbtn-hist" onclick="setTab('hist')">🕘 Historial</button>
+    </div>
+
+    <!-- ===== Pestaña: Historial de trabajos validados (2026-09-22, pedido del usuario: instaladores y
+         ayudantes vuelven a ver un trabajo completado; gerencia además lo puede corregir o reabrir) ===== -->
+    <div class="tabpanel" id="tab-hist" style="display:none;flex-direction:column;gap:10px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="hist-per" onchange="renderHistorial()" style="padding:9px 12px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:14px;min-height:42px;background:#fff">
+                <option value="30">Últimos 30 días</option><option value="90" selected>Últimos 3 meses</option><option value="365">Último año</option><option value="0">Todo</option>
+            </select>
+            <input type="search" id="hist-q" oninput="renderHistorial()" placeholder="🔎 Cliente u obra…" style="flex:1;min-width:180px;padding:9px 12px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:14px;min-height:42px">
+        </div>
+        <p id="hist-resumen" style="font-size:12.5px;color:#667;margin:0"></p>
+        <div id="hist-list"></div>
     </div>
 
     <!-- ===== Pestaña: Calendario día a día (agenda + calendario colapsable) ===== -->
@@ -424,8 +438,11 @@
         document.getElementById('tab-dia').style.display = t === 'dia' ? 'flex' : 'none';
         document.getElementById('tab-cal').style.display = (t === 'dia' && calAbierto) ? 'flex' : 'none';
         document.getElementById('tab-inst').style.display = t === 'inst' ? 'flex' : 'none';
+        document.getElementById('tab-hist').style.display = t === 'hist' ? 'flex' : 'none';
         document.getElementById('tabbtn-dia').classList.toggle('active', t === 'dia');
         document.getElementById('tabbtn-inst').classList.toggle('active', t === 'inst');
+        document.getElementById('tabbtn-hist').classList.toggle('active', t === 'hist');
+        if (t === 'hist') renderHistorial();
     };
     window.toggleCalendario = function () {
         calAbierto = !calAbierto;
@@ -512,7 +529,8 @@
     }
 
     /* ===== Tarjeta de trabajo (instalaciones) ===== */
-    function jobCardHTML(j) {
+    function jobCardHTML(j, opts) {
+        const hist = !!(opts && opts.hist);   // en Historial, quien no es admin solo consulta
         const hora = fechaTxtJob(j);
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
         const g = parseGps(j.gps);
@@ -566,11 +584,11 @@
             ${navHtml}
             ${recInlineHTML(recsCache.filter(c => c.instalacionId === j.id))}
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
-            ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
+            ${(puedeCambiarEstado && (!hist || esAdmin)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
             <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
-            ${puedeCambiarEstado ? `
+            ${(puedeCambiarEstado && (!hist || esAdmin)) ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
                 <select onchange="cambiarEstado('${j.id}', this.value)">
@@ -730,7 +748,24 @@
         renderCalendario();
         renderPorInstalar();
         renderBadges();
+        if (tabActual === 'hist') renderHistorial();
     }
+
+    // Historial: trabajos COMPLETADOS (validados), los más recientes primero. Instaladores y ayudantes
+    // los ven en solo lectura (hoja, fotos, conversación); admin puede editar, reabrir o eliminar.
+    window.renderHistorial = function () {
+        const list = document.getElementById('hist-list'); if (!list) return;
+        const dias = Number((document.getElementById('hist-per') || {}).value || 90);
+        const q = String((document.getElementById('hist-q') || {}).value || '').trim().toLowerCase();
+        const desde = dias ? Date.now() - dias * 86400000 : 0;
+        const fechaVal = (j) => { const v = j.validadoFecha || j.estadoFecha || j.fecha; return v && v.toDate ? v.toDate().getTime() : (v ? Date.parse(v) || 0 : 0); };
+        const hechos = allJobs.filter(j => j.estado === 'completado')
+            .filter(j => !desde || fechaVal(j) >= desde)
+            .filter(j => !q || [j.cliente, j.obra, j.direccion, j.validadoPor].join(' ').toLowerCase().includes(q))
+            .sort((a, b) => fechaVal(b) - fechaVal(a));
+        document.getElementById('hist-resumen').textContent = hechos.length + ' trabajo(s) validado(s)' + (dias ? ' en el período' : '') + (esAdmin ? ' · como gerencia puedes editar, reabrir o eliminar' : ' · solo consulta');
+        list.innerHTML = hechos.length ? hechos.map(j => jobCardHTML(j, { hist: true })).join('') : '<p class="empty">No hay trabajos validados en este período.</p>';
+    };
 
     function renderMiDia() {
         // Agenda día a día: trabajos con fecha (no completados) ordenados + en curso sin fecha.
