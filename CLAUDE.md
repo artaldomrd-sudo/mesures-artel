@@ -1913,6 +1913,14 @@ adiciones puntuales y explícitas (ver más abajo).
     falta tocar la plantilla, solo el filtro. La encargada sube el precio final directo, sin
     pasar por ALUCUFEL. Esto es a propósito una solución simple: cuando se conecte el ERP nuevo
     al Panel de Control, cotización interna se manejará ahí en vez de acá.
+  - **Reenvío desde el cuaderno con un pedido de fábrica ya abierto (2026-09-22, usuario; caso Riviera Coson 4
+    duplicado)**: `enviarOrden()` (Fabricación o directo a Instalación) consulta `orders` por cliente+obra; si hay un
+    pedido FAB no completado, `elegirReenvio()` (overlay propio, 3 opciones) pregunta: **Actualizar el original**
+    (`updateDoc`: items/appJSON/material/color, `fichaActualizada/Por/Version`, y `comentarioParaFabrica` "📐 FICHA
+    ACTUALIZADA…" sin atender para que fábrica lo vea en rojo; conserva estado, partes marcadas e historial), **Enviar
+    como pedido NUEVO** (segunda tanda; confirm extra) o **Cancelar**. Sin pedido abierto envía como siempre. Hecho en
+    esta sesión de sistema con autorización explícita ("es algo relacionado entre los dos"). `order-preview.js`
+    "Reenviar" y `cotizaciones.html` "A ALUCUFEL / Oficina interna" también avisan antes de duplicar.
   - **`aprobarYEnviarFabrica(id, destino)`** en `ops/cotizaciones.html` (cliente aprobó la
     cotización → crea el pedido de fábrica aparte) también pide destino — dos botones ("A
     ALUCUFEL" / "Oficina interna") en vez de uno solo. Este es un **segundo punto de creación**

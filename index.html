@@ -565,7 +565,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 15:20</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 23:28</div>
         </div>
     </div>
     
@@ -9387,7 +9387,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
-    import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
     import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
@@ -9681,6 +9681,31 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     };
     document.getElementById('header-cliente')?.addEventListener('input', refreshObraDatalist);
 
+    // Diálogo "ya existe un pedido de esta obra": devuelve el id del pedido a actualizar, 'nuevo' o 'cancelar'.
+    const ETAPA_PEDIDO = { pendiente_fabrica: 'pendiente en fábrica', en_fabrica: 'en fábrica', parcialmente_listo: 'parcialmente listo', listo_para_cargar: 'listo para cargar', parcialmente_instalado: 'parcialmente instalado' };
+    function elegirReenvio(abiertos) {
+        return new Promise((resolve) => {
+            const ov = document.createElement('div');
+            ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,61,98,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arimo,sans-serif;';
+            const fecha = (o) => { const v = o.fechaCotizado; const d = v && v.toDate ? v.toDate() : null; return d ? d.toLocaleDateString('es-DO') : ''; };
+            const lista = abiertos.map(o => `<label style="display:flex;gap:8px;align-items:flex-start;background:#f4f6f9;border-radius:9px;padding:9px 11px;margin-top:6px;font-size:13.5px;cursor:pointer"><input type="radio" name="rv-ped" value="${o.id}" ${o === abiertos[0] ? 'checked' : ''} style="margin-top:3px"><span><b>${o.docType || 'FABRICACIÓN'}</b> · ${ETAPA_PEDIDO[o.status] || o.status || ''}${o.entregado ? ' · entregado' : ''}${fecha(o) ? ' · enviado el ' + fecha(o) : ''} · ${o.totalItems || (o.items || []).length || 0} ítems${o.destino === 'interno' ? ' · fábrica interna' : ' · ALUCUFEL'}</span></label>`).join('');
+            ov.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:520px;width:100%;padding:20px 18px;box-shadow:0 10px 40px rgba(0,0,0,.3);max-height:92vh;overflow:auto">
+                <h2 style="margin:0 0 6px;font-size:18px;color:#0A3D62">⚠ Esta obra ya tiene un pedido de fabricación en curso</h2>
+                <p style="margin:0 0 8px;font-size:13.5px;color:#556;line-height:1.5">Si solo corregiste la ficha, <b>actualiza el original</b>: fábrica verá la ficha nueva en el mismo pedido y nada se duplica. Si es una <b>segunda tanda</b> real de la misma obra, envíalo como pedido nuevo.</p>
+                ${lista}
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+                    <button id="rv-act" style="background:#0A3D62;color:#fff;border:none;border-radius:10px;padding:13px;font-weight:bold;font-size:15px;cursor:pointer;font-family:Arimo">✏️ Actualizar el pedido original con esta ficha</button>
+                    <button id="rv-nuevo" style="background:#fff;color:#0A3D62;border:1.5px solid #0A3D62;border-radius:10px;padding:12px;font-weight:bold;font-size:14px;cursor:pointer;font-family:Arimo">➕ Enviar como pedido NUEVO (segunda tanda)</button>
+                    <button id="rv-cancel" style="background:#eef1f4;color:#556;border:none;border-radius:10px;padding:11px;font-weight:bold;font-size:14px;cursor:pointer;font-family:Arimo">Cancelar, no enviar nada</button>
+                </div></div>`;
+            document.body.appendChild(ov);
+            const fin = (v) => { ov.remove(); resolve(v); };
+            ov.querySelector('#rv-act').onclick = () => { const r = ov.querySelector('input[name="rv-ped"]:checked'); fin(r ? r.value : abiertos[0].id); };
+            ov.querySelector('#rv-nuevo').onclick = () => fin(confirm('Se creará un SEGUNDO pedido de fabricación de esta obra (aparecerá dos veces en fábrica, Transportes e Instalación). ¿Seguro?') ? 'nuevo' : 'cancelar');
+            ov.querySelector('#rv-cancel').onclick = () => fin('cancelar');
+        });
+    }
+
     window.enviarOrden = async function (destino, btnEl) {
         const btn = btnEl || null;
         const originalHtml = btn ? btn.innerHTML : '';
@@ -9722,7 +9747,41 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 };
             });
 
+            // ¿Ya existe un pedido de FABRICACIÓN abierto de esta misma obra? (usuario 2026-09-22: modificar
+            // la ficha en el cuaderno y volver a enviar creaba un duplicado — caso Riviera Coson 4). Se pregunta:
+            // actualizar el original (misma etapa, fábrica ve la ficha nueva) o enviar como pedido nuevo.
+            const isFabOrInst = (appJSON.docType || '').indexOf('FAB') === 0 || destino === 'instalacion';
+            let pedidoAActualizar = null;
+            if (isFabOrInst) {
+                let abiertos = [];
+                try {
+                    const qs = await getDocs(query(collection(db, 'orders'), where('cliente', '==', clienteEnviado), where('obra', '==', obraEnviada)));
+                    abiertos = qs.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => (o.docType || '').indexOf('FAB') === 0 && o.status !== 'completado');
+                } catch (_) { abiertos = []; }
+                if (abiertos.length) {
+                    const eleccion = await elegirReenvio(abiertos);
+                    if (eleccion === 'cancelar') return;
+                    if (eleccion !== 'nuevo') pedidoAActualizar = abiertos.find(o => o.id === eleccion) || null;
+                }
+            }
+
             if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
+
+            if (pedidoAActualizar) {
+                const quien = (auth.currentUser && (auth.currentUser.displayName || auth.currentUser.email)) || '';
+                const ahoraTxt = new Date().toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' });
+                await updateDoc(doc(db, 'orders', pedidoAActualizar.id), {
+                    items, totalItems: items.length, appJSON,
+                    material: appJSON.header.material, color: appJSON.header.color,
+                    fichaActualizada: serverTimestamp(), fichaActualizadaPor: quien, fichaVersion: (Number(pedidoAActualizar.fichaVersion) || 1) + 1,
+                    // Fábrica ve el aviso en rojo hasta marcarlo atendido (mismo mecanismo que "Instrucción de la oficina").
+                    comentarioParaFabrica: `📐 FICHA ACTUALIZADA desde el cuaderno el ${ahoraTxt}${quien ? ' por ' + quien : ''}: revisa medidas, cantidades e ítems antes de seguir. Lo que ya marcaste como listo se conserva.`,
+                    comentarioParaFabricaAtendido: false, comentarioParaFabricaFecha: serverTimestamp(), comentarioParaFabricaPor: quien
+                });
+                syncClienteObra(clienteEnviado, obraEnviada);
+                alert('✓ Pedido original actualizado con la ficha nueva. Fábrica verá el aviso de ficha actualizada; el pedido sigue en su misma etapa.');
+                return;
+            }
 
             // Instalación directa: trabajos que NO pasan por fábrica (perfiles que se cortan e
             // instalan en obra; el pedido de vidrios se sube después). Van directo a la página de
