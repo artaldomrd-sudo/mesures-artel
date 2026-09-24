@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — ¿Cómo fue tu experiencia?</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<style>
+    /* Página PÚBLICA (el cliente la abre desde WhatsApp, sin sesión): estilos propios, sin shared.css
+       para no depender de nada del panel. Colores de marca ARTAL. */
+    :root { --azul: #0A3D62; --azul2: #1c5a85; --amarillo: #f5b400; --verde: #1f9d61; --gris: #667; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Arimo', Arial, sans-serif; background: #f3f6fa; color: #1c2b3a; }
+    .top { background: linear-gradient(135deg, var(--azul), var(--azul2)); padding: 22px 16px 26px; text-align: center; color: #fff; }
+    .top img { height: 54px; background: #fff; border-radius: 12px; padding: 6px 12px; }
+    .top h1 { font-size: 21px; margin: 14px 0 4px; }
+    .top p { margin: 0; font-size: 14px; opacity: .9; }
+    .lang { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+    .lang button { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.5); border-radius: 20px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .lang button.on { background: #fff; color: var(--azul); font-weight: bold; }
+    main { max-width: 560px; margin: -14px auto 40px; padding: 0 14px; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 10px 30px -14px rgba(20,49,75,.35); padding: 18px 16px; margin-bottom: 14px; }
+    .obra { font-size: 15px; color: var(--gris); text-align: center; }
+    .obra b { color: var(--azul); }
+    .q { margin: 16px 0 6px; font-weight: bold; font-size: 15.5px; }
+    .q.big { font-size: 18px; text-align: center; margin-top: 6px; }
+    .stars { display: flex; gap: 6px; justify-content: center; }
+    .stars button { background: none; border: none; font-size: 40px; line-height: 1; color: #d5dbe3; cursor: pointer; padding: 4px; transition: transform .1s; font-family: inherit; }
+    .stars.small button { font-size: 30px; }
+    .stars button.on { color: var(--amarillo); text-shadow: 0 2px 6px rgba(245,180,0,.35); }
+    .stars button:active { transform: scale(1.15); }
+    .hint { text-align: center; color: var(--gris); font-size: 13px; min-height: 18px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid #eef1f4; }
+    .row:last-child { border-bottom: none; }
+    .row .lbl { font-size: 14.5px; }
+    .yn { display: flex; gap: 8px; }
+    .yn button { border: 2px solid #d5dbe3; background: #fff; border-radius: 12px; padding: 12px 20px; font-size: 15px; font-weight: bold; cursor: pointer; font-family: inherit; color: #1c2b3a; flex: 1; }
+    .yn button.on { border-color: var(--verde); background: #e7f7ee; color: #145c39; }
+    textarea, input[type=text] { width: 100%; border: 1.5px solid #d5dbe3; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 15px; resize: vertical; }
+    textarea { min-height: 96px; }
+    .send { display: block; width: 100%; background: var(--azul); color: #fff; border: none; border-radius: 14px; padding: 16px; font-size: 17px; font-weight: bold; cursor: pointer; font-family: inherit; margin-top: 8px; }
+    .send:disabled { opacity: .5; cursor: default; }
+    .err { color: #c0392b; font-size: 14px; text-align: center; margin-top: 8px; min-height: 18px; }
+    .gracias { text-align: center; padding: 30px 10px; }
+    .gracias .big { font-size: 56px; }
+    .gracias h2 { color: var(--azul); margin: 8px 0; }
+    .gracias p { color: var(--gris); font-size: 15px; line-height: 1.5; }
+    .foot { text-align: center; color: #98a2ae; font-size: 12px; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<div class="top">
+    <img src="../logo.png" alt="ARTAL">
+    <h1 data-t="titulo">¿Cómo fue tu experiencia con ARTAL?</h1>
+    <p data-t="sub">Tu opinión nos toma 1 minuto y nos ayuda a mejorar.</p>
+    <div class="lang"><button data-lang="es" class="on">Español</button><button data-lang="en">English</button><button data-lang="fr">Français</button></div>
+</div>
+
+<main>
+    <div id="cont"><div class="card" style="text-align:center;color:#667" data-t="cargando">Cargando…</div></div>
+    <div class="foot">ARTAL Dominicana · Las Terrenas</div>
+</main>
+
+<script type="module">
+    import { db } from './firebase-config.js';
+    import { doc, getDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const T = {
+        es: { titulo: '¿Cómo fue tu experiencia con ARTAL?', sub: 'Tu opinión nos toma 1 minuto y nos ayuda a mejorar.', cargando: 'Cargando…', trabajo: 'Trabajo realizado en', general: 'En general, ¿cómo calificas el trabajo?', detalle: 'Cuéntanos un poco más', puntualidad: 'Puntualidad', limpieza: 'Limpieza y orden al terminar', trato: 'Trato del equipo', recom: '¿Nos recomendarías a un amigo o vecino?', si: 'Sí', no: 'No', comentario: '¿Algo que quieras decirnos? (opcional)', nombre: 'Tu nombre (opcional)', enviar: 'Enviar mi opinión', enviando: 'Enviando…', faltaGeneral: 'Elige cuántas estrellas le das al trabajo.', gracias: '¡Gracias!', graciasTxt: 'Tu opinión ya llegó al equipo de ARTAL. Nos ayuda a seguir mejorando.', yaRespondida: 'Esta encuesta ya fue respondida. ¡Gracias!', noExiste: 'Este enlace no es válido o ya venció.', estrellas: ['Muy malo', 'Malo', 'Regular', 'Bueno', 'Excelente'], error: 'No se pudo enviar. Revisa tu conexión e inténtalo de nuevo.' },
+        en: { titulo: 'How was your experience with ARTAL?', sub: 'It takes 1 minute and helps us improve.', cargando: 'Loading…', trabajo: 'Work done at', general: 'Overall, how would you rate the work?', detalle: 'Tell us a bit more', puntualidad: 'Punctuality', limpieza: 'Cleanliness and tidiness when finished', trato: 'Team courtesy', recom: 'Would you recommend us to a friend or neighbour?', si: 'Yes', no: 'No', comentario: 'Anything you would like to tell us? (optional)', nombre: 'Your name (optional)', enviar: 'Send my feedback', enviando: 'Sending…', faltaGeneral: 'Please choose how many stars you give the work.', gracias: 'Thank you!', graciasTxt: 'Your feedback has reached the ARTAL team. It helps us keep improving.', yaRespondida: 'This survey has already been answered. Thank you!', noExiste: 'This link is not valid or has expired.', estrellas: ['Very poor', 'Poor', 'Fair', 'Good', 'Excellent'], error: 'Could not send. Check your connection and try again.' },
+        fr: { titulo: 'Comment s’est passée votre expérience avec ARTAL ?', sub: '1 minute suffit et cela nous aide à nous améliorer.', cargando: 'Chargement…', trabajo: 'Travaux réalisés à', general: 'Globalement, comment notez-vous le travail ?', detalle: 'Dites-nous en un peu plus', puntualidad: 'Ponctualité', limpieza: 'Propreté et ordre à la fin', trato: 'Amabilité de l’équipe', recom: 'Nous recommanderiez-vous à un ami ou un voisin ?', si: 'Oui', no: 'Non', comentario: 'Quelque chose à nous dire ? (facultatif)', nombre: 'Votre nom (facultatif)', enviar: 'Envoyer mon avis', enviando: 'Envoi…', faltaGeneral: 'Choisissez le nombre d’étoiles pour le travail.', gracias: 'Merci !', graciasTxt: 'Votre avis est bien arrivé à l’équipe ARTAL. Il nous aide à progresser.', yaRespondida: 'Ce questionnaire a déjà été rempli. Merci !', noExiste: 'Ce lien n’est pas valide ou a expiré.', estrellas: ['Très mauvais', 'Mauvais', 'Moyen', 'Bien', 'Excellent'], error: 'Envoi impossible. Vérifiez votre connexion et réessayez.' }
+    };
+    let lang = (navigator.language || 'es').slice(0, 2); if (!T[lang]) lang = 'es';
+    const t = (k) => T[lang][k];
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const token = new URLSearchParams(location.search).get('t') || '';
+    const cont = document.getElementById('cont');
+    const resp = { general: 0, puntualidad: 0, limpieza: 0, trato: 0, recomendaria: null, comentario: '', nombre: '' };
+    let encuesta = null, estado = 'cargando';
+
+    document.querySelectorAll('.lang button').forEach(b => b.onclick = () => { lang = b.dataset.lang; pintar(); });
+
+    function starsHTML(key, small) {
+        return `<div class="stars ${small ? 'small' : ''}" data-key="${key}">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-n="${n}" class="${resp[key] >= n ? 'on' : ''}" aria-label="${n}">★</button>`).join('')}</div>`;
+    }
+    function pintar() {
+        document.querySelectorAll('.lang button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
+        document.querySelectorAll('[data-t]').forEach(el => { if (T[lang][el.dataset.t]) el.textContent = t(el.dataset.t); });
+        document.documentElement.lang = lang;
+        if (estado === 'cargando') { cont.innerHTML = `<div class="card" style="text-align:center;color:#667">${t('cargando')}</div>`; return; }
+        if (estado === 'noExiste') { cont.innerHTML = `<div class="card gracias"><div class="big">🔗</div><p>${t('noExiste')}</p></div>`; return; }
+        if (estado === 'gracias' || estado === 'yaRespondida') { cont.innerHTML = `<div class="card gracias"><div class="big">🙏</div><h2>${t('gracias')}</h2><p>${estado === 'gracias' ? t('graciasTxt') : t('yaRespondida')}</p></div>`; return; }
+        const lugar = [encuesta.cliente, encuesta.obra].filter(Boolean).join(' — ');
+        cont.innerHTML = `
+            <div class="card">
+                <div class="obra">${t('trabajo')} <b>${esc(lugar)}</b></div>
+                <div class="q big">${t('general')}</div>
+                ${starsHTML('general', false)}
+                <div class="hint" id="hint-general">${resp.general ? t('estrellas')[resp.general - 1] : ''}</div>
+            </div>
+            <div class="card">
+                <div class="q" style="margin-top:0">${t('detalle')}</div>
+                <div class="row"><span class="lbl">${t('puntualidad')}</span>${starsHTML('puntualidad', true)}</div>
+                <div class="row"><span class="lbl">${t('limpieza')}</span>${starsHTML('limpieza', true)}</div>
+                <div class="row"><span class="lbl">${t('trato')}</span>${starsHTML('trato', true)}</div>
+            </div>
+            <div class="card">
+                <div class="q" style="margin-top:0">${t('recom')}</div>
+                <div class="yn"><button type="button" data-yn="1" class="${resp.recomendaria === true ? 'on' : ''}">👍 ${t('si')}</button><button type="button" data-yn="0" class="${resp.recomendaria === false ? 'on' : ''}">👎 ${t('no')}</button></div>
+                <div class="q">${t('comentario')}</div>
+                <textarea id="comentario" maxlength="1500">${esc(resp.comentario)}</textarea>
+                <div class="q">${t('nombre')}</div>
+                <input type="text" id="nombre" maxlength="120" value="${esc(resp.nombre)}">
+                <button class="send" id="send">${t('enviar')}</button>
+                <div class="err" id="err"></div>
+            </div>`;
+        cont.querySelectorAll('.stars button').forEach(b => b.onclick = () => {
+            const key = b.parentElement.dataset.key; resp[key] = Number(b.dataset.n);
+            b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', Number(x.dataset.n) <= resp[key]));
+            if (key === 'general') document.getElementById('hint-general').textContent = t('estrellas')[resp.general - 1];
+        });
+        cont.querySelectorAll('.yn button').forEach(b => b.onclick = () => { resp.recomendaria = b.dataset.yn === '1'; cont.querySelectorAll('.yn button').forEach(x => x.classList.toggle('on', x === b)); });
+        document.getElementById('comentario').oninput = (e) => resp.comentario = e.target.value;
+        document.getElementById('nombre').oninput = (e) => resp.nombre = e.target.value;
+        document.getElementById('send').onclick = enviar;
+    }
+
+    async function enviar() {
+        const err = document.getElementById('err'); err.textContent = '';
+        if (!resp.general) { err.textContent = t('faltaGeneral'); return; }
+        const btn = document.getElementById('send'); btn.disabled = true; btn.textContent = t('enviando');
+        try {
+            const respuesta = { general: resp.general, comentario: String(resp.comentario || '').trim().slice(0, 1500), idioma: lang, fecha: new Date().toISOString() };
+            if (resp.puntualidad) respuesta.puntualidad = resp.puntualidad;
+            if (resp.limpieza) respuesta.limpieza = resp.limpieza;
+            if (resp.trato) respuesta.trato = resp.trato;
+            if (resp.recomendaria !== null) respuesta.recomendaria = resp.recomendaria;
+            if (resp.nombre.trim()) respuesta.nombre = resp.nombre.trim().slice(0, 120);
+            if (token !== 'demo') await updateDoc(doc(db, 'encuestas', token), { estado: 'respondida', respuesta });
+            estado = 'gracias'; pintar();
+        } catch (e) { console.error(e); err.textContent = t('error'); btn.disabled = false; btn.textContent = t('enviar'); }
+    }
+
+    (async () => {
+        if (!token) { estado = 'noExiste'; pintar(); return; }
+        // ?t=demo: vista de muestra para gerencia (no lee ni escribe nada en Firestore).
+        if (token === 'demo') { encuesta = { cliente: 'Cliente de ejemplo', obra: 'Villa Demo' }; estado = 'form'; pintar(); return; }
+        try {
+            const s = await getDoc(doc(db, 'encuestas', token));
+            if (!s.exists()) { estado = 'noExiste'; }
+            else { encuesta = s.data(); estado = encuesta.estado === 'respondida' ? 'yaRespondida' : 'form'; }
+        } catch (e) { console.error(e); estado = 'noExiste'; }
+        pintar();
+    })();
+</script>
+</body>
+</html>

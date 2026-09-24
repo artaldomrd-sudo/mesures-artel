@@ -2312,6 +2312,33 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Puntos del equipo y encuesta de satisfacción del cliente (2026-09-24)
+
+Primer paso del sistema de Nivel / bonificaciones (memoria `artal-nivel-rango-gamificacion`). Ledger `puntos` (ya lo
+alimentaba la Academia) + `puntosConfig/general` {visibleEquipo, desde, horaLimiteParte, diasVencido, reglas{…}} +
+`puntosConfig/ultimaEvaluacion`. **Modo silencioso**: `visibleEquipo=false` → el equipo ve "Próximamente" en
+`ops/puntos.html` y no hay enlace; admin ve todo. Solo cuentan eventos con `fechaEvento ≥ desde` (24/09/2026);
+el total puede ser negativo.
+- `functions/puntos.js` (fábrica montada en index.js): `puntosEvaluarDiario` (23:45 RD) → `evaluarDia(D)` escribe eventos
+  con id determinista `{emailKey}__{tipo}__{ref}` (idempotente): `parte` (a tiempo / tarde / falta; incluido en el parte de
+  otro encargado = cumplido; el veredicto de un día no cambia si el parte llega después), `trabajo` (completado el día
+  agendado / 1 día / 2+; solo asignados con rol de obra), `trabajo_vencido` (una vez, > diasVencido), `msg` (comunicados
+  de 48–72 h: acuse < 24 h / sin acuse; se saltan `informe_obra` y `encuesta`). `puntosEvaluarAhora` (POST admin {fecha}).
+  `encuestaAlCompletar` (instalación → completado, cliente no interno) crea `encuestas/{token}` + `instalaciones.encuestaToken/
+  Url/Estado` y avisa a los asignados; `encuestaRespondida` aplica `encuesta{1..5}` a cada asignado (origen `cliente`),
+  marca `puntosAplicados`, escribe `instalaciones.encuestaGeneral` y manda Mensajería + push a admins (tipo `encuesta`).
+- `ops/satisfaccion.html?t=TOKEN`: página PÚBLICA (sin sesión, sin shared.css) ES/EN/FR: estrellas general + puntualidad /
+  limpieza / trato, ¿recomendaría?, comentario, nombre. Reglas: `encuestas` get público por id, update solo pendiente →
+  respondida con `respuesta` acotada (`respuestaEncuestaValida`); `puntosConfig` admin; `puntos` create también admin
+  (puntos manuales `supervisor`).
+- `ops/puntos.html`: admin → 👥 Equipo (ranking, puntos manuales con motivo, borrar evento), ⭐ Encuestas (WhatsApp `wa.me` /
+  copiar), ⚙️ Reglas (visibleEquipo, desde, valores, "Evaluar esa fecha ahora"), 👤 vista de cada persona. Equipo → solo lo
+  suyo. Enlace `#link-puntos` en el menú de Instalación (admin siempre; equipo cuando visibleEquipo). Tarjeta del trabajo
+  completado: bloque «⭐ Encuesta al cliente» (WhatsApp con teléfono de `clientes` si existe, copiar) o estrellas si respondió.
+  Guía `guia-puntos` en la Academia con `roles:['admin']` hasta que se active; entonces quitar esa restricción.
+- Pendiente acordado: repartir las horas "Transporte" del chofer entre las obras de sus viajes del día (usuario 24/09,
+  todavía sin confirmar). Transportes NO entra en los puntos por decisión del usuario.
+
 ### Academia: guías de la plataforma (2026-09-22)
 
 `ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La

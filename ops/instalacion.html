@@ -186,6 +186,7 @@
             <a href="inventario.html">📦 Inventario</a>
             <a href="rrhh-reuniones.html">🎯 Mis objetivos</a>
             <a href="academia.html" id="link-academia">🎓 Academia · guías</a>
+            <a href="puntos.html" id="link-puntos" style="display:none;">⭐ Mis puntos</a>
             <a href="historial.html" id="link-historial" style="display:none;">🗂️ Historial</a>
             <button id="bio-btn" title="Registrar tu huella/Face ID en este teléfono para confirmar instalaciones">🔒 Mi biometría</button>
             <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
@@ -388,6 +389,9 @@
     // Historial exige admin/lector (historial.html usa requireAuth([])): antes el link se le mostraba
     // al instalador y lo rebotaba al tocarlo — ahora solo lo ve el admin.
     if (esAdmin) { const lh = document.getElementById('link-historial'); if (lh) lh.style.display = ''; }
+    // ⭐ Puntos del equipo: el enlace aparece para admin siempre y para el equipo solo cuando gerencia
+    // activa `puntosConfig/general.visibleEquipo` (mientras tanto el sistema acumula en silencio).
+    onSnapshot(doc(db, 'puntosConfig', 'general'), (s) => { const lp = document.getElementById('link-puntos'); if (lp) lp.style.display = (esAdmin || (s.exists() && s.data().visibleEquipo)) ? '' : 'none'; });
     // Menú ☰: abre/cierra; se cierra al tocar fuera o al elegir una opción.
     const menuBtn = document.getElementById('menu-btn'), menuPanel = document.getElementById('menu-panel');
     const setMenu = (open) => { menuPanel.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); };
@@ -529,6 +533,29 @@
     }
 
     /* ===== Tarjeta de trabajo (instalaciones) ===== */
+    // Encuesta de satisfacción del cliente (la crea la Cloud Function encuestaAlCompletar al validar el
+    // trabajo; ops/satisfaccion.html?t=TOKEN, pública). Pendiente → botón para mandarla por WhatsApp
+    // (con el teléfono del cliente si está en Clientes) o copiar el enlace. Respondida → estrellas.
+    function encuestaHTML(j) {
+        if (j.estado !== 'completado' || !j.encuestaToken) return '';
+        const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
+        if (j.encuestaEstado === 'respondida') {
+            const g = Number(j.encuestaGeneral) || 0;
+            return `<br><span style="color:#b8860b;font-weight:bold;">⭐ Cliente: ${'★'.repeat(g)}${'☆'.repeat(Math.max(0, 5 - g))} (${g}/5)</span>`;
+        }
+        const url = j.encuestaUrl || ('https://artaldomrd-sudo.github.io/mesures-artel/ops/satisfaccion.html?t=' + j.encuestaToken);
+        const cli = clientesCache.find(c => c && c.nombre && j.cliente && c.nombre.trim().toLowerCase() === String(j.cliente).trim().toLowerCase()) || {};
+        const tel = String(cli.telefono || '').replace(/\D/g, '');
+        const telWa = tel ? (tel.length === 10 ? '1' + tel : tel) : '';
+        const texto = encodeURIComponent(`Hola, somos ARTAL. Acabamos de terminar el trabajo en ${lugar}. ¿Nos regalas 1 minuto para contarnos cómo fue? 🙏\n${url}`);
+        return `<div style="margin-top:8px;background:#fff8e1;border-left:4px solid #f5b400;border-radius:8px;padding:8px 10px;font-size:12.5px;">
+            <b>⭐ Encuesta al cliente</b> — mándale el enlace para que califique el trabajo${telWa ? ' (' + esc(cli.telefono) + ')' : ''}.
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+                <a class="nav-btn" style="background:#25D366;color:#fff;" href="https://wa.me/${telWa}?text=${texto}" target="_blank" rel="noopener">📲 WhatsApp</a>
+                <button class="nav-btn copiar" onclick="copiarTexto('${encodeURIComponent(url)}')">⧉ Copiar enlace</button>
+            </div></div>`;
+    }
+    window.copiarTexto = async (enc) => { const t = decodeURIComponent(enc); try { await navigator.clipboard.writeText(t); alert('Enlace copiado.'); } catch (_) { prompt('Copia el enlace:', t); } };
     function jobCardHTML(j, opts) {
         const hist = !!(opts && opts.hist);   // en Historial, quien no es admin solo consulta
         const hora = fechaTxtJob(j);
@@ -579,6 +606,7 @@
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
                 ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
+                ${encuestaHTML(j)}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
             </div>
             ${navHtml}

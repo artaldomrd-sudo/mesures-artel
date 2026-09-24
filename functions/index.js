@@ -2281,4 +2281,8 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 // PENDIENTE (usuario 2026-09-22: "no voy a desplegar lo del WhatsApp, que no afecte el resto de la app"):
 // el Inbox solo se monta con INBOX_ACTIVO=1 en functions/.env. Apagado, sus funciones no existen, no se
 // despliegan y el deploy no pide los secretos WHATSAPP_* ni la versión de Graph.
+// ---------------------------------------------------------------------------------------------
+// PUNTOS DEL EQUIPO + ENCUESTA DE SATISFACCIÓN DEL CLIENTE (usuario 2026-09-24). Ver ./puntos.js.
+Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin }));
+
 if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));

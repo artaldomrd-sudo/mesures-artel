@@ -95,8 +95,30 @@ service cloud.firestore {
     // Puntos (gamificación): ledger que alimenta el futuro módulo de Nivel/Rango. Cada quien solo
     // puede escribir eventos con SU propio correo (no puntos ajenos). Borrar, solo admin.
     match /puntos/{id} {
-      allow create, update: if request.auth != null && request.resource.data.email == request.auth.token.email;
+      allow create, update: if request.auth != null && (request.resource.data.email == request.auth.token.email || 'admin' in rolesDelUsuario());
       allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+    }
+    // Reglas/valores del sistema de puntos (visibleEquipo, desde, puntos por evento): solo admin.
+    match /puntosConfig/{id} { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }
+    // Encuesta de satisfacción del cliente (ops/satisfaccion.html?t=TOKEN): la crea la Cloud Function
+    // al completarse un trabajo. El CLIENTE la abre SIN sesión: puede leer SU encuesta (por el token,
+    // que es el id del doc; no puede listar) y responderla UNA vez — solo pasa de 'pendiente' a
+    // 'respondida' escribiendo el mapa `respuesta` con campos acotados. Nadie edita una respuesta.
+    function respuestaEncuestaValida() {
+      let r = request.resource.data.respuesta;
+      return resource.data.estado == 'pendiente'
+        && request.resource.data.estado == 'respondida'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estado', 'respuesta'])
+        && r is map
+        && r.general is int && r.general >= 1 && r.general <= 5
+        && r.comentario is string && r.comentario.size() <= 1500
+        && r.keys().hasOnly(['general', 'puntualidad', 'limpieza', 'trato', 'recomendaria', 'comentario', 'nombre', 'idioma', 'fecha']);
+    }
+    match /encuestas/{token} {
+      allow get: if true;
+      allow list: if request.auth != null;
+      allow update: if respuestaEncuestaValida() || (request.auth != null && 'admin' in rolesDelUsuario());
+      allow create, delete: if request.auth != null && 'admin' in rolesDelUsuario();
     }
 
     // Mensajería ARTAL (comunicados de gerencia → equipo). CREAR/BORRAR solo lo puede el rol
