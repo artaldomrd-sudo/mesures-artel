@@ -64,7 +64,7 @@
 </header>
 
 <main>
-    <p class="hint" style="margin:0 0 10px">Escribe las medidas y sale el precio de venta. Una línea por producto; por ahora: tela de mosquitera. Los valores de costo y precio por m² se definen en «⚙️ Rollo y precio» y quedan guardados para todo el equipo.</p>
+    <p class="hint" style="margin:0 0 10px">Escribe las medidas y sale el precio de venta. Una línea por producto; por ahora: tela de mosquitera. <span id="hint-admin"></span></p>
 
     <div class="card prod">
         <div class="cab"><span style="font-size:26px">🕸️</span><h2>Tela de mosquitera</h2><span class="hint" id="p-precio-m2"></span></div>
@@ -114,6 +114,9 @@
     const usuario = await requireAuth(['cotizaciones']);
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
+    // Costo, margen y parámetros del rollo: SOLO gerencia (admin). El equipo ve precio, m² y corte.
+    const esAdmin = usuario.roles.includes('admin');
+    if (!esAdmin) { const d = document.querySelector('details.cfg'); if (d) d.remove(); } else document.getElementById('hint-admin').textContent = 'Costo, margen y precio por m² solo los ves tú (gerencia): el equipo ve el precio, los m² y el corte.';
 
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const n2 = (v) => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
@@ -132,6 +135,7 @@
     const CAMPOS = { 'c-ancho': 'ancho', 'c-largo': 'largo', 'c-costo': 'costo', 'c-fecha': 'fecha', 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo', 'c-margenmin': 'margenMin', 'c-maxcorto': 'maxCorto' };
 
     function pintarConfig() {
+        if (!esAdmin) return;
         Object.entries(CAMPOS).forEach(([id, k]) => $(id).value = cfg[k]);
         $('c-extra').value = cfg.extraPor3;
         let desde = 1;
@@ -139,7 +143,7 @@
     }
     function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => cfg[k] = k === 'fecha' ? $(id).value : n2($(id).value)); cfg.extraPor3 = n2($('c-extra').value); }
     window.setTramo = (i, k, v) => { cfg.tramos[i][k] = Math.round(n2(v)); calcular(); };
-    $('c-extra').oninput = () => { leerConfig(); calcular(); };
+    if (esAdmin) $('c-extra').oninput = () => { leerConfig(); calcular(); };
     // Precio de transporte + instalación según nº de telas (tabla por tramos; más allá, +extraPor3 por cada 3 telas).
     function tramoTxt(n) {
         const T = (cfg.tramos || []).slice().sort((a, b) => a.hasta - b.hasta); let desde = 1;
@@ -153,7 +157,7 @@
         const ult = T[T.length - 1]; if (!ult) return 0;
         return ult.precio + Math.ceil((nTelas - ult.hasta) / 3) * cfg.extraPor3;
     }
-    Object.keys(CAMPOS).forEach(id => $(id).oninput = () => { leerConfig(); calcular(); });
+    if (esAdmin) Object.keys(CAMPOS).forEach(id => $(id).oninput = () => { leerConfig(); calcular(); });
 
     onSnapshot(doc(db, 'calculadores', 'telaMosquitera'), (s) => {
         if (s.exists()) { const d = s.data(); Object.keys(DEF).forEach(k => { if (d[k] != null && d[k] !== '') cfg[k] = d[k]; }); }
@@ -184,29 +188,30 @@
         const bloqueada = m2 > 0 && largo * 1000 > cfg.ancho * 1000 + 0.5 && corto * 1000 > cfg.maxCorto + 0.5;
         let largoCorte = largo + marg;
         if (largo + marg <= cfg.ancho) largoCorte = corto + marg;   // cabe entera en el ancho: se corta solo el lado corto
-        const costoTela = bloqueada ? 0 : largoCorte * C.costoMl;
+        const sinMedida = !(a > 0 && h > 0);
+        const costoTela = bloqueada || sinMedida ? 0 : largoCorte * C.costoMl;
         const porM2 = m2 * cfg.precioM2, porMargen = costoTela / Math.max(0.05, 1 - cfg.margenMin / 100);
-        const precioUnit = bloqueada ? 0 : Math.max(porM2, m2 > 0 ? cfg.minimo : 0, porMargen);
+        const precioUnit = bloqueada || sinMedida ? 0 : Math.max(porM2, cfg.minimo, porMargen);
         const motivo = bloqueada ? '' : precioUnit === porMargen && porMargen > porM2 && porMargen > cfg.minimo ? `ajustado para no bajar del ${cfg.margenMin} % de margen` : precioUnit === cfg.minimo && cfg.minimo > porM2 ? 'aplica el mínimo' : '';
         return { a, h, q, m2, bloqueada, largoCorte, costoTela, precioUnit, motivo, margen: precioUnit ? (1 - costoTela / precioUnit) * 100 : 0, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
     }
     window.calcular = () => {
         const C = costos();
         const margenPct = C.costoM2Real ? (1 - C.costoM2Real / (cfg.precioM2 || 1)) * 100 : 0;
-        $('kpis').innerHTML = `
+        if ($('kpis')) $('kpis').innerHTML = `
             <div class="kpi"><div class="v">${f2(C.m2Rollo)} m²</div><div class="l">rinde el rollo (${f2(cfg.ancho)} × ${f2(cfg.largo)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2)}</div><div class="l">costo por m² de tela</div></div>
             <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal de rollo (tira de ${f2(cfg.ancho)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2Real)}</div><div class="l">costo real por m² con ${cfg.desperdicio} % de desperdicio</div></div>
             <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen ${Math.round(margenPct)} % sobre el costo real · nunca menos del ${cfg.margenMin} % por pieza · bloqueo: lado corto > ${cfg.maxCorto} mm cuando el largo pasa el rollo</div></div>`;
         const R = filas.map(f => calcFila(f, C));
-        $('p-precio-m2').textContent = `${RD0(cfg.precioM2)} por m² · mínimo ${RD0(cfg.minimo)} por pieza`;
+        $('p-precio-m2').textContent = esAdmin ? `${RD0(cfg.precioM2)} por m² · mínimo ${RD0(cfg.minimo)} por pieza` : '';
         $('filas').innerHTML = filas.map((f, i) => { const r = R[i]; return `<div class="linea">
             <div><label>Ancho (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.ancho || ''}" placeholder="1000" oninput="setF(${i},'ancho',this.value)"></div>
             <div><label>Alto (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.alto || ''}" placeholder="1800" oninput="setF(${i},'alto',this.value)"></div>
             <div><label>Cant.</label><input type="number" step="1" min="1" inputmode="numeric" value="${f.cant}" oninput="setF(${i},'cant',this.value)"></div>
             <div class="precio" ${r.bloqueada ? 'style="background:#fdeaea;border-color:#d9483b"' : ''}><div class="v" ${r.bloqueada ? 'style="color:#d9483b;font-size:15px"' : ''}>${r.bloqueada ? '🚫 No se puede fabricar' : r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
-                <div class="d">${r.bloqueada ? `Con el rollo de ${f2(cfg.ancho)} m no se puede: si un lado pasa ${Math.round(cfg.ancho * 1000)} mm, el otro no puede pasar de ${cfg.maxCorto} mm. No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m²${r.motivo ? ' · ' + r.motivo : ''} · corte ${f2(r.largoCorte)} m de rollo · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : 'escribe ancho y alto'}</div></div>
+                <div class="d">${r.bloqueada ? `Con el rollo de ${f2(cfg.ancho)} m no se puede: si un lado pasa ${Math.round(cfg.ancho * 1000)} mm, el otro no puede pasar de ${cfg.maxCorto} mm. No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m² · corte ${f2(r.largoCorte)} m de rollo${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : ''}` : 'escribe ancho y alto'}</div></div>
             <div class="quitar">${filas.length > 1 ? `<button class="btn x" onclick="quitarFila(${i})" title="Quitar">✕</button>` : ''}</div>
         </div>`; }).join('');
         const tv = R.reduce((s, r) => s + r.totalVenta, 0), tc = R.reduce((s, r) => s + r.totalCosto, 0);
@@ -216,7 +221,7 @@
         const total = tv + trans, itbis = $('itbis').checked ? total * 0.18 : 0;
         $('p-trans').innerHTML = fuera ? `<div class="v" style="font-size:15px;color:#c0392b">Cotizar aparte</div><div class="d">Fuera de Las Terrenas: usa el Calculador de obra para el transporte real.</div>`
             : nTelas ? `<div class="v">${RD(trans)}</div><div class="d">${nTelas} tela${nTelas > 1 ? 's' : ''} en Las Terrenas · tramo ${tramoTxt(nTelas)}</div>` : `<div class="v">—</div><div class="d">se calcula solo con la cantidad de telas</div>`;
-        $('avisos').innerHTML = tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
+        $('avisos').innerHTML = esAdmin && tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
         $('resumen').textContent = R.map((r, i) => r.bloqueada ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm → NO SE PUEDE FABRICAR con el rollo actual` : r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
             + (tv ? `\nTela mosquitera: ${RD0(tv)} (${nTelas} tela${nTelas > 1 ? 's' : ''})` : '')
             + (tv ? (fuera ? `\nTransporte + instalación: cotizar aparte (fuera de Las Terrenas)` : `\nTransporte + instalación en Las Terrenas: ${RD0(trans)}`) : '')
