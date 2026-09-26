@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Calculador de precio de venta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 980px; }
+    .card { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px; }
+    .card h2 { margin: 0 0 8px; font-size: 15px; color: var(--artal-blue); }
+    .hint { font-size: 12.5px; color: #8a93a0; line-height: 1.5; }
+    .frm { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .frm label { display: block; font-size: 12px; color: #667; margin-bottom: 3px; }
+    .frm input, .frm select { width: 100%; padding: 9px 10px; border: 1.5px solid #ddd; border-radius: 9px; font-family: 'Arimo'; font-size: 14px; box-sizing: border-box; background: #fff; min-height: 42px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 10px 0 4px; }
+    .kpi { background: #f4f6f9; border-radius: 10px; padding: 10px 12px; border-top: 3px solid var(--artal-blue); }
+    .kpi .v { font-size: 20px; font-weight: bold; color: var(--artal-blue); } .kpi .l { font-size: 11.5px; color: #667; margin-top: 2px; line-height: 1.35; }
+    .kpi.venta { border-top-color: #1f9d61; background: #eef8f2; } .kpi.venta .v { color: #1f9d61; }
+    table.rep { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); font-size: 13.5px; }
+    table.rep th { background: var(--artal-blue); color: #fff; text-align: left; padding: 9px 8px; font-size: 12px; }
+    table.rep td { padding: 6px 8px; border-bottom: 1px solid #eef1f4; vertical-align: middle; }
+    table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
+    table.rep tr.tot td { font-weight: bold; background: #f4f6f9; }
+    table.rep input { width: 82px; padding: 7px 8px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; text-align: right; }
+    table.rep input.ref { width: 90px; text-align: left; }
+    .tabla-wrap { overflow-x: auto; }
+    .btn { border: none; border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; cursor: pointer; font-family: 'Arimo'; min-height: 42px; background: var(--artal-blue); color: #fff; }
+    .btn.o { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); }
+    .btn.x { background: transparent; color: #d9483b; border: none; font-size: 18px; padding: 4px 8px; min-height: 0; }
+    .aviso { background: #fff2dc; border-left: 4px solid #e67e22; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: #6b4a08; margin-top: 8px; line-height: 1.5; }
+    .ok { color: #1f9d61; font-size: 12.5px; min-height: 16px; }
+    .warn { color: #c0392b; font-size: 12px; }
+    .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .prod { border-left: 6px solid #1f9d61; }
+    .prod .cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .prod .cab h2 { margin: 0; font-size: 17px; }
+    .linea { display: grid; grid-template-columns: 1fr 1fr 80px 1.4fr 40px; gap: 10px; align-items: end; padding: 10px 0; border-bottom: 1px solid #eef1f4; }
+    .linea label { display: block; font-size: 12px; color: #667; margin-bottom: 3px; }
+    .linea input { width: 100%; padding: 11px 10px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 17px; box-sizing: border-box; min-height: 46px; }
+    .precio { background: #eef8f2; border: 2px solid #1f9d61; border-radius: 10px; padding: 6px 12px; min-height: 46px; display: flex; flex-direction: column; justify-content: center; }
+    .precio .v { font-size: 20px; font-weight: bold; color: #1f9d61; white-space: nowrap; }
+    .precio .d { font-size: 11.5px; color: #557; line-height: 1.3; }
+    details.cfg summary { cursor: pointer; color: var(--artal-blue); font-weight: bold; font-size: 14px; padding: 4px 0; }
+    @media (max-width: 640px) { .linea { grid-template-columns: 1fr 1fr 70px; } .linea .precio { grid-column: 1 / -1; } .linea .quitar { grid-column: 3; } }
+    .resumen { white-space: pre-wrap; background: #f4f6f9; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="cotizaciones.html" title="Volver">← Cotizaciones</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Calculador de precio de venta</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <p class="hint" style="margin:0 0 10px">Escribe las medidas y sale el precio de venta. Una línea por producto; por ahora: tela de mosquitera. Los valores de costo y precio por m² se definen en «⚙️ Rollo y precio» y quedan guardados para todo el equipo.</p>
+
+    <div class="card prod">
+        <div class="cab"><span style="font-size:26px">🕸️</span><h2>Tela de mosquitera</h2><span class="hint" id="p-precio-m2"></span></div>
+        <div id="filas"></div>
+        <div class="acts">
+            <button class="btn o" onclick="agregarFila()">+ Otra medida</button>
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="itbis" onchange="calcular()"> Agregar ITBIS 18 %</label>
+            <button class="btn o" onclick="copiarResumen()">⧉ Copiar resumen</button>
+        </div>
+        <div id="avisos"></div>
+        <div class="resumen" id="resumen"></div>
+        <details class="cfg" style="margin-top:12px">
+            <summary>⚙️ Rollo y precio (definir con gerencia)</summary>
+            <div class="hint" style="margin:6px 0 8px">Cambia el costo del rollo cuando compres uno nuevo. El precio por m² y el mínimo por pieza son los que salen en la línea de arriba.</div>
+            <div class="frm">
+                <div><label>Ancho del rollo (m)</label><input type="number" step="0.01" id="c-ancho"></div>
+                <div><label>Largo del rollo (m)</label><input type="number" step="0.01" id="c-largo"></div>
+                <div><label>Costo del rollo (RD$)</label><input type="number" step="1" id="c-costo"></div>
+                <div><label>Fecha del precio</label><input type="date" id="c-fecha"></div>
+                <div><label>Desperdicio estimado (%)</label><input type="number" step="1" id="c-desp"></div>
+                <div><label>Margen de corte por lado (cm)</label><input type="number" step="1" id="c-margen"></div>
+                <div><label><b>Precio de venta por m² (RD$)</b></label><input type="number" step="1" id="c-precio" style="border-color:#1f9d61;font-weight:bold"></div>
+                <div><label>Mínimo por pieza (RD$)</label><input type="number" step="1" id="c-min"></div>
+            </div>
+            <div class="kpis" id="kpis"></div>
+            <div class="hint">Cómo se calcula: el lado más corto de la mosquitera va en el ancho del rollo y del largo del rollo se corta el lado más largo más el margen. Si los dos lados pasan el ancho del rollo hacen falta dos tiras con junta. El precio de venta es m² × precio por m², nunca menos que el mínimo por pieza.</div>
+            <div class="acts"><button class="btn" onclick="guardarConfig()">💾 Guardar para el equipo</button><span class="ok" id="c-ok"></span></div>
+        </details>
+    </div>
+</main>
+
+<script type="module">
+    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import './mensajeria-widget.js';
+    import { doc, onSnapshot, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    const usuario = await requireAuth(['cotizaciones']);
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const n2 = (v) => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
+    const RD = (n) => 'RD$ ' + (Math.round(n2(n) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const RD0 = (n) => 'RD$ ' + Math.round(n2(n)).toLocaleString('es-DO');
+    const f2 = (n) => (Math.round(n2(n) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // Valores iniciales (usuario 2026-09-26): rollo de 48" × 100 pies = 1.22 × 30.48 m, RD$ 6,500.
+    // Precio de venta propuesto RD$ 450/m² y mínimo RD$ 500 por pieza — se ajustan aquí mismo.
+    const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500 };
+    let cfg = { ...DEF };
+    let filas = [{ ancho: 0, alto: 0, cant: 1 }];
+    const $ = (id) => document.getElementById(id);
+    const CAMPOS = { 'c-ancho': 'ancho', 'c-largo': 'largo', 'c-costo': 'costo', 'c-fecha': 'fecha', 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo' };
+
+    function pintarConfig() { Object.entries(CAMPOS).forEach(([id, k]) => $(id).value = cfg[k]); }
+    function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => cfg[k] = k === 'fecha' ? $(id).value : n2($(id).value)); }
+    Object.keys(CAMPOS).forEach(id => $(id).oninput = () => { leerConfig(); calcular(); });
+
+    onSnapshot(doc(db, 'calculadores', 'telaMosquitera'), (s) => {
+        if (s.exists()) { const d = s.data(); Object.keys(DEF).forEach(k => { if (d[k] != null && d[k] !== '') cfg[k] = d[k]; }); }
+        pintarConfig(); calcular();
+    }, () => { pintarConfig(); calcular(); });
+
+    window.guardarConfig = async () => {
+        leerConfig();
+        const ok = $('c-ok');
+        try { await setDoc(doc(db, 'calculadores', 'telaMosquitera'), { ...cfg, actualizado: serverTimestamp(), actualizadoPor: usuario.nombre }, { merge: true }); ok.style.color = '#1f9d61'; ok.textContent = 'Guardado para todo el equipo.'; }
+        catch (e) { ok.style.color = '#d9483b'; ok.textContent = 'No se pudo guardar (¿reglas de Firestore?): ' + e.message; }
+    };
+
+    // ---- cálculo -----------------------------------------------------------------------------
+    function costos() {
+        const m2Rollo = cfg.ancho * cfg.largo;
+        const costoM2 = m2Rollo ? cfg.costo / m2Rollo : 0;
+        const costoMl = cfg.largo ? cfg.costo / cfg.largo : 0;           // por metro lineal de rollo (tira completa de 1.22)
+        const costoM2Real = costoM2 * (1 + cfg.desperdicio / 100);
+        return { m2Rollo, costoM2, costoMl, costoM2Real };
+    }
+    function calcFila(f, C) {
+        const a = n2(f.ancho) / 1000, h = n2(f.alto) / 1000, q = Math.max(0, Math.round(n2(f.cant)));
+        const corto = Math.min(a, h), largo = Math.max(a, h), marg = cfg.margenCm / 100;
+        const m2 = a * h;
+        let tiras = 1, largoCorte = largo + marg, aviso = '';
+        if (corto + marg > cfg.ancho) {
+            // Los dos lados superan el ancho del rollo: dos tiras del largo del lado largo, con junta.
+            tiras = Math.ceil((corto + marg) / cfg.ancho); aviso = `los dos lados pasan el ancho del rollo (${f2(cfg.ancho)} m): ${tiras} tiras con junta`;
+        } else if (largo + marg <= cfg.ancho && largo + marg > 0) {
+            // Cabe entera en el ancho: se corta solo el lado corto del largo del rollo (menos desperdicio).
+            largoCorte = corto + marg;
+        }
+        const costoTela = tiras * largoCorte * C.costoMl;
+        const precioUnit = Math.max(m2 * cfg.precioM2, m2 > 0 ? cfg.minimo : 0);
+        return { a, h, q, m2, tiras, largoCorte, costoTela, precioUnit, aviso, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
+    }
+    window.calcular = () => {
+        const C = costos();
+        const margenPct = C.costoM2Real ? (1 - C.costoM2Real / (cfg.precioM2 || 1)) * 100 : 0;
+        $('kpis').innerHTML = `
+            <div class="kpi"><div class="v">${f2(C.m2Rollo)} m²</div><div class="l">rinde el rollo (${f2(cfg.ancho)} × ${f2(cfg.largo)} m)</div></div>
+            <div class="kpi"><div class="v">${RD(C.costoM2)}</div><div class="l">costo por m² de tela</div></div>
+            <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal de rollo (tira de ${f2(cfg.ancho)} m)</div></div>
+            <div class="kpi"><div class="v">${RD(C.costoM2Real)}</div><div class="l">costo real por m² con ${cfg.desperdicio} % de desperdicio</div></div>
+            <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen bruto ${Math.round(margenPct)} % · ${(cfg.precioM2 / (C.costoM2Real || 1)).toFixed(2)}× el costo real</div></div>`;
+        const R = filas.map(f => calcFila(f, C));
+        $('p-precio-m2').textContent = `${RD0(cfg.precioM2)} por m² · mínimo ${RD0(cfg.minimo)} por pieza`;
+        $('filas').innerHTML = filas.map((f, i) => { const r = R[i]; return `<div class="linea">
+            <div><label>Ancho (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.ancho || ''}" placeholder="1000" oninput="setF(${i},'ancho',this.value)"></div>
+            <div><label>Alto (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.alto || ''}" placeholder="1800" oninput="setF(${i},'alto',this.value)"></div>
+            <div><label>Cant.</label><input type="number" step="1" min="1" inputmode="numeric" value="${f.cant}" oninput="setF(${i},'cant',this.value)"></div>
+            <div class="precio"><div class="v">${r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
+                <div class="d">${r.m2 > 0 ? `${f2(r.m2)} m²${r.m2 * cfg.precioM2 < cfg.minimo ? ' · aplica el mínimo' : ''} · corte ${r.tiras > 1 ? r.tiras + ' × ' : ''}${f2(r.largoCorte)} m de rollo · tela nos cuesta ${RD0(r.costoTela)}` : 'escribe ancho y alto'}${r.aviso ? `<div class="warn">⚠ ${esc(r.aviso)}</div>` : ''}</div></div>
+            <div class="quitar">${filas.length > 1 ? `<button class="btn x" onclick="quitarFila(${i})" title="Quitar">✕</button>` : ''}</div>
+        </div>`; }).join('');
+        const tv = R.reduce((s, r) => s + r.totalVenta, 0), tc = R.reduce((s, r) => s + r.totalCosto, 0), itbis = $('itbis').checked ? tv * 0.18 : 0;
+        $('avisos').innerHTML = tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
+        $('resumen').textContent = R.map((r, i) => r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
+            + (tv ? `\nTOTAL tela mosquitera: ${RD0(tv)}${itbis ? ' + ITBIS ' + RD0(itbis) + ' = ' + RD0(tv + itbis) : ''} (${RD0(cfg.precioM2)}/m², mínimo ${RD0(cfg.minimo)} por pieza)` : '');
+    };
+    window.setF = (i, k, v) => { filas[i][k] = n2(v); calcular(); };
+    window.agregarFila = () => { filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
+    window.quitarFila = (i) => { filas.splice(i, 1); if (!filas.length) filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
+    window.copiarResumen = async () => { const t = $('resumen').textContent; try { await navigator.clipboard.writeText(t); alert('Resumen copiado.'); } catch (_) { prompt('Copia el resumen:', t); } };
+</script>
+</body>
+</html>

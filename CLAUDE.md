@@ -2339,6 +2339,17 @@ el total puede ser negativo.
 - Pendiente acordado: repartir las horas "Transporte" del chofer entre las obras de sus viajes del día (usuario 24/09,
   todavía sin confirmar). Transportes NO entra en los puntos por decisión del usuario.
 
+### Calculador de precio de venta (`ops/calculador-precio-venta.html`, 2026-09-26)
+
+Enlazado desde Cotizaciones (rol `cotizaciones`). Una línea por producto; la primera es **Tela de mosquitera**: ancho × alto
+(mm) + cantidad → precio de venta grande, con detalle (m², corte real del rollo, costo de la tela). Parámetros compartidos
+en `calculadores/telaMosquitera` (rule `calculadores` puedeEscribir): rollo 48" × 100 pies = 1.22 × 30.48 m a RD$ 6,500
+(26/09/2026), desperdicio 20 %, margen de corte 10 cm por lado, precio de venta por m² (propuesto RD$ 450) y mínimo por pieza
+(RD$ 500). Regla de corte: el lado corto va en el ancho del rollo y se corta el lado largo + margen del largo del rollo; si cabe
+entera en el ancho se corta solo el lado corto; si los dos lados superan el ancho → n tiras con junta (aviso). Precio = máx(m² ×
+precio/m², mínimo). Copiar resumen y ITBIS opcional. Para agregar otro producto: otra tarjeta `.prod` con su propio doc en
+`calculadores/`.
+
 ### Academia: guías de la plataforma (2026-09-22)
 
 `ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La
