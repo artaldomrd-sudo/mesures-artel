@@ -2347,7 +2347,7 @@ en `calculadores/telaMosquitera` (rule `calculadores` puedeEscribir): rollo 48" 
 (26/09/2026), desperdicio 20 %, margen de corte 10 cm por lado, precio de venta por m² (propuesto RD$ 450) y mínimo por pieza
 (RD$ 500). Regla de corte: el lado corto va en el ancho del rollo y se corta el lado largo + margen del largo del rollo; si cabe
 entera en el ancho se corta solo el lado corto; los dos lados por encima → bloqueo. Precio = máx(m² × precio/m², mínimo, costo real del corte ÷ (1 − margenMin)) — usuario 26/09: nunca por debajo del 50 % de margen bruto.
-**Bloqueo** (`maxCorto` 1200): si el lado largo pasa el ancho del rollo y el corto supera 1200 mm, «No se puede fabricar» y sin precio (antes se calculaban dos tiras; el usuario no quiere vender lo que no se puede hacer). Copiar resumen y ITBIS opcional. Para agregar otro producto: otra tarjeta `.prod` con su propio doc en
+**Bloqueo** (`maxCorto` 1200): si el lado largo pasa el ancho del rollo y el corto supera 1200 mm, «No se puede fabricar» y sin precio (antes se calculaban dos tiras; el usuario no quiere vender lo que no se puede hacer). **Transporte + instalación** (usuario 26/09): en Las Terrenas, por nº de telas (no bloqueadas): 1–3 RD$ 2,500 · 4–6 3,000 · 7–10 3,500 · 11–13 4,500 · 14–16 5,500; más allá +1,000 por cada 3 telas (`tramos[]`, `extraPor3`, editables). Fuera de Las Terrenas → «cotizar aparte» (Calculador de obra). TOTAL = tela + transporte; ITBIS opcional sobre el total. Copiar resumen. Para agregar otro producto: otra tarjeta `.prod` con su propio doc en
 `calculadores/`.
 
 ### Academia: guías de la plataforma (2026-09-22)
