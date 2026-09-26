@@ -88,9 +88,11 @@
                 <div><label>Margen de corte por lado (cm)</label><input type="number" step="1" id="c-margen"></div>
                 <div><label><b>Precio de venta por m² (RD$)</b></label><input type="number" step="1" id="c-precio" style="border-color:#1f9d61;font-weight:bold"></div>
                 <div><label>Mínimo por pieza (RD$)</label><input type="number" step="1" id="c-min"></div>
+                <div><label><b>Margen bruto mínimo (%)</b></label><input type="number" step="1" id="c-margenmin" style="border-color:#1f9d61;font-weight:bold"></div>
+                <div><label>Lado corto máximo si el largo pasa el rollo (mm)</label><input type="number" step="10" id="c-maxcorto"></div>
             </div>
             <div class="kpis" id="kpis"></div>
-            <div class="hint">Cómo se calcula: el lado más corto de la mosquitera va en el ancho del rollo y del largo del rollo se corta el lado más largo más el margen. Si los dos lados pasan el ancho del rollo hacen falta dos tiras con junta. El precio de venta es m² × precio por m², nunca menos que el mínimo por pieza.</div>
+            <div class="hint">Cómo se calcula: el lado más corto de la mosquitera va en el ancho del rollo y del largo del rollo se corta el lado más largo más el margen. Si los dos lados pasan el ancho del rollo hacen falta dos tiras con junta. El precio de venta es m² × precio por m², nunca menos que el mínimo por pieza ni menos de lo que haga falta para el margen bruto mínimo sobre el costo real del corte. Si el lado largo pasa el ancho del rollo y el lado corto supera el máximo, la medida se BLOQUEA: no se puede fabricar con este rollo y no se da precio.</div>
             <div class="acts"><button class="btn" onclick="guardarConfig()">💾 Guardar para el equipo</button><span class="ok" id="c-ok"></span></div>
         </details>
     </div>
@@ -114,11 +116,11 @@
 
     // Valores iniciales (usuario 2026-09-26): rollo de 48" × 100 pies = 1.22 × 30.48 m, RD$ 6,500.
     // Precio de venta propuesto RD$ 450/m² y mínimo RD$ 500 por pieza — se ajustan aquí mismo.
-    const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500 };
+    const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500, margenMin: 50, maxCorto: 1200 };
     let cfg = { ...DEF };
     let filas = [{ ancho: 0, alto: 0, cant: 1 }];
     const $ = (id) => document.getElementById(id);
-    const CAMPOS = { 'c-ancho': 'ancho', 'c-largo': 'largo', 'c-costo': 'costo', 'c-fecha': 'fecha', 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo' };
+    const CAMPOS = { 'c-ancho': 'ancho', 'c-largo': 'largo', 'c-costo': 'costo', 'c-fecha': 'fecha', 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo', 'c-margenmin': 'margenMin', 'c-maxcorto': 'maxCorto' };
 
     function pintarConfig() { Object.entries(CAMPOS).forEach(([id, k]) => $(id).value = cfg[k]); }
     function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => cfg[k] = k === 'fecha' ? $(id).value : n2($(id).value)); }
@@ -148,17 +150,16 @@
         const a = n2(f.ancho) / 1000, h = n2(f.alto) / 1000, q = Math.max(0, Math.round(n2(f.cant)));
         const corto = Math.min(a, h), largo = Math.max(a, h), marg = cfg.margenCm / 100;
         const m2 = a * h;
-        let tiras = 1, largoCorte = largo + marg, aviso = '';
-        if (corto + marg > cfg.ancho) {
-            // Los dos lados superan el ancho del rollo: dos tiras del largo del lado largo, con junta.
-            tiras = Math.ceil((corto + marg) / cfg.ancho); aviso = `los dos lados pasan el ancho del rollo (${f2(cfg.ancho)} m): ${tiras} tiras con junta`;
-        } else if (largo + marg <= cfg.ancho && largo + marg > 0) {
-            // Cabe entera en el ancho: se corta solo el lado corto del largo del rollo (menos desperdicio).
-            largoCorte = corto + marg;
-        }
-        const costoTela = tiras * largoCorte * C.costoMl;
-        const precioUnit = Math.max(m2 * cfg.precioM2, m2 > 0 ? cfg.minimo : 0);
-        return { a, h, q, m2, tiras, largoCorte, costoTela, precioUnit, aviso, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
+        // Regla del usuario (2026-09-26): si el lado largo pasa el ancho del rollo, el lado corto no puede pasar
+        // de `maxCorto` (1200 mm) — no se puede fabricar con este rollo, se bloquea y no se da precio.
+        const bloqueada = m2 > 0 && largo * 1000 > cfg.ancho * 1000 + 0.5 && corto * 1000 > cfg.maxCorto + 0.5;
+        let largoCorte = largo + marg;
+        if (largo + marg <= cfg.ancho) largoCorte = corto + marg;   // cabe entera en el ancho: se corta solo el lado corto
+        const costoTela = bloqueada ? 0 : largoCorte * C.costoMl;
+        const porM2 = m2 * cfg.precioM2, porMargen = costoTela / Math.max(0.05, 1 - cfg.margenMin / 100);
+        const precioUnit = bloqueada ? 0 : Math.max(porM2, m2 > 0 ? cfg.minimo : 0, porMargen);
+        const motivo = bloqueada ? '' : precioUnit === porMargen && porMargen > porM2 && porMargen > cfg.minimo ? `ajustado para no bajar del ${cfg.margenMin} % de margen` : precioUnit === cfg.minimo && cfg.minimo > porM2 ? 'aplica el mínimo' : '';
+        return { a, h, q, m2, bloqueada, largoCorte, costoTela, precioUnit, motivo, margen: precioUnit ? (1 - costoTela / precioUnit) * 100 : 0, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
     }
     window.calcular = () => {
         const C = costos();
@@ -168,21 +169,21 @@
             <div class="kpi"><div class="v">${RD(C.costoM2)}</div><div class="l">costo por m² de tela</div></div>
             <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal de rollo (tira de ${f2(cfg.ancho)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2Real)}</div><div class="l">costo real por m² con ${cfg.desperdicio} % de desperdicio</div></div>
-            <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen bruto ${Math.round(margenPct)} % · ${(cfg.precioM2 / (C.costoM2Real || 1)).toFixed(2)}× el costo real</div></div>`;
+            <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen ${Math.round(margenPct)} % sobre el costo real · nunca menos del ${cfg.margenMin} % por pieza · bloqueo: lado corto > ${cfg.maxCorto} mm cuando el largo pasa el rollo</div></div>`;
         const R = filas.map(f => calcFila(f, C));
         $('p-precio-m2').textContent = `${RD0(cfg.precioM2)} por m² · mínimo ${RD0(cfg.minimo)} por pieza`;
         $('filas').innerHTML = filas.map((f, i) => { const r = R[i]; return `<div class="linea">
             <div><label>Ancho (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.ancho || ''}" placeholder="1000" oninput="setF(${i},'ancho',this.value)"></div>
             <div><label>Alto (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.alto || ''}" placeholder="1800" oninput="setF(${i},'alto',this.value)"></div>
             <div><label>Cant.</label><input type="number" step="1" min="1" inputmode="numeric" value="${f.cant}" oninput="setF(${i},'cant',this.value)"></div>
-            <div class="precio"><div class="v">${r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
-                <div class="d">${r.m2 > 0 ? `${f2(r.m2)} m²${r.m2 * cfg.precioM2 < cfg.minimo ? ' · aplica el mínimo' : ''} · corte ${r.tiras > 1 ? r.tiras + ' × ' : ''}${f2(r.largoCorte)} m de rollo · tela nos cuesta ${RD0(r.costoTela)}` : 'escribe ancho y alto'}${r.aviso ? `<div class="warn">⚠ ${esc(r.aviso)}</div>` : ''}</div></div>
+            <div class="precio" ${r.bloqueada ? 'style="background:#fdeaea;border-color:#d9483b"' : ''}><div class="v" ${r.bloqueada ? 'style="color:#d9483b;font-size:15px"' : ''}>${r.bloqueada ? '🚫 No se puede fabricar' : r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
+                <div class="d">${r.bloqueada ? `Con el rollo de ${f2(cfg.ancho)} m no se puede: si un lado pasa ${Math.round(cfg.ancho * 1000)} mm, el otro no puede pasar de ${cfg.maxCorto} mm. No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m²${r.motivo ? ' · ' + r.motivo : ''} · corte ${f2(r.largoCorte)} m de rollo · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : 'escribe ancho y alto'}</div></div>
             <div class="quitar">${filas.length > 1 ? `<button class="btn x" onclick="quitarFila(${i})" title="Quitar">✕</button>` : ''}</div>
         </div>`; }).join('');
         const tv = R.reduce((s, r) => s + r.totalVenta, 0), tc = R.reduce((s, r) => s + r.totalCosto, 0), itbis = $('itbis').checked ? tv * 0.18 : 0;
         $('avisos').innerHTML = tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
-        $('resumen').textContent = R.map((r, i) => r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
-            + (tv ? `\nTOTAL tela mosquitera: ${RD0(tv)}${itbis ? ' + ITBIS ' + RD0(itbis) + ' = ' + RD0(tv + itbis) : ''} (${RD0(cfg.precioM2)}/m², mínimo ${RD0(cfg.minimo)} por pieza)` : '');
+        $('resumen').textContent = R.map((r, i) => r.bloqueada ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm → NO SE PUEDE FABRICAR con el rollo actual` : r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
+            + (tv ? `\nTOTAL tela mosquitera: ${RD0(tv)}${itbis ? ' + ITBIS ' + RD0(itbis) + ' = ' + RD0(tv + itbis) : ''} (${RD0(cfg.precioM2)}/m², mínimo ${RD0(cfg.minimo)} por pieza, margen mínimo ${cfg.margenMin} %)` : '');
     };
     window.setF = (i, k, v) => { filas[i][k] = n2(v); calcular(); };
     window.agregarFila = () => { filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
