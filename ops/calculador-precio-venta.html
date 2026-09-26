@@ -80,6 +80,17 @@
         </div>
         <div id="avisos"></div>
         <div class="resumen" id="resumen"></div>
+        <div class="card" style="margin:12px 0 0;background:#f7f9fc;border:1.5px solid #dbe3ee;box-shadow:none">
+            <b>🍊 Crear la cotización en Citrus</b>
+            <div class="hint" style="margin:4px 0 8px">Crea la cotización directo en Citrus con estas líneas (tela + transporte) y te devuelve el PDF. Queda «Pendiente de aprobación» a nombre de quien la crea. Si el cliente ya existe en Citrus, elígelo de la lista para que quede enlazado.</div>
+            <div class="frm">
+                <div><label>Cliente</label><input type="text" id="cz-cliente" list="cz-clientes" placeholder="Nombre del cliente" autocomplete="off"><datalist id="cz-clientes"></datalist></div>
+                <div><label>Dirección / obra (opcional)</label><input type="text" id="cz-dir" placeholder="Las Terrenas, Villa…"></div>
+                <div style="grid-column:1/-1"><label>Nota para la cotización (opcional)</label><input type="text" id="cz-nota" maxlength="500" placeholder="Ej: cambio de telas de mosquitera, incluye retiro de las viejas"></div>
+            </div>
+            <div class="acts"><button class="btn" id="cz-btn" onclick="crearEnCitrus()">📤 Crear cotización en Citrus</button><span class="ok" id="cz-ok"></span></div>
+            <div id="cz-res"></div>
+        </div>
         <details class="cfg" style="margin-top:12px">
             <summary>⚙️ Rollo y precio (definir con gerencia)</summary>
             <div class="hint" style="margin:6px 0 8px">Cambia el costo del rollo cuando compres uno nuevo. El precio por m² y el mínimo por pieza son los que salen en la línea de arriba.</div>
@@ -109,7 +120,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
-    import { doc, onSnapshot, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { doc, onSnapshot, setDoc, serverTimestamp, collection } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth(['cotizaciones']);
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -219,6 +230,8 @@
         const fuera = $('zona').value !== 'terrenas';
         const trans = fuera ? 0 : transporte(nTelas);
         const total = tv + trans, itbis = $('itbis').checked ? total * 0.18 : 0;
+        ultimasLineas = R.map((r, i) => (r.bloqueada || !r.m2) ? null : { descripcion: `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm`, cantidad: r.q, precio: Math.round(r.precioUnit * 100) / 100, nota: `${f2(r.m2)} m² · tela de fibra de vidrio` }).filter(Boolean);
+        if (!fuera && trans > 0 && nTelas) ultimasLineas.push({ descripcion: 'Transporte e instalación en Las Terrenas', cantidad: 1, precio: trans, nota: `${nTelas} tela${nTelas > 1 ? 's' : ''}` });
         $('p-trans').innerHTML = fuera ? `<div class="v" style="font-size:15px;color:#c0392b">Cotizar aparte</div><div class="d">Fuera de Las Terrenas: usa el Calculador de obra para el transporte real.</div>`
             : nTelas ? `<div class="v">${RD(trans)}</div><div class="d">${nTelas} tela${nTelas > 1 ? 's' : ''} en Las Terrenas · tramo ${tramoTxt(nTelas)}</div>` : `<div class="v">—</div><div class="d">se calcula solo con la cantidad de telas</div>`;
         $('avisos').innerHTML = esAdmin && tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
@@ -230,6 +243,42 @@
     window.setF = (i, k, v) => { filas[i][k] = n2(v); calcular(); };
     window.agregarFila = () => { filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
     window.quitarFila = (i) => { filas.splice(i, 1); if (!filas.length) filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
+    // ---- Citrus: crear la cotización con un clic ----------------------------------------------------
+    const FN_CITRUS = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusCrearCotizacion';
+    let clientesCache = [];
+    onSnapshot(collection(db, 'clientes'), (snap) => {
+        clientesCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.nombre);
+        clientesCache.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+        $('cz-clientes').innerHTML = clientesCache.map(c => `<option value="${esc(c.nombre)}">${c.citrusId ? 'en Citrus' : ''}</option>`).join('');
+    });
+    let ultimasLineas = [];   // lo que se mandaría a Citrus, armado en calcular()
+    window.crearEnCitrus = async () => {
+        const ok = $('cz-ok'), btn = $('cz-btn'), res = $('cz-res');
+        const nombre = $('cz-cliente').value.trim();
+        if (!nombre) { ok.style.color = '#d9483b'; ok.textContent = 'Escribe el nombre del cliente.'; return; }
+        if (!ultimasLineas.length) { ok.style.color = '#d9483b'; ok.textContent = 'No hay medidas con precio para cotizar.'; return; }
+        const cli = clientesCache.find(c => String(c.nombre).trim().toLowerCase() === nombre.toLowerCase()) || {};
+        const conItbis = $('itbis').checked;
+        const total = ultimasLineas.reduce((s, l) => s + l.precio * l.cantidad, 0);
+        if (!confirm(`Se creará en Citrus una cotización para «${nombre}» con ${ultimasLineas.length} línea(s), total ${RD(total * (conItbis ? 1.18 : 1))}${conItbis ? ' con ITBIS' : ' sin ITBIS'}.\n\n¿Continuar?`)) return;
+        btn.disabled = true; ok.style.color = '#667'; ok.textContent = 'Creando en Citrus…'; res.innerHTML = '';
+        try {
+            const tok = await auth.currentUser.getIdToken();
+            const r = await fetch(FN_CITRUS, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+                body: JSON.stringify({ nombreCliente: nombre, clienteId: cli.citrusId || null, direccion: $('cz-dir').value.trim(), nota: $('cz-nota').value.trim(), itbis: conItbis, lineas: ultimasLineas, origen: 'calculador-precio-venta' }) });
+            const j = await r.json();
+            if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+            ok.style.color = '#1f9d61'; ok.textContent = `Creada: ${j.numero}${j.entorno === 'test' ? ' (entorno de PRUEBAS)' : ''}.`;
+            let pdfBtn = '';
+            if (j.pdfBase64) {
+                const bin = atob(j.pdfBase64); const arr = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                const url = URL.createObjectURL(new Blob([arr], { type: 'application/pdf' }));
+                pdfBtn = `<a class="btn o" href="${url}" target="_blank" rel="noopener" style="text-decoration:none">📄 Abrir PDF de Citrus</a> <a class="btn o" href="${url}" download="${esc(j.numero || 'cotizacion')}.pdf" style="text-decoration:none">⬇ Descargar</a>`;
+            }
+            res.innerHTML = `<div class="aviso" style="background:#e7f7ee;border-left-color:#1f9d61;color:#145c39"><b>✅ ${esc(j.numero)}</b> creada en Citrus para <b>${esc(nombre)}</b>: ${RD(j.monto)}${j.impuesto ? ' + ITBIS ' + RD(j.impuesto) + ' = <b>' + RD(j.total) + '</b>' : ''}. Está «Pendiente de aprobación» en Citrus; ahí la revisas, la apruebas y la conviertes en factura cuando el cliente confirme.<div class="acts" style="margin-top:8px">${pdfBtn}</div></div>`;
+        } catch (e) { ok.style.color = '#d9483b'; ok.textContent = 'No se pudo crear: ' + e.message; }
+        btn.disabled = false;
+    };
     window.copiarResumen = async () => { const t = $('resumen').textContent; try { await navigator.clipboard.writeText(t); alert('Resumen copiado.'); } catch (_) { prompt('Copia el resumen:', t); } };
 </script>
 </body>

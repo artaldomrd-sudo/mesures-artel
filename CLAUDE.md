@@ -2234,6 +2234,18 @@ en `setVista('carpetas')` (clic en la pestaña) — un refresco en vivo de Fires
 
 Citrus es el sistema fiscal (facturación, NCF, contabilidad). **Decisión del usuario: Citrus factura, el Panel LEE;
 nada del Panel escribe en Citrus** (la casilla "Enviar a Citrus" de CxP está escondida con `CITRUS_ESCRITURA=false`).
+**Excepción (usuario 2026-09-26): las COTIZACIONES sí se crean desde el Panel.** `citrusCrearCotizacion` (onRequest,
+roles cotizaciones/admin, secretos Citrus): por cada línea crea un ítem de servicio (`POST /v5/item`, `idSecItemTipo: 3`,
+igual que hace Anny en la pantalla de Citrus, que crea un ítem por línea) y luego `POST /v5/cotizacion` con TiendaId 1,
+MonedaId 1, Tipo 'C', Estatus 'Pendiente Aprobacion', `NombreCliente` libre (+ `ClienteId` si `clientes/{id}.citrusId`),
+`Monto` sin ITBIS e `Impuesto1` = 18 % solo si se pide; detalles `{ItemId, DocSec, ItemDescripcion, ItemPrecio,
+ItemCantidad, Impuesto1, Nota, Estatus:'N', EstatusDespacho:'S'}`. Vendedor: `usuarios/{email}.citrusVendedorId`, si no
+coincidencia del nombre del usuario con `vendedor/extraccionDatos` (prod: 2 Andrea, 3 Dylan, 5 Rolanny/Anny, 4 Mabelin,
+6 Sara), si no 1. Devuelve id, número (`Nombre` del reporte, ej. "Cotización #590"), PDF Base64 (`GET
+/v5/cotizacion/{id}/reporte`) y deja rastro en `citrusCotizacionesPanel`. `entorno:'test'` en el body fuerza testapi.
+Probado de punta a punta en testapi el 26/09 (ítems 4 y 5, Cotización #1). Primer botón: «🍊 Crear cotización en Citrus» en
+`ops/calculador-precio-venta.html` (líneas = telas + transporte; cliente con datalist de `clientes`). Las FACTURAS siguen
+siendo solo de Citrus.
 Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (sección 4 "Importar de Citrus al Panel").
 - `citrusRead`/`citrusWrite`: puente genérico (token en secretos `CITRUS_TOKEN`/`CITRUS_TOKEN_PROD`, entorno
   `CITRUS_ENV` en `functions/.env`, hoy `prod`). Token JWT directo en `Authorization`, sin "Bearer".

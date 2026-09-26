@@ -1740,6 +1740,76 @@ async function citrusGet(ctx, path, params) {
     try { return JSON.parse(t); } catch (_) { throw new Error(`Citrus devolvió algo que no es JSON en ${path}`); }
 }
 const fechaOk = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+
+// ---------- Crear COTIZACIÓN en Citrus desde el Panel (Calculador de precio de venta, 2026-09-26) ----------
+// Excepción acordada a "el Panel solo LEE de Citrus": las COTIZACIONES (no facturas) sí se crean desde el Panel
+// con un botón. Replica lo que hace Anny en la pantalla de Citrus: un ítem de servicio por línea (POST /v5/item,
+// idSecItemTipo 3) y luego POST /v5/cotizacion con TiendaId 1 (Las Terrenas), MonedaId 1 (RD$), Tipo 'C',
+// NombreCliente libre (ClienteId si el cliente ya existe en Citrus) y el ITBIS del 18 % en Impuesto1 si se pide.
+// Vendedor: usuarios/{email}.citrusVendedorId si está; si no, se busca el nombre del usuario entre los vendedores
+// de Citrus; si no, Vendedor Principal (1). Devuelve id, número y el PDF (Base64) del reporte. Roles: cotizaciones/admin.
+// `entorno:'test'` en el body fuerza el entorno de pruebas (para probar sin ensuciar el Citrus real).
+async function citrusPost(ctx, path, body) {
+    const r = await fetch(`${ctx.base}/v5/${path}`, { method: 'POST', headers: { 'Authorization': ctx.token, 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body) });
+    const t = await r.text(); if (!r.ok) throw new Error(`Citrus ${r.status} en ${path}: ${t.slice(0, 300)}`);
+    try { return JSON.parse(t); } catch (_) { throw new Error(`Citrus devolvió algo que no es JSON en ${path}`); }
+}
+const normNom = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+async function vendedorCitrusPara(ctx, email) {
+    const u = (await db.doc('usuarios/' + email).get()).data() || {};
+    if (Number(u.citrusVendedorId) > 0) return Number(u.citrusVendedorId);
+    try {
+        const vend = await citrusGet(ctx, 'vendedor/extraccionDatos', { 'request.indiceDePagina': 0 });
+        const palabras = normNom(u.nombre).split(/\s+/).filter((w) => w.length >= 4);
+        const hit = (Array.isArray(vend) ? vend : []).find((v) => { const n = normNom(v.Nombre); return palabras.some((w) => n.includes(w)); });
+        if (hit) return hit.Id;
+    } catch (_) { }
+    return 1;
+}
+exports.citrusCrearCotizacion = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 120 }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const email = await callerConRol(req, ['cotizaciones']);
+    if (!email) { res.status(403).json({ error: 'solo cotizaciones o admin' }); return; }
+    const b = req.body || {};
+    const nombreCliente = String(b.nombreCliente || '').trim().slice(0, 120);
+    const lineas = Array.isArray(b.lineas) ? b.lineas.map((l) => ({ descripcion: String(l.descripcion || '').trim().slice(0, 200), cantidad: Math.max(1, Math.round(Number(l.cantidad) || 1)), precio: Math.round((Number(l.precio) || 0) * 100) / 100, nota: String(l.nota || '').slice(0, 500) })).filter((l) => l.descripcion && l.precio > 0) : [];
+    if (!nombreCliente) { res.status(400).json({ error: 'Falta el nombre del cliente' }); return; }
+    if (!lineas.length) { res.status(400).json({ error: 'No hay líneas con precio' }); return; }
+    const conItbis = b.itbis === true;
+    // `citrusCtx(req)` ya baja a 'test' si el body lo pide; escalar a prod nunca (manda CITRUS_ENV).
+    const ctx = citrusCtx(req);
+    try {
+        const vendedorId = await vendedorCitrusPara(ctx, email);
+        const detalles = [];
+        let monto = 0, impuesto = 0;
+        for (let i = 0; i < lineas.length; i++) {
+            const l = lineas[i];
+            const item = await citrusPost(ctx, 'item', { Nombre: l.descripcion, Descripcion: l.nota || '', Estatus: 'A', Precio1: l.precio, idSecItemTipo: 3 });
+            const sub = Math.round(l.precio * l.cantidad * 100) / 100;
+            const imp = conItbis ? Math.round(sub * 0.18 * 100) / 100 : 0;
+            monto += sub; impuesto += imp;
+            detalles.push({ ItemId: item.Id, DocSec: i + 1, ItemDescripcion: l.descripcion, ItemPrecio: l.precio, ItemCantidad: l.cantidad, Impuesto1: imp, Impuesto2: 0, Impuesto3: 0, Impuesto4: 0, Impuesto5: 0, Descuento: 0, Nota: l.nota || '', Estatus: 'N', EstatusDespacho: 'S' });
+        }
+        monto = Math.round(monto * 100) / 100; impuesto = Math.round(impuesto * 100) / 100;
+        const hoy = hoySantoDomingo().fecha + 'T00:00:00';
+        const cot = await citrusPost(ctx, 'cotizacion', {
+            ClienteId: Number(b.clienteId) > 0 ? Number(b.clienteId) : null, TiendaId: Number(b.tiendaId) > 0 ? Number(b.tiendaId) : 1, MonedaId: 1, Fecha: hoy,
+            Estatus: 'Pendiente Aprobacion', Nota: String(b.nota || '').slice(0, 500), NombreCliente: nombreCliente, DireccionCliente: String(b.direccion || '').slice(0, 200),
+            Monto: monto, Impuesto: impuesto, Impuesto1: impuesto, Impuesto2: 0, Impuesto3: 0, Impuesto4: 0, Impuesto5: 0, Descuento: 0, DescuentoTotal: 0, Tasa: 1.0, Tipo: 'C',
+            VendedorId: vendedorId, Documento: '', DescuentoAutorizado: false, EstatusDespacho: 'Sin Despachar', EsCreditoParcial: false, CotizacionDetalles: detalles
+        });
+        let reporte = null;
+        try { reporte = await citrusGet(ctx, `cotizacion/${cot.Id}/reporte`); } catch (e) { console.warn('reporte cotización', e.message); }
+        await db.collection('citrusCotizacionesPanel').add({
+            citrusId: cot.Id, entorno: ctx.entorno, numero: (reporte && reporte.Nombre) || null, nombreCliente, clienteId: b.clienteId || null, vendedorId,
+            lineas, monto, impuesto, total: monto + impuesto, conItbis, origen: String(b.origen || 'calculador-precio-venta'), creadoPor: email, fecha: FieldValue.serverTimestamp()
+        });
+        res.status(200).json({ ok: true, entorno: ctx.entorno, id: cot.Id, numero: (reporte && reporte.Nombre) || ('Cotización #' + cot.Id), monto, impuesto, total: monto + impuesto, vendedorId, pdfBase64: (reporte && reporte.ReporteSerializado) || null, pdfExt: (reporte && reporte.Extension) || 'pdf' });
+    } catch (e) {
+        console.error('citrusCrearCotizacion', e);
+        res.status(502).json({ error: String((e && e.message) || e) });
+    }
+});
 exports.citrusReportes = onRequest({ secrets: [citrusToken, citrusTokenProd], cors: true, timeoutSeconds: 120 }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
     const quien = await callerConRol(req, ['contable']);
