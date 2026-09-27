@@ -40,7 +40,8 @@ service cloud.firestore {
     // tokens, 2FA), que solo lee cada quien su propio doc o un admin (ver más abajo). Las pantallas
     // compartidas usan el espejo `equipo` (nombre, rol, activo), que lo mantiene una Cloud Function.
     match /{coleccion}/{resto=**} {
-      allow read: if request.auth != null && coleccion != 'usuarios';
+      allow read: if request.auth != null && coleccion != 'usuarios'
+        && coleccion != 'valoracionesEquipo' && coleccion != 'valoracionesEncargado';
     }
     match /equipo/{email} {
       allow write: if false;   // solo la Cloud Function sincronizarEquipo (Admin SDK)
@@ -96,6 +97,28 @@ service cloud.firestore {
     // puede escribir eventos con SU propio correo (no puntos ajenos). Borrar, solo admin.
     match /puntos/{id} {
       allow create, update: if request.auth != null && (request.resource.data.email == request.auth.token.email || 'admin' in rolesDelUsuario());
+      allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+    }
+    // Valoraciones entre el equipo (2026-09-27), SIEMPRE anónimas entre ellos: `valoracionesEquipo`
+    // (encargado → cada persona, desde la ventana de horas al completar) y `valoracionesEncargado`
+    // (cada persona → su encargado, desde la tarjeta del trabajo). Solo las lee gerencia (admin) o quien
+    // la escribió (`por` = su correo); cada quien crea/edita solo las suyas y nunca sobre sí mismo. Los
+    // puntos los aplica la Cloud Function sin nombrar a nadie. Borrar, solo admin.
+    function valoracionPropia() {
+      return request.auth != null
+        && request.resource.data.por == request.auth.token.email
+        && request.resource.data.nivel in ['bien', 'ok', 'flojo']
+        && (!('email' in request.resource.data) || request.resource.data.email != request.auth.token.email)
+        && (!('para' in request.resource.data) || request.resource.data.para != request.auth.token.email);
+    }
+    match /valoracionesEquipo/{id} {
+      allow read: if request.auth != null && ('admin' in rolesDelUsuario() || resource.data.por == request.auth.token.email);
+      allow create, update: if valoracionPropia();
+      allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+    }
+    match /valoracionesEncargado/{id} {
+      allow read: if request.auth != null && ('admin' in rolesDelUsuario() || resource.data.por == request.auth.token.email);
+      allow create, update: if valoracionPropia();
       allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
     }
     // Reglas/valores del sistema de puntos (visibleEquipo, desde, puntos por evento): solo admin.

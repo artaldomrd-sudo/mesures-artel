@@ -260,11 +260,18 @@
 <!-- Horas del trabajo al validarlo (usuario 2026-09-27): quiénes estuvieron y cuántas horas. Van al PARTE DIARIO del
      día del encargado como borrador, con el nombre exacto de la obra, para que el informe de costo no salga en 0 y el
      parte de las 6 pm ya venga con estas líneas. -->
+<style>
+    #modal-val .vr { border: 1.5px solid #e3e8ee; background: #fff; border-radius: 8px; width: 34px; height: 34px; font-size: 16px; cursor: pointer; opacity: .45; padding: 0; }
+    #modal-val .vr.on { opacity: 1; border-color: var(--artal-blue); background: #eef4fb; }
+    #modal-val .vr.on[data-n="bien"] { border-color: #1f9d61; background: #e7f7ee; }
+    #modal-val .vr.on[data-n="flojo"] { border-color: #d9483b; background: #fdeaea; }
+</style>
 <div class="modal-ov" id="modal-val">
     <div class="modal-bx">
         <h3 style="margin:0 0 4px">✅ Validar trabajo</h3>
         <div id="val-lugar" style="font-weight:bold;color:var(--artal-blue);margin-bottom:8px"></div>
-        <p style="font-size:13px;color:#556;margin:0 0 10px">¿Quiénes trabajaron en esta obra y cuántas horas cada uno? Escribe las horas reales (no vienen puestas). Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
+        <p style="font-size:13px;color:#556;margin:0 0 6px">¿Quiénes trabajaron en esta obra y cuántas horas cada uno? Escribe las horas reales (no vienen puestas). Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
+        <p style="font-size:12px;color:#8a93a0;margin:0 0 10px">👍 bien · 👌 normal · ⚠️ flojo = cómo trabajó cada uno hoy (suma o resta puntos; ⚠️ pide un motivo corto).</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
             <label style="font-size:13px">Día del trabajo <input type="date" id="val-fecha" style="padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px"></label>
             <span class="hint" id="val-parte" style="font-size:12px;color:#8a93a0"></span>
@@ -575,6 +582,46 @@
                 <button class="nav-btn copiar" onclick="copiarTexto('${encodeURIComponent(url)}')">⧉ Copiar enlace</button>
             </div></div>`;
     }
+    // Valoración inversa (usuario 2026-09-27): el ayudante/compañero marca cómo se portó el encargado con él en ese trabajo
+    // (explicaciones, trato, actitud). Un toque: 👍 / 👌 / ⚠️ (⚠️ pide un comentario). Va a la colección
+    // `valoracionesEncargado/{instId}_{claveDeMiEmail}` (solo la leen gerencia y el autor: anónima para el encargado) y la
+    // función valoracionEncargadoAplicar le aplica los puntos. Solo quien trabajó (asignado o con horas validadas) y no es el encargado.
+    function encargadoDelTrabajo(j) {
+        const encs = Array.isArray(parteCfg.encargados) ? parteCfg.encargados.map(e => String(e.email || '').toLowerCase()) : [];
+        const asig = Array.isArray(j.asignados) ? j.asignados.map(a => ({ email: String((a && a.email) || '').toLowerCase(), nombre: (a && a.nombre) || '' })) : [];
+        const cand = [String(j.validadoPorEmail || '').toLowerCase(), String(j.horasValidacionParte || '').toLowerCase()].filter(Boolean)
+            .concat(asig.filter(a => encs.includes(a.email)).map(a => a.email));
+        const em = cand.find(e => e && !(rolesEm(e).includes('admin'))); if (!em) return null;
+        const a = asig.find(x => x.email === em); const eq = equipoRoles[em] || {};
+        return { email: em, nombre: (a && a.nombre) || eq.nombre || (em === String(j.validadoPorEmail || '').toLowerCase() ? j.validadoPor : '') || em };
+    }
+    function valoracionEncargadoHTML(j) {
+        if (j.estado !== 'completado') return '';
+        const yo = usuario.email.toLowerCase(); const misRoles = rolesEm(yo);
+        if (!(misRoles.includes('instalador') || misRoles.includes('ayudante'))) return '';
+        const enc = encargadoDelTrabajo(j); if (!enc || enc.email === yo) return '';
+        const miEmp = rrhhEmpleados.find(e => String(e.correo || '').toLowerCase() === yo);
+        const trabaje = (Array.isArray(j.asignados) && j.asignados.some(a => String((a && a.email) || '').toLowerCase() === yo)) || (miEmp && Array.isArray(j.horasValidacion) && j.horasValidacion.some(h => h.empleadoId === miEmp.id));
+        if (!trabaje) return '';
+        const mia = misValEnc[j.id];
+        if (mia) return `<div style="margin-top:8px;font-size:12.5px;color:#556">🤝 Tu valoración de ${esc(enc.nombre)} en este trabajo: <b>${mia.nivel === 'bien' ? '👍 bien' : mia.nivel === 'flojo' ? '⚠️ flojo' : '👌 normal'}</b> (enviada, solo la ve gerencia).</div>`;
+        return `<div style="margin-top:8px;background:#eef4fb;border-left:4px solid var(--artal-blue);border-radius:8px;padding:8px 10px;font-size:12.5px;">
+            <b>🤝 ¿Cómo se portó ${esc(enc.nombre)} contigo en este trabajo?</b> (explicaciones, trato, actitud). Un toque; él no ve quién respondió.
+            <div style="display:flex;gap:6px;margin-top:6px;">
+                <button class="nav-btn" style="background:#e7f7ee;color:#1f9d61;font-size:16px" onclick="valorarEncargado('${esc(j.id)}','bien')" title="Bien">👍</button>
+                <button class="nav-btn" style="background:#fff;font-size:16px" onclick="valorarEncargado('${esc(j.id)}','ok')" title="Normal">👌</button>
+                <button class="nav-btn" style="background:#fdeaea;color:#d9483b;font-size:16px" onclick="valorarEncargado('${esc(j.id)}','flojo')" title="Flojo (pide un comentario)">⚠️</button>
+            </div></div>`;
+    }
+    window.valorarEncargado = async function (id, nivel) {
+        const j = allJobs.find(x => x.id === id); if (!j) return;
+        const enc = encargadoDelTrabajo(j); if (!enc) return;
+        let comentario = '';
+        if (nivel === 'flojo') { comentario = (prompt(`¿Qué pasó con ${enc.nombre}? Escribe un comentario corto (obligatorio). Solo lo lee gerencia.`) || '').trim(); if (!comentario) return; }
+        else { comentario = (prompt('¿Quieres agregar un comentario? (opcional, solo lo lee gerencia)') || '').trim(); }
+        const datos = { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', nivel, comentario: comentario.slice(0, 200), para: enc.email, paraNombre: enc.nombre, por: usuario.email.toLowerCase(), porNombre: usuario.nombre, fecha: hoyYmd(), creado: serverTimestamp() };
+        try { await setDoc(doc(db, 'valoracionesEncargado', id + '_' + claveEm(usuario.email)), datos); alert('Gracias. Tu valoración quedó guardada; solo la ve gerencia.'); } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
     window.copiarTexto = async (enc) => { const t = decodeURIComponent(enc); try { await navigator.clipboard.writeText(t); alert('Enlace copiado.'); } catch (_) { prompt('Copia el enlace:', t); } };
     function jobCardHTML(j, opts) {
         const hist = !!(opts && opts.hist);   // en Historial, quien no es admin solo consulta
@@ -627,6 +674,7 @@
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
                 ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
                 ${encuestaHTML(j)}
+                ${valoracionEncargadoHTML(j)}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
             </div>
             ${navHtml}
@@ -1246,7 +1294,11 @@
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };
     /* ===== Horas al validar → parte diario (borrador) ===== */
-    let valCtx = null, rrhhEmpleados = [], parteCfg = {}, equipoRoles = {};
+    let valCtx = null, rrhhEmpleados = [], parteCfg = {}, equipoRoles = {}, misValEnc = {}, misValEquipo = {};
+    // Valoraciones (usuario 2026-09-27: SIEMPRE anónimas entre ellos): viven en colecciones propias que solo leen gerencia y
+    // el autor; aquí cada quien carga solo las suyas (para mostrar "ya valoraste" y para reemplazar una anterior).
+    onSnapshot(query(collection(db, 'valoracionesEncargado'), where('por', '==', usuario.email.toLowerCase())), (s) => { misValEnc = {}; s.docs.forEach(d => { misValEnc[d.data().instalacionId] = d.data(); }); renderTodo(); }, () => {});
+    onSnapshot(query(collection(db, 'valoracionesEquipo'), where('por', '==', usuario.email.toLowerCase())), (s) => { misValEquipo = {}; s.docs.forEach(d => { misValEquipo[d.id] = d.data(); }); }, () => {});
     onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { rrhhEmpleados = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { parteCfg = s.exists() ? s.data() : {}; }, () => {});
     onSnapshot(collection(db, 'equipo'), (s) => { equipoRoles = {}; s.docs.forEach(d => { equipoRoles[d.id.toLowerCase()] = d.data(); }); }, () => {});
@@ -1278,12 +1330,22 @@
         const lista = rrhhEmpleados.filter(e => (e.estado || 'activo') === 'activo').filter(e => { const r = rolesEm(e.correo); return !r.includes('admin') && (r.includes('instalador') || r.includes('ayudante')); })
             .filter(e => !(jefe && encEm !== jefe && String(e.correo || '').toLowerCase() === jefe))
             .sort((a, b) => { const am = asig.has(String(a.correo || '').toLowerCase()), bm = asig.has(String(b.correo || '').toLowerCase()); if (am !== bm) return am ? -1 : 1; return String(a.nombre).localeCompare(String(b.nombre)); });
-        document.getElementById('val-personas').innerHTML = lista.length ? lista.map(e => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f3f7;font-size:14px">
-            <input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px">
-            <span style="flex:1">${esc(e.nombre)}</span>
-            <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="0" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:70px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h</label>`).join('')
+        const yoEm = usuario.email.toLowerCase();
+        document.getElementById('val-personas').innerHTML = lista.length ? lista.map(e => { const propio = String(e.correo || '').toLowerCase() === yoEm; const prev = misValEquipo[j.id + '_' + e.id] || {}; const niv = prev.nivel || 'ok'; return `<div style="padding:8px 4px;border-bottom:1px solid #f0f3f7;font-size:14px">
+            <div style="display:flex;align-items:center;gap:10px">
+                <label style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(e.nombre)}</span></label>
+                <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="0" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:64px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h
+                <span class="val-rate" data-id="${esc(e.id)}" style="display:flex;gap:2px;${propio ? 'visibility:hidden' : ''}">${[['bien', '👍', 'Buen trabajo hoy (suma puntos)'], ['ok', '👌', 'Normal'], ['flojo', '⚠️', 'Flojo (resta puntos, pide motivo)']].map(([n, ic, t]) => `<button type="button" class="vr${niv === n ? ' on' : ''}" data-n="${n}" title="${t}" onclick="valRate(this)">${ic}</button>`).join('')}</span>
+            </div>
+            <input type="text" class="val-motivo" data-id="${esc(e.id)}" maxlength="120" placeholder="Motivo (obligatorio con ⚠️): p. ej. llegó tarde, dejó herramientas…" value="${esc(prev.motivo || '')}" style="display:${niv === 'flojo' ? 'block' : 'none'};width:100%;margin-top:6px;padding:7px;border:1.5px solid #f3c1bb;border-radius:8px;font-family:'Arimo';font-size:13px;box-sizing:border-box">
+        </div>`; }).join('')
             : '<p class="hint">No hay empleados de instalación en RRHH con correo enlazado.</p>';
         document.getElementById('modal-val').classList.add('show');
+    };
+    // Valoración del encargado por persona (usuario 2026-09-27): 👍 / 👌 / ⚠️; el motivo solo se pide con ⚠️.
+    window.valRate = function (btn) {
+        const g = btn.closest('.val-rate'); g.querySelectorAll('.vr').forEach(b => b.classList.remove('on')); btn.classList.add('on');
+        const m = document.querySelector(`#modal-val .val-motivo[data-id="${g.dataset.id}"]`); if (m) { m.style.display = btn.dataset.n === 'flojo' ? 'block' : 'none'; if (btn.dataset.n === 'flojo') m.focus(); }
     };
     window.cerrarValidacion = function () { document.getElementById('modal-val').classList.remove('show'); if (valCtx && valCtx.opts.completar) renderTodo(); valCtx = null; };
     window.completarSinHoras = async function () { const c = valCtx; document.getElementById('modal-val').classList.remove('show'); valCtx = null; if (c && c.opts.completar) await cambiarEstado(c.id, 'completado', true); };
@@ -1301,7 +1363,31 @@
             alert('Escribe las horas de cada persona marcada (no pueden quedar en 0). Si alguien no estuvo, desmárcalo.');
             return;
         }
+        // Valoraciones: solo de las personas marcadas, nunca la propia. 'ok' solo se guarda si ya había una valoración
+        // anterior (para reemplazarla); ⚠️ exige motivo.
+        const valor = {};
+        sel.forEach(id => {
+            const g = document.querySelector(`#modal-val .val-rate[data-id="${id}"]`); if (!g || g.style.visibility === 'hidden') return;
+            const on = g.querySelector('.vr.on'); const nivel = on ? on.dataset.n : 'ok';
+            const motivo = ((document.querySelector(`#modal-val .val-motivo[data-id="${id}"]`) || {}).value || '').trim();
+            if (nivel === 'ok' && !misValEquipo[j.id + '_' + id]) return;
+            valor[id] = { nivel, motivo };
+        });
+        const sinMotivo = Object.entries(valor).filter(([, v]) => v.nivel === 'flojo' && !v.motivo);
+        if (sinMotivo.length) {
+            sinMotivo.forEach(([id]) => { const m = document.querySelector(`#modal-val .val-motivo[data-id="${id}"]`); if (m) { m.style.display = 'block'; m.style.borderColor = '#d9483b'; } });
+            alert('Escribe el motivo de cada ⚠️ (flojo): es lo que la persona va a leer en sus puntos.');
+            return;
+        }
         if (!sel.length && c.enc) { if (!confirm('No marcaste a nadie. ¿Completar el trabajo sin cargar horas al parte?')) return; }
+        if (Object.keys(valor).length) {
+            try {
+                for (const [id, v] of Object.entries(valor)) {
+                    const e = rrhhEmpleados.find(x => x.id === id) || {};
+                    await setDoc(doc(db, 'valoracionesEquipo', c.id + '_' + id), { instalacionId: c.id, cliente: j.cliente || '', obra: j.obra || '', empleadoId: id, email: String(e.correo || '').toLowerCase(), nombre: e.nombre || id, nivel: v.nivel, motivo: v.motivo, por: usuario.email.toLowerCase(), porNombre: usuario.nombre, fecha, creado: serverTimestamp() });
+                }
+            } catch (e) { alert('La valoración del equipo no se pudo guardar: ' + e.message); }
+        }
         if (c.enc && sel.length) {
             const jornada = Number(parteCfg.horasJornada) || 9;
             const costoDia = (e) => e ? (Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0)) : 0;
@@ -1496,7 +1582,7 @@
             // Si el pedido tiene una instalación agendada (Calendario), la marca completada también.
             const job = allJobs.find(j => j.orderId === id);
             if (job && job.estado !== 'completado') {
-                try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoFecha: serverTimestamp() }); } catch (_) { }
+                try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: serverTimestamp() }); } catch (_) { }
                 setTimeout(() => abrirValidacion(job.id, { completar: false }), 300);   // solo cargar horas al parte
             }
         } catch (e) { alert('No se pudo registrar la instalación: ' + e.message); }

@@ -2363,8 +2363,31 @@ el total puede ser negativo.
   suyo. Enlace `#link-puntos` en el menú de Instalación (admin siempre; equipo cuando visibleEquipo). Tarjeta del trabajo
   completado: bloque «⭐ Encuesta al cliente» (WhatsApp con teléfono de `clientes` si existe, copiar) o estrellas si respondió.
   Guía `guia-puntos` en la Academia con `roles:['admin']` hasta que se active; entonces quitar esa restricción.
+- **Ayudantes también ganan (usuario 2026-09-27, caso Emerson: nunca lo asignan en la agenda pero sí está en el parte).**
+  (1) «Quien está en el parte, cuenta»: `trabajo` y `encuesta` van a los asignados Y a toda persona con horas en el parte
+  (enviado o borrador) de esa obra (`personasEnObra`, `mismaObra`, ventana desde el día agendado hasta el cierre / +2 días;
+  las líneas se enlazan por `rrhhEmpleados.correo`). `encuestas.participantes` guarda a quién se aplicó.
+  (2) `jornada` (por día y persona, desde los partes del día): completa ≥ jornada +2, media +1, horas extra +1 más;
+  `falta` −5 si un día laborable está 'ausente' (parte o `rrhhAsistencia`) sin horas y sin `rrhhPermisos` aprobado.
+  (3) `valoracion`: en `#modal-val` de Instalación cada persona marcada lleva 👍 / 👌 / ⚠️ (motivo obligatorio con ⚠️, nunca
+  la fila propia) → `valoracionesEquipo/{instId}_{empleadoId}` → trigger `valoracionEquipoAplicar` escribe +3 / 0 / −3
+  (id determinista: cambiar la valoración reemplaza el evento). (4) Al revés, `valoracion_enc`: en la tarjeta del trabajo
+  completado, quien trabajó (asignado o con horas validadas) y no es el encargado ve «🤝 ¿Cómo se portó X contigo?» 👍/👌/⚠️
+  (⚠️ pide comentario) → `valoracionesEncargado/{instId}_{emailKeyAutor}` → `valoracionEncargadoAplicar` da +3 / 0 / −3 al
+  encargado (`encargadoDelTrabajo`: validadoPorEmail → horasValidacionParte → asignado que es encargado de parte).
+  **SIEMPRE anónimo entre ellos (usuario 27/09: «crearía muchos conflictos»)**: las dos colecciones solo las leen admin y el
+  autor (regla `valoracionPropia`, excluidas del read general), el detalle del evento no nombra a nadie («El encargado del
+  trabajo…» / «Un compañero…»), el `ref` del evento inverso lleva un hash del autor (los docs de `puntos` los lee cualquier
+  usuario con sesión) y el comentario del ayudante solo lo ve gerencia (desplegable «🤝 Cómo valora el equipo a sus
+  encargados» en 👥 Equipo de puntos.html). Límite: con un solo ayudante en el trabajo, el encargado puede deducirlo.
+  Reglas nuevas: jornadaCompleta, jornadaMedia, horasExtra, faltaSinPermiso, valoracionBien, valoracionFlojo,
+  valoracionEncBien, valoracionEncFlojo. Verificado 27/09 corriendo `evaluarDia` localmente sobre un puente REST
+  (scratch `fsrest.cjs`, el Admin SDK no acepta la credencial de firebase-tools para Firestore): Emerson +10 por Anahata
+  «contado por tus horas en el parte». Ojo: los partes cargan 3–4 h por persona y obra, así que `jornada` casi siempre da
+  «menos de media jornada» (0) hasta que los encargados carguen el día completo.
 - Pendiente acordado: repartir las horas "Transporte" del chofer entre las obras de sus viajes del día (usuario 24/09,
-  todavía sin confirmar). Transportes NO entra en los puntos por decisión del usuario.
+  todavía sin confirmar). Transportes NO entra en los puntos por decisión del usuario. Pendiente «más adelante» (usuario
+  27/09): punteo mañana/tarde con GPS (memoria `artal-punteo-gps-pendiente`).
 
 ### Calculador de precio de venta (`ops/calculador-precio-venta.html`, 2026-09-26)
 

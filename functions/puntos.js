@@ -14,6 +14,19 @@
 //   · trabajo_vencido — agendado hace > N días y sin completar ni reprogramar (− una sola vez).
 //   · msg      — comunicado de Mensajería: acuse en < 24 h (+), sin acuse a las 48 h (−).
 //   · encuesta — el cliente califica el trabajo (satisfaccion.html): 5★ +, 4★ +, 3★ 0, 2★ −, 1★ −.
+//   · jornada  — (usuario 2026-09-27, para que un ayudante también gane) horas en los partes del día:
+//                jornada completa (+), media jornada (+ menor), horas extra (+ adicional).
+//   · falta    — día laborable marcado 'ausente' (parte o Asistencia de RRHH) sin permiso aprobado (−).
+//   · valoracion — el encargado, en la ventana de horas al completar, marca 👍 bien (+) / 👌 normal (0) /
+//                ⚠ flojo (−, con motivo) a cada persona que trabajó (colección `valoracionesEquipo`).
+//                SIEMPRE anónimo entre ellos (usuario 2026-09-27): el detalle no nombra a quien valora y las
+//                colecciones solo las leen gerencia y el autor.
+//   · valoracion_enc — al revés: cada compañero que trabajó marca cómo se portó el encargado con él
+//                (colección `valoracionesEncargado`, que solo leen gerencia y el autor); los puntos van al
+//                encargado sin decirle quién; el comentario queda para gerencia en esa colección.
+// «Quien está en el parte, cuenta» (usuario 2026-09-27): los puntos de trabajo y de encuesta van a los
+// asignados Y a toda persona con horas en el parte de esa obra (mismaObra), porque a los ayudantes no los
+// asignan en la agenda pero sí aparecen en el parte con sus horas.
 // Además la Academia ya escribe `academia` al aprobar un examen, y gerencia puede dar/quitar puntos
 // a mano (`supervisor`) desde ops/puntos.html.
 //
@@ -36,13 +49,15 @@ const DEFAULTS = {
         parteATiempo: 10, parteTarde: 3, parteFalta: -10,
         trabajoATiempo: 10, trabajoUnDia: 0, trabajoTarde: -10, trabajoVencido: -5,
         msgLeido24: 2, msgNoLeido48: -3,
-        encuesta5: 15, encuesta4: 5, encuesta3: 0, encuesta2: -10, encuesta1: -20
+        encuesta5: 15, encuesta4: 5, encuesta3: 0, encuesta2: -10, encuesta1: -20,
+        jornadaCompleta: 2, jornadaMedia: 1, horasExtra: 1, faltaSinPermiso: -5,
+        valoracionBien: 3, valoracionFlojo: -3, valoracionEncBien: 3, valoracionEncFlojo: -3
     }
 };
 const ROLES_EQUIPO = ['instalador', 'ayudante', 'chofer'];
 const URL_BASE = 'https://artaldomrd-sudo.github.io/mesures-artel/';
 
-module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin }) {
+module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }) {
 
     // ---- utilidades de fecha en hora de RD --------------------------------------------------
     const TZ = 'America/Santo_Domingo';
@@ -83,15 +98,41 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
         });
         return out;
     }
+    // rrhhEmpleados: id → { email, nombre }. Las líneas del parte van por empleadoId; el ledger de puntos por email
+    // (el `correo` del empleado en RRHH es el del login).
+    async function empleadosPorId() {
+        const snap = await db.collection('rrhhEmpleados').get();
+        const out = new Map();
+        snap.docs.forEach((d) => { const x = d.data() || {}; out.set(d.id, { email: String(x.correo || '').toLowerCase(), nombre: x.nombre || d.id }); });
+        return out;
+    }
+    // Quiénes tuvieron horas en el parte (enviado o borrador) en ESA obra entre dos fechas → Map email → nombre.
+    // Solo equipo de obra. Las líneas traen obraKey "cliente|obra" (normalizado) u obraLabel "Cliente — Obra".
+    async function personasEnObra(inst, desde, hasta, eq, emps) {
+        const out = new Map();
+        if (!inst || !desde || !hasta || desde > hasta) return out;
+        const partes = (await db.collection('partesDiarios').where('fecha', '>=', desde).where('fecha', '<=', hasta).get()).docs.map((d) => d.data());
+        for (const p of partes) for (const l of (p.lineas || [])) {
+            if (l.tipo !== 'obra' || !(Number(l.horas) > 0)) continue;
+            const k = String(l.obraKey || ''), lab = String(l.obraLabel || '').split(' — ');
+            const cli = k.includes('|') ? k.split('|')[0] : (lab[0] || ''), obra = k.includes('|') ? k.split('|').slice(1).join('|') : (lab.slice(1).join(' — ') || '');
+            if (!cli || !mismaObra(inst.cliente, inst.obra, cli, obra)) continue;
+            const e = emps.get(l.empleadoId); const em = e && e.email;
+            if (!em || !eq.has(em)) continue;
+            out.set(em, (eq.get(em) || {}).nombre || e.nombre || em);
+        }
+        return out;
+    }
     // Escribe un evento del ledger con id determinista (idempotente). `puntos` puede ser 0: se guarda
     // igual para que la persona vea que ese día se evaluó (transparencia), salvo que `omitirCero`.
-    async function evento({ email, nombre, tipo, ref, puntos, detalle, fechaEvento, origen, omitirCero }) {
+    async function evento({ email, nombre, tipo, ref, puntos, detalle, fechaEvento, origen, omitirCero, ...extra }) {
         if (!email) return;
         if (omitirCero && !puntos) return;
         const id = `${ek(email)}__${tipo}__${String(ref).replace(/[^A-Za-z0-9_-]/g, '_')}`;
+        const ex = {}; for (const [k, v] of Object.entries(extra)) if (v !== undefined) ex[k] = v;   // p. ej. comentarioGerencia/por (solo admin los ve)
         await db.doc('puntos/' + id).set({
             email: email.toLowerCase(), nombre: nombre || email, origen: origen || 'plataforma', tipo, ref: String(ref),
-            puntos: Number(puntos) || 0, detalle, fechaEvento, fecha: FieldValue.serverTimestamp(), creadoPor: 'sistema'
+            puntos: Number(puntos) || 0, detalle, fechaEvento, fecha: FieldValue.serverTimestamp(), creadoPor: 'sistema', ...ex
         });
     }
 
@@ -107,13 +148,15 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
     async function evaluarDia(D) {
         const cfg = await cargarConfig();
         const R = cfg.reglas;
-        const res = { fecha: D, partes: 0, trabajos: 0, vencidos: 0, mensajes: 0, omitido: false };
+        const res = { fecha: D, partes: 0, jornadas: 0, faltas: 0, trabajos: 0, vencidos: 0, mensajes: 0, omitido: false };
         if (D < cfg.desde) { res.omitido = true; return res; }
         const eq = await equipo();
+        const emps = await empleadosPorId();
         const nombreDe = (em) => (eq.get(String(em || '').toLowerCase()) || {}).nombre || em;
+        const laborable = await esLaborable(D);
 
         // 1) Parte diario de los encargados.
-        if (await esLaborable(D)) {
+        if (laborable) {
             const cfgP = await db.doc('rrhhConfig/parteDiario').get();
             const encargados = (cfgP.exists && Array.isArray(cfgP.data().encargados)) ? cfgP.data().encargados : [];
             const delDia = (await db.collection('partesDiarios').where('fecha', '==', D).get()).docs.map((d) => d.data());
@@ -137,6 +180,58 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             }
         }
 
+        // 1b) Jornada trabajada — para TODO el equipo (ayudantes incluidos): horas en los partes del día, enviados o
+        // borrador (las horas validadas al completar son reales). Completa (≥ jornada) +, media (≥ mitad) + menor,
+        // horas extra (> jornada) + adicional. Un solo evento por persona y día con el desglose.
+        {
+            const cfgP2 = await db.doc('rrhhConfig/parteDiario').get();
+            const jornada = Number(cfgP2.exists && cfgP2.data().horasJornada) || 9;
+            const partesDia = (await db.collection('partesDiarios').where('fecha', '==', D).get()).docs.map((d) => d.data());
+            const horasPor = new Map();   // email → { horas, obras:Set, ausente }
+            for (const p of partesDia) for (const l of (p.lineas || [])) {
+                const e = emps.get(l.empleadoId); const em = e && e.email; if (!em || !eq.has(em)) continue;
+                const h = horasPor.get(em) || { horas: 0, obras: new Set(), ausente: false };
+                if (l.tipo === 'ausente') h.ausente = true;
+                else {
+                    h.horas += Number(l.horas) || 0;
+                    const lab = String(l.obraLabel || '').split(' — ').pop();
+                    if (l.tipo === 'obra' && lab) h.obras.add(lab); else if (l.tipo && l.tipo !== 'obra') h.obras.add(l.tipo);
+                }
+                horasPor.set(em, h);
+            }
+            for (const [em, h] of horasPor) {
+                if (!(h.horas > 0)) continue;
+                let pts = 0; const tramos = [];
+                if (h.horas >= jornada) { pts += Number(R.jornadaCompleta) || 0; tramos.push('jornada completa'); }
+                else if (h.horas >= jornada / 2) { pts += Number(R.jornadaMedia) || 0; tramos.push('media jornada'); }
+                else tramos.push('menos de media jornada');
+                if (h.horas > jornada) { pts += Number(R.horasExtra) || 0; tramos.push(`${Math.round((h.horas - jornada) * 10) / 10} h extra`); }
+                const donde = h.obras.size ? ' en ' + [...h.obras].slice(0, 3).join(', ') + (h.obras.size > 3 ? '…' : '') : '';
+                await evento({ email: em, nombre: nombreDe(em), tipo: 'jornada', ref: D, puntos: pts, fechaEvento: D, detalle: `Jornada del ${fmtF(D)}: ${Math.round(h.horas * 10) / 10} h (${tramos.join(' + ')})${donde}.` });
+                res.jornadas++;
+            }
+            // Falta sin permiso (solo día laborable): 'ausente' en el parte o en Asistencia de RRHH, sin horas ese día y
+            // sin permiso aprobado que cubra la fecha.
+            if (laborable) {
+                const ausentes = new Set();
+                horasPor.forEach((h, em) => { if (h.ausente && !(h.horas > 0)) ausentes.add(em); });
+                (await db.collection('rrhhAsistencia').where('fecha', '==', D).get()).docs.forEach((d) => {
+                    const x = d.data(); if (x.estado !== 'ausente') return;
+                    const e = emps.get(x.empleadoId); if (!e || !e.email || !eq.has(e.email)) return;
+                    if (!((horasPor.get(e.email) || {}).horas > 0)) ausentes.add(e.email);
+                });
+                if (ausentes.size) {
+                    const permisos = (await db.collection('rrhhPermisos').where('estado', '==', 'aprobado').get()).docs.map((d) => d.data()).filter((p) => p.fechaInicio <= D && D <= p.fechaFin);
+                    for (const em of ausentes) {
+                        const idsEmp = [...emps].filter(([, v]) => v.email === em).map(([k]) => k);
+                        if (permisos.some((p) => idsEmp.includes(p.empleadoId))) continue;
+                        await evento({ email: em, nombre: nombreDe(em), tipo: 'falta', ref: D, puntos: R.faltaSinPermiso, fechaEvento: D, detalle: `Falta del ${fmtF(D)} sin permiso registrado en RRHH.` });
+                        res.faltas++;
+                    }
+                }
+            }
+        }
+
         // 2) Trabajos de instalación completados hoy + vencidos sin cerrar.
         const asignadosDe = (j) => {
             const a = Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map((x) => x && x.email).filter(Boolean) : (j.instaladorEmail ? [j.instaladorEmail] : []);
@@ -155,7 +250,11 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 if (dif <= 0) { pts = R.trabajoATiempo; det = `${lugar}: completado el día agendado (${fmtF(lim)}).`; }
                 else if (dif === 1) { pts = R.trabajoUnDia; det = `${lugar}: completado un día después de lo agendado (${fmtF(lim)}).`; }
                 else { pts = R.trabajoTarde; det = `${lugar}: completado ${dif} días después de lo agendado (${fmtF(lim)}).`; }
-                for (const em of asignadosDe(j)) { await evento({ email: em, nombre: nombreDe(em), tipo: 'trabajo', ref: j.id, puntos: pts, detalle: det, fechaEvento: D }); res.trabajos++; }
+                // Asignados + quien tenga horas en el parte de esa obra desde el día agendado (máx. 14 días atrás) hasta hoy.
+                const ini = fechaRD(j.fecha) || D, piso = addDias(D, -14);
+                const enParte = await personasEnObra(j, [ini < D ? ini : D, piso].sort()[1], D, eq, emps);
+                const gente = new Map(); asignadosDe(j).forEach((em) => gente.set(em, nombreDe(em))); enParte.forEach((n, em) => gente.set(em, n));
+                for (const [em, n] of gente) { await evento({ email: em, nombre: n, tipo: 'trabajo', ref: j.id, puntos: pts, detalle: det + (enParte.has(em) && !asignadosDe(j).includes(em) ? ' Contado por tus horas en el parte.' : ''), fechaEvento: D }); res.trabajos++; }
             } else if (diffDias(D, lim) > cfg.diasVencido) {
                 for (const em of asignadosDe(j)) {
                     const id = `${ek(em)}__trabajo_vencido__${j.id}`;
@@ -244,11 +343,24 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ');
             const estrellas = '★'.repeat(g) + '☆'.repeat(5 - g);
             const D = hoySantoDomingo().fecha;
-            for (const a of (after.asignados || [])) {
-                await evento({ email: a.email, nombre: a.nombre, tipo: 'encuesta', ref: after.instalacionId || event.params.token, puntos: pts, origen: 'cliente', fechaEvento: D,
+            // Participantes = asignados + quien tenga horas en el parte de esa obra alrededor del día del trabajo
+            // (desde el día agendado, o el anterior al trabajo, hasta 2 días después; nunca más allá de hoy).
+            const participantes = new Map();
+            (after.asignados || []).forEach((a) => { if (a && a.email) participantes.set(String(a.email).toLowerCase(), a.nombre || ''); });
+            try {
+                const eq = await equipo(); const emps = await empleadosPorId();
+                const instS = after.instalacionId ? await db.doc('instalaciones/' + after.instalacionId).get() : null;
+                const inst = instS && instS.exists ? instS.data() : { cliente: after.cliente, obra: after.obra };
+                const fT = after.fechaTrabajo || D, ini = fechaRD(inst.fecha) || fT;
+                const desde = addDias(ini < fT ? ini : fT, -1), hasta = [addDias(fT, 2), D].sort()[0];
+                (await personasEnObra({ cliente: inst.cliente || after.cliente, obra: inst.obra || after.obra }, desde < addDias(fT, -14) ? addDias(fT, -14) : desde, hasta, eq, emps)).forEach((n, em) => { if (!participantes.has(em)) participantes.set(em, n); });
+            } catch (e) { console.error('encuestaRespondida participantes', e); }
+            for (const [em, n] of participantes) {
+                await evento({ email: em, nombre: n, tipo: 'encuesta', ref: after.instalacionId || event.params.token, puntos: pts, origen: 'cliente', fechaEvento: D,
                     detalle: `El cliente calificó ${lugar} con ${estrellas} (${g}/5)${r.comentario ? ': «' + String(r.comentario).slice(0, 160) + '»' : ''}.` });
             }
-            await db.doc('encuestas/' + event.params.token).update({ puntosAplicados: pts, puntosFecha: FieldValue.serverTimestamp() });
+            const listaEquipo = [...participantes].map(([em, n]) => n || em);
+            await db.doc('encuestas/' + event.params.token).update({ puntosAplicados: pts, puntosFecha: FieldValue.serverTimestamp(), participantes: [...participantes].map(([email, nombre]) => ({ email, nombre })) });
             if (after.instalacionId) { try { await db.doc('instalaciones/' + after.instalacionId).update({ encuestaEstado: 'respondida', encuestaGeneral: g, encuestaFecha: D }); } catch (_) { } }
             // Aviso a gerencia por Mensajería + push.
             const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const x = d.data().rol; return (Array.isArray(x) ? x : [x]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
@@ -258,7 +370,7 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 sub('puntualidad', 'Puntualidad'), sub('limpieza', 'Limpieza y orden'), sub('trato', 'Trato del equipo'),
                 r.recomendaria != null ? `¿Nos recomendaría? ${r.recomendaria ? 'Sí' : 'No'}` : null,
                 r.comentario ? `Comentario: «${r.comentario}»` : null,
-                '', `Equipo: ${(after.asignados || []).map((a) => a.nombre || a.email).join(', ') || '—'} → ${pts >= 0 ? '+' : ''}${pts} puntos cada uno.`
+                '', `Equipo: ${listaEquipo.join(', ') || '—'} → ${pts >= 0 ? '+' : ''}${pts} puntos cada uno.`
             ].filter((x) => x !== null).join('\n');
             await db.collection('mensajes').add({
                 estado: 'enviado', asunto: `⭐ Encuesta del cliente — ${lugar} (${g}/5)`, cuerpo,
@@ -270,5 +382,54 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
         } catch (e) { console.error('encuestaRespondida', event.params.token, e); }
     });
 
-    return { puntosEvaluarDiario, puntosEvaluarAhora, encuestaAlCompletar, encuestaRespondida };
+    // ---- valoración del encargado al completar (usuario 2026-09-27) ------------------------------
+    // instalacion.html escribe `valoracionesEquipo/{instId}_{empleadoId}` = { instalacionId, cliente, obra, empleadoId, email,
+    // nombre, nivel:'bien'|'ok'|'flojo', motivo, por, porNombre, fecha }. Solo gerencia y el autor leen esa colección; el
+    // encargado no puede escribir en `puntos`, así que se aplica aquí. Id determinista por persona + trabajo → cambiar la
+    // valoración reemplaza el evento. Nadie se valora a sí mismo. El detalle NO nombra al encargado. Un 👌 normal solo se
+    // escribe (con 0) si antes había otra valoración.
+    const valoracionEquipoAplicar = onDocumentWritten('valoracionesEquipo/{id}', async (event) => {
+        const v = event.data.after.exists ? event.data.after.data() : null; if (!v) return;
+        const b = event.data.before.exists ? event.data.before.data() : null;
+        if (b && b.nivel === v.nivel && (b.motivo || '') === (v.motivo || '')) return;
+        try {
+            const cfg = await cargarConfig(); const R = cfg.reglas; const eq = await equipo();
+            const em = String(v.email || '').toLowerCase(); if (!em || !eq.has(em)) return;
+            if (em === String(v.por || '').toLowerCase()) return;
+            const fe = String(v.fecha || hoySantoDomingo().fecha); if (fe < cfg.desde) return;
+            const lugar = [v.cliente, v.obra].filter(Boolean).join(' — ') || 'un trabajo';
+            const nivel = String(v.nivel || 'ok'); const motivo = String(v.motivo || '').slice(0, 200);
+            const pts = nivel === 'bien' ? (Number(R.valoracionBien) || 0) : nivel === 'flojo' ? (Number(R.valoracionFlojo) || 0) : 0;
+            const det = nivel === 'bien' ? `El encargado del trabajo valoró tu trabajo en ${lugar}: 👍 bien${motivo ? ' («' + motivo + '»)' : ''}.`
+                : nivel === 'flojo' ? `El encargado del trabajo valoró tu trabajo en ${lugar}: ⚠️ flojo («${motivo || 'sin motivo'}»).`
+                : `El encargado del trabajo valoró tu trabajo en ${lugar}: 👌 normal.`;
+            await evento({ email: em, nombre: v.nombre || (eq.get(em) || {}).nombre, tipo: 'valoracion', ref: `${v.instalacionId || event.params.id}_${String(v.empleadoId || '')}`, puntos: pts, fechaEvento: fe, origen: 'encargado', detalle: det, omitirCero: !b });
+        } catch (e) { console.error('valoracionEquipoAplicar', event.params.id, e); }
+    });
+
+    // Valoración inversa: compañero → encargado. Doc `valoracionesEncargado/{instId}_{emailKeyAutor}` = { instalacionId,
+    // cliente, obra, nivel, comentario, para, paraNombre, por, porNombre, fecha }. Un evento por autor y trabajo (ref = id
+    // del doc con el autor reemplazado por un hash, para que ni el id delate quién fue); el detalle no dice quién; el
+    // comentario NO viaja al ledger (los eventos de `puntos` los puede leer cualquier usuario con sesión).
+    const valoracionEncargadoAplicar = onDocumentWritten('valoracionesEncargado/{id}', async (event) => {
+        const v = event.data.after.exists ? event.data.after.data() : null; if (!v) return;
+        const b = event.data.before.exists ? event.data.before.data() : null;
+        if (b && b.nivel === v.nivel) return;
+        try {
+            const cfg = await cargarConfig(); const R = cfg.reglas; const eq = await equipo();
+            const em = String(v.para || '').toLowerCase(); if (!em || !eq.has(em)) return;
+            if (em === String(v.por || '').toLowerCase()) return;
+            const fe = String(v.fecha || hoySantoDomingo().fecha); if (fe < cfg.desde) return;
+            const lugar = [v.cliente, v.obra].filter(Boolean).join(' — ') || 'un trabajo';
+            const nivel = String(v.nivel || 'ok');
+            const pts = nivel === 'bien' ? (Number(R.valoracionEncBien) || 0) : nivel === 'flojo' ? (Number(R.valoracionEncFlojo) || 0) : 0;
+            const det = nivel === 'bien' ? `Un compañero valoró cómo lo trataste en ${lugar} (explicaciones, trato, actitud): 👍 bien.`
+                : nivel === 'flojo' ? `Un compañero valoró cómo lo trataste en ${lugar} (explicaciones, trato, actitud): ⚠️ flojo. Gerencia tiene el comentario.`
+                : `Un compañero valoró cómo lo trataste en ${lugar}: 👌 normal.`;
+            const refAnon = `${v.instalacionId || event.params.id.split('_')[0]}_${crypto.createHash('sha256').update('artal-val-' + String(v.por || '').toLowerCase()).digest('hex').slice(0, 10)}`;
+            await evento({ email: em, nombre: v.paraNombre || (eq.get(em) || {}).nombre, tipo: 'valoracion_enc', ref: refAnon, puntos: pts, fechaEvento: fe, origen: 'equipo', detalle: det, omitirCero: !b });
+        } catch (e) { console.error('valoracionEncargadoAplicar', event.params.id, e); }
+    });
+
+    return { puntosEvaluarDiario, puntosEvaluarAhora, encuestaAlCompletar, encuestaRespondida, valoracionEquipoAplicar, valoracionEncargadoAplicar };
 };

@@ -2388,6 +2388,6 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 // despliegan y el deploy no pide los secretos WHATSAPP_* ni la versión de Graph.
 // ---------------------------------------------------------------------------------------------
 // PUNTOS DEL EQUIPO + ENCUESTA DE SATISFACCIÓN DEL CLIENTE (usuario 2026-09-24). Ver ./puntos.js.
-Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin }));
+Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }));
 
 if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));
