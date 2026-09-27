@@ -257,6 +257,26 @@
 </main>
 
 <!-- Modal: recordatorio (citas) -->
+<!-- Horas del trabajo al validarlo (usuario 2026-09-27): quiénes estuvieron y cuántas horas. Van al PARTE DIARIO del
+     día del encargado como borrador, con el nombre exacto de la obra, para que el informe de costo no salga en 0 y el
+     parte de las 6 pm ya venga con estas líneas. -->
+<div class="modal-ov" id="modal-val">
+    <div class="modal-bx">
+        <h3 style="margin:0 0 4px">✅ Validar trabajo</h3>
+        <div id="val-lugar" style="font-weight:bold;color:var(--artal-blue);margin-bottom:8px"></div>
+        <p style="font-size:13px;color:#556;margin:0 0 10px">¿Quiénes trabajaron en esta obra y cuántas horas? Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+            <label style="font-size:13px">Día del trabajo <input type="date" id="val-fecha" style="padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px"></label>
+            <span class="hint" id="val-parte" style="font-size:12px;color:#8a93a0"></span>
+        </div>
+        <div id="val-personas" style="max-height:46vh;overflow:auto;border:1px solid #eef1f4;border-radius:10px;padding:4px 8px"></div>
+        <div class="modal-acts">
+            <button type="button" class="btn-cancelar" onclick="cerrarValidacion()">Cancelar</button>
+            <button type="button" class="btn-cancelar" style="background:#eef4fb;color:var(--artal-blue)" onclick="completarSinHoras()" title="Marca el trabajo completado sin cargar horas (el parte se llena después)">Sin horas ahora</button>
+            <button type="button" class="btn-instalado" onclick="confirmarValidacion()">✅ Completar con estas horas</button>
+        </div>
+    </div>
+</div>
 <div class="modal-ov" id="modal-rec">
     <div class="modal-bx">
         <h2>🔔 Nuevo recordatorio</h2>
@@ -377,7 +397,7 @@
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import {
-        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, Timestamp, serverTimestamp
+        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     window.openOrderPreview = openOrderPreview;
 
@@ -914,8 +934,8 @@
                 if (d.getDay() === 0 || (feriados.has(f) && !feriadosTrab.has(f)) || f < desde) continue;
                 if (k === 0 && ahora.getHours() < 18) continue;
                 const em = usuario.email.toLowerCase();
-                if (partesDocs.some(p => p.id === f + '_' + clave(em))) continue;
-                if (partesDocs.some(p => p.fecha === f && String(p.encargadoEmail || '').toLowerCase() !== em && Array.isArray(p.incluidosEmails) && p.incluidosEmails.includes(em))) continue;
+                if (partesDocs.some(p => p.id === f + '_' + clave(em) && !p.borrador)) continue;
+                if (partesDocs.some(p => p.fecha === f && !p.borrador && String(p.encargadoEmail || '').toLowerCase() !== em && Array.isArray(p.incluidosEmails) && p.incluidosEmails.includes(em))) continue;
                 pend.push(f);
             }
             box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Primero haz el parte de ${pend.length === 1 && pend[0] === ymd(new Date(Date.now() - 86400000)) ? 'ayer' : 'los días pendientes'}</b> antes del de hoy: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
@@ -1205,13 +1225,13 @@
     };
 
     /* ===== Estado / reprogramar / eliminar (instalaciones) ===== */
-    window.cambiarEstado = async function (id, estado) {
+    window.cambiarEstado = async function (id, estado, yaConfirmado) {
         const j = allJobs.find(x => x.id === id) || {};
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ') || 'este trabajo';
-        const msg = estado === 'completado'
-            ? `¿Marcar "${lugar}" como COMPLETADO?\n\nQuedará validado a tu nombre.`
-            : `¿Cambiar el estado de "${lugar}" a "${ESTADO_LABEL[estado] || estado}"?`;
-        if (!confirm(msg)) { renderTodo(); return; }   // renderTodo restaura el select si se cancela
+        // Completar pasa por la ventana de horas (quiénes y cuánto) → parte diario del día.
+        if (estado === 'completado' && !yaConfirmado) { abrirValidacion(id, { completar: true }); return; }
+        const msg = `¿Cambiar el estado de "${lugar}" a "${ESTADO_LABEL[estado] || estado}"?`;
+        if (!yaConfirmado && !confirm(msg)) { renderTodo(); return; }   // renderTodo restaura el select si se cancela
         const ahora = serverTimestamp();
         const cambios = { estado, estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora };
         if (estado === 'completado') { cambios.validadoPor = usuario.nombre; cambios.validadoPorEmail = usuario.email; cambios.validadoFecha = ahora; }
@@ -1224,6 +1244,76 @@
                 else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: false, status: 'listo_para_cargar' });
             }
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
+    };
+    /* ===== Horas al validar → parte diario (borrador) ===== */
+    let valCtx = null, rrhhEmpleados = [], parteCfg = {}, equipoRoles = {};
+    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { rrhhEmpleados = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});
+    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { parteCfg = s.exists() ? s.data() : {}; }, () => {});
+    onSnapshot(collection(db, 'equipo'), (s) => { equipoRoles = {}; s.docs.forEach(d => { equipoRoles[d.id.toLowerCase()] = d.data(); }); }, () => {});
+    const normTxtP = (x) => String(x || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+    const claveEm = (em) => String(em || '').toLowerCase().replace(/[.@]/g, '_');
+    const hoyYmd = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+    const rolesEm = (em) => { const u = equipoRoles[String(em || '').toLowerCase()]; return u ? (Array.isArray(u.rol) ? u.rol : [u.rol]) : []; };
+    // El parte al que van las horas: el del usuario si es encargado; si no, el del encargado asignado al trabajo; si no, el jefe.
+    function encargadoParaParte(j) {
+        const encs = Array.isArray(parteCfg.encargados) ? parteCfg.encargados : [];
+        if (!encs.length) return null;
+        const yo = encs.find(e => String(e.email || '').toLowerCase() === usuario.email.toLowerCase()); if (yo) return yo;
+        const asig = (Array.isArray(j.asignados) ? j.asignados.map(a => String((a && a.email) || '').toLowerCase()) : []);
+        const enAsig = encs.find(e => asig.includes(String(e.email || '').toLowerCase())); if (enAsig) return enAsig;
+        const jefe = encs.find(e => String(e.email || '').toLowerCase() === String(parteCfg.jefe || '').toLowerCase());
+        return jefe || encs[0];
+    }
+    window.abrirValidacion = function (id, opts) {
+        const j = allJobs.find(x => x.id === id); if (!j) return;
+        const enc = encargadoParaParte(j);
+        valCtx = { id, opts: opts || {}, enc };
+        document.getElementById('val-lugar').textContent = [j.cliente, j.obra].filter(Boolean).join(' — ') || 'Trabajo';
+        document.getElementById('val-fecha').value = hoyYmd();
+        document.getElementById('val-parte').textContent = enc ? `Van al parte diario de ${enc.nombre || enc.email}` : 'No hay encargados de parte configurados: se completa sin horas';
+        const jornada = Number(parteCfg.horasJornada) || 9;
+        const asig = new Set((Array.isArray(j.asignados) ? j.asignados.map(a => String((a && a.email) || '').toLowerCase()) : []).concat([usuario.email.toLowerCase()]));
+        const jefe = String(parteCfg.jefe || (enc && enc.email) || '').toLowerCase();
+        const encEm = String((enc && enc.email) || '').toLowerCase();
+        const lista = rrhhEmpleados.filter(e => (e.estado || 'activo') === 'activo').filter(e => { const r = rolesEm(e.correo); return !r.includes('admin') && (r.includes('instalador') || r.includes('ayudante')); })
+            .filter(e => !(jefe && encEm !== jefe && String(e.correo || '').toLowerCase() === jefe))
+            .sort((a, b) => { const am = asig.has(String(a.correo || '').toLowerCase()), bm = asig.has(String(b.correo || '').toLowerCase()); if (am !== bm) return am ? -1 : 1; return String(a.nombre).localeCompare(String(b.nombre)); });
+        document.getElementById('val-personas').innerHTML = lista.length ? lista.map(e => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f3f7;font-size:14px">
+            <input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px">
+            <span style="flex:1">${esc(e.nombre)}</span>
+            <input type="number" class="val-h" data-id="${esc(e.id)}" value="${jornada}" step="0.5" min="0.5" max="16" style="width:70px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h</label>`).join('')
+            : '<p class="hint">No hay empleados de instalación en RRHH con correo enlazado.</p>';
+        document.getElementById('modal-val').classList.add('show');
+    };
+    window.cerrarValidacion = function () { document.getElementById('modal-val').classList.remove('show'); if (valCtx && valCtx.opts.completar) renderTodo(); valCtx = null; };
+    window.completarSinHoras = async function () { const c = valCtx; document.getElementById('modal-val').classList.remove('show'); valCtx = null; if (c && c.opts.completar) await cambiarEstado(c.id, 'completado', true); };
+    window.confirmarValidacion = async function () {
+        const c = valCtx; if (!c) return;
+        const j = allJobs.find(x => x.id === c.id) || {};
+        const fecha = document.getElementById('val-fecha').value || hoyYmd();
+        const sel = [...document.querySelectorAll('#modal-val .val-chk:checked')].map(x => x.value);
+        const horasDe = (id) => { const i = document.querySelector(`#modal-val .val-h[data-id="${id}"]`); return Math.max(0, parseFloat(i && i.value) || 0); };
+        if (c.enc && sel.length) {
+            const jornada = Number(parteCfg.horasJornada) || 9;
+            const costoDia = (e) => e ? (Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0)) : 0;
+            const obraKey = normTxtP(j.cliente) + '|' + normTxtP(j.obra), obraLabel = [j.cliente, j.obra].filter(Boolean).join(' — ');
+            const nuevas = sel.map(id => { const e = rrhhEmpleados.find(x => x.id === id) || {}; return { empleadoId: id, nombre: e.nombre || id, tipo: 'obra', obraKey, obraLabel, horas: horasDe(id), costoHora: Math.round(costoDia(e) / jornada * 100) / 100, origenValidacion: c.id }; }).filter(l => l.horas > 0);
+            if (nuevas.length) {
+                try {
+                    const ref = doc(db, 'partesDiarios', fecha + '_' + claveEm(c.enc.email));
+                    const ex = await getDoc(ref);
+                    const prev = ex.exists() ? ((ex.data().lineas || []).filter(l => l.origenValidacion !== c.id)) : [];
+                    const lineas = prev.concat(nuevas);
+                    const incluidosEmails = [...new Set(lineas.map(l => { const e = rrhhEmpleados.find(x => x.id === l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
+                    const datos = { fecha, encargadoEmail: c.enc.email, encargadoNombre: c.enc.nombre || c.enc.email, lineas, incluidosEmails, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
+                    if (!ex.exists()) Object.assign(datos, { borrador: true, nota: '', creado: serverTimestamp() });   // borrador: NO cuenta como parte enviado
+                    await setDoc(ref, datos, { merge: true });
+                    await updateDoc(doc(db, 'instalaciones', c.id), { horasValidacion: nuevas.map(l => ({ empleadoId: l.empleadoId, nombre: l.nombre, horas: l.horas })), horasValidacionFecha: fecha, horasValidacionParte: c.enc.email });
+                } catch (e) { alert('Las horas no se pudieron guardar en el parte: ' + e.message); }
+            }
+        }
+        document.getElementById('modal-val').classList.remove('show'); valCtx = null;
+        if (c.opts.completar) await cambiarEstado(c.id, 'completado', true);
     };
     window.toggleReprog = function (id) {
         const row = document.getElementById('reprog-' + id); if (!row) return;
@@ -1398,6 +1488,7 @@
             const job = allJobs.find(j => j.orderId === id);
             if (job && job.estado !== 'completado') {
                 try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoFecha: serverTimestamp() }); } catch (_) { }
+                setTimeout(() => abrirValidacion(job.id, { completar: false }), 300);   // solo cargar horas al parte
             }
         } catch (e) { alert('No se pudo registrar la instalación: ' + e.message); }
     };

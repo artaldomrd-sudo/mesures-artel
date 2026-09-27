@@ -362,9 +362,9 @@ async function recordarParteDiario(avisarAdmin) {
         if (e.desde && fecha < e.desde) continue;   // todavía no se le exige (arranque escalonado)
         const id = fecha + '_' + em.replace(/[.@]/g, '_');
         const p = await db.doc('partesDiarios/' + id).get();
-        if (p.exists) continue;
+        if (p.exists && !p.data().borrador) continue;   // borrador (horas cargadas al validar un trabajo) ≠ parte enviado
         // Trabajó bajo otro encargado ese día (lo incluyó en su parte) → no le toca enviar el suyo.
-        if (delDia.some((x) => String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em))) continue;
+        if (delDia.some((x) => !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em))) continue;
         faltan.push(e);
         await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
     }
@@ -2205,7 +2205,8 @@ const fmtMiles = (n) => Math.round(Number(n) || 0).toLocaleString('es-DO');
 const fmtRD = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtF = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
 
-async function generarInformeObra(instId, inst) {
+async function generarInformeObra(instId, inst, opts) {
+    opts = opts || {};
     const cliente = String(inst.cliente || '').trim(), obra = String(inst.obra || '').trim();
     const obraKey = obraKeyDe(cliente, obra);
     const { fecha: hoy } = hoySantoDomingo();
@@ -2315,7 +2316,7 @@ async function generarInformeObra(instId, inst) {
         enlace: { titulo: 'Ver informe completo', url: urlInforme }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
     });
     await db.doc('instalaciones/' + instId).update({ informeObraId: instId, informeObraFecha: hoy });
-    for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
+    if (opts.push !== false) for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
     return informe;
 }
 exports.informeObraRecalcular = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
@@ -2333,6 +2334,40 @@ exports.informeObraRecalcular = onRequest({ cors: true, timeoutSeconds: 120 }, a
         const inf = await generarInformeObra(instId, inst);
         res.status(200).json({ ok: true, total: inf.total, horas: inf.manoObra.horas, viajes: inf.transporte.viajes });
     } catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
+});
+// Recalcula los informes de cierre recientes (45 días) de las obras tocadas por un parte diario o un viaje que
+// llega DESPUÉS de completado el trabajo (usuario 2026-09-27: el informe salía en 0 porque el parte de las 6 pm
+// aún no existía al validar a las 2 pm). Borra el mensaje anterior y regenera sin push (el mensaje se reemplaza).
+async function recalcularInformesDeObras(pares) {
+    if (!pares.length) return;
+    const { fecha: hoy } = hoySantoDomingo();
+    const lim = new Date(hoy + 'T12:00:00Z'); lim.setUTCDate(lim.getUTCDate() - 45); const desde = lim.toISOString().slice(0, 10);
+    const informes = (await db.collection('informesObra').where('fechaCierre', '>=', desde).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+    const hechos = new Set();
+    for (const inf of informes) {
+        if (hechos.has(inf.id)) continue;
+        if (!pares.some((p) => mismaObra(inf.cliente, inf.obra, p.cliente, p.obra))) continue;
+        hechos.add(inf.id);
+        try {
+            const inst = (await db.doc('instalaciones/' + inf.id).get()).data(); if (!inst) continue;
+            const viejos = await db.collection('mensajes').where('informeObraId', '==', inf.id).get();
+            for (const m of viejos.docs) await m.ref.delete();
+            await generarInformeObra(inf.id, inst, { push: false });
+            console.log('informe recalculado', inf.id, inf.cliente, inf.obra);
+        } catch (e) { console.error('recalcularInformesDeObras', inf.id, e); }
+    }
+}
+const paresDeParte = (p) => (p && Array.isArray(p.lineas) ? p.lineas : []).filter((l) => l.tipo === 'obra' && l.obraLabel).map((l) => { const i = String(l.obraLabel).indexOf(' — '); return i > 0 ? { cliente: l.obraLabel.slice(0, i), obra: l.obraLabel.slice(i + 3) } : { cliente: l.obraLabel, obra: '' }; });
+exports.informeObraAlCambiarParte = onDocumentWritten('partesDiarios/{id}', async (event) => {
+    const a = event.data.after.exists ? event.data.after.data() : null, b = event.data.before.exists ? event.data.before.data() : null;
+    const pares = paresDeParte(a).concat(paresDeParte(b));
+    const vistos = new Set(); const unicos = pares.filter((p) => { const k = normTxtObra(p.cliente) + "|" + normTxtObra(p.obra); if (vistos.has(k)) return false; vistos.add(k); return true; });
+    try { await recalcularInformesDeObras(unicos); } catch (e) { console.error('informeObraAlCambiarParte', e); }
+});
+exports.informeObraAlCambiarViaje = onDocumentWritten('viajes/{id}', async (event) => {
+    const a = event.data.after.exists ? event.data.after.data() : null, b = event.data.before.exists ? event.data.before.data() : null;
+    const pares = [].concat((a && a.obras) || [], (b && b.obras) || []).filter((o) => o && o.cliente).map((o) => ({ cliente: o.cliente, obra: o.obra || '' }));
+    try { await recalcularInformesDeObras(pares); } catch (e) { console.error('informeObraAlCambiarViaje', e); }
 });
 exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;

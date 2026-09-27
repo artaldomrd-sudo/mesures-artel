@@ -37,10 +37,10 @@ export async function partesPendientes(email, dias = 7) {
     for (const f of candidatas) {
         if (feriados.has(f) || f < desde) continue;
         const p = await getDoc(doc(db, 'partesDiarios', f + '_' + claveEmail(email))).catch(() => null);
-        if (p && p.exists()) continue;
+        if (p && p.exists() && !p.data().borrador) continue;   // un borrador (horas cargadas al validar un trabajo) NO es parte enviado
         // Si otro encargado ya lo incluyó ese día (trabajaron juntos), no le toca enviar parte.
         let otro = false;
-        try { const qs = await getDocs(query(collection(db, 'partesDiarios'), where('fecha', '==', f))); otro = qs.docs.some((d) => { const x = d.data(); return String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em); }); } catch (_) { }
+        try { const qs = await getDocs(query(collection(db, 'partesDiarios'), where('fecha', '==', f))); otro = qs.docs.some((d) => { const x = d.data(); return !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em); }); } catch (_) { }
         if (!otro) pend.push(f);
     }
     return pend;

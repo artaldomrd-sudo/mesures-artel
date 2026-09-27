@@ -2320,6 +2320,21 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   desde las 6:00 pm; NO bloquea `parte-diario.html` ni `chofer.html` (Wilson es chofer: entregar no espera al parte;
   `SIN_BLOQUEO_PARTE` en auth-common.js). El encargado corrige sus partes hasta 6 días laborables atrás; un día pendiente de la ventana del bloqueo
   siempre se puede cargar (`ajustarMinFecha`); los avisos del formulario e Instalación usan la misma ventana de 7 días.
+- **Horas al validar el trabajo → parte BORRADOR (usuario 2026-09-27: «los informes salen en 0 porque el parte llega a las 6 pm»).**
+  En Instalación, marcar «completado» (`cambiarEstado` y la biometría) abre `#modal-val`: quiénes estuvieron (RRHH con rol
+  instalador/ayudante, prechecados los asignados + quien valida) y horas (jornada). Se escriben como líneas
+  `{tipo:'obra', obraKey, obraLabel, horas, costoHora, origenValidacion: instId}` en `partesDiarios/{fecha}_{encargado}` del
+  encargado dueño (`encargadoParaParte`: el usuario si es encargado, si no un encargado asignado, si no el jefe). Si el parte
+  no existe se crea con **`borrador: true`** (nota vacía, `creado` provisional). **Un borrador NO es parte enviado**: lo ignoran
+  parte-gate, el aviso de Instalación, `recordarParteDiario`, Seguimiento («⏳ Borrador en curso» / «✗ Falta (hay borrador)»),
+  `puntos.js` y `diasPendientes`/`incluidoPorOtro` del formulario; Costo de obras e informes SÍ lo suman (horas reales).
+  `parte-diario.html` carga el borrador (líneas «✓ validado» + resto del equipo con obra por elegir) y al Enviar quita
+  `borrador` y pone `creado` = hora real del envío. «Sin horas ahora» completa sin líneas (comportamiento anterior).
+  Re-validar el mismo trabajo reemplaza sus líneas (`origenValidacion`). `instalaciones.horasValidacion*` guarda copia.
+- **Recálculo automático del informe de cierre**: `informeObraAlCambiarParte` (trigger `partesDiarios`) y
+  `informeObraAlCambiarViaje` (trigger `viajes`) buscan `informesObra` de los últimos 45 días cuya obra calce (`mismaObra`) con
+  las líneas/obras tocadas, borran su mensaje y regeneran con `generarInformeObra(id, inst, {push:false})`. Así un parte o viaje
+  que llega después de completado el trabajo ya no deja el informe en 0.
 - **Gastos fijos de pago automático**: `contaRecurrentes.pago === 'automatico'` → la función
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".

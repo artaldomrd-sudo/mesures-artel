@@ -137,7 +137,7 @@
     // ¿Otro encargado lo incluyó en su parte ese día? (trabajaron juntos → no le toca enviar el suyo)
     function cubiertoPor(email, fecha) {
         const em = String(email || '').toLowerCase();
-        const p = partes.find(x => x.fecha === fecha && String(x.encargadoEmail || '').toLowerCase() !== em &&
+        const p = partes.find(x => x.fecha === fecha && !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em &&
             (Array.isArray(x.incluidosEmails) ? x.incluidosEmails.includes(em) : (x.lineas || []).some(l => { const e = empPorId(l.empleadoId); return e && String(e.correo || '').toLowerCase() === em; })));
         return p ? (p.encargadoNombre || p.encargadoEmail) : '';
     }
@@ -145,7 +145,10 @@
     const horaDe = (v) => { const d = v && v.toDate ? v.toDate() : null; return d ? d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }) : ''; };
 
     function estadoEncargado(e, fecha) {
-        const p = partes.find(x => x.id === parteId(fecha, e.email));
+        const p = partes.find(x => x.id === parteId(fecha, e.email) && !x.borrador);
+        const b = !p && partes.find(x => x.id === parteId(fecha, e.email) && x.borrador);
+        if (b && (fecha !== hoyStr() || new Date().getHours() >= 18)) return { cls: 'no', txt: '✗ Falta (hay borrador)', det: `Tiene ${(b.lineas || []).length} línea(s) cargadas al validar trabajos, pero no envió el parte.` };
+        if (b) return { cls: 'espera', txt: '⏳ Borrador en curso', det: `${(b.lineas || []).length} línea(s) cargadas al validar trabajos; falta completar y enviar el parte antes de las 6:00 pm.` };
         if (p) { const personas = new Set((p.lineas || []).map(l => l.empleadoId)).size; const horas = (p.lineas || []).reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0); return { cls: 'ok', txt: '✓ Enviado' + (horaDe(p.actualizado || p.creado) ? ' a las ' + horaDe(p.actualizado || p.creado) : ''), det: `${personas} persona(s) · ${horas} h${feriadosTrab.has(fecha) ? ' · 🗓️ feriado trabajado (200 %)' : ''}${p.nota ? '<br>📝 ' + esc(p.nota) : ''}`, p }; }
         if (!esLaborable(fecha)) return { cls: 'libre', txt: 'Día libre', det: feriados.has(fecha) ? 'Feriado (si se trabaja, Anny lo avisa por comunicado marcando la casilla del feriado)' : 'Domingo' };
         if (fecha < desdeDe(e)) return { cls: 'libre', txt: 'Aún no se le exigía', det: 'Empieza el ' + fmtFecha(desdeDe(e)) };

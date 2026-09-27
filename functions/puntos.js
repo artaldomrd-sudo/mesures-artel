@@ -121,8 +121,8 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 if (!e || !e.email) continue;
                 const em = String(e.email).toLowerCase();
                 if (e.desde && D < e.desde) continue;
-                const mio = delDia.find((x) => String(x.encargadoEmail || '').toLowerCase() === em);
-                const incluido = !mio && delDia.some((x) => String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.map((z) => String(z).toLowerCase()).includes(em));
+                const mio = delDia.find((x) => String(x.encargadoEmail || '').toLowerCase() === em && !x.borrador);   // un borrador no es parte enviado
+                const incluido = !mio && delDia.some((x) => !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.map((z) => String(z).toLowerCase()).includes(em));
                 let pts, det;
                 if (incluido) { pts = R.parteATiempo; det = `Parte del ${fmtF(D)}: trabajaste con otro encargado y él te incluyó en su parte.`; }
                 else if (!mio) { pts = R.parteFalta; det = `Parte del ${fmtF(D)}: no se envió ese día.`; }

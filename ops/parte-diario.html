@@ -351,7 +351,13 @@
         const fecha = document.getElementById('p-fecha').value || hoyStr(); const enc = encargadoSel();
         const ex = partes.find(p => p.id === parteId(fecha, enc.email));
         parteGuardado = ex || null;
-        if (ex) {
+        if (ex && ex.borrador) {
+            // Borrador: líneas cargadas al validar trabajos en Instalación + el resto del equipo con obra por elegir.
+            const base = (ex.lineas || []).map(l => ({ ...l }));
+            const ya = new Set(base.map(l => l.empleadoId));
+            equipoInstalacion(enc.email).filter(e => !ya.has(e.id)).forEach(e => base.push({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || JORNADA_H }));
+            parteActual = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas: base, nota: ex.nota || '' };
+        } else if (ex) {
             parteActual = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas: (ex.lineas || []).map(l => ({ ...l })), nota: ex.nota || '' };
         } else {
             // Parte nuevo: arranca con todo el equipo, 8 h, obra por elegir (rápido de ajustar).
@@ -360,7 +366,9 @@
         }
         document.getElementById('p-nota').value = parteActual.nota || '';
         const ft = feriadosTrab.get(fecha);
-        const yaEnviado = ex && fecha !== hoyStr() ? `✏️ <b>Estás corrigiendo el parte del ${esc(fmtFecha(fecha))}</b> (ya enviado). Cambia lo que haga falta y vuelve a tocar <b>Enviar parte</b>: reemplaza al anterior. ` : '';
+        const nVal = ex && ex.borrador ? (ex.lineas || []).filter(l => l.origenValidacion).length : 0;
+        const yaEnviado = ex && ex.borrador ? `✅ <b>Ya tienes ${nVal} línea(s) cargadas</b> desde los trabajos que validaste este día (marcadas «✓ validado»). Revísalas, completa el resto del equipo y toca <b>Enviar parte</b>: hasta entonces el parte cuenta como NO enviado. `
+            : (ex && fecha !== hoyStr() ? `✏️ <b>Estás corrigiendo el parte del ${esc(fmtFecha(fecha))}</b> (ya enviado). Cambia lo que haga falta y vuelve a tocar <b>Enviar parte</b>: reemplaza al anterior. ` : '');
         document.getElementById('p-estado').innerHTML = yaEnviado + (ft ? `🗓️ <b>Feriado trabajado</b> (${esc(ft.nombreFeriado || 'feriado')}, avisado por ${esc(ft.por || 'gerencia')}): el parte de este día es obligatorio y las horas se pagan al 200 %.` : (feriados.has(fecha) ? '🗓️ Este día es feriado: no se exige parte (salvo aviso de gerencia por comunicado).' : ''));
         renderParte();
     };
@@ -394,7 +402,7 @@
             const tot = ls.reduce((s, x) => s + (x.l.tipo === 'ausente' ? 0 : n2(x.l.horas)), 0);
             const filas = ls.map(({ l, i }) => `<div class="tramo">
                 <select onchange="setLinea(${i},'tipo',this.value)">${TIPOS.map(t => `<option value="${t[0]}" ${t[0] === l.tipo ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
-                ${l.tipo === 'obra' ? `<select class="obra ${!l.obraKey ? 'falta' : ''}" onchange="setObra(${i},this)">${opcionesObra(l.obraKey)}</select>` : `<span class="hint" style="padding:0 4px">${esc(tipoLabel(l.tipo).replace(/^\S+\s/, ''))}</span>`}
+                ${l.tipo === 'obra' ? `<select class="obra ${!l.obraKey ? 'falta' : ''}" onchange="setObra(${i},this)">${opcionesObra(l.obraKey)}</select>${l.origenValidacion ? '<span class="hint" title="Horas cargadas al validar el trabajo en Instalación" style="color:#1f9d61;font-weight:bold;white-space:nowrap">✓ validado</span>' : ''}` : `<span class="hint" style="padding:0 4px">${esc(tipoLabel(l.tipo).replace(/^\S+\s/, ''))}</span>`}
                 <input type="number" step="0.5" min="0" max="16" value="${l.tipo === 'ausente' ? 0 : n2(l.horas)}" ${l.tipo === 'ausente' ? 'disabled' : ''} onchange="setLinea(${i},'horas',this.value)" title="Horas">
                 <button class="x" title="Quitar esta fila" onclick="quitarLinea(${i})">✕</button>
             </div>`).join('');
@@ -451,7 +459,7 @@
         if (!parteActual) return;
         const fecha = parteActual.fecha, enc = encargadoSel();
         parteActual.nota = document.getElementById('p-nota').value.trim();
-        const lineas = parteActual.lineas.map(l => ({ empleadoId: l.empleadoId, nombre: l.nombre, tipo: l.tipo, obraKey: l.tipo === 'obra' ? (l.obraKey || '') : '', obraLabel: l.tipo === 'obra' ? (l.obraLabel || '') : '', horas: l.tipo === 'ausente' ? 0 : n2(l.horas) }));
+        const lineas = parteActual.lineas.map(l => ({ empleadoId: l.empleadoId, nombre: l.nombre, tipo: l.tipo, obraKey: l.tipo === 'obra' ? (l.obraKey || '') : '', obraLabel: l.tipo === 'obra' ? (l.obraLabel || '') : '', horas: l.tipo === 'ausente' ? 0 : n2(l.horas), ...(l.origenValidacion ? { origenValidacion: l.origenValidacion } : {}) }));
         if (!lineas.length) { alert('El parte está vacío. Agrega al menos una persona (o quita el día si nadie trabajó).'); return; }
         const sinObra = lineas.filter(l => l.tipo === 'obra' && !l.obraKey).map(l => l.nombre);
         if (sinObra.length) { alert('Falta elegir la obra de: ' + [...new Set(sinObra)].join(', ') + '.'); return; }
@@ -467,7 +475,10 @@
         const id = parteId(fecha, enc.email);
         const incluidosEmails = [...new Set(lineas.map(l => { const e = empPorId(l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
         const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, incluidosEmails, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
-        if (!parteGuardado) datos.creado = serverTimestamp();
+        // Un borrador (horas cargadas al validar trabajos) pasa a parte enviado AHORA: `creado` = momento real del envío
+        // (es la hora que mira el sistema de puntos para «a tiempo / tarde»).
+        if (!parteGuardado || parteGuardado.borrador) datos.creado = serverTimestamp();
+        if (parteGuardado && parteGuardado.borrador) datos.borrador = deleteField();
         const btn = document.getElementById('btn-enviar'); btn.disabled = true;
         try {
             await setDoc(doc(db, 'partesDiarios', id), datos, { merge: true });
@@ -490,7 +501,7 @@
     // viejos se resuelven por empleadoId → correo).
     function incluidoPorOtro(email, fecha) {
         const em = String(email || '').toLowerCase();
-        return partes.some(p => p.fecha === fecha && String(p.encargadoEmail || '').toLowerCase() !== em &&
+        return partes.some(p => p.fecha === fecha && !p.borrador && String(p.encargadoEmail || '').toLowerCase() !== em &&
             (Array.isArray(p.incluidosEmails) ? p.incluidosEmails.includes(em) : (p.lineas || []).some(l => { const e = empPorId(l.empleadoId); return e && String(e.correo || '').toLowerCase() === em; })));
     }
     // Fecha desde la que se le exige el parte a cada encargado (Control → "desde"): Wilson desde el
@@ -504,7 +515,7 @@
             if (!esLaborable(f)) continue;
             if (k === 0 && ahora.getHours() < 18) continue;   // hoy solo cuenta como pendiente desde las 6 pm
             if (f < desdeDe(email)) continue;   // antes de su fecha de arranque no se le exige nada
-            if (partes.some(p => p.id === parteId(f, email))) continue;
+            if (partes.some(p => p.id === parteId(f, email) && !p.borrador)) continue;
             if (incluidoPorOtro(email, f)) continue;   // ese día trabajó bajo otro encargado (ej. Miki con Wilson)
             out.push(f);
         }
