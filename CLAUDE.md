@@ -2370,7 +2370,10 @@ el total puede ser negativo.
   (2) `jornada` (por día y persona, desde los partes del día): **día trabajado** +2 por aparecer con horas en algún parte,
   sin importar cuántas (usuario 27/09: «hay que hacerlo de manera más genérica», el parte solo recoge obras registradas y
   muchos días van a sitios que no son obra), horas extra +1 si el total del día pasa la jornada; `falta` −5 si un día
-  laborable está 'ausente' (parte o `rrhhAsistencia`) sin horas y sin `rrhhPermisos` aprobado.
+  laborable está 'ausente' en `rrhhAsistencia` (registro manual de gerencia) sin horas y sin `rrhhPermisos` aprobado.
+  **El parte diario NO alimenta RRHH (usuario 27/09)**: es información de obra (costos, dónde estaban); se quitó la escritura
+  de `rrhhAsistencia` al enviar el parte (`origen:'parte_diario'`) y la línea 'ausente' del parte no cuenta como falta. Lo
+  único compartido con RRHH es el feriado trabajado. La nómina la hace la contable con sus propios datos.
   (3) `valoracion`: en `#modal-val` de Instalación cada persona marcada lleva 👍 / 👌 / ⚠️ (motivo obligatorio con ⚠️, nunca
   la fila propia) → `valoracionesEquipo/{instId}_{empleadoId}` → trigger `valoracionEquipoAplicar` escribe +3 / 0 / −3
   (id determinista: cambiar la valoración reemplaza el evento). (4) Al revés, `valoracion_enc`: en la tarjeta del trabajo

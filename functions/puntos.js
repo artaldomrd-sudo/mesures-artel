@@ -18,7 +18,8 @@
 //                parte del día con horas (+); horas extra si el total del día pasa la jornada (+ adicional).
 //                Regla GENÉRICA a propósito (usuario, mismo día): el parte solo recoge las obras registradas y
 //                muchos días van a sitios que no son obra, así que no se exige que las horas sumen la jornada.
-//   · falta    — día laborable marcado 'ausente' (parte o Asistencia de RRHH) sin permiso aprobado (−).
+//   · falta    — día laborable marcado 'ausente' por gerencia en Asistencia de RRHH, sin permiso aprobado (−).
+//                (El parte diario NO alimenta RRHH — usuario 2026-09-27; solo da costos de obra y los puntos de arriba.)
 //   · valoracion — el encargado, en la ventana de horas al completar, marca 👍 bien (+) / 👌 normal (0) /
 //                ⚠ flojo (−, con motivo) a cada persona que trabajó (colección `valoracionesEquipo`).
 //                SIEMPRE anónimo entre ellos (usuario 2026-09-27): el detalle no nombra a quien valora y las
@@ -210,11 +211,11 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 await evento({ email: em, nombre: nombreDe(em), tipo: 'jornada', ref: D, puntos: pts, fechaEvento: D, detalle: `${fmtF(D)}: ${tramos.join(' + ')} (${Math.round(h.horas * 10) / 10} h en el parte${donde}).` });
                 res.jornadas++;
             }
-            // Falta sin permiso (solo día laborable): 'ausente' en el parte o en Asistencia de RRHH, sin horas ese día y
-            // sin permiso aprobado que cubra la fecha.
+            // Falta sin permiso (solo día laborable): SOLO lo que gerencia registró a mano en Asistencia de RRHH
+            // ('ausente'), sin horas en ningún parte ese día y sin permiso aprobado que cubra la fecha. Una línea 'ausente'
+            // del parte NO cuenta (usuario 2026-09-27: el parte no influye en RRHH).
             if (laborable) {
                 const ausentes = new Set();
-                horasPor.forEach((h, em) => { if (h.ausente && !(h.horas > 0)) ausentes.add(em); });
                 (await db.collection('rrhhAsistencia').where('fecha', '==', D).get()).docs.forEach((d) => {
                     const x = d.data(); if (x.estado !== 'ausente') return;
                     const e = emps.get(x.empleadoId); if (!e || !e.email || !eq.has(e.email)) return;
