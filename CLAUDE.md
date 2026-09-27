@@ -2367,8 +2367,10 @@ el total puede ser negativo.
   (1) «Quien está en el parte, cuenta»: `trabajo` y `encuesta` van a los asignados Y a toda persona con horas en el parte
   (enviado o borrador) de esa obra (`personasEnObra`, `mismaObra`, ventana desde el día agendado hasta el cierre / +2 días;
   las líneas se enlazan por `rrhhEmpleados.correo`). `encuestas.participantes` guarda a quién se aplicó.
-  (2) `jornada` (por día y persona, desde los partes del día): completa ≥ jornada +2, media +1, horas extra +1 más;
-  `falta` −5 si un día laborable está 'ausente' (parte o `rrhhAsistencia`) sin horas y sin `rrhhPermisos` aprobado.
+  (2) `jornada` (por día y persona, desde los partes del día): **día trabajado** +2 por aparecer con horas en algún parte,
+  sin importar cuántas (usuario 27/09: «hay que hacerlo de manera más genérica», el parte solo recoge obras registradas y
+  muchos días van a sitios que no son obra), horas extra +1 si el total del día pasa la jornada; `falta` −5 si un día
+  laborable está 'ausente' (parte o `rrhhAsistencia`) sin horas y sin `rrhhPermisos` aprobado.
   (3) `valoracion`: en `#modal-val` de Instalación cada persona marcada lleva 👍 / 👌 / ⚠️ (motivo obligatorio con ⚠️, nunca
   la fila propia) → `valoracionesEquipo/{instId}_{empleadoId}` → trigger `valoracionEquipoAplicar` escribe +3 / 0 / −3
   (id determinista: cambiar la valoración reemplaza el evento). (4) Al revés, `valoracion_enc`: en la tarjeta del trabajo
@@ -2383,8 +2385,8 @@ el total puede ser negativo.
   Reglas nuevas: jornadaCompleta, jornadaMedia, horasExtra, faltaSinPermiso, valoracionBien, valoracionFlojo,
   valoracionEncBien, valoracionEncFlojo. Verificado 27/09 corriendo `evaluarDia` localmente sobre un puente REST
   (scratch `fsrest.cjs`, el Admin SDK no acepta la credencial de firebase-tools para Firestore): Emerson +10 por Anahata
-  «contado por tus horas en el parte». Ojo: los partes cargan 3–4 h por persona y obra, así que `jornada` casi siempre da
-  «menos de media jornada» (0) hasta que los encargados carguen el día completo.
+  «contado por tus horas en el parte». (La primera versión exigía jornada completa/media y daba 0 casi siempre porque los
+  partes cargan 3–4 h por persona y obra; por eso se volvió genérica.)
 - Pendiente acordado: repartir las horas "Transporte" del chofer entre las obras de sus viajes del día (usuario 24/09,
   todavía sin confirmar). Transportes NO entra en los puntos por decisión del usuario. Pendiente «más adelante» (usuario
   27/09): punteo mañana/tarde con GPS (memoria `artal-punteo-gps-pendiente`).

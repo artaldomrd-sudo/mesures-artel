@@ -14,8 +14,10 @@
 //   · trabajo_vencido — agendado hace > N días y sin completar ni reprogramar (− una sola vez).
 //   · msg      — comunicado de Mensajería: acuse en < 24 h (+), sin acuse a las 48 h (−).
 //   · encuesta — el cliente califica el trabajo (satisfaccion.html): 5★ +, 4★ +, 3★ 0, 2★ −, 1★ −.
-//   · jornada  — (usuario 2026-09-27, para que un ayudante también gane) horas en los partes del día:
-//                jornada completa (+), media jornada (+ menor), horas extra (+ adicional).
+//   · jornada  — (usuario 2026-09-27, para que un ayudante también gane) día trabajado: aparecer en algún
+//                parte del día con horas (+); horas extra si el total del día pasa la jornada (+ adicional).
+//                Regla GENÉRICA a propósito (usuario, mismo día): el parte solo recoge las obras registradas y
+//                muchos días van a sitios que no son obra, así que no se exige que las horas sumen la jornada.
 //   · falta    — día laborable marcado 'ausente' (parte o Asistencia de RRHH) sin permiso aprobado (−).
 //   · valoracion — el encargado, en la ventana de horas al completar, marca 👍 bien (+) / 👌 normal (0) /
 //                ⚠ flojo (−, con motivo) a cada persona que trabajó (colección `valoracionesEquipo`).
@@ -50,7 +52,7 @@ const DEFAULTS = {
         trabajoATiempo: 10, trabajoUnDia: 0, trabajoTarde: -10, trabajoVencido: -5,
         msgLeido24: 2, msgNoLeido48: -3,
         encuesta5: 15, encuesta4: 5, encuesta3: 0, encuesta2: -10, encuesta1: -20,
-        jornadaCompleta: 2, jornadaMedia: 1, horasExtra: 1, faltaSinPermiso: -5,
+        diaTrabajado: 2, horasExtra: 1, faltaSinPermiso: -5,
         valoracionBien: 3, valoracionFlojo: -3, valoracionEncBien: 3, valoracionEncFlojo: -3
     }
 };
@@ -180,9 +182,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             }
         }
 
-        // 1b) Jornada trabajada — para TODO el equipo (ayudantes incluidos): horas en los partes del día, enviados o
-        // borrador (las horas validadas al completar son reales). Completa (≥ jornada) +, media (≥ mitad) + menor,
-        // horas extra (> jornada) + adicional. Un solo evento por persona y día con el desglose.
+        // 1b) Día trabajado — para TODO el equipo (ayudantes incluidos): aparecer con horas en algún parte del día
+        // (enviado o borrador; las horas validadas al completar son reales) = día trabajado (+). Si el total del día
+        // pasa la jornada, horas extra (+ adicional). No se exige que las horas sumen la jornada: el parte solo recoge
+        // las obras registradas. Un solo evento por persona y día con el desglose.
         {
             const cfgP2 = await db.doc('rrhhConfig/parteDiario').get();
             const jornada = Number(cfgP2.exists && cfgP2.data().horasJornada) || 9;
@@ -201,13 +204,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             }
             for (const [em, h] of horasPor) {
                 if (!(h.horas > 0)) continue;
-                let pts = 0; const tramos = [];
-                if (h.horas >= jornada) { pts += Number(R.jornadaCompleta) || 0; tramos.push('jornada completa'); }
-                else if (h.horas >= jornada / 2) { pts += Number(R.jornadaMedia) || 0; tramos.push('media jornada'); }
-                else tramos.push('menos de media jornada');
+                let pts = Number(R.diaTrabajado) || 0; const tramos = ['día trabajado'];
                 if (h.horas > jornada) { pts += Number(R.horasExtra) || 0; tramos.push(`${Math.round((h.horas - jornada) * 10) / 10} h extra`); }
                 const donde = h.obras.size ? ' en ' + [...h.obras].slice(0, 3).join(', ') + (h.obras.size > 3 ? '…' : '') : '';
-                await evento({ email: em, nombre: nombreDe(em), tipo: 'jornada', ref: D, puntos: pts, fechaEvento: D, detalle: `Jornada del ${fmtF(D)}: ${Math.round(h.horas * 10) / 10} h (${tramos.join(' + ')})${donde}.` });
+                await evento({ email: em, nombre: nombreDe(em), tipo: 'jornada', ref: D, puntos: pts, fechaEvento: D, detalle: `${fmtF(D)}: ${tramos.join(' + ')} (${Math.round(h.horas * 10) / 10} h en el parte${donde}).` });
                 res.jornadas++;
             }
             // Falta sin permiso (solo día laborable): 'ausente' en el parte o en Asistencia de RRHH, sin horas ese día y
