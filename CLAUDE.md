@@ -2322,7 +2322,7 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   siempre se puede cargar (`ajustarMinFecha`); los avisos del formulario e Instalación usan la misma ventana de 7 días.
 - **Horas al validar el trabajo → parte BORRADOR (usuario 2026-09-27: «los informes salen en 0 porque el parte llega a las 6 pm»).**
   En Instalación, marcar «completado» (`cambiarEstado` y la biometría) abre `#modal-val`: quiénes estuvieron (RRHH con rol
-  instalador/ayudante, prechecados los asignados + quien valida) y horas (jornada). Se escriben como líneas
+  instalador/ayudante, prechecados los asignados + quien valida) y horas SIN prellenar (usuario 27/09: «deja en 0 por defecto y obliga a poner otro número»: no se completa con una persona marcada en 0). Se escriben como líneas
   `{tipo:'obra', obraKey, obraLabel, horas, costoHora, origenValidacion: instId}` en `partesDiarios/{fecha}_{encargado}` del
   encargado dueño (`encargadoParaParte`: el usuario si es encargado, si no un encargado asignado, si no el jefe). Si el parte
   no existe se crea con **`borrador: true`** (nota vacía, `creado` provisional). **Un borrador NO es parte enviado**: lo ignoran

@@ -264,7 +264,7 @@
     <div class="modal-bx">
         <h3 style="margin:0 0 4px">✅ Validar trabajo</h3>
         <div id="val-lugar" style="font-weight:bold;color:var(--artal-blue);margin-bottom:8px"></div>
-        <p style="font-size:13px;color:#556;margin:0 0 10px">¿Quiénes trabajaron en esta obra y cuántas horas? Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
+        <p style="font-size:13px;color:#556;margin:0 0 10px">¿Quiénes trabajaron en esta obra y cuántas horas cada uno? Escribe las horas reales (no vienen puestas). Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
             <label style="font-size:13px">Día del trabajo <input type="date" id="val-fecha" style="padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px"></label>
             <span class="hint" id="val-parte" style="font-size:12px;color:#8a93a0"></span>
@@ -1281,7 +1281,7 @@
         document.getElementById('val-personas').innerHTML = lista.length ? lista.map(e => `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f3f7;font-size:14px">
             <input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px">
             <span style="flex:1">${esc(e.nombre)}</span>
-            <input type="number" class="val-h" data-id="${esc(e.id)}" value="${jornada}" step="0.5" min="0.5" max="16" style="width:70px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h</label>`).join('')
+            <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="0" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:70px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h</label>`).join('')
             : '<p class="hint">No hay empleados de instalación en RRHH con correo enlazado.</p>';
         document.getElementById('modal-val').classList.add('show');
     };
@@ -1293,6 +1293,15 @@
         const fecha = document.getElementById('val-fecha').value || hoyYmd();
         const sel = [...document.querySelectorAll('#modal-val .val-chk:checked')].map(x => x.value);
         const horasDe = (id) => { const i = document.querySelector(`#modal-val .val-h[data-id="${id}"]`); return Math.max(0, parseFloat(i && i.value) || 0); };
+        // Regla del usuario (2026-09-27): las horas no vienen prellenadas y NUNCA se guarda un 0 — cada persona marcada
+        // tiene que tener sus horas escritas; si no, se avisa y no se completa.
+        const sinHoras = sel.filter(id => !(horasDe(id) > 0));
+        if (sinHoras.length) {
+            sinHoras.forEach(id => { const i = document.querySelector(`#modal-val .val-h[data-id="${id}"]`); if (i) i.style.borderColor = '#d9483b'; });
+            alert('Escribe las horas de cada persona marcada (no pueden quedar en 0). Si alguien no estuvo, desmárcalo.');
+            return;
+        }
+        if (!sel.length && c.enc) { if (!confirm('No marcaste a nadie. ¿Completar el trabajo sin cargar horas al parte?')) return; }
         if (c.enc && sel.length) {
             const jornada = Number(parteCfg.horasJornada) || 9;
             const costoDia = (e) => e ? (Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0)) : 0;
