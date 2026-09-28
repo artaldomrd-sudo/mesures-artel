@@ -116,11 +116,13 @@
         <button type="button" onclick="setFiltroPersona('Anny')">Anny</button>
         <button type="button" onclick="setFiltroPersona('Andrea')">Andrea</button>
         <button type="button" onclick="setFiltroPersona('Dylan')">Dylan</button>
+        <button type="button" onclick="setFiltroPersona('Sara')">Sara</button>
     </div>
     <div class="leyenda">
         <span><i class="punto" style="background:#F6B93B;"></i>Dylan</span>
         <span><i class="punto" style="background:#3498db;"></i>Anny</span>
         <span><i class="punto" style="background:#2ecc71;"></i>Andrea</span>
+        <span><i class="punto" style="background:#9b59b6;"></i>Sara</span>
         <span><i class="punto" style="background:#9b59b6;"></i>Otros</span>
     </div>
     <div class="month-nav">
@@ -232,6 +234,7 @@
                 <label><input type="checkbox" value="Andrea"> Andrea</label>
                 <label><input type="checkbox" value="Anny"> Anny</label>
                 <label><input type="checkbox" value="Dylan"> Dylan</label>
+                <label><input type="checkbox" value="Sara"> Sara</label>
             </div>
         </div>
 
@@ -392,7 +395,8 @@
         if (n === 'dylan') return '#F6B93B';
         if (n === 'andrea') return '#2ecc71';
         if (n === 'rolanny' || n === 'rolany' || n === 'anny') return '#3498db';
-        return '#9b59b6';
+        if (n === 'sara') return '#9b59b6';
+        return '#8a93a0';
     }
 
     function fmtHora(d) { return d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }); }
@@ -593,13 +597,20 @@
     let ordersCache = [];
     let instaladoresCache = [];
     let adminsCache = []; // { email, nombre, ... } — para mandarle el push a la persona de gerencia elegida, no a quien esté creando el evento
+    // Personas de gerencia del calendario (usuario 2026-09-28: Sara Inés agenda con su propio usuario aunque no sea admin).
+    // Se casan con `equipo` por el PRIMER NOMBRE (en Firestore están como "Sara Hernandez", "Dylan Regis…", "Rolanny…").
+    const GERENCIA = ['Andrea', 'Anny', 'Dylan', 'Sara'];
+    const ALIAS_GERENCIA = { anny: ['anny', 'rolanny', 'rolany'] };
+    const primerNombre = (n) => String(n || '').trim().toLowerCase().split(/\s+/)[0] || '';
+    const esPersonaGerencia = (u, nombre) => { const k = nombre.toLowerCase(); const pn = primerNombre(u.nombre); return (ALIAS_GERENCIA[k] || [k]).includes(pn); };
+    const personaGerencia = (nombre) => adminsCache.find(u => esPersonaGerencia(u, nombre));
 
     // "Quién agenda" viene por defecto con la cuenta conectada, pero se puede elegir a mano otro
     // nombre de oficina (la lista sale de los usuarios con rol admin/gerencia).
     onSnapshot(collection(db, 'equipo'), (snap) => {
         const admins = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false).filter(u => {
             const roles = Array.isArray(u.rol) ? u.rol : [u.rol];
-            return roles.includes('admin');
+            return roles.includes('admin') || GERENCIA.some(n => esPersonaGerencia(u, n));
         });
         adminsCache = admins;
         let nombres = admins.map(u => u.nombre).filter(Boolean);
@@ -704,8 +715,8 @@
     // Personas disponibles para asignar una etapa, según a quién va el recordatorio.
     function personasParaEtapas() {
         if (asignadoA === 'gerente') {
-            return ['Andrea', 'Anny', 'Dylan'].map(nombre => {
-                const p = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+            return GERENCIA.map(nombre => {
+                const p = personaGerencia(nombre);
                 return { nombre, email: p ? p.email : '' };
             });
         }
@@ -766,7 +777,7 @@
             // tiene el rol admin cargado con ese nombre exacto, cae a la cuenta conectada para no
             // dejar el campo vacío (fallback silencioso, igual que el resto de la app).
             asignados = nombresMarcados.map(nombre => {
-                const persona = adminsCache.find(u => (u.nombre || '').trim().toLowerCase() === nombre.toLowerCase());
+                const persona = personaGerencia(nombre);
                 return { nombre, email: persona ? persona.email : auth.currentUser.email };
             });
         } else {

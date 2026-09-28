@@ -29,7 +29,7 @@ export const GRUPOS = [
 export const PAGINAS = [
     { id: "index.html", titulo: "Panel de Control", grupo: "panel", roles: [], desc: "Inicio del panel: mosaicos a cada módulo, badges con lo pendiente y centro de notificaciones (comentarios, problemas, solicitudes, recordatorios)." },
     { id: "instalaciones.html", titulo: "Agenda de Instalación", grupo: "operaciones", roles: ["instalador", "ayudante"], desc: "Versión anterior de la agenda de instalación (calendario + GPS + agendar). Reemplazada por Instalación; sigue disponible como respaldo." },
-    { id: "calendario.html", titulo: "Calendario", grupo: "operaciones", roles: [], desc: "Calendario de gerencia: citas y recordatorios por persona (Andrea, Anny, Dylan), con etapas, recurrencia y push." },
+    { id: "calendario.html", titulo: "Calendario", grupo: "operaciones", roles: [], desc: "Calendario de gerencia: citas y recordatorios por persona (Andrea, Anny, Dylan, Sara), con etapas, recurrencia y push." },
     { id: "compras.html", titulo: "Compra Directa", grupo: "operaciones", roles: [], desc: "Compra Directa: artículos que se compran hechos a un proveedor y van directo a transporte/instalación con su orden de compra en PDF." },
     { id: "etiquetas.html", titulo: "Etiquetas de fábrica", grupo: "operaciones", roles: ["fabrica"], desc: "Impresión de etiquetas de fábrica por pedido/ítem para marcar las piezas." },
     { id: "fabrica-interna.html", titulo: "Fábrica Interna", grupo: "operaciones", roles: [], desc: "Tablero de fabricación del taller propio de ARTAL (pedidos con destino interno): pendiente, en fábrica, listo, completado." },
