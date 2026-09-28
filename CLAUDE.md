@@ -2000,7 +2000,10 @@ para ver/corregir trabajos ya entregados o verificar datos meses después. Badge
 trabajos de hoy. Combina: `jobCardHTML` (instalaciones), `orderCardHTML` (firma),
 `cambiarEstado`+`movimientosInstalaciones` (auditoría), `marcarSinInstalacion`, etc. Un solo juego
 de listeners (`instalaciones`, `orders` x2, `citas`, `usuarios`, `clientes`). `requireAuth(['instalador',
-'ayudante'])`, admin gestiona todo. El tile del Panel ("Instalación") ya apunta aquí.
+'ayudante'])`, admin gestiona todo. **`esOficina` (2026-09-28)**: admin o quien entra por permiso de página sin rol de obra
+(instalador/ayudante/chofer), p. ej. Sara Inés → puede crear, editar, eliminar, agendar y reprogramar trabajos, «Solo recoger»,
+y en la conversación habla como gerencia; Historial, «Marcar listo (admin)» y «Eliminar obra» siguen solo admin. Los roles de
+obra NO son permisos de ver: Andrea y Anny quedaron sin instalador/ayudante (siguen entrando como admin). El tile del Panel ("Instalación") ya apunta aquí.
 **`ops/instalaciones.html` e `ops/instalador.html` siguen existiendo como respaldo** (accesibles por
 URL directa) hasta confirmar en producción; el hub que las enlazaba se reemplazó por esta pantalla.
 Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).

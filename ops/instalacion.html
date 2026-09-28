@@ -410,7 +410,11 @@
 
     const usuario = await requireAuth(['instalador', 'ayudante']);
     const esAdmin = usuario.roles.includes('admin');
-    const puedeCambiarEstado = esAdmin || usuario.roles.includes('instalador');
+    // "Oficina" = gestiona la agenda sin ser del equipo de obra: admin, o quien entra por permiso de página sin rol
+    // instalador/ayudante/chofer (usuario 2026-09-28: Sara Inés agenda, edita y borra trabajos con su propio usuario).
+    // Lo estrictamente de gerencia (Historial, marcar pedido listo, eliminar obra) sigue siendo solo admin.
+    const esOficina = esAdmin || !usuario.roles.some(r => ['instalador', 'ayudante', 'chofer'].includes(r));
+    const puedeCambiarEstado = esOficina || usuario.roles.includes('instalador');
     // Academia está en BETA: su link solo se muestra al admin (oculto por defecto en el HTML).
     // Academia visible para todo el equipo (guías de la plataforma, 2026-09-22).
     // Historial exige admin/lector (historial.html usa requireAuth([])): antes el link se le mostraba
@@ -448,7 +452,7 @@
     };
     document.getElementById('bio-btn').onclick = () => registrarMiBiometria();
     actualizarBioBtn();
-    if (esAdmin) document.getElementById('new-job-btn').style.display = 'block';
+    if (esOficina) document.getElementById('new-job-btn').style.display = 'block';
 
     function esc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
@@ -680,18 +684,18 @@
             ${navHtml}
             ${recInlineHTML(recsCache.filter(c => c.instalacionId === j.id))}
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
-            ${(puedeCambiarEstado && (!hist || esAdmin)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
+            ${(puedeCambiarEstado && (!hist || esOficina)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
             <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
-            ${(puedeCambiarEstado && (!hist || esAdmin)) ? `
+            ${(puedeCambiarEstado && (!hist || esOficina)) ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
                 <select onchange="cambiarEstado('${j.id}', this.value)">
                     ${Object.keys(ESTADO_LABEL).map(k => `<option value="${k}" ${k === estado ? 'selected' : ''}>${ESTADO_LABEL[k]}</option>`).join('')}
                 </select>
                 <button class="mini-btn" style="background:#f0f3f7;color:var(--artal-blue)" onclick="toggleReprog('${j.id}')">🕑 Reprogramar</button>`}
-                ${esAdmin ? `<button class="btn-editar" onclick="abrirEditar('${j.id}')">✏ Editar</button>
+                ${esOficina ? `<button class="btn-editar" onclick="abrirEditar('${j.id}')">✏ Editar</button>
                 <button class="btn-eliminar" onclick="eliminarJob('${j.id}')">🗑</button>` : ''}
             </div>
             <div class="reprog-row" id="reprog-${j.id}">
@@ -802,8 +806,8 @@
             <div class="actions">
                 <button class="btn-instalado" ${puedeInstalar ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${puedeInstalar ? `confirmarInstalacionBio('${id}')` : ''}">✅ Confirmar instalación (huella / Face ID)</button>
                 ${puedeParcial ? `<button class="btn-parcial" onclick="guardarAvanceParcial('${id}')">💾 Avance parcial (${c.instalados}/${c.total})</button>` : ''}
-                ${esAdmin && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
-                ${esAdmin ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
+                ${esOficina && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
+                ${esOficina ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
                 ${(esCompra || esDirecto) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
             </div>
             <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e6ea;">
@@ -938,7 +942,7 @@
     function renderPorInstalar() {
         // Pedidos listos sin agendar (solo aviso arriba, admin)
         const wrap = document.getElementById('sin-agendar-wrap');
-        if (esAdmin) {
+        if (esOficina) {
             const listos = ordersCache.filter(o => ['listo_para_cargar', 'parcialmente_listo'].includes(o.data.status) && !agendadosOrderIds.has(o.id) && !o.data.sinInstalacion && o.data.docType !== 'COMPRA_DIRECTA');
             wrap.innerHTML = listos.length
                 ? `<div class="sin-agendar"><h3>📦 Listos sin agendar (${listos.length})</h3><p style="font-size:12px;color:#8a7320;margin:0;">Cada uno tiene abajo su botón <b>📅 Agendar</b>. Agéndalos para verlos en el Calendario.</p></div>`
@@ -1436,7 +1440,7 @@
        cuántos mensajes ya vio (clave = email sin puntos/@). Gerencia además usa
        `comentariosInstaladorAtendidos` (el Panel de Control lo marca como atendido). La Cloud
        Function avisa por push al otro lado (gerencia ↔ instaladores asignados), nunca al autor. */
-    const miRol = esAdmin ? 'gerencia' : 'instalador';
+    const miRol = esOficina ? 'gerencia' : 'instalador';
     const claveEmail = (em) => String(em || '').replace(/[.@]/g, '_');
     const hiloMsgs = (d) => Array.isArray(d.comentariosInstalador) ? d.comentariosInstalador : [];
     const esGerencia = (cm) => cm && cm.deRol === 'gerencia';
@@ -1453,7 +1457,7 @@
             const cls = 'coment-item ' + (mio ? 'mio' : 'otro') + (ger ? ' gerencia' : '') + (!mio && i >= vistos ? ' nuevo' : '');
             return `<div class="${cls}"><div class="coment-meta">${ger ? '🏢 ' : '🔧 '}${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`;
         }).join('');
-        const ph = esAdmin ? 'Escríbele al instalador: instrucciones, preguntas, qué resolver…' : 'Cuéntale a la oficina: cómo va, qué faltó, cliente ausente, daños, preguntas…';
+        const ph = esOficina ? 'Escríbele al instalador: instrucciones, preguntas, qué resolver…' : 'Cuéntale a la oficina: cómo va, qué faltó, cliente ausente, daños, preguntas…';
         return `<div class="coment-box">
                 <div class="coment-title">💬 Conversación de la obra${nuevos ? `<span class="coment-nuevos">${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}</div>
                 ${items ? `<div class="coment-list">${items}</div>` : '<div style="font-size:12px;color:#8a93a0;margin-bottom:6px;">Sin mensajes todavía.</div>'}
@@ -1474,7 +1478,7 @@
             const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
             const nuevo = prev.concat([{ texto, nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol }]);
             const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
-            if (esAdmin) upd.comentariosInstaladorAtendidos = nuevo.length;  // contestar = atendido en el Panel
+            if (esOficina) upd.comentariosInstaladorAtendidos = nuevo.length;  // contestar = atendido en el Panel
             await updateDoc(doc(db, col, id), upd);
             if (ta) ta.value = '';
         } catch (e) { alert('No se pudo enviar: ' + e.message); }
@@ -1482,7 +1486,7 @@
     window.hiloLeido = async function (col, id) {
         const d = hiloDoc(col, id); const n = d ? hiloMsgs(d).length : 0;
         const upd = { ['leidoPor.' + claveEmail(usuario.email)]: n };
-        if (esAdmin) upd.comentariosInstaladorAtendidos = n;
+        if (esOficina) upd.comentariosInstaladorAtendidos = n;
         try { await updateDoc(doc(db, col, id), upd); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     // Pop-up cuando llega un mensaje nuevo del otro lado mientras la pantalla está abierta.
@@ -1504,7 +1508,7 @@
             if (!ult || ult.email === usuario.email) return;
             const f = Date.parse(ult.fecha || ''); if (!f || Date.now() - f > 3 * 60000) return;
             // Al instalador solo le salta lo de sus obras (o sin asignar = cualquiera); a gerencia, todo.
-            if (!esAdmin) {
+            if (!esOficina) {
                 const asig = col === 'orders'
                     ? (Array.isArray(d.asignadosInstalador) ? d.asignadosInstalador.map(a => a && a.email) : [d.asignadoInstaladorEmail])
                     : (Array.isArray(d.asignados) ? d.asignados.map(a => a && a.email) : [d.instaladorEmail]);
