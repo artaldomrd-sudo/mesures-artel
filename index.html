@@ -331,6 +331,8 @@
         body.printing-sheets input[type=number]::-webkit-inner-spin-button,
         body.printing-sheets input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
 
+        /* PDF: el desplegable "Abrir otro proyecto" y el botón "Nuevo proyecto de este cliente" son controles de edición, no van en la hoja (usuario 2026-09-28). */
+        body.printing-sheets #header-obra-sel, body.printing-sheets #btn-nuevo-proy-cliente { display: none !important; }
         body.printing-sheets .project-header { grid-template-columns: 1fr 1.1fr 1.1fr 1.3fr 1fr auto !important; grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion ubicacion logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
 
         body.printing-sheets .item-row { display: block !important; width: 100% !important; text-align: left !important; }
@@ -565,7 +567,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-22 23:28</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-28 14:25</div>
         </div>
     </div>
     
@@ -1827,14 +1829,29 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Conectores/Sin Marco/sin fijación elegida: sin fórmula todavía (devuelve null, no se
     // muestra nada) — "para iniciar", el resto se agrega cuando el usuario confirme esos casos.
     const VIDRIO_DEDUCCION_POR_LADO = { p40: 35, p40_puerta: 55 };
+    // Varios paños a TOPE (usuario 2026-09-28, ej. 3395 × 2505 P40 puerta en 3 vidrios): ancho total − descuento
+    // izq − descuento der − 3 mm por cada JUNTA (n−1) = ancho de vidrio de los n paños juntos; cada vidrio = eso ÷ n;
+    // alto = alto total − descuento arriba − descuento abajo (igual que 1 paño). Con unión "T" (perfil entre paños)
+    // el descuento por junta no está definido todavía: se devuelve solo el total con `pendiente:true`.
+    const JUNTA_TOPE_MM = 3;
     function calcVidrioPanoFijo(state) {
         if (state.type !== 'fachada_din') return null;
         const ancho = parseInt(state.ancho) || 0, alto = parseInt(state.alto) || 0;
         if (!ancho || !alto) return null;
-        if (state.fijacion === 'moldura') return { w: ancho - 7, h: alto - 7 };
-        const perLado = VIDRIO_DEDUCCION_POR_LADO[state.fijacion];
-        if (perLado === undefined) return null;
-        return { w: ancho - perLado * 2, h: alto - perLado * 2 };
+        let wTot, h, ded;
+        if (state.fijacion === 'moldura') { wTot = ancho - 7; h = alto - 7; ded = '7 mm en total'; }
+        else {
+            const perLado = VIDRIO_DEDUCCION_POR_LADO[state.fijacion];
+            if (perLado === undefined) return null;
+            wTot = ancho - perLado * 2; h = alto - perLado * 2; ded = `${perLado} − ${perLado} mm`;
+        }
+        const n = Math.max(1, parseInt(state.panos) || 1);
+        if (n === 1) return { w: wTot, h, n: 1 };
+        if ((state.union || 'T') === 'tope') {
+            const juntas = n - 1, wVidrios = wTot - juntas * JUNTA_TOPE_MM, cada = wVidrios / n;
+            return { w: Math.round(cada * 10) / 10, h, n, wTotal: wVidrios, juntas, detalle: `${ancho} − ${ded} − ${juntas} junta${juntas > 1 ? 's' : ''} × ${JUNTA_TOPE_MM} mm = ${wVidrios} mm de vidrio en total` };
+        }
+        return { w: wTot, h, n, pendiente: true };
     }
 
     function generateSummary(id) {
@@ -2293,7 +2310,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (state.union && (parseInt(state.panos) || 1) > 1) specs.push(`Unión: ${state.union}`);
             {
                 const vidrioCalc = calcVidrioPanoFijo(state);
-                if (vidrioCalc) specs.push(`Vidrio a cortar: ${vidrioCalc.w} x ${vidrioCalc.h} mm`);
+                if (vidrioCalc) {
+                    if (vidrioCalc.n === 1) specs.push(`Vidrio a cortar: ${vidrioCalc.w} x ${vidrioCalc.h} mm`);
+                    else if (vidrioCalc.pendiente) specs.push(`Vidrio a cortar: ${vidrioCalc.w} x ${vidrioCalc.h} mm en total (${vidrioCalc.n} paños con unión "T": descuento entre paños por definir)`);
+                    else specs.push(`Vidrio a cortar: <b>${vidrioCalc.n} vidrios de ${vidrioCalc.w} x ${vidrioCalc.h} mm</b> <span style="color:#666;">(${vidrioCalc.detalle}; ÷ ${vidrioCalc.n})</span>`);
+                }
             }
             
             if(specs.length > 0) {

@@ -392,9 +392,14 @@ por ahora la fórmula vive embebida en el cuaderno).
     los P40 — confirmado explícitamente) → vidrio = marco − 7mm (ancho y alto).
   - `conectores` / `sin_marco` / sin fijación elegida: sin fórmula todavía → `null`, no se
     muestra nada. Pendiente para cuando el usuario confirme esos casos.
-  - No distingue `panos > 1` (Fachada Multipañó): usa siempre el `ancho`/`alto` totales del
-    ítem, no un desglose por paño individual — coincide con los ejemplos que dio el usuario
-    (un solo marco). Si hace falta el cálculo por paño individual, pedirlo explícitamente.
+  - **Varios paños a TOPE (`panos > 1`, `union === 'tope'`; usuario 2026-09-28 con captura: 3395 × 2505,
+    P40 puerta, 3 vidrios)**: ancho total − descuento izq − descuento der − **3 mm por cada junta**
+    (`JUNTA_TOPE_MM`, n−1 juntas) = ancho de vidrio de los n paños juntos; cada vidrio = eso ÷ n (redondeado
+    a 0.1 mm); alto = alto total − descuento arriba/abajo. Ej.: 3395 − 55 − 55 − 2×3 = 3279 → **3 vidrios de
+    1093 × 2395**. El resumen dice "Vidrio a cortar: 3 vidrios de 1093 x 2395 mm (3395 − 55 − 55 mm − 2
+    juntas × 3 mm = 3279 mm de vidrio en total; ÷ 3)". Con unión **"T"** (perfil entre paños) el descuento
+    por junta NO está definido: se muestra el total con "(descuento entre paños por definir)"
+    (`pendiente:true`). Moldura U con varios paños: 7 mm en total + 3 mm por junta (supuesto propio).
 - **Dónde se muestra**: solo en el resumen/PDF (rama genérica de `generateSummary`, junto a la
   línea "Fijación: ..."), como `Vidrio a cortar: {w} x {h} mm` — **no** se muestra mientras se
   edita la tarjeta (antes de fijarla), a pedido explícito del usuario ("por ahora" solo en
