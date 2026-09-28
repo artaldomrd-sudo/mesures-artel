@@ -59,6 +59,7 @@ const DEFAULTS = {
 };
 const ROLES_EQUIPO = ['instalador', 'ayudante', 'chofer'];
 const URL_BASE = 'https://artaldomrd-sudo.github.io/mesures-artel/';
+const URL_CORTA_ENCUESTA = 'https://artaldominicana.com/e/';   // redirección en el sitio → ops/satisfaccion.html?t=CODIGO
 
 module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }) {
 
@@ -318,10 +319,14 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             const cli = String(after.cliente || '').trim();
             // Sin cliente, o trabajo interno (viajes, almacén, taller) → no hay a quién encuestar.
             if (!cli || /^artal\b|almac[eé]n|taller/i.test(cli)) return;
-            const token = crypto.randomBytes(16).toString('hex');
+            // Código corto (usuario 2026-09-27: el enlace era larguísimo): 8 caracteres sin letras/números que se confundan
+            // (sin 0/O/1/I/L). Enlace corto artaldominicana.com/e/CODIGO → redirige a ops/satisfaccion.html?t=CODIGO
+            // (página de redirección en el repo del sitio, artal-web: 404.html + e/index.html).
+            const ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+            const token = [...crypto.randomBytes(8)].map((b) => ABC[b % ABC.length]).join('');
             const asignados = (Array.isArray(after.asignados) && after.asignados.length ? after.asignados : (after.instaladorEmail ? [{ email: after.instaladorEmail, nombre: after.instaladorNombre || '' }] : []))
                 .filter((a) => a && a.email).map((a) => ({ email: String(a.email).toLowerCase(), nombre: a.nombre || '' }));
-            const url = URL_BASE + 'ops/satisfaccion.html?t=' + token;
+            const url = URL_CORTA_ENCUESTA + token;
             await db.doc('encuestas/' + token).set({
                 instalacionId: event.params.id, cliente: cli, obra: String(after.obra || ''), asignados,
                 completadoPor: after.validadoPor || '', fechaTrabajo: fechaRD(after.validadoFecha) || hoySantoDomingo().fecha,

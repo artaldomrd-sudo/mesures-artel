@@ -482,10 +482,17 @@
         const btn = document.getElementById('btn-enviar'); btn.disabled = true;
         try {
             await setDoc(doc(db, 'partesDiarios', id), datos, { merge: true });
-            // El parte NO alimenta Asistencia de RRHH (usuario 2026-09-27: el parte es información de obra — costos y dónde
-            // estaban —, no un registro de RRHH; la nómina la hace la contable con sus propios datos). Antes escribía
-            // rrhhAsistencia/{empId}_{fecha} con presente/ausente y horasParte; se quitó. Lo único que el parte comparte con
-            // RRHH es el feriado trabajado (rrhhFeriadosTrabajados), que marca gerencia.
+            // El parte NO alimenta Asistencia de RRHH con presencias ni horas (usuario 2026-09-27: el parte es información de
+            // obra — costos y dónde estaban —; la nómina la hace la contable con sus propios datos). Lo ÚNICO que sí llega a
+            // RRHH (usuario 2026-09-28: «cuando se marca una ausencia sí puede llegar la información») es la AUSENCIA: una
+            // persona con línea 'ausente' y sin horas ese día → rrhhAsistencia/{empId}_{fecha} estado 'ausente'. Gerencia la
+            // justifica o la convierte en permiso desde RRHH.
+            const porEmp = new Map(); lineas.forEach(l => { const c = porEmp.get(l.empleadoId) || { horas: 0, ausente: false }; c.horas += l.horas; if (l.tipo === 'ausente') c.ausente = true; porEmp.set(l.empleadoId, c); });
+            for (const [empId, c] of porEmp) {
+                if (!c.ausente || c.horas > 0) continue;
+                const e = empPorId(empId);
+                try { await setDoc(doc(db, 'rrhhAsistencia', empId + '_' + fecha), { empleadoId: empId, empleadoNombre: e ? e.nombre : '', fecha, estado: 'ausente', origen: 'parte_diario', registradoPor: usuario.nombre, actualizado: serverTimestamp() }, { merge: true }); } catch (_) { }
+            }
             const quedan = diasPendientes(enc.email, 7).filter(x => x !== fecha);
             alert('✓ Parte del ' + fmtFecha(fecha) + ' enviado.' + (quedan.length ? '\n\nTodavía faltan: ' + quedan.map(fmtFecha).join(', ') + '.' : ''));
             if (!quedan.length && new URLSearchParams(location.search).get('bloqueo') === '1') location.replace('instalacion.html');

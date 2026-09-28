@@ -2359,6 +2359,10 @@ el total puede ser negativo.
   `encuestaAlCompletar` (instalación → completado, cliente no interno) crea `encuestas/{token}` + `instalaciones.encuestaToken/
   Url/Estado` y avisa a los asignados; `encuestaRespondida` aplica `encuesta{1..5}` a cada asignado (origen `cliente`),
   marca `puntosAplicados`, escribe `instalaciones.encuestaGeneral` y manda Mensajería + push a admins (tipo `encuesta`).
+- **Enlace corto (usuario 27/09: «no diga -sudo.github.io/mesures-artel…»)**: `encuestaAlCompletar` genera un código de 8
+  caracteres (sin 0/O/1/I/L) y la URL `https://artaldominicana.com/e/CODIGO`; en el repo del sitio `artaldomrd-sudo/artal-web`
+  (dominio) hay `e/index.html` + `404.html` que redirigen a `ops/satisfaccion.html?t=CODIGO` (commit 92e1315 de ese repo,
+  hecho desde la sesión de sistema con permiso). Las encuestas anteriores conservan su enlace largo, que sigue funcionando.
 - `ops/satisfaccion.html?t=TOKEN`: página PÚBLICA (sin sesión, sin shared.css) ES/EN/FR: estrellas general + puntualidad /
   limpieza / trato, ¿recomendaría?, comentario, nombre. Reglas: `encuestas` get público por id, update solo pendiente →
   respondida con `respuesta` acotada (`respuestaEncuestaValida`); `puntosConfig` admin; `puntos` create también admin
@@ -2376,9 +2380,11 @@ el total puede ser negativo.
   sin importar cuántas (usuario 27/09: «hay que hacerlo de manera más genérica», el parte solo recoge obras registradas y
   muchos días van a sitios que no son obra), horas extra +1 si el total del día pasa la jornada; `falta` −5 si un día
   laborable está 'ausente' en `rrhhAsistencia` (registro manual de gerencia) sin horas y sin `rrhhPermisos` aprobado.
-  **El parte diario NO alimenta RRHH (usuario 27/09)**: es información de obra (costos, dónde estaban); se quitó la escritura
-  de `rrhhAsistencia` al enviar el parte (`origen:'parte_diario'`) y la línea 'ausente' del parte no cuenta como falta. Lo
-  único compartido con RRHH es el feriado trabajado. La nómina la hace la contable con sus propios datos.
+  **El parte diario NO alimenta RRHH con presencias ni horas (usuario 27/09)**: es información de obra (costos, dónde
+  estaban); se quitó la escritura de presente/horasParte en `rrhhAsistencia` (los 39 registros viejos `origen:'parte_diario'`
+  se borraron el 28/09, respaldo en el scratchpad). **Sí llega la AUSENCIA (usuario 28/09)**: persona con línea 'ausente' y
+  sin horas → `rrhhAsistencia/{empId}_{fecha}` estado 'ausente'; por eso `falta` en puntos lee solo `rrhhAsistencia`. Lo
+  demás compartido con RRHH es el feriado trabajado. La nómina la hace la contable con sus propios datos.
   (3) `valoracion`: en `#modal-val` de Instalación cada persona marcada lleva 👍 / 👌 / ⚠️ (motivo obligatorio con ⚠️, nunca
   la fila propia) → `valoracionesEquipo/{instId}_{empleadoId}` → trigger `valoracionEquipoAplicar` escribe +3 / 0 / −3
   (id determinista: cambiar la valoración reemplaza el evento). (4) Al revés, `valoracion_enc`: en la tarjeta del trabajo
