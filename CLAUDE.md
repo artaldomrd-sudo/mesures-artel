@@ -2003,7 +2003,13 @@ de listeners (`instalaciones`, `orders` x2, `citas`, `usuarios`, `clientes`). `r
 'ayudante'])`, admin gestiona todo. **`esOficina` (2026-09-28)**: admin o quien entra por permiso de página sin rol de obra
 (instalador/ayudante/chofer), p. ej. Sara Inés → puede crear, editar, eliminar, agendar y reprogramar trabajos, «Solo recoger»,
 y en la conversación habla como gerencia; Historial, «Marcar listo (admin)» y «Eliminar obra» siguen solo admin. Los roles de
-obra NO son permisos de ver: Andrea y Anny quedaron sin instalador/ayudante (siguen entrando como admin). El tile del Panel ("Instalación") ya apunta aquí.
+obra NO son permisos de ver: Andrea y Anny quedaron sin instalador/ayudante (siguen entrando como admin).
+**Papelera con registro (usuario 2026-09-28, «botones borrar con record de los hechos»)**: `ops/papelera.js` →
+`borrarConRegistro({coleccion,id,datos,resumen,usuario,pantalla})` guarda la copia completa en `papelera` (regla solo
+CREAR, a prueba de manipulación) y luego borra; la usan `eliminarJob` (+ movimiento 'eliminado' en `movimientosInstalaciones`),
+`borrarRec` y `eliminarOrden` de Instalación, `borrarCita` de Calendario y `eliminarPedido` de Historial. Historial →
+Auditoría tiene el desplegable «🗑 Eliminados (papelera)» con «↩ Restaurar» (admin; `restaurarDePapelera` reescribe el doc
+con su id original y deja un registro 'restaurado'). Timestamps se guardan como ISO en la copia. El tile del Panel ("Instalación") ya apunta aquí.
 **`ops/instalaciones.html` e `ops/instalador.html` siguen existiendo como respaldo** (accesibles por
 URL directa) hasta confirmar en producción; el hub que las enlazaba se reemplazó por esta pantalla.
 Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).

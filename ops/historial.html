@@ -108,6 +108,13 @@
     </div>
 
     <div id="auditoria-view" style="display:none;">
+        <div id="papelera-wrap" style="margin-bottom:14px;">
+            <details id="papelera-det">
+                <summary style="cursor:pointer;font-weight:bold;color:var(--artal-blue);">🗑 Eliminados (papelera) — <span id="papelera-n">0</span></summary>
+                <p class="empty" style="margin:6px 0 8px;font-size:12.5px;">Cada trabajo, recordatorio, cita o pedido borrado queda aquí con su copia completa, quién lo borró y cuándo. Nadie puede editar ni borrar estos registros. «Restaurar» lo vuelve a poner en su sitio.</p>
+                <div id="papelera-list"></div>
+            </details>
+        </div>
         <input type="text" id="audit-search" placeholder="🔎 Buscar proyecto…" autocomplete="off">
         <div id="audit-list"><p class="empty">Cargando…</p></div>
     </div>
@@ -425,9 +432,10 @@
 
     window.eliminarPedido = async function (id) {
         const o = (allOrders.find(o => o.id === id) || {}).data || {};
-        if (!confirm(`¿Eliminar definitivamente "${o.cliente || ''} — ${o.obra || ''}"? Esta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Eliminar definitivamente "${o.cliente || ''} — ${o.obra || ''}"?\n\nQueda registrado quién lo eliminó y cuándo, y se puede restaurar desde Auditoría → Eliminados.`)) return;
         try {
-            await deleteDoc(doc(db, 'orders', id));
+            const m = await import('./papelera.js');
+            await m.borrarConRegistro({ coleccion: 'orders', id, datos: o, resumen: [o.cliente || '', o.obra || ''].filter(Boolean).join(' — ') + ' · ' + (o.docType || 'pedido'), usuario, pantalla: 'historial.html' });
         } catch (e) {
             alert('No se pudo eliminar: ' + e.message);
         }
@@ -506,7 +514,7 @@
     // ============ Auditoría por proyecto ============
     // Muestra el registro de cambios de estado de las instalaciones (colección append-only
     // movimientosInstalaciones), agrupado por obra/proyecto, con quién y cuándo hizo cada cambio.
-    const AUDIT_ESTADO = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado' };
+    const AUDIT_ESTADO = { pendiente: 'Pendiente', en_proceso: 'En proceso', completado: 'Completado', eliminado: '🗑 Eliminado' };
     let auditMovs = [];
 
     // Ver firma: la firma se guarda como imagen incrustada (data:image...). Los navegadores
@@ -1119,6 +1127,29 @@
     }
 
     document.getElementById('carpeta-search').addEventListener('input', renderCarpetas);
+
+    // 🗑 Papelera: registros de eliminación (create-only) con copia del documento; restaurar solo admin.
+    let papelera = [];
+    const esAdmin = (usuario.roles || []).includes('admin');   // Historial es solo admin (requireAuth([])), pero se comprueba igual
+    function renderPapelera() {
+        const restaurados = new Set(papelera.filter(r => r.tipo === 'restaurado').map(r => r.coleccion + '/' + r.docId));
+        const items = papelera.filter(r => r.tipo === 'eliminado').sort((a, b) => (b.fecha && b.fecha.toMillis ? b.fecha.toMillis() : 0) - (a.fecha && a.fecha.toMillis ? a.fecha.toMillis() : 0));
+        document.getElementById('papelera-n').textContent = items.length;
+        const COL = { instalaciones: '🔧 Trabajo', citas: '🔔 Recordatorio / cita', orders: '📄 Pedido / obra' };
+        document.getElementById('papelera-list').innerHTML = items.length ? items.map(r => {
+            const ya = restaurados.has(r.coleccion + '/' + r.docId);
+            return `<div style="padding:8px 0;border-bottom:1px solid #eef1f4;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <div style="flex:1;min-width:220px;"><b>${esc(COL[r.coleccion] || r.coleccion)}</b> · ${esc(r.resumen || r.docId)}<div class="audit-meta">borrado por ${esc(r.por || r.porEmail || 'alguien')} · ${esc(fmtFechaHora(r.fecha))} · ${esc(r.pantalla || '')}${ya ? ' · <b style="color:#1f9d61">restaurado</b>' : ''}</div></div>
+                ${(!ya && esAdmin) ? `<button class="mini-btn" onclick="restaurarPapelera('${esc(r.id)}')">↩ Restaurar</button>` : ''}
+            </div>`;
+        }).join('') : '<p class="empty">Nada eliminado todavía.</p>';
+    }
+    window.restaurarPapelera = async function (id) {
+        const r = papelera.find(x => x.id === id); if (!r) return;
+        if (!confirm(`¿Restaurar "${r.resumen || r.docId}" en ${r.coleccion}?`)) return;
+        try { const m = await import('./papelera.js'); await m.restaurarDePapelera(r, usuario); } catch (e) { alert('No se pudo restaurar: ' + e.message); }
+    };
+    onSnapshot(collection(db, 'papelera'), (snap) => { papelera = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderPapelera(); }, () => {});
 
     onSnapshot(collection(db, 'movimientosInstalaciones'), (snap) => {
         auditMovs = snap.docs.map(d => d.data());

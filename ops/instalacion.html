@@ -403,6 +403,7 @@
     import { buildClientMap, clientList } from './clients.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
+    import { borrarConRegistro } from './papelera.js';
     import {
         collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -833,8 +834,8 @@
     window.eliminarOrden = async function (id) {
         const d = ordersDocs.find(x => x.id === id);
         const o = d ? d.data() : {};
-        if (!confirm(`¿Eliminar definitivamente "${(o.cliente || '')} — ${(o.obra || '')}"?\n\nEsta acción no se puede deshacer. Úsala solo para quitar obras duplicadas.`)) return;
-        try { await deleteDoc(doc(db, 'orders', id)); } catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
+        if (!confirm(`¿Eliminar definitivamente "${(o.cliente || '')} — ${(o.obra || '')}"?\n\nÚsala solo para quitar obras duplicadas. Queda registrado quién la eliminó y gerencia puede restaurarla desde Historial → Auditoría.`)) return;
+        try { await borrarConRegistro({ coleccion: 'orders', id, datos: o, resumen: [(o.cliente || ''), (o.obra || '')].filter(Boolean).join(' — ') + ' · ' + (o.docType || 'pedido'), usuario, pantalla: 'instalacion.html' }); } catch (e) { alert('No se pudo eliminar: ' + (e && e.message ? e.message : e)); }
     };
 
     /* ===== Render maestro ===== */
@@ -1101,8 +1102,9 @@
         catch (e) { alert('No se pudo actualizar: ' + e.message); }
     };
     window.borrarRec = async function (id) {
-        if (!confirm('¿Borrar este recordatorio?')) return;
-        try { await deleteDoc(doc(db, 'citas', id)); } catch (e) { alert('No se pudo borrar: ' + e.message); }
+        if (!confirm('¿Borrar este recordatorio? Queda registrado quién lo borró y cuándo.')) return;
+        const c = (recsCache || []).find(x => x.id === id) || {};
+        try { await borrarConRegistro({ coleccion: 'citas', id, datos: c, resumen: (c.titulo || 'Recordatorio') + (c.fecha ? ' · ' + String(c.fecha).slice(0, 16) : ''), usuario, pantalla: 'instalacion.html' }); } catch (e) { alert('No se pudo borrar: ' + e.message); }
     };
 
     /* ===== Trabajo rápido (instalaciones) ===== */
@@ -1431,8 +1433,12 @@
     window.eliminarJob = async function (id) {
         const j = allJobs.find(x => x.id === id);
         const lugar = j ? [j.cliente, j.obra].filter(Boolean).join(' — ') : '';
-        if (!confirm(`¿Eliminar la instalación "${lugar}"? Esta acción no se puede deshacer.`)) return;
-        try { await deleteDoc(doc(db, 'instalaciones', id)); } catch (e) { alert('No se pudo eliminar: ' + e.message); }
+        if (!confirm(`¿Eliminar la instalación "${lugar}"?\n\nQueda registrado quién la eliminó y cuándo, y gerencia puede restaurarla desde Historial → Auditoría.`)) return;
+        try {
+            // Registro de los hechos: copia completa en `papelera` + movimiento 'eliminado' en la auditoría de la obra.
+            await borrarConRegistro({ coleccion: 'instalaciones', id, datos: j || {}, resumen: lugar + (j && j.fecha ? ' · ' + fechaTxtJob(j) : ''), usuario, pantalla: 'instalacion.html' });
+            try { await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: (j && j.cliente) || '', obra: (j && j.obra) || '', estado: 'eliminado', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); } catch (_) { }
+        } catch (e) { alert('No se pudo eliminar: ' + e.message); }
     };
     /* ===== Conversación de la obra (instalador ↔ gerencia) =====
        Un solo hilo por obra/trabajo en `comentariosInstalador` [{texto, nombre, email, fecha, deRol}].
