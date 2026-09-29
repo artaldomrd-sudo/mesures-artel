@@ -2453,7 +2453,9 @@ lo lee instalador: el parte y la ventana de horas necesitan nombre/correo/costo 
 partesDiarios finanzas/oficina/instalador; viajes finanzas/chofer; ventas*/productos*/produccionObras/tablero ventas;
 `puntos` SOLO admin lee (beta); `papelera` solo admin; `encuestas` list solo admin; `mensajes` update del equipo solo
 `acuses`; `solicitudesWeb` oficina; inbox* solo roles inbox. **Al crear una colección nueva hay que darle regla de lectura
-explícita** (ya no hereda la general). Roles, PIN y parte-gate siguen siendo además controles de interfaz. Consecuencias
+explícita** (ya no hereda la general). **Probar SIEMPRE las reglas antes de mandarlas a pegar** con
+`python3 herramientas/probar-reglas.py` (herramienta LOCAL, carpeta `herramientas/` no versionada — el repo es público; banco
+de 34 casos por rol contra la API de pruebas de Firebase Rules, sin desplegar; agregar un caso por cada regla nueva). Publicadas por el usuario el 2026-09-29 con 34/34. Roles, PIN y parte-gate siguen siendo además controles de interfaz. Consecuencias
 conocidas: en Instalación un ayudante no puede leer rrhhEmpleados/partesDiarios (los onSnapshot tienen manejador de error y
 no los necesita); el cuaderno (index.html) lee rrhhEmpleados para el calculador de transporte → un usuario solo-cotizaciones
 no lo verá (área cuaderno, pendiente).
