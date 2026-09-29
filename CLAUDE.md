@@ -2440,6 +2440,28 @@ mano Woof Woof y Plaza Manuela; (4) el modo demo de `parte-diario.html` ya no tr
 mensaje de gerencia existente en vez de borrarlo y recrearlo (conserva acuses), no manda push en recálculos, y los triggers
 de parte/viaje solo recalculan si cambió la huella de obra/horas/costo (una nota o el envío del borrador ya no regeneran).
 
+### Bloqueo provisional por rol en firestore.rules (2026-09-29)
+
+Usuario: «cada quien solo puede ver lo que le pertenece… haz un bloqueo provisional». Antes cualquier sesión leía TODO y
+cualquier no-lector escribía en cualquier colección. Ahora, por GRUPOS (funciones `finanzas` admin+contable, `rrhh`
+admin+contable, `ventas` admin+cotizaciones+contable, `oficina` admin+contable+cotizaciones+comunicaciones, `obra`
+admin+instalador+ayudante+chofer, `operativo` = oficina|obra|fabrica|contratista): la lectura general solo cubre lo operativo
+no sensible (orders, instalaciones, citas, clientes, equipo, mensajes, notas, inventario*, academia*, puntosConfig, feriados,
+turnos, rrhhConfig, departamentos/cargos/sucursales, proyectosGuardados, calculadores, especificaciones, productosUnidades,
+tasas); bancos*/conta*/activos*/informesObra/rrhhNominas/rrhhPrestamos solo finanzas; rrhh* solo rrhh (rrhhEmpleados también
+lo lee instalador: el parte y la ventana de horas necesitan nombre/correo/costo — PENDIENTE mover el costo al servidor);
+partesDiarios finanzas/oficina/instalador; viajes finanzas/chofer; ventas*/productos*/produccionObras/tablero ventas;
+`puntos` SOLO admin lee (beta); `papelera` solo admin; `encuestas` list solo admin; `mensajes` update del equipo solo
+`acuses`; `solicitudesWeb` oficina; inbox* solo roles inbox. **Al crear una colección nueva hay que darle regla de lectura
+explícita** (ya no hereda la general). Roles, PIN y parte-gate siguen siendo además controles de interfaz. Consecuencias
+conocidas: en Instalación un ayudante no puede leer rrhhEmpleados/partesDiarios (los onSnapshot tienen manejador de error y
+no los necesita); el cuaderno (index.html) lee rrhhEmpleados para el calculador de transporte → un usuario solo-cotizaciones
+no lo verá (área cuaderno, pendiente).
+
+**Beta de puntos oculto al equipo (usuario 29/09)**: en Instalación, `betaPuntos()` = admin o `visibleEquipo`; si es falso no
+se muestran las estrellas del cliente en la tarjeta, ni el bloque «🤝 ¿Cómo se portó…?», ni los botones 👍/👌/⚠️ de la ventana
+de horas (la ventana de horas sí). puntos.html solo consulta `puntos` si es admin.
+
 ### Academia: guías de la plataforma (2026-09-22)
 
 `ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La

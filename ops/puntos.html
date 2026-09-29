@@ -118,7 +118,9 @@
 
     onSnapshot(doc(db, 'puntosConfig', 'general'), (s) => { const c = s.exists() ? s.data() : {}; config = { ...DEF, ...c, reglas: { ...DEF.reglas, ...(c.reglas || {}) } }; cargado.cfg = true; render(); });
     onSnapshot(doc(db, 'puntosConfig', 'ultimaEvaluacion'), (s) => { ultima = s.exists() ? s.data() : null; render(); });
-    onSnapshot(query(collection(db, 'puntos'), orderBy('fecha', 'desc'), limit(3000)), (s) => { eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); cargado.ev = true; render(); });
+    // Beta: las reglas solo dejan leer `puntos` a admin; el equipo ve «Próximamente» sin consultar nada.
+    if (esAdmin) onSnapshot(query(collection(db, 'puntos'), orderBy('fecha', 'desc'), limit(3000)), (s) => { eventos = s.docs.map(d => ({ id: d.id, ...d.data() })); cargado.ev = true; render(); }, () => { cargado.ev = true; render(); });
+    else { cargado.ev = true; }
     onSnapshot(collection(db, 'equipo'), (s) => {
         equipo = s.docs.map(d => ({ email: d.id.toLowerCase(), ...d.data() })).filter(u => u.activo !== false && (Array.isArray(u.rol) ? u.rol : [u.rol]).some(r => ROLES_EQUIPO.includes(r)));
         equipo.sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || '')));

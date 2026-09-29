@@ -3,9 +3,9 @@ rules_version = '2';
 // Reglas de seguridad de Firestore para el proyecto artal-operaciones.
 // Se pegan en Firebase Console → Firestore Database → pestaña "Reglas" → Publicar.
 //
-// - Todo usuario autenticado puede LEER.
-// - Escriben todos EXCEPTO quien tenga el rol `lector` (a menos que también sea `admin`). El rol
-//   vive en usuarios/{email}.rol y puede ser un string ('chofer') o un array (['chofer',...]).
+// - Desde 2026-09-29 (bloqueo provisional por rol): lo operativo lo lee cualquier sesión; finanzas, RRHH,
+//   ventas y puntos solo los roles de su grupo; la escritura va por grupo de rol (ver bloque de funciones).
+//   El rol vive en usuarios/{email}.rol y puede ser un string ('chofer') o un array (['chofer',...]).
 // - Los registros de auditoría (movimientosInstalaciones, movimientosInventario) solo permiten
 //   CREAR: una anotación ya hecha no se puede editar ni borrar (ni siquiera un admin) — historial
 //   a prueba de manipulación. Por eso las colecciones se enumeran una por una en vez de usar un
@@ -36,43 +36,76 @@ service cloud.firestore {
         && d.keys().hasOnly(['origen','estado','nombre','telefono','email','tipo','mensaje','fecha']);
     }
 
-    // Todo se puede LEER estando autenticado — EXCEPTO `usuarios` (datos sensibles: PIN, biometría,
-    // tokens, 2FA), que solo lee cada quien su propio doc o un admin (ver más abajo). Las pantallas
-    // compartidas usan el espejo `equipo` (nombre, rol, activo), que lo mantiene una Cloud Function.
+    // ==========================================================================================
+    // BLOQUEO PROVISIONAL POR ROL (usuario 2026-09-29: «cada quien solo puede ver lo que le pertenece»).
+    // Antes: todo usuario con sesión leía TODO (bancos, nómina, sueldos) y cualquiera que no fuera lector
+    // escribía en cualquier colección. Ahora la lectura y la escritura van por GRUPOS de rol. Es una
+    // primera capa (provisional); la seguridad fina (por documento/campo) vendrá después.
+    //   finanzas  = admin, contable                  → bancos*, conta*, activos*, informes de costo, nómina
+    //   rrhh      = admin, contable                  → rrhh* (empleados, permisos, eventos, reclutamiento…)
+    //   ventas    = admin, cotizaciones, contable    → ventas*, productos*, producción, calculadores
+    //   oficina   = admin, contable, cotizaciones, comunicaciones → gestión del día a día (pedidos, agenda…)
+    //   obra      = admin, instalador, ayudante, chofer            → pedidos, agenda, inventario, partes
+    // Lo operativo y no sensible (pedidos, agenda, clientes, equipo, mensajes, academia, feriados) lo lee
+    // cualquier sesión. `puntos` (beta) lo lee SOLO admin. `usuarios` como antes (propio o admin).
+    // ==========================================================================================
+    function alguno(rs) { return request.auth != null && rolesDelUsuario().hasAny(rs); }
+    function esAdmin()  { return alguno(['admin']); }
+    function finanzas() { return alguno(['admin', 'contable']); }
+    function rrhh()     { return alguno(['admin', 'contable']); }
+    function ventas()   { return alguno(['admin', 'cotizaciones', 'contable']); }
+    function oficina()  { return alguno(['admin', 'contable', 'cotizaciones', 'comunicaciones']); }
+    function obra()     { return alguno(['admin', 'instalador', 'ayudante', 'chofer']); }
+    function operativo(){ return oficina() || obra() || alguno(['fabrica', 'contratista']); }
+
+    // --- Lectura general: solo lo operativo y no sensible. Todo lo demás se declara abajo colección por colección.
     match /{coleccion}/{resto=**} {
-      allow read: if request.auth != null && coleccion != 'usuarios'
-        && coleccion != 'valoracionesEquipo' && coleccion != 'valoracionesEncargado';
+      allow read: if request.auth != null && coleccion in [
+        'orders', 'instalaciones', 'citas', 'clientes', 'equipo', 'mensajes', 'notas',
+        'inventario', 'categoriasInventario', 'subgruposInventario', 'bultosHerramientas', 'equiposInstalacion',
+        'movimientosInventario', 'movimientosInstalaciones',
+        'academiaCursos', 'academiaLecciones', 'academiaProgreso',
+        'puntosConfig', 'rrhhFeriados', 'rrhhFeriadosTrabajados', 'rrhhTurnos', 'rrhhConfig',
+        'rrhhDepartamentos', 'rrhhCargos', 'rrhhSucursales',
+        'proyectosGuardados', 'calculadores', 'cotizacionesEspecificaciones', 'productosUnidades', 'tasas'
+      ];
     }
     match /equipo/{email} {
       allow write: if false;   // solo la Cloud Function sincronizarEquipo (Admin SDK)
     }
 
-    // Precios de combustible (MICM): los actualiza una Cloud Function semanal (Admin SDK, se salta
-    // las reglas). Lectura PÚBLICA — son precios oficiales, no hay dato sensible — para que la
-    // calculadora de transporte del cuaderno los lea aunque no haya sesión iniciada. Ningún cliente
-    // puede escribir aquí.
+    // Precios de combustible (MICM): los actualiza una Cloud Function. Lectura PÚBLICA (precios oficiales) para que
+    // la calculadora de transporte del cuaderno los lea aunque no haya sesión. Ningún cliente escribe aquí.
     match /config/{id} {
       allow read: if true;
       allow write: if false;
     }
+    match /tablero/{id}                  { allow read: if ventas(); allow write: if false; }
+    match /citrusSync/{id}               { allow read: if finanzas(); allow write: if false; }
+    match /citrusCotizacionesPanel/{id}  { allow read: if ventas(); allow write: if false; }
+    match /proveedores/{id}              { allow read: if finanzas(); allow write: if finanzas(); }
 
-    // Registros de auditoría: SOLO se pueden CREAR. Nadie (ni admin) edita ni borra una anotación
-    // ya hecha — historial a prueba de manipulación.
-    match /movimientosInstalaciones/{id} { allow create: if puedeEscribir(); }
-    match /movimientosInventario/{id}    { allow create: if puedeEscribir(); }
-    // Papelera (2026-09-28): copia completa de cada trabajo/recordatorio/cita/pedido borrado, con quién y
-    // cuándo (ops/papelera.js). Solo CREAR: nadie edita ni borra el registro; restaurar deja otro registro.
-    match /papelera/{id}                 { allow create: if puedeEscribir(); }
+    // Registros de auditoría: SOLO se pueden CREAR. Nadie (ni admin) edita ni borra una anotación ya hecha.
+    match /movimientosInstalaciones/{id} { allow create: if oficina() || obra(); }
+    match /movimientosInventario/{id}    { allow create: if oficina() || obra(); }
+    // Papelera (2026-09-28): copia completa de cada trabajo/recordatorio/cita/pedido borrado, con quién y cuándo
+    // (ops/papelera.js). Solo CREAR; la LEE solo admin (contiene copias de cualquier documento).
+    match /papelera/{id}                 { allow read: if esAdmin(); allow create: if operativo(); }
 
-    // Colecciones normales: crear / editar / borrar para quien no sea "lector".
-    match /orders/{id}               { allow write: if puedeEscribir(); }
-    match /citas/{id}                { allow write: if puedeEscribir(); }
-    match /instalaciones/{id}        { allow write: if puedeEscribir(); }
-    match /inventario/{id}           { allow write: if puedeEscribir(); }
-    match /categoriasInventario/{id} { allow write: if puedeEscribir(); }
-    match /subgruposInventario/{id}  { allow write: if puedeEscribir(); }
-    match /bultosHerramientas/{id}   { allow write: if puedeEscribir(); }
-    match /clientes/{id}             { allow write: if puedeEscribir(); }
+    // --- Operación del día a día.
+    match /orders/{id}               { allow write: if operativo(); }
+    match /citas/{id}                { allow write: if oficina() || obra(); }
+    match /instalaciones/{id}        { allow write: if oficina() || obra(); }
+    match /inventario/{id}           { allow write: if oficina() || obra(); }
+    match /categoriasInventario/{id} { allow write: if oficina() || obra(); }
+    match /subgruposInventario/{id}  { allow write: if oficina() || obra(); }
+    match /bultosHerramientas/{id}   { allow write: if oficina() || obra(); }
+    match /clientes/{id}             { allow write: if oficina() || obra(); }
+    match /equiposInstalacion/{id}   { allow write: if oficina() || alguno(['instalador']); }
+    match /viajes/{id}               { allow read: if finanzas() || alguno(['chofer']); allow write: if alguno(['admin', 'chofer']); }   // salidas del camión con costo por obra
+    // Parte diario (horas y costo/hora por persona): encargados (instalador), oficina y finanzas. Ayudante/chofer no lo leen.
+    match /partesDiarios/{id}        { allow read: if finanzas() || oficina() || alguno(['instalador']); allow write: if oficina() || alguno(['instalador']); }
+    match /informesObra/{id}         { allow read: if finanzas(); allow write: if esAdmin(); }   // los escribe la Cloud Function; admin corrige
     // Usuarios y roles: CREAR/BORRAR y cambiar rol/nombre/activo solo un ADMIN (pantalla
     // usuarios.html). Cada persona puede actualizar SU propio documento solo en sus ajustes
     // personales (fcmToken, panelOrden, notifOcultas, PIN, biometría…), nunca su rol ni su estado.
@@ -84,11 +117,9 @@ service cloud.firestore {
         || (request.auth.token.email == email
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol', 'activo', 'nombre', 'paginasExtra', 'paginasBloqueadas'])));
     }
-    match /proyectosGuardados/{id}   { allow write: if puedeEscribir(); }
-    // Historial de versiones del cuaderno (proyectosGuardados/{id}/versiones/{ts}): la lectura la
-    // cubre el match general; la escritura NO se hereda del padre, hay que declararla aparte.
+    match /proyectosGuardados/{id}   { allow write: if puedeEscribir(); }   // cuaderno de medidas (cualquier sesión que no sea lector)
+    // Historial de versiones del cuaderno (proyectosGuardados/{id}/versiones/{ts}): la escritura NO se hereda del padre.
     match /proyectosGuardados/{id}/versiones/{v} { allow write: if puedeEscribir(); }
-    match /equiposInstalacion/{id}   { allow write: if puedeEscribir(); }
 
     // Academia (capacitación): el CONTENIDO (cursos/lecciones) solo lo edita gerencia (admin) o el
     // rol 'capacitador'. El PROGRESO lo escribe cada quien sobre su propio avance (cualquier sesión).
@@ -96,11 +127,12 @@ service cloud.firestore {
     match /academiaLecciones/{id} { allow write: if request.auth != null && ('admin' in rolesDelUsuario() || 'capacitador' in rolesDelUsuario()); }
     match /academiaProgreso/{id}  { allow write: if request.auth != null; }
 
-    // Puntos (gamificación): ledger que alimenta el futuro módulo de Nivel/Rango. Cada quien solo
-    // puede escribir eventos con SU propio correo (no puntos ajenos). Borrar, solo admin.
+    // Puntos (gamificación, BETA no visible para el equipo — usuario 2026-09-29): SOLO admin lee. La Academia crea
+    // eventos con el correo propio (tipo academia); el resto los escribe la Cloud Function. Borrar, solo admin.
     match /puntos/{id} {
-      allow create, update: if request.auth != null && (request.resource.data.email == request.auth.token.email || 'admin' in rolesDelUsuario());
-      allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+      allow read: if esAdmin();
+      allow create: if request.auth != null && (request.resource.data.email == request.auth.token.email || esAdmin());
+      allow update, delete: if esAdmin();
     }
     // Valoraciones entre el equipo (2026-09-27), SIEMPRE anónimas entre ellos: `valoracionesEquipo`
     // (encargado → cada persona, desde la ventana de horas al completar) y `valoracionesEncargado`
@@ -142,7 +174,7 @@ service cloud.firestore {
     }
     match /encuestas/{token} {
       allow get: if true;
-      allow list: if request.auth != null;
+      allow list: if esAdmin();
       allow update: if respuestaEncuestaValida() || (request.auth != null && 'admin' in rolesDelUsuario());
       allow create, delete: if request.auth != null && 'admin' in rolesDelUsuario();
     }
@@ -153,9 +185,11 @@ service cloud.firestore {
     // el mismo documento. La lectura la cubre el match general (el equipo ve lo que le corresponde;
     // el filtro por destinatario es en la app).
     match /mensajes/{id} {
-      allow create: if request.auth != null && ('admin' in rolesDelUsuario() || 'comunicaciones' in rolesDelUsuario());
-      allow update: if puedeEscribir();
-      allow delete: if request.auth != null && ('admin' in rolesDelUsuario() || 'comunicaciones' in rolesDelUsuario());
+      allow create: if alguno(['admin', 'comunicaciones', 'capacitador']);   // capacitador: aviso de curso nuevo (Academia)
+      // El receptor solo marca SU acuse (acuses.{suClave}); el cuerpo lo editan admin/comunicaciones.
+      allow update: if alguno(['admin', 'comunicaciones'])
+        || (request.auth != null && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acuses']));
+      allow delete: if alguno(['admin', 'comunicaciones']);
     }
 
     // Notas personales: cada quien SOLO escribe/edita/borra las suyas (campo email == su correo).
@@ -166,85 +200,85 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.email == request.auth.token.email;
     }
 
-    // Recursos Humanos. En la UI el acceso es solo-admin (requireAuth([])), pero la LECTURA a
-    // nivel de reglas la cubre el match /{document=**} de arriba (todo usuario con sesión). Si más
-    // adelante hace falta ocultar sueldos al resto del equipo, habrá que restringir esa lectura
-    // general y dar a rrhh* su propio `allow read: if 'admin' in rolesDelUsuario()`.
-    match /rrhhEmpleados/{id}      { allow write: if puedeEscribir(); }
-    match /rrhhDepartamentos/{id} { allow write: if puedeEscribir(); }
-    match /rrhhCargos/{id}        { allow write: if puedeEscribir(); }
-    match /rrhhSucursales/{id}    { allow write: if puedeEscribir(); }
-    match /rrhhAsistencia/{id}    { allow write: if puedeEscribir(); }
-    match /rrhhPermisos/{id}      { allow write: if puedeEscribir(); }
-    match /rrhhTurnos/{id}        { allow write: if puedeEscribir(); }
-    match /rrhhFeriados/{id}      { allow write: if puedeEscribir(); }
-    match /rrhhFeriadosTrabajados/{fecha} { allow write: if puedeEscribir(); }   // feriado que SÍ se trabaja (lo marca gerencia en el comunicado de Mensajería)
-    match /rrhhEventos/{id}       { allow write: if puedeEscribir(); }
-    match /rrhhVacaciones/{id}    { allow write: if puedeEscribir(); }
-    match /rrhhVacantes/{id}      { allow write: if puedeEscribir(); }
-    match /rrhhCandidatos/{id}    { allow write: if puedeEscribir(); }
-    match /rrhhConfig/{id}        { allow write: if puedeEscribir(); }
-    match /partesDiarios/{id}     { allow write: if puedeEscribir(); }   // parte diario de obra (encargados de instalación)
-    match /viajes/{id}            { allow write: if puedeEscribir(); }   // salidas del camión (Transportes): vehículo, ruta y costo repartido por obra
-    match /informesObra/{id}      { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }   // los escribe la Cloud Function informeObraAlCompletar; admin puede corregir
-    match /rrhhNominas/{id}       { allow write: if puedeEscribir(); }
-    match /rrhhPrestamos/{id}     { allow write: if puedeEscribir(); }
-    // Reuniones de seguimiento 1-a-1: SOLO gerencia (admin) crea/edita. El empleado las LEE (la
-    // lectura la cubre el match general) y la app le muestra solo las suyas (por su correo).
-    match /rrhhReuniones/{id}     { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }
+    // Recursos Humanos: LEER y ESCRIBIR solo finanzas/RRHH (admin, contable). Excepciones operativas:
+    // rrhhEmpleados lo leen también los encargados (instalador) porque el parte diario y la ventana de horas necesitan
+    // nombre/correo/costo por día (pendiente: mover el costo al servidor); rrhhAsistencia recibe la AUSENCIA que marca el
+    // encargado en el parte; feriados/turnos/config/departamentos/cargos/sucursales se leen en general (arriba);
+    // rrhhReuniones: el empleado lee las suyas. La nómina la lleva la contable.
+    match /rrhhEmpleados/{id}      { allow read: if rrhh() || alguno(['instalador']); allow write: if rrhh(); }
+    match /rrhhDepartamentos/{id} { allow write: if rrhh(); }
+    match /rrhhCargos/{id}        { allow write: if rrhh(); }
+    match /rrhhSucursales/{id}    { allow write: if rrhh(); }
+    match /rrhhAsistencia/{id}    { allow read: if rrhh(); allow write: if rrhh() || alguno(['instalador']); }
+    match /rrhhPermisos/{id}      { allow read, write: if rrhh(); }
+    match /rrhhTurnos/{id}        { allow write: if rrhh(); }
+    match /rrhhFeriados/{id}      { allow write: if rrhh(); }
+    match /rrhhFeriadosTrabajados/{fecha} { allow write: if alguno(['admin', 'comunicaciones']); }   // feriado que SÍ se trabaja (comunicado)
+    match /rrhhEventos/{id}       { allow read, write: if rrhh(); }
+    match /rrhhVacaciones/{id}    { allow read, write: if rrhh(); }
+    match /rrhhVacantes/{id}      { allow read, write: if rrhh(); }
+    match /rrhhCandidatos/{id}    { allow read, write: if rrhh(); }
+    match /rrhhConfig/{id}        { allow write: if esAdmin(); }
+    match /rrhhNominas/{id}       { allow read, write: if finanzas(); }
+    match /rrhhPrestamos/{id}     { allow read, write: if finanzas(); }
+    match /rrhhReuniones/{id} {
+      allow read: if rrhh() || (request.auth != null && resource.data.empleadoCorreo == request.auth.token.email);
+      allow write: if esAdmin();
+    }
 
-    // Ventas / ERP comercial.
-    match /ventasCotizaciones/{id} { allow write: if puedeEscribir(); }
-    match /ventasOportunidades/{id} { allow write: if puedeEscribir(); }
-    match /ventasVendedores/{id}    { allow write: if puedeEscribir(); }
-    match /ventasComisiones/{id}    { allow write: if puedeEscribir(); }
-    match /ventasListasPrecios/{id} { allow write: if puedeEscribir(); }
-    match /ventasPrecioItems/{id}   { allow write: if puedeEscribir(); }
-    match /ventasActividades/{id}   { allow write: if puedeEscribir(); }
+    // Ventas / ERP comercial: admin, cotizaciones, contable.
+    match /ventasCotizaciones/{id}  { allow read, write: if ventas(); }
+    match /ventasOportunidades/{id} { allow read, write: if ventas(); }
+    match /ventasVendedores/{id}    { allow read, write: if ventas(); }
+    match /ventasComisiones/{id}    { allow read, write: if ventas(); }
+    match /ventasListasPrecios/{id} { allow read, write: if ventas(); }
+    match /ventasPrecioItems/{id}   { allow read, write: if ventas(); }
+    match /ventasActividades/{id}   { allow read, write: if ventas(); }
 
-    // Activos fijos.
-    match /activos/{id}             { allow write: if puedeEscribir(); }
-    match /activosPrestamos/{id}    { allow write: if puedeEscribir(); }
+    // Activos fijos: finanzas.
+    match /activos/{id}             { allow read, write: if finanzas(); }
+    match /activosPrestamos/{id}    { allow read, write: if finanzas(); }
 
-    // Producción (costeo y control de obra).
-    match /produccionObras/{id}     { allow write: if puedeEscribir(); }
+    // Producción (costeo y control de obra): ventas + finanzas.
+    match /produccionObras/{id}     { allow read, write: if ventas(); }
 
-    // Productos y servicios (catálogo).
-    match /productos/{id}           { allow write: if puedeEscribir(); }
-    match /productosCategorias/{id} { allow write: if puedeEscribir(); }
-    match /productosUnidades/{id}   { allow write: if puedeEscribir(); }
-    match /productosImpuestos/{id}  { allow write: if puedeEscribir(); }
+    // Productos y servicios (catálogo): ventas. Las unidades las lee todo el mundo (cuaderno).
+    match /productos/{id}           { allow read, write: if ventas(); }
+    match /productosCategorias/{id} { allow read, write: if ventas(); }
+    match /productosUnidades/{id}   { allow write: if ventas(); }
+    match /productosImpuestos/{id}  { allow read, write: if ventas(); }
 
-    // Bancos y tesorería.
-    match /bancosCuentas/{id}         { allow write: if puedeEscribir(); }
-    match /bancosMovimientos/{id}     { allow write: if puedeEscribir(); }
-    match /bancosTransferencias/{id}  { allow write: if puedeEscribir(); }
-    match /bancosCajaChica/{id}       { allow write: if puedeEscribir(); }
-    match /bancosCajaMovimientos/{id} { allow write: if puedeEscribir(); }
-    match /bancosCierres/{id}         { allow write: if puedeEscribir(); }
-    match /bancosPrestamos/{id}       { allow write: if puedeEscribir(); }
-    match /bancosLineas/{id}          { allow write: if puedeEscribir(); }
-    match /bancosLineaMovimientos/{id} { allow write: if puedeEscribir(); }
-    match /bancosTarjetas/{id}        { allow write: if puedeEscribir(); }
-    match /bancosTarjetaMovimientos/{id} { allow write: if puedeEscribir(); }
+    // Bancos y tesorería: SOLO finanzas (admin, contable).
+    match /bancosCuentas/{id}         { allow read, write: if finanzas(); }
+    match /bancosMovimientos/{id}     { allow read, write: if finanzas(); }
+    match /bancosTransferencias/{id}  { allow read, write: if finanzas(); }
+    match /bancosCajaChica/{id}       { allow read, write: if finanzas(); }
+    match /bancosCajaMovimientos/{id} { allow read, write: if finanzas(); }
+    match /bancosCierres/{id}         { allow read, write: if finanzas(); }
+    match /bancosPrestamos/{id}       { allow read, write: if finanzas(); }
+    match /bancosLineas/{id}          { allow read, write: if finanzas(); }
+    match /bancosLineaMovimientos/{id} { allow read, write: if finanzas(); }
+    match /bancosTarjetas/{id}        { allow read, write: if finanzas(); }
+    match /bancosTarjetaMovimientos/{id} { allow read, write: if finanzas(); }
 
-    // Contabilidad operativa (la contabilidad formal/DGII vive en Citrus).
-    match /contaMovimientos/{id}    { allow write: if puedeEscribir(); }
-    match /contaCuentas/{id}        { allow write: if puedeEscribir(); }
-    match /contaCategorias/{id}     { allow write: if puedeEscribir(); }
-    match /contaPresupuestos/{id}   { allow write: if puedeEscribir(); }
-    match /contaRecurrentes/{id}    { allow write: if puedeEscribir(); }
-    match /contaCentros/{id}        { allow write: if puedeEscribir(); }
-    match /catalogoCuentas/{id}     { allow write: if puedeEscribir(); }
-    match /cotizacionesEspecificaciones/{id} { allow write: if puedeEscribir(); }
-    match /calculadores/{id}      { allow write: if puedeEscribir(); }   // parámetros compartidos de los calculadores (rollo de tela mosquitera, precio por m²…)
+    // Contabilidad operativa (la formal/DGII vive en Citrus): SOLO finanzas.
+    match /contaMovimientos/{id}    { allow read, write: if finanzas(); }
+    match /contaCuentas/{id}        { allow read, write: if finanzas(); }
+    match /contaCategorias/{id}     { allow read, write: if finanzas(); }
+    match /contaPresupuestos/{id}   { allow read, write: if finanzas(); }
+    match /contaRecurrentes/{id}    { allow read, write: if finanzas(); }
+    match /contaCentros/{id}        { allow read, write: if finanzas(); }
+    match /catalogoCuentas/{id}     { allow read, write: if finanzas(); }
+    match /cotizacionesEspecificaciones/{id} { allow write: if ventas(); }
+    match /calculadores/{id}      { allow write: if ventas(); }   // parámetros compartidos de los calculadores (rollo de tela mosquitera, precio por m²…)
 
     // Solicitudes del sitio web: CREAR lo puede el público SIN sesión (validado arriba); un
     // visitante anónimo NO puede leer (la lectura de más arriba exige `request.auth != null`, así
     // que solo el equipo con sesión ve las solicitudes). Editar/borrar (marcar atendida, etc.)
     // requiere ser personal que pueda escribir.
     match /solicitudesWeb/{id} {
-      allow update, delete: if puedeEscribir();
+      allow read: if oficina();
+      allow update, delete: if oficina();
       allow create: if solicitudWebValida();
     }
 
@@ -262,6 +296,9 @@ service cloud.firestore {
       return request.auth != null && (
         'admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario()
         || 'inbox_supervisor' in rolesDelUsuario() || 'inbox_agente' in rolesDelUsuario());
+    }
+    match /{inboxCol}/{resto=**} {
+      allow read: if inboxCol.matches('inbox.*') && (puedeInbox() || alguno(['inbox_lector', 'lector']));
     }
     match /inboxConversaciones/{id} {
       allow update: if puedeInbox();          // asignar, estado, prioridad, tags, leídos…

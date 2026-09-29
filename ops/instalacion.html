@@ -271,7 +271,7 @@
         <h3 style="margin:0 0 4px">✅ Validar trabajo</h3>
         <div id="val-lugar" style="font-weight:bold;color:var(--artal-blue);margin-bottom:8px"></div>
         <p style="font-size:13px;color:#556;margin:0 0 6px">¿Quiénes trabajaron en esta obra y cuántas horas cada uno? Escribe las horas reales (no vienen puestas). Estas horas van al parte diario del día (con el nombre de esta obra), así el costo de la obra sale bien desde ya y el parte de las 6 pm viene adelantado.</p>
-        <p style="font-size:12px;color:#8a93a0;margin:0 0 10px">👍 bien · 👌 normal · ⚠️ flojo = cómo trabajó cada uno hoy (suma o resta puntos; ⚠️ pide un motivo corto).</p>
+        <p id="val-leyenda" style="font-size:12px;color:#8a93a0;margin:0 0 10px">👍 bien · 👌 normal · ⚠️ flojo = cómo trabajó cada uno hoy (suma o resta puntos; ⚠️ pide un motivo corto).</p>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
             <label style="font-size:13px">Día del trabajo <input type="date" id="val-fecha" style="padding:8px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px"></label>
             <span class="hint" id="val-parte" style="font-size:12px;color:#8a93a0"></span>
@@ -424,7 +424,12 @@
     if (esAdmin) { const lh = document.getElementById('link-historial'); if (lh) lh.style.display = ''; }
     // ⭐ Puntos del equipo: el enlace aparece para admin siempre y para el equipo solo cuando gerencia
     // activa `puntosConfig/general.visibleEquipo` (mientras tanto el sistema acumula en silencio).
-    onSnapshot(doc(db, 'puntosConfig', 'general'), (s) => { const lp = document.getElementById('link-puntos'); if (lp) lp.style.display = (esAdmin || (s.exists() && s.data().visibleEquipo)) ? '' : 'none'; });
+    // BETA de puntos (usuario 2026-09-29: «no debe quedar visible hasta tenerlo totalmente listo»): mientras
+    // puntosConfig.visibleEquipo sea false, el equipo NO ve nada relacionado — ni el enlace, ni las estrellas del cliente en
+    // la tarjeta, ni las valoraciones (👍/👌/⚠️ al completar, 🤝 al encargado). Solo admin lo ve para probarlo.
+    let puntosVisibleEquipo = false;
+    const betaPuntos = () => esAdmin || puntosVisibleEquipo;
+    onSnapshot(doc(db, 'puntosConfig', 'general'), (s) => { puntosVisibleEquipo = !!(s.exists() && s.data().visibleEquipo); const lp = document.getElementById('link-puntos'); if (lp) lp.style.display = betaPuntos() ? '' : 'none'; renderTodo(); }, () => {});
     // Menú ☰: abre/cierra; se cierra al tocar fuera o al elegir una opción.
     const menuBtn = document.getElementById('menu-btn'), menuPanel = document.getElementById('menu-panel');
     const setMenu = (open) => { menuPanel.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open)); };
@@ -573,6 +578,7 @@
         if (j.estado !== 'completado' || !j.encuestaToken) return '';
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
         if (j.encuestaEstado === 'respondida') {
+            if (!betaPuntos()) return '';   // beta: el equipo no ve la calificación del cliente hasta que se active
             const g = Number(j.encuestaGeneral) || 0;
             return `<br><span style="color:#b8860b;font-weight:bold;">⭐ Cliente: ${'★'.repeat(g)}${'☆'.repeat(Math.max(0, 5 - g))} (${g}/5)</span>`;
         }
@@ -602,7 +608,7 @@
         return { email: em, nombre: (a && a.nombre) || eq.nombre || (em === String(j.validadoPorEmail || '').toLowerCase() ? j.validadoPor : '') || em };
     }
     function valoracionEncargadoHTML(j) {
-        if (j.estado !== 'completado') return '';
+        if (j.estado !== 'completado' || !betaPuntos()) return '';   // beta oculto al equipo
         const yo = usuario.email.toLowerCase(); const misRoles = rolesEm(yo);
         if (!(misRoles.includes('instalador') || misRoles.includes('ayudante'))) return '';
         const enc = encargadoDelTrabajo(j); if (!enc || enc.email === yo) return '';
@@ -1355,11 +1361,12 @@
             <div style="display:flex;align-items:center;gap:10px">
                 <label style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(e.nombre)}</span></label>
                 <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="0" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:64px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h
-                <span class="val-rate" data-id="${esc(e.id)}" style="display:flex;gap:2px;${propio ? 'visibility:hidden' : ''}">${[['bien', '👍', 'Buen trabajo hoy (suma puntos)'], ['ok', '👌', 'Normal'], ['flojo', '⚠️', 'Flojo (resta puntos, pide motivo)']].map(([n, ic, t]) => `<button type="button" class="vr${niv === n ? ' on' : ''}" data-n="${n}" title="${t}" onclick="valRate(this)">${ic}</button>`).join('')}</span>
+                <span class="val-rate" data-id="${esc(e.id)}" style="display:${betaPuntos() ? 'flex' : 'none'};gap:2px;${propio ? 'visibility:hidden' : ''}">${[['bien', '👍', 'Buen trabajo hoy (suma puntos)'], ['ok', '👌', 'Normal'], ['flojo', '⚠️', 'Flojo (resta puntos, pide motivo)']].map(([n, ic, t]) => `<button type="button" class="vr${niv === n ? ' on' : ''}" data-n="${n}" title="${t}" onclick="valRate(this)">${ic}</button>`).join('')}</span>
             </div>
             <input type="text" class="val-motivo" data-id="${esc(e.id)}" maxlength="120" placeholder="Motivo (obligatorio con ⚠️): p. ej. llegó tarde, dejó herramientas…" value="${esc(prev.motivo || '')}" style="display:${niv === 'flojo' ? 'block' : 'none'};width:100%;margin-top:6px;padding:7px;border:1.5px solid #f3c1bb;border-radius:8px;font-family:'Arimo';font-size:13px;box-sizing:border-box">
         </div>`; }).join('')
             : '<p class="hint">No hay empleados de instalación en RRHH con correo enlazado.</p>';
+        const ley = document.getElementById('val-leyenda'); if (ley) ley.style.display = betaPuntos() ? '' : 'none';
         document.getElementById('modal-val').classList.add('show');
     };
     // Valoración del encargado por persona (usuario 2026-09-27): 👍 / 👌 / ⚠️; el motivo solo se pide con ⚠️.
@@ -1387,7 +1394,7 @@
         // anterior (para reemplazarla); ⚠️ exige motivo.
         const valor = {};
         sel.forEach(id => {
-            const g = document.querySelector(`#modal-val .val-rate[data-id="${id}"]`); if (!g || g.style.visibility === 'hidden') return;
+            const g = document.querySelector(`#modal-val .val-rate[data-id="${id}"]`); if (!g || g.style.visibility === 'hidden' || g.style.display === 'none') return;
             const on = g.querySelector('.vr.on'); const nivel = on ? on.dataset.n : 'ok';
             const motivo = ((document.querySelector(`#modal-val .val-motivo[data-id="${id}"]`) || {}).value || '').trim();
             if (nivel === 'ok' && !misValEquipo[j.id + '_' + id]) return;
