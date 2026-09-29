@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Inbox: Contactos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 1180px; }
+    .layout { display: grid; grid-template-columns: 380px 1fr; gap: 14px; align-items: start; }
+    .pane { background: rgba(255,255,255,.78); border: 1px solid var(--glass-brd); border-radius: 16px; box-shadow: var(--glass-sh); overflow: hidden; }
+    .pane-h { padding: 12px 14px; border-bottom: 1px solid #e6ecf2; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .pane-h h2 { margin: 0; font-size: 15px; color: var(--azul-noche); }
+    .btn { border: 1px solid #cfd8e3; background: #fff; color: var(--azul-hondo); border-radius: 100px; padding: 7px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; min-height: 34px; font-family: inherit; }
+    .btn.p { background: linear-gradient(180deg, var(--azul), var(--azul-hondo)); color: #fff; border-color: transparent; } .btn.danger { color: #c0392b; border-color: #f1c4bf; } .btn.s { padding: 4px 9px; min-height: 26px; font-size: 11.5px; }
+    .btn:disabled { opacity: .5; }
+    input, select, textarea { font-family: inherit; }
+    .search { padding: 10px; display: flex; gap: 6px; border-bottom: 1px solid #e6ecf2; } .search input, .search select { border: 1px solid #cfd8e3; border-radius: 100px; padding: 8px 12px; font-size: 13px; } .search input { flex: 1; }
+    .lista { max-height: calc(100vh - 260px); overflow-y: auto; }
+    .row { display: flex; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #edf1f5; cursor: pointer; align-items: center; } .row:hover { background: #f5f8fb; } .row.on { background: #e8f0fa; }
+    .av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; flex: none; }
+    .row .n { font-weight: 700; color: var(--azul-noche); font-size: 14px; } .row .s { font-size: 12px; color: var(--gris); }
+    .chip { font-size: 10.5px; font-weight: 700; border-radius: 100px; padding: 2px 8px; background: #fff3c4; color: #7a5a00; margin-right: 3px; }
+    .chip.dup { background: #fdecea; color: #a4261a; }
+    .det { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+    .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .campo label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--gris); font-weight: 700; margin-bottom: 3px; }
+    .campo input, .campo textarea, .campo select { width: 100%; border: 1px solid #cfd8e3; border-radius: 10px; padding: 8px 10px; font-size: 13.5px; background: #fff; } .campo textarea { min-height: 70px; resize: vertical; } .campo.full { grid-column: 1 / -1; }
+    h3 { margin: 6px 0 0; font-size: 14px; color: var(--azul-hondo); }
+    .conv { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eef1f4; font-size: 13px; align-items: center; } .conv a { color: var(--azul); font-weight: 700; text-decoration: none; }
+    .dup-box { border: 1px solid #f5c26b; background: #fff8e8; border-radius: 12px; padding: 12px; }
+    .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12.5px; } .cmp div { background: #fff; border-radius: 10px; padding: 8px 10px; } .cmp b { display: block; color: var(--azul-noche); }
+    .muted { color: var(--gris); font-size: 12px; }
+    .vacio { padding: 40px; text-align: center; color: var(--gris); }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } .lista { max-height: 50vh; } }
+</style>
+</head>
+<body>
+<header>
+    <div class="header-title"><a class="btn-back" href="inbox.html">← Inbox</a><img class="logo" src="../logo.png" alt="ARTAL"><h1>Contactos <span class="accent">CRM</span></h1></div>
+    <div class="who"><span id="user-name"></span><button id="signout-btn">Cerrar sesión</button></div>
+</header>
+<main>
+    <div class="layout">
+        <section class="pane">
+            <div class="pane-h"><h2>Contactos</h2><span class="muted" id="n-cont"></span><span style="flex:1"></span><button class="btn s p" onclick="nuevo()">＋ Nuevo</button></div>
+            <div class="search"><input type="search" id="q" placeholder="Nombre, teléfono, email, empresa, tag…" oninput="render()"><select id="f-tag" onchange="render()"><option value="">Tag: todos</option></select><select id="f-dup" onchange="render()"><option value="">Todos</option><option value="dup">Con posible duplicado</option></select></div>
+            <div class="lista" id="lista"></div>
+        </section>
+        <section class="pane" id="det"><div class="vacio">👤 Elige un contacto.</div></section>
+    </div>
+</main>
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import * as C from './inbox-core.js';
+    import { collection, doc, query, where, orderBy, limit, onSnapshot, updateDoc, setDoc, addDoc, serverTimestamp, arrayUnion, getDocs } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    const usuario = await requireAuth(['inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector']);
+    const nivel = C.nivelInbox(usuario.roles) || 'lector'; const puedeEditar = C.puede(nivel, 'asignar');
+    wireBackButton(usuario.roles); document.getElementById('user-name').textContent = usuario.nombre; document.getElementById('signout-btn').onclick = () => signOut(auth);
+    const { esc, fechaLarga, fechaCorta, telefonoBonito, iniciales, colorDe, canalDe, estadoDe } = C;
+    const yo = { email: usuario.email, nombre: usuario.nombre };
+    let contactos = [], sel = null, convs = [], fusiones = [], unsub = [];
+    onSnapshot(query(collection(db, 'inboxContactos'), orderBy('ultimoContacto', 'desc'), limit(1500)), s => { contactos = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); if (sel) { const c = contactos.find(x => x.id === sel.id); if (c) { sel = c; renderDet(); } } });
+    onSnapshot(query(collection(db, 'inboxFusiones'), where('deshecha', '==', false)), s => { fusiones = s.docs.map(d => ({ id: d.id, ...d.data() })); if (sel) renderDet(); });
+    const porId = (id) => contactos.find(c => c.id === id);
+    window.render = render;   // los handlers inline (oninput/onchange) no ven las funciones del módulo (auditoría 2026-09-28)
+    function render() {
+        const q = C.normalizar(document.getElementById('q').value.trim()), ft = document.getElementById('f-tag').value, fd = document.getElementById('f-dup').value;
+        const tags = [...new Set(contactos.flatMap(c => c.tags || []))].sort(); const selT = document.getElementById('f-tag'); if (selT.options.length !== tags.length + 1) selT.innerHTML = '<option value="">Tag: todos</option>' + tags.map(t => `<option value="${esc(t)}" ${ft === t ? 'selected' : ''}>${esc(t)}</option>`).join('');
+        const lista = contactos.filter(c => !c.fusionadoEn).filter(c => (!ft || (c.tags || []).includes(ft)) && (fd !== 'dup' || (c.posiblesDuplicados || []).length) && (!q || q.split(/\s+/).every(w => C.normalizar([c.nombre, c.telefono, c.email, c.empresa, (c.tags || []).join(' '), (c.identidades || []).map(i => i.valor).join(' ')].join(' ')).includes(w))));
+        document.getElementById('n-cont').textContent = lista.length + ' de ' + contactos.filter(c => !c.fusionadoEn).length;
+        document.getElementById('lista').innerHTML = lista.map(c => `<div class="row ${sel && sel.id === c.id ? 'on' : ''}" onclick="abrir('${c.id}')"><div class="av" style="background:${colorDe(c.nombre || c.telefono)}">${esc(iniciales(c.nombre || c.telefono))}</div><div style="flex:1;min-width:0"><div class="n">${esc(c.nombre || telefonoBonito(c.telefono) || c.email || 'Sin nombre')}</div><div class="s">${esc([telefonoBonito(c.telefono), c.email, c.empresa].filter(Boolean).join(' · '))}</div><div style="margin-top:3px">${(c.identidades || []).map(i => canalDe(i.canal).icono).join(' ')} ${(c.tags || []).slice(0, 3).map(t => `<span class="chip">${esc(t)}</span>`).join('')}${(c.posiblesDuplicados || []).length ? '<span class="chip dup">¿duplicado?</span>' : ''}</div></div><div class="s">${esc(fechaCorta(c.ultimoContacto))}</div></div>`).join('') || '<div class="vacio">Sin contactos.</div>';
+    }
+    window.abrir = (id) => { sel = porId(id); if (!sel) return; unsub.forEach(u => u()); unsub = []; convs = []; renderDet(); render(); history.replaceState(null, '', '?id=' + id);
+        unsub.push(onSnapshot(query(collection(db, 'inboxConversaciones'), where('contactoId', '==', id)), s => { convs = s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => C.ms(b.actualizado) - C.ms(a.actualizado)); renderDet(); })); };
+    function renderDet() {
+        const c = sel, el = document.getElementById('det'); if (!c) return;
+        const dups = (c.posiblesDuplicados || []).map(porId).filter(x => x && !x.fusionadoEn);
+        const fusDe = fusiones.filter(f => f.destinoId === c.id);
+        const dis = puedeEditar ? '' : 'disabled';
+        el.innerHTML = `<div class="pane-h"><div class="av" style="background:${colorDe(c.nombre || c.telefono)};width:44px;height:44px">${esc(iniciales(c.nombre || c.telefono))}</div><h2 style="font-size:17px">${esc(c.nombre || 'Sin nombre')}</h2><span class="muted">creado ${esc(fechaLarga(c.creado))} · último contacto ${esc(fechaLarga(c.ultimoContacto))}</span><span style="flex:1"></span>${puedeEditar ? `<button class="btn s" onclick="buscarFusion()">🔗 Fusionar con…</button>` : ''}</div>
+        <div class="det">
+            ${dups.length ? `<div class="dup-box"><b>⚠️ Posible coincidencia con ${dups.length} contacto${dups.length > 1 ? 's' : ''}.</b> <span class="muted">El sistema NUNCA fusiona solo: compara y decide.</span>${dups.map(d => `<div class="cmp" style="margin-top:8px"><div><b>Este: ${esc(c.nombre || '—')}</b>${esc([telefonoBonito(c.telefono), c.email, c.instagramId ? 'IG ' + c.instagramId : ''].filter(Boolean).join(' · '))}<br>${(c.identidades || []).map(i => canalDe(i.canal).icono + ' ' + esc(i.valor)).join(' · ')}</div><div><b>Otro: ${esc(d.nombre || '—')}</b>${esc([telefonoBonito(d.telefono), d.email, d.instagramId ? 'IG ' + d.instagramId : ''].filter(Boolean).join(' · '))}<br>${(d.identidades || []).map(i => canalDe(i.canal).icono + ' ' + esc(i.valor)).join(' · ')}</div></div><div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">${puedeEditar ? `<button class="btn s p" onclick="fusionar('${d.id}','${c.id}')">Fusionar «${esc(d.nombre || d.id)}» dentro de este</button><button class="btn s" onclick="fusionar('${c.id}','${d.id}')">Fusionar este dentro de «${esc(d.nombre || d.id)}»</button><button class="btn s" onclick="noEsDuplicado('${d.id}')">No es la misma persona</button>` : ''}<button class="btn s" onclick="abrir('${d.id}')">Ver el otro</button></div>`).join('')}</div>` : ''}
+            ${fusDe.length ? `<div class="dup-box" style="background:#eef9f1;border-color:#bfe6cc">${fusDe.map(f => `🔗 Fusión hecha por ${esc(f.porNombre)} el ${esc(fechaLarga(f.at))} (absorbió «${esc((f.origenAntes || {}).nombre || f.origenId)}»). ${puedeEditar ? `<button class="btn s" onclick="deshacer('${f.id}')">Deshacer</button>` : ''}`).join('<br>')}</div>` : ''}
+            <div class="campos">
+                <div class="campo"><label>Nombre</label><input id="c-nombre" value="${esc(c.nombre || '')}" ${dis}></div>
+                <div class="campo"><label>Empresa</label><input id="c-empresa" value="${esc(c.empresa || '')}" ${dis}></div>
+                <div class="campo"><label>Teléfono</label><input id="c-tel" value="${esc(c.telefono || '')}" ${(c.identidades || []).some(i => i.canal === 'whatsapp') ? 'disabled title="Viene de WhatsApp"' : dis}></div>
+                <div class="campo"><label>Email</label><input id="c-email" type="email" value="${esc(c.email || '')}" ${dis}></div>
+                <div class="campo full"><label>Tags (separados por coma)</label><input id="c-tags" value="${esc((c.tags || []).join(', '))}" ${dis}></div>
+                <div class="campo full"><label>Notas</label><textarea id="c-notas" ${dis}>${esc(c.notas || '')}</textarea></div>
+            </div>
+            ${puedeEditar ? `<div><button class="btn p" onclick="guardar()">Guardar</button></div>` : ''}
+            <h3>Identidades por canal</h3>
+            <div class="muted">${(c.identidades || []).map(i => `${canalDe(i.canal).icono} ${esc(canalDe(i.canal).nombre)}: <b>${esc(i.valor)}</b>${c.canales && c.canales[i.canal] && c.canales[i.canal].nombrePerfil ? ' (perfil: ' + esc(c.canales[i.canal].nombrePerfil) + ')' : ''}`).join(' · ') || 'Sin identidades de canal (contacto creado a mano). Cuando escriba por WhatsApp con el mismo teléfono, aparecerá como posible duplicado para fusionarlo.'}</div>
+            <h3>Historial de conversaciones (${convs.length})</h3>
+            <div>${convs.map(v => `<div class="conv"><span>${canalDe(v.canal).icono}</span><a href="inbox.html?c=${v.id}">#${v.numero}</a><span style="flex:1">${esc((v.ultimoMensaje && v.ultimoMensaje.texto) || '')}</span><span class="chip" style="background:${estadoDe(v.estado).color};color:#fff">${esc(estadoDe(v.estado).nombre)}</span><span class="muted">${esc(fechaCorta(v.actualizado))}</span></div>`).join('') || '<div class="muted">Sin conversaciones.</div>'}</div>
+        </div>`;
+    }
+    window.guardar = async () => {
+        const g = (id) => document.getElementById(id).value.trim();
+        const campos = { nombre: g('c-nombre'), empresa: g('c-empresa'), email: g('c-email').toLowerCase(), tags: g('c-tags').split(',').map(s => s.trim()).filter(Boolean), notas: g('c-notas') };
+        if (!document.getElementById('c-tel').disabled) campos.telefono = g('c-tel');
+        try { await updateDoc(doc(db, 'inboxContactos', sel.id), { ...campos, actualizado: serverTimestamp(), buscar: arrayUnion(...C.tokensDe(campos.nombre, campos.email, campos.empresa, campos.telefono, ...campos.tags)) }); await C.auditar(yo, 'contacto_editado', 'contacto', sel.id, Object.keys(campos)); for (const v of convs) await updateDoc(doc(db, 'inboxConversaciones', v.id), { contactoNombre: campos.nombre, contactoEmail: campos.email }); alert('Guardado.'); } catch (e) { alert(e.message); }
+    };
+    window.nuevo = async () => {
+        if (!puedeEditar) return; const nombre = (prompt('Nombre del contacto:') || '').trim(); if (!nombre) return;
+        const tel = (prompt('Teléfono con código de país (opcional):') || '').replace(/\D/g, '');
+        const ref = await addDoc(collection(db, 'inboxContactos'), { nombre, telefono: tel ? '+' + tel : '', email: '', empresa: '', tags: [], notas: '', identidades: [], canales: {}, creado: serverTimestamp(), actualizado: serverTimestamp(), ultimoContacto: serverTimestamp(), fusionadoEn: null, posiblesDuplicados: [], buscar: C.tokensDe(nombre, tel), creadoPor: usuario.email });
+        await C.auditar(yo, 'contacto_creado', 'contacto', ref.id, { nombre }); abrir(ref.id);
+    };
+    window.fusionar = async (origenId, destinoId) => {
+        const o = porId(origenId), d = porId(destinoId);
+        if (!confirm(`¿Fusionar «${o.nombre || origenId}» DENTRO de «${d.nombre || destinoId}»?\n\nSe unen identidades, tags y conversaciones; el destino conserva su nombre/datos y rellena lo que le falte. Se puede deshacer desde la ficha del destino.`)) return;
+        try { await C.llamar('inboxFusionarContactos', { origenId, destinoId }); abrir(destinoId); } catch (e) { alert(e.message); }
+    };
+    window.deshacer = async (id) => { if (!confirm('¿Deshacer esta fusión? Los dos contactos vuelven a como estaban.')) return; try { await C.llamar('inboxFusionarContactos', { deshacerId: id }); } catch (e) { alert(e.message); } };
+    window.noEsDuplicado = async (otroId) => { try { const { arrayRemove } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'); await updateDoc(doc(db, 'inboxContactos', sel.id), { posiblesDuplicados: arrayRemove(otroId) }); await updateDoc(doc(db, 'inboxContactos', otroId), { posiblesDuplicados: arrayRemove(sel.id) }); await C.auditar(yo, 'contacto_no_duplicado', 'contacto', sel.id, { otroId }); } catch (e) { alert(e.message); } };
+    window.buscarFusion = () => {
+        const q = (prompt('Escribe nombre, teléfono o email del contacto con el que quieres fusionar «' + (sel.nombre || sel.id) + '»:') || '').trim(); if (!q) return;
+        const nq = C.normalizar(q); const cand = contactos.filter(c => c.id !== sel.id && !c.fusionadoEn && C.normalizar([c.nombre, c.telefono, c.email].join(' ')).includes(nq)).slice(0, 8);
+        if (!cand.length) { alert('No encontré contactos con ese texto.'); return; }
+        const i = prompt(cand.map((c, k) => (k + 1) + ') ' + (c.nombre || '—') + ' · ' + (c.telefono || '') + ' ' + (c.email || '')).join('\n') + '\n\nNúmero del contacto DESTINO (este se fusionará dentro de él):'); const d = cand[Number(i) - 1]; if (!d) return;
+        fusionar(sel.id, d.id);
+    };
+    const idParam = new URLSearchParams(location.search).get('id'); if (idParam) { const iv = setInterval(() => { if (porId(idParam)) { clearInterval(iv); abrir(idParam); } }, 300); setTimeout(() => clearInterval(iv), 10000); }
+</script>
+</body>
+</html>

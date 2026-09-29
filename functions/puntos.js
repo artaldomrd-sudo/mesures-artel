@@ -341,7 +341,9 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
 
     const encuestaRespondida = onDocumentWritten('encuestas/{token}', async (event) => {
         const after = event.data.after.exists ? event.data.after.data() : null;
-        if (!after || after.estado !== 'respondida' || !after.respuesta || after.puntosAplicados) return;
+        // Guarda por FECHA de aplicación, no por el valor de puntos: con 3★ (0 puntos) `puntosAplicados` era 0 → falsy →
+        // el trigger se repetía sin fin (mensaje + push a admins cada vez). Auditoría 2026-09-28, crítico 1.
+        if (!after || after.estado !== 'respondida' || !after.respuesta || after.puntosFecha || after.puntosAplicados != null) return;
         try {
             const cfg = await cargarConfig(); const R = cfg.reglas;
             const r = after.respuesta; const g = Math.max(1, Math.min(5, Math.round(Number(r.general) || 0)));

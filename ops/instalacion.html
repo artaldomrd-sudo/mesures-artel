@@ -404,6 +404,7 @@
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import { borrarConRegistro } from './papelera.js';
+    import { mismaObra } from './obras-util.js';
     import {
         collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -1131,7 +1132,8 @@
                 asignados: trAsig, instaladorEmail: trAsig[0].email, instaladorNombre: trAsig[0].nombre || '',
                 estado: 'pendiente', notas: document.getElementById('tr-nota').value.trim(),
                 recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
-                orderId: null, origen: 'instalador', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp()
+                orderId: (pedidoAbiertoDeObra(cliente, document.getElementById('tr-obra').value.trim()) || {}).id || null,   // se enlaza al pedido de la obra si lo hay
+                origen: 'instalador', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             cerrarModalTrabajo();
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
@@ -1269,7 +1271,7 @@
             instaladorEmail: asigEmails[0] || '', instaladorNombre: (asignados[0] && asignados[0].nombre) || '',
             estado: document.getElementById('job-estado').value, notas: document.getElementById('job-notas').value.trim(), recordatorios,
             recordatoriosEnviados: [], recordatoriosPendientes: tieneInicio && recordatorios.length > 0,
-            orderId: window._orderIdParaGuardar || null
+            orderId: window._orderIdParaGuardar || (editingId ? ((allJobs.find(x => x.id === editingId) || {}).orderId || null) : null) || (pedidoAbiertoDeObra(cliente, document.getElementById('job-obra').value.trim()) || {}).id || null
         };
         try {
             if (editingId) await updateDoc(doc(db, 'instalaciones', editingId), datos);
@@ -1279,6 +1281,15 @@
     };
 
     /* ===== Estado / reprogramar / eliminar (instalaciones) ===== */
+    // Pedido de fabricación abierto que corresponde a esta obra (misma regla "mismaObra" que los informes). Sirve para
+    // enlazar un trabajo creado a mano / rápido con su pedido y para cerrar el pedido al completar aunque el trabajo no
+    // traiga orderId (auditoría 2026-09-28, crítico 3: 5 pedidos entregados e instalados seguían en "listo para cargar").
+    function pedidoAbiertoDeObra(cliente, obra) {
+        if (!cliente) return null;
+        const cand = ordersCache.filter(o => { const d = o.data || {}; return d.docType !== 'COMPRA_DIRECTA' && String(d.docType || '').indexOf('COT') !== 0 && d.status !== 'completado' && !d.sinInstalacion && mismaObra(cliente, obra, d.cliente, d.obra); });
+        if (cand.length !== 1) return cand.length ? cand.sort((a, b) => { const fa = (a.data.fecha && a.data.fecha.toMillis) ? a.data.fecha.toMillis() : 0, fb = (b.data.fecha && b.data.fecha.toMillis) ? b.data.fecha.toMillis() : 0; return fb - fa; })[0] : null;
+        return cand[0];
+    }
     window.cambiarEstado = async function (id, estado, yaConfirmado) {
         const j = allJobs.find(x => x.id === id) || {};
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ') || 'este trabajo';
@@ -1293,9 +1304,12 @@
             await updateDoc(doc(db, 'instalaciones', id), cambios);
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
             // El pedido ligado sigue al trabajo: completado → instalado (como la biometría); reabierto → vuelve a "listo".
-            if (j.orderId) {
-                if (estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
-                else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', j.orderId), { instalado: false, status: 'listo_para_cargar' });
+            // Si el trabajo no trae orderId, se busca el pedido abierto de la misma obra y se enlaza de paso.
+            let oid = j.orderId || null;
+            if (!oid) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oid = p.id; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: oid }); } catch (_) { } } }
+            if (oid) {
+                if (estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
+                else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: false, status: 'listo_para_cargar' });
             }
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };

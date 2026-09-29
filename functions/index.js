@@ -597,6 +597,8 @@ Si un campo no aparece o no estás seguro, deja el string vacío o 0. NUNCA inve
 
 exports.extraerFactura = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    // Cuesta dinero por llamada (Claude visión): solo usuarios con sesión y rol de contabilidad (auditoría 2026-09-28).
+    if (!(await callerConRol(req, ['contable', 'cotizaciones']))) { res.status(403).json({ error: 'no-autorizado' }); return; }
     try {
         // `attachment.data` es base64 SIN el prefijo "data:...;base64,". Tipos/tamaño acotados.
         const adj = req.body && req.body.attachment;
@@ -1999,6 +2001,7 @@ exports.actualizarPreciosCombustible = onSchedule({ schedule: '0 8 * * *', timeZ
 });
 // Disparo manual (para probar o forzar): abrir la URL de esta función en el navegador.
 exports.actualizarPreciosCombustibleAhora = onRequest({ cors: true }, async (req, res) => {
+    if (!(await callerAdmin(req))) { res.status(403).json({ error: 'solo admin' }); return; }   // escribe config/ (auditoría 2026-09-28)
     try { const r = await guardarPreciosCombustible(); res.json(r); }
     catch (e) { console.error('actualizarPreciosCombustibleAhora', e); res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
 });
@@ -2033,6 +2036,8 @@ async function llamarClaudeAcademia(system, userText, maxTokens) {
 
 exports.academiaRedactar = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    // Cuesta dinero por llamada: solo capacitadores/admin con sesión (auditoría 2026-09-28).
+    if (!(await callerConRol(req, ['capacitador']))) { res.status(403).json({ error: 'no-autorizado' }); return; }
     try {
         const modo = (req.body && req.body.modo) || 'leccion';
         const titulo = String((req.body && req.body.titulo) || '').slice(0, 200);
@@ -2209,10 +2214,14 @@ async function generarInformeObra(instId, inst, opts) {
     opts = opts || {};
     const cliente = String(inst.cliente || '').trim(), obra = String(inst.obra || '').trim();
     const obraKey = obraKeyDe(cliente, obra);
-    const { fecha: hoy } = hoySantoDomingo();
+    // Fecha de cierre ESTABLE (auditoría 2026-09-28, crítico 6): al recalcular se conserva la del primer cierre, así las
+    // ventanas de partes/viajes no se corren a "hoy" ni el informe absorbe horas posteriores, y sale de la ventana de
+    // recálculo automático (45 días) cuando le toca. Solo el primer informe usa la fecha de hoy.
+    const existente = (await db.doc('informesObra/' + instId).get()).data() || null;
+    const hoy = (existente && existente.fechaCierre) || hoySantoDomingo().fecha;
     const esMia = (c, o) => mismaObra(cliente, obra, c, o);
-    // Informe anterior de la misma obra (con tolerancia de nombre) → este cubre desde ahí.
-    const previos = (await db.collection('informesObra').get()).docs.map((d) => d.data()).filter((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra));
+    // Informes ANTERIORES de la misma obra (con tolerancia de nombre) → este cubre desde ahí. Los posteriores no cuentan.
+    const previos = (await db.collection('informesObra').get()).docs.map((d) => d.data()).filter((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra) && String(p.fechaCierre || '') <= hoy);
     const desde = previos.reduce((m, p) => (p.fechaCierre > m ? p.fechaCierre : m), '');
     const acumPrevio = previos.reduce((s, p) => s + (Number(p.total) || 0), 0);
 
@@ -2308,15 +2317,23 @@ async function generarInformeObra(instId, inst, opts) {
     if (previos.length) L.push(`Acumulado de la obra (${informe.numero} informes): ${fmtRD(informe.acumuladoObra)}`);
     D.push('');
     D.push('Compáralo con lo cotizado de transporte e instalación en la factura para ver si el precio fue correcto.');
-    await db.doc('informesObra/' + instId).update({ resumen: cuerpoNuevo, detalleTexto: D.join('\n') });
-    await db.collection('mensajes').add({
-        estado: 'enviado', asunto: '💰 Costo de realización — ' + lugar, cuerpo: cuerpoNuevo,
-        remitenteEmail: 'sistema@artal', remitenteNombre: 'Sistema ARTAL (informe automático)',
-        fecha: FieldValue.serverTimestamp(), paraTodos: false, destinatarios: admins, requiereFirma: false, adjuntos: [],
-        enlace: { titulo: 'Ver informe completo', url: urlInforme }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
-    });
+    await db.doc('informesObra/' + instId).update({ resumen: cuerpoNuevo, detalleTexto: D.join('\n'), recalculado: existente ? FieldValue.serverTimestamp() : null });
+    // Mensaje a gerencia: si ya existe el de este informe se ACTUALIZA (conserva acuses/leídos y no re-notifica);
+    // si no, se crea. Antes se borraba y recreaba en cada recálculo (auditoría 2026-09-28).
+    const msgPrev = await db.collection('mensajes').where('informeObraId', '==', instId).limit(5).get();
+    if (!msgPrev.empty) {
+        await msgPrev.docs[0].ref.update({ cuerpo: cuerpoNuevo, asunto: '💰 Costo de realización — ' + lugar, enlace: { titulo: 'Ver informe completo', url: urlInforme }, actualizado: FieldValue.serverTimestamp() });
+        for (const m of msgPrev.docs.slice(1)) await m.ref.delete();   // duplicados de versiones anteriores
+    } else {
+        await db.collection('mensajes').add({
+            estado: 'enviado', asunto: '💰 Costo de realización — ' + lugar, cuerpo: cuerpoNuevo,
+            remitenteEmail: 'sistema@artal', remitenteNombre: 'Sistema ARTAL (informe automático)',
+            fecha: FieldValue.serverTimestamp(), paraTodos: false, destinatarios: admins, requiereFirma: false, adjuntos: [],
+            enlace: { titulo: 'Ver informe completo', url: urlInforme }, acuses: {}, tipo: 'informe_obra', informeObraId: instId
+        });
+    }
     await db.doc('instalaciones/' + instId).update({ informeObraId: instId, informeObraFecha: hoy });
-    if (opts.push !== false) for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
+    if (opts.push !== false && !existente) for (const em of admins) { try { await enviarPushUsuario(em, '💰 Costo de realización — ' + lugar, `Total ${fmtRD(total)} · mano de obra ${fmtRD(costoMO)} · transporte ${fmtRD(costoTransporte)}`, 'ops/mensajes.html'); } catch (_) { } }
     return informe;
 }
 exports.informeObraRecalcular = onRequest({ cors: true, timeoutSeconds: 120 }, async (req, res) => {
@@ -2328,10 +2345,7 @@ exports.informeObraRecalcular = onRequest({ cors: true, timeoutSeconds: 120 }, a
     try {
         const inst = (await db.doc('instalaciones/' + instId).get()).data();
         if (!inst) { res.status(404).json({ error: 'trabajo no encontrado' }); return; }
-        // Borra el mensaje anterior de este informe para no dejar dos versiones en Mensajería.
-        const viejos = await db.collection('mensajes').where('informeObraId', '==', instId).get();
-        for (const m of viejos.docs) await m.ref.delete();
-        const inf = await generarInformeObra(instId, inst);
+        const inf = await generarInformeObra(instId, inst);   // actualiza el mensaje existente (no lo borra)
         res.status(200).json({ ok: true, total: inf.total, horas: inf.manoObra.horas, viajes: inf.transporte.viajes });
     } catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
 });
@@ -2350,22 +2364,26 @@ async function recalcularInformesDeObras(pares) {
         hechos.add(inf.id);
         try {
             const inst = (await db.doc('instalaciones/' + inf.id).get()).data(); if (!inst) continue;
-            const viejos = await db.collection('mensajes').where('informeObraId', '==', inf.id).get();
-            for (const m of viejos.docs) await m.ref.delete();
             await generarInformeObra(inf.id, inst, { push: false });
             console.log('informe recalculado', inf.id, inf.cliente, inf.obra);
         } catch (e) { console.error('recalcularInformesDeObras', inf.id, e); }
     }
 }
 const paresDeParte = (p) => (p && Array.isArray(p.lineas) ? p.lineas : []).filter((l) => l.tipo === 'obra' && l.obraLabel).map((l) => { const i = String(l.obraLabel).indexOf(' — '); return i > 0 ? { cliente: l.obraLabel.slice(0, i), obra: l.obraLabel.slice(i + 3) } : { cliente: l.obraLabel, obra: '' }; });
+// Huella de lo que afecta al costo (obra, horas, costo/hora, persona): si no cambió, no se recalcula nada (una nota,
+// el envío del borrador o un acuse no deben regenerar informes — auditoría 2026-09-28).
+const huellaLineasObra = (p) => JSON.stringify(((p && Array.isArray(p.lineas)) ? p.lineas : []).filter((l) => l.tipo === 'obra').map((l) => [l.empleadoId, l.obraKey || l.obraLabel, Number(l.horas) || 0, Number(l.costoHora) || 0]).sort());
 exports.informeObraAlCambiarParte = onDocumentWritten('partesDiarios/{id}', async (event) => {
     const a = event.data.after.exists ? event.data.after.data() : null, b = event.data.before.exists ? event.data.before.data() : null;
+    if (a && b && huellaLineasObra(a) === huellaLineasObra(b) && a.fecha === b.fecha) return;
     const pares = paresDeParte(a).concat(paresDeParte(b));
     const vistos = new Set(); const unicos = pares.filter((p) => { const k = normTxtObra(p.cliente) + "|" + normTxtObra(p.obra); if (vistos.has(k)) return false; vistos.add(k); return true; });
     try { await recalcularInformesDeObras(unicos); } catch (e) { console.error('informeObraAlCambiarParte', e); }
 });
 exports.informeObraAlCambiarViaje = onDocumentWritten('viajes/{id}', async (event) => {
     const a = event.data.after.exists ? event.data.after.data() : null, b = event.data.before.exists ? event.data.before.data() : null;
+    const huellaV = (v) => JSON.stringify(v ? [v.fecha, v.costoTotal, (v.obras || []).map((o) => [o.cliente, o.obra, o.costo])] : null);
+    if (a && b && huellaV(a) === huellaV(b)) return;
     const pares = [].concat((a && a.obras) || [], (b && b.obras) || []).filter((o) => o && o.cliente).map((o) => ({ cliente: o.cliente, obra: o.obra || '' }));
     try { await recalcularInformesDeObras(pares); } catch (e) { console.error('informeObraAlCambiarViaje', e); }
 });

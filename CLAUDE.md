@@ -2425,6 +2425,21 @@ entera en el ancho se corta solo el lado corto; los dos lados por encima → blo
 **Bloqueo** (`maxCorto` 1200): si el lado largo pasa el ancho del rollo y el corto supera 1200 mm, «No se puede fabricar» y sin precio (antes se calculaban dos tiras; el usuario no quiere vender lo que no se puede hacer). **Transporte + instalación** (usuario 26/09): en Las Terrenas, por nº de telas (no bloqueadas): 1–3 RD$ 2,500 · 4–6 3,000 · 7–10 3,500 · 11–13 4,500 · 14–16 5,500; más allá +1,000 por cada 3 telas (`tramos[]`, `extraPor3`, editables). Fuera de Las Terrenas → «cotizar aparte» (Calculador de obra). TOTAL = tela + transporte; ITBIS opcional sobre el total. Copiar resumen. **Solo admin ve costo, margen, precio/m² y el bloque «⚙️ Rollo y precio»** (usuario 26/09: «empleados no tienen por qué ver esto»); el equipo ve precio, m² y corte. Sin ancho Y alto no hay precio (antes el margen mínimo daba precio con el alto vacío). Para agregar otro producto: otra tarjeta `.prod` con su propio doc en
 `calculadores/`.
 
+### Auditoría del sistema (2026-09-28) y correcciones críticas (2026-09-29)
+
+Informe completo en la memoria `artal-auditoria-2026-09-28` (fallos, incoherencias, seguridad, limpieza, orden de trabajo).
+Corregidos los 6 críticos el 29/09: (1) `encuestaRespondida` guarda por `puntosFecha`/`puntosAplicados != null` (con 3★ = 0
+puntos el trigger se repetía sin fin); (2) 24 páginas del ERP tenían `oninput="render()"` a una función del módulo no
+expuesta → se agregó `window.render = render` (o renderNomina/renderCandidatos/renderComisiones/renderLista) antes de la
+declaración; (3) Instalación enlaza los trabajos con el pedido abierto de la misma obra (`pedidoAbiertoDeObra`, regla
+`mismaObra`) al crearlos (rápido y agendar) y al completar aunque no traigan `orderId`, y cierra el pedido; se corrigieron a
+mano Woof Woof y Plaza Manuela; (4) el modo demo de `parte-diario.html` ya no trae nombres, correos ni sueldos reales;
+(5) `extraerFactura` (contable/cotizaciones), `academiaRedactar` (capacitador) y `actualizarPreciosCombustibleAhora`
+(admin) exigen ID token — los llamadores mandan `Authorization: Bearer`; (6) `generarInformeObra` conserva la
+`fechaCierre` original al recalcular (ventanas estables, `previos` solo anteriores, sale de los 45 días), ACTUALIZA el
+mensaje de gerencia existente en vez de borrarlo y recrearlo (conserva acuses), no manda push en recálculos, y los triggers
+de parte/viaje solo recalculan si cambió la huella de obra/horas/costo (una nota o el envío del borrador ya no regeneran).
+
 ### Academia: guías de la plataforma (2026-09-22)
 
 `ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La

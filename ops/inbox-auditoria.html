@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Inbox: Auditoría</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 1100px; }
+    .fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .fila input, .fila select { border: 1px solid #cfd8e3; border-radius: 100px; padding: 8px 12px; font-size: 13px; font-family: inherit; }
+    .panel { background: rgba(255,255,255,.85); border: 1px solid var(--glass-brd); border-radius: 14px; box-shadow: var(--glass-sh); padding: 10px 14px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eef1f4; vertical-align: top; } th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--gris); }
+    .chip { font-size: 10.5px; font-weight: 700; border-radius: 100px; padding: 2px 8px; background: #eef1f4; color: #556; white-space: nowrap; }
+    .muted { color: var(--gris); font-size: 12px; } code { font-size: 11.5px; background: #f3f6f9; border-radius: 6px; padding: 1px 5px; word-break: break-all; }
+    .btn { border: 1px solid #cfd8e3; background: #fff; color: var(--azul-hondo); border-radius: 100px; padding: 7px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+</style>
+</head>
+<body>
+<header>
+    <div class="header-title"><a class="btn-back" href="inbox.html">← Inbox</a><img class="logo" src="../logo.png" alt="ARTAL"><h1>Inbox · <span class="accent">Auditoría</span></h1></div>
+    <div class="who"><span id="user-name"></span><button id="signout-btn">Cerrar sesión</button></div>
+</header>
+<main>
+    <p class="muted">Registro a prueba de manipulación: cada acción se escribe una vez y nadie (ni un administrador) puede editarla ni borrarla. Incluye accesos al inbox, mensajes enviados, notas, asignaciones, cambios de estado/prioridad/etiquetas, configuración, canales y fusiones de contactos. Los mensajes de WhatsApp <b>no se pueden eliminar</b> para el cliente por API una vez enviados, por eso no existe la acción «mensaje eliminado».</p>
+    <div class="fila"><input id="q" type="search" placeholder="Buscar en texto, actor, id de conversación…" oninput="render()" style="flex:1;min-width:200px"><select id="f-accion" onchange="render()"><option value="">Acción: todas</option></select><select id="f-actor" onchange="render()"><option value="">Actor: todos</option></select><select id="f-dias" onchange="cargar()"><option value="7">Últimos 7 días</option><option value="30" selected>Últimos 30 días</option><option value="90">Últimos 90 días</option><option value="365">Último año</option></select><button class="btn" onclick="exportar()">⬇ CSV</button></div>
+    <div class="panel"><div style="overflow-x:auto"><table><thead><tr><th>Fecha y hora</th><th>Actor</th><th>Acción</th><th>Objeto</th><th>Detalle</th></tr></thead><tbody id="tb"></tbody></table></div><div class="muted" id="n"></div></div>
+</main>
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import * as C from './inbox-core.js';
+    import { collection, query, where, orderBy, limit, onSnapshot, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    const usuario = await requireAuth(['inbox_admin']);
+    wireBackButton(usuario.roles); document.getElementById('user-name').textContent = usuario.nombre; document.getElementById('signout-btn').onclick = () => signOut(auth);
+    const { esc, fechaLarga } = C; let regs = [], unsub = null;
+    const NOM = { login: 'Acceso al inbox', logout: 'Cierre de sesión', mensaje_enviado: 'Mensaje enviado', nota_interna: 'Nota interna', conversacion_asignada: 'Conversación asignada', conversacion_tomada: 'Conversación tomada', conversacion_transferida: 'Conversación transferida', conversacion_desasignada: 'Asignación quitada', conversacion_equipo: 'Cambio de equipo', conversacion_estado: 'Cambio de estado', conversacion_prioridad: 'Cambio de prioridad', tag_agregado: 'Etiqueta agregada', tag_eliminado: 'Etiqueta quitada', conversacion_iniciada: 'Conversación iniciada por la empresa', contacto_editado: 'Contacto editado', contacto_creado: 'Contacto creado', contactos_fusionados: 'Contactos fusionados', contactos_fusion_deshecha: 'Fusión deshecha', contacto_no_duplicado: 'Marcado como no duplicado', canal_conectado: 'Canal conectado', canal_configurado: 'Canal configurado', plantillas_sincronizadas: 'Plantillas sincronizadas', config_sla: 'Configuración SLA', config_ia: 'Configuración IA', config_estados: 'Estados personalizados', regla_guardada: 'Regla guardada', regla_borrado: 'Regla borrada', equipo_creado: 'Equipo creado', equipo_editado: 'Equipo editado', equipo_borrado: 'Equipo borrado', tag_creado: 'Etiqueta creada', 'etiqueta_borrado': 'Etiqueta borrada', respuesta_rapida: 'Respuesta rápida guardada', 'respuesta rápida_borrado': 'Respuesta rápida borrada', ia_respuesta_automatica: 'IA respondió automáticamente' };
+    window.cargar = () => { if (unsub) unsub(); const d = Number(document.getElementById('f-dias').value); unsub = onSnapshot(query(collection(db, 'inboxAuditoria'), where('at', '>=', Timestamp.fromMillis(Date.now() - d * 86400000)), orderBy('at', 'desc'), limit(2000)), s => { regs = s.docs.map(x => ({ id: x.id, ...x.data() })); render(); }, e => { document.getElementById('n').textContent = 'Error: ' + e.message; }); };
+    window.render = render;   // los handlers inline (oninput/onchange) no ven las funciones del módulo (auditoría 2026-09-28)
+    function render() {
+        const q = C.normalizar(document.getElementById('q').value.trim()), fa = document.getElementById('f-accion').value, fu = document.getElementById('f-actor').value;
+        const acciones = [...new Set(regs.map(r => r.accion))].sort(), actores = [...new Set(regs.map(r => r.actorEmail))].sort();
+        const sa = document.getElementById('f-accion'); if (sa.options.length !== acciones.length + 1) sa.innerHTML = '<option value="">Acción: todas</option>' + acciones.map(a => `<option value="${esc(a)}" ${fa === a ? 'selected' : ''}>${esc(NOM[a] || a)}</option>`).join('');
+        const su = document.getElementById('f-actor'); if (su.options.length !== actores.length + 1) su.innerHTML = '<option value="">Actor: todos</option>' + actores.map(a => `<option value="${esc(a)}" ${fu === a ? 'selected' : ''}>${esc((regs.find(r => r.actorEmail === a) || {}).actorNombre || a)}</option>`).join('');
+        const lista = regs.filter(r => (!fa || r.accion === fa) && (!fu || r.actorEmail === fu) && (!q || C.normalizar([r.accion, NOM[r.accion], r.actorNombre, r.actorEmail, r.objetoTipo, r.objetoId, JSON.stringify(r.detalle || '')].join(' ')).includes(q)));
+        document.getElementById('tb').innerHTML = lista.map(r => `<tr><td style="white-space:nowrap">${esc(fechaLarga(r.at))}</td><td>${esc(r.actorNombre || r.actorEmail)}<div class="muted">${esc(r.actorEmail || '')}</div></td><td><span class="chip">${esc(NOM[r.accion] || r.accion)}</span></td><td>${esc(r.objetoTipo || '')} ${r.objetoTipo === 'conversacion' && r.objetoId ? `<a href="inbox.html?c=${esc(r.objetoId)}">abrir</a>` : ''}<div class="muted"><code>${esc(r.objetoId || '')}</code></div></td><td><code>${esc(typeof r.detalle === 'string' ? r.detalle : JSON.stringify(r.detalle || '')).slice(0, 220)}</code></td></tr>`).join('') || '<tr><td colspan="5" class="muted">Sin registros.</td></tr>';
+        document.getElementById('n').textContent = lista.length + ' registro' + (lista.length === 1 ? '' : 's');
+        window.__lista = lista;
+    }
+    window.exportar = () => { const rows = [['fecha', 'actor', 'email', 'accion', 'objetoTipo', 'objetoId', 'detalle'], ...(window.__lista || []).map(r => [fechaLarga(r.at), r.actorNombre, r.actorEmail, r.accion, r.objetoTipo, r.objetoId, JSON.stringify(r.detalle || '')])]; const csv = rows.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'inbox-auditoria.csv'; a.click(); };
+    cargar();
+</script>
+</body>
+</html>
