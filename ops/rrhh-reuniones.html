@@ -88,7 +88,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, Timestamp, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // Gerencia (admin) gestiona todo; el empleado entra a ver SOLO las suyas (por su correo).
     const usuario = await requireAuth(['instalador', 'ayudante', 'chofer', 'cotizaciones', 'contable', 'comunicaciones']);
@@ -116,11 +116,16 @@
         if (vista === 'inicio') render();
     }, () => {});
 
-    onSnapshot(collection(db, 'rrhhReuniones'), (snap) => {
+    // Gerencia/RRHH (admin, contable) lee toda la colección; un empleado SOLO puede leer las suyas (regla de Firestore
+    // 2026-09-29: `empleadoCorreo == su correo`), así que su consulta lleva ese filtro — sin él Firestore rechaza la consulta
+    // entera y la pantalla decía «no tienes reuniones» aunque las tuviera (caso Roosevelt, 2026-09-30).
+    const esRRHH = (usuario.roles || []).some(r => r === 'admin' || r === 'contable');
+    const qReuniones = esRRHH ? collection(db, 'rrhhReuniones') : query(collection(db, 'rrhhReuniones'), where('empleadoCorreo', '==', String(usuario.email || '').toLowerCase()));
+    onSnapshot(qReuniones, (snap) => {
         reunionesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
         render();
-    }, () => { reunionesCache = []; render(); });
+    }, (e) => { console.warn('rrhhReuniones', e && e.message); reunionesCache = []; render(); });
 
     const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const mismoNombre = (a, b) => { a = norm(a); b = norm(b); return a && b && (a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')); };
