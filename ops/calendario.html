@@ -242,9 +242,9 @@
             <label>¿Quién del equipo de instalación? (puedes marcar varios)</label>
             <div id="cita-instalador" class="personas-group"></div>
             <p style="font-size:12px;color:#666;margin:6px 0 0;background:#fff6ec;border-radius:7px;padding:8px 10px;">
-                🔔 Esto es un <b>recordatorio/aviso</b> — le aparece al instalador en su pantalla
-                "Trabajo en Obra". Para una <b>instalación con GPS, checklist y firma</b>, usa
-                <a href="instalacion.html">Instalación</a>.
+                🔔 Sin pedido, esto es un <b>recordatorio</b> que le aparece al equipo en <a href="instalacion.html">Instalación</a>.
+                Si eliges <b>un pedido</b>, se agenda como <b>trabajo de instalación</b> (con GPS, horas e informe de cierre) y el
+                pedido queda enlazado.
             </p>
         </div>
 
@@ -814,6 +814,27 @@
             repCfg = { repetir: repetirVal, repetirCada: cada, repetirModo: modo, repetirFin: fin, repetirFinValor: finValor, repetirGenerado: false };
             // El inicio y el contador solo se fijan al CREAR — al editar una serie en curso no se resetean.
             if (!editingId) { repCfg.repetirInicio = new Date(fechaStr).toISOString(); repCfg.repetirCount = 1; }
+        }
+
+        // Equipo de instalación + pedido = un TRABAJO de instalación (colección instalaciones), no una cita: así el pedido
+        // queda agendado de verdad, sale en Instalación con GPS/horas/informe, y el enlace pedido↔trabajo existe
+        // (auditoría 2026-09-28: antes se creaba una cita y el pedido nunca quedaba agendado).
+        if (!editingId && asignadoA === 'instalador' && tipoCita === 'pedido' && orderId) {
+            const o = ordersCache.find(x => x.id === orderId); const od = (o && o.data) || {};
+            const inst = instaladoresCache.find(x => x.email === (asignados[0] || {}).email) || {};
+            try {
+                await addDoc(collection(db, 'instalaciones'), {
+                    cliente, obra, direccion: od.direccion || '', gps: od.gps || '',
+                    modoFecha: 'unica', fecha: Timestamp.fromDate(new Date(fechaStr)), fechaFin: null,
+                    asignados, instaladorEmail: (asignados[0] || {}).email || '', instaladorNombre: (asignados[0] || {}).nombre || inst.nombre || '',
+                    estado: 'pendiente', notas: [titulo, descripcion].filter(Boolean).join(' — '),
+                    recordatorios, recordatoriosEnviados: [], recordatoriosPendientes: recordatorios.length > 0,
+                    orderId, origen: 'calendario', creadoPorNombre, fechaCreacion: serverTimestamp()
+                });
+                alert('Agendado como TRABAJO de instalación: aparece en Instalación (y aquí en el calendario) con el pedido enlazado.');
+                cerrarNuevaCita(); resetForm();
+            } catch (e) { alert('No se pudo agendar el trabajo: ' + e.message); }
+            return;
         }
 
         const datos = {

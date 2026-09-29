@@ -2440,6 +2440,25 @@ mano Woof Woof y Plaza Manuela; (4) el modo demo de `parte-diario.html` ya no tr
 mensaje de gerencia existente en vez de borrarlo y recrearlo (conserva acuses), no manda push en recálculos, y los triggers
 de parte/viaje solo recalculan si cambió la huella de obra/horas/costo (una nota o el envío del borrador ya no regeneran).
 
+### Correcciones ALTO de la auditoría (2026-09-30)
+
+- Los push del sistema ya apuntan a `ops/instalacion.html`; `instalador.html`, `instalaciones.html` y `ayudante.html` quedaron
+  como redirecciones (fuera del catálogo `paginas.js`). Se retiró el recordatorio viejo (`procesarRecordatorios`, campos
+  `recordarAntesMin`/`recordatorioEnviado`).
+- Asignación de instalador en pedidos: todos los escritores (Instalación, Fábrica interna, Historial) escriben AMBOS formatos
+  (`asignadosInstalador[]` + `asignadoInstaladorEmail/Nombre`); 14 pedidos viejos migrados al array.
+- `informeObraAlCompletar` regenera el informe al re-completar un trabajo reabierto (ya no lo frena `informeObraId`).
+- Historial: `normTexto` colapsa espacios y las carpetas casan informes con `mismaObra` (antes nombre exacto).
+- Transportes: los fijos del vehículo (seguro+depreciación/365) se cobran una vez por vehículo y día (`fijosYaCobrados`); el
+  Calculador de obra usa el precio MICM vivo también en los viajes extra. (El medio peaje en ida sola ya era igual en ambos.)
+- Calendario: «Equipo de instalación» + pedido crea un TRABAJO en `instalaciones` (orderId enlazado, origen 'calendario'),
+  no una cita; sin pedido sigue siendo recordatorio.
+- `reprogramarJob` pone `fechaFin: null`. Puntos: la falta respeta `rrhhVacaciones`; `puntosEvaluarDiario` corre a las 00:10
+  evaluando el día anterior; la ventana de comunicados sale del día D (mensajes de D−2), no de «ahora».
+- Datos pendientes de decisión del usuario: trabajo Yomayra—Xcape pendiente con fecha 25/09; 4 pedidos listos sin agendar
+  (Altea 11 ventanas ×2, Dinorah A5 201, Jean Pierre); 10 citas de gerencia vencidas; usuario romain.jardinier sin nombre ni
+  rol; 179/183 clientes sin teléfono; «cliente jeffrey» sin ficha; informe «Artal —» en 0 (no es obra).
+
 ### Bloqueo provisional por rol en firestore.rules (2026-09-29)
 
 Usuario: «cada quien solo puede ver lo que le pertenece… haz un bloqueo provisional». Antes cualquier sesión leía TODO y

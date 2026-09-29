@@ -28,7 +28,6 @@ export const GRUPOS = [
 ];
 export const PAGINAS = [
     { id: "index.html", titulo: "Panel de Control", grupo: "panel", roles: [], desc: "Inicio del panel: mosaicos a cada módulo, badges con lo pendiente y centro de notificaciones (comentarios, problemas, solicitudes, recordatorios)." },
-    { id: "instalaciones.html", titulo: "Agenda de Instalación", grupo: "operaciones", roles: ["instalador", "ayudante"], desc: "Versión anterior de la agenda de instalación (calendario + GPS + agendar). Reemplazada por Instalación; sigue disponible como respaldo." },
     { id: "calendario.html", titulo: "Calendario", grupo: "operaciones", roles: [], desc: "Calendario de gerencia: citas y recordatorios por persona (Andrea, Anny, Dylan, Sara), con etapas, recurrencia y push." },
     { id: "compras.html", titulo: "Compra Directa", grupo: "operaciones", roles: [], desc: "Compra Directa: artículos que se compran hechos a un proveedor y van directo a transporte/instalación con su orden de compra en PDF." },
     { id: "etiquetas.html", titulo: "Etiquetas de fábrica", grupo: "operaciones", roles: ["fabrica"], desc: "Impresión de etiquetas de fábrica por pedido/ítem para marcar las piezas." },
@@ -39,7 +38,6 @@ export const PAGINAS = [
     { id: "parte-diario-seguimiento.html", titulo: "Seguimiento del parte diario", grupo: "operaciones", roles: [], desc: "Gerencia: quién envió el parte hoy y quién falta, últimos 14 días, resumen del día por obra, encargados y bloqueo." },
     { id: "inventario.html", titulo: "Inventario", grupo: "operaciones", roles: ["chofer", "instalador", "ayudante"], desc: "Inventario de herramientas y materiales con stock, mínimos y categorías." },
     { id: "solicitudes.html", titulo: "Solicitudes web", grupo: "operaciones", roles: [], desc: "Solicitudes que llegan del sitio web (formulario y bot): datos del cliente, tipo de trabajo y seguimiento." },
-    { id: "instalador.html", titulo: "Trabajo en Obra", grupo: "operaciones", roles: ["instalador", "ayudante"], desc: "Versión anterior de 'Trabajo en Obra' (recordatorios, obras, firma). Reemplazada por Instalación; sigue como respaldo." },
     { id: "chofer.html", titulo: "Transportes", grupo: "operaciones", roles: ["chofer"], desc: "Transportes: pedidos listos para cargar, marcar en ruta, entregar en obra con recepción y reportar faltantes." },
     { id: "calculador-obra.html", titulo: "Calculador de obra", grupo: "cotizaciones", roles: ["cotizaciones"], desc: "Calculador de costos de una obra: equipo, días, vehículo, ruta, peajes, hotel y comida, para cotizar con margen." },
     { id: "clientes.html", titulo: "Clientes", grupo: "cotizaciones", roles: ["cotizaciones"], desc: "Directorio de clientes con sus obras, contactos y documentos." },

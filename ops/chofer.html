@@ -119,7 +119,7 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
-    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
@@ -406,12 +406,21 @@
         if (!(v.kmIda > 0)) { alert('Escribe los km de ida del recorrido.'); return; }
         const btn = document.getElementById('vj-ok'); btn.disabled = true;
         const hoy = new Date(), pad = (n) => String(n).padStart(2, '0'), fecha = hoy.getFullYear() + '-' + pad(hoy.getMonth() + 1) + '-' + pad(hoy.getDate());
+        // Los fijos del vehículo (seguro + depreciación / 365) se cobran UNA vez por vehículo y día: si ya hubo un viaje
+        // hoy con este vehículo, este viaje no los vuelve a cargar (auditoría 2026-09-28: doble conteo con 2 viajes el mismo día).
+        try {
+            const prev = await getDocs(query(collection(db, 'viajes'), where('fecha', '==', fecha), where('vehiculoId', '==', v.veh.id)));
+            if (!prev.empty && v.fijoVehiculo > 0) {
+                v.costoTotal = Math.max(0, v.costoTotal - v.fijoVehiculo); v.fijoVehiculo = 0; v.fijosYaCobrados = true;
+                const n = v.obras.length || 1; v.obras.forEach(o => { o.costo = Math.round(v.costoTotal / n * 100) / 100; });
+            }
+        } catch (_) { }
         try {
             const ref = await addDoc(collection(db, 'viajes'), {
                 fecha, salida: serverTimestamp(), choferEmail: usuario.email, choferNombre: usuario.nombre,
                 vehiculoId: v.veh.id, vehiculoNombre: v.veh.id + ' · ' + v.veh.nombre, rutaId: v.rutaId, rutaNombre: v.ruta ? v.ruta.nombre : 'Otro recorrido',
                 kmIda: v.kmIda, idaVuelta: v.idaVuelta, kmTot: v.kmTot, precioGal: v.precioGal, precioFuente: v.precioFuente,
-                combustible: Math.round(v.combustible * 100) / 100, mantenimiento: Math.round(v.mantenimiento * 100) / 100, peajes: v.peajes, fijoVehiculo: Math.round(v.fijoVehiculo * 100) / 100,
+                combustible: Math.round(v.combustible * 100) / 100, mantenimiento: Math.round(v.mantenimiento * 100) / 100, peajes: v.peajes, fijoVehiculo: Math.round(v.fijoVehiculo * 100) / 100, fijosYaCobrados: !!v.fijosYaCobrados,
                 costoTotal: Math.round(v.costoTotal * 100) / 100, pedidos: v.pedidos, obras: v.obras, obrasKeys: v.obras.map(o => o.obraKey), pedidosIds: v.pedidos.map(p => p.id)
             });
             for (const p of v.pedidos) {

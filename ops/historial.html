@@ -203,7 +203,7 @@
     // separadas — el sistema no puede adivinar si son el mismo sitio o no, y ya no hay un
     // botón de combinar manual (se quitó: con la navegación Cliente → Obra ya no hacía falta).
     function normTexto(s) {
-        return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');   // también colapsa espacios (2026-09-30)
     }
 
     function itemLabel(o, itemId) {
@@ -482,7 +482,8 @@
                 asignadoChoferEmail: chofer ? chofer.email : null,
                 asignadoChoferNombre: choferNombre || null,
                 asignadoInstaladorEmail: instaladorEmail || null,
-                asignadoInstaladorNombre: instalador ? instalador.nombre : null
+                asignadoInstaladorNombre: instalador ? instalador.nombre : null,
+                asignadosInstalador: instaladorEmail ? [{ email: instaladorEmail, nombre: instalador ? instalador.nombre : '' }] : []   // ambos formatos (2026-09-30)
             });
             alert('Asignación guardada.');
         } catch (e) {
@@ -716,8 +717,9 @@
     const fmtRDh = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fDh = (s) => String(s || '').slice(0, 10).split('-').reverse().join('/');
     function informesHTML(proyecto) {
-        const keys = new Set(proyecto.obras.map(g => g.key));
-        const I = informesArr.filter(i => keys.has(claveObra(i.cliente, i.obra))).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
+        // Misma regla de "misma obra" que el informe de cierre (antes casaba por nombre EXACTO y un informe con el nombre
+        // escrito distinto no aparecía en su carpeta — auditoría 2026-09-28).
+        const I = informesArr.filter(i => proyecto.obras.some(g => mismaObra(g.cliente, g.obra, i.cliente, i.obra))).sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
         if (!I.length) return '';
         const acum = I.reduce((s, i) => s + (Number(i.total) || 0), 0);
         return `<div class="carpeta-doc" style="background:#f2faf5;border-left:4px solid #1f9d61;">

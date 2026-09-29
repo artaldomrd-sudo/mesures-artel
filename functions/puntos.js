@@ -224,9 +224,12 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 });
                 if (ausentes.size) {
                     const permisos = (await db.collection('rrhhPermisos').where('estado', '==', 'aprobado').get()).docs.map((d) => d.data()).filter((p) => p.fechaInicio <= D && D <= p.fechaFin);
+                    // Vacaciones registradas en RRHH que cubren el día (cualquier estado salvo rechazadas/canceladas) tampoco son falta.
+                    const vacaciones = (await db.collection('rrhhVacaciones').get()).docs.map((d) => d.data()).filter((v) => v.fechaInicio && v.fechaFin && v.fechaInicio <= D && D <= v.fechaFin && !/rechaz|cancel/i.test(String(v.estado || '')));
                     for (const em of ausentes) {
                         const idsEmp = [...emps].filter(([, v]) => v.email === em).map(([k]) => k);
                         if (permisos.some((p) => idsEmp.includes(p.empleadoId))) continue;
+                        if (vacaciones.some((v) => idsEmp.includes(v.empleadoId))) continue;
                         await evento({ email: em, nombre: nombreDe(em), tipo: 'falta', ref: D, puntos: R.faltaSinPermiso, fechaEvento: D, detalle: `Falta del ${fmtF(D)} sin permiso registrado en RRHH.` });
                         res.faltas++;
                     }
@@ -267,10 +270,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             }
         }
 
-        // 3) Comunicados de Mensajería con más de 48 h: acuse en < 24 h (+) o sin acuse (−).
-        const ahora = new Date();
-        const h48 = new Date(ahora - 48 * 3600000), h72 = new Date(ahora - 72 * 3600000);
-        const msgs = (await db.collection('mensajes').where('fecha', '>=', h72).where('fecha', '<=', h48).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        // 3) Comunicados de Mensajería enviados el día D−2 (ya tienen 48–72 h): acuse en < 24 h (+) o sin acuse (−).
+        // La ventana sale de D (no de "ahora"): evaluar una fecha pasada a mano puntúa los mensajes de ESA fecha.
+        const ini2 = new Date(addDias(D, -2) + 'T00:00:00-04:00'), fin2 = new Date(addDias(D, -1) + 'T00:00:00-04:00');
+        const msgs = (await db.collection('mensajes').where('fecha', '>=', ini2).where('fecha', '<', fin2).get()).docs.map((d) => ({ id: d.id, ...d.data() }));
         for (const m of msgs) {
             if (m.tipo === 'informe_obra' || m.tipo === 'encuesta') continue;   // avisos del sistema a gerencia
             const env = aDate(m.fecha); if (!env) continue;
@@ -292,8 +295,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
         return res;
     }
 
-    const puntosEvaluarDiario = onSchedule({ schedule: '45 23 * * *', timeZone: TZ, timeoutSeconds: 300 }, async () => {
-        const { fecha } = hoySantoDomingo();
+    // Corre a las 00:10 y evalúa el día ANTERIOR completo (antes a las 23:45 del mismo día: lo que pasaba entre 23:45 y
+    // medianoche —un parte enviado a las 23:50, un trabajo cerrado tarde— nunca se evaluaba).
+    const puntosEvaluarDiario = onSchedule({ schedule: '10 0 * * *', timeZone: TZ, timeoutSeconds: 300 }, async () => {
+        const fecha = addDias(hoySantoDomingo().fecha, -1);
         try { console.log('puntosEvaluarDiario', await evaluarDia(fecha)); }
         catch (e) { console.error('puntosEvaluarDiario', e); }
     });

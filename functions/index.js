@@ -160,7 +160,7 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
     const lugar = [cita.cliente, cita.obra].filter(Boolean).join(' — ');
     // Un aviso para el equipo de instalación abre SU pantalla (Trabajo en Obra), no el calendario
     // (que es solo de gerencia). Los de gerencia siguen abriendo el calendario.
-    const urlDestino = cita.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html';
+    const urlDestino = cita.asignadoA === 'instalador' ? 'ops/instalacion.html' : 'ops/calendario.html';
 
     for (const email of emails) {
         await enviarPushUsuario(email, 'Nueva cita: ' + (cita.titulo || 'Sin título'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
@@ -208,7 +208,7 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
             else await pushATokens(await tokensPorRol('fabrica'), 'Nuevo pedido de fabricación', lugar, 'ops/alucufel/fabrica.html');
         } else if (after.status === 'listo_para_cargar' || after.status === 'parcialmente_listo') {
             await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
-            if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalador.html');
+            if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
         }
     }
 
@@ -258,25 +258,6 @@ exports.enviarNotificacionComentarioInstalacion = onDocumentWritten('instalacion
 // recordatorio pendiente (recordarAntesMin > 0 y recordatorioEnviado == false) y, cuando falta
 // ese tiempo o menos para el evento, manda el push y marca recordatorioEnviado = true (para no
 // repetirlo). Si el evento ya pasó sin enviarse, igual se marca enviado para no reintentar.
-async function procesarRecordatorios(coll, campoEmail, urlDestino, tituloPrefix) {
-    const ahora = Date.now();
-    const snap = await db.collection(coll).where('recordatorioEnviado', '==', false).get();
-    for (const docu of snap.docs) {
-        const d = docu.data();
-        const fecha = d.fecha && d.fecha.toDate ? d.fecha.toDate().getTime() : null;
-        const offset = Number(d.recordarAntesMin || 0);
-        if (!fecha || !offset) { await docu.ref.update({ recordatorioEnviado: true }); continue; }
-        if (ahora < fecha - offset * 60000) continue; // todavía no toca
-        if (ahora <= fecha) {
-            if (d[campoEmail]) {
-                const fechaTexto = new Date(fecha).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santo_Domingo' });
-                const lugar = [d.cliente, d.obra].filter(Boolean).join(' — ');
-                await enviarPushUsuario(d[campoEmail], tituloPrefix + (d.titulo || lugar || 'Recordatorio'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
-            }
-        }
-        await docu.ref.update({ recordatorioEnviado: true });
-    }
-}
 
 // Múltiples recordatorios por evento: `recordatorios` es un array de minutos-antes (ej. [30,1440]).
 // `recordatoriosEnviados` guarda los que ya se mandaron; `recordatoriosPendientes` es true mientras
@@ -444,12 +425,10 @@ async function procesarRecurrencias() {
 exports.enviarRecordatorios = onSchedule('every 5 minutes', async () => {
     await procesarRecurrencias();   // genera las próximas ocurrencias de los recurrentes 'auto'
     // Nuevo esquema (varios avisos por evento)
-    await procesarRecordatoriosMulti('citas', emailsAsignados, (d) => d.asignadoA === 'instalador' ? 'ops/instalador.html' : 'ops/calendario.html', 'Recordatorio: ');
-    await procesarRecordatoriosMulti('instalaciones', (d) => (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map(a => a && a.email).filter(Boolean) : (d.instaladorEmail ? [d.instaladorEmail] : [])), 'ops/instalaciones.html', 'Instalación próxima: ');
-    // Compatibilidad con citas/instalaciones creadas con el esquema anterior (un solo aviso,
-    // siempre una sola persona — no aplica lo de "varias personas", es de antes de eso)
-    await procesarRecordatorios('citas', 'asignadoEmail', 'ops/calendario.html', 'Recordatorio: ');
-    await procesarRecordatorios('instalaciones', 'instaladorEmail', 'ops/instalaciones.html', 'Instalación próxima: ');
+    await procesarRecordatoriosMulti('citas', emailsAsignados, (d) => d.asignadoA === 'instalador' ? 'ops/instalacion.html' : 'ops/calendario.html', 'Recordatorio: ');
+    await procesarRecordatoriosMulti('instalaciones', (d) => (Array.isArray(d.asignados) && d.asignados.length ? d.asignados.map(a => a && a.email).filter(Boolean) : (d.instaladorEmail ? [d.instaladorEmail] : [])), 'ops/instalacion.html', 'Instalación próxima: ');
+    // (El esquema viejo de un solo aviso —recordarAntesMin/recordatorioEnviado— se retiró el 2026-09-30: nada lo
+    // escribía ya y corría dos consultas inútiles cada 5 minutos, sin la ventana de gracia.)
 });
 
 // ---------- Bot del sitio web (asistente con Claude) ----------
@@ -2391,8 +2370,10 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const before = event.data.before.exists ? event.data.before.data() : {};
-    if (after.estado !== 'completado' || before.estado === 'completado' || after.informeObraId) return;
-    try { await generarInformeObra(event.params.id, after); }
+    // Un trabajo reabierto y completado de nuevo SÍ regenera su informe (generarInformeObra es estable e idempotente
+    // desde 2026-09-29: conserva fechaCierre y actualiza el mensaje). Antes `after.informeObraId` lo impedía.
+    if (after.estado !== 'completado' || before.estado === 'completado') return;
+    try { await generarInformeObra(event.params.id, after, { push: !after.informeObraId }); }
     catch (e) { console.error('informeObraAlCompletar', event.params.id, e); }
 });
 
