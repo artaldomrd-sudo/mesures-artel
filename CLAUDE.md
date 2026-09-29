@@ -2440,6 +2440,22 @@ mano Woof Woof y Plaza Manuela; (4) el modo demo de `parte-diario.html` ya no tr
 mensaje de gerencia existente en vez de borrarlo y recrearlo (conserva acuses), no manda push en recálculos, y los triggers
 de parte/viaje solo recalculan si cambió la huella de obra/horas/costo (una nota o el envío del borrador ya no regeneran).
 
+### Cuentas espejo para pruebas de gerencia (2026-09-30)
+
+Usuario: «una opción mucho más práctica para verificar fallos o ver cómo se porta la página de cada uno». El equipo sigue
+entrando con Google; gerencia tiene por cada persona real una **cuenta espejo** `espejo.<local>@artal.test` (`usuarios/{espejo}`
+con `cuentaPrueba:true`, `espejoDe: correoReal`, mismos `rol`/`activo`/`paginasExtra`/`paginasBloqueadas`) que entra con
+correo+contraseña y ve la plataforma con las reglas de Firestore reales. Piezas: `espejoCrear` (onRequest admin; crear /
+`clave` / `borrar`; la contraseña se devuelve UNA vez y no se guarda), `sincronizarEquipo` (los espejos NUNCA van a `equipo` →
+no salen en listas de instaladores, puntos, calendario; y copia roles/permisos del real a su espejo al cambiar), `equipoSync`
+los excluye. Pantalla de acceso (`auth-common.js`): enlace discreto «Entrar con usuario y contraseña» SOLO en dispositivos con
+`localStorage.artal_espejos='1'` (casilla en Usuarios y roles → «🪞 Cuentas espejo», o abrir cualquier pantalla con
+`?espejos=1`; `?espejos=0` lo quita). Requiere el proveedor **Correo electrónico/contraseña** habilitado en Firebase
+Authentication (lo habilita el usuario). Límites: el espejo no es la persona en los cruces por correo (asignados, encargado
+del parte, rrhhEmpleados.correo, rrhhReuniones) → ve la pantalla con sus permisos pero no «sus» trabajos; no se crean
+espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramientas/servidor.js` (servidor estático
+`http://127.0.0.1:8787`, `.claude/launch.json` «ops-local») y `herramientas/.espejos.json` (credenciales generadas por script).
+
 ### Correcciones ALTO de la auditoría (2026-09-30)
 
 - Los push del sistema ya apuntan a `ops/instalacion.html`; `instalador.html`, `instalaciones.html` y `ayudante.html` quedaron

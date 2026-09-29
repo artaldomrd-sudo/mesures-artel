@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
@@ -745,13 +746,65 @@ function espejoEquipo(data) {
     const rol = Array.isArray(data.rol) ? data.rol : (data.rol ? [data.rol] : []);
     return { nombre: data.nombre || '', rol, activo: data.activo !== false, actualizado: FieldValue.serverTimestamp() };
 }
+// ---------- Cuentas ESPEJO (pruebas de gerencia, 2026-09-30) ----------
+// Una cuenta espejo (`cuentaPrueba: true`, `espejoDe: correoReal`) copia los roles y permisos de página de una persona
+// real y entra con correo+contraseña (solo gerencia, enlace discreto en la pantalla de acceso). Sirve para ver la
+// plataforma exactamente como la ve esa persona, con las reglas de Firestore reales. Nunca va al directorio `equipo`
+// (así no aparece en listas de instaladores, puntos, calendario…) y se mantiene sincronizada sola cuando cambia el real.
+const ESPEJO_DOMINIO = '@artal.test';
+function emailEspejoDe(emailReal) {
+    const local = String(emailReal || '').toLowerCase().split('@')[0].replace(/[^a-z0-9.]/g, '').replace(/\.+/g, '.').slice(0, 40);
+    return 'espejo.' + local + ESPEJO_DOMINIO;
+}
+function camposEspejo(real) {
+    return {
+        nombre: (real.nombre || real.espejoDe || 'Usuario') + ' (espejo)', rol: Array.isArray(real.rol) ? real.rol : (real.rol ? [real.rol] : []),
+        activo: real.activo !== false, paginasExtra: Array.isArray(real.paginasExtra) ? real.paginasExtra : [], paginasBloqueadas: Array.isArray(real.paginasBloqueadas) ? real.paginasBloqueadas : [],
+        cuentaPrueba: true, sincronizado: FieldValue.serverTimestamp()
+    };
+}
 exports.sincronizarEquipo = onDocumentWritten('usuarios/{email}', async (event) => {
     const email = event.params.email;
     const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
     try {
-        if (!after) await db.collection('equipo').doc(email).delete();
+        if (!after || after.cuentaPrueba) await db.collection('equipo').doc(email).delete();   // las cuentas espejo NUNCA van al directorio
         else await db.collection('equipo').doc(email).set(espejoEquipo(after));
+        // Si es una persona real con espejo, el espejo hereda roles/permisos/activo.
+        if (after && !after.cuentaPrueba) {
+            const esp = await db.collection('usuarios').where('espejoDe', '==', email).get();
+            for (const d of esp.docs) await d.ref.set(camposEspejo({ ...after, espejoDe: email }), { merge: true });
+        }
     } catch (e) { console.error('sincronizarEquipo', email, e); }
+});
+// Crear / renovar clave / borrar una cuenta espejo. Solo admin. POST {email, accion?: 'crear'|'clave'|'borrar'}.
+// Devuelve {espejo, password} — la contraseña se muestra UNA vez en pantalla y no se guarda en ningún lado.
+exports.espejoCrear = onRequest({ cors: true }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'no-autorizado' }); return; }
+    const emailReal = String((req.body || {}).email || '').trim().toLowerCase();
+    const accion = String((req.body || {}).accion || 'crear');
+    if (!emailReal.includes('@')) { res.status(400).json({ error: 'email' }); return; }
+    try {
+        const realSnap = await db.collection('usuarios').doc(emailReal).get();
+        if (!realSnap.exists) { res.status(404).json({ error: 'usuario real no existe' }); return; }
+        const real = realSnap.data();
+        if (real.cuentaPrueba) { res.status(400).json({ error: 'ese ya es un espejo' }); return; }
+        const espejo = emailEspejoDe(emailReal);
+        if (accion === 'borrar') {
+            try { const u = await getAuth().getUserByEmail(espejo); await getAuth().deleteUser(u.uid); } catch (_) { }
+            await db.collection('usuarios').doc(espejo).delete();
+            await db.collection('equipo').doc(espejo).delete().catch(() => { });
+            res.status(200).json({ ok: true, espejo, borrado: true }); return;
+        }
+        const ABC = 'abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+        const password = [...crypto.randomBytes(12)].map((b) => ABC[b % ABC.length]).join('');
+        let u; try { u = await getAuth().getUserByEmail(espejo); await getAuth().updateUser(u.uid, { password, disabled: false, displayName: (real.nombre || '') + ' (espejo)' }); }
+        catch (_) { u = await getAuth().createUser({ email: espejo, password, displayName: (real.nombre || '') + ' (espejo)', emailVerified: true }); }
+        await db.collection('usuarios').doc(espejo).set({ ...camposEspejo(real), espejoDe: emailReal, creadoPor: admin, creado: FieldValue.serverTimestamp() }, { merge: true });
+        console.log('espejo', accion, espejo, 'por', admin);
+        res.status(200).json({ ok: true, espejo, password, nombre: real.nombre || '' });
+    } catch (e) { console.error('espejoCrear', emailReal, e); res.status(500).json({ error: String((e && e.message) || e) }); }
 });
 // Reconstruye TODO el directorio (una vez, o si se desincronizó). Solo admin.
 exports.equipoSync = onRequest({ cors: true }, async (req, res) => {
@@ -761,7 +814,7 @@ exports.equipoSync = onRequest({ cors: true }, async (req, res) => {
     try {
         const snap = await db.collection('usuarios').get();
         const batch = db.batch();
-        snap.docs.forEach((d) => batch.set(db.collection('equipo').doc(d.id), espejoEquipo(d.data())));
+        snap.docs.forEach((d) => { if (d.data().cuentaPrueba) batch.delete(db.collection('equipo').doc(d.id)); else batch.set(db.collection('equipo').doc(d.id), espejoEquipo(d.data())); });
         const eq = await db.collection('equipo').get();
         const vivos = new Set(snap.docs.map(d => d.id));
         eq.docs.forEach((d) => { if (!vivos.has(d.id)) batch.delete(d.ref); });

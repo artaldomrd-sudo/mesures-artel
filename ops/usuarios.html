@@ -127,6 +127,13 @@
             </div>
         </div>
         <div id="lista"><p class="muted">Cargando…</p></div>
+        <div class="box" id="box-espejos" style="margin-top:18px">
+            <h3 style="margin:0 0 6px">🪞 Cuentas espejo (pruebas de gerencia)</h3>
+            <p class="muted" style="margin:0 0 10px;font-size:13px">Cada espejo copia los roles y permisos de una persona real y entra con <b>usuario y contraseña</b> para ver la plataforma exactamente como la ve ella (reglas reales incluidas). No aparecen en listas de instaladores, puntos ni calendario, y se sincronizan solos cuando cambias a la persona real. El enlace «Entrar con usuario y contraseña» de la pantalla de acceso solo se muestra en los dispositivos donde lo actives aquí.</p>
+            <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:10px"><input type="checkbox" id="espejos-dispositivo" onchange="toggleEspejosDispositivo(this.checked)"> Mostrar el acceso con usuario y contraseña <b>en este dispositivo</b></label>
+            <div id="espejos-lista" class="muted">Cargando…</div>
+            <div class="msg" id="espejos-msg" style="margin-top:8px"></div>
+        </div>
     </div>
 </main>
 
@@ -208,7 +215,11 @@
         { id: 'contratista', nombre: 'Contratista (ALUCUFEL)', desc: 'Sube las cotizaciones de costo de los pedidos.' },
         { id: 'chofer', nombre: 'Transportes', desc: 'Recoger en fábrica, marcar en ruta y entregar en obra.' },
         { id: 'instalador', nombre: 'Instalador', desc: 'Agenda de instalación, checklist en obra, confirmar con biometría.' },
-        { id: 'ayudante', nombre: 'Ayudante de instalación', desc: 'Ve la agenda y las obras; no cambia estados.' }
+        { id: 'ayudante', nombre: 'Ayudante de instalación', desc: 'Ve la agenda y las obras; no cambia estados.' },
+        { id: 'inbox_admin', nombre: 'Inbox: Administrador', desc: 'Inbox omnicanal (WhatsApp): equipos, etiquetas, plantillas, reglas, SLA, IA, estadísticas y auditoría. El Owner del inbox es el admin de la plataforma.' },
+        { id: 'inbox_supervisor', nombre: 'Inbox: Supervisor', desc: 'Ve todas las conversaciones del inbox, asigna/reasigna/transfiere y ve estadísticas.' },
+        { id: 'inbox_agente', nombre: 'Inbox: Agente', desc: 'Responde por WhatsApp desde la bandeja compartida: sus conversaciones, las de su equipo y las sin asignar; notas, etiquetas, cerrar.' },
+        { id: 'inbox_lector', nombre: 'Inbox: Solo lectura', desc: 'Ve el inbox y el dashboard sin poder escribir ni asignar.' }
     ];
     document.getElementById('roles-grid').innerHTML = ROLES.map(r => `<label class="rol"><input type="checkbox" value="${r.id}"><div><b>${esc(r.nombre)}</b><span>${esc(r.desc)}</span></div></label>`).join('');
     document.querySelectorAll('#roles-grid input').forEach(i => i.addEventListener('change', renderPermisos));
@@ -276,9 +287,11 @@
 
     window.renderLista = function () {
         const q = (document.getElementById('buscar').value || '').trim().toLowerCase();
-        const lista = usuarios.filter(u => !q || [u.nombre, u.email, ...rolesDe(u)].join(' ').toLowerCase().includes(q));
-        const admins = usuarios.filter(u => u.activo !== false && rolesDe(u).includes('admin')).length;
-        document.getElementById('u-count').textContent = `(${usuarios.length} · ${admins} admin${admins === 1 ? '' : 's'} activo${admins === 1 ? '' : 's'})`;
+        renderEspejos();
+        const reales = usuarios.filter(u => !u.cuentaPrueba);   // los espejos van en su propia caja abajo
+        const lista = reales.filter(u => !q || [u.nombre, u.email, ...rolesDe(u)].join(' ').toLowerCase().includes(q));
+        const admins = reales.filter(u => u.activo !== false && rolesDe(u).includes('admin')).length;
+        document.getElementById('u-count').textContent = `(${reales.length} · ${admins} admin${admins === 1 ? '' : 's'} activo${admins === 1 ? '' : 's'})`;
         if (!lista.length) { document.getElementById('lista').innerHTML = '<p class="muted">No hay usuarios que coincidan.</p>'; return; }
         document.getElementById('lista').innerHTML = lista.map(u => {
             const off = u.activo === false, roles = rolesDe(u), yo = u.email === usuario.email;
@@ -372,6 +385,38 @@
     };
     // Quitar el 2FA a un usuario (perdió el teléfono): lo hace la Cloud Function mfaReset con el Admin
     // SDK (un cliente no puede tocar los factores de OTRA cuenta). Al volver a entrar lo inscribe de nuevo.
+    // ---- Cuentas espejo (2026-09-30) ----
+    const espejoDeReal = (email) => usuarios.find(u => u.cuentaPrueba && u.espejoDe === email);
+    function renderEspejos() {
+        const box = document.getElementById('espejos-lista'); if (!box) return;
+        try { document.getElementById('espejos-dispositivo').checked = localStorage.getItem('artal_espejos') === '1'; } catch (_) { }
+        if (!esAdmin) { box.innerHTML = '<span class="muted">Solo administradores.</span>'; return; }
+        const reales = usuarios.filter(u => !u.cuentaPrueba && u.activo !== false);
+        box.innerHTML = reales.map(u => {
+            const e = espejoDeReal(u.email);
+            return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid #eef1f4;font-size:13.5px">
+                <div style="flex:1;min-width:200px"><b>${esc(u.nombre || u.email)}</b> <span class="muted">· ${esc(rolesDe(u).join(', '))}</span>${e ? `<div class="mail">🪞 ${esc(e.email)}${e.activo === false ? ' · <span class="chip off">Desactivado</span>' : ''}</div>` : ''}</div>
+                ${e ? `<button class="act sec" onclick="espejoAccion('${esc(u.email)}','clave')" title="Genera una contraseña nueva (la anterior deja de servir)">🔑 Nueva clave</button>
+                       <button class="act sec" onclick="espejoAccion('${esc(u.email)}','borrar')">🗑 Borrar espejo</button>`
+                    : `<button class="act sec" onclick="espejoAccion('${esc(u.email)}','crear')">🪞 Crear espejo</button>`}
+            </div>`;
+        }).join('') || '<span class="muted">No hay usuarios activos.</span>';
+    }
+    window.toggleEspejosDispositivo = function (on) { try { if (on) localStorage.setItem('artal_espejos', '1'); else localStorage.removeItem('artal_espejos'); } catch (_) { } };
+    window.espejoAccion = async function (email, accion) {
+        const u = usuarios.find(x => x.email === email); if (!u || !esAdmin) return;
+        if (accion === 'borrar' && !confirm('¿Borrar la cuenta espejo de ' + (u.nombre || email) + '?')) return;
+        const m = document.getElementById('espejos-msg'); m.textContent = 'Procesando…'; m.className = 'msg';
+        try {
+            const idToken = await auth.currentUser.getIdToken();
+            const r = await fetch('https://us-central1-artal-operaciones.cloudfunctions.net/espejoCrear', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + idToken }, body: JSON.stringify({ email, accion }) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+            if (j.borrado) { m.textContent = '✓ Espejo borrado.'; m.className = 'msg ok'; return; }
+            m.innerHTML = `✓ Espejo de <b>${esc(u.nombre || email)}</b> listo. Usuario: <code>${esc(j.espejo)}</code> · Contraseña: <code id="esp-pass">${esc(j.password)}</code> <button class="act sec" onclick="navigator.clipboard.writeText('${esc(j.espejo)} / ${esc(j.password)}').then(()=>alert('Copiado'))">⧉ Copiar</button><br><span class="muted">La contraseña se muestra UNA sola vez; si la pierdes, «Nueva clave».</span>`;
+            m.className = 'msg ok';
+        } catch (e) { m.textContent = 'No se pudo: ' + (e.message || e); m.className = 'msg err'; }
+    };
     window.quitarMFA = async function (email) {
         const u = usuarios.find(x => x.email === email); if (!u || !esAdmin) return;
         if (!confirm('¿Quitar la verificación en 2 pasos a ' + (u.nombre || email) + '?\n\nLa próxima vez que entre, tendrá que volver a configurarla con su app autenticadora.')) return;

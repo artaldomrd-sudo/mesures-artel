@@ -5,7 +5,7 @@
 //   // usuario = { email, nombre, rol }
 import { auth, googleProvider, db } from './firebase-config.js';
 import { rootPath } from './paths.js';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+import { signInWithPopup, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { paginaActual, aplicarPermisosEnlaces } from './paginas.js';
 
@@ -72,14 +72,35 @@ function fallaVerificacion(detalle) {
   showRetryScreen(detalle);
 }
 
+// Acceso con usuario y contraseña SOLO para las cuentas espejo de gerencia (2026-09-30). El enlace no se muestra a
+// nadie salvo en un dispositivo donde gerencia lo activó (localStorage `artal_espejos` = '1', desde Usuarios y roles o
+// abriendo cualquier pantalla con `?espejos=1`). Las personas reales siguen entrando con Google.
+try { if (new URLSearchParams(location.search).get('espejos') === '1') localStorage.setItem('artal_espejos', '1'); if (new URLSearchParams(location.search).get('espejos') === '0') localStorage.removeItem('artal_espejos'); } catch (_) { }
+const espejosActivos = () => { try { return localStorage.getItem('artal_espejos') === '1'; } catch (_) { return false; } };
+
 function showLoginScreen() {
   const el = showOverlay(
     '<img src="' + rootPath('logo.png') + '" alt="ARTAL" style="height:64px;width:auto;object-fit:contain;">' +
     '<h2 style="margin:0;font-size:20px;">ARTAL Operaciones</h2>' +
     '<button id="auth-google-btn" style="font-size:16px;padding:14px 28px;border-radius:10px;' +
     'border:none;background:#fff;color:#0A3D62;cursor:pointer;font-weight:700;min-height:48px;">' +
-    'Iniciar sesión con Google</button>'
+    'Iniciar sesión con Google</button>' +
+    (espejosActivos() ? '<a href="#" id="auth-espejo-link" style="color:#fff;opacity:.7;font-size:13px;margin-top:10px;">Entrar con usuario y contraseña</a>' +
+      '<form id="auth-espejo-form" style="display:none;flex-direction:column;gap:8px;width:260px;margin-top:6px;">' +
+      '<input id="auth-espejo-email" type="email" placeholder="espejo.nombre@artal.test" autocomplete="username" style="padding:10px;border-radius:8px;border:none;font-size:15px;">' +
+      '<input id="auth-espejo-pass" type="password" placeholder="Contraseña" autocomplete="current-password" style="padding:10px;border-radius:8px;border:none;font-size:15px;">' +
+      '<button type="submit" style="padding:10px;border-radius:8px;border:1px solid #fff;background:transparent;color:#fff;font-weight:700;cursor:pointer;">Entrar</button>' +
+      '<div id="auth-espejo-msg" style="font-size:12px;opacity:.85;"></div></form>' : '')
   );
+  const lk = document.getElementById('auth-espejo-link');
+  if (lk) {
+    lk.onclick = (e) => { e.preventDefault(); const f = document.getElementById('auth-espejo-form'); f.style.display = f.style.display === 'none' ? 'flex' : 'none'; };
+    document.getElementById('auth-espejo-form').onsubmit = async (e) => {
+      e.preventDefault(); const msg = document.getElementById('auth-espejo-msg'); msg.textContent = 'Entrando…';
+      try { await signInWithEmailAndPassword(auth, document.getElementById('auth-espejo-email').value.trim(), document.getElementById('auth-espejo-pass').value); }
+      catch (err) { msg.textContent = 'No se pudo entrar: ' + (err && err.code === 'auth/operation-not-allowed' ? 'el acceso con contraseña no está habilitado en Firebase (Authentication → Sign-in method).' : (err.code || err.message)); }
+    };
+  }
   document.getElementById('auth-google-btn').onclick = () => {
     signInWithPopup(auth, googleProvider).catch(async (err) => {
       // Cuenta con verificación en 2 pasos: Google ya validó la contraseña; ahora el código.
