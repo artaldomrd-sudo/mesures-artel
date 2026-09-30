@@ -818,7 +818,9 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     (`planViewAbatible('puerta')`); resumen "puerta flotante: vidrio sin marco · kit botella (pivote
     arriba y abajo) · tirador 8" · cerradura media luna + piso · apertura adentro 1 hoja · abre izq.".
     **Sin marco de aluminio alrededor** (usuario, mismo día): el marco exterior de la columna (`bandRect`)
-    se dibuja por celda (`frameSeg`) saltando las celdas `pflot` y el lado abierto de un `pf`.
+    se dibuja por celda (`frameSeg`) saltando las celdas `pflot` y el lado abierto de un `pf`; el muro `vacio`
+    tampoco lleva marco (foto del usuario: el P40 bajaba alrededor del muro), y un lado es exterior cuando el
+    vecino de arriba/abajo es `pflot`/`vacio` o no existe (`sinMarco`).
     **Paño Fijo con marco en 3 lados** (`cfg.marco_abierto` `''|'izq'|'der'|'arriba'|'abajo'`, fila
     "Marco" del `pf`): `extrudedPanelSides(uid,x,y,w,h,{t,b,l,r})` dibuja el perfil solo en esos lados y el
     canto fino de vidrio en el abierto → junta vidrio/vidrio con la puerta flotante vecina; resumen "marco en
@@ -2795,3 +2797,29 @@ completo y decisiones en `ops/inbox-DISEÑO.md`** (leerlo antes de tocar el mód
   chat/SMS SOLO diseñados, no funcionan todavía.
 - `verify.mjs` no cubre nada de esto. Comprobar sintaxis con `node --check functions/inbox.js` y el
   extractor de `<script type="module">` (scratch `check-html.mjs`); probar la UI con `?demo=1`.
+
+## Plataforma B2B mayorista (`b2b/`) — cuarta área (2026-09-30)
+
+Pedido del usuario: convertir a ARTAL en **mayorista** para empresas de aluminio, decoración,
+arquitectos e ingenieros, con espacio cliente (RNC o particular con cédula), catálogo en línea,
+carrito, **retiro en local o delivery a la obra/taller** (la fuerza de venta), programa de fidelidad
+y asesoría por chatbot/operador. Estilo visual = `sitio-web/index.html` (tokens azul/amarillo,
+cristal, Archivo + Inter, píldora de nav, orbes); organización de catálogo tipo Louis Vuitton
+(categorías claras, producto grande y limpio, mega menú, ficha con variantes).
+- **Área de sesión `b2b`** (sesión "Plataforma B2B Artal Dominicana"); el hook `area-sesion.sh` la
+  guarda como cuarta área junto a cuaderno/sistema/sitio. Producción sigue siendo `main`.
+- **Un solo archivo `b2b/index.html`** (SPA con hash-router, sin build): vistas `#inicio`,
+  `#catalogo[/cat]`, `#producto/id`, `#carrito`, `#checkout` (3 pasos: datos → entrega retiro/delivery
+  → pago), `#pedido-ok/num`, `#registro`, `#cuenta[/sec]`, `#fidelidad`, `#delivery`, `#asesoria`.
+  Datos en memoria (`CATS`, `PRODUCTOS` ~45 ítems de MUESTRA con escalas mayoristas `ESC` 1/10/50,
+  `NIVELES` Bronce→Platino, `DELIVERY_ZONAS`); persistencia solo en `localStorage`
+  (`artal_b2b_cart/cuenta/pedidos`); `demoLogin()` = cuenta "Aluminios del Este" nivel Oro.
+  Fotos reutilizadas de `../sitio-web/productos/`; lo que no tiene foto se dibuja con `ilus(tipo, acabado)`
+  (SVG por código con la paleta `PAL` del acabado, mismo criterio que el cuaderno). Chat = respuestas
+  fijas por intención (búsqueda de producto ANTES que delivery/precios, con `STOP` de palabras vacías).
+- **Es una MAQUETA (v0.1)**: precios de muestra, sin Firebase todavía. Siguiente paso previsto: catálogo,
+  cuentas y pedidos en Firestore (misma consola que `ops/`), validación de RNC, pagos reales.
+- Servidor local propio: `.claude/launch.json` → `b2b-local` (`herramientas/servidor-b2b.js`, puerto
+  8795, sirve la raíz del repo) porque `ops-local` (8787) suele estar ocupado por la otra sesión.
+  Abrir `http://127.0.0.1:8795/b2b/`. Sintaxis del `<script>`: `node -e` con `new Function` (no hay
+  `verify.mjs` para esta área).

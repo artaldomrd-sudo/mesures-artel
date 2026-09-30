@@ -126,6 +126,9 @@ for (const modo of ['integrado', 'suma']) {
   try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'negro', verPlanta: true, esquinaLado: 'der', esquinaCols: 1, tubos: { entre: true, entreModo: modo, sup: true, medida: '100 x 45', incluidos: true }, cols: [{ w: 1030, rows: [{ h: 2295, celda: 'pflot', apertura: 'adentro_1', lado: 'izq', cerr_luna: 'si', cerr_piso: 'si' }] }, { w: 700, rows: [{ h: 2295, celda: 'pf', marco_abierto: 'izq' }] }, { w: 1575, rows: [{ h: 2505, celda: 'pf' }] }] }); ok++; }
   catch (e) { fail++; console.error('  pflot + junta vidrio ' + modo + ':', e.message); }
 }
+// Foto 2026-09-30: puerta flotante + columna PF (marco 3 lados) sobre muro vacío → el perfil no rodea el muro
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', color_vidrio: 'natural', verPlanta: true, cols: [{ w: 870, rows: [{ h: 2525, celda: 'pflot', apertura: 'adentro_1', lado: 'izq', tirador: '12' }] }, { w: 1770, rows: [{ h: 1375, celda: 'pf', marco_abierto: 'izq', alu: 'p40_ventana' }, { h: 1150, celda: 'vacio' }] }] }); ok++; }
+catch (e) { fail++; console.error('  pflot + pf sobre vacio:', e.message); }
 // Puerta de ducha: siempre bisagras pared/vidrio aunque el panel guardado diga botella
 try { ctx.__render('facade', { type: 'ducha_facade', categoria: 'cerramiento', alto: 2000, paneles: [{ tipo: 'fijo', ancho: 700, color_vidrio: 'natural', herraje_color: 'cromado', fijacion: 'conectores' }, { tipo: 'puerta', ancho: 700, orientacion: 'D', bisagras: 'botella', color_vidrio: 'natural', herraje_color: 'negro', tirador: '8' }] }); ok++; }
 catch (e) { fail++; console.error('  ducha puerta bisagras:', e.message); }
