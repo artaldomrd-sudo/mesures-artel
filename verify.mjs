@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'cort_ondas', 'pleg', 'mosq'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'cort_ondas', 'pleg', 'mosq', 'door_flot'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -118,6 +118,12 @@ for (const ot of ['blackout', 'visillo', 'doble']) for (const ap of ['central', 
   try { ctx.__render('card1', { type: 'cort_ondas', categoria: 'cortina', ancho: 3000, alto: 2600, orientacion: 'D', ondas_tipo: ot, ondas_apertura: ap, mecanismo: mec, motor_lado: ml, color_cortina: 'taupe', color_visillo: 'crudo', ondas_riel: 'pared' }); ok++; }
   catch (e) { fail++; console.error(`  ondas ${ot} ${ap} ${ml}/${mec}:`, e.message); }
 }
+// Puerta flotante (kit botella) en la Fachada Compuesta: 1 hoja izq/der adentro/afuera, 2 hojas, con tirador y cerradura
+try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'negro', verPlanta: true, cols: [{ w: 900, rows: [{ h: 2200, celda: 'pflot', apertura: 'adentro_1', lado: 'izq', tirador: '8', cerr_vidrio: 'luna' }] }, { w: 900, rows: [{ h: 2200, celda: 'pflot', apertura: 'afuera_1', lado: 'der', tirador: 'redondo', cerr_vidrio: 'piso' }] }, { w: 1800, rows: [{ h: 2200, celda: 'pflot', apertura: 'adentro_2', tirador: '12' }] }, { w: 1000, rows: [{ h: 2200, celda: 'pf' }] }], fajaArriba: { h: 400, celda: 'pf' } }); ok++; }
+catch (e) { fail++; console.error('  pflot fachada:', e.message); }
+// Puerta de ducha: siempre bisagras pared/vidrio aunque el panel guardado diga botella
+try { ctx.__render('facade', { type: 'ducha_facade', categoria: 'cerramiento', alto: 2000, paneles: [{ tipo: 'fijo', ancho: 700, color_vidrio: 'natural', herraje_color: 'cromado', fijacion: 'conectores' }, { tipo: 'puerta', ancho: 700, orientacion: 'D', bisagras: 'botella', color_vidrio: 'natural', herraje_color: 'negro', tirador: '8' }] }); ok++; }
+catch (e) { fail++; console.error('  ducha puerta bisagras:', e.message); }
 // Mosquiteras: 4 tipos × 1/2 hojas × izq/der, más una sin medidas (caja completa)
 for (const t of ['tela', 'fija', 'corredera', 'deslizante']) for (const h of [1, 2]) for (const o of ['I', 'D']) {
   try { ctx.__render('card1', { type: 'mosq', categoria: 'mosquitera', ancho: h === 2 ? 1800 : 900, alto: 1400, orientacion: o, mosq_tipo: t, mosq_hojas: h, mosq_tela: t === 'deslizante' ? 'plisada' : 'fibra', mosq_tela_color: 'negro', mosq_fijacion: t === 'tela' ? 'iman' : 'clips', tipo_aluminio: 'E70', color_perfil: 'negro' }); ok++; }

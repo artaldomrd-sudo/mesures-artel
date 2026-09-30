@@ -72,8 +72,13 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   `win_souf` (soufflet), `door_abat` (puerta abisagrada de aluminio).
 - **Correderas**: `cor2, cor3, cor4_cent, cor4_lat, cor6_cent, cor6_lat`.
 - **Galandajes** (plegables): `gal1, gal2_lat, gal2_cent, gal3_3v, gal4_2v, gal4_4v, gal6_3v`.
-- **Vidrios y Mamparas**: `ducha_facade` ("Vidrio de Ducha", constructor) y `fachada_din`
-  ("Paños Fijos"). *(Los items sueltos `mamp_fija`, `door_glass`, `door_slide` ya NO están en el
+- **Vidrios y Mamparas**: `ducha_facade` ("Vidrio de Ducha", constructor), `fachada_din`
+  ("Paños Fijos") y **`door_flot` "Puerta Flotante (kit botella)"** (2026-09-30, `categoria:
+  'puerta_vidrio'`): vidrio templado sin marco con pivote arriba/abajo — se dibuja como `door_glass`
+  con `bisagras` forzado a botella (switch de `renderSVG`, `cadTechnical`, `getPanelRects`), menú sin
+  selector de bisagras (cajita "Kit botella"), resumen "Puerta flotante: vidrio templado sin marco · kit
+  botella…" + herrajes/tirador/cerradura. **Separación pedida por el usuario**: la puerta de DUCHA es
+  siempre con bisagras pared/vidrio; la de kit botella es esta. *(Los items sueltos `mamp_fija`, `door_glass`, `door_slide` ya NO están en el
   menú: viven dentro de "Vidrio de Ducha", pero sus `type` siguen existiendo para proyectos
   guardados y para el dibujo libre CAD.)*
 - **Barandas**: `baranda_bal` (baranda con constructor de tramos). *(`ducha_cab` "Cabina de
@@ -633,6 +638,12 @@ estilo simplificado del CAD.
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).
+- **Puerta de ducha = SIEMPRE bisagras pared/vidrio (usuario 2026-09-30)**: se quitó el select Kit
+  Botella/Bisagras de `renderPanelOptions` (queda una cajita "Bisagras pared / vidrio"), `facadeAddPanel`
+  pone `bisagras:'bisagra'` y la `mini` de `renderFacade` fuerza `'bisagra'` para `tipo==='puerta'`
+  aunque el panel guardado diga `'botella'`. La puerta con kit botella es la **Puerta Flotante**
+  (`door_flot`, ítem propio, y celda `pflot` de la Fachada Compuesta). El resumen dice "Puerta Abatible
+  (bisagras pared/vidrio)".
 - **Esquina a 90° (2026-09-18, pedido del usuario)**: `state.esquinaAfter` = nº de paneles del lado A
   (0 = sin esquina; `facadeEsquinaK` lo acota a 1..n−1; `facadeInvert` lo refleja: n−k). Selector
   "Esquina 90°" en el constructor (solo con 2+ paneles). `renderFacade`: la elevación sigue
@@ -795,7 +806,14 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     oculta los centrales** (pliegan a dos lados, imposible en una esquina — regla explícita del
     usuario; `celdaList(cur)` en `renderGridBuilder`, conserva el valor ya elegido), `puerta`, `ventana`
     (abisagradas), `osci`, `proy`, `louvers`, `vacio` (muro con hatch, `wallBlock`). **Nombres
-    idénticos a los ítems del menú lateral**, a propósito.
+    idénticos a los ítems del menú lateral**, a propósito. **`pflot` Puerta Flotante (2026-09-30)**:
+    vidrio templado SIN marco (`glassOnlyPanel`, `ALU_POR_CELDA.pflot = []`) con kit botella = 2
+    pivotes (arriba/abajo) del lado de la bisagra, chevron como la abisagrada (`apertura` adentro
+    punteado / afuera continuo, 1 o 2 hojas, `lado`), `tirador` (redondo/5/8/12/16/ninguno, default
+    redondo) y `cerr_vidrio` (luna/digital/piso, `cerraduraMarks`); color de herrajes = el global de la
+    fachada (`gridCell.herraje`, lo fija `renderFachadaGrid`). Planta y `needs` como `puerta`
+    (`planViewAbatible('puerta')`); resumen "puerta flotante: vidrio sin marco · kit botella (pivote
+    arriba y abajo) · tirador 8" · cerradura media luna · apertura adentro 1 hoja · abre izq.".
   - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
     tipo (`pf`→P40 ventana/puerta; `puerta`→P40 puerta/Titan; correderas→P92/E70/E100/E200;
     `louvers`/`vacio`→ninguno). `celdaAluOpts(celda)` / `celdaAluDefault(celda)`.
