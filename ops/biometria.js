@@ -47,7 +47,7 @@ function credsDe(d) {
 
 // ¿El usuario ya registró biometría en ALGÚN dispositivo?
 export async function biometriaRegistrada(usuario) {
-  try { const s = await getDoc(doc(db, 'usuarios', usuario.email)); return credsDe(s.exists() ? s.data() : null).length > 0; }
+  try { const s = await getDoc(doc(db, 'usuarios', usuario.emailAuth || usuario.email)); return credsDe(s.exists() ? s.data() : null).length > 0; }
   catch (_) { return false; }
 }
 
@@ -67,7 +67,7 @@ export async function registrarBiometria(usuario) {
   });
   if (!cred || !cred.rawId) throw new Error('No se pudo registrar la biometría.');
   const entrada = { credentialId: bufToB64url(cred.rawId), registradoEn: new Date().toISOString(), dispositivo: (navigator.userAgent || '').slice(0, 140) };
-  const ref = doc(db, 'usuarios', usuario.email);
+  const ref = doc(db, 'usuarios', usuario.emailAuth || usuario.email);
   let prev = [];
   try {
     const s = await getDoc(ref); const d = s.exists() ? s.data() : null;
@@ -83,7 +83,7 @@ export async function registrarBiometria(usuario) {
 // si no ha registrado ninguna. allowCredentials lleva TODAS sus credenciales; el equipo usa la que tenga.
 export async function confirmarBiometria(usuario) {
   if (!apiDisponible()) throw new Error('Este dispositivo/navegador no soporta biometría.');
-  const s = await getDoc(doc(db, 'usuarios', usuario.email));
+  const s = await getDoc(doc(db, 'usuarios', usuario.emailAuth || usuario.email));
   const ids = credsDe(s.exists() ? s.data() : null);
   if (!ids.length) throw new Error('SIN_REGISTRO');
   const assertion = await navigator.credentials.get({

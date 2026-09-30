@@ -208,7 +208,7 @@ export function requireAuth(rolesPermitidos) {
       if (!roles.includes('admin') && !SIN_BLOQUEO_PARTE.includes(pagId)) {
         try {
           const g = await import('./parte-gate.js');
-          const pend = await g.partesPendientes(user.email);
+          const pend = await g.partesPendientes(((data.cuentaPrueba === true && data.espejoDe) ? String(data.espejoDe).toLowerCase() : user.email));
           if (pend.length) {
             const carpeta = location.pathname.replace(/[^/]*$/, ''), opsIdx = carpeta.indexOf('/ops/');
             const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
@@ -223,7 +223,18 @@ export function requireAuth(rolesPermitidos) {
       // concedido) — así nunca "se desactivan" por rotación del token ni porque otro dispositivo
       // activó las suyas. Best-effort: no bloquea la página ni muestra nada si falla.
       import('./notifications.js').then((m) => m.refrescarNotificaciones && m.refrescarNotificaciones({ pedir: data.pedirNotificaciones === true })).catch(() => {});
-      const usuarioObj = { email: user.email, nombre: data.nombre || user.email, rol: roles[0], roles, paginasExtra, paginasBloqueadas };
+      // Cuenta ESPEJO (gerencia): hereda la IDENTIDAD de la persona real (`espejoDe`) para todo lo que es "lo mío"
+      // (reuniones, acuses, trabajos asignados, parte, progreso). `emailAuth` sigue siendo el correo con el que entró (lo
+      // usan PIN, biometría y notificaciones, que son por dispositivo/cuenta). Las reglas de Firestore dejan al espejo
+      // SOLO LEER: cualquier intento de escribir sale rechazado (usuario 2026-09-30: son para mirar).
+      const esEspejo = data.cuentaPrueba === true && !!data.espejoDe;
+      const usuarioObj = { email: esEspejo ? String(data.espejoDe).toLowerCase() : user.email, emailAuth: user.email, esEspejo, nombre: esEspejo ? String(data.nombre || '').replace(/\s*\(espejo\)\s*$/, '') : (data.nombre || user.email), rol: roles[0], roles, paginasExtra, paginasBloqueadas };
+      if (esEspejo && !document.getElementById('espejo-banner')) {
+        const bn = document.createElement('div'); bn.id = 'espejo-banner';
+        bn.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9990;background:#6c3fb5;color:#fff;font:600 12.5px Arimo,Arial,sans-serif;text-align:center;padding:6px 10px;box-shadow:0 -2px 8px rgba(0,0,0,.2);';
+        bn.textContent = '🪞 Vista espejo de ' + usuarioObj.nombre + ' — solo para mirar: cualquier cambio será rechazado.';
+        (document.body || document.documentElement).appendChild(bn);
+      }
       // Esconde mosaicos/enlaces a páginas que no puede ver (hubs). Se repite un momento después por
       // si la página dibuja sus mosaicos con JS tras cargar.
       const ocultar = () => { try { aplicarPermisosEnlaces(usuarioObj); } catch (_) {} };

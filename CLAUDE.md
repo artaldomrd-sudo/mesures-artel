@@ -2482,8 +2482,13 @@ no salen en listas de instaladores, puntos, calendario; y copia roles/permisos d
 los excluye. Pantalla de acceso (`auth-common.js`): enlace discreto «Entrar con usuario y contraseña» SOLO en dispositivos con
 `localStorage.artal_espejos='1'` (casilla en Usuarios y roles → «🪞 Cuentas espejo», o abrir cualquier pantalla con
 `?espejos=1`; `?espejos=0` lo quita). Requiere el proveedor **Correo electrónico/contraseña** habilitado en Firebase
-Authentication (lo habilita el usuario). Límites: el espejo no es la persona en los cruces por correo (asignados, encargado
-del parte, rrhhEmpleados.correo, rrhhReuniones) → ve la pantalla con sus permisos pero no «sus» trabajos; no se crean
+Authentication (lo habilita el usuario). **Identidad heredada (mismo día, usuario: «en la de Wilson no veo las reuniones»)**: `requireAuth` devuelve
+`usuario.email` = correo de la persona REAL (`espejoDe`), `usuario.emailAuth` = correo del espejo (lo usan pin-gate,
+biometria y notifications para su propio doc), `usuario.esEspejo` y un banner morado fijo «🪞 Vista espejo de X — solo
+para mirar». Así reuniones, acuses, «Para ti», encargado del parte y parte-gate se comportan como la persona. Las reglas
+hacen al espejo **solo lectura** (`esEspejo()` + `escribiendo()` dentro de `alguno()`/`puedeEscribir()`, y en
+academiaProgreso, notas, acuses de mensajes, valoraciones y puntos) salvo su propio doc de `usuarios`; `correoEfectivo()`
+da el correo real para leer reuniones/valoraciones «propias». Banco de pruebas: 45 casos (11 de espejo). No se crean
 espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramientas/servidor.js` (servidor estático
 `http://127.0.0.1:8787`, `.claude/launch.json` «ops-local») y `herramientas/.espejos.json` (credenciales generadas por script).
 

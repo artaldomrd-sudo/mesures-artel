@@ -59,7 +59,7 @@ export async function requirePin(usuario, opts) {
     if (!usuario || !usuario.email) return;      // sin usuario no hay a quién pedirle PIN
     if (!(opts && opts.siempre) && desbloqueado()) return;
 
-    const ref = doc(db, 'usuarios', usuario.email);
+    const ref = doc(db, 'usuarios', usuario.emailAuth || usuario.email);
     let pinHash = null, tieneCred = false;
     try {
         const snap = await getDoc(ref);
