@@ -568,7 +568,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-30 10:16</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-30 10:37</div>
         </div>
     </div>
     
@@ -1913,7 +1913,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (celda === 'pflot') {
                     p.push('puerta flotante: vidrio sin marco · kit botella (pivote arriba y abajo)');
                     if (o.tirador === undefined || o.tirador === 'redondo') p.push('tirador redondo'); else if (o.tirador) p.push('tirador ' + o.tirador + '"');
-                    if (o.cerr_vidrio) p.push('cerradura ' + ({ luna: 'media luna', digital: 'digital', piso: 'piso' })[o.cerr_vidrio]);
+                    { const cz = pflotCerr(o), lst = [cz.luna && 'media luna', cz.digital && 'digital', cz.piso && 'piso'].filter(Boolean); if (lst.length) p.push('cerradura ' + lst.join(' + ')); }
                 }
                 if ((celda === 'puerta' || celda === 'pflot' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); else p.push('hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)'); }
                 if (celda === 'osci') p.push((o.apertura || '').includes('2') ? ('2 hojas hacia adentro · hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)') : ('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.')));
@@ -1923,6 +1923,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (o.cerradura) p.push('cerradura ' + (({ llave: 'llave', mariposa: 'mariposa', smartlock: 'Smartlock' })[o.cerradura] || o.cerradura));
                 if (o.mosquitera) p.push('mosq. ' + (o.mosquitera === 'con' ? 'sí' : o.mosquitera));
                 if (o.division && o.division !== 'ninguna') p.push('división ' + (o.division === 'perfil' ? 'con perfil' : 'a tope'));
+                if (celda === 'pf' && o.marco_abierto) p.push('marco en 3 lados: sin perfil ' + ({ izq: 'a la izquierda', der: 'a la derecha', arriba: 'arriba', abajo: 'abajo' })[o.marco_abierto] + ' (junta vidrio/vidrio)');
                 if (celda === 'pf' && (parseInt(o.panos) || 1) > 1) { const np = parseInt(o.panos), wmm = parseInt(o.w) || 0; p.push(`${np} paños iguales${wmm ? ' de ' + Math.round(wmm / np) + ' mm' : ''} · ${o.union === 'tope' ? 'vidrios a tope' : 'división "T" (perfil)'}`); }
                 return p;
             };
@@ -1993,9 +1994,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 tuboLines.push(`Tubo horizontal entre columnas: <b>incluido en la altura total</b>, centrado en la unión (descuenta ${fmt(half)} mm a cada lado${partes.length ? ': ' + partes.join(' · ') : ''})`);
             }
             if (tbz.entre) {
-                const nJ = Math.max(0, cols.length - 1), fmt = v => (Math.round(v * 10) / 10).toString().replace('.0', '');
-                if (gridEntreSuma(state)) tuboLines.push(`Tubo vertical entre columnas: <b>SUMA al ancho total</b> (${nJ} × ${tuboG} mm = +${nJ * tuboG} mm; las columnas conservan su ancho)`);
-                else tuboLines.push(`Tubo vertical entre columnas: <b>integrado en el ancho total</b>, centrado en la unión (descuenta ${fmt(tuboG / 2)} mm a cada columna vecina)`);
+                const nJ = gridJuntasTubo(state), nV = Math.max(0, cols.length - 1) - nJ, fmt = v => (Math.round(v * 10) / 10).toString().replace('.0', '');
+                const sinTubo = nV > 0 ? ` · <b>sin tubo en ${nV === 1 ? 'la junta' : nV + ' juntas'} vidrio/vidrio</b> (puerta flotante / paño con marco abierto: la junta queda libre de aluminio)` : '';
+                if (gridEntreSuma(state)) tuboLines.push(`Tubo vertical entre columnas: <b>SUMA al ancho total</b> (${nJ} × ${tuboG} mm = +${nJ * tuboG} mm; las columnas conservan su ancho)${sinTubo}`);
+                else tuboLines.push(`Tubo vertical entre columnas: <b>integrado en el ancho total</b>, centrado en la unión (descuenta ${fmt(tuboG / 2)} mm a cada columna vecina)${sinTubo}`);
             }
             const tubosLine = tuboLines.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos${tbz.medida ? ` (${tbz.medida} mm)` : ''}:</b>${tuboLines.map(t => `<div style="padding-left:12px; color:#444;">${t}</div>`).join('')}</div>` : '';
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
@@ -2272,7 +2274,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm${penetracionTxt(state) ? `<span style="color:#1e7a46;">${penetracionTxt(state)}</span>` : ''} | Cantidad: ${state.cantidad || 1}</div>`;
             let specs = [];
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
-            { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }
+            if (state.categoria !== 'puerta_vidrio' && state.categoria !== 'mampara') { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }   // vidrio sin perfil (puerta flotante, mampara, puerta de vidrio): no lleva acabado de aluminio
             if(state.vidrio) {
                 if (esNoVidrio(state.vidrio)) specs.push(`Vidrio: ${noVidrioLabel(state.vidrio)} (${headerColor})`);
                 else specs.push(`Vidrio: ${state.vidrio} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`);
@@ -5077,6 +5079,25 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         return s;
     }
 
+    // Paño con marco en SOLO algunos lados (usuario 2026-09-30: Paño Fijo con 3 lados de marco junto a una
+    // Puerta Flotante para que la junta quede vidrio/vidrio). `sides = {t,b,l,r}`; el lado abierto lleva el
+    // canto fino de vidrio de glassOnlyPanel en vez del perfil.
+    function extrudedPanelSides(uid, x, y, w, h, sides) {
+        let s = `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="url(#glass-${uid})" stroke="none"/>` + glassReflection(x, y, w, h);
+        const p = 1.7, f = n => n.toFixed(2);
+        const seg = (x1, y1, x2, y2, on) => on
+            ? `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="#0A3D62" stroke-width="1.4"/>`
+            : `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="#86a8c4" stroke-width="1" stroke-opacity="0.75"/>`;
+        s += seg(x, y, x + w, y, sides.t) + seg(x, y + h, x + w, y + h, sides.b) + seg(x, y, x, y + h, sides.l) + seg(x + w, y, x + w, y + h, sides.r);
+        const inner = (x1, y1, x2, y2) => `<line x1="${f(x1)}" y1="${f(y1)}" x2="${f(x2)}" y2="${f(y2)}" stroke="#1c5a85" stroke-width="0.7"/>`;
+        const ix = x + p, iy = y + p, ix2 = x + w - p, iy2 = y + h - p;
+        if (sides.t) s += inner(sides.l ? ix : x, iy, sides.r ? ix2 : x + w, iy);
+        if (sides.b) s += inner(sides.l ? ix : x, iy2, sides.r ? ix2 : x + w, iy2);
+        if (sides.l) s += inner(ix, sides.t ? iy : y, ix, sides.b ? iy2 : y + h);
+        if (sides.r) s += inner(ix2, sides.t ? iy : y, ix2, sides.b ? iy2 : y + h);
+        return s;
+    }
+
     // Reflejo de vidrio: franjas diagonales suaves (en lugar de una sola línea)
     function glassReflection(x, y, w, h) {
         const band = (ox, ww, op) => {
@@ -6736,7 +6757,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const g = gridTuboG(state.tubos), iFa = gridFajaInfo(state, state.fajaArriba, 'arriba');
         return ((state.fajaArriba && !(iFa && iFa.local)) ? g : 0) + (state.fajaAbajo ? g : 0);
     }
-    function gridEntreExtraW(state) { const n = (state.cols || []).length; return gridEntreSuma(state) && n > 1 ? (n - 1) * gridTuboG(state.tubos) : 0; }
+    // Junta VIDRIO/VIDRIO entre la columna k y la k+1 (usuario 2026-09-30, con foto): si un lado es una Puerta
+    // Flotante, o un Paño Fijo con el marco abierto hacia esa junta, ahí NO va tubo vertical (queda libre de aluminio).
+    function gridJuntaVidrio(cols, k) {
+        const a = cols[k], b = cols[k + 1]; if (!a || !b) return false;
+        const lado = (c, ld) => (c.rows || []).some(r => r.celda === 'pflot' || (r.celda === 'pf' && r.marco_abierto === ld));
+        return lado(a, 'der') || lado(b, 'izq');
+    }
+    function gridJuntasTubo(state) { const cols = state.cols || []; let n = 0; for (let k = 0; k < cols.length - 1; k++) if (!gridJuntaVidrio(cols, k)) n++; return n; }
+    function gridEntreExtraW(state) { return gridEntreSuma(state) ? gridJuntasTubo(state) * gridTuboG(state.tubos) : 0; }
     // Giro de la esquina como número (usuario 2026-09-18: "giro 1, giro 2… sin tanta explicación"):
     // 1 = └ ala izquierda hacia arriba · 2 = ┌ ala izquierda hacia abajo · 3 = ┘ ala derecha hacia arriba ·
     // 4 = ┐ ala derecha hacia abajo (arriba/abajo en la planta; adentro/afuera internamente).
@@ -6785,6 +6814,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const half = Math.min(size, 18) * 0.32, ex = dir === 'L' ? cx - half : cx + half, sx = dir === 'L' ? cx + half : cx - half, hx = dir === 'L' ? ex + 1.4 : ex - 1.4;
         return `<g style="stroke:#111;stroke-width:1px;fill:none"><line x1="${sx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${cy.toFixed(1)}"/><polyline points="${hx.toFixed(1)},${(cy - 1.3).toFixed(1)} ${ex.toFixed(1)},${cy.toFixed(1)} ${hx.toFixed(1)},${(cy + 1.3).toFixed(1)}"/></g>`;
     }
+    // Cerraduras de la puerta flotante (varias a la vez: piso + media luna, etc. — usuario 2026-09-30). Compat con
+    // el primer formato de un solo valor `cerr_vidrio`.
+    function pflotCerr(cfg) { return { luna: cfg.cerr_luna === 'si' || cfg.cerr_vidrio === 'luna', digital: cfg.cerr_digital === 'si' || cfg.cerr_vidrio === 'digital', piso: cfg.cerr_piso === 'si' || cfg.cerr_vidrio === 'piso' }; }
     function gridCell(uid, x, y, w, h, celda, cfg, gv) {
         celda = celda || 'pf'; cfg = cfg || {};
         if (celda === 'vacio') return wallBlock(uid, x, y, w, h);
@@ -6824,7 +6856,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                          : `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
                 s += tir(izq ? x + w * 0.22 : x + w * 0.78);
                 const eX = izq ? x + w * 0.04 : x + w * 0.96, dr = izq ? 1 : -1;
-                s += cerraduraMarks(eX, dr, cy, y + h - 0.5, Math.max(2, w * 0.08), hc, cfg.cerr_vidrio === 'luna', cfg.cerr_vidrio === 'digital', cfg.cerr_vidrio === 'piso');
+                s += cerraduraMarks(eX, dr, cy, y + h - 0.5, Math.max(2, w * 0.08), hc, pflotCerr(cfg).luna, pflotCerr(cfg).digital, pflotCerr(cfg).piso);
             }
             return s;
         }
@@ -6905,7 +6937,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // columnas de 2000): misma función que el Paño Fijo dinámico — `panos` paños iguales, unión "T"
             // (montante, línea gruesa) o "a tope" (junta de vidrio, línea fina), una "PF" por paño.
             const np = Math.max(1, parseInt(cfg.panos) || 1), tope = cfg.union === 'tope';
-            if (np > 1 && !tope && !esNoVidrio(cv)) {
+            const open = cfg.marco_abierto || '';   // '' | 'izq' | 'der' | 'arriba' | 'abajo' → ese lado sin perfil (junta vidrio/vidrio)
+            const sidesOf = (edgeL, edgeR) => ({ t: open !== 'arriba', b: open !== 'abajo', l: !(edgeL && open === 'izq'), r: !(edgeR && open === 'der') });
+            if (open && !esNoVidrio(cv)) {
+                if (np > 1 && !tope) { s = ''; for (let k = 0; k < np; k++) s += extrudedPanelSides(uid, x + w * k / np, y, w / np, h, sidesOf(k === 0, k === np - 1)); }
+                else {
+                    s = extrudedPanelSides(uid, x, y, w, h, sidesOf(true, true));
+                    for (let k = 1; k < np; k++) { const dx = x + w * k / np; s += tope ? `<line x1="${dx.toFixed(1)}" y1="${(y + 0.7).toFixed(1)}" x2="${dx.toFixed(1)}" y2="${(y + h - 0.7).toFixed(1)}" stroke="#86a8c4" stroke-width="0.9" stroke-opacity="0.85"/>` : `<line x1="${dx.toFixed(1)}" y1="${(y + 0.7).toFixed(1)}" x2="${dx.toFixed(1)}" y2="${(y + h - 0.7).toFixed(1)}" stroke="#0A3D62" stroke-width="1.6"/>`; }
+                }
+            } else if (np > 1 && !tope && !esNoVidrio(cv)) {
                 // División "T": cada paño con SU marco (mismo doble trazo que el marco perimetral) — el
                 // usuario pidió que la unión se vea igual que el perímetro, para no confundirla con vidrio a tope.
                 s = ''; for (let k = 0; k < np; k++) s += extrudedPanel(uid, x + w * k / np, y, w / np, h);
@@ -7076,7 +7116,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // ancho. El ancho total de la fachada = la banda más ancha; las más angostas se ALINEAN
         // (izq/centro/der) dentro de ese ancho. Una faja de un solo elemento ocupa el ancho completo.
         const entreSuma = gridEntreSuma(state), gapMm = entreSuma ? tuboG : 0;   // tubo vertical que SUMA: banda real entre columnas
-        const wMain = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) + (cols.length > 1 ? (cols.length - 1) * gapMm : 0));
+        const wMain = Math.max(1, cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) + (entreSuma ? gridJuntasTubo(state) * tuboG : 0));   // solo las juntas que llevan tubo (no las vidrio/vidrio)
         const faSub = !!(fa && fa.cols && fa.cols.length), fbSub = !!(fb && fb.cols && fb.cols.length);
         const wFa = faSub ? Math.max(1, fa.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0)) : 0;
         const wFb = fbSub ? Math.max(1, fb.cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0)) : 0;
@@ -7098,7 +7138,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const bwMain = wMain * scale, offMain = alignOff(state.gridAlign, bwMain);
         // Posición en x de cada columna (a escala), para acotar una faja a un rango de columnas.
         const gapDW = gapMm * scale;
-        const colXs = []; { let xx = offMain; cols.forEach(c => { colXs.push(xx); xx += (parseInt(c.w) || 0) * scale + gapDW; }); }
+        const gapAt = k => (entreSuma && !gridJuntaVidrio(cols, k)) ? gapDW : 0;   // banda del tubo entre la columna k y la k+1 (0 en junta vidrio/vidrio)
+        const colXs = []; { let xx = offMain; cols.forEach((c, k) => { colXs.push(xx); xx += (parseInt(c.w) || 0) * scale + gapAt(k); }); }
         const fajaRange = (info) => (info && info.partial) ? [colXs[info.i0], colXs[info.i1] + (parseInt(cols[info.i1].w) || 0) * scale - colXs[info.i0]] : null;
         const rFa = fajaRange(infoFa), rFb = fajaRange(infoFb);
         // Faja de un solo lado: una faja de UN elemento cubre todo ese lado; una faja SUBDIVIDIDA usa la
@@ -7134,7 +7175,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const faY0 = faLocal ? (gy0 + (gDH - infoFa.maxIn * scaleV) - faDHd) : 0;
         if (fa) body += drawFaja(fa, faY0, faDHd, offFa, bwFa);   // faja superior (ancho propio + alineación)
         let cx = offMain; const colInfo = []; const rowDims = [];
-        cols.forEach(c => {
+        cols.forEach((c, cIdx) => {
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
             // Tubo horizontal ENTRE FILAS apiladas (usuario 2026-09-17: no se ponía entre la corredera y el
@@ -7149,8 +7190,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const colTop = gy0 + (gDH - colDH);
             const rowGapDH = rowGapMm * (colDH / rowSum);
             let cy = colTop, tubosFilas = '';
+            const cellsCol = [];
             rows.forEach((r, ri) => {
-                const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio);
+                const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio); cellsCol.push({ y: cy, h: rh, r });
                 if (ri === rows.length - 1 && r.penetracionRiel && r.penetracionRiel !== 'no' && (gridCorN(r.celda) || gridGal(r.celda))) {
                     // Penetración del riel (usuario 2026-09-18): línea de SUELO al pie de la celda y el riel que
                     // baja por debajo del suelo lo que penetra (a escala, mínimo visible) con su cota.
@@ -7169,7 +7211,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 }
             });
             body += tubosFilas;   // encima de los paños de la columna
-            colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0, col: c, top: colTop, h: colDH }); cx += cw + gapDW;
+            colInfo.push({ x: cx, w: cw, mm: parseInt(c.w) || 0, col: c, top: colTop, h: colDH, cells: cellsCol }); cx += cw + gapAt(cIdx);
         });
         if (fb) body += drawFaja(fb, fbY, fbDH, offFb, bwFb);   // faja inferior (ancho propio + alineación)
         // Divisiones de la FAJA (paño fijo) alineadas con los elementos de abajo: en cada frontera de
@@ -7188,7 +7230,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     : (rw.celda === 'pf' && (parseInt(rw.panos) || 1) > 1) ? parseInt(rw.panos)
                     : ((rw.celda === 'puerta' || rw.celda === 'ventana') && (rw.apertura || '').includes('2')) ? 2 : 1;
                 for (let k = 1; k < n; k++) xs.push(cxd + cw * k / n);
-                cxd += cw + gapDW;
+                cxd += cw + gapAt(ci);
             });
             return xs;
         };
@@ -7203,7 +7245,23 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // marco (contorno) por banda — así una fachada irregular queda con su silueta escalonada
         const bandRect = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="none" stroke="#0A3D62" stroke-width="2.2"/>`;
         if (fa) body += bandRect(offFa, faY0, bwFa, faDHd);
-        colInfo.forEach(ci => { body += bandRect(ci.x, ci.top, ci.w, ci.h); });   // marco por columna (pueden tener altos distintos)
+        // Marco por columna (pueden tener altos distintos). Si la columna tiene una Puerta Flotante (vidrio sin
+        // marco) o un Paño Fijo con marco en 3 lados, el marco exterior se dibuja por celda, saltando esos lados.
+        const frameSeg = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#0A3D62" stroke-width="2.2" stroke-linecap="square"/>`;
+        colInfo.forEach(ci => {
+            const cells = ci.cells || [];
+            const especial = cells.some(cl => cl.r.celda === 'pflot' || (cl.r.celda === 'pf' && cl.r.marco_abierto));
+            if (!especial) { body += bandRect(ci.x, ci.top, ci.w, ci.h); return; }
+            cells.forEach((cl, k) => {
+                const r = cl.r; if (r.celda === 'pflot') return;
+                const op = r.celda === 'pf' ? (r.marco_abierto || '') : '';
+                const sd = { t: k === 0 && op !== 'arriba', b: k === cells.length - 1 && op !== 'abajo', l: op !== 'izq', r: op !== 'der' };
+                if (sd.t) body += frameSeg(ci.x, cl.y, ci.x + ci.w, cl.y);
+                if (sd.b) body += frameSeg(ci.x, cl.y + cl.h, ci.x + ci.w, cl.y + cl.h);
+                if (sd.l) body += frameSeg(ci.x, cl.y, ci.x, cl.y + cl.h);
+                if (sd.r) body += frameSeg(ci.x + ci.w, cl.y, ci.x + ci.w, cl.y + cl.h);
+            });
+        });
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
         // Tubo entre columnas HORIZONTAL: CENTRADO en la unión faja/columnas (arriba) y/o columnas/faja
         // inferior (abajo) — tapa media faja y media carpintería, sin sumar a la altura.
@@ -7220,11 +7278,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Tubo VERTICAL entre columnas: "integrado" (default) = centrado en la unión, se come la mitad de cada
         // columna y no suma; "suma" = banda real entre columnas (gapDW) que sí suma al ancho total.
         if (tb.entre) for (let i = 1; i < colInfo.length; i++) {
-            const bx = colInfo[i].x;
+            if (gridJuntaVidrio(cols, i - 1)) continue;   // junta vidrio/vidrio (puerta flotante / PF con marco abierto): sin tubo
+            const bx = colInfo[i].x, g = gapAt(i - 1);
             const tw = Math.max(tuboG * scale, 1.2);
-            if (entreSuma) body += tuboRect(bx - gapDW, gy0, gapDW, gDH);
+            if (entreSuma) body += tuboRect(bx - g, gy0, g, gDH);
             else body += tuboRect(bx - tw / 2, gy0, tw, gDH);
-            if (tb.medida) body += `<text x="${(entreSuma ? bx - gapDW / 2 : bx).toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
+            if (tb.medida) body += `<text x="${(entreSuma ? bx - g / 2 : bx).toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
         }
         // cotas: ancho total (abajo) + mm por columna + alto total (derecha). Si un tubo perimetral
         // NO está incluido en la medida, se dibuja fuera del envolvente y la cota se corre para
@@ -7244,7 +7303,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (entreSuma) {
                 // columnas + tubos que suman, como segmentos alternados: [col, tubo, col, tubo, col]
                 const xs = [colInfo[0].x], mms = [];
-                colInfo.forEach((ci, i) => { if (i > 0) { xs.push(ci.x); mms.push(tuboG); } xs.push(ci.x + ci.w); mms.push(ci.mm); });
+                colInfo.forEach((ci, i) => { if (i > 0 && gapAt(i - 1) > 0) { xs.push(ci.x); mms.push(tuboG); } xs.push(ci.x + ci.w); mms.push(ci.mm); });
                 dimRows.push({ xs, mms });
             } else dimRows.push({ xs: [colInfo[0].x].concat(colInfo.map(ci => ci.x + ci.w)), mms: colInfo.map(ci => ci.mm) });
         }
@@ -7376,7 +7435,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const planY = planTop + 7 + Math.max(upNeed, -wMinY > 0 ? -wMinY - 2 : 0);
             cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             mainCols.forEach(ci => { cotas += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R, uid, cornerOf(ci)); });
-            if (entreSuma) mainCols.forEach((ci, i) => { if (i > 0) cotas += `<line x1="${(ci.x - gapDW).toFixed(1)}" y1="${planY}" x2="${ci.x.toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`; });
+            if (entreSuma) mainCols.forEach((ci, i) => { const gi = colInfo.indexOf(ci); if (i > 0 && gapAt(gi - 1) > 0) cotas += `<line x1="${(ci.x - gapAt(gi - 1)).toFixed(1)}" y1="${planY}" x2="${ci.x.toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`; });
             if (wingCols.length) {
                 // Ala girada 90° hacia adentro (sube desde la esquina). Se dibuja con el MISMO gridColPlan en
                 // coordenadas locales (x = como en la elevación, y = interior arriba / exterior abajo) y se
@@ -7478,9 +7537,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 // Puerta flotante: vidrio templado sin marco, kit botella (pivote) arriba/abajo; tirador y cerradura
                 // de vidrio (media luna / digital / piso). El color de herrajes es el global de la fachada.
                 const TIR = [['redondo', 'Tirador redondo'], ['5', 'Tirador 5"'], ['8', 'Tirador 8"'], ['12', 'Tirador 12"'], ['16', 'Tirador 16"'], ['', 'Sin tirador']];
-                const CERV = [['', '-- Cerradura --'], ['luna', 'Media luna'], ['digital', 'Digital'], ['piso', 'Piso']];
-                return grosor ? cfgRow('Vidrio', cfgSel(effVid, VIDCELL, mk('vidrio'))) + grosor + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Tirador', cfgSel(obj.tirador === undefined ? 'redondo' : obj.tirador, TIR, mk('tirador'))) + cfgRow('Cerradura', cfgSel(obj.cerr_vidrio, CERV, mk('cerr_vidrio')))
-                    : vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Tirador', cfgSel(obj.tirador === undefined ? 'redondo' : obj.tirador, TIR, mk('tirador'))) + cfgRow('Cerradura', cfgSel(obj.cerr_vidrio, CERV, mk('cerr_vidrio')));
+                // Cerraduras COMBINABLES (piso + media luna / digital a la vez — usuario 2026-09-30): casillas.
+                const cz = pflotCerr(obj);
+                const chk = (key, on, label) => `<label style="display:flex;gap:3px;align-items:center;font-size:11px;cursor:pointer;"><input type="checkbox" ${on ? 'checked' : ''} style="width:14px;height:14px;accent-color:#0A3D62;margin:0;" onchange="${mk(key).replace('this.value', "(this.checked?'si':'')")}">${label}</label>`;
+                const cerrRow = `<div style="display:grid;grid-template-columns:66px 1fr;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">Cerradura</label><div style="display:flex;gap:9px;flex-wrap:wrap;">${chk('cerr_luna', cz.luna, 'Media luna')}${chk('cerr_digital', cz.digital, 'Digital')}${chk('cerr_piso', cz.piso, 'Piso')}</div></div>`;
+                return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Tirador', cfgSel(obj.tirador === undefined ? 'redondo' : obj.tirador, TIR, mk('tirador'))) + cerrRow;
             }
             if (celda === 'ventana') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             if (celda === 'osci') {
@@ -7496,7 +7557,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (celda === 'pf') {
                 const np = Math.max(1, parseInt(obj.panos) || 1);
                 const PANOS = [1, 2, 3, 4, 5, 6, 8, 10].map(n => [String(n), n === 1 ? '1 paño (sin división)' : n + ' paños iguales']);
-                return vid + cfgRow('Paños', cfgSel(String(np), PANOS, mk('panos'))) + (np > 1 ? cfgRow('Unión', cfgSel(obj.union || 'T', [['T', 'Con división "T" (perfil)'], ['tope', 'Vidrios a tope']], mk('union'))) : '');
+                // Marco en 3 lados (usuario 2026-09-30): el lado sin perfil queda como junta vidrio/vidrio con una Puerta Flotante vecina.
+                const MARCO = [['', 'Marco: 4 lados (completo)'], ['izq', 'Marco: 3 lados, sin perfil a la IZQUIERDA (junta vidrio/vidrio)'], ['der', 'Marco: 3 lados, sin perfil a la DERECHA (junta vidrio/vidrio)'], ['arriba', 'Marco: 3 lados, sin perfil ARRIBA'], ['abajo', 'Marco: 3 lados, sin perfil ABAJO']];
+                return vid + cfgRow('Paños', cfgSel(String(np), PANOS, mk('panos'))) + (np > 1 ? cfgRow('Unión', cfgSel(obj.union || 'T', [['T', 'Con división "T" (perfil)'], ['tope', 'Vidrios a tope']], mk('union'))) : '') + cfgRow('Marco', cfgSel(obj.marco_abierto || '', MARCO, mk('marco_abierto')));
             }
             return vid;   // proy → al menos el selector de vidrio por paño
         };
@@ -8933,7 +8996,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
             case 'door_flot':
             case 'door_glass':
-                drawing += '<rect x="30" y="5" width="40" height="50"/>';
+                if (state.type !== 'door_flot') drawing += '<rect x="30" y="5" width="40" height="50"/>';   // la flotante es vidrio solo: sin contorno del color del aluminio (usuario 2026-09-30)
                 if (state.bisagras === 'bisagra' && state.type !== 'door_flot') {
                     drawing += `<rect x="${isD ? 68 : 30}" y="15" width="2" height="4" fill="${herrajeCol}"/><rect x="${isD ? 68 : 30}" y="41" width="2" height="4" fill="${herrajeCol}"/>`;
                 } else {

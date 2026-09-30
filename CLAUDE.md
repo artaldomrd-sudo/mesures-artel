@@ -77,8 +77,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   'puerta_vidrio'`): vidrio templado sin marco con pivote arriba/abajo — se dibuja como `door_glass`
   con `bisagras` forzado a botella (switch de `renderSVG`, `cadTechnical`, `getPanelRects`), menú sin
   selector de bisagras (cajita "Kit botella"), resumen "Puerta flotante: vidrio templado sin marco · kit
-  botella…" + herrajes/tirador/cerradura. **Separación pedida por el usuario**: la puerta de DUCHA es
-  siempre con bisagras pared/vidrio; la de kit botella es esta. *(Los items sueltos `mamp_fija`, `door_glass`, `door_slide` ya NO están en el
+  botella…" + herrajes/tirador/cerradura; **sin el contorno del color del aluminio** (el `<rect>` del
+  `case 'door_glass'` se omite para `door_flot`) y sin línea "Acabado" (tampoco en mampara/puerta de
+  vidrio: vidrio sin perfil). **Separación pedida por el usuario**: la puerta de DUCHA es siempre con
+  bisagras pared/vidrio; la de kit botella es esta. *(Los items sueltos `mamp_fija`, `door_glass`, `door_slide` ya NO están en el
   menú: viven dentro de "Vidrio de Ducha", pero sus `type` siguen existiendo para proyectos
   guardados y para el dibujo libre CAD.)*
 - **Barandas**: `baranda_bal` (baranda con constructor de tramos). *(`ducha_cab` "Cabina de
@@ -810,10 +812,21 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
     vidrio templado SIN marco (`glassOnlyPanel`, `ALU_POR_CELDA.pflot = []`) con kit botella = 2
     pivotes (arriba/abajo) del lado de la bisagra, chevron como la abisagrada (`apertura` adentro
     punteado / afuera continuo, 1 o 2 hojas, `lado`), `tirador` (redondo/5/8/12/16/ninguno, default
-    redondo) y `cerr_vidrio` (luna/digital/piso, `cerraduraMarks`); color de herrajes = el global de la
+    redondo) y **cerraduras combinables** (casillas `cerr_luna`/`cerr_digital`/`cerr_piso` = `'si'`,
+    `pflotCerr(cfg)`; compat con el primer valor único `cerr_vidrio`); color de herrajes = el global de la
     fachada (`gridCell.herraje`, lo fija `renderFachadaGrid`). Planta y `needs` como `puerta`
     (`planViewAbatible('puerta')`); resumen "puerta flotante: vidrio sin marco · kit botella (pivote
-    arriba y abajo) · tirador 8" · cerradura media luna · apertura adentro 1 hoja · abre izq.".
+    arriba y abajo) · tirador 8" · cerradura media luna + piso · apertura adentro 1 hoja · abre izq.".
+    **Sin marco de aluminio alrededor** (usuario, mismo día): el marco exterior de la columna (`bandRect`)
+    se dibuja por celda (`frameSeg`) saltando las celdas `pflot` y el lado abierto de un `pf`.
+    **Paño Fijo con marco en 3 lados** (`cfg.marco_abierto` `''|'izq'|'der'|'arriba'|'abajo'`, fila
+    "Marco" del `pf`): `extrudedPanelSides(uid,x,y,w,h,{t,b,l,r})` dibuja el perfil solo en esos lados y el
+    canto fino de vidrio en el abierto → junta vidrio/vidrio con la puerta flotante vecina; resumen "marco en
+    3 lados: sin perfil a la izquierda (junta vidrio/vidrio)". **Tubo vertical entre columnas: NO en la junta
+    vidrio/vidrio** (usuario, con foto: solo tubo en la esquina): `gridJuntaVidrio(cols,k)` (un lado es
+    `pflot` o un `pf` con `marco_abierto` hacia esa junta) → el dibujo la salta, `gridJuntasTubo(state)`
+    cuenta solo las juntas con tubo (modo "suma": `gapAt(k)` por junta, `wMain`/`gridEntreExtraW`/cota
+    segmentada/planta solo suman esas) y el resumen dice "sin tubo en la junta vidrio/vidrio…".
   - `alu` por celda (no global): `ALU_MASTER` × `ALU_POR_CELDA` restringen el material según el
     tipo (`pf`→P40 ventana/puerta; `puerta`→P40 puerta/Titan; correderas→P92/E70/E100/E200;
     `louvers`/`vacio`→ninguno). `celdaAluOpts(celda)` / `celdaAluDefault(celda)`.
