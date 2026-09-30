@@ -61,6 +61,9 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   tipo_aluminio, locked`.
 - Categorías (`getCategoriaByType`): `corredera, galandaje, ventana, puerta_vidrio, mampara,
   fachada, fachada_grid, ducha, baranda, cerramiento, cortina`.
+- **Paño Fijo "Sin Marco" (usuario 2026-09-30)**: con `fijacion === 'sin_marco'` no hay perfil → sin selector
+  de acabado en el menú (`getMenuOpciones` rama fachada), ni en el paño adosado (`buildPanoConfigHtml`;
+  `updatePanoState('fijacion')` refresca), ni línea "Acabado" en el resumen.
 - **Vidrio de Ducha** (`categoria: 'cerramiento'`, `type: 'ducha_facade'`): `state.paneles` es
   un array; cada panel `{ tipo:'fijo'|'puerta'|'deslizante', ancho, color_vidrio, vidrio,
   espesor, herraje_color, orientacion, tirador, bisagras, cerr_luna, cerr_digital, cerr_piso,
@@ -74,8 +77,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
 - **Galandajes** (plegables): `gal1, gal2_lat, gal2_cent, gal3_3v, gal4_2v, gal4_4v, gal6_3v`.
 - **Vidrios y Mamparas**: `ducha_facade` ("Vidrio de Ducha", constructor), `fachada_din`
   ("Paños Fijos") y **`door_flot` "Puerta Flotante (kit botella)"** (2026-09-30, `categoria:
-  'puerta_vidrio'`): vidrio templado sin marco con pivote arriba/abajo — se dibuja como `door_glass`
-  con `bisagras` forzado a botella (switch de `renderSVG`, `cadTechnical`, `getPanelRects`), menú sin
+  'puerta_vidrio'`): vidrio templado sin marco con pivote arriba/abajo — **a proporción real** (entrada
+  `door_flot` en `PROP_BOX` 80×52 top 5 + `fitPropRect`; el usuario vio 870×2505 dibujada 4:5) con un `case
+  'door_flot'` propio en el switch de `renderSVG` (pivotes, tirador y `cerraduraMarks` relativos a
+  `bx/by/bw/bh`); en `cadTechnical` se dibuja como `door_glass` con `bisagras` forzado a botella, menú sin
   selector de bisagras (cajita "Kit botella"), resumen "Puerta flotante: vidrio templado sin marco · kit
   botella…" + herrajes/tirador/cerradura; **sin el contorno del color del aluminio** (el `<rect>` del
   `case 'door_glass'` se omite para `door_flot`) y sin línea "Acabado" (tampoco en mampara/puerta de

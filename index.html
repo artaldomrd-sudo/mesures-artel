@@ -568,7 +568,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-30 23:06</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-30 23:27</div>
         </div>
     </div>
     
@@ -2274,7 +2274,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             html += `<div style="border-bottom: 2px solid var(--artal-blue); margin-bottom: 8px; padding-bottom: 5px;"><strong>MEDIDAS TOTALES:</strong> A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm${penetracionTxt(state) ? `<span style="color:#1e7a46;">${penetracionTxt(state)}</span>` : ''} | Cantidad: ${state.cantidad || 1}</div>`;
             let specs = [];
             if(state.tipo_aluminio) specs.push(`Alum: ${state.tipo_aluminio}`);
-            if (state.categoria !== 'puerta_vidrio' && state.categoria !== 'mampara') { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }   // vidrio sin perfil (puerta flotante, mampara, puerta de vidrio): no lleva acabado de aluminio
+            if (state.categoria !== 'puerta_vidrio' && state.categoria !== 'mampara' && !(state.type === 'fachada_din' && state.fijacion === 'sin_marco')) { const fm = { natural: 'Natural/Plata', negro: 'Negro', grafito: 'Grafito', blanco: 'Blanco', madera: 'Madera', inox: 'Inox (Champagne)', ral: ralLabel(state.color_ral) }; specs.push(`Acabado: ${fm[state.color_perfil || 'natural']}`); }   // vidrio sin perfil (puerta flotante, mampara, puerta de vidrio): no lleva acabado de aluminio
             if(state.vidrio) {
                 if (esNoVidrio(state.vidrio)) specs.push(`Vidrio: ${noVidrioLabel(state.vidrio)} (${headerColor})`);
                 else specs.push(`Vidrio: ${state.vidrio} ${espesorLabel(state.espesor)} ${state.color_vidrio || ''}`);
@@ -3883,7 +3883,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         } else if (categoria === 'fachada') {
             let panosCount = parseInt(state.panos) || 1;
             let unionHtml = panosCount > 1 ? `<select onchange="${fn}, 'union', this.value)"><option value="T">Con division "T"</option><option value="tope">Vidrios a tope</option></select>` : '';
-            return `<select onchange="${fn}, 'panos', this.value)"><option value="1">1 Paño Fijo</option><option value="2">2 Paños Fijos</option><option value="3">3 Paños Fijos</option><option value="4">4 Paños Fijos</option><option value="5">5 Paños Fijos</option><option value="6">6 Paños Fijos</option><option value="8">8 Paños Fijos</option><option value="10">10 Paños Fijos</option></select>${unionHtml}<select onchange="${fn}, 'fijacion', this.value)"><option value="">-- Sistema / Fijación --</option><option value="moldura">Con Moldura Perimetral</option><option value="conectores">Con Conectores</option><option value="p40">Perfiles Aluminio (P40)</option><option value="p40_puerta">P40 de puerta</option><option value="sin_marco">Sin Marco</option></select>${vidriosBasicos}${colorPerfilSel}`;
+            return `<select onchange="${fn}, 'panos', this.value)"><option value="1">1 Paño Fijo</option><option value="2">2 Paños Fijos</option><option value="3">3 Paños Fijos</option><option value="4">4 Paños Fijos</option><option value="5">5 Paños Fijos</option><option value="6">6 Paños Fijos</option><option value="8">8 Paños Fijos</option><option value="10">10 Paños Fijos</option></select>${unionHtml}<select onchange="${fn}, 'fijacion', this.value)"><option value="">-- Sistema / Fijación --</option><option value="moldura">Con Moldura Perimetral</option><option value="conectores">Con Conectores</option><option value="p40">Perfiles Aluminio (P40)</option><option value="p40_puerta">P40 de puerta</option><option value="sin_marco">Sin Marco</option></select>${vidriosBasicos}${state.fijacion === 'sin_marco' ? '' : colorPerfilSel}`;   // Sin Marco = vidrio solo, sin perfil → sin selector de acabado (usuario 2026-09-30)
         } else if (categoria === 'mampara') {
             return `<select onchange="${fn}, 'herraje_color', this.value)"><option value="">-- Color Conectores --</option><option value="negro">Negro Mate</option><option value="cromado">Cromado / Inox</option></select>${vidriosBasicos}`;
         } else if (categoria === 'ducha') {
@@ -4892,7 +4892,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const container = document.getElementById('schematic-' + id);
         if (container) container.innerHTML = renderSVG(id);
         adaptDrawingToContent(id);
-        if (key === 'color_perfil' || key === 'espesor' || key === 'vidrio') refreshPanoUI(id);
+        if (key === 'color_perfil' || key === 'espesor' || key === 'vidrio' || key === 'fijacion') refreshPanoUI(id);   // fijacion: Sin Marco oculta el acabado
         if (cardsState[id].locked) generateSummary(id);
         saveProgress();
     };
@@ -4923,7 +4923,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             ${espesorSel}
             ${vidrioColorSel}
             <select onchange="${fn}, 'fijacion', this.value)" title="Sistema / Fijación"><option value="conectores" ${fij==='conectores'?'selected':''}>Con Conectores</option><option value="moldura" ${fij==='moldura'?'selected':''}>Con Moldura Perimetral</option><option value="p40" ${fij==='p40'?'selected':''}>Perfiles Aluminio (P40)</option><option value="p40_puerta" ${fij==='p40_puerta'?'selected':''}>P40 de puerta</option><option value="sin_marco" ${fij==='sin_marco'?'selected':''}>Sin Marco</option></select>
-            ${colorPerfilSel}
+            ${fij === 'sin_marco' ? '' : colorPerfilSel}
         `;
     }
 
@@ -5280,6 +5280,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         win_proy: { maxW: 80, maxH: 45, top: 10 }, win_souf: { maxW: 80, maxH: 45, top: 10 },
         win_abat: { maxW: 65, maxH: 62, top: 8 }, win_ob: { maxW: 65, maxH: 62, top: 8 },
         door_abat: { maxW: 65, maxH: 62, top: 8 }, fachada_din: { maxW: 84, maxH: 53, top: 5 },
+        door_flot: { maxW: 80, maxH: 52, top: 5 },   // puerta flotante suelta a proporción real (usuario 2026-09-30: 870×2505 se veía 4:5)
     };
     function fitPropRect(state) {
         const box = PROP_BOX[state.type];
@@ -5549,10 +5550,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const g = galLayout(state); return [[g.opX, g.y0, g.opW, g.H]];   // el vidrio = el hueco (proporcional)
             }
             case 'pleg': { const g = plegLayout(state); return [[g.x0, g.y0, g.W, g.H]]; }
-            case 'win_proy': case 'win_souf': case 'win_abat': case 'win_ob': case 'door_abat': case 'fachada_din':
+            case 'win_proy': case 'win_souf': case 'win_abat': case 'win_ob': case 'door_abat': case 'fachada_din': case 'door_flot':
                 return [fitPropRect(state)];
             case 'mamp_fija': return [[30, 5, 40, 50]];
-            case 'door_glass': case 'door_flot': return [[30, 5, 40, 50]];
+            case 'door_glass': return [[30, 5, 40, 50]];
             case 'door_slide': case 'door_slide_conn': return [[30, 9, 40, 47]];
         }
         return [];
@@ -8997,10 +8998,23 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 break;
             }
 
-            case 'door_flot':
+            case 'door_flot': {
+                // Puerta flotante suelta A PROPORCIÓN REAL (PROP_BOX/fitPropRect → bx,by,bw,bh): vidrio solo, sin
+                // contorno del color del aluminio; kit botella (pivotes) arriba/abajo del lado de la bisagra
+                // (derecha con orientación D), tirador y cerraduras del lado contrario. Todo relativo al panel.
+                const kw = Math.max(3, bw * 0.12), kh = Math.max(1.6, bh * 0.035);
+                const hx = isD ? bx + bw - kw : bx;
+                drawing += `<rect x="${hx.toFixed(1)}" y="${by.toFixed(1)}" width="${kw.toFixed(1)}" height="${kh.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><rect x="${hx.toFixed(1)}" y="${(by + bh - kh).toFixed(1)}" width="${kw.toFixed(1)}" height="${kh.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`;
+                const cyF = by + bh / 2, edgeX = isD ? bx : bx + bw, dir = isD ? 1 : -1;
+                drawing += cerraduraMarks(edgeX, dir, cyF, by + bh, Math.max(2.5, bw * 0.1), herrajeCol, state.cerr_luna || state.cerradura_tipo === 'central', state.cerr_digital || state.cerradura_tipo === 'digital', state.cerr_piso || state.cerradura_piso === 'si');
+                const tx = isD ? bx + bw * 0.2 : bx + bw * 0.8, tr = Math.max(1.4, Math.min(2.4, bw * 0.06));
+                if (state.tirador === 'redondo') drawing += `<circle cx="${tx.toFixed(1)}" cy="${cyF.toFixed(1)}" r="${tr.toFixed(1)}" fill="none" stroke="${herrajeCol}" stroke-width="1.6"/>`;
+                else if (state.tirador) { const hh = (({ '5': 0.12, '8': 0.2, '12': 0.3, '16': 0.4 })[state.tirador] || 0.2) * bh; drawing += `<line x1="${tx.toFixed(1)}" y1="${(cyF - hh / 2).toFixed(1)}" x2="${tx.toFixed(1)}" y2="${(cyF + hh / 2).toFixed(1)}" stroke="${herrajeCol}" stroke-width="2"/>`; }
+                break;
+            }
             case 'door_glass':
-                if (state.type !== 'door_flot') drawing += '<rect x="30" y="5" width="40" height="50"/>';   // la flotante es vidrio solo: sin contorno del color del aluminio (usuario 2026-09-30)
-                if (state.bisagras === 'bisagra' && state.type !== 'door_flot') {
+                drawing += '<rect x="30" y="5" width="40" height="50"/>';
+                if (state.bisagras === 'bisagra') {
                     drawing += `<rect x="${isD ? 68 : 30}" y="15" width="2" height="4" fill="${herrajeCol}"/><rect x="${isD ? 68 : 30}" y="41" width="2" height="4" fill="${herrajeCol}"/>`;
                 } else {
                     drawing += `<rect x="${isD ? 65 : 30}" y="5" width="5" height="2" fill="${herrajeCol}"/><rect x="${isD ? 65 : 30}" y="53" width="5" height="2" fill="${herrajeCol}"/>`;
