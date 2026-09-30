@@ -2511,6 +2511,20 @@ espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramien
   (Altea 11 ventanas ×2, Dinorah A5 201, Jean Pierre); 10 citas de gerencia vencidas; usuario romain.jardinier sin nombre ni
   rol; 179/183 clientes sin teléfono; «cliente jeffrey» sin ficha; informe «Artal —» en 0 (no es obra).
 
+### Nómina: pedidos de la contable (2026-09-30)
+
+- **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
+  paga ese día, así el total del día queda al 200 %. Las nóminas ya guardadas conservan el factor viejo en cada ítem
+  (`factor` viaja dentro del ítem): hay que volver a elegir el concepto en la nómina abierta para que tome el nuevo.
+- **Volante** (HTML y texto de Mensajería): INGRESOS → Total ingresos → DEDUCCIONES → Total deducciones → Neto (filas
+  `.vsec`/`.vsub2`).
+- **Pestaña «Reporte del mes»** (`renderReporte`, `imprimirReporte`, `csvReporte`): consolidado por empleado de todas las
+  nóminas GUARDADAS del mes (`rrhhNominas.periodo`, usa el `calc` guardado) + detalle por nómina con sus ítems; CSV con `;`.
+- **Pago de vacaciones desde Vacaciones** (`rrhh-vacaciones.html`: `pagoMonto`, `pagoFecha`, `pagoFuera`): al generar la
+  nómina del período donde cae `pagoFecha` (mensual / q1 día ≤ 15 / q2 día > 15) se agrega el ingreso GRAVABLE «Pago de
+  vacaciones» y, si `pagoFuera`, la deducción «Adelanto de vacaciones ya pagado» por el mismo monto (neto igual, ISR/TSS
+  correctos). Ítems con `vacId`; se reconstruyen en cada `generarNomina` (`conVacaciones`).
+
 ### Bloqueo provisional por rol en firestore.rules (2026-09-29)
 
 Usuario: «cada quien solo puede ver lo que le pertenece… haz un bloqueo provisional». Antes cualquier sesión leía TODO y

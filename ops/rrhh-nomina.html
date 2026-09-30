@@ -28,6 +28,10 @@
     .param-grid label { font-size: 12px; font-weight: bold; color: var(--artal-blue); display: block; margin-bottom: 4px; }
     .param-grid input { width: 100%; padding: 9px 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 42px; box-sizing: border-box; }
     .param-card { background: #fff; border-radius: 10px; box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 12px; }
+    .tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .tabla th { background: var(--artal-blue); color: #fff; font-size: 10.5px; text-transform: uppercase; padding: 7px 6px; text-align: left; }
+    .tabla th.r, .tabla td.r { text-align: right; white-space: nowrap; }
+    .tabla td { padding: 6px; border-bottom: 1px solid #eef1f4; }
     .tabla-isr { width: 100%; border-collapse: collapse; font-size: 13px; }
     .tabla-isr th, .tabla-isr td { padding: 6px 6px; text-align: right; }
     .tabla-isr th { color: #778; font-size: 11px; text-transform: uppercase; }
@@ -101,6 +105,8 @@
     .reparto { background: #f6f8fb; border: 1px solid #e6ecf3; border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.9; }
     .reparto input { padding: 6px 8px; border: 1.5px solid #ddd; border-radius: 6px; font-family: 'Arimo'; }
     .reparto button { background: var(--artal-blue); color: #fff; border: none; border-radius: 6px; padding: 6px 10px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 12px; margin-left: 6px; }
+    .volante .vsec td { font-size:11px; letter-spacing:.5px; color:#8a93a0; padding-top:12px; border-bottom:none; }
+    .volante .vsub2 td { font-weight:bold; border-top:1px solid #dde3ea; }
 </style>
 </head>
 <body>
@@ -125,6 +131,7 @@
         <button class="tab-btn" id="tab-prestamos" onclick="setTab('prestamos')">Préstamos</button>
         <button class="tab-btn" id="tab-regalia" onclick="setTab('regalia')">Regalía</button>
         <button class="tab-btn" id="tab-liquidacion" onclick="setTab('liquidacion')">Liquidación</button>
+        <button class="tab-btn" id="tab-reporte" onclick="setTab('reporte')">Reporte del mes</button>
         <button class="tab-btn" id="tab-parametros" onclick="setTab('parametros')">Parámetros</button>
     </div>
 
@@ -215,6 +222,18 @@
     </section>
 
     <!-- PARÁMETROS -->
+    <section class="panel" id="panel-reporte">
+        <div class="box">
+            <h3 style="margin:0 0 6px">📊 Reporte de nómina del mes (auditoría)</h3>
+            <p class="muted" style="margin:0 0 10px">Todo lo procesado en el mes (quincenas y mensual) consolidado por empleado: sueldo, otros ingresos, total de ingresos, cada deducción, total de deducciones y neto, más el aporte patronal. Debajo, cada nómina guardada con su detalle. Solo se muestran nóminas <b>guardadas</b>.</p>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+                <label>Mes <input type="month" id="rep-mes" onchange="renderReporte()"></label>
+                <button class="act sec" onclick="imprimirReporte()">🖨 Imprimir / PDF</button>
+                <button class="act sec" onclick="csvReporte()">⬇ CSV</button>
+            </div>
+            <div id="rep-body" class="muted">Elige un mes.</div>
+        </div>
+    </section>
     <section class="panel" id="panel-parametros">
         <div class="param-card">
             <div class="sec-title" style="margin-top:0">Seguridad Social (TSS) — porcentajes</div>
@@ -325,7 +344,9 @@
         tiposIngreso: [
             { nombre: 'Horas extra (35% recargo)', gravable: true, calc: 'hora', factor: 1.35 },
             { nombre: 'Horas extra al 100% (más de 68 h/semana)', gravable: true, calc: 'hora', factor: 2.00 },
-            { nombre: 'Día extra (feriado / descanso trabajado)', gravable: true, calc: 'dia', factor: 2.00 },
+            // Feriado / descanso trabajado: el sueldo mensual YA paga ese día; el extra es UN día adicional (con eso el día
+            // queda al 200 % en total). Antes el factor era 2 y se pagaban dos días de más (contable, 2026-09-30).
+            { nombre: 'Día extra (feriado / descanso trabajado)', gravable: true, calc: 'dia', factor: 1.00 },
             { nombre: 'Bono', gravable: true },
             { nombre: 'Comisión', gravable: true },
             { nombre: 'Incentivo', gravable: true },
@@ -341,6 +362,25 @@
     let cfg = JSON.parse(JSON.stringify(DEFAULTS));
     let empleados = [];
     let nominaActual = null; // {periodo, lineas:[...]}
+    // Vacaciones con pago registrado (rrhh-vacaciones.html: pagoMonto, pagoFecha, pagoFuera). Al generar la nómina del
+    // período en que cae `pagoFecha`, se agrega el ingreso GRAVABLE «Pago de vacaciones» (así ISR y TSS lo incluyen) y, si
+    // ya se pagó fuera de nómina (adelanto), la deducción «Adelanto de vacaciones ya pagado» por el mismo monto → el neto
+    // no cambia pero el impuesto sí queda bien (contable, 2026-09-30: antes tenía que meter el ISR a mano en «Otro»).
+    let vacacionesPago = [];
+    onSnapshot(collection(db, 'rrhhVacaciones'), (s) => { vacacionesPago = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => n2(v.pagoMonto) > 0 && v.pagoFecha); }, () => {});
+    function vacacionesDelPeriodo(empId, periodo, runTipo) {
+        return vacacionesPago.filter(v => v.empleadoId === empId && String(v.pagoFecha).slice(0, 7) === periodo && !/rechaz|cancel/i.test(String(v.estado || '')))
+            .filter(v => { const dia = Number(String(v.pagoFecha).slice(8, 10)) || 1; return runTipo === 'q1' ? dia <= 15 : runTipo === 'q2' ? dia > 15 : true; });
+    }
+    function conVacaciones(items, empId, periodo, runTipo, tipo) {
+        const vs = vacacionesDelPeriodo(empId, periodo, runTipo); const out = (items || []).filter(it => !it.vacId || vs.some(v => v.id === it.vacId));
+        vs.forEach(v => {
+            if (out.some(it => it.vacId === v.id)) return;
+            if (tipo === 'ing') out.push({ tipo: 'Pago de vacaciones' + (v.anio ? ' ' + v.anio : ''), monto: n2(v.pagoMonto), gravable: true, vacId: v.id });
+            else if (v.pagoFuera) out.push({ tipo: 'Adelanto de vacaciones ya pagado' + (v.pagoFecha ? ' (' + fmtFecha(v.pagoFecha) + ')' : ''), monto: n2(v.pagoMonto), vacId: v.id });
+        });
+        return out;
+    }
 
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => (e.estado || 'activo') === 'activo').sort(byNombre);
@@ -376,7 +416,7 @@
     }).catch(() => { normalizarCfg(); pintarParametros(); });
 
     window.setTab = function (t) {
-        ['mensual', 'historial', 'prestamos', 'regalia', 'liquidacion', 'parametros'].forEach(k => {
+        ['mensual', 'historial', 'prestamos', 'regalia', 'liquidacion', 'reporte', 'parametros'].forEach(k => {
             document.getElementById('tab-' + k).classList.toggle('active', k === t);
             document.getElementById('panel-' + k).classList.toggle('show', k === t);
         });
@@ -829,7 +869,7 @@
                 empleadoId: e.id, nombre: e.nombre, formaCobro: e.formaCobro || '',
                 fechaIngreso: e.fechaIngreso || '', fechaSalida: e.fechaSalida || '',   // para el sueldo proporcional
                 sueldo: p.sueldo != null ? n2(p.sueldo) : n2(e.sueldoBase),   // mensual
-                ingresosItems: itemsIniIng(p), deduccionesItems: itemsIniDed(p),
+                ingresosItems: conVacaciones(itemsIniIng(p), e.id, periodo, runTipo, 'ing'), deduccionesItems: conVacaciones(itemsIniDed(p), e.id, periodo, runTipo, 'ded'),
                 descAfp: pctIni(p.descAfp, p, e), descSfs: pctIni(p.descSfs, p, e), descIsr: pctIni(p.descIsr, p, e),
                 sinTSS: e.enTSS === false,
                 prestamo: prs.reduce((a, x) => a + x.monto, 0), prestamosDetalle: prs
@@ -995,7 +1035,51 @@
 
     // ---------- HISTORIAL DE NÓMINAS + PAGO DESDE BANCO ----------
     let nominasGuardadas = [], cuentasBanco = [], movsBanco = [];
-    onSnapshot(collection(db, 'rrhhNominas'), (s) => { nominasGuardadas = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); }, () => {});
+    onSnapshot(collection(db, 'rrhhNominas'), (s) => { nominasGuardadas = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); renderReporte(); }, () => {});
+
+    // ---------- REPORTE DEL MES (auditoría de la contable, 2026-09-30) ----------
+    let reporteHTML = '';
+    function lineasReporte(mes) {
+        const noms = nominasGuardadas.filter(n => n.periodo === mes && Array.isArray(n.calc)).sort((a, b) => String(a.key).localeCompare(String(b.key)));
+        const porEmp = new Map();
+        noms.forEach(n => (n.calc || []).forEach(l => {
+            if (l.cobra === false) return;
+            const e = porEmp.get(l.empleadoId) || { nombre: l.nombre, sueldo: 0, ing: 0, afp: 0, sfs: 0, isr: 0, prestamo: 0, ded: 0, neto: 0, afpPat: 0, sfsPat: 0, srlPat: 0, periodos: [] };
+            e.sueldo += n2(l.sueldo); e.ing += n2(l.ingresos); e.afp += n2(l.afp); e.sfs += n2(l.sfs); e.isr += n2(l.isr); e.prestamo += n2(l.prestamo); e.ded += n2(l.deducciones); e.neto += n2(l.neto);
+            e.afpPat += n2(l.afpPat); e.sfsPat += n2(l.sfsPat); e.srlPat += n2(l.srlPat); e.periodos.push(n.key);
+            porEmp.set(l.empleadoId, e);
+        }));
+        return { noms, emps: [...porEmp.values()].sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es')) };
+    }
+    const filaTot = (r) => ({ ingT: r.sueldo + r.ing, dedT: r.afp + r.sfs + r.isr + r.prestamo + r.ded });
+    window.renderReporte = function () {
+        const inp = document.getElementById('rep-mes'); if (!inp) return;
+        if (!inp.value) { const d = new Date(); inp.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+        const mes = inp.value; const { noms, emps } = lineasReporte(mes);
+        const body = document.getElementById('rep-body');
+        if (!noms.length) { body.innerHTML = '<span class="muted">No hay nóminas guardadas en ' + esc(mes) + '.</span>'; reporteHTML = ''; return; }
+        const T = emps.reduce((a, e) => { Object.keys(a).forEach(k => a[k] += n2(e[k])); return a; }, { sueldo: 0, ing: 0, afp: 0, sfs: 0, isr: 0, prestamo: 0, ded: 0, neto: 0, afpPat: 0, sfsPat: 0, srlPat: 0 });
+        const fila = (e, b) => { const t = filaTot(e); return `<tr${b ? ' style="font-weight:bold;background:#f3f6fa"' : ''}><td>${esc(e.nombre)}</td><td class="r">${fmt(e.sueldo)}</td><td class="r">${fmt(e.ing)}</td><td class="r"><b>${fmt(t.ingT)}</b></td><td class="r">${fmt(e.afp)}</td><td class="r">${fmt(e.sfs)}</td><td class="r">${fmt(e.isr)}</td><td class="r">${fmt(e.prestamo)}</td><td class="r">${fmt(e.ded)}</td><td class="r"><b>${fmt(t.dedT)}</b></td><td class="r"><b>${fmt(e.neto)}</b></td><td class="r muted">${fmt(e.afpPat + e.sfsPat + e.srlPat)}</td></tr>`; };
+        const cab = `<tr><th>Empleado</th><th class="r">Sueldo</th><th class="r">Otros ingresos</th><th class="r">Total ingresos</th><th class="r">AFP</th><th class="r">SFS</th><th class="r">ISR</th><th class="r">Préstamo</th><th class="r">Otras ded.</th><th class="r">Total deducciones</th><th class="r">Neto</th><th class="r">Patronal</th></tr>`;
+        const detalle = noms.map(n => `<h4 style="margin:16px 0 6px">${esc(fmtPeriodoKey(n.key))} <span class="muted" style="font-weight:normal">· guardada por ${esc(n.guardadoPor || '')}${n.pagado ? ' · pagada' : ''}</span></h4>
+            <div style="overflow:auto"><table class="tabla">${cab}${(n.calc || []).filter(l => l.cobra !== false).map(l => fila({ ...l, ing: l.ingresos, ded: l.deducciones }, false)).join('')}</table></div>
+            ${(n.calc || []).some(l => (l.ingItems || []).length || (l.dedItems || []).length) ? `<div class="muted" style="font-size:12px;margin-top:4px">${(n.calc || []).map(l => { const ii = (l.ingItems || []).filter(x => n2(x.monto) > 0).map(x => x.tipo + ' ' + fmt(x.monto)); const dd = (l.dedItems || []).filter(x => n2(x.monto) > 0).map(x => x.tipo + ' −' + fmt(x.monto)); return (ii.length || dd.length) ? `<div><b>${esc(l.nombre)}</b>: ${esc(ii.concat(dd).join(' · '))}</div>` : ''; }).join('')}</div>` : ''}`).join('');
+        reporteHTML = `<h2 style="margin:0 0 4px">ARTAL — Nómina de ${esc(fmtMesLargo(mes))}</h2><p class="muted" style="margin:0 0 10px">Consolidado por empleado (${noms.length} nómina${noms.length === 1 ? '' : 's'} guardada${noms.length === 1 ? '' : 's'}: ${noms.map(n => esc(fmtPeriodoKey(n.key))).join(' · ')}).</p>
+            <div style="overflow:auto"><table class="tabla">${cab}${emps.map(e => fila(e, false)).join('')}${fila({ ...T, nombre: 'TOTAL' }, true)}</table></div>
+            <p class="muted" style="margin-top:8px">Patronal = aporte del empleador (AFP + SFS + Riesgos Laborales), no se descuenta al empleado.</p>
+            <h3 style="margin:18px 0 0">Detalle por nómina</h3>${detalle}`;
+        body.innerHTML = reporteHTML;
+    };
+    function fmtMesLargo(mes) { const [y, m] = String(mes).split('-'); const d = new Date(Number(y), Number(m) - 1, 1); return d.toLocaleDateString('es-DO', { month: 'long', year: 'numeric' }); }
+    window.imprimirReporte = function () { if (!reporteHTML) { alert('No hay reporte para imprimir.'); return; } imprimir(reporteHTML, 'Nómina ' + (document.getElementById('rep-mes').value || '')); };
+    window.csvReporte = function () {
+        const mes = document.getElementById('rep-mes').value; const { noms, emps } = lineasReporte(mes); if (!noms.length) { alert('No hay nóminas guardadas en ese mes.'); return; }
+        const cel = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+        const filas = [['Empleado', 'Sueldo', 'Otros ingresos', 'Total ingresos', 'AFP', 'SFS', 'ISR', 'Préstamo', 'Otras deducciones', 'Total deducciones', 'Neto', 'Patronal AFP', 'Patronal SFS', 'Patronal SRL', 'Períodos']];
+        emps.forEach(e => { const t = filaTot(e); filas.push([e.nombre, e.sueldo, e.ing, t.ingT, e.afp, e.sfs, e.isr, e.prestamo, e.ded, t.dedT, e.neto, e.afpPat, e.sfsPat, e.srlPat, e.periodos.join(' ')]); });
+        const csv = '\ufeff' + filas.map(r => r.map(cel).join(';')).join('\n');
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'nomina-' + mes + '.csv'; a.click();
+    };
     onSnapshot(collection(db, 'bancosCuentas'), (s) => { cuentasBanco = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.activo !== false); renderHistorial(); }, () => {});
     onSnapshot(collection(db, 'bancosMovimientos'), (s) => { movsBanco = s.docs.map(d => ({ id: d.id, ...d.data() })); renderHistorial(); }, () => {});
     const saldoCuenta = (c) => n2(c.saldoInicial) + movsBanco.filter(m => m.cuentaId === c.id).reduce((a, m) => a + (m.tipo === 'credito' ? n2(m.monto) : -n2(m.monto)), 0);
@@ -1077,14 +1161,15 @@
 
     // Texto plano del volante (para enviar por mensajería interna).
     function volanteTexto(l, periodoKey) {
-        const L = ['ARTAL DOMINICANA — Volante de pago', l.nombre, 'Período: ' + fmtPeriodoKey(periodoKey), ''];
+        const L = ['ARTAL DOMINICANA — Volante de pago', l.nombre, 'Período: ' + fmtPeriodoKey(periodoKey), '', 'Ingresos:'];
         L.push('Sueldo: ' + fmt(l.sueldo) + (l.prorrateo && !l.prorrateo.fuera ? ` (proporcional: ${l.prorrateo.dias} días laborables)` : ''));
         (l.ingItems || []).filter(it => n2(it.monto) > 0).forEach(it => L.push(it.tipo + (n2(it.cantidad) ? ` (${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'd'})` : '') + ': ' + fmt(it.monto)));
+        L.push('TOTAL INGRESOS: ' + fmt(l.sueldo + l.ingresos), '', 'Deducciones:');
         if (!l.sinTSS) { L.push('AFP: - ' + fmt(l.afp)); L.push('SFS: - ' + fmt(l.sfs)); }
         if (l.isr) L.push('ISR: - ' + fmt(l.isr));
         if (l.prestamo) L.push('Cuota de préstamo: - ' + fmt(l.prestamo));
         (l.dedItems || []).filter(it => n2(it.monto) > 0).forEach(it => L.push(it.tipo + (n2(it.cantidad) ? ` (${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'día(s)'})` : '') + ': - ' + fmt(it.monto)));
-        L.push('', 'NETO A PAGAR: ' + fmt(l.neto));
+        L.push('TOTAL DEDUCCIONES: - ' + fmt(l.afp + l.sfs + l.isr + l.deducciones + l.prestamo), '', 'NETO A PAGAR: ' + fmt(l.neto));
         return L.join('\n');
     }
     // Envía a cada empleado su volante DIRECTO (sin abrir nada) a su Mensajería interna.
@@ -1163,15 +1248,17 @@
             <h3>ARTAL — Volante de pago</h3>
             <div class="vsub">${esc(l.nombre)} · Período: ${esc(fmtPeriodoKey(periodoKey))}</div>
             <table>
+                <tr class="vsec"><td colspan="2">INGRESOS</td></tr>
                 <tr><td>Sueldo${l.prorrateo && !l.prorrateo.fuera ? ` <span class="muted">(proporcional: ${l.prorrateo.dias} días laborables, ${fmtFecha(l.prorrateo.desde)} → ${fmtFecha(l.prorrateo.hasta)})</span>` : ''}</td><td class="r">${fmt(l.sueldo)}</td></tr>
                 ${(l.ingItems || []).filter(it => n2(it.monto) > 0).map(it => `<tr><td>${esc(it.tipo)}${n2(it.cantidad) ? ` <span class="muted">· ${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'd'} × ${fmt(valorUnitario(l.sueldoMes, it.calc))} × ${n2(it.factor) || 1}</span>` : ''}</td><td class="r">${fmt(it.monto)}</td></tr>`).join('')}
+                <tr class="vsub2"><td>Total ingresos</td><td class="r">${fmt(l.sueldo + l.ingresos)}</td></tr>
+                <tr class="vsec"><td colspan="2">DEDUCCIONES</td></tr>
                 ${l.sinTSS ? '' : `<tr><td>AFP (${cfg.afpEmp}%)</td><td class="r">- ${fmt(l.afp)}</td></tr>
                 <tr><td>SFS (${cfg.sfsEmp}%)</td><td class="r">- ${fmt(l.sfs)}</td></tr>`}
                 <tr><td>ISR${isrNota(l) ? ` <span class="muted">${isrNota(l)}</span>` : ''}</td><td class="r">- ${fmt(l.isr)}</td></tr>
                 ${l.prestamo ? `<tr><td>Cuota de préstamo</td><td class="r">- ${fmt(l.prestamo)}</td></tr>` : ''}
                 ${(l.dedItems || []).filter(it => n2(it.monto) > 0).map(it => `<tr><td>${esc(it.tipo)}${n2(it.cantidad) ? ` <span class="muted">· ${n2(it.cantidad)} ${it.calc === 'hora' ? 'h' : 'día(s)'} × ${fmt(valorUnitario(l.sueldoMes, it.calc))}${(n2(it.factor) || 1) !== 1 ? ' × ' + it.factor : ''}</span>` : ''}</td><td class="r">- ${fmt(it.monto)}</td></tr>`).join('')}
-                <tr><td>Total ingresos</td><td class="r">${fmt(l.sueldo + l.ingresos)}</td></tr>
-                <tr><td>Total deducciones</td><td class="r">- ${fmt(totalDed)}</td></tr>
+                <tr class="vsub2"><td>Total deducciones</td><td class="r">- ${fmt(totalDed)}</td></tr>
                 <tr class="vtot"><td>Neto a pagar</td><td class="r">${fmt(l.neto)}</td></tr>
             </table>
             ${l.sinTSS ? '<p class="muted" style="margin-top:10px">Empleado sin seguridad social (TSS): no lleva AFP/SFS.</p>' : `<p class="muted" style="margin-top:14px">Aporte del empleador (no se descuenta): AFP ${fmt(l.afpPat)} · SFS ${fmt(l.sfsPat)} · Riesgos Laborales ${fmt(l.srlPat)}.</p>`}
