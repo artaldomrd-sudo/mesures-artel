@@ -261,6 +261,68 @@ exports.instalacionActividad = onDocumentWritten('instalaciones/{id}', async (ev
     } catch (e) { console.error('instalacionActividad', id, e); }
 });
 
+// ---------- El pedido sigue al trabajo de instalación (usuario 2026-10-01, Fábrica interna) ----------
+// Antes el tablero de fábrica solo avanzaba con los botones de fábrica; un pedido instalado hace semanas seguía en «Tomar
+// pedido». Reglas (decididas por el usuario):
+//  · Trabajo COMPLETADO → los pedidos de esa obra pasan a Completado/Instalado. Dos salvaguardas: si queda OTRO trabajo
+//    abierto de la misma obra (obra por partes, caso Plaza Manuela) no se cierra nada; y un pedido de ALUCUFEL solo se cierra
+//    si fábrica ya lo había marcado listo (ALUCUFEL manda sobre «listo para entregar»; nada lo empuja).
+//  · Trabajo EN PROCESO → solo un pedido de FÁBRICA INTERNA que siga en Pendiente/En fábrica pasa a Listo para cargar
+//    (Wilson puede buscar material listo sin que la oficina lo haya marcado). Los de ALUCUFEL no se tocan.
+// Los pedidos se buscan por enlace directo (orderId/orderIds) y por la regla mismaObra; el trabajo queda enlazado de paso.
+const ABIERTOS_FAB = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar'];
+const esPedidoFabricacion = (o) => o && o.docType !== 'COMPRA_DIRECTA' && String(o.docType || '').indexOf('COT') !== 0 && o.sinInstalacion !== true;
+async function pedidosDelTrabajo(jobId, j) {
+    const directos = [...new Set([j.orderId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])].filter(Boolean))];
+    const abiertos = (await db.collection('orders').where('status', 'in', ABIERTOS_FAB).get()).docs
+        .filter((d) => esPedidoFabricacion(d.data()) && (directos.includes(d.id) || mismaObra(j.cliente, j.obra, d.data().cliente, d.data().obra)))
+        .map((d) => ({ id: d.id, ...d.data() }));
+    const nuevos = abiertos.map((o) => o.id).filter((id) => !directos.includes(id));
+    if (nuevos.length) { try { await db.doc('instalaciones/' + jobId).update({ orderIds: FieldValue.arrayUnion(...directos, ...nuevos), orderId: j.orderId || nuevos[0] }); } catch (_) { } }
+    return abiertos;
+}
+exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const id = event.params.id;
+    const estado = after.estado || 'pendiente';
+    if (estado === (before.estado || 'pendiente')) return;
+    if (estado !== 'completado' && estado !== 'en_proceso') return;
+    try {
+        const pedidos = await pedidosDelTrabajo(id, after);
+        if (!pedidos.length) return;
+        if (estado === 'completado') {
+            const otros = (await db.collection('instalaciones').get()).docs.filter((d) => d.id !== id && (d.data().estado || 'pendiente') !== 'completado' && mismaObra(after.cliente, after.obra, d.data().cliente, d.data().obra));
+            if (otros.length) { console.log('pedidoSigueTrabajo: obra por partes, queda abierto', otros.map((d) => d.id).join(','), '→ no se cierra el pedido'); return; }
+            for (const o of pedidos) {
+                if (o.instalado === true && o.status === 'completado') continue;
+                if (o.destino !== 'interno' && !['listo_para_cargar', 'parcialmente_listo'].includes(o.status)) { console.log('pedidoSigueTrabajo: pedido ALUCUFEL', o.id, 'aún', o.status, '→ ALUCUFEL manda, no se cierra'); continue; }
+                await db.doc('orders/' + o.id).update({ instalado: true, status: 'completado', fechaInstalado: after.validadoFecha || FieldValue.serverTimestamp(), instaladoPorNombre: after.validadoPor || 'Sistema ARTAL', cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: id, cierreAutomaticoFecha: FieldValue.serverTimestamp() });
+                console.log('pedidoSigueTrabajo: pedido', o.id, 'cerrado por trabajo completado', id);
+            }
+        } else {
+            for (const o of pedidos) {
+                if (o.destino !== 'interno' || !['pendiente_fabrica', 'en_fabrica'].includes(o.status)) continue;
+                await db.doc('orders/' + o.id).update({ status: 'listo_para_cargar', fechaListoParaCargar: FieldValue.serverTimestamp(), listoAutomatico: 'instalacion_en_proceso', listoAutomaticoTrabajo: id, listoAutomaticoFecha: FieldValue.serverTimestamp() });
+                console.log('pedidoSigueTrabajo: pedido interno', o.id, '→ listo por instalación en proceso', id);
+            }
+        }
+    } catch (e) { console.error('pedidoSigueTrabajo', id, e); }
+});
+// Entrega del camión en un pedido de FÁBRICA INTERNA que la oficina no marcó listo → pasa a Listo para cargar (Transportes
+// muestra esos pedidos para que Wilson pueda recoger material que ya está hecho). ALUCUFEL: nunca.
+exports.pedidoEntregadoInterno = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    if (after.destino !== 'interno' || !esPedidoFabricacion(after)) return;
+    const movido = (after.entregado === true && before.entregado !== true) || (after.enRuta === true && before.enRuta !== true);
+    if (!movido || !['pendiente_fabrica', 'en_fabrica'].includes(after.status)) return;
+    try {
+        await db.doc('orders/' + event.params.id).update({ status: 'listo_para_cargar', fechaListoParaCargar: FieldValue.serverTimestamp(), listoAutomatico: after.entregado === true ? 'entregado' : 'en_ruta', listoAutomaticoFecha: FieldValue.serverTimestamp() });
+        console.log('pedidoEntregadoInterno:', event.params.id, '→ listo por', after.entregado === true ? 'entrega' : 'en ruta');
+    } catch (e) { console.error('pedidoEntregadoInterno', event.params.id, e); }
+});
+
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return; // borrado

@@ -59,6 +59,7 @@
     import { db } from '../firebase-config.js';
     import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from '../order-preview.js';
+    import { mismaObra } from '../obras-util.js';
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['fabrica']);
@@ -130,6 +131,7 @@
                 · <a href="../etiquetas.html?orderId=${id}" target="_blank">🏷 Etiquetas</a>
                 ${(o.fechaCotizado || o.fechaSolicitada) && (o.fechaCotizado || o.fechaSolicitada).toDate ? `<br><span style="color:#667;">📤 Recibido: <b>${esc((o.fechaCotizado || o.fechaSolicitada).toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }))}</b></span>` : ''}
             </div>
+            ${rioAbajoHTML(id, o)}
             ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar partes listas" para ver/actualizar qué partes (marco, hojas, vidrios, accesorios) van de cada ítem.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
@@ -152,6 +154,30 @@
 
     let currentTab = 'pendientes';
     let allOrders = [];
+    // Lo que pasó RÍO ABAJO de fábrica (usuario 2026-10-01: «si se instaló ya no debe estar como tomar pedido»): entrega del
+    // camión, instalación en proceso (trabajo de Instalación enlazado o de la misma obra) e instalación terminada. Se muestra
+    // en cada tarjeta para que fábrica sepa que el pedido ya salió, aunque nadie haya tocado los botones de aquí.
+    let jobsCache = [];
+    onSnapshot(collection(db, 'instalaciones'), (snap) => { jobsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => { });
+    const fD = (t) => (t && t.toDate) ? t.toDate().toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) : '';
+    function rioAbajo(id, o) {
+        const jobs = jobsCache.filter(j => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)) || mismaObra(o.cliente, o.obra, j.cliente, j.obra));
+        const enProceso = jobs.find(j => j.estado === 'en_proceso');
+        const completado = jobs.find(j => j.estado === 'completado');
+        const chips = [];
+        if (o.enRuta === true && o.entregado !== true) chips.push('🚚 En ruta' + (fD(o.fechaEnRuta) ? ' ' + fD(o.fechaEnRuta) : ''));
+        if (o.entregado === true) chips.push('🚚 Entregado' + (fD(o.fechaEntregado) ? ' ' + fD(o.fechaEntregado) : ''));
+        if (enProceso) chips.push('🔧 En instalación' + (fD(enProceso.inicioReal) ? ' desde ' + fD(enProceso.inicioReal) : ''));
+        if (o.instalado === true || (completado && !enProceso)) chips.push('✅ Instalado' + (fD(o.fechaInstalado || (completado && completado.validadoFecha)) ? ' ' + fD(o.fechaInstalado || (completado && completado.validadoFecha)) : ''));
+        return { chips, salio: chips.length > 0 };
+    }
+    function rioAbajoHTML(id, o) {
+        const r = rioAbajo(id, o);
+        const auto = o.cierreAutomatico ? 'Cerrado automáticamente al terminar la instalación' : (o.listoAutomatico ? 'Marcado listo automáticamente (' + ({ instalacion_en_proceso: 'instalación en proceso', entregado: 'entrega del camión', en_ruta: 'camión en ruta' }[o.listoAutomatico] || o.listoAutomatico) + ')' : '');
+        if (!r.chips.length && !auto) return '';
+        return `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">${r.chips.map(c => `<span style="background:#eef4fb;color:#1f6aa5;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:bold;">${esc(c)}</span>`).join('')}${auto ? `<span style="font-size:12px;color:#667;">⚙️ ${esc(auto)}</span>` : ''}</div>`;
+    }
+
     let choferesCache = [];
 
     window.setTab = function (tab) {

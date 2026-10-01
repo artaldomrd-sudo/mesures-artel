@@ -2557,6 +2557,29 @@ desde el 18 sept · ⏸ en espera de volver» (fecha pasada) / «· ↩ vuelven 
 siguen midiendo «a tiempo» contra la fecha vigente (la de regreso). (3) Datos corregidos: Gregory — Riviera Coson 4 (en proceso
 desde 18/09, comentario de Roosevelt) y Sol de Arena — Edificio 2 (desde 28/09). Guía `guia-instalacion-01` actualizada.
 
+### El pedido sigue al trabajo: Fábrica interna automática (2026-10-01)
+
+Usuario: «en Fábrica interna seguimos con el modelo de tomar pedidos… si se instaló ya no debe estar como tomar pedido»;
+luego: «ALUCUFEL marca listo para entregar, ese empuje automático no lo quiero; solo con fábrica interna». Reglas:
+- `pedidoSigueTrabajo` (trigger `instalaciones`): trabajo → **completado** cierra los pedidos de la obra (enlace directo
+  `orderId/orderIds` + `mismaObra`; `pedidosDelTrabajo` enlaza de paso) con dos salvaguardas: si queda OTRO trabajo abierto de
+  la misma obra (obra por partes, Plaza Manuela) no cierra nada; un pedido de ALUCUFEL solo se cierra si ya estaba
+  listo/parcialmente listo. Trabajo → **en_proceso**: solo pedidos `destino:'interno'` en Pendiente/En fábrica pasan a
+  `listo_para_cargar` (`listoAutomatico:'instalacion_en_proceso'`). Campos: `cierreAutomatico`, `cierreAutomaticoTrabajo`,
+  `listoAutomatico`, `listoAutomaticoTrabajo`. `cambiarEstado` en Instalación aplica las mismas salvaguardas del lado cliente.
+- `pedidoEntregadoInterno` (trigger `orders`): pedido interno en Pendiente/En fábrica que el chofer marca En ruta o Entregado →
+  `listo_para_cargar` (`listoAutomatico:'en_ruta'|'entregado'`). Para eso Transportes (`chofer.html`) ahora LISTA los pedidos
+  internos aún no marcados listos (aviso azul «Fábrica interna — la oficina todavía no lo marcó listo»); los de ALUCUFEL no
+  aparecen hasta que fábrica los marque.
+- Tableros (`fabrica-interna.html` y `alucufel/fabrica.html`): `rioAbajo(id,o)` (lee `instalaciones` + campos del pedido) pinta
+  chips «🚚 En ruta/Entregado dd mmm · 🔧 En instalación desde … · ✅ Instalado …» y la nota «⚙️ Cerrado/Marcado listo
+  automáticamente». En la interna, un pedido Pendiente que ya salió no muestra «Tomar pedido» sino «Listo para cargar».
+- Panel (`index.html`, centro de notificaciones, tarjeta `sm:`): pedido de fabricación Pendiente/En fábrica/Parcial con ≥ 30 días
+  sin movimiento (máx. de fechas del pedido y comentarios), sin trabajo de instalación ni entrega → «Sigue en fábrica (30 días
+  más)» (`sinMovimientoSilenciadoHasta`) o «Cerrar pedido» (`cierreManual:'sin_movimiento'`). Nunca cierra solo.
+- Datos 01/10 (validados): Marisol Acosta A5-105 y Altea 11 barandas cerrados con su fecha real de instalación; Plaza Manuela
+  reabierto (obra por partes, trabajo en proceso desde 28/08). Pendiente opcional: unificar los dos tableros en un archivo.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
@@ -2883,6 +2906,11 @@ cristal, Archivo + Inter, píldora de nav, orbes); organización de catálogo ti
   `#producto/<id>` de un producto con `marca` se renderiza dentro del shell (truco `_inUni` en `VISTAS.producto`).
   `render()` pone `body.en-universo uni-bg-<id>` (oculta los orbes, fondo propio). Portada: sección "Universos" con dos
   tarjetas + sello `.marca-badge` en las categorías; mega menú con bloque "Universos". Colores nuevos en `COLORES`/`.sw-*`.
+- **Paneles y pisos PVC propios (2026-10-01)**: fotos de los slides de ARTAL recortadas por color en `img/pvc/` (`pl-*` planchas
+  acanaladas 16 × 290, `p3v-*` paneles 3 vías 22 × 290, `piso-*` pisos 19 × 122, `ambiente-*`). Productos `wp-plancha` (16
+  colores), `wp-3vias` (5) y `piso-pvc` (7, categoría nueva `pisos-pvc`) usan **`imgs: {color: ruta}`**: `prodImg(p, color)`
+  elige la foto del color, los thumbs de la ficha muestran una por color y `swAttr(p, c)` pinta el swatch con la foto
+  (`.sw-img`) en ficha y filtros. Para cualquier producto con foto por acabado basta con rellenar `imgs`.
 - **Es una MAQUETA (v0.1)**: precios de muestra, sin Firebase todavía. Siguiente paso previsto: catálogo,
   cuentas y pedidos en Firestore (misma consola que `ops/`), validación de RNC, pagos reales.
 - Servidor local propio: `.claude/launch.json` → `b2b-local` (`herramientas/servidor-b2b.js`, puerto

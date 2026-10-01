@@ -1328,7 +1328,13 @@
             // Si el trabajo no trae orderId, se busca el pedido abierto de la misma obra y se enlaza de paso.
             let oids = ordenesDeJob(j);
             if (!oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
+            // Mismas salvaguardas que el trigger pedidoSigueTrabajo (usuario 2026-10-01): obra por partes (queda otro trabajo
+            // abierto de la misma obra) → el pedido no se cierra; pedido de ALUCUFEL que fábrica no marcó listo → tampoco.
+            const otroAbierto = estado === 'completado' && allJobs.some(x => x.id !== id && (x.estado || 'pendiente') !== 'completado' && mismaObra(j.cliente, j.obra, x.cliente, x.obra));
             for (const oid of oids) {
+                const od = ((ordersCache.find(x => x.id === oid) || {}).data) || {};
+                if (estado === 'completado' && otroAbierto) { console.log('pedido', oid, 'no se cierra: obra por partes, queda otro trabajo abierto'); continue; }
+                if (estado === 'completado' && od.destino !== 'interno' && !['listo_para_cargar', 'parcialmente_listo', 'completado'].includes(od.status)) { console.log('pedido ALUCUFEL', oid, 'aún', od.status, '→ no se cierra'); continue; }
                 if (estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
                 else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: false, status: 'listo_para_cargar' });
             }

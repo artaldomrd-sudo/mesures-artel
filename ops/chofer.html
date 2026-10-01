@@ -180,6 +180,7 @@
                 ${metaLine}
                 ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
             </div>
+            ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 Fábrica interna — la oficina todavía no lo marcó listo. Si el material ya está hecho puedes recogerlo: al marcar «En ruta» pasa solo a Listo para cargar.</div>` : ''}
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
             ${enRuta ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
@@ -269,6 +270,7 @@
         // Los pedidos "directo a instalación" no pasan por transporte (se instalan en obra): se
         // excluyen de Transportes para no confundir al chofer.
         docs = docs.filter(d => d.data().directoInstalacion !== true);
+        docs = docs.filter(d => !['pendiente_fabrica', 'en_fabrica'].includes(d.data().status) || (d.data().destino === 'interno' && d.data().docType !== 'COMPRA_DIRECTA'));
         // La asignación (ver historial.html) es solo informativa: cualquier chofer ve todos los
         // pedidos, así uno puede cubrir al otro si falta.
         let filtrados;
@@ -314,7 +316,11 @@
 
     // Incluye 'completado' para que los pedidos ya entregados (y, si corresponde, instalados)
     // sigan visibles en la pestaña "Entregado" en vez de desaparecer de esta pantalla.
-    const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'completado']));
+    // Fábrica interna (usuario 2026-10-01): Wilson puede recoger material que ya está hecho aunque la oficina no lo haya marcado
+    // listo. Esos pedidos (destino 'interno', aún Pendiente/En fábrica) se ven aquí con un aviso; al marcarlos «En ruta» o
+    // «Entregado» pasan solos a Listo para cargar (trigger pedidoEntregadoInterno). Los de ALUCUFEL NUNCA aparecen antes de
+    // que fábrica los marque listos (ALUCUFEL manda).
+    const q = query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'completado', 'pendiente_fabrica', 'en_fabrica']));
     onSnapshot(q, (snap) => render(snap.docs), (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
