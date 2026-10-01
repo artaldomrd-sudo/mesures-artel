@@ -2518,6 +2518,14 @@ espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramien
   (Altea 11 ventanas ×2, Dinorah A5 201, Jean Pierre); 10 citas de gerencia vencidas; usuario romain.jardinier sin nombre ni
   rol; 179/183 clientes sin teléfono; «cliente jeffrey» sin ficha; informe «Artal —» en 0 (no es obra).
 
+### Contadores de cotizaciones unificados (2026-10-01)
+
+Usuario: el hub de ALUCUFEL marcaba «4» en Cotizaciones sin nada que costear (eran 4 solicitudes `destino:'interno'` que
+ALUCUFEL nunca ve). Regla única ahora: **cada contador cuenta exactamente lo que lista su página**. ALUCUFEL hub:
+solicitadas sin `interno`; fábrica sin `interno` ni `directoInstalacion`. Panel (`index.html`) y ERP (`erp.html`)
+«Cotizaciones» = `costeada` + (`solicitada` y `interno`), que es lo que `cotizaciones.html` muestra como pendiente de la
+oficina. Dato visto: 3 solicitudes internas de «Katana sushi» con el mismo nombre (posible duplicado).
+
 ### Trabajos automáticos desde fábrica y «Empezamos hoy» (2026-10-01)
 
 Usuario: «debería haber una manera más sencilla de que aparezcan en Instalación desde que fábrica lo marca listo, sin yo
