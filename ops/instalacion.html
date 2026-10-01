@@ -695,7 +695,7 @@
             ${(puedeCambiarEstado && (!hist || esOficina)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado === 'pendiente') ? `<button class="btn-tomar" style="background:#1f6aa5" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy (la agenda vieja no castiga)">▶ Empezamos hoy</button>` : ''}${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
             ${(puedeCambiarEstado && (!hist || esOficina)) ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
@@ -800,7 +800,7 @@
             <div class="order-meta">
                 ${metaLine}
                 · ${asignadoTxt({ asignados: o.asignadosInstalador, instaladorNombre: o.asignadoInstaladorNombre, instaladorEmail: o.asignadoInstaladorEmail })}
-                ${yaAgendado ? '<br>📅 <b style="color:#1f6aa5">Agendado</b> (ver Calendario)' : (allJobs.some(j => j.orderId === id && !jobDate(j) && j.estado !== 'completado') ? '<br>📋 <b style="color:#c07a12">Agendado sin fecha</b> — ponle fecha desde la agenda (Editar)' : '')}
+                ${yaAgendado ? '<br>📅 <b style="color:#1f6aa5">Agendado</b> (ver Calendario)' : (jobsDeOrden(id).some(j => !jobDate(j) && j.estado !== 'completado') ? '<br>📋 <b style="color:#c07a12">Trabajo creado, sin fecha</b> — el equipo lo arranca con «Empezamos hoy» o gerencia le pone fecha' : '')}
             </div>
             ${c.total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:12px;color:#556;">
                 <span>🔧 Avance: <b>${c.instalados}/${c.total}</b></span>
@@ -847,11 +847,14 @@
 
     /* ===== Render maestro ===== */
     let agendadosOrderIds = new Set();
+    // Un trabajo puede cubrir VARIOS pedidos de la misma obra (`orderIds[]`, p. ej. Altea 11 ventanas + completivo).
+    const jobsDeOrden = (oid) => allJobs.filter(j => j.orderId === oid || (Array.isArray(j.orderIds) && j.orderIds.includes(oid)));
+    const ordenesDeJob = (j) => [...new Set([j.orderId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])].filter(Boolean))];
     function renderTodo() {
         // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
         // "sin fecha" seguía siendo visible únicamente dentro del calendario colapsado ("Por programar")
         // y desaparecía de "Por agendar" y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
-        agendadosOrderIds = new Set(allJobs.filter(j => j.orderId && (jobDate(j) || j.estado === 'completado' || j.estado === 'en_proceso')).map(j => j.orderId));
+        agendadosOrderIds = new Set(allJobs.filter(j => (jobDate(j) || j.estado === 'completado' || j.estado === 'en_proceso')).flatMap(j => ordenesDeJob(j)));
         renderMiDia();
         renderCalendario();
         renderPorInstalar();
@@ -1311,9 +1314,9 @@
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
             // El pedido ligado sigue al trabajo: completado → instalado (como la biometría); reabierto → vuelve a "listo".
             // Si el trabajo no trae orderId, se busca el pedido abierto de la misma obra y se enlaza de paso.
-            let oid = j.orderId || null;
-            if (!oid) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oid = p.id; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: oid }); } catch (_) { } } }
-            if (oid) {
+            let oids = ordenesDeJob(j);
+            if (!oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
+            for (const oid of oids) {
                 if (estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
                 else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: false, status: 'listo_para_cargar' });
             }
@@ -1577,6 +1580,22 @@
         try { await updateDoc(doc(db, 'orders', orderId), { asignadosInstalador: nuevos, asignadoInstaladorEmail: nuevos[0].email, asignadoInstaladorNombre: nuevos[0].nombre || '' }); }
         catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };
+    // «Empezamos hoy» (usuario 2026-10-01): el equipo corrige la agenda al llegar a la obra. Pasa a En proceso, guarda
+    // `inicioReal` (lo usan los puntos como referencia de "a tiempo") y `fechaOriginal`, pone la fecha de hoy y suma a quien
+    // lo toca como asignado si no lo estaba. Deja movimiento en la auditoría.
+    window.empezarHoy = async function (jobId) {
+        const j = allJobs.find(x => x.id === jobId); if (!j) return;
+        if (!confirm(`¿Empezar hoy «${[j.cliente, j.obra].filter(Boolean).join(' — ')}»?`)) return;
+        const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
+        const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
+        const ahora = serverTimestamp();
+        const cambios = { estado: 'en_proceso', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, inicioReal: ahora, fecha: Timestamp.now(), modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '' };
+        if (j.fecha && !j.fechaOriginal) cambios.fechaOriginal = j.fecha;
+        try {
+            await updateDoc(doc(db, 'instalaciones', jobId), cambios);
+            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Empezamos hoy', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+        } catch (e) { alert('No se pudo: ' + e.message); }
+    };
     window.tomarTrabajo = async function (jobId) {
         const j = allJobs.find(x => x.id === jobId) || {};
         const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
@@ -1612,8 +1631,8 @@
                 confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' }
             });
             // Si el pedido tiene una instalación agendada (Calendario), la marca completada también.
-            const job = allJobs.find(j => j.orderId === id);
-            if (job && job.estado !== 'completado') {
+            const job = jobsDeOrden(id).find(j => j.estado !== 'completado');
+            if (job) {
                 try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: serverTimestamp() }); } catch (_) { }
                 setTimeout(() => abrirValidacion(job.id, { completar: false }), 300);   // solo cargar horas al parte
             }

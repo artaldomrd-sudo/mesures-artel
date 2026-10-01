@@ -250,9 +250,12 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ') || 'trabajo';
             if (j.estado === 'completado') {
                 if (fechaRD(j.validadoFecha || j.estadoFecha) !== D) continue;
-                const dif = diffDias(D, lim);
+                // La referencia es el día en que EMPEZARON («Empezamos hoy», inicioReal) si es posterior al agendado: una
+                // agenda vieja que nadie movió no castiga a quien sí hizo el trabajo (usuario 2026-10-01, caso Xcape).
+                const iniReal = fechaRD(j.inicioReal); const refD = iniReal && iniReal > lim ? iniReal : lim;
+                const dif = diffDias(D, refD);
                 let pts, det;
-                if (dif <= 0) { pts = R.trabajoATiempo; det = `${lugar}: completado el día agendado (${fmtF(lim)}).`; }
+                if (dif <= 0) { pts = R.trabajoATiempo; det = `${lugar}: completado el día ${iniReal && iniReal > lim ? 'en que empezaron' : 'agendado'} (${fmtF(refD)}).`; }
                 else if (dif === 1) { pts = R.trabajoUnDia; det = `${lugar}: completado un día después de lo agendado (${fmtF(lim)}).`; }
                 else { pts = R.trabajoTarde; det = `${lugar}: completado ${dif} días después de lo agendado (${fmtF(lim)}).`; }
                 // Asignados + quien tenga horas en el parte de esa obra desde el día agendado (máx. 14 días atrás) hasta hoy.
@@ -260,7 +263,7 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 const enParte = await personasEnObra(j, [ini < D ? ini : D, piso].sort()[1], D, eq, emps);
                 const gente = new Map(); asignadosDe(j).forEach((em) => gente.set(em, nombreDe(em))); enParte.forEach((n, em) => gente.set(em, n));
                 for (const [em, n] of gente) { await evento({ email: em, nombre: n, tipo: 'trabajo', ref: j.id, puntos: pts, detalle: det + (enParte.has(em) && !asignadosDe(j).includes(em) ? ' Contado por tus horas en el parte.' : ''), fechaEvento: D }); res.trabajos++; }
-            } else if (diffDias(D, lim) > cfg.diasVencido) {
+            } else if (diffDias(D, lim) > cfg.diasVencido && !j.inicioReal && j.estado !== 'en_proceso') {   // si lo tocaron, no está "olvidado"
                 for (const em of asignadosDe(j)) {
                     const id = `${ek(em)}__trabajo_vencido__${j.id}`;
                     if ((await db.doc('puntos/' + id).get()).exists) continue;

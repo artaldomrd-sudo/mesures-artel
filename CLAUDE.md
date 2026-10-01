@@ -2518,6 +2518,21 @@ espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramien
   (Altea 11 ventanas ×2, Dinorah A5 201, Jean Pierre); 10 citas de gerencia vencidas; usuario romain.jardinier sin nombre ni
   rol; 179/183 clientes sin teléfono; «cliente jeffrey» sin ficha; informe «Artal —» en 0 (no es obra).
 
+### Trabajos automáticos desde fábrica y «Empezamos hoy» (2026-10-01)
+
+Usuario: «debería haber una manera más sencilla de que aparezcan en Instalación desde que fábrica lo marca listo, sin yo
+tener que agendar». Plan: Wilson será el encargado de programación en unas semanas; la herramienta se diseña para que el
+equipo se autogestione. (1) `instalacionAlListo` (trigger `orders`): al pasar a listo_para_cargar/parcialmente_listo un
+pedido de fabricación (no compra directa, no «solo recoger») crea un trabajo `sin_fecha` enlazado (`orderId`, `orderIds[]`,
+`origen:'auto_fabrica'`, asignados = los del pedido); si ya hay un trabajo ABIERTO de la misma obra (`mismaObra`) engancha el
+pedido a ese (`orderIds`). (2) Instalación: botón **«▶ Empezamos hoy»** en trabajos pendientes (equipo): pasa a en_proceso,
+`inicioReal`, `fechaOriginal`, fecha = hoy, suma al que lo toca como asignado, movimiento en auditoría. `jobsDeOrden(oid)` /
+`ordenesDeJob(j)` manejan varios pedidos por trabajo (completar sincroniza TODOS los pedidos). (3) Puntos: «a tiempo» se mide
+contra el día en que empezaron si es posterior al agendado; `trabajo_vencido` no aplica si lo tocaron (`inicioReal` o
+en_proceso). Datos 01/10: Xcape puesto en proceso desde el 30/09; trabajo «ALTEA VILLA 11 ventanas» creado cubriendo los dos
+pedidos (en proceso desde 24/09); trabajo del completivo de Woof Woof (BETEP) creado sin fecha. Pendiente 2ª vuelta: aviso
+8 am a asignados cuando un trabajo con fecha vencida sigue pendiente («¿se hizo / hoy / reprogramar?»).
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
@@ -2822,6 +2837,28 @@ cristal, Archivo + Inter, píldora de nav, orbes); organización de catálogo ti
   Fotos reutilizadas de `../sitio-web/productos/`; lo que no tiene foto se dibuja con `ilus(tipo, acabado)`
   (SVG por código con la paleta `PAL` del acabado, mismo criterio que el cuaderno). Chat = respuestas
   fijas por intención (búsqueda de producto ANTES que delivery/precios, con `STOP` de palabras vacías).
+- **Bilingüe ES/EN (2026-09-30)**: selector ES/EN en la nav (`setLang`, `localStorage.artal_b2b_lang`). Todo
+  texto de vista pasa por `t('texto en español')` / `tf('… {x}', {x})`; el HTML estático usa `data-t` /
+  `data-tp` (placeholder) y `staticTexts()`. El diccionario vive en **`b2b/i18n-en.js`** (`window.ARTAL_EN`,
+  clave = el español tal cual; incluye nombres/descripciones/fichas de productos, categorías, niveles, zonas y
+  chat). Clave que falte → se muestra el español. El chat entiende palabras clave en ambos idiomas. Al agregar
+  texto nuevo: envolver en `t()` y sumar la línea al diccionario. Otros idiomas (FR) = otro archivo igual.
+- **Fotos de ilustración**: el usuario las irá subiendo a `b2b/img/` (ninguna definitiva por ahora); para usar
+  una, poner `img:'img/archivo.jpg'` en el producto o categoría en vez de `ilus:`.
+- **Universos (2026-10-01)**: tiendas por familia con diseño propio, estilo "tienda de vendedor" de Amazon pero
+  **SIN datos del proveedor** (regla explícita del usuario: "que sea un universo distinto… para que el cliente se sienta
+  cómodo", nada de marcas ni nombres del suplidor; el material del catálogo del proveedor se recorta y se presenta como
+  colección ARTAL). `MARCAS` = `wpc` (Puertas & Gabinetes WPC: azul/blanco, fotos en `img/wpc/` recortadas con PIL desde
+  el catálogo — 24 puertas KMB/KM-Q/KF + 5 gabinetes + corte/ficha/collage) y `sellado` (Sellado & Pegado: pizarra +
+  ámbar; los cartuchos se dibujan con `ilus('cartucho', color, {fam, salchicha})` con banda por familia `SELLADO_FAM`
+  — `FOTOS_SELLADO = true` (2026-10-01) usa las fotos reales recortadas en `img/sellado/` (`<fam>.jpg`, `<fam>-570.jpg` salchichas, `famImg()`), en cuya etiqueta se ve la marca del fabricante (usuario 2026-10-01: "no importa, deja la marca"); `false` vuelve a los dibujos; los productos son los del proveedor NP1 pero renombrados por función: Sellador SMP
+  Construcción, Adhesivo de montaje 320 kg, automotriz, duchas, marino, RTV roja 300 °C, masilla acrílica, silicona
+  universal). Rutas `#universo/<id>` (portada `UNI_HOME`), `#universo/<id>/<cat>` (grilla) y `#universo/<id>/tecnologia`
+  (guía `UNI_GUIA`); `uniShell()` pone la barra propia (← ARTAL Pro · Universo · pestañas); las categorías con `marca`
+  (`puertas-wpc`, `gabinetes-wpc`, `selladores`, `adhesivos`) redirigen al universo desde `#catalogo/<cat>`, y
+  `#producto/<id>` de un producto con `marca` se renderiza dentro del shell (truco `_inUni` en `VISTAS.producto`).
+  `render()` pone `body.en-universo uni-bg-<id>` (oculta los orbes, fondo propio). Portada: sección "Universos" con dos
+  tarjetas + sello `.marca-badge` en las categorías; mega menú con bloque "Universos". Colores nuevos en `COLORES`/`.sw-*`.
 - **Es una MAQUETA (v0.1)**: precios de muestra, sin Firebase todavía. Siguiente paso previsto: catálogo,
   cuentas y pedidos en Firestore (misma consola que `ops/`), validación de RNC, pagos reales.
 - Servidor local propio: `.claude/launch.json` → `b2b-local` (`herramientas/servidor-b2b.js`, puerto

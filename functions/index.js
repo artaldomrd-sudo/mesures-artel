@@ -193,6 +193,41 @@ exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', a
 //   comentarioParaFabrica nuevo (instrucción de oficina) → fabrica (+ admin si es interno)
 // Se dispara con cualquier escritura, pero solo notifica cuando el disparador REALMENTE cambió
 // (status distinto al anterior, o instrucción recién puesta) — así no repite en ediciones sueltas.
+// ---------- Trabajo de instalación AUTOMÁTICO al quedar listo en fábrica (usuario 2026-10-01) ----------
+// Antes gerencia tenía que «Agendar» cada pedido a mano para que existiera el trabajo (y con él las horas, el informe de
+// cierre, la encuesta y el cierre del pedido). Ahora, cuando un pedido de fabricación pasa a listo_para_cargar /
+// parcialmente_listo, se crea solo un trabajo «sin fecha, por programar» enlazado al pedido; el equipo lo toma, lo
+// arranca con «Empezamos hoy» y lo completa. Si ya hay un trabajo ABIERTO de la misma obra (regla mismaObra), el pedido se
+// engancha a ese (`orderIds[]`) en vez de crear otro. Compras directas y pedidos «solo recoger» no generan trabajo.
+exports.instalacionAlListo = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const LISTO = ['listo_para_cargar', 'parcialmente_listo'];
+    if (!LISTO.includes(after.status) || LISTO.includes(before.status)) return;
+    if (after.docType === 'COMPRA_DIRECTA' || after.sinInstalacion === true || after.instalado === true) return;
+    const id = event.params.id;
+    try {
+        const todos = (await db.collection('instalaciones').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (todos.some((j) => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)))) return;   // ya tiene trabajo
+        const abierto = todos.find((j) => j.estado !== 'completado' && mismaObra(after.cliente, after.obra, j.cliente, j.obra));
+        if (abierto) {
+            await db.doc('instalaciones/' + abierto.id).update({ orderIds: FieldValue.arrayUnion(...[...new Set([abierto.orderId, ...(abierto.orderIds || []), id].filter(Boolean))]), orderId: abierto.orderId || id });
+            console.log('instalacionAlListo: pedido', id, 'enganchado al trabajo abierto', abierto.id);
+            return;
+        }
+        const asig = Array.isArray(after.asignadosInstalador) ? after.asignadosInstalador.filter((a) => a && a.email) : (after.asignadoInstaladorEmail ? [{ email: after.asignadoInstaladorEmail, nombre: after.asignadoInstaladorNombre || '' }] : []);
+        await db.collection('instalaciones').add({
+            cliente: after.cliente || '', obra: after.obra || '', direccion: after.direccion || '', gps: after.gps || '',
+            modoFecha: 'sin_fecha', fecha: null, fechaFin: null,
+            asignados: asig, instaladorEmail: (asig[0] || {}).email || '', instaladorNombre: (asig[0] || {}).nombre || '',
+            estado: 'pendiente', notas: 'Creado automáticamente al quedar listo en fábrica (' + (after.docType || 'pedido') + ').',
+            recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
+            orderId: id, orderIds: [id], origen: 'auto_fabrica', creadoPorNombre: 'Sistema ARTAL', fechaCreacion: FieldValue.serverTimestamp()
+        });
+        console.log('instalacionAlListo: trabajo creado para', id, after.cliente, after.obra);
+    } catch (e) { console.error('instalacionAlListo', id, e); }
+});
+
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return; // borrado
