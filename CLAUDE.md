@@ -2380,6 +2380,10 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   no existe se crea con **`borrador: true`** (nota vacía, `creado` provisional). **Un borrador NO es parte enviado**: lo ignoran
   parte-gate, el aviso de Instalación, `recordarParteDiario`, Seguimiento («⏳ Borrador en curso» / «✗ Falta (hay borrador)»),
   `puntos.js` y `diasPendientes`/`incluidoPorOtro` del formulario; Costo de obras e informes SÍ lo suman (horas reales).
+  **Ventana de horas (video del usuario 2026-10-01, Miki atascado)**: la lista incluye a TODO el equipo de obra, también al
+  jefe de parte (Wilson) aunque el parte sea de otro encargado (antes se lo excluía y Miki no podía marcarlo); el aviso de
+  «escribe las horas» se muestra DENTRO de la ventana (`#val-error`, `valError()`), no solo como alert; la casilla de horas es
+  amarilla, 16 px (sin zoom en iOS) y recibe el foco al abrir.
   `parte-diario.html` carga el borrador (líneas «✓ validado» + resto del equipo con obra por elegir) y al Enviar quita
   `borrador` y pone `creado` = hora real del envío. «Sin horas ahora» completa sin líneas (comportamiento anterior).
   Re-validar el mismo trabajo reemplaza sus líneas (`origenValidacion`). `instalaciones.horasValidacion*` guarda copia.

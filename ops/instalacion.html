@@ -277,6 +277,7 @@
             <span class="hint" id="val-parte" style="font-size:12px;color:#8a93a0"></span>
         </div>
         <div id="val-personas" style="max-height:46vh;overflow:auto;border:1px solid #eef1f4;border-radius:10px;padding:4px 8px"></div>
+        <div id="val-error" style="display:none;margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;color:#c0392b;border-radius:9px;padding:9px 11px;font-size:13.5px;font-weight:bold"></div>
         <div class="modal-acts">
             <button type="button" class="btn-cancelar" onclick="cerrarValidacion()">Cancelar</button>
             <button type="button" class="btn-cancelar" style="background:#eef4fb;color:var(--artal-blue)" onclick="completarSinHoras()" title="Marca el trabajo completado sin cargar horas (el parte se llena después)">Sin horas ahora</button>
@@ -1374,22 +1375,27 @@
         const asig = new Set((Array.isArray(j.asignados) ? j.asignados.map(a => String((a && a.email) || '').toLowerCase()) : []).concat([usuario.email.toLowerCase()]));
         const jefe = String(parteCfg.jefe || (enc && enc.email) || '').toLowerCase();
         const encEm = String((enc && enc.email) || '').toLowerCase();
+        // Todo el equipo de obra, INCLUIDO el jefe de parte (Wilson): antes se lo excluía cuando el parte era de otro encargado
+        // y Miki no podía marcarlo aunque trabajaran juntos (video del usuario 2026-10-01). Quien está en el parte, cuenta.
         const lista = rrhhEmpleados.filter(e => (e.estado || 'activo') === 'activo').filter(e => { const r = rolesEm(e.correo); return !r.includes('admin') && (r.includes('instalador') || r.includes('ayudante')); })
-            .filter(e => !(jefe && encEm !== jefe && String(e.correo || '').toLowerCase() === jefe))
             .sort((a, b) => { const am = asig.has(String(a.correo || '').toLowerCase()), bm = asig.has(String(b.correo || '').toLowerCase()); if (am !== bm) return am ? -1 : 1; return String(a.nombre).localeCompare(String(b.nombre)); });
         const yoEm = usuario.email.toLowerCase();
         document.getElementById('val-personas').innerHTML = lista.length ? lista.map(e => { const propio = String(e.correo || '').toLowerCase() === yoEm; const prev = misValEquipo[j.id + '_' + e.id] || {}; const niv = prev.nivel || 'ok'; return `<div style="padding:8px 4px;border-bottom:1px solid #f0f3f7;font-size:14px">
             <div style="display:flex;align-items:center;gap:10px">
                 <label style="display:flex;align-items:center;gap:10px;flex:1;min-width:0"><input type="checkbox" class="val-chk" value="${esc(e.id)}" ${asig.has(String(e.correo || '').toLowerCase()) ? 'checked' : ''} style="width:20px;height:20px"><span style="flex:1;overflow:hidden;text-overflow:ellipsis">${esc(e.nombre)}</span></label>
-                <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="0" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:64px;padding:7px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:14px;text-align:right"> h
+                <input type="number" class="val-h" data-id="${esc(e.id)}" value="" placeholder="horas" step="0.5" min="0.5" max="16" inputmode="decimal" style="width:78px;padding:9px 7px;border:1.5px solid #c9d3df;border-radius:8px;font-family:'Arimo';font-size:16px;text-align:right;background:#fffbe6"> h
                 <span class="val-rate" data-id="${esc(e.id)}" style="display:${betaPuntos() ? 'flex' : 'none'};gap:2px;${propio ? 'visibility:hidden' : ''}">${[['bien', '👍', 'Buen trabajo hoy (suma puntos)'], ['ok', '👌', 'Normal'], ['flojo', '⚠️', 'Flojo (resta puntos, pide motivo)']].map(([n, ic, t]) => `<button type="button" class="vr${niv === n ? ' on' : ''}" data-n="${n}" title="${t}" onclick="valRate(this)">${ic}</button>`).join('')}</span>
             </div>
             <input type="text" class="val-motivo" data-id="${esc(e.id)}" maxlength="120" placeholder="Motivo (obligatorio con ⚠️): p. ej. llegó tarde, dejó herramientas…" value="${esc(prev.motivo || '')}" style="display:${niv === 'flojo' ? 'block' : 'none'};width:100%;margin-top:6px;padding:7px;border:1.5px solid #f3c1bb;border-radius:8px;font-family:'Arimo';font-size:13px;box-sizing:border-box">
         </div>`; }).join('')
             : '<p class="hint">No hay empleados de instalación en RRHH con correo enlazado.</p>';
         const ley = document.getElementById('val-leyenda'); if (ley) ley.style.display = betaPuntos() ? '' : 'none';
+        const err = document.getElementById('val-error'); if (err) { err.style.display = 'none'; err.textContent = ''; }
         document.getElementById('modal-val').classList.add('show');
+        // El cursor va solo a la primera casilla de horas de alguien marcado: en el teléfono se ve de inmediato qué hay que llenar.
+        setTimeout(() => { const chk = document.querySelector('#modal-val .val-chk:checked'); const i = chk && document.querySelector(`#modal-val .val-h[data-id="${chk.value}"]`); if (i) { try { i.focus(); } catch (_) { } } }, 80);
     };
+    function valError(msg) { const err = document.getElementById('val-error'); if (err) { err.textContent = msg; err.style.display = 'block'; err.scrollIntoView({ block: 'nearest' }); } }
     // Valoración del encargado por persona (usuario 2026-09-27): 👍 / 👌 / ⚠️; el motivo solo se pide con ⚠️.
     window.valRate = function (btn) {
         const g = btn.closest('.val-rate'); g.querySelectorAll('.vr').forEach(b => b.classList.remove('on')); btn.classList.add('on');
@@ -1408,7 +1414,7 @@
         const sinHoras = sel.filter(id => !(horasDe(id) > 0));
         if (sinHoras.length) {
             sinHoras.forEach(id => { const i = document.querySelector(`#modal-val .val-h[data-id="${id}"]`); if (i) i.style.borderColor = '#d9483b'; });
-            alert('Escribe las horas de cada persona marcada (no pueden quedar en 0). Si alguien no estuvo, desmárcalo.');
+            valError('⚠️ Escribe las horas de cada persona marcada en la casilla amarilla (no pueden quedar en 0). Si alguien no estuvo, desmárcalo. Si todavía no sabes las horas, usa «Sin horas ahora».');
             return;
         }
         // Valoraciones: solo de las personas marcadas, nunca la propia. 'ok' solo se guarda si ya había una valoración
@@ -1424,7 +1430,7 @@
         const sinMotivo = Object.entries(valor).filter(([, v]) => v.nivel === 'flojo' && !v.motivo);
         if (sinMotivo.length) {
             sinMotivo.forEach(([id]) => { const m = document.querySelector(`#modal-val .val-motivo[data-id="${id}"]`); if (m) { m.style.display = 'block'; m.style.borderColor = '#d9483b'; } });
-            alert('Escribe el motivo de cada ⚠️ (flojo): es lo que la persona va a leer en sus puntos.');
+            valError('Escribe el motivo de cada ⚠️ (flojo): es lo que la persona va a leer en sus puntos.');
             return;
         }
         if (!sel.length && c.enc) { if (!confirm('No marcaste a nadie. ¿Completar el trabajo sin cargar horas al parte?')) return; }
