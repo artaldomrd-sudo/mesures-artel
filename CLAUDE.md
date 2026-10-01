@@ -2574,11 +2574,11 @@ luego: «ALUCUFEL marca listo para entregar, ese empuje automático no lo quiero
 - Tableros (`fabrica-interna.html` y `alucufel/fabrica.html`): `rioAbajo(id,o)` (lee `instalaciones` + campos del pedido) pinta
   chips «🚚 En ruta/Entregado dd mmm · 🔧 En instalación desde … · ✅ Instalado …» y la nota «⚙️ Cerrado/Marcado listo
   automáticamente». En la interna, un pedido Pendiente que ya salió no muestra «Tomar pedido» sino «Listo para cargar».
-- Panel (`index.html`, centro de notificaciones, tarjeta `sm:`): pedido de fabricación Pendiente/En fábrica/Parcial con ≥ 30 días
-  sin movimiento (máx. de fechas del pedido y comentarios), sin trabajo de instalación ni entrega → «Sigue en fábrica (30 días
-  más)» (`sinMovimientoSilenciadoHasta`) o «Cerrar pedido» (`cierreManual:'sin_movimiento'`). Nunca cierra solo.
+- NO hay aviso de «pedidos sin movimiento» (usuario 2026-10-01, se construyó y se quitó el mismo día): un pedido en fábrica
+  está validado y cobrado; puede esperar meses por material en contenedor o por una instalación lejana. Tampoco se unifican
+  los dos tableros (son fábricas distintas).
 - Datos 01/10 (validados): Marisol Acosta A5-105 y Altea 11 barandas cerrados con su fecha real de instalación; Plaza Manuela
-  reabierto (obra por partes, trabajo en proceso desde 28/08). Pendiente opcional: unificar los dos tableros en un archivo.
+  reabierto (obra por partes, trabajo en proceso desde 28/08). Los dos tableros siguen separados a propósito.
 
 ### Nómina: pedidos de la contable (2026-09-30)
 
@@ -2911,6 +2911,13 @@ cristal, Archivo + Inter, píldora de nav, orbes); organización de catálogo ti
   colores), `wp-3vias` (5) y `piso-pvc` (7, categoría nueva `pisos-pvc`) usan **`imgs: {color: ruta}`**: `prodImg(p, color)`
   elige la foto del color, los thumbs de la ficha muestran una por color y `swAttr(p, c)` pinta el swatch con la foto
   (`.sw-img`) en ficha y filtros. Para cualquier producto con foto por acabado basta con rellenar `imgs`.
+- **Tubos: gama completa generada (2026-10-01, "agrega todo tipo de tubos")**: `TUBOS_DEF` = `[tipo, a, b, nombre en
+  pulgadas, espesores, extra]` (rectangulares 20×40 … 4"×8", cuadrados 20×20 … 4"×4", redondos ¾" … 4", efecto madera) →
+  `PRODUCTOS` los genera con precio de muestra ≈ perímetro × 9.2 (× 13.5 madera) × factor de espesor, `medidas` = espesores
+  (`medLabel:'Espesor'`, la ficha traduce el prefijo) y `serie` Rectangular/Cuadrado/Redondo/Efecto madera para los filtros.
+  Fotos en `img/tubos/` (`familia.jpg` categoría, sin logo del proveedor; `cuadrado-negro.jpg` como `imgs.negro` del 2"×2";
+  `rect-madera.jpg` efecto madera). Los nombres en inglés se generan y se pegan al final de `i18n-en.js` (si cambia
+  `TUBOS_DEF`, regenerar ese bloque).
 - **Es una MAQUETA (v0.1)**: precios de muestra, sin Firebase todavía. Siguiente paso previsto: catálogo,
   cuentas y pedidos en Firestore (misma consola que `ops/`), validación de RNC, pagos reales.
 - Servidor local propio: `.claude/launch.json` → `b2b-local` (`herramientas/servidor-b2b.js`, puerto

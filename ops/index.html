@@ -119,7 +119,6 @@
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
-    import { mismaObra } from './obras-util.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
     // Solo admin: es el panel central con acceso a todas las pantallas.
@@ -283,23 +282,6 @@
                     acciones: `<a class="n-ver" href="cotizaciones.html">Ir a Cotizaciones</a>` });
             }
         });
-        // 3c) Pedidos de fabricación OLVIDADOS en fábrica (usuario 2026-10-01): más de 30 días sin movimiento, sin trabajo de
-        //     instalación, sin entrega. Nunca se cierran solos: gerencia decide «Sigue en fábrica» (30 días más) o «Cerrar».
-        ordersCache.forEach(({ id, o }) => {
-            if (!['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'].includes(o.status)) return;
-            if (o.docType === 'COMPRA_DIRECTA' || String(o.docType || '').indexOf('COT') === 0 || o.entregado === true || o.enRuta === true) return;
-            if (instCache.some(({ j }) => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)) || mismaObra(o.cliente, o.obra, j.cliente, j.obra))) return;
-            const ms = (t) => (t && t.toDate) ? t.toDate().getTime() : (typeof t === 'string' && !isNaN(Date.parse(t)) ? Date.parse(t) : 0);
-            const ult = Math.max(ms(o.fecha), ms(o.fechaCotizado), ms(o.fechaSolicitada), ms(o.fechaEnFabrica), ms(o.fechaParcialListo), ms(o.comentarioFabricaFecha), ms(o.comentarioParaFabricaFecha), ms(o.fichaActualizadaFecha), ...(Array.isArray(o.comentariosInstalador) ? o.comentariosInstalador.map(c => ms(c.fecha)) : [0]));
-            if (!ult) return;
-            const dias = Math.floor((Date.now() - ult) / 86400000);
-            if (dias < 30) return;
-            if (ms(o.sinMovimientoSilenciadoHasta) > Date.now()) return;
-            const lugar = (o.cliente || 'Sin cliente') + (o.obra ? ' — ' + o.obra : '');
-            N.push({ key: `sm:${id}`, tipo: 'tarea', ic: '🏭', titulo: `Pedido sin movimiento en fábrica (${o.destino === 'interno' ? 'interna' : 'ALUCUFEL'}) · ${dias} días`, sub: lugar,
-                txt: `Sigue en «${({ pendiente_fabrica: 'Pendiente', en_fabrica: 'En fábrica', parcialmente_listo: 'Parcialmente listo' })[o.status]}» desde el ${new Date(ult).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' })}, sin trabajo de instalación ni entrega. ¿Sigue real o se instaló sin pasar por el sistema?`,
-                acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifSigueFabrica('${id}')">Sigue en fábrica (30 días más)</button><button class="n-done" style="background:#c0392b" onclick="notifCerrarSinMovimiento('${id}')">Cerrar pedido</button>` });
-        });
         // 3b) Comentarios del instalador en trabajos del calendario (colección instalaciones), sin atender.
         instCache.forEach(({ id, j }) => {
             const lugar = (j.cliente || 'Sin cliente') + (j.obra ? ' — ' + j.obra : '');
@@ -350,12 +332,6 @@
     }
 
     window.notifVer = (id) => openOrderPreview(id);
-    window.notifSigueFabrica = async (id) => { const h = new Date(); h.setDate(h.getDate() + 30); try { await updateDoc(doc(db, 'orders', id), { sinMovimientoSilenciadoHasta: h.toISOString(), sinMovimientoSilenciadoPor: usuario.nombre }); } catch (e) { alert('No se pudo: ' + e.message); } };
-    window.notifCerrarSinMovimiento = async (id) => {
-        const o = (ordersCache.find(x => x.id === id) || {}).o || {};
-        if (!confirm(`¿Cerrar el pedido «${o.cliente || ''} — ${o.obra || ''}»?\n\nPasa a Completado y deja de aparecer en el tablero de fábrica. Queda registrado quién lo cerró.`)) return;
-        try { await updateDoc(doc(db, 'orders', id), { status: 'completado', cierreManual: 'sin_movimiento', cerradoPorNombre: usuario.nombre, cerradoPorEmail: usuario.email, cerradoFecha: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
-    };
     window.notifAtenderComentario = async (id) => { try { await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
     window.notifResponder = async (col, id) => {
         const inp = document.getElementById(`resp-${col}-${id}`);
