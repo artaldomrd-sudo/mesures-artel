@@ -406,7 +406,7 @@
     import { borrarConRegistro } from './papelera.js';
     import { mismaObra } from './obras-util.js';
     import {
-        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp
+        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     window.openOrderPreview = openOrderPreview;
 
@@ -562,9 +562,20 @@
     }
     function fechaTxtJob(j) {
         const ini = jobDate(j);
-        if (!ini) return j.estado === 'en_proceso' ? '🔧 En curso (sin fecha)' : '📋 Sin fecha (por programar)';
-        const fin = jobFin(j);
         const fmt = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
+        // En proceso (usuario 2026-10-01): se dice desde cuándo empezaron y, si falta terminar, cuándo vuelven.
+        // Fecha en el pasado = la obra quedó en espera de volver (falta algo) → se pide «Retomar» con el día de regreso.
+        if (j.estado === 'en_proceso') {
+            const ir = (j.inicioReal && j.inicioReal.toDate) ? j.inicioReal.toDate() : null;
+            const hoy0 = d0(new Date()).getTime();
+            let s = ir ? `🔧 En proceso desde el ${fmt(ir)}` : '🔧 En proceso';
+            if (ini && d0(ini).getTime() > hoy0) s += ` · ↩ vuelven el ${fmt(ini)}`;
+            else if (ini && d0(ini).getTime() === hoy0) s += ' · hoy en la obra';
+            else s += ' · ⏸ en espera de volver';
+            return s;
+        }
+        if (!ini) return '📋 Sin fecha (por programar)';
+        const fin = jobFin(j);
         if (j.modoFecha === 'rango') return fin ? `Del ${fmt(ini)} al ${fmt(fin)}` : `En curso desde el ${fmt(ini)}`;
         // Día único: mostrar FECHA + hora (antes solo salía la hora, se pedía la fecha).
         return ini.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' + ini.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
@@ -695,7 +706,8 @@
             ${(puedeCambiarEstado && (!hist || esOficina)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado === 'pendiente') ? `<button class="btn-tomar" style="background:#1f6aa5" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy (la agenda vieja no castiga)">▶ Empezamos hoy</button>` : ''}${(puedeCambiarEstado && estado !== 'completado' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}</div>
+            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado === 'pendiente') ? `<button class="btn-tomar" style="background:#1f6aa5" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy (la agenda vieja no castiga)">▶ Empezamos hoy</button>` : ''}${(puedeCambiarEstado && estado === 'pendiente' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}${(puedeCambiarEstado && estado === 'en_proceso') ? `<button class="btn-tomar" style="background:#8e44ad" onclick="toggleRetomar('${j.id}')" title="Fija el día en que vuelven a terminar; te suma como asignado si no lo estabas">↩ Retomar</button>` : ''}</div>
+            ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">¿Qué día vuelven a terminar?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar regreso</button></div>` : ''}
             ${(puedeCambiarEstado && (!hist || esOficina)) ? `
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
@@ -1595,6 +1607,34 @@
             await updateDoc(doc(db, 'instalaciones', jobId), cambios);
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Empezamos hoy', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
         } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    // «Retomar» (usuario 2026-10-01): un trabajo en proceso que quedó en espera (falta una pieza, un paño, un chicane…)
+    // no se vuelve a «tomar» ni a «empezar»: se fija el día en que regresan a terminarlo. La fecha pasa a ese día (los
+    // puntos de "a tiempo" se miden contra la fecha vigente), queda el historial en `retomas[]` y en la auditoría.
+    window.toggleRetomar = function (id) {
+        const row = document.getElementById('retomar-' + id); if (!row) return;
+        const abrir = row.style.display !== 'flex'; row.style.display = abrir ? 'flex' : 'none';
+        if (abrir) {
+            const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0);
+            const pad = (n) => String(n).padStart(2, '0');
+            document.getElementById('retomar-input-' + id).value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+    };
+    window.retomarJob = async function (jobId) {
+        const j = allJobs.find(x => x.id === jobId); if (!j) return;
+        const val = (document.getElementById('retomar-input-' + jobId) || {}).value; if (!val) { alert('Elige el día y la hora en que vuelven.'); return; }
+        const cuando = new Date(val); if (isNaN(cuando)) { alert('Fecha no válida.'); return; }
+        const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
+        const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
+        const txt = cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) + ' ' + cuando.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '',
+            retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: new Date().toISOString() }) };
+        if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = serverTimestamp(); if (!j.inicioReal) cambios.inicioReal = serverTimestamp(); }
+        try {
+            await updateDoc(doc(db, 'instalaciones', jobId), cambios);
+            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Retomar: vuelven el ' + txt, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+            const row = document.getElementById('retomar-' + jobId); if (row) row.style.display = 'none';
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };
     window.tomarTrabajo = async function (jobId) {
         const j = allJobs.find(x => x.id === jobId) || {};

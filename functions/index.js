@@ -4,7 +4,7 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getAuth } = require('firebase-admin/auth');
 
@@ -226,6 +226,39 @@ exports.instalacionAlListo = onDocumentWritten('orders/{id}', async (event) => {
         });
         console.log('instalacionAlListo: trabajo creado para', id, after.cliente, after.obra);
     } catch (e) { console.error('instalacionAlListo', id, e); }
+});
+
+// ---------- El trabajo pasa solo a «En proceso» con la actividad real de la obra (usuario 2026-10-01) ----------
+// «Este trabajo empezó y se está completando pero falta por terminar… debería marcarse en proceso automáticamente
+// cuando se inició, esto lo sabes porque han enviado fotos y comentarios del proceso.» Cuenta como actividad: un
+// comentario del EQUIPO en la conversación de la obra (deRol distinto de 'gerencia') o una FOTO nueva (tipo 'img'; un
+// PDF/plano que adjunta la oficina no arranca nada). `inicioReal` = la primera actividad del equipo registrada (el
+// comentario más antiguo), no la hora del trigger, para que los puntos midan contra el día en que de verdad empezaron.
+// Si el trabajo no tenía fecha, toma la del inicio para aparecer en el calendario de ese día.
+function primeraActividadEquipo(after, before) {
+    const equipo = (c) => c && c.deRol !== 'gerencia';
+    const nuevosCom = comentariosNuevos(before, after).filter(equipo);
+    const fa = Array.isArray(after.fotos) ? after.fotos : [], fb = Array.isArray(before && before.fotos) ? before.fotos : [];
+    const nuevasFotos = fa.length > fb.length ? fa.slice(fb.length).filter((f) => !f || !f.tipo || f.tipo === 'img') : [];
+    if (!nuevosCom.length && !nuevasFotos.length) return null;
+    const fechas = (Array.isArray(after.comentariosInstalador) ? after.comentariosInstalador : []).filter(equipo).map((c) => new Date(c.fecha)).filter((d) => !isNaN(d));
+    return { inicio: fechas.length ? new Date(Math.min(...fechas.map((d) => d.getTime()))) : new Date(), por: nuevosCom.length ? 'comentario' : 'foto' };
+}
+exports.instalacionActividad = onDocumentWritten('instalaciones/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    if ((after.estado || 'pendiente') !== 'pendiente') return;
+    const act = primeraActividadEquipo(after, before); if (!act) return;
+    const id = event.params.id;
+    try {
+        const inicio = Timestamp.fromDate(act.inicio);
+        const cambios = { estado: 'en_proceso', estadoPor: 'Sistema ARTAL', estadoPorEmail: '', estadoFecha: FieldValue.serverTimestamp(), inicioReal: inicio, inicioDetectado: act.por };
+        if (after.fecha && !after.fechaOriginal) cambios.fechaOriginal = after.fecha;
+        if (!after.fecha) { cambios.fecha = inicio; cambios.modoFecha = 'unica'; cambios.fechaFin = null; }
+        await db.doc('instalaciones/' + id).update(cambios);
+        await db.collection('movimientosInstalaciones').add({ instalacionId: id, cliente: after.cliente || '', obra: after.obra || '', estado: 'en_proceso', nota: 'En proceso por actividad en la obra (' + act.por + ' del equipo)', por: 'Sistema ARTAL', porEmail: '', fecha: FieldValue.serverTimestamp() });
+        console.log('instalacionActividad:', id, after.cliente, after.obra, '→ en_proceso por', act.por);
+    } catch (e) { console.error('instalacionActividad', id, e); }
 });
 
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {

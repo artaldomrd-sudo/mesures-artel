@@ -2541,6 +2541,22 @@ en_proceso). Datos 01/10: Xcape puesto en proceso desde el 30/09; trabajo «ALTE
 pedidos (en proceso desde 24/09); trabajo del completivo de Woof Woof (BETEP) creado sin fecha. Pendiente 2ª vuelta: aviso
 8 am a asignados cuando un trabajo con fecha vencida sigue pendiente («¿se hizo / hoy / reprogramar?»).
 
+### En proceso automático por actividad + «Retomar» (2026-10-01)
+
+Usuario (captura de Gregory — Riviera Coson 4): «este trabajo empezó y se está completando pero falta por terminar, está en
+espera; debería haber un botón Retomar para el día que van a regresar, y marcarse en proceso automáticamente cuando se inició:
+lo sabes porque han enviado fotos y comentarios del proceso». (1) Trigger `instalacionActividad` (`functions/index.js`, junto a
+`instalacionAlListo`): un trabajo `pendiente` pasa a `en_proceso` cuando entra un comentario del EQUIPO (`deRol` ≠ 'gerencia')
+o una FOTO (`tipo:'img'`; un PDF de la oficina no cuenta); `inicioReal` = el comentario del equipo más antiguo (no la hora del
+trigger), `inicioDetectado` 'comentario'|'foto', `estadoPor` 'Sistema ARTAL', `fechaOriginal` si tenía fecha, y si no tenía
+fecha toma la del inicio; deja movimiento en `movimientosInstalaciones`. Probado en vivo con un doc temporal (borrado).
+(2) Instalación: en proceso NO salen «Lo tomo yo» ni «Empezamos hoy» (solo en pendiente); sale **«↩ Retomar»** (`toggleRetomar`/
+`retomarJob`): fila con fecha-hora (default mañana 8:00) → `fecha` = día de regreso, `retomas[]` (arrayUnion con ISO), suma a
+quien lo toca como asignado, movimiento «Retomar: vuelven el …». La cabecera de la tarjeta (`fechaTxtJob`) dice «🔧 En proceso
+desde el 18 sept · ⏸ en espera de volver» (fecha pasada) / «· ↩ vuelven el 2 oct» (futura) / «· hoy en la obra». Los puntos
+siguen midiendo «a tiempo» contra la fecha vigente (la de regreso). (3) Datos corregidos: Gregory — Riviera Coson 4 (en proceso
+desde 18/09, comentario de Roosevelt) y Sol de Arena — Edificio 2 (desde 28/09). Guía `guia-instalacion-01` actualizada.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
