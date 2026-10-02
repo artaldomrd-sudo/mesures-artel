@@ -114,7 +114,13 @@
         if (o.status === 'pendiente_fabrica' && salio) {
             actionsHtml = `<div class="actions"><span style="font-size:12.5px;color:#c07a12;font-weight:bold;">Este pedido ya salió de fábrica (ver arriba) — márcalo listo para que deje de aparecer como pendiente.</span><button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button></div>`;
         } else if (o.status === 'pendiente_fabrica') {
-            actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarPedido('${id}')">Tomar pedido</button></div>`;
+            actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarAbrir('${id}')">Tomar pedido</button></div>
+            <div id="tomar-form-${id}" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;background:#eef4fb;border-radius:9px;padding:9px 11px;">
+                <span style="font-size:13px;color:#1f6aa5;font-weight:bold;">📅 ¿Para qué fecha estimas tenerlo listo para cargar?</span>
+                <input type="date" id="tomar-fecha-${id}" min="${ymdHoy()}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:14px;">
+                <button onclick="tomarPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Confirmar y tomar</button>
+                <span style="font-size:12px;color:#667;width:100%">Es una estimación, no una promesa: después podrás moverla hasta ${SALIDA_MARGEN_DIAS} días. La oficina la usa para agendar transporte e instalación.</span>
+            </div>`;
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
             actionsHtml = `<div class="actions">
                 <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar ítems listos</button>
@@ -137,6 +143,8 @@
                 · <a href="etiquetas.html?orderId=${id}" target="_blank">🏷 Etiquetas</a>
             </div>
             ${rioAbajoHTML(id, o)}
+            ${anticipoChip(o) ? `<div style="margin-top:8px;">${anticipoChip(o)}</div>` : ''}
+            ${salidaHTML(id, o)}
             ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
@@ -166,6 +174,57 @@
 
     let currentTab = 'pendientes';
     let allOrders = [];
+    // Fecha estimada de salida (usuario 2026-10-02): al TOMAR un pedido, fábrica fija cuándo estima tenerlo listo. No es una
+    // promesa: puede moverse, pero como máximo 1 semana respecto a la primera estimación (`fechaSalidaEstimadaOriginal`); más
+    // que eso hay que avisar a la oficina. La lee el Coordinador de Obras para la agenda y las alertas. Campos en `orders`:
+    // fechaSalidaEstimada (AAAA-MM-DD), fechaSalidaEstimadaOriginal, fechaSalidaPor, fechaSalidaCambios[].
+    const SALIDA_MARGEN_DIAS = 7;
+    const ymdHoy = () => { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+    const diasEntre = (a, b) => Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
+    const fechaLarga = (ymd) => new Date(ymd + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' });
+    function salidaHTML(id, o) {
+        if (!['en_fabrica', 'parcialmente_listo'].includes(o.status)) return '';
+        const f = o.fechaSalidaEstimada || '';
+        const hoy = ymdHoy();
+        let txt, color = '#1f6aa5', bg = '#eef4fb';
+        if (!f) { txt = '📅 Salida estimada: <b>sin fijar</b> — ponla para que la oficina pueda agendar'; color = '#8a6d00'; bg = '#fff8e1'; }
+        else {
+            const d = diasEntre(hoy, f);
+            txt = `📅 Salida estimada: <b>${fechaLarga(f)}</b> ${d > 0 ? `(en ${d} día${d > 1 ? 's' : ''})` : d === 0 ? '(hoy)' : `(<b>vencida</b> hace ${-d} día${-d > 1 ? 's' : ''})`}`;
+            if (d < 0) { color = '#c0392b'; bg = '#fdecea'; }
+            if (o.fechaSalidaEstimadaOriginal && o.fechaSalidaEstimadaOriginal !== f) txt += ` <span style="color:#667;font-weight:normal">· primera estimación ${fechaLarga(o.fechaSalidaEstimadaOriginal)}</span>`;
+        }
+        return `<div style="margin-top:8px;background:${bg};color:${color};border-radius:9px;padding:7px 11px;font-size:13px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <span>${txt}</span>
+            <button onclick="salidaAbrir('${id}')" style="background:#fff;color:${color};border:1.5px solid ${color};border-radius:7px;padding:5px 9px;font-weight:bold;font-family:'Arimo';font-size:12px;cursor:pointer;">${f ? 'Cambiar' : 'Poner fecha'}</button>
+            <div id="salida-form-${id}" style="display:none;gap:6px;align-items:center;flex-wrap:wrap;width:100%;">
+                <input type="date" id="salida-input-${id}" value="${f || ''}" min="${hoy}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:14px;">
+                <button onclick="salidaGuardar('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Guardar</button>
+                <span style="font-size:12px;color:#667">Margen máximo: ${SALIDA_MARGEN_DIAS} días sobre la primera estimación.</span>
+            </div></div>`;
+    }
+    window.salidaAbrir = function (id) { const f = document.getElementById('salida-form-' + id); if (f) f.style.display = f.style.display === 'flex' ? 'none' : 'flex'; };
+    async function fijarSalida(id, o, nueva, motivo) {
+        const orig = o.fechaSalidaEstimadaOriginal || o.fechaSalidaEstimada || nueva;
+        const desvio = Math.abs(diasEntre(orig, nueva));
+        if (desvio > SALIDA_MARGEN_DIAS) { alert(`La fecha estimada solo puede moverse hasta ${SALIDA_MARGEN_DIAS} días respecto a la primera estimación (${fechaLarga(orig)}). Esta se va ${desvio} días. Habla con la oficina para que lo autoricen y deje nota al pedido.`); return false; }
+        const cambios = { fechaSalidaEstimada: nueva, fechaSalidaEstimadaOriginal: orig, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() };
+        if (o.fechaSalidaEstimada && o.fechaSalidaEstimada !== nueva) cambios.fechaSalidaCambios = (o.fechaSalidaCambios || []).concat([{ de: o.fechaSalidaEstimada, a: nueva, por: usuario.nombre, cuando: new Date().toISOString(), motivo: motivo || '' }]);
+        await updateDoc(doc(db, 'orders', id), cambios);
+        return true;
+    }
+    window.salidaGuardar = async function (id) {
+        const nueva = (document.getElementById('salida-input-' + id) || {}).value; if (!nueva) { alert('Elige la fecha estimada de salida.'); return; }
+        const d = allOrders.find(x => x.id === id); const o = d ? d.data() : {};
+        try { await fijarSalida(id, o, nueva); } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+    function anticipoChip(o) {
+        const a = o.anticipo || null;
+        if (a && a.recibido) return `<span style="background:#e9f7ef;color:#1e8449;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:bold;">💰 Anticipo validado${a.fecha ? ' ' + a.fecha.slice(5).split('-').reverse().join('/') : ''}</span>`;
+        if (String(o.docType || '').indexOf('FAB') !== 0) return '';
+        return `<span style="background:#fff8e1;color:#8a6d00;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:bold;" title="La oficina no ha marcado el anticipo como recibido (Cotizaciones o Historial)">💰 Anticipo sin validar</span>`;
+    }
+
     // Lo que pasó RÍO ABAJO de fábrica (usuario 2026-10-01: «si se instaló ya no debe estar como tomar pedido»): entrega del
     // camión, instalación en proceso (trabajo de Instalación enlazado o de la misma obra) e instalación terminada. Se muestra
     // en cada tarjeta para que fábrica sepa que el pedido ya salió, aunque nadie haya tocado los botones de aquí.
@@ -233,8 +292,11 @@
         render();
     });
 
+    window.tomarAbrir = function (id) { const f = document.getElementById('tomar-form-' + id); if (f) f.style.display = f.style.display === 'flex' ? 'none' : 'flex'; };
     window.tomarPedido = async function (id) {
-        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp() });
+        const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
+        if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
+        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
     };
     window.listoParaCargar = async function (id) {
         if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nPasará a chofer e instalador.')) return;

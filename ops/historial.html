@@ -384,6 +384,7 @@
                 ${extraLinks.join(' ')}
                 <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
             </div>
+            ${isCompra ? '' : anticipoHTML(id, o)}
             ${lineaTiempoHTML(o)}
             <div class="status-change-row">
                 <select id="status-select-${id}">
@@ -628,6 +629,32 @@
         if (dias < 1) { const h = Math.max(1, Math.round(ms / 3600000)); return h + ' h'; }
         const d = Math.round(dias); return d + (d === 1 ? ' día' : ' días');
     }
+    // Anticipo recibido (usuario 2026-10-02): la oficina lo marca normalmente en Cotizaciones; aquí está para los pedidos de
+    // fabricación que llegaron directo del cuaderno (sin cotización) y para corregir. Mismo campo `anticipo` que cotizaciones.html.
+    function anticipoHTML(id, o) {
+        const a = o.anticipo || null;
+        if (a && a.recibido) return `<div style="margin-top:8px;background:#e9f7ef;border:1.5px solid #a9dfbf;border-radius:9px;padding:7px 11px;font-size:13px;color:#1e8449;">💰 <b>Anticipo recibido</b>${a.monto ? ' · ' + esc(a.moneda || 'RD$') + ' ' + Number(a.monto).toLocaleString('es-DO') : ''}${a.fecha ? ' · ' + esc(a.fecha) : ''}${a.validadoPor ? ' · validó ' + esc(a.validadoPor) : ''}${a.nota ? ' · ' + esc(a.nota) : ''} <a href="#" onclick="anticipoQuitar('${id}');return false;" style="margin-left:6px;color:#c0392b;font-size:12px;">quitar</a></div>`;
+        return `<div style="margin-top:8px;background:#fff8e1;border:1.5px solid #f6d365;border-radius:9px;padding:7px 11px;font-size:13px;">
+            <span style="font-weight:bold;color:#8a6d00;">💰 Anticipo: <span style="color:#c0392b">sin validar</span></span>
+            <button onclick="const f=document.getElementById('antic-form-${id}');f.style.display=f.style.display==='flex'?'none':'flex';" style="margin-left:8px;background:#fff;color:#8a6d00;border:1.5px solid #f6d365;border-radius:7px;padding:5px 9px;font-weight:bold;font-family:'Arimo';font-size:12px;cursor:pointer;">✓ Marcar recibido</button>
+            <div id="antic-form-${id}" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">
+                <input type="number" id="antic-monto-${id}" placeholder="Monto" min="0" step="0.01" style="width:110px;padding:6px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+                <select id="antic-moneda-${id}" style="padding:6px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;"><option>RD$</option><option>US$</option><option>€</option></select>
+                <input type="date" id="antic-fecha-${id}" value="${new Date().toISOString().slice(0, 10)}" style="padding:6px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+                <input type="text" id="antic-nota-${id}" placeholder="Nota (transferencia, recibo…)" style="flex:1;min-width:140px;padding:6px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+                <button onclick="anticipoGuardar('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Guardar</button>
+            </div></div>`;
+    }
+    window.anticipoGuardar = async function (id) {
+        const monto = parseFloat((document.getElementById('antic-monto-' + id) || {}).value) || 0;
+        if (!monto && !confirm('No pusiste el monto. ¿Marcar el anticipo como recibido igual?')) return;
+        const anticipo = { recibido: true, monto, moneda: (document.getElementById('antic-moneda-' + id) || {}).value || 'RD$', fecha: (document.getElementById('antic-fecha-' + id) || {}).value || new Date().toISOString().slice(0, 10), nota: ((document.getElementById('antic-nota-' + id) || {}).value || '').trim(), validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: new Date().toISOString() };
+        try { await updateDoc(doc(db, 'orders', id), { anticipo }); } catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+    window.anticipoQuitar = async function (id) {
+        if (!confirm('¿Quitar la marca de anticipo recibido?')) return;
+        try { await updateDoc(doc(db, 'orders', id), { anticipo: { recibido: false, quitadoPor: usuario.nombre, quitadoFecha: new Date().toISOString() } }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
     function lineaTiempoHTML(o) {
         const HITOS = [
             ['fechaSolicitada', '📤 Cotización enviada al contratista'],

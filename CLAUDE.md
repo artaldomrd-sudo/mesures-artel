@@ -2584,6 +2584,25 @@ luego: «ALUCUFEL marca listo para entregar, ese empuje automático no lo quiero
 - Datos 01/10 (validados): Marisol Acosta A5-105 y Altea 11 barandas cerrados con su fecha real de instalación; Plaza Manuela
   reabierto (obra por partes, trabajo en proceso desde 28/08). Los dos tableros siguen separados a propósito.
 
+### Coordinador de Obras (agente IA) y campos que le dan de comer (2026-10-02)
+
+Dylan entregó la definición del agente «Coordinador de Obras» (Wilson = interlocutor, Dylan valida) y pidió construirlo. Vive
+FUERA del repo (`.claude/agents/coordinador-obras.md` + `coordinador-obras.datos.md`, mapa de colecciones/estados/pantallas) y
+lee/escribe Firestore con `scripts/ops/{leer,escribir,borrar}.js` (REST sin dependencias, sesión de `firebase login`, registro
+local de escrituras; también fuera del repo). Tarea programada de la app de escritorio `coordinador-obras-matinal` (lun–sáb
+6:30): SOLO lectura + publica el informe en `mensajes` (`remitenteEmail:'coordinador@artal'`, `tipo:'informe_coordinador'`,
+destinatarios Wilson y Dylan) → trigger `mensajeCoordinadorPush` manda el push. Tres campos nuevos del Panel pedidos para él:
+- **Anticipo recibido** (`orders.anticipo {recibido, monto, moneda, fecha, nota, validadoPor…}`): la oficina lo marca en
+  `cotizaciones.html` (tarjeta «Enviada al cliente», `anticipoHTML`) o en `historial.html` (pedidos FAB directos del cuaderno);
+  `aprobarYEnviarFabrica` lo copia al pedido de fábrica y avisa (sin bloquear) si se manda a fábrica sin anticipo. Chip «💰
+  Anticipo validado / sin validar» en los tableros de fábrica y en la tarjeta del pedido de Instalación.
+- **Fecha estimada de salida de fábrica** (`fechaSalidaEstimada`, `…Original`, `fechaSalidaPor`, `fechaSalidaCambios[]`): en
+  `fabrica-interna.html` y `alucufel/fabrica.html` «Tomar pedido» abre una fila con fecha OBLIGATORIA (`tomarAbrir`/`tomarPedido`);
+  la tarjeta en fábrica muestra «📅 Salida estimada: … (en N días / vencida)» con «Cambiar» (`salidaHTML`/`fijarSalida`): máximo
+  7 días (`SALIDA_MARGEN_DIAS`) respecto a la primera estimación, si no, hablar con la oficina. Es estimación, no promesa
+  (usuario). Instalación la muestra en la línea del pedido.
+- **Idioma del cliente** (`clientes.idioma` es|fr|en|it|de|otro, default es): selector en la ficha de `clientes.html`.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

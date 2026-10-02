@@ -323,6 +323,20 @@ exports.pedidoEntregadoInterno = onDocumentWritten('orders/{id}', async (event) 
     } catch (e) { console.error('pedidoEntregadoInterno', event.params.id, e); }
 });
 
+// ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------
+// La rutina matinal escribe en `mensajes` con remitenteEmail 'coordinador@artal' (vía scripts/ops/escribir.js). La pantalla de
+// Mensajería hace su propio push al enviar desde el navegador; este trigger cubre los mensajes creados desde fuera.
+exports.mensajeCoordinadorPush = onDocumentWritten('mensajes/{id}', async (event) => {
+    if (event.data.before.exists) return;   // solo creación
+    const m = event.data.after.exists ? event.data.after.data() : null; if (!m) return;
+    if (m.remitenteEmail !== 'coordinador@artal' || m.pushEnviado === true) return;
+    const dest = Array.isArray(m.destinatarios) ? m.destinatarios : [];
+    try {
+        for (const em of dest) { try { await enviarPushUsuario(em, m.asunto || 'Coordinador de Obras', String(m.cuerpo || '').split('\n').slice(0, 3).join(' · ').slice(0, 160), 'ops/mensajes.html'); } catch (_) { } }
+        await event.data.after.ref.update({ pushEnviado: true });
+    } catch (e) { console.error('mensajeCoordinadorPush', event.params.id, e); }
+});
+
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return; // borrado
