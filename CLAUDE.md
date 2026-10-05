@@ -284,6 +284,11 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     pegado por fuera del riel (`x0-tt` / `x0+W`); `galLayout.latL/latR` sirven para correr la cota de alto
     más allá de él; la cota del hueco (abajo) mide el vidrio, la de marco (arriba) mide el riel y arranca
     sus testigos ENCIMA del tubo superior; la planta usa `X0/X1 = marco` (bolsillo + hueco).
+    **El tubo lateral también se dibuja EN PLANTA** (usuario 2026-10-05, "que se vea dónde va"): `tubosPlan`
+    en `galandajePlan` pone un rect del grosor `gl.tt` por fuera del marco (`X0-tt` si `latL`, `X1` si
+    `latR`, ambos en centrales con tubo lateral) de pared a pared (`PT`→`planBottom`, por eso no depende del
+    espejo vertical — se agrega después del flip, en las dos ramas), con placeholder `#0A3D62` (toma el
+    acabado) y etiqueta "tubo" en vertical por fuera (abajo chocaba con "sheetrock (int)" en centrales).
   - **Planta orientada según la vista**: `galandajePlan` usa el mismo layout (X0/X1 = marco, bolsillos =
     sobrante real, hojas = hueco/n) y `flipV = vista === 'afuera'` (observador abajo: el exterior pasa
     abajo — así "por fuera + vista de afuera" deja la hoja DEBAJO del concreto, como pidió el usuario).
