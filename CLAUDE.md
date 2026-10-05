@@ -328,6 +328,14 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
      etiqueta "mosquitera (lado ext)" también estaba mal ubicada (pegada a `planBottom`, el lado
      del sheetrock) — corregida al lado del concreto (cerca de `PT`), con el mismo criterio de
      espejo que ya usan `topLabel`/`botLabel` para "Instalación: por fuera".
+  3. **Enganche de la pared (usuario 2026-10-05, "urgente", con foto de un gal3_3v por fuera/sin
+     sheetrock/vista de afuera)**: el arreglo 1 aplicaba `(maxd − d)` también SIN mosquitera, así que la
+     hoja pegada al bolsillo (d=0) quedaba en el riel más LEJANO del concreto y la escalera iba al revés
+     (no enganchaba de nada). Ahora `glassY` = `glassBandTop + d·dz` sin mosquitera (d=0 en el riel
+     contiguo al concreto) y `(maxd − d)` solo con mosquitera (el vidrio engancha del sheetrock, abajo).
+     Además el hueco muro↔primera hoja bajó a `vgE = 0.9` y la hoja d=0 se prolonga dentro del bolsillo
+     (`enganche` = min(4, mitad del bolsillo)) para que se vea enganchada. Verificado por coordenadas:
+     concreto y=78–81.2, hoja del bolsillo y=82.1 y x hasta 66.7 con el bolsillo desde 62.7.
 - **Vista superior (planta) de correderas**: `correderaPlan(state, uid)`, config en
   `CORREDERA_CFG` (y `correderaVias(type)` para la cantidad de "vías"). A diferencia del
   galandaje (bolsillo en la pared), la corredera va en un **marco perimetral** con varios

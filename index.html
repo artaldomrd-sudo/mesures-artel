@@ -568,7 +568,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-09-30 23:27</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-05 12:07</div>
         </div>
     </div>
     
@@ -8099,19 +8099,29 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // cúmulo crece hacia el otro lado (desde `glassBandTop`, que es el borde LEJANO al
         // sheetrock) — la hoja d=0 necesita el mayor desplazamiento para llegar al borde
         // CERCANO al sheetrock (su "riel 1").
-        const mosqYL = d => bandTop + d * dz;
-        const glassBandTop = mosq ? (bandTop + clusterSpan + mt + vg) : bandTop;
-        const glassY = d => glassBandTop + (maxd - d) * dz;
-        const bottomWallY = glassBandTop + clusterSpan + gt + vg;
+        // ENGANCHE (usuario 2026-10-05, "las hojas tienen que enganchar de la pared", con foto): la hoja pegada al
+        // bolsillo (d=0) va en el riel CONTIGUO al muro del que engancha y entra en el bolsillo. Sin mosquitera
+        // engancha del CONCRETO (arriba): d=0 en el primer riel desde `bandTop` (antes se usaba (maxd − d) en los
+        // dos casos y la escalera quedaba al revés, con la hoja del bolsillo en el riel más lejano). Con mosquitera
+        // la mosquitera engancha del concreto (d=0 arriba) y el vidrio del sheetrock (abajo): d=0 en el riel más
+        // bajo de su propio cúmulo, (maxd − d). El hueco muro↔primera hoja se reduce a `vgE` para que se vea pegada.
+        const vgE = 0.9;
+        const mosqYL = d => (PT + wbh + vgE) + d * dz;
+        const glassBandTop = mosq ? ((PT + wbh + vgE) + clusterSpan + mt + vg) : (PT + wbh + vgE);
+        const glassY = d => mosq ? (glassBandTop + (maxd - d) * dz) : (glassBandTop + d * dz);
+        const bottomWallY = glassBandTop + clusterSpan + gt + (mosq ? vgE : vg);
         const planBottom = bottomWallY + wbh;
+        // la hoja d=0 se prolonga DENTRO del bolsillo (engancha): hasta la mitad del bolsillo, máx. 4 unidades
+        const enganche = Math.min(4, pockets[0][1] * 0.5), pocketLeft = pocketLeftDefault;
 
         let body = '';
         pockets.forEach(p => { body += concreteG(p[0], PT, p[1]); });
         if (sheetrock) pockets.forEach(p => { body += sheetG(p[0], bottomWallY, p[1]); });
         leaves.forEach(L => {
-            if (mosq) body += mosqG(L.x, mosqYL(L.d), L.w);
+            const ex = L.d === 0 ? enganche : 0, lx = pocketLeft ? L.x - ex : L.x, lw = L.w + ex;
+            if (mosq) body += mosqG(lx, mosqYL(L.d), lw);
             const gy = glassY(L.d);
-            body += leafG(L.x, gy, L.w) + arrow(L.x + L.w / 2, gy + gt / 2, L.w, L.dir);
+            body += leafG(lx, gy, lw) + arrow(L.x + L.w / 2, gy + gt / 2, L.w, L.dir);
         });
 
         let plan = body;
