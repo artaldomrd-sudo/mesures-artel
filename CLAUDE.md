@@ -2616,6 +2616,16 @@ destinatarios Wilson y Dylan) → trigger `mensajeCoordinadorPush` manda el push
   (usuario). Instalación la muestra en la línea del pedido.
 - **Idioma del cliente** (`clientes.idioma` es|fr|en|it|de|otro, default es): selector en la ficha de `clientes.html`.
 
+### Carga lenta en el teléfono (2026-10-05)
+
+Usuario: «en el teléfono la plataforma tiene dificultad en cargar». Medido en producción con el espejo de Miki: tras el login la
+pantalla se quedaba 15–20 s en «Entrando…». Causa: `parte-gate.js` hacía por cada día de la ventana (6–7) una lectura + una
+consulta de `partesDiarios`, EN SERIE (≈12 viajes; 4,3 s con buena conexión). Ahora `partesPendientes` hace 3 consultas en
+paralelo (`rrhhFeriados`, `rrhhFeriadosTrabajados`, `partesDiarios where fecha in <días>`) y resuelve en memoria: 0,9 s. Si la
+consulta de partes falla (sin red / permiso) NO bloquea (antes contaba el día como pendiente). `auth-common.js` descarga
+`mfa.js` y `parte-gate.js` en paralelo con la lectura de `usuarios`. Regla: en móvil cada viaje a Firestore cuesta ~0,4 s; nunca
+encadenar lecturas por día/por ítem en el arranque de una pantalla.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

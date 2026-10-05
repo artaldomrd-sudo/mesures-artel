@@ -28,19 +28,30 @@ export async function partesPendientes(email, dias = 7) {
         candidatas.push(ymd(d));
     }
     if (!candidatas.length) return [];
-    let feriados = new Set();
-    try { const fs = await getDocs(query(collection(db, 'rrhhFeriados'), where('fecha', 'in', candidatas.slice(0, 10)))); feriados = new Set(fs.docs.map((x) => x.data().fecha)); } catch (_) { }
+    // Rendimiento (usuario 2026-10-05, «en el teléfono la plataforma tiene dificultad en cargar»): antes esto hacía una lectura
+    // + una consulta POR DÍA, en serie (≈12 viajes al servidor, 4 s con buena conexión, 10–20 s con datos móviles, y la pantalla
+    // se quedaba en «Entrando…»). Ahora son TRES consultas en paralelo: feriados, feriados trabajados y TODOS los partes de esos
+    // días (los míos y los de los demás encargados) con un solo `where fecha in`, y el resto se resuelve en memoria.
+    const dias10 = candidatas.slice(0, 10);
+    const [fs, ft, ps] = await Promise.all([
+        getDocs(query(collection(db, 'rrhhFeriados'), where('fecha', 'in', dias10))).catch(() => null),
+        getDocs(query(collection(db, 'rrhhFeriadosTrabajados'), where('fecha', 'in', dias10))).catch(() => null),
+        getDocs(query(collection(db, 'partesDiarios'), where('fecha', 'in', dias10))).catch(() => null)
+    ]);
+    const feriados = new Set(fs ? fs.docs.map((x) => x.data().fecha) : []);
     // Un feriado que gerencia avisó por comunicado que SE TRABAJA (rrhhFeriadosTrabajados/{fecha}) cuenta como día normal.
-    try { const ft = await getDocs(query(collection(db, 'rrhhFeriadosTrabajados'), where('fecha', 'in', candidatas.slice(0, 10)))); ft.docs.forEach((x) => feriados.delete(x.data().fecha)); } catch (_) { }
+    if (ft) ft.docs.forEach((x) => feriados.delete(x.data().fecha));
+    // Si la consulta de partes falla (sin red, permiso denegado…) NO se bloquea a nadie: mejor dejar pasar que encerrar por un error.
+    if (!ps) { console.warn('parte-gate: no se pudieron leer los partes; no se bloquea'); return []; }
+    const partes = ps.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const em = String(email).toLowerCase(); const miId = (f) => f + '_' + claveEmail(email);
     const pend = [];
-    const em = String(email).toLowerCase();
     for (const f of candidatas) {
         if (feriados.has(f) || f < desde) continue;
-        const p = await getDoc(doc(db, 'partesDiarios', f + '_' + claveEmail(email))).catch(() => null);
-        if (p && p.exists() && !p.data().borrador) continue;   // un borrador (horas cargadas al validar un trabajo) NO es parte enviado
+        const mio = partes.find((p) => p.id === miId(f));
+        if (mio && !mio.borrador) continue;   // un borrador (horas cargadas al validar un trabajo) NO es parte enviado
         // Si otro encargado ya lo incluyó ese día (trabajaron juntos), no le toca enviar parte.
-        let otro = false;
-        try { const qs = await getDocs(query(collection(db, 'partesDiarios'), where('fecha', '==', f))); otro = qs.docs.some((d) => { const x = d.data(); return !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em); }); } catch (_) { }
+        const otro = partes.some((p) => p.fecha === f && !p.borrador && String(p.encargadoEmail || '').toLowerCase() !== em && Array.isArray(p.incluidosEmails) && p.incluidosEmails.includes(em));
         if (!otro) pend.push(f);
     }
     return pend;

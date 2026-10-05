@@ -162,6 +162,10 @@ export function requireAuth(rolesPermitidos) {
         showLoginScreen();
         return;
       }
+      // Los módulos que se necesitan después se descargan EN PARALELO con la lectura del usuario (en el teléfono cada
+      // descarga en serie costaba ~0,4 s; usuario 2026-10-05: «en el teléfono la plataforma tiene dificultad en cargar»).
+      const mfaMod = import('./mfa.js').catch(() => null);
+      const gateMod = import('./parte-gate.js').catch(() => null);
       let snap;
       try { snap = await conTiempo(getDoc(doc(db, 'usuarios', user.email)), 15000, 'leer usuario'); }
       catch (e) { fallaVerificacion(e && e.message ? e.message : String(e)); return; }
@@ -196,8 +200,8 @@ export function requireAuth(rolesPermitidos) {
       // Roles sensibles (admin/contable/comunicaciones): verificación en 2 pasos obligatoria. Si la
       // cuenta aún no la tiene, se inscribe aquí mismo (QR + código) antes de mostrar la pantalla.
       try {
-        const m = await import('./mfa.js');
-        if (m.requiere2FA(roles) && !m.tieneMFA(user)) await m.inscribirMFA(user, user.email);
+        const m = await mfaMod;
+        if (m && m.requiere2FA(roles) && !m.tieneMFA(user)) await m.inscribirMFA(user, user.email);
       } catch (e) { console.warn('2FA', e && e.message ? e.message : e); }
       // Parte diario pendiente (encargados de instalación): hasta ponerse al día solo pueden usar
       // ops/parte-diario.html — desde cualquier otra pantalla se les manda ahí (regla del usuario:
@@ -207,8 +211,8 @@ export function requireAuth(rolesPermitidos) {
       const SIN_BLOQUEO_PARTE = ['parte-diario.html', 'chofer.html', 'academia.html'];   // Academia: las guías se consultan siempre
       if (!roles.includes('admin') && !SIN_BLOQUEO_PARTE.includes(pagId)) {
         try {
-          const g = await import('./parte-gate.js');
-          const pend = await g.partesPendientes(((data.cuentaPrueba === true && data.espejoDe) ? String(data.espejoDe).toLowerCase() : user.email));
+          const g = await gateMod;
+          const pend = g ? await g.partesPendientes(((data.cuentaPrueba === true && data.espejoDe) ? String(data.espejoDe).toLowerCase() : user.email)) : [];
           if (pend.length) {
             const carpeta = location.pathname.replace(/[^/]*$/, ''), opsIdx = carpeta.indexOf('/ops/');
             const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
