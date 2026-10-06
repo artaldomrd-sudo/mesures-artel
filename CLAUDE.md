@@ -2641,6 +2641,18 @@ encadenar lecturas por día/por ítem en el arranque de una pantalla.
   (`completada == false`) ∪ últimos 45 días (las antiguas sin el campo `completada` no se pueden consultar por igualdad).
   Regla general: ninguna pantalla se suscribe a una colección entera si solo necesita los activos.
 
+### Contratistas externos de instalación (Delvis, 2026-10-06)
+
+Dylan: «agregar a Delvis como contratista y en trabajos de fábrica interna elegirlo como instalador asignado cuando se trata
+de shutters». `rrhhConfig/contratistasExternos` → `lista[] {id, nombre, empresa, telefono, especialidad, activo}` (legible por
+todos los roles operativos, se edita con `scripts/ops/escribir.js` o a mano; sin UI todavía). `fabrica-interna.html` e
+`historial.html` listan la `lista` en el selector de instalador bajo «Contratistas externos» con valor `contratista:<id>`
+(`opcionesInstalador`/`instaladorDeValor`); el pedido guarda `asignadosInstalador [{email:'contratista:delvis', nombre:'Delvis
+(contratista)', externo:true}]`. No son empleados: no están en `equipo`, así que puntos, partes y RRHH los ignoran; el trabajo
+automático de Instalación nace con ellos como asignados (informativo). Fábrica interna muestra además la caja completa de
+anticipo en los pedidos FAB abiertos (misma `anticipoHTML` que Historial). Dato: Yomayra Rosado — Xcape apartamento b2b
+(shutters, interno) cerrado como instalado el 22/09/2026 por Delvis (`cierreManual:'instalado_por_contratista'`).
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

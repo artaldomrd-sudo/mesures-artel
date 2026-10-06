@@ -311,6 +311,22 @@
     let allOrders = [];
     let choferesCache = [];
     let instaladoresCache = [];
+    // Contratistas externos de instalación (Dylan 2026-10-06, caso Delvis para shutters): viven en rrhhConfig/contratistasExternos
+    // (`lista[]`, no son empleados: no entran en partes, puntos ni RRHH). Se eligen como instalador asignado con valor
+    // `contratista:<id>`; el pedido guarda asignadosInstalador [{email:'contratista:<id>', nombre, externo:true}].
+    let contratistasExt = [];
+    onSnapshot(doc(db, 'rrhhConfig', 'contratistasExternos'), (s) => { contratistasExt = (s.exists() && Array.isArray(s.data().lista)) ? s.data().lista.filter(c => c && c.activo !== false) : []; render(); }, () => { });
+    function opcionesInstalador(sel) {
+        const eq = instaladoresCache.map(u => `<option value="${esc(u.email)}" ${sel === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('');
+        const ext = contratistasExt.map(c => `<option value="contratista:${esc(c.id)}" ${sel === 'contratista:' + c.id ? 'selected' : ''}>${esc(c.nombre)} (contratista${c.especialidad ? ' · ' + esc(c.especialidad) : ''})</option>`).join('');
+        return eq + (ext ? `<optgroup label="Contratistas externos">${ext}</optgroup>` : '');
+    }
+    function instaladorDeValor(v) {
+        if (!v) return null;
+        if (v.startsWith('contratista:')) { const c = contratistasExt.find(x => 'contratista:' + x.id === v); return c ? { email: v, nombre: c.nombre + ' (contratista)', externo: true } : { email: v, nombre: 'Contratista', externo: true }; }
+        const u = instaladoresCache.find(x => x.email === v); return { email: v, nombre: u ? u.nombre : '' };
+    }
+
 
     onSnapshot(query(collection(db, 'equipo'), where('rol', 'array-contains', 'chofer')), (snap) => {
         choferesCache = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false);
@@ -399,7 +415,7 @@
                 <label>Instalador:</label>
                 <select id="asignar-instalador-${id}">
                     <option value="">(sin asignar — cualquiera)</option>
-                    ${instaladoresCache.map(u => `<option value="${esc(u.email)}" ${o.asignadoInstaladorEmail === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+                    ${opcionesInstalador(o.asignadoInstaladorEmail)}
                 </select>
                 <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
             </div>` : ''}
@@ -477,14 +493,14 @@
             : choferRaw;
         const instaladorEmail = document.getElementById('asignar-instalador-' + id).value;
         const chofer = choferesCache.find(u => u.nombre === choferNombre);
-        const instalador = instaladoresCache.find(u => u.email === instaladorEmail);
+        const instalador = instaladorDeValor(instaladorEmail);
         try {
             await updateDoc(doc(db, 'orders', id), {
                 asignadoChoferEmail: chofer ? chofer.email : null,
                 asignadoChoferNombre: choferNombre || null,
                 asignadoInstaladorEmail: instaladorEmail || null,
                 asignadoInstaladorNombre: instalador ? instalador.nombre : null,
-                asignadosInstalador: instaladorEmail ? [{ email: instaladorEmail, nombre: instalador ? instalador.nombre : '' }] : []   // ambos formatos (2026-09-30)
+                asignadosInstalador: instaladorEmail ? [{ email: instaladorEmail, nombre: instalador ? instalador.nombre : '', ...(instalador && instalador.externo ? { externo: true } : {}) }] : []   // ambos formatos (2026-09-30)
             });
             alert('Asignación guardada.');
         } catch (e) {
