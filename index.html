@@ -95,13 +95,14 @@
         .project-header {
             display: grid;
             grid-template-columns: 1.1fr 1.2fr 1.2fr 1.3fr 1fr auto;
-            grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion ubicacion logo";
+            grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion telefono logo";
             column-gap: 18px; row-gap: 16px;
             border-bottom: 3px solid var(--artal-blue); padding-bottom: 20px; margin-bottom: 30px; width: 100%; align-items: end;
         }
         .hf-cliente { grid-area: cliente; }
         .hf-obra { grid-area: obra; }
         .hf-ubicacion { grid-area: ubicacion; }
+        .hf-telefono { grid-area: telefono; }
         .hf-fecha { grid-area: fecha; }
         .hf-material { grid-area: material; }
         .hf-vidrio { grid-area: vidrio; }
@@ -333,7 +334,7 @@
 
         /* PDF: el desplegable "Abrir otro proyecto" y el botón "Nuevo proyecto de este cliente" son controles de edición, no van en la hoja (usuario 2026-09-28). */
         body.printing-sheets #header-obra-sel, body.printing-sheets #btn-nuevo-proy-cliente { display: none !important; }
-        body.printing-sheets .project-header { grid-template-columns: 1fr 1.1fr 1.1fr 1.3fr 1fr auto !important; grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion ubicacion logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
+        body.printing-sheets .project-header { grid-template-columns: 1fr 1.1fr 1.1fr 1.3fr 1fr auto !important; grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion telefono logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
 
         body.printing-sheets .item-row { display: block !important; width: 100% !important; text-align: left !important; }
 
@@ -568,7 +569,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-05 18:37</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-06 16:21</div>
         </div>
     </div>
     
@@ -597,6 +598,10 @@
             <div class="header-field hf-ubicacion">
                 <label>UBICACIÓN</label>
                 <input type="text" id="header-ubicacion" placeholder="ej: Los Prados, Santo Domingo">
+            </div>
+            <div class="header-field hf-telefono">
+                <label>TELÉFONO / RNC DEL CLIENTE</label>
+                <input type="text" id="header-telefono" placeholder="ej: 809-555-1234" inputmode="tel" autocomplete="off" title="Con el teléfono o RNC el pedido se engancha a la ficha del cliente y a Citrus aunque el nombre esté escrito distinto">
             </div>
             <div class="header-field hf-fecha">
                 <label>FECHAS (AUTO)</label>
@@ -3137,6 +3142,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 cliente: document.getElementById('header-cliente').value,
                 obra: document.getElementById('header-obra').value,
                 ubicacion: document.getElementById('header-ubicacion').value,
+                telefono: (document.getElementById('header-telefono') || {}).value || '',
+                clienteId: (document.getElementById('header-cliente') || {}).dataset ? (document.getElementById('header-cliente').dataset.clienteId || '') : '',
                 fechaCreacion: createdStr,
                 fechaModificacion: modStr,
                 // Reloj (no fecha-solo-texto) para que la sincronización entre dispositivos
@@ -3201,6 +3208,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             document.getElementById('header-cliente').value = data.header.cliente || '';
             document.getElementById('header-obra').value = data.header.obra || '';
             document.getElementById('header-ubicacion').value = data.header.ubicacion || '';
+            if (document.getElementById('header-telefono')) { document.getElementById('header-telefono').value = data.header.telefono || ''; document.getElementById('header-cliente').dataset.clienteId = data.header.clienteId || ''; }
             document.getElementById('header-material').value = data.header.material || '';
             if (document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = data.header.vidrio || '';
             if (document.getElementById('notas-proyecto')) document.getElementById('notas-proyecto').value = data.header.notas || '';
@@ -3598,6 +3606,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         document.getElementById('header-cliente').value = '';
         document.getElementById('header-obra').value = '';
         document.getElementById('header-ubicacion').value = '';
+        if (document.getElementById('header-telefono')) { document.getElementById('header-telefono').value = ''; document.getElementById('header-cliente').dataset.clienteId = ''; }
         document.getElementById('header-material').value = '';
         if (document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = '';
         if (document.getElementById('notas-proyecto')) document.getElementById('notas-proyecto').value = '';
@@ -3677,6 +3686,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (h.color) document.getElementById('header-color').value = h.color;
             if (h.vidrio && document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = h.vidrio;
             if (h.ubicacion) document.getElementById('header-ubicacion').value = h.ubicacion;
+            if (h.telefono && document.getElementById('header-telefono')) document.getElementById('header-telefono').value = h.telefono;
+            if (h.clienteId) document.getElementById('header-cliente').dataset.clienteId = h.clienteId;
         }
         document.getElementById('header-obra').value = nuevoNombre;
         const displayDate = document.getElementById('header-fecha');
@@ -9817,11 +9828,35 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const obras = entry ? Array.from(entry.obras.values()) : [];
         dl.innerHTML = obras.map(o => `<option value="${escAttr(o)}"></option>`).join('');
     }
+    // Ficha del cliente (ops/clientes.html) reconocida desde el encabezado (2026-10-06, Dylan: «que las obras se enganchen»):
+    // al escribir el cliente, si coincide con el nombre de referencia, el de facturación o un alias de una ficha, se guarda su id
+    // (`header.clienteId`, viaja al pedido) y se rellena el teléfono si está vacío. También al revés: un teléfono/RNC escrito que
+    // coincide con una ficha la reconoce aunque el nombre esté distinto. El datalist de clientes suma los nombres de las fichas.
+    const normFicha = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const tel10 = (t) => String(t || '').replace(/\D/g, '').slice(-10);
+    function fichaPorId(id) { return fsClientesCache.find(c => c._id === id) || null; }
+    window.fichaPorId = fichaPorId;
+    function buscarFicha(nombre, tel) {
+        const n = normFicha(nombre), t = tel10(tel), d = String(tel || '').replace(/\D/g, '');
+        return fsClientesCache.find(c => (t.length === 10 && tel10(c.telefono) === t) || (d.length >= 9 && String(c.documento || '').replace(/\D/g, '') === d))
+            || (n ? fsClientesCache.find(c => [c.nombre, c.nombreFacturacion, ...(Array.isArray(c.alias) ? c.alias : [])].some(x => normFicha(x) === n)) : null) || null;
+    }
+    function refreshFichaCliente() {
+        const cEl = document.getElementById('header-cliente'), tEl = document.getElementById('header-telefono'); if (!cEl || !tEl) return;
+        const f = buscarFicha(cEl.value, tEl.value);
+        cEl.dataset.clienteId = f ? f._id : '';
+        if (f && !tEl.value.trim() && f.telefono) tEl.value = f.telefono;
+        cEl.title = f ? ('Ficha: ' + (f.nombre || '') + (f.nombreFacturacion && normFicha(f.nombreFacturacion) !== normFicha(f.nombre) ? ' · factura: ' + f.nombreFacturacion : '')) : '';
+        const dl = document.getElementById('cliente-datalist');
+        if (dl) { const ya = new Set([...dl.querySelectorAll('option')].map(o => normFicha(o.value))); fsClientesCache.forEach(c => { if (c.nombre && !ya.has(normFicha(c.nombre))) { const o = document.createElement('option'); o.value = c.nombre; dl.appendChild(o); ya.add(normFicha(c.nombre)); } }); }
+    }
+    document.getElementById('header-cliente')?.addEventListener('input', refreshFichaCliente);
+    document.getElementById('header-telefono')?.addEventListener('input', refreshFichaCliente);
     function startFsClientListeners() {
         if (fsListenersStarted) return;
         fsListenersStarted = true;
         onSnapshot(collection(db, 'orders'), (snap) => { fsOrdersCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
-        onSnapshot(collection(db, 'clientes'), (snap) => { fsClientesCache = snap.docs.map(d => d.data()); refreshFsClientMap(); }, () => {});
+        onSnapshot(collection(db, 'clientes'), (snap) => { fsClientesCache = snap.docs.map(d => ({ _id: d.id, ...d.data() })); refreshFsClientMap(); refreshFichaCliente(); }, () => {});
         // Unidades de medida del catálogo de ops (Productos → Unidades). Se exponen en
         // window.artalUnidades para que el selector de la Cotización cliente (script clásico) las
         // use; si no hay sesión/señal, el overlay cae a una lista estándar de respaldo.
@@ -9983,6 +10018,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             await addDoc(collection(db, 'orders'), {
                 cliente: clienteEnviado,
                 obra: obraEnviada,
+                // Enganche con la ficha del cliente y con Citrus (2026-10-06): teléfono/RNC del encabezado + ficha ya reconocida.
+                clienteTelefono: appJSON.header.telefono || '',
+                ...(appJSON.header.clienteId ? { clienteId: appJSON.header.clienteId, clienteFacturacion: (fichaPorId(appJSON.header.clienteId) || {}).nombreFacturacion || (fichaPorId(appJSON.header.clienteId) || {}).nombre || '' } : {}),
                 docType: esInstalacion ? 'FAB' : appJSON.docType,
                 destino: destinoFinal,
                 material: appJSON.header.material,

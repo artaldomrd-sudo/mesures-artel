@@ -314,13 +314,53 @@ exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (even
 exports.pedidoEntregadoInterno = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
     const before = event.data.before.exists ? event.data.before.data() : {};
-    if (after.destino !== 'interno' || !esPedidoFabricacion(after)) return;
-    const movido = (after.entregado === true && before.entregado !== true) || (after.enRuta === true && before.enRuta !== true);
-    if (!movido || !['pendiente_fabrica', 'en_fabrica'].includes(after.status)) return;
+    if (!esPedidoFabricacion(after)) return;
+    // Entregado por el chofer ⇒ listo para CUALQUIER destino (Dylan 2026-10-06: «Wilson marcó entregado lo que ALUCUFEL le entregó,
+    // eso mismo se marca como listo»). «En ruta» solo empuja a los internos (ALUCUFEL manda hasta que entrega).
+    const entregadoAhora = after.entregado === true && before.entregado !== true;
+    const enRutaAhora = after.enRuta === true && before.enRuta !== true && after.destino === 'interno';
+    if (!(entregadoAhora || enRutaAhora) || !['pendiente_fabrica', 'en_fabrica'].includes(after.status)) return;
     try {
         await db.doc('orders/' + event.params.id).update({ status: 'listo_para_cargar', fechaListoParaCargar: FieldValue.serverTimestamp(), listoAutomatico: after.entregado === true ? 'entregado' : 'en_ruta', listoAutomaticoFecha: FieldValue.serverTimestamp() });
         console.log('pedidoEntregadoInterno:', event.params.id, '→ listo por', after.entregado === true ? 'entrega' : 'en ruta');
     } catch (e) { console.error('pedidoEntregadoInterno', event.params.id, e); }
+});
+
+// ---------- Pedido ↔ ficha de cliente (Dylan 2026-10-06: «crear una manera de que las obras se enganchen») ----------
+// Cada pedido guarda `clienteId` (ficha de `clientes`) y `clienteFacturacion` (nombre con que Citrus factura, p. ej. Pink
+// Networking para Yomayra Rosado). Se resuelve solo al crearse o cambiar el pedido, por este orden: teléfono (últimos 10
+// dígitos, `clienteTelefono` que trae el cuaderno), RNC/cédula, nombre o alias de la ficha. Si cruza por teléfono/documento con un
+// nombre distinto, ese nombre entra como alias de la ficha → la próxima vez cruza por nombre. Si no cruza con nada, la oficina lo
+// vincula una vez desde Historial (alias automático). Los nombres operativos del pedido NO se tocan (el equipo sigue viendo el
+// nombre de referencia).
+const tel10 = (t) => String(t || '').replace(/\D/g, '').slice(-10);
+const docNum = (d) => String(d || '').replace(/\D/g, '');
+function fichaCoincide(f, pedido) {
+    const t = tel10(pedido.clienteTelefono); const d = docNum(pedido.clienteDocumento);
+    if (t && t.length === 10 && tel10(f.telefono) === t) return 'telefono';
+    if (d && d.length >= 9 && docNum(f.documento) === d) return 'documento';
+    const n = normNombre(pedido.cliente); if (!n) return null;
+    const nombres = [f.nombre, f.nombreFacturacion, ...(Array.isArray(f.alias) ? f.alias : [])].map(normNombre).filter(Boolean);
+    return nombres.includes(n) ? 'nombre' : null;
+}
+exports.pedidoEnlazarCliente = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    if (after.clienteId || !after.cliente) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const relevante = !event.data.before.exists || before.cliente !== after.cliente || before.clienteTelefono !== after.clienteTelefono || before.clienteDocumento !== after.clienteDocumento || before.clienteId !== after.clienteId;
+    if (!relevante) return;
+    try {
+        const fichas = (await db.collection('clientes').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        let f = null, como = null;
+        for (const x of fichas) { const c = fichaCoincide(x, after); if (c) { f = x; como = c; break; } }
+        if (!f) { console.log('pedidoEnlazarCliente: sin ficha para', after.cliente); return; }
+        await event.data.after.ref.update({ clienteId: f.id, clienteFacturacion: f.nombreFacturacion || f.nombre || after.cliente, clienteEnlace: como });
+        if (como !== 'nombre') {   // cruzó por teléfono/documento con otro nombre → aprende el alias
+            const n = normNombre(after.cliente); const ya = [f.nombre, f.nombreFacturacion, ...(f.alias || [])].map(normNombre);
+            if (n && !ya.includes(n)) await db.doc('clientes/' + f.id).update({ alias: FieldValue.arrayUnion(after.cliente) });
+        }
+        console.log('pedidoEnlazarCliente:', event.params.id, after.cliente, '→', f.id, 'por', como);
+    } catch (e) { console.error('pedidoEnlazarCliente', event.params.id, e); }
 });
 
 // ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------
@@ -1541,6 +1581,11 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
                 const cambios = {};
                 if (Number(x.citrusId) !== Number(c.Id)) cambios.citrusId = Number(c.Id);
                 CAMPOS_RELLENAR_CLIENTE.forEach(k => { if (!limpio(x[k]) && m[k]) cambios[k] = m[k]; });
+                // Nombre de FACTURACIÓN (Dylan 2026-10-06, caso Pink Networking / Yomayra Rosado): el nombre con que Citrus factura
+                // se guarda aparte del nombre de referencia que usa el equipo, y entra en `alias` para que cualquier pedido escrito
+                // con uno u otro nombre cruce con la misma ficha.
+                if (m.nombre && normNombre(x.nombreFacturacion) !== normNombre(m.nombre)) cambios.nombreFacturacion = m.nombre;
+                if (m.nombre && normNombre(m.nombre) !== normNombre(x.nombre) && !(Array.isArray(x.alias) && x.alias.some(a => normNombre(a) === normNombre(m.nombre)))) cambios.alias = FieldValue.arrayUnion(m.nombre);
                 if (x.citrusTipoFactura !== m.citrusTipoFactura) cambios.citrusTipoFactura = m.citrusTipoFactura;
                 if (Object.keys(cambios).length) {
                     plan.actualizar.push({ id: ex.id, nombre: x.nombre || m.nombre, campos: Object.keys(cambios) });
@@ -1552,7 +1597,7 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
                 idsPlaneados.add(id);
                 plan.crear.push({ id, nombre: m.nombre, documento: m.documento ? `${m.tipoDocumento} ${m.documento}` : '' });
                 escrituras.push([db.collection(coleccion).doc(id), {
-                    ...m, citrusId: Number(c.Id), estado: c.Estatus === 'Activo' ? 'activo' : 'inactivo',
+                    ...m, nombreFacturacion: m.nombre, citrusId: Number(c.Id), estado: c.Estatus === 'Activo' ? 'activo' : 'inactivo',
                     origen: 'citrus', creadoPor: 'Importación Citrus', fechaCreacion: ahora, citrusSync: ahora
                 }, true]);
             }

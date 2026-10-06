@@ -2655,6 +2655,29 @@ automático de Instalación nace con ellos como asignados (informativo). Fábric
 anticipo en los pedidos FAB abiertos (misma `anticipoHTML` que Historial). Dato: Yomayra Rosado — Xcape apartamento b2b
 (shutters, interno) cerrado como instalado el 22/09/2026 por Delvis (`cierreManual:'instalado_por_contratista'`).
 
+### Enganche pedido ↔ ficha de cliente ↔ Citrus (2026-10-06)
+
+Dylan: en Citrus la clienta de Xcape es «Pink Networking» (nombre comercial/facturación) y en el Panel «Yomayra Rosado»;
+«debemos usar en oficina el nombre de facturación y poder poner el nombre de la clienta como referencia para el equipo», y
+cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campos obligatorios nuevos para el equipo):
+- `clientes/{id}`: `nombre` = **referencia** (equipo), `nombreFacturacion` (razón social Citrus; lo rellena la importación de
+  clientes al enlazar por citrusId/documento/nombre y lo pone en `alias`), `alias[]` (otros nombres), `telefono`, `documento`,
+  `idioma`. Ficha editable en `clientes.html` (campos «Nombre de referencia», «Nombre de facturación», «Otros nombres»); la
+  tarjeta muestra «🧾 factura: …» cuando difiere.
+- **Cuaderno (`index.html`, tocado desde la sesión de sistema con autorización excepcional de Dylan)**: casilla «TELÉFONO / RNC
+  DEL CLIENTE» (`#header-telefono`, área `telefono` en la fila 2 del encabezado, también en `printing-sheets`), `header.telefono` y
+  `header.clienteId` en `getAppJSON`/`restoreData`/`clearNotebookToBlank`/`nuevoProyectoMismoCliente`. El módulo reconoce la ficha
+  al escribir (`buscarFicha`: teléfono 10 dígitos / documento / nombre-facturación-alias; `refreshFichaCliente` guarda
+  `dataset.clienteId`, rellena el teléfono vacío y suma los nombres de las fichas al datalist). `enviarOrden` manda
+  `clienteTelefono`, `clienteId`, `clienteFacturacion`.
+- Trigger `pedidoEnlazarCliente` (orders): si el pedido no trae `clienteId`, lo resuelve por teléfono → documento → nombre/alias y
+  escribe `clienteId`, `clienteFacturacion`, `clienteEnlace`; si cruzó por teléfono/documento con otro nombre, ese nombre entra como
+  alias de la ficha (aprende). Los campos operativos `cliente`/`obra` NO se tocan: el equipo sigue viendo el nombre de referencia.
+- `pedidoEntregadoInterno` ahora: Entregado por el chofer ⇒ `listo_para_cargar` para CUALQUIER destino (Dylan: «lo que ALUCUFEL le
+  entregó se marca como listo»); «En ruta» solo empuja internos. ECO 83 pasado a listo a mano (06/10).
+- Pendiente (siguiente paso acordado): «Vincular a ficha» en Historial para pedidos sin `clienteId`, y el anticipo automático
+  desde Citrus (descripción del asiento: obra / «cot. N» / % → 4 reglas, tarjeta admin si es ambiguo).
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
