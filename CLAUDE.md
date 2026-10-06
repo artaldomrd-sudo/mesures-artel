@@ -2607,8 +2607,10 @@ local de escrituras; también fuera del repo). Tarea programada de la app de esc
 destinatarios Wilson y Dylan) → trigger `mensajeCoordinadorPush` manda el push. Tres campos nuevos del Panel pedidos para él:
 - **Anticipo recibido** (`orders.anticipo {recibido, monto, moneda, fecha, nota, validadoPor…}`): la oficina lo marca en
   `cotizaciones.html` (tarjeta «Enviada al cliente», `anticipoHTML`) o en `historial.html` (pedidos FAB directos del cuaderno);
-  `aprobarYEnviarFabrica` lo copia al pedido de fábrica y avisa (sin bloquear) si se manda a fábrica sin anticipo. Chip «💰
-  Anticipo validado / sin validar» en los tableros de fábrica y en la tarjeta del pedido de Instalación.
+  `aprobarYEnviarFabrica` lo copia al pedido de fábrica y avisa (sin bloquear) si se manda a fábrica sin anticipo. **Solo
+  gerencia (admin) lo ve** (Dylan 2026-10-06: «no es información relevante para nadie más que Anny y yo»): caja en Cotizaciones solo
+  admin, caja/chip en Fábrica interna e Historial (páginas admin); NADA en ALUCUFEL ni en Instalación. Pendiente (Dylan, mismo
+  día): una sola entrada — el anticipo se registra en Citrus y viaja al Panel (cuenta 200204 / recibos) en vez de marcarse dos veces.
 - **Fecha estimada de salida de fábrica** (`fechaSalidaEstimada`, `…Original`, `fechaSalidaPor`, `fechaSalidaCambios[]`): en
   `fabrica-interna.html` y `alucufel/fabrica.html` «Tomar pedido» abre una fila con fecha OBLIGATORIA (`tomarAbrir`/`tomarPedido`);
   la tarjeta en fábrica muestra «📅 Salida estimada: … (en N días / vencida)» con «Cambiar» (`salidaHTML`/`fijarSalida`): máximo
