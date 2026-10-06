@@ -264,13 +264,16 @@
     };
 
     function render(docs) {
-        allDocs = docs;
         renderAvisoRuta();
         const list = document.getElementById('orders-list');
         // Los pedidos "directo a instalación" no pasan por transporte (se instalan en obra): se
         // excluyen de Transportes para no confundir al chofer.
         docs = docs.filter(d => d.data().directoInstalacion !== true);
-        docs = docs.filter(d => !['pendiente_fabrica', 'en_fabrica'].includes(d.data().status) || (d.data().destino === 'interno' && d.data().docType !== 'COMPRA_DIRECTA'));
+        docs = docs.filter(d => !['pendiente_fabrica', 'en_fabrica'].includes(d.data().status) || (d.data().destino === 'interno' && d.data().docType !== 'COMPRA_DIRECTA') || d.data().enRuta === true);   // si el camión ya lo lleva (En ruta) se ve siempre, aunque fábrica lo haya devuelto a «en fábrica»
+        // Un pedido COMPLETADO (instalado) que nunca pasó por «Entregado» no vuelve a aparecer en espera/ruta (usuario 2026-10-06:
+        // «aparecen cosas completadas hace mucho»; caso Marisol Acosta y Altea 11 barandas, cerrados por instalación).
+        docs = docs.filter(d => d.data().entregado === true || (d.data().status !== 'completado' && d.data().instalado !== true));
+        allDocs = docs;   // el aviso de «en ruta sin entregar» y los botones trabajan sobre la MISMA lista que se muestra
         // La asignación (ver historial.html) es solo informativa: cualquier chofer ve todos los
         // pedidos, así uno puede cubrir al otro si falta.
         let filtrados;

@@ -2626,6 +2626,21 @@ consulta de partes falla (sin red / permiso) NO bloquea (antes contaba el día c
 `mfa.js` y `parte-gate.js` en paralelo con la lectura de `usuarios`. Regla: en móvil cada viaje a Firestore cuesta ~0,4 s; nunca
 encadenar lecturas por día/por ítem en el arranque de una pantalla.
 
+### Capturas de Wilson 2026-10-06: tres fallos corregidos
+
+- **Parte diario: enviar un BORRADOR no hacía nada** (Wilson, 30/09). `parte-diario.html` usaba `deleteField()` sin importarlo ni
+  declararlo → ReferenceError antes del `try`, sin alerta. Importado y declarado. Además el estado decía «✓ Enviado» para un
+  borrador (`parteGuardado` existía): ahora «📝 Borrador — falta ENVIAR». Lección: cuando una función «no hace nada» en el
+  teléfono, buscar primero identificadores sin importar en el `<script type="module">` (el checker de sintaxis no los detecta).
+- **Transportes**: un pedido `completado`/`instalado` que nunca pasó por «Entregado» se quedaba en «En espera» para siempre
+  (Marisol Acosta, Altea 11 barandas, cerrados por instalación). Ahora en espera/ruta solo salen pedidos no completados; el aviso
+  «en ruta sin entregar» usa la MISMA lista filtrada (antes contaba pedidos que la pestaña no mostraba); un pedido con `enRuta`
+  se ve siempre aunque fábrica lo haya devuelto a `en_fabrica`.
+- **Panel de admin lento en el teléfono**: `index.html` se bajaba `orders` entero (1,1 MB; 52 completados + 36 cotizaciones
+  enviadas con toda la ficha) y 797 `citas` (718 hechas). Ahora `orders where status in ESTADOS_ACTIVOS` y citas = abiertas
+  (`completada == false`) ∪ últimos 45 días (las antiguas sin el campo `completada` no se pueden consultar por igualdad).
+  Regla general: ninguna pantalla se suscribe a una colección entera si solo necesita los activos.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

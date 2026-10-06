@@ -396,7 +396,11 @@
     // Todas las tarjetas sin aplicar el filtro de ocultas (para podar claves viejas).
     function buildNotifsTodas() { const guardadas = notifOcultas; notifOcultas = []; try { return buildNotifs(); } finally { notifOcultas = guardadas; } }
 
-    onSnapshot(collection(db, 'orders'), (snap) => {
+    // Rendimiento en el teléfono (usuario 2026-10-06, «la pantalla de admin no cargaba»): antes el Panel se bajaba la colección
+    // `orders` ENTERA (1,1 MB: 52 completados y 36 cotizaciones enviadas con toda su ficha) y las 797 citas (718 ya hechas) solo
+    // para contar badges. Ahora solo los pedidos en estados ACTIVOS y las citas abiertas o de los últimos 45 días (~10 % del peso).
+    const ESTADOS_ACTIVOS = ['solicitada', 'costeada', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'];
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ESTADOS_ACTIVOS)), (snap) => {
         ordersCache = snap.docs.map(d => ({ id: d.id, o: d.data() }));
         avisarComentariosNuevos(snap, ordersPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); ordersPrimera = false;
         let alucufel = 0, fabricaInterna = 0, cotizaciones = 0, chofer = 0, instalador = 0;
@@ -481,10 +485,12 @@
     }, () => { /* colección aún vacía o reglas sin publicar: sin badge, no romper el panel */ });
 
     // Citas/recordatorios (calendario): para las notificaciones descartables.
-    onSnapshot(collection(db, 'citas'), (snap) => {
-        citasCache = snap.docs.map(d => ({ id: d.id, c: d.data() }));
-        renderNotifs();
-    }, () => { /* sin permisos o vacío: no romper */ });
+    // Citas: las abiertas (`completada == false`) + las de los últimos 45 días (cubre las antiguas sin el campo `completada`,
+    // que no se pueden consultar por igualdad). Se unen por id. Las vencidas de hace más de 45 días sin ese campo ya no se listan.
+    const citasPorFuente = { abiertas: [], recientes: [] };
+    const unirCitas = () => { const m = new Map(); [...citasPorFuente.abiertas, ...citasPorFuente.recientes].forEach(x => m.set(x.id, x)); citasCache = [...m.values()]; renderNotifs(); };
+    onSnapshot(query(collection(db, 'citas'), where('completada', '==', false)), (snap) => { citasPorFuente.abiertas = snap.docs.map(d => ({ id: d.id, c: d.data() })); unirCitas(); }, () => { /* sin permisos o vacío: no romper */ });
+    onSnapshot(query(collection(db, 'citas'), where('fecha', '>=', new Date(Date.now() - 45 * 86400000))), (snap) => { citasPorFuente.recientes = snap.docs.map(d => ({ id: d.id, c: d.data() })); unirCitas(); }, () => { /* sin permisos o vacío: no romper */ });
 
     // Badge del tile "Mensajería ARTAL": mensajes sin leer para este usuario (mismo criterio que
     // el botón flotante). El floating widget ya muestra su propio círculo; esto es el número en el tile.

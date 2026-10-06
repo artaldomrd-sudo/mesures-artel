@@ -123,7 +123,7 @@
     // ===== MODO DEMO (?demo=1 encargado · ?demo=admin gerencia): sin login ni Firebase, con datos de
     // ejemplo en memoria, para revisar cómo está armada la pantalla. Nada se guarda de verdad. =====
     const DEMO = new URLSearchParams(location.search).get('demo') || (location.hash === '#admin' ? 'admin' : location.hash === '#encargado' ? '1' : (window.ARTAL_DEMO || ''));
-    let requireAuth, auth, signOut, db, collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp;
+    let requireAuth, auth, signOut, db, collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp, deleteField;
     if (DEMO) {
         const hoyD = new Date(), ymdD = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const dAgo = (n) => { const d = new Date(hoyD); d.setDate(d.getDate() - n); return ymdD(d); };
@@ -186,7 +186,7 @@
         ({ requireAuth, auth, signOut } = await import('./auth-common.js'));
         ({ db } = await import('./firebase-config.js'));
         await import('./mensajeria-widget.js');
-        ({ collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'));
+        ({ collection, onSnapshot, doc, getDoc, getDocs, setDoc, query, where, serverTimestamp, deleteField } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'));   // deleteField: faltaba y el envío de un BORRADOR fallaba en silencio (Wilson, 30/09, visto 2026-10-06)
     }
 
     const usuario = await requireAuth(['instalador']);
@@ -421,8 +421,8 @@
         const est = document.getElementById('p-estado');
         const otro = !parteGuardado && partes.find(p => p.fecha === parteActual.fecha && String(p.encargadoEmail || '').toLowerCase() !== String(parteActual.encargadoEmail || '').toLowerCase() && incluidoPorOtro(parteActual.encargadoEmail, parteActual.fecha));
         if (otro) est.innerHTML = `<b class="ok">✓ Este día ya estás en el parte de ${esc(otro.encargadoNombre || otro.encargadoEmail)}</b> · no tienes que enviar el tuyo, salvo que hayas tenido gente aparte.`;
-        else if (parteGuardado) est.innerHTML = `<b class="ok">✓ Enviado</b> el ${esc(fmtTs(parteGuardado.actualizado || parteGuardado.creado))} por ${esc(parteGuardado.editadoPor || parteGuardado.encargadoNombre || '')}. Puedes corregirlo y volver a enviar.`;
-        else est.innerHTML = `<b class="${parteActual.fecha < hoyStr() ? 'bad' : 'warn'}">${parteActual.fecha < hoyStr() ? '⚠️ Este parte está pendiente' : 'Sin enviar todavía'}</b> · ${esc(fmtFecha(parteActual.fecha))}`;
+        else if (parteGuardado && !parteGuardado.borrador) est.innerHTML = `<b class="ok">✓ Enviado</b> el ${esc(fmtTs(parteGuardado.actualizado || parteGuardado.creado))} por ${esc(parteGuardado.editadoPor || parteGuardado.encargadoNombre || '')}. Puedes corregirlo y volver a enviar.`;
+        else est.innerHTML = `<b class="${parteActual.fecha < hoyStr() ? 'bad' : 'warn'}">${parteGuardado && parteGuardado.borrador ? '📝 Borrador (horas de los trabajos validados) — falta ENVIAR' : (parteActual.fecha < hoyStr() ? '⚠️ Este parte está pendiente' : 'Sin enviar todavía')}</b> · ${esc(fmtFecha(parteActual.fecha))}`;
         const horasTot = parteActual.lineas.reduce((s, l) => s + (l.tipo === 'ausente' ? 0 : n2(l.horas)), 0);
         document.getElementById('p-resumen').textContent = `${ids.length} persona(s) · ${horasTot} h en total`;
         renderAvisoPendientes();
