@@ -216,7 +216,7 @@
     }
 
     // ---------------- Centro de notificaciones ----------------
-    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [];
+    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [];
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
     // Solo cuentan los mensajes del INSTALADOR (los de gerencia, `deRol:'gerencia'`, son respuestas nuestras).
@@ -281,6 +281,12 @@
                 N.push({ key: `cot:${id}`, tipo: 'tarea', ic: '💵', titulo: 'Cotización costeada — falta enviar al cliente', sub: lugar, txt: '',
                     acciones: `<a class="n-ver" href="cotizaciones.html">Ir a Cotizaciones</a>` });
             }
+        });
+        // 3d) Anticipos registrados en Citrus que el Panel no pudo asignar solo a una obra (solo admin; Dylan 2026-10-06).
+        anticiposPend.forEach(({ id, a }) => {
+            const btns = (a.candidatos || []).map(c => `<button class="n-done" onclick="notifAnticipoAsignar('${id}','${c.orderId}')">${esc(c.obra || c.cliente || c.orderId)}</button>`).join('');
+            N.push({ key: `ac:${id}`, tipo: 'tarea', ic: '💰', titulo: `Anticipo en Citrus sin obra: ${a.cliente || '?'} · RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}`, sub: a.fecha || '', txt: (a.descripcion ? '«' + a.descripcion + '» · ' : '') + (a.motivo || ''),
+                acciones: (btns ? `<span style="font-size:12px;color:#556;margin-right:4px">¿A qué obra?</span>${btns}` : '') + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button>` });
         });
         // 3b) Comentarios del instalador en trabajos del calendario (colección instalaciones), sin atender.
         instCache.forEach(({ id, j }) => {
@@ -426,6 +432,20 @@
     });
     // Trabajos del calendario de instalación: sus comentarios también cuentan en el badge y el centro.
     let instComentariosSinAtender = 0;
+    onSnapshot(query(collection(db, 'anticiposCitrus'), where('estado', '==', 'pendiente')), (snap) => { anticiposPend = snap.docs.map(d => ({ id: d.id, a: d.data() })); renderNotifs(); }, () => { /* sin permiso: no admin */ });
+    window.notifAnticipoAsignar = async (asientoId, orderId) => {
+        const p = anticiposPend.find(x => x.id === asientoId); if (!p) return;
+        const a = p.a; const c = (a.candidatos || []).find(x => x.orderId === orderId) || {};
+        if (!confirm(`¿Aplicar el anticipo de ${a.cliente} (RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}, ${a.fecha}) a «${c.obra || orderId}»?`)) return;
+        try {
+            await updateDoc(doc(db, 'orders', orderId), { anticipo: { recibido: true, monto: a.monto || 0, moneda: 'RD$', fecha: a.fecha || '', nota: a.descripcion || '', origen: 'citrus', citrusAsientoId: asientoId, regla: 'manual', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: new Date().toISOString() } });
+            await updateDoc(doc(db, 'anticiposCitrus', asientoId), { estado: 'manual', orderId, obra: c.obra || '', asignadoPor: usuario.nombre, asignadoFecha: serverTimestamp() });
+        } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.notifAnticipoIgnorar = async (asientoId) => {
+        if (!confirm('¿Marcar este anticipo como no asociado a una obra del Panel? No volverá a aparecer.')) return;
+        try { await updateDoc(doc(db, 'anticiposCitrus', asientoId), { estado: 'ignorado', ignoradoPor: usuario.nombre, ignoradoFecha: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
     onSnapshot(collection(db, 'instalaciones'), (snap) => {
         instCache = snap.docs.map(d => ({ id: d.id, j: d.data() }));
         avisarComentariosNuevos(snap, instPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); instPrimera = false;

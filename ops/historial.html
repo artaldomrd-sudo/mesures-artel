@@ -123,7 +123,7 @@
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, doc, deleteDoc, updateDoc, writeBatch, onSnapshot, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, doc, deleteDoc, updateDoc, writeBatch, onSnapshot, query, where, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { mismaObra } from './obras-util.js';   // regla única de "misma obra" (igual que el informe de cierre y Costo de obras)
     import { openOrderPreview } from './order-preview.js';
     import { buildClientMap, clientList } from './clients.js';
@@ -400,6 +400,7 @@
                 ${extraLinks.join(' ')}
                 <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
             </div>
+            ${fichaHTML(id, o)}
             ${isCompra ? '' : anticipoHTML(id, o)}
             ${lineaTiempoHTML(o)}
             <div class="status-change-row">
@@ -515,7 +516,29 @@
         document.getElementById('clientes-datalist').innerHTML =
             clientList(buildClientMap(allOrders.map(o => o.data), clientesCache)).map(c => `<option value="${esc(c.nombre)}">`).join('');
     }
-    onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientesDatalist(); });
+    onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => ({ _id: d.id, ...d.data() })); refreshClientesDatalist(); let dl = document.getElementById('fichas-datalist-wrap'); if (!dl) { dl = document.createElement('div'); dl.id = 'fichas-datalist-wrap'; document.body.appendChild(dl); } dl.innerHTML = fichasDatalistHTML(); render(); });
+    // Vincular pedido ↔ ficha de cliente (Dylan 2026-10-06). El trigger pedidoEnlazarCliente lo hace solo por teléfono/documento/nombre;
+    // aquí la oficina resuelve los que no cruzaron, UNA vez: el nombre del pedido queda como alias de la ficha y los siguientes cruzan solos.
+    const normF = (x) => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    function fichaHTML(id, o) {
+        if (o.docType === 'COMPRA_DIRECTA') return '';
+        if (o.clienteId) { const f = clientesCache.find(c => c._id === o.clienteId); const fact = (f && f.nombreFacturacion && normF(f.nombreFacturacion) !== normF(f.nombre)) ? ' · 🧾 factura: ' + esc(f.nombreFacturacion) : ''; return `<div style="margin-top:6px;font-size:12px;color:#556">👤 Ficha: <b>${esc(f ? f.nombre : o.clienteId)}</b>${fact}${o.clienteEnlace ? ' <span style="color:#889">(' + esc(o.clienteEnlace) + ')</span>' : ''} <a href="#" onclick="desvincularFicha('${id}');return false;" style="color:#c0392b;margin-left:6px">cambiar</a></div>`; }
+        return `<div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;background:#fff8e1;border-radius:8px;padding:6px 9px"><span style="color:#8a6d00;font-weight:bold">👤 Sin ficha de cliente</span>
+            <input list="fichas-datalist" id="ficha-sel-${id}" placeholder="Elige la ficha (nombre, facturación o alias)" style="flex:1;min-width:180px;padding:6px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:12.5px">
+            <button onclick="vincularFicha('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:6px 10px;font-weight:bold;font-family:'Arimo';font-size:12px;cursor:pointer">Vincular</button></div>`;
+    }
+    function fichasDatalistHTML() { return `<datalist id="fichas-datalist">${clientesCache.filter(c => c.estado !== 'inactivo').map(c => `<option value="${esc(c.nombre)}">${esc([c.nombreFacturacion, ...(c.alias || [])].filter(Boolean).join(' · '))}</option>`).join('')}</datalist>`; }
+    window.vincularFicha = async function (orderId) {
+        const v = normF((document.getElementById('ficha-sel-' + orderId) || {}).value); if (!v) { alert('Escribe o elige la ficha.'); return; }
+        const f = clientesCache.find(c => [c.nombre, c.nombreFacturacion, ...(c.alias || [])].some(x => normF(x) === v)); if (!f) { alert('No hay una ficha con ese nombre. Créala primero en Clientes.'); return; }
+        const o = (allOrders.find(x => x.id === orderId) || {}).data() || {};
+        try {
+            await updateDoc(doc(db, 'orders', orderId), { clienteId: f._id, clienteFacturacion: f.nombreFacturacion || f.nombre || '', clienteEnlace: 'manual' });
+            const ya = [f.nombre, f.nombreFacturacion, ...(f.alias || [])].map(normF);
+            if (o.cliente && !ya.includes(normF(o.cliente))) await updateDoc(doc(db, 'clientes', f._id), { alias: arrayUnion(o.cliente) });
+        } catch (e) { alert('No se pudo vincular: ' + e.message); }
+    };
+    window.desvincularFicha = async function (orderId) { if (!confirm('¿Quitar el vínculo con la ficha para elegir otra?')) return; try { await updateDoc(doc(db, 'orders', orderId), { clienteId: null, clienteFacturacion: null, clienteEnlace: null }); } catch (e) { alert('No se pudo: ' + e.message); } };
 
     onSnapshot(collection(db, 'orders'), (snap) => {
         allOrders = snap.docs.map(d => ({ id: d.id, data: d.data() }));

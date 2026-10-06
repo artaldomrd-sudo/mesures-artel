@@ -2675,8 +2675,16 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
   alias de la ficha (aprende). Los campos operativos `cliente`/`obra` NO se tocan: el equipo sigue viendo el nombre de referencia.
 - `pedidoEntregadoInterno` ahora: Entregado por el chofer ⇒ `listo_para_cargar` para CUALQUIER destino (Dylan: «lo que ALUCUFEL le
   entregó se marca como listo»); «En ruta» solo empuja internos. ECO 83 pasado a listo a mano (06/10).
-- Pendiente (siguiente paso acordado): «Vincular a ficha» en Historial para pedidos sin `clienteId`, y el anticipo automático
-  desde Citrus (descripción del asiento: obra / «cot. N» / % → 4 reglas, tarjeta admin si es ambiguo).
+- **Historial → «👤 Sin ficha de cliente → Vincular»** (`fichaHTML`/`vincularFicha`): la oficina elige la ficha (datalist por nombre,
+  facturación o alias) UNA vez; el nombre del pedido entra como alias de la ficha y los siguientes cruzan solos. «cambiar» desvincula.
+- **Anticipo automático desde Citrus** (`aplicarAnticiposCitrus`, al final de `sincronizarCitrus`, 6:30/12:30/17:30 y «Sincronizar
+  ahora»): asientos del diario con crédito a 200204; cliente de «Cliente: X» → ficha por nombre/facturación/alias; candidatos = pedidos
+  abiertos de esa ficha (sin anticipo; la cotización cede ante su pedido FAB). Reglas: `citrusCotizacionNumero` = «cot. N» →
+  `obraCoincideTexto(obra, descripción)` (palabras propias, números deben coincidir; quita «70%» y «cot. 590» antes) → único abierto →
+  monto = % × total (`totalCotizacion`/`precioTotal`, ±2 %) → si no, **pendiente**. Registro `anticiposCitrus/{asientoId}` {estado
+  aplicado|pendiente|manual|ignorado|anulado, candidatos[]}; un asiento se aplica una vez; anulado en Citrus → se quita del pedido.
+  Panel (admin): tarjeta `ac:` «Anticipo en Citrus sin obra» con un botón por obra (`notifAnticipoAsignar`) e «ignorar». Regla
+  nueva `anticiposCitrus` solo admin (pegar a mano). Anny no cambia nada: sigue poniendo obra / «cot. N» / % en la descripción.
 
 ### Nómina: pedidos de la contable (2026-09-30)
 

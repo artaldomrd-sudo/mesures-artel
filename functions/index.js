@@ -2131,6 +2131,89 @@ exports.citrusImportar = onRequest({ secrets: [citrusToken, citrusTokenProd], co
 // Citrus). Solo con CITRUS_ENV=prod: en pruebas no se ensucia el Panel con datos del entorno de test. Deja un
 // registro en `citrusSync/{fecha}` y `citrusSync/ultimo` (lo muestra la sección 4 de ops/citrus.html).
 const SYNC_ENTIDADES = ['cliente', 'suplidor', 'factura-suplidor', 'diario', 'banco', 'factura-cliente', 'cxc'];
+// ---------- Anticipos de clientes desde Citrus → pedido (Dylan 2026-10-06: «se marca en Citrus y viaja al Panel, no dos veces») ----------
+// Un anticipo en Citrus es un asiento con crédito a la cuenta 200204 (anticipos de clientes) cuya descripción trae «Cliente: X» y el
+// texto libre que escribe Anny («70% pago aloha 1 cot. 590»). Reglas, en orden; la primera que cuadra decide y si ninguna cuadra NO se
+// aplica a ciegas (queda `anticiposCitrus/{asiento}` en estado 'pendiente' → tarjeta solo-admin en el Panel con un botón por obra):
+//   1. la descripción nombra la obra (palabras significativas / número) o el nº de cotización Citrus del pedido (`citrusCotizacionNumero`);
+//   2. el cliente tiene UN solo pedido abierto sin anticipo;
+//   3. el monto coincide con el % de la descripción sobre el total del pedido (si el pedido tiene total), ±2 %;
+//   4. ambiguo → pendiente. Un asiento se aplica una sola vez (`anticiposCitrus/{id}`); si Citrus lo anula, se quita del pedido.
+const PALABRAS_GENERICAS = new Set(['villa', 'casa', 'apartamento', 'apto', 'apartamentos', 'edificio', 'residencial', 'proyecto', 'obra', 'fabricacion', 'parte', 'pago', 'anticipo', 'avance', 'cot', 'cotizacion', 'cliente', 'abono', 'inicial', 'primer', 'segundo', 'tercer', 'por', 'del', 'de', 'la', 'el', 'los', 'las']);
+const palabrasSig = (t) => normNombre(t).split(/[^a-z0-9]+/).filter((w) => w && !PALABRAS_GENERICAS.has(w) && (w.length >= 4 || /^\d+$/.test(w)));
+function obraCoincideTexto(obra, texto) {
+    // Del texto se quitan el porcentaje («70%») y el nº de cotización («cot. 590») para que esos números no se confundan con el de la obra.
+    const limpioTxt = String(texto || '').replace(/\d{1,3}\s*%/g, ' ').replace(/cot\.?\s*#?\s*n?[oº]?\.?\s*\d+/gi, ' ');
+    const a = palabrasSig(obra), b = new Set(palabrasSig(limpioTxt)); if (!a.length || !b.size) return false;
+    const comunes = a.filter((w) => b.has(w)); if (!comunes.length) return false;
+    const nA = a.filter((w) => /^\d+$/.test(w)), nB = [...b].filter((w) => /^\d+$/.test(w));
+    if (nA.length && nB.length && !nA.some((n) => nB.includes(n))) return false;   // Villa 11 ≠ Villa 12
+    if (comunes.some((w) => !/^\d+$/.test(w))) return true;                        // comparten una palabra propia (aloha, riviera, xcape…)
+    const textoSoloNumeros = ![...b].some((w) => !/^\d+$/.test(w));
+    return nA.some((n) => nB.includes(n)) && (textoSoloNumeros || a.length === 1);  // «villa 11» → ALTEA VILLA 11 (el número decide)
+}
+async function aplicarAnticiposCitrus(ctx, quien, diario) {
+    const res = { vistos: 0, aplicados: 0, pendientes: 0, anulados: 0, yaProcesados: 0, sinFicha: 0 };
+    const asientos = (diario || []).filter((x) => Array.isArray(x.Detalles) && x.Detalles.some((l) => String(l.Cuenta || '').startsWith('200204') && l.Tipo === 'Credito'));
+    if (!asientos.length) return res;
+    const [fichasSnap, pedidosSnap, regSnap] = await Promise.all([
+        db.collection('clientes').get(),
+        db.collection('orders').where('status', 'in', ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado']).get(),
+        db.collection('anticiposCitrus').get()
+    ]);
+    const fichas = fichasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const pedidos = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType !== 'COMPRA_DIRECTA' && !(String(o.docType || '').indexOf('COT') === 0 && o.enviadaAFabrica));
+    const registro = new Map(regSnap.docs.map((d) => [d.id, d.data()]));
+    const nombresFicha = (f) => [f.nombre, f.nombreFacturacion, ...(Array.isArray(f.alias) ? f.alias : [])].map(normNombre).filter(Boolean);
+    for (const x of asientos) {
+        res.vistos++;
+        const id = String(x.Id); const prev = registro.get(id);
+        const monto = r2(x.Detalles.filter((l) => String(l.Cuenta || '').startsWith('200204') && l.Tipo === 'Credito').reduce((s, l) => s + (Number(l.Monto) || 0), 0));
+        const fecha = limpio(x.Fecha).slice(0, 10); const desc = limpio(x.Descripcion);
+        const mCli = desc.match(/Cliente:\s*(.*?)(?:\s+NCF|\s+Concepto|\s+Descripci[oó]n|\s*$)/i); const nombreCitrus = mCli ? limpio(mCli[1]) : '';
+        const anulado = x.Estatus === 'Cancelado';
+        if (anulado) {
+            if (prev && prev.estado === 'aplicado' && prev.orderId) {
+                try { const o = await db.doc('orders/' + prev.orderId).get(); const a = o.exists ? o.data().anticipo : null; if (a && a.citrusAsientoId === id) await o.ref.update({ anticipo: { recibido: false, anuladoEnCitrus: true, anuladoFecha: FieldValue.serverTimestamp(), anterior: a } }); } catch (_) { }
+                await db.doc('anticiposCitrus/' + id).set({ estado: 'anulado', anuladoFecha: FieldValue.serverTimestamp() }, { merge: true }); res.anulados++;
+            } else if (prev && prev.estado === 'pendiente') await db.doc('anticiposCitrus/' + id).set({ estado: 'anulado' }, { merge: true });
+            continue;
+        }
+        if (prev && ['aplicado', 'pendiente', 'ignorado', 'manual'].includes(prev.estado)) { res.yaProcesados++; continue; }
+        const nC = normNombre(nombreCitrus);
+        const ficha = nC ? fichas.find((f) => nombresFicha(f).includes(nC)) : null;
+        const base = { citrusAsientoId: id, cliente: nombreCitrus, clienteId: ficha ? ficha.id : null, monto, fecha, descripcion: desc, fuente: limpio(x.Fuente), creado: FieldValue.serverTimestamp(), por: quien };
+        if (!ficha) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: 'El cliente de Citrus no cruza con ninguna ficha del Panel', candidatos: [] }); res.pendientes++; res.sinFicha++; continue; }
+        const nombres = nombresFicha(ficha);
+        let cands = pedidos.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))).filter((o) => !(o.anticipo && o.anticipo.recibido && o.anticipo.citrusAsientoId !== id));
+        // Si una cotización y su pedido de fábrica están ambos abiertos, cuenta el pedido de fábrica.
+        const origenes = new Set(cands.map((o) => o.cotizacionOrigenId).filter(Boolean)); cands = cands.filter((o) => !origenes.has(o.id));
+        const texto = desc.replace(/Cliente:\s*.*?(?=\s+Concepto|\s+Descripci[oó]n|\s+NCF|$)/i, ' ');
+        const mCot = texto.match(/cot\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i); const numCot = mCot ? Number(mCot[1]) : null;
+        const mPct = texto.match(/(\d{1,3})\s*%/); const pct = mPct ? Number(mPct[1]) : null;
+        let elegido = null, regla = '';
+        const porCot = numCot ? cands.filter((o) => Number(o.citrusCotizacionNumero) === numCot) : [];
+        const porObra = cands.filter((o) => obraCoincideTexto(o.obra, texto));
+        if (porCot.length === 1) { elegido = porCot[0]; regla = 'cotizacion'; }
+        else if (porObra.length === 1) { elegido = porObra[0]; regla = 'obra'; }
+        else if (cands.length === 1) { elegido = cands[0]; regla = 'unico'; }
+        else if (pct && cands.length > 1) {
+            const okMonto = cands.filter((o) => { const t = Number(o.totalCotizacion || o.precioTotal || 0); return t > 0 && Math.abs(t * pct / 100 - monto) <= t * 0.02; });
+            if (okMonto.length === 1) { elegido = okMonto[0]; regla = 'monto'; }
+        }
+        if (elegido) {
+            const anticipo = { recibido: true, monto, moneda: 'RD$', fecha, nota: desc, origen: 'citrus', citrusAsientoId: id, regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
+            await db.doc('orders/' + elegido.id).update({ anticipo });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, aplicadoFecha: FieldValue.serverTimestamp() });
+            res.aplicados++;
+        } else {
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? `Varias obras abiertas (${cands.length}) y la descripción no permite elegir` : 'El cliente no tiene pedidos abiertos en el Panel', candidatos: cands.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '' })) });
+            res.pendientes++;
+        }
+    }
+    return res;
+}
+exports.aplicarAnticiposCitrus = aplicarAnticiposCitrus;
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
     const { fecha } = hoySantoDomingo();   // devuelve { fecha, domingo }
@@ -2152,6 +2235,8 @@ async function sincronizarCitrus(motivo) {
     if (ctx.entorno === 'prod') {
         try { registro.resultados['resumen-clientes'] = await resumenClientesCitrus(ctx, motivo); }
         catch (e) { registro.resultados['resumen-clientes'] = { error: String((e && e.message) || e) }; console.error('resumenClientesCitrus', e); }
+        try { registro.resultados['anticipos'] = await aplicarAnticiposCitrus(ctx, motivo, await citrusLeerTodo(ctx, 'diario', true)); }
+        catch (e) { registro.resultados['anticipos'] = { error: String((e && e.message) || e) }; console.error('aplicarAnticiposCitrus', e); }
         try { registro.resultados['tablero'] = await tableroErp(ctx, motivo); }
         catch (e) { registro.resultados['tablero'] = { error: String((e && e.message) || e) }; console.error('tableroErp', e); }
     }
