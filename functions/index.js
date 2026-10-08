@@ -2152,48 +2152,51 @@ function obraCoincideTexto(obra, texto) {
     const textoSoloNumeros = ![...b].some((w) => !/^\d+$/.test(w));
     return nA.some((n) => nB.includes(n)) && (textoSoloNumeros || a.length === 1);  // «villa 11» → ALTEA VILLA 11 (el número decide)
 }
-async function aplicarAnticiposCitrus(ctx, quien, diario) {
-    const res = { vistos: 0, aplicados: 0, pendientes: 0, anulados: 0, yaProcesados: 0, sinFicha: 0 };
-    const asientos = (diario || []).filter((x) => Array.isArray(x.Detalles) && x.Detalles.some((l) => String(l.Cuenta || '').startsWith('200204') && l.Tipo === 'Credito'));
-    if (!asientos.length) return res;
+async function aplicarAnticiposCitrus(ctx, quien) {
+    // Fuente: la entidad `anticipo` de Citrus (no el asiento del diario, cuya descripción es automática y trae el concepto vacío —
+    // visto el 2026-10-08). Cada anticipo trae ClienteId (→ ficha por citrusId, sin depender del nombre), Monto, Fecha, Estatus y
+    // `Descripcion` = el texto que escribe Anny («70% baranda salome», «primera parte 70% catherine marandat»).
+    const HISTORICO_ANTES_DE = '2026-09-01';   // los anteriores son de obras ya cerradas: se registran como 'historico', sin tarjeta
+    const res = { vistos: 0, aplicados: 0, pendientes: 0, anulados: 0, yaProcesados: 0, historicos: 0, sinFicha: 0 };
+    const registros = await citrusLeerTodo(ctx, 'anticipo');
+    if (!registros.length) return res;
     const [fichasSnap, pedidosSnap, regSnap] = await Promise.all([
         db.collection('clientes').get(),
         db.collection('orders').where('status', 'in', ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado']).get(),
         db.collection('anticiposCitrus').get()
     ]);
     const fichas = fichasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const fichaPorCitrusId = new Map(); fichas.forEach((f) => { if (f.citrusId != null) fichaPorCitrusId.set(Number(f.citrusId), f); });
     const pedidos = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType !== 'COMPRA_DIRECTA' && !(String(o.docType || '').indexOf('COT') === 0 && o.enviadaAFabrica));
     const registro = new Map(regSnap.docs.map((d) => [d.id, d.data()]));
     const nombresFicha = (f) => [f.nombre, f.nombreFacturacion, ...(Array.isArray(f.alias) ? f.alias : [])].map(normNombre).filter(Boolean);
-    for (const x of asientos) {
+    const fechaDe = (t) => (t && t.toDate) ? t.toDate().toISOString().slice(0, 10) : '';
+    for (const x of registros) {
         res.vistos++;
-        const id = String(x.Id); const prev = registro.get(id);
-        const monto = r2(x.Detalles.filter((l) => String(l.Cuenta || '').startsWith('200204') && l.Tipo === 'Credito').reduce((s, l) => s + (Number(l.Monto) || 0), 0));
-        const fecha = limpio(x.Fecha).slice(0, 10); const desc = limpio(x.Descripcion);
-        const mCli = desc.match(/Cliente:\s*(.*?)(?:\s+NCF|\s+Concepto|\s+Descripci[oó]n|\s*$)/i); const nombreCitrus = mCli ? limpio(mCli[1]) : '';
-        const anulado = x.Estatus === 'Cancelado';
+        const id = 'a' + String(x.Id); const prev = registro.get(id);
+        const monto = r2(Number(x.Monto) || 0); const fecha = limpio(x.Fecha).slice(0, 10); const desc = limpio(x.Descripcion) || limpio(x.Concepto);
+        const anulado = /cancel|anul/i.test(String(x.Estatus || ''));
+        const ficha = fichaPorCitrusId.get(Number(x.ClienteId)) || null;
+        const base = { citrusAnticipoId: Number(x.Id), citrusClienteId: Number(x.ClienteId) || null, cliente: ficha ? (ficha.nombre || '') : '', clienteFacturacion: ficha ? (ficha.nombreFacturacion || '') : '', clienteId: ficha ? ficha.id : null, monto, fecha, descripcion: desc, estatusCitrus: String(x.Estatus || ''), creado: FieldValue.serverTimestamp(), por: quien };
         if (anulado) {
             if (prev && prev.estado === 'aplicado' && prev.orderId) {
-                try { const o = await db.doc('orders/' + prev.orderId).get(); const a = o.exists ? o.data().anticipo : null; if (a && a.citrusAsientoId === id) await o.ref.update({ anticipo: { recibido: false, anuladoEnCitrus: true, anuladoFecha: FieldValue.serverTimestamp(), anterior: a } }); } catch (_) { }
-                await db.doc('anticiposCitrus/' + id).set({ estado: 'anulado', anuladoFecha: FieldValue.serverTimestamp() }, { merge: true }); res.anulados++;
-            } else if (prev && prev.estado === 'pendiente') await db.doc('anticiposCitrus/' + id).set({ estado: 'anulado' }, { merge: true });
+                try { const o = await db.doc('orders/' + prev.orderId).get(); const a = o.exists ? o.data().anticipo : null; if (a && a.citrusAnticipoId === Number(x.Id)) await o.ref.update({ anticipo: { recibido: false, anuladoEnCitrus: true, anuladoFecha: FieldValue.serverTimestamp(), anterior: a } }); } catch (_) { }
+                res.anulados++;
+            }
+            if (!prev || prev.estado !== 'anulado') await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'anulado', anuladoFecha: FieldValue.serverTimestamp() }, { merge: true });
             continue;
         }
-        if (prev && ['aplicado', 'pendiente', 'ignorado', 'manual'].includes(prev.estado)) { res.yaProcesados++; continue; }
-        const nC = normNombre(nombreCitrus);
-        const ficha = nC ? fichas.find((f) => nombresFicha(f).includes(nC)) : null;
-        const base = { citrusAsientoId: id, cliente: nombreCitrus, clienteId: ficha ? ficha.id : null, monto, fecha, descripcion: desc, fuente: limpio(x.Fuente), creado: FieldValue.serverTimestamp(), por: quien };
-        if (!ficha) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: 'El cliente de Citrus no cruza con ninguna ficha del Panel', candidatos: [] }); res.pendientes++; res.sinFicha++; continue; }
+        if (prev && ['aplicado', 'pendiente', 'ignorado', 'manual', 'historico'].includes(prev.estado)) { res.yaProcesados++; continue; }
+        if (fecha && fecha < HISTORICO_ANTES_DE) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'historico', motivo: 'anterior al arranque del enganche automático' }); res.historicos++; continue; }
+        if (!ficha) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: `El cliente de Citrus (id ${x.ClienteId}) no cruza con ninguna ficha del Panel: importa clientes de Citrus o enlaza la ficha`, candidatos: [] }); res.pendientes++; res.sinFicha++; continue; }
         const nombres = nombresFicha(ficha);
-        let cands = pedidos.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))).filter((o) => !(o.anticipo && o.anticipo.recibido && o.anticipo.citrusAsientoId !== id));
-        // Si una cotización y su pedido de fábrica están ambos abiertos, cuenta el pedido de fábrica.
-        const origenes = new Set(cands.map((o) => o.cotizacionOrigenId).filter(Boolean)); cands = cands.filter((o) => !origenes.has(o.id));
-        const texto = desc.replace(/Cliente:\s*.*?(?=\s+Concepto|\s+Descripci[oó]n|\s+NCF|$)/i, ' ');
-        const mCot = texto.match(/cot\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i); const numCot = mCot ? Number(mCot[1]) : null;
-        const mPct = texto.match(/(\d{1,3})\s*%/); const pct = mPct ? Number(mPct[1]) : null;
+        let cands = pedidos.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))).filter((o) => !(o.anticipo && o.anticipo.recibido && o.anticipo.citrusAnticipoId !== Number(x.Id)));
+        const origenes = new Set(cands.map((o) => o.cotizacionOrigenId).filter(Boolean)); cands = cands.filter((o) => !origenes.has(o.id));   // la cotización cede ante su pedido de fábrica
+        const mCot = desc.match(/cot\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i); const numCot = mCot ? Number(mCot[1]) : null;
+        const mPct = desc.match(/(\d{1,3})\s*%/); const pct = mPct ? Number(mPct[1]) : null;
         let elegido = null, regla = '';
         const porCot = numCot ? cands.filter((o) => Number(o.citrusCotizacionNumero) === numCot) : [];
-        const porObra = cands.filter((o) => obraCoincideTexto(o.obra, texto));
+        const porObra = cands.filter((o) => obraCoincideTexto(o.obra, desc));
         if (porCot.length === 1) { elegido = porCot[0]; regla = 'cotizacion'; }
         else if (porObra.length === 1) { elegido = porObra[0]; regla = 'obra'; }
         else if (cands.length === 1) { elegido = cands[0]; regla = 'unico'; }
@@ -2201,13 +2204,14 @@ async function aplicarAnticiposCitrus(ctx, quien, diario) {
             const okMonto = cands.filter((o) => { const t = Number(o.totalCotizacion || o.precioTotal || 0); return t > 0 && Math.abs(t * pct / 100 - monto) <= t * 0.02; });
             if (okMonto.length === 1) { elegido = okMonto[0]; regla = 'monto'; }
         }
+        const candidatos = cands.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', fechaPedido: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion) }));
         if (elegido) {
-            const anticipo = { recibido: true, monto, moneda: 'RD$', fecha, nota: desc, origen: 'citrus', citrusAsientoId: id, regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
+            const anticipo = { recibido: true, monto, moneda: 'RD$', fecha, nota: desc, origen: 'citrus', citrusAnticipoId: Number(x.Id), regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
             await db.doc('orders/' + elegido.id).update({ anticipo });
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, aplicadoFecha: FieldValue.serverTimestamp() });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, candidatos, aplicadoFecha: FieldValue.serverTimestamp() });
             res.aplicados++;
         } else {
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? `Varias obras abiertas (${cands.length}) y la descripción no permite elegir` : 'El cliente no tiene pedidos abiertos en el Panel', candidatos: cands.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '' })) });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? `Varias obras abiertas (${cands.length}) y la descripción no permite elegir` : 'El cliente no tiene pedidos abiertos en el Panel (¿aún no se envió el pedido o la cotización?)', candidatos });
             res.pendientes++;
         }
     }
@@ -2235,7 +2239,7 @@ async function sincronizarCitrus(motivo) {
     if (ctx.entorno === 'prod') {
         try { registro.resultados['resumen-clientes'] = await resumenClientesCitrus(ctx, motivo); }
         catch (e) { registro.resultados['resumen-clientes'] = { error: String((e && e.message) || e) }; console.error('resumenClientesCitrus', e); }
-        try { registro.resultados['anticipos'] = await aplicarAnticiposCitrus(ctx, motivo, await citrusLeerTodo(ctx, 'diario', true)); }
+        try { registro.resultados['anticipos'] = await aplicarAnticiposCitrus(ctx, motivo); }
         catch (e) { registro.resultados['anticipos'] = { error: String((e && e.message) || e) }; console.error('aplicarAnticiposCitrus', e); }
         try { registro.resultados['tablero'] = await tableroErp(ctx, motivo); }
         catch (e) { registro.resultados['tablero'] = { error: String((e && e.message) || e) }; console.error('tableroErp', e); }

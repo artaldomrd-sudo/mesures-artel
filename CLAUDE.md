@@ -2678,8 +2678,13 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
 - **Historial → «👤 Sin ficha de cliente → Vincular»** (`fichaHTML`/`vincularFicha`): la oficina elige la ficha (datalist por nombre,
   facturación o alias) UNA vez; el nombre del pedido entra como alias de la ficha y los siguientes cruzan solos. «cambiar» desvincula.
 - **Anticipo automático desde Citrus** (`aplicarAnticiposCitrus`, al final de `sincronizarCitrus`, 6:30/12:30/17:30 y «Sincronizar
-  ahora»): asientos del diario con crédito a 200204; cliente de «Cliente: X» → ficha por nombre/facturación/alias; candidatos = pedidos
-  abiertos de esa ficha (sin anticipo; la cotización cede ante su pedido FAB). Reglas: `citrusCotizacionNumero` = «cot. N» →
+  ahora»): **fuente = entidad `anticipo` de Citrus** (`{Id, ClienteId, Monto, Fecha, Descripcion, Estatus}`; la primera versión leía el
+  asiento del diario, cuya descripción es automática «Emisión de anticipo número: N Cliente: X Concepto:» con el concepto VACÍO —
+  el texto de Anny vive en `Descripcion` del anticipo). Ficha por `citrusId == ClienteId`; anticipos con fecha anterior a
+  `HISTORICO_ANTES_DE` (2026-09-01) se registran `historico` sin tarjeta (la primera pasada aplicó 11 anticipos viejos de ECO 83 y otros
+  a la única obra abierta por la regla «único»: se revirtieron y se reinició el registro el 08/10). Candidatos = pedidos abiertos de esa
+  ficha (sin anticipo; la cotización cede ante su pedido FAB). Para inspeccionar Citrus desde la Mac: `firebase functions:secrets:access
+  CITRUS_TOKEN_PROD` + `curl -H "Authorization: $TOKEN" https://api.citrus.com.do/v5/<entidad>/extraccionDatos`. Reglas: `citrusCotizacionNumero` = «cot. N» →
   `obraCoincideTexto(obra, descripción)` (palabras propias, números deben coincidir; quita «70%» y «cot. 590» antes) → único abierto →
   monto = % × total (`totalCotizacion`/`precioTotal`, ±2 %) → si no, **pendiente**. Registro `anticiposCitrus/{asientoId}` {estado
   aplicado|pendiente|manual|ignorado|anulado, candidatos[]}; un asiento se aplica una vez; anulado en Citrus → se quita del pedido.
