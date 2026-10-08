@@ -2686,6 +2686,18 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
   Panel (admin): tarjeta `ac:` «Anticipo en Citrus sin obra» con un botón por obra (`notifAnticipoAsignar`) e «ignorar». Regla
   nueva `anticiposCitrus` solo admin (pegar a mano). Anny no cambia nada: sigue poniendo obra / «cot. N» / % en la descripción.
 
+### Tipo de trabajo en Instalación y filtro de encuestas (2026-10-08)
+
+Dylan (capturas de encuestas enviadas a dos tomas de medidas): «ahora es muy general, se mezclan todos los tipos de trabajo».
+`instalaciones.tipoTrabajo` obligatorio al crear: `instalacion` (pedido de fábrica interna/ALUCUFEL) · `reparacion_artal` ·
+`servicio_post` · `medicion` · `reemplazo_dano` · `preparacion_obra` · `reparacion_otra` (`TIPOS_TRABAJO`/`TIPO_ICONO`,
+`tipoDeJob(j)`: sin campo pero con pedido enlazado = instalación). «+ Trabajo» (equipo) tiene el select + «Obra existente»
+(pedidos abiertos de `ordersCache`; rellena cliente/obra/dirección/GPS y engancha `orderId`/`orderIds`; obligatorio para
+instalación y preparación de obra); el modal de gerencia tiene `#job-tipo`; Calendario y el trigger `instalacionAlListo` ponen
+`instalacion`. La tarjeta muestra el chip del tipo. **Encuesta solo para `reparacion_artal`, `reparacion_otra` e `instalacion`**
+(`encuestaAplica` en la tarjeta y en `encuestaAlCompletar`, que marca `encuestaEstado:'no_aplica'` + `encuestaMotivo` en los
+demás). Las dos encuestas ya creadas para mediciones (Valeria Tifa, Yonatan Burgos) quedaron canceladas.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

@@ -306,6 +306,21 @@
 <div class="modal-ov" id="modal-trabajo">
     <div class="modal-bx">
         <h2>📌 Nuevo trabajo</h2>
+        <label>Tipo de trabajo *</label>
+        <select id="tr-tipo" onchange="trTipoCambio()">
+            <option value="">— Elige el tipo —</option>
+            <option value="instalacion">Instalación de un pedido (fábrica interna / ALUCUFEL)</option>
+            <option value="reparacion_artal">Reparación de trabajo antiguo de Artal</option>
+            <option value="servicio_post">Servicio al cliente post-instalación</option>
+            <option value="medicion">Toma de medidas</option>
+            <option value="reemplazo_dano">Reemplazo de elemento dañado durante la instalación</option>
+            <option value="preparacion_obra">Preparación de obra</option>
+            <option value="reparacion_otra">Reparación de trabajo de otra empresa</option>
+        </select>
+        <div id="tr-obra-wrap" style="display:none">
+            <label>Obra existente <span id="tr-obra-hint" style="font-weight:normal;color:#889;font-size:12px">(opcional: rellena cliente y obra y engancha el pedido)</span></label>
+            <select id="tr-obra-existente" onchange="trObraExistente()"><option value="">— Elegir obra —</option></select>
+        </div>
         <label>Cliente</label>
         <input type="text" id="tr-cliente" placeholder="Nombre del cliente">
         <label>Obra / Ubicación</label>
@@ -379,6 +394,17 @@
                 <label><input type="checkbox" value="1440"> 1 día antes</label>
             </div>
         </div>
+        <label>Tipo de trabajo *</label>
+        <select id="job-tipo">
+            <option value="">— Elige el tipo —</option>
+            <option value="instalacion">Instalación de un pedido (fábrica interna / ALUCUFEL)</option>
+            <option value="reparacion_artal">Reparación de trabajo antiguo de Artal</option>
+            <option value="servicio_post">Servicio al cliente post-instalación</option>
+            <option value="medicion">Toma de medidas</option>
+            <option value="reemplazo_dano">Reemplazo de elemento dañado durante la instalación</option>
+            <option value="preparacion_obra">Preparación de obra</option>
+            <option value="reparacion_otra">Reparación de trabajo de otra empresa</option>
+        </select>
         <label>Estado</label>
         <select id="job-estado">
             <option value="pendiente">Pendiente</option>
@@ -587,7 +613,7 @@
     // trabajo; ops/satisfaccion.html?t=TOKEN, pública). Pendiente → botón para mandarla por WhatsApp
     // (con el teléfono del cliente si está en Clientes) o copiar el enlace. Respondida → estrellas.
     function encuestaHTML(j) {
-        if (j.estado !== 'completado' || !j.encuestaToken) return '';
+        if (j.estado !== 'completado' || !j.encuestaToken || !encuestaAplica(j) || j.encuestaEstado === 'no_aplica') return '';
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ');
         if (j.encuestaEstado === 'respondida') {
             if (!betaPuntos()) return '';   // beta: el equipo no ve la calificación del cliente hasta que se active
@@ -692,7 +718,7 @@
                 <span class="hora">${hora}</span>
             </div>
             <div class="job-meta">
-                <span class="estado-badge ${estado}">${esc(ESTADO_LABEL[estado] || estado)}</span>
+                <span class="estado-badge ${estado}">${esc(ESTADO_LABEL[estado] || estado)}</span>${tipoChipHTML(j)}
                 · ${asignadoTxt(j)}
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
@@ -1131,14 +1157,43 @@
     };
 
     /* ===== Trabajo rápido (instalaciones) ===== */
+    // Tipo de trabajo (Dylan 2026-10-08: «ahora es muy general, se mezclan todos los tipos»). Obligatorio al crear. La ENCUESTA de
+    // satisfacción solo aplica a reparaciones (Artal / otra empresa) y a instalaciones de un pedido de fábrica (interna o ALUCUFEL).
+    const TIPOS_TRABAJO = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación trabajo de otra empresa' };
+    const TIPO_ICONO = { instalacion: '🔧', reparacion_artal: '🛠️', servicio_post: '🤝', medicion: '📏', reemplazo_dano: '♻️', preparacion_obra: '🧱', reparacion_otra: '🔩' };
+    function tipoDeJob(j) { return j.tipoTrabajo || ((j.orderId || (Array.isArray(j.orderIds) && j.orderIds.length)) ? 'instalacion' : ''); }
+    function encuestaAplica(j) { const t = tipoDeJob(j); return t === 'reparacion_artal' || t === 'reparacion_otra' || t === 'instalacion'; }
+    window.encuestaAplica = encuestaAplica;
+    function tipoChipHTML(j) { const t = tipoDeJob(j); return t ? ` · <span style="background:#eef4fb;color:#1f6aa5;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:bold">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : ' · <span style="color:#c07a12;font-size:11.5px;font-weight:bold">tipo sin definir</span>'; }
+    let trOrderId = null;
+    window.trTipoCambio = function () {
+        const t = document.getElementById('tr-tipo').value;
+        const wrap = document.getElementById('tr-obra-wrap'); wrap.style.display = t ? 'block' : 'none';
+        document.getElementById('tr-obra-hint').textContent = t === 'preparacion_obra' || t === 'instalacion' ? '(obligatorio: elige el pedido/obra que se prepara o instala)' : '(opcional: rellena cliente y obra y engancha el pedido)';
+        const sel = document.getElementById('tr-obra-existente');
+        const abiertos = ordersCache.filter(o => o.data && o.data.docType !== 'COMPRA_DIRECTA' && String(o.data.docType || '').indexOf('COT') !== 0 && o.data.status !== 'completado')
+            .sort((a, b) => String(a.data.cliente || '').localeCompare(String(b.data.cliente || '')));
+        sel.innerHTML = '<option value="">— Elegir obra —</option>' + abiertos.map(o => `<option value="${o.id}">${esc(o.data.cliente || '')} — ${esc(o.data.obra || '')} (${esc(ORDER_STATUS_LABEL[o.data.status] || o.data.status || '')})</option>`).join('');
+    };
+    window.trObraExistente = function () {
+        const id = document.getElementById('tr-obra-existente').value; trOrderId = id || null;
+        const o = ordersCache.find(x => x.id === id); if (!o) return;
+        document.getElementById('tr-cliente').value = o.data.cliente || ''; document.getElementById('tr-obra').value = o.data.obra || '';
+        if (!document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = o.data.direccion || '';
+        if (!document.getElementById('tr-gps').value) document.getElementById('tr-gps').value = o.data.gps || '';
+    };
     window.abrirModalTrabajo = function () {
         ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota'].forEach(i => document.getElementById(i).value = '');
+        document.getElementById('tr-tipo').value = ''; trOrderId = null; trTipoCambio();
         // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
         document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
         document.getElementById('modal-trabajo').classList.add('show');
     };
     window.cerrarModalTrabajo = function () { document.getElementById('modal-trabajo').classList.remove('show'); };
     window.guardarTrabajo = async function () {
+        const tipo = document.getElementById('tr-tipo').value;
+        if (!tipo) { alert('Elige el tipo de trabajo (instalación, reparación, toma de medidas…).'); return; }
+        if ((tipo === 'preparacion_obra' || tipo === 'instalacion') && !trOrderId) { alert('Para este tipo elige la obra/pedido existente en la lista.'); return; }
         const cliente = document.getElementById('tr-cliente').value.trim();
         if (!cliente) { alert('Escribe el cliente.'); return; }
         const fechaStr = document.getElementById('tr-fecha').value;
@@ -1154,7 +1209,9 @@
                 asignados: trAsig, instaladorEmail: trAsig[0].email, instaladorNombre: trAsig[0].nombre || '',
                 estado: 'pendiente', notas: document.getElementById('tr-nota').value.trim(),
                 recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
-                orderId: (pedidoAbiertoDeObra(cliente, document.getElementById('tr-obra').value.trim()) || {}).id || null,   // se enlaza al pedido de la obra si lo hay
+                tipoTrabajo: tipo,
+                orderId: trOrderId || (tipo === 'instalacion' ? (pedidoAbiertoDeObra(cliente, document.getElementById('tr-obra').value.trim()) || {}).id || null : null),   // solo una instalación de pedido se engancha sola por nombre; los demás tipos solo si se eligió la obra
+                ...(trOrderId ? { orderIds: [trOrderId] } : {}),
                 origen: 'instalador', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             cerrarModalTrabajo();
@@ -1224,6 +1281,7 @@
         ['job-cliente','job-obra','job-direccion','job-gps','job-fecha','job-fecha-inicio','job-fecha-fin','job-notas'].forEach(id => document.getElementById(id).value = '');
         document.querySelectorAll('#job-instaladores input').forEach(c => c.checked = false);
         document.getElementById('job-estado').value = 'pendiente';
+        document.getElementById('job-tipo').value = '';
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = false);
         setModoFecha('unica');
     }
@@ -1255,6 +1313,7 @@
         const asigEmails = Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map(a => a && a.email).filter(Boolean) : (j.instaladorEmail ? [j.instaladorEmail] : []);
         document.querySelectorAll('#job-instaladores input').forEach(c => c.checked = asigEmails.includes(c.value));
         document.getElementById('job-estado').value = j.estado || 'pendiente';
+        document.getElementById('job-tipo').value = tipoDeJob(j) || '';
         const recs = Array.isArray(j.recordatorios) ? j.recordatorios.map(String) : [];
         document.querySelectorAll('#job-recordar input').forEach(c => c.checked = recs.includes(c.value));
         document.getElementById('job-notas').value = j.notas || '';
@@ -1287,10 +1346,12 @@
         if (gps && !parseGps(gps)) { if (!confirm('El GPS no parece coordenadas ni un link válido. ¿Guardar de todos modos?')) return; }
         const recordatorios = Array.from(document.querySelectorAll('#job-recordar input:checked')).map(c => Number(c.value));
         const tieneInicio = !!fecha;
+        if (!document.getElementById('job-tipo').value && !window._orderIdParaGuardar && !editingId) { alert('Elige el tipo de trabajo.'); return; }
         const datos = {
             cliente, obra: document.getElementById('job-obra').value.trim(), direccion: document.getElementById('job-direccion').value.trim(), gps,
             modoFecha, fecha, fechaFin, asignados,
             instaladorEmail: asigEmails[0] || '', instaladorNombre: (asignados[0] && asignados[0].nombre) || '',
+            tipoTrabajo: document.getElementById('job-tipo').value || (window._orderIdParaGuardar ? 'instalacion' : ''),
             estado: document.getElementById('job-estado').value, notas: document.getElementById('job-notas').value.trim(), recordatorios,
             recordatoriosEnviados: [], recordatoriosPendientes: tieneInicio && recordatorios.length > 0,
             orderId: window._orderIdParaGuardar || (editingId ? ((allJobs.find(x => x.id === editingId) || {}).orderId || null) : null) || (pedidoAbiertoDeObra(cliente, document.getElementById('job-obra').value.trim()) || {}).id || null

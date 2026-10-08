@@ -327,6 +327,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             const cli = String(after.cliente || '').trim();
             // Sin cliente, o trabajo interno (viajes, almacén, taller) → no hay a quién encuestar.
             if (!cli || /^artal\b|almac[eé]n|taller/i.test(cli)) return;
+            // Tipo de trabajo (Dylan 2026-10-08): encuesta SOLO para reparaciones (Artal / otra empresa) y para instalaciones ligadas a
+            // un pedido de fábrica (interna o ALUCUFEL). Mediciones, servicio post-instalación, reemplazos y preparación de obra: no.
+            const tipo = after.tipoTrabajo || ((after.orderId || (Array.isArray(after.orderIds) && after.orderIds.length)) ? 'instalacion' : '');
+            if (!['reparacion_artal', 'reparacion_otra', 'instalacion'].includes(tipo)) { await event.data.after.ref.update({ encuestaEstado: 'no_aplica', encuestaMotivo: tipo ? 'tipo ' + tipo : 'sin tipo ni pedido' }); return; }
             // Código corto (usuario 2026-09-27: el enlace era larguísimo): 8 caracteres sin letras/números que se confundan
             // (sin 0/O/1/I/L). Enlace corto artaldominicana.com/e/CODIGO → redirige a ops/satisfaccion.html?t=CODIGO
             // (página de redirección en el repo del sitio, artal-web: 404.html + e/index.html).

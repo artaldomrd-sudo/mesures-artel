@@ -222,7 +222,7 @@ exports.instalacionAlListo = onDocumentWritten('orders/{id}', async (event) => {
             asignados: asig, instaladorEmail: (asig[0] || {}).email || '', instaladorNombre: (asig[0] || {}).nombre || '',
             estado: 'pendiente', notas: 'Creado automáticamente al quedar listo en fábrica (' + (after.docType || 'pedido') + ').',
             recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
-            orderId: id, orderIds: [id], origen: 'auto_fabrica', creadoPorNombre: 'Sistema ARTAL', fechaCreacion: FieldValue.serverTimestamp()
+            orderId: id, orderIds: [id], tipoTrabajo: 'instalacion', origen: 'auto_fabrica', creadoPorNombre: 'Sistema ARTAL', fechaCreacion: FieldValue.serverTimestamp()
         });
         console.log('instalacionAlListo: trabajo creado para', id, after.cliente, after.obra);
     } catch (e) { console.error('instalacionAlListo', id, e); }
