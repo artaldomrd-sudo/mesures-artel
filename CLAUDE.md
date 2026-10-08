@@ -2683,8 +2683,15 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
   el texto de Anny vive en `Descripcion` del anticipo). Ficha por `citrusId == ClienteId`; anticipos con fecha anterior a
   `HISTORICO_ANTES_DE` (2026-09-01) se registran `historico` sin tarjeta (la primera pasada aplicó 11 anticipos viejos de ECO 83 y otros
   a la única obra abierta por la regla «único»: se revirtieron y se reinició el registro el 08/10). Candidatos = pedidos abiertos de esa
-  ficha (sin anticipo; la cotización cede ante su pedido FAB). Para inspeccionar Citrus desde la Mac: `firebase functions:secrets:access
-  CITRUS_TOKEN_PROD` + `curl -H "Authorization: $TOKEN" https://api.citrus.com.do/v5/<entidad>/extraccionDatos`. Reglas: `citrusCotizacionNumero` = «cot. N» →
+  ficha; si no hay por nombre exacto, **aproximados** (`pedidoAproximaFicha`: palabras ≥ 5 letras de los nombres de la ficha contra
+  cliente+obra del pedido, «Pablo Spina» ↔ «PABLO — Villa quitaespuelas 3») que NUNCA se aplican por «único», solo si la descripción
+  nombra la obra; la cotización cede ante su pedido FAB (por `cotizacionOrigenId` o misma obra); varios anticipos por pedido se
+  acumulan en `anticipos[]` (`anticipo.monto` = total). Al aplicar o confirmar, el pedido recibe `clienteId`/`clienteFacturacion` y
+  el nombre del pedido entra como alias de la ficha. Si no hay pedidos abiertos, la tarjeta lista como contexto los cerrados de los
+  últimos 90 días (🔒, no se aplican solos). `obraCoincideTexto` también compara sin espacios («quita espuelas» ≈ «quitaespuelas»).
+  Simulacro del 08/10 contra datos reales: 92 anticipos, 73 históricos, 13 recientes. Para inspeccionar Citrus desde la Mac:
+  `firebase functions:secrets:access CITRUS_TOKEN_PROD` + `curl -H "Authorization: $TOKEN" https://api.citrus.com.do/v5/<entidad>/extraccionDatos`
+  (entidad `anticipo`: Id, ClienteId, Monto, Fecha, Descripcion, Estatus; `cotizacion`: Id, ClienteId, NombreCliente, Monto, sin obra). Reglas: `citrusCotizacionNumero` = «cot. N» →
   `obraCoincideTexto(obra, descripción)` (palabras propias, números deben coincidir; quita «70%» y «cot. 590» antes) → único abierto →
   monto = % × total (`totalCotizacion`/`precioTotal`, ±2 %) → si no, **pendiente**. Registro `anticiposCitrus/{asientoId}` {estado
   aplicado|pendiente|manual|ignorado|anulado, candidatos[]}; un asiento se aplica una vez; anulado en Citrus → se quita del pedido.

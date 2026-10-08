@@ -117,7 +117,7 @@
     import { requirePin } from './pin-gate.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
@@ -284,10 +284,10 @@
         });
         // 3d) Anticipos registrados en Citrus que el Panel no pudo asignar solo a una obra (solo admin; Dylan 2026-10-06).
         anticiposPend.forEach(({ id, a }) => {
-            const btns = (a.candidatos || []).map(c => `<button class="n-done" onclick="notifAnticipoAsignar('${id}','${c.orderId}')" title="${esc(c.docType || '')} · ${esc(c.status || '')}${c.fechaPedido ? ' · creado ' + esc(c.fechaPedido) : ''}">${esc(c.obra || c.cliente || c.orderId)}${c.fechaPedido ? ' <span style="opacity:.7;font-weight:normal">(' + esc(c.fechaPedido) + ')</span>' : ''}</button>`).join('');
+            const btns = (a.candidatos || []).map(c => `<button class="n-done" onclick="notifAnticipoAsignar('${id}','${c.orderId}')" title="${esc(c.docType || '')} · ${esc(c.status || '')}${c.fechaPedido ? ' · creado ' + esc(c.fechaPedido) : ''}${c.aproximado ? ' · el nombre del pedido no coincide exactamente con la ficha' : ''}">${c.cerrado ? '🔒 ' : ''}${esc(c.cliente || '')} — ${esc(c.obra || c.orderId)}${c.fechaPedido ? ' <span style="opacity:.7;font-weight:normal">(' + esc(c.fechaPedido) + ')</span>' : ''}${c.aproximado ? ' <span style="opacity:.8;font-weight:normal">≈</span>' : ''}</button>`).join('');
             const quien = (a.cliente || a.clienteFacturacion) ? `${a.cliente || ''}${a.clienteFacturacion && a.clienteFacturacion !== a.cliente ? ' (factura: ' + a.clienteFacturacion + ')' : ''}` : `cliente Citrus id ${a.citrusClienteId || '?'}`;
             N.push({ key: `ac:${id}`, tipo: 'tarea', ic: '💰', titulo: `Anticipo en Citrus sin obra: ${quien} · RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}`, sub: `${a.fecha || ''}${a.citrusAnticipoId ? ' · anticipo nº ' + a.citrusAnticipoId : ''}`, txt: (a.descripcion ? 'Descripción en Citrus: «' + a.descripcion + '» · ' : 'Sin descripción en Citrus · ') + (a.motivo || ''),
-                acciones: (btns ? `<span style="font-size:12px;color:#556;margin-right:4px">¿A qué obra?</span>${btns}` : '') + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button>` });
+                acciones: (btns ? `<span style="font-size:12px;color:#556;margin-right:4px">¿A qué obra?</span>${btns}<span style="font-size:11px;color:#889;margin-left:4px">≈ nombre distinto · 🔒 obra cerrada</span>` : '') + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button>` });
         });
         // 3b) Comentarios del instalador en trabajos del calendario (colección instalaciones), sin atender.
         instCache.forEach(({ id, j }) => {
@@ -439,7 +439,14 @@
         const a = p.a; const c = (a.candidatos || []).find(x => x.orderId === orderId) || {};
         if (!confirm(`¿Aplicar el anticipo de ${a.cliente} (RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}, ${a.fecha}) a «${c.obra || orderId}»?`)) return;
         try {
-            await updateDoc(doc(db, 'orders', orderId), { anticipo: { recibido: true, monto: a.monto || 0, moneda: 'RD$', fecha: a.fecha || '', nota: a.descripcion || '', origen: 'citrus', citrusAsientoId: asientoId, regla: 'manual', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: new Date().toISOString() } });
+            const mCot = String(a.descripcion || '').match(/cot[a-z]*\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i);
+            const cambios = { anticipo: { recibido: true, monto: a.monto || 0, moneda: 'RD$', fecha: a.fecha || '', nota: a.descripcion || '', origen: 'citrus', citrusAnticipoId: a.citrusAnticipoId || null, regla: 'manual', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: new Date().toISOString() } };
+            if (mCot) cambios.citrusCotizacionNumero = Number(mCot[1]);
+            // Al confirmar, el pedido queda enganchado a la ficha del cliente de Citrus y su nombre entra como alias: la próxima vez cruza solo.
+            const o = (ordersCache.find(x => x.id === orderId) || {}).o || {};
+            if (a.clienteId && !o.clienteId) { cambios.clienteId = a.clienteId; cambios.clienteFacturacion = a.clienteFacturacion || a.cliente || ''; cambios.clienteEnlace = 'anticipo-manual'; }
+            if (a.clienteId && o.cliente) { try { await updateDoc(doc(db, 'clientes', a.clienteId), { alias: arrayUnion(o.cliente) }); } catch (_) { } }
+            await updateDoc(doc(db, 'orders', orderId), cambios);
             await updateDoc(doc(db, 'anticiposCitrus', asientoId), { estado: 'manual', orderId, obra: c.obra || '', asignadoPor: usuario.nombre, asignadoFecha: serverTimestamp() });
         } catch (e) { alert('No se pudo: ' + e.message); }
     };

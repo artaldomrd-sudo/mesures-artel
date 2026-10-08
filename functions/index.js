@@ -350,7 +350,8 @@ exports.pedidoEnlazarCliente = onDocumentWritten('orders/{id}', async (event) =>
     const relevante = !event.data.before.exists || before.cliente !== after.cliente || before.clienteTelefono !== after.clienteTelefono || before.clienteDocumento !== after.clienteDocumento || before.clienteId !== after.clienteId;
     if (!relevante) return;
     try {
-        const fichas = (await db.collection('clientes').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
+        const fichas = (await db.collection('clientes').get()).docs.map((d) => ({ id: d.id, ...d.data() })).filter((x) => x.estado !== 'inactivo')
+            .sort((a, b) => (b.citrusId != null ? 1 : 0) - (a.citrusId != null ? 1 : 0));   // primero las fichas enlazadas a Citrus (facturación)
         let f = null, como = null;
         for (const x of fichas) { const c = fichaCoincide(x, after); if (c) { f = x; como = c; break; } }
         if (!f) { console.log('pedidoEnlazarCliente: sin ficha para', after.cliente); return; }
@@ -2143,14 +2144,32 @@ const PALABRAS_GENERICAS = new Set(['villa', 'casa', 'apartamento', 'apto', 'apa
 const palabrasSig = (t) => normNombre(t).split(/[^a-z0-9]+/).filter((w) => w && !PALABRAS_GENERICAS.has(w) && (w.length >= 4 || /^\d+$/.test(w)));
 function obraCoincideTexto(obra, texto) {
     // Del texto se quitan el porcentaje («70%») y el nº de cotización («cot. 590») para que esos números no se confundan con el de la obra.
-    const limpioTxt = String(texto || '').replace(/\d{1,3}\s*%/g, ' ').replace(/cot\.?\s*#?\s*n?[oº]?\.?\s*\d+/gi, ' ');
+    const limpioTxt = String(texto || '').replace(/\d{1,3}\s*%/g, ' ').replace(/cot[a-z]*\.?\s*#?\s*n?[oº]?\.?\s*\d+/gi, ' ');
     const a = palabrasSig(obra), b = new Set(palabrasSig(limpioTxt)); if (!a.length || !b.size) return false;
-    const comunes = a.filter((w) => b.has(w)); if (!comunes.length) return false;
-    const nA = a.filter((w) => /^\d+$/.test(w)), nB = [...b].filter((w) => /^\d+$/.test(w));
+    const esNum = (w) => /^\d+$/.test(w);
+    const nA = a.filter(esNum), nB = [...b].filter(esNum);
     if (nA.length && nB.length && !nA.some((n) => nB.includes(n))) return false;   // Villa 11 ≠ Villa 12
-    if (comunes.some((w) => !/^\d+$/.test(w))) return true;                        // comparten una palabra propia (aloha, riviera, xcape…)
-    const textoSoloNumeros = ![...b].some((w) => !/^\d+$/.test(w));
+    const comunes = a.filter((w) => b.has(w));
+    let propia = comunes.some((w) => !esNum(w));                                     // comparten una palabra propia (aloha, riviera, xcape…)
+    if (!propia) {                                                                    // «quita espuelas» ≈ «quitaespuelas»: palabra (≥ 6 letras) contenida en el otro lado sin espacios
+        const sinEsp = (t) => normNombre(t).replace(/[^a-z0-9]/g, '');
+        const oa = sinEsp(obra), ob = sinEsp(limpioTxt);
+        propia = a.some((w) => !esNum(w) && w.length >= 6 && ob.includes(w)) || [...b].some((w) => !esNum(w) && w.length >= 6 && oa.includes(w));
+    }
+    if (propia) return true;
+    const textoSoloNumeros = ![...b].some((w) => !esNum(w));
     return nA.some((n) => nB.includes(n)) && (textoSoloNumeros || a.length === 1);  // «villa 11» → ALTEA VILLA 11 (el número decide)
+}
+// Cruce APROXIMADO ficha ↔ pedido por palabras del nombre (≥ 5 letras, sin «srl», «sas»…): «Pablo Spina» ↔ «PABLO — Villa
+// quitaespuelas 3», «KATANASUSHIRD SRL» ↔ «VANESSA KATANASUSHI», «ALTEA SRL» ↔ «… — ALTEA VILLA 11». Se mira cliente + obra del
+// pedido. Un candidato aproximado NUNCA se aplica por la regla «único»: solo si además la descripción nombra la obra (o el nº de
+// cotización). Al aplicarse (o al confirmarlo Dylan en la tarjeta) el nombre del pedido queda como alias de la ficha.
+const GENERICAS_NOMBRE = new Set(['srl', 'sas', 'eirl', 'inc', 'ltd', 'company', 'cliente', 'villa', 'casa', 'proyecto']);
+function tokensNombre(t) { return normNombre(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 5 && !GENERICAS_NOMBRE.has(w) && !/^\d+$/.test(w)); }
+function pedidoAproximaFicha(o, nombresFicha) {
+    const tf = [...new Set(nombresFicha.flatMap(tokensNombre))]; if (!tf.length) return false;
+    const tp = tokensNombre(String(o.cliente || '') + ' ' + String(o.obra || ''));
+    return tf.some((a) => tp.some((b) => a === b || a.startsWith(b) || b.startsWith(a)));
 }
 async function aplicarAnticiposCitrus(ctx, quien) {
     // Fuente: la entidad `anticipo` de Citrus (no el asiento del diario, cuya descripción es automática y trae el concepto vacío —
@@ -2160,11 +2179,16 @@ async function aplicarAnticiposCitrus(ctx, quien) {
     const res = { vistos: 0, aplicados: 0, pendientes: 0, anulados: 0, yaProcesados: 0, historicos: 0, sinFicha: 0 };
     const registros = await citrusLeerTodo(ctx, 'anticipo');
     if (!registros.length) return res;
-    const [fichasSnap, pedidosSnap, regSnap] = await Promise.all([
+    const [fichasSnap, pedidosSnap, cerradosSnap, regSnap] = await Promise.all([
         db.collection('clientes').get(),
         db.collection('orders').where('status', 'in', ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado']).get(),
+        db.collection('orders').where('status', '==', 'completado').get(),
         db.collection('anticiposCitrus').get()
     ]);
+    // Pedidos cerrados recientes: solo como CONTEXTO en la tarjeta (nunca se aplican solos) — un anticipo suele llegar cuando la obra
+    // ya está entregada o terminada, y Dylan necesita ver a qué obra corresponde aunque esté cerrada.
+    const hace90 = new Date(Date.now() - 90 * 86400000);
+    const cerrados = cerradosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => { const t = o.fechaInstalado || o.fechaEntregado || o.fechaListoParaCargar || o.fechaCotizado || o.fechaCreacion; const dt = t && t.toDate ? t.toDate() : null; return dt && dt >= hace90; });
     const fichas = fichasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const fichaPorCitrusId = new Map(); fichas.forEach((f) => { if (f.citrusId != null) fichaPorCitrusId.set(Number(f.citrusId), f); });
     const pedidos = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType !== 'COMPRA_DIRECTA' && !(String(o.docType || '').indexOf('COT') === 0 && o.enviadaAFabrica));
@@ -2189,9 +2213,17 @@ async function aplicarAnticiposCitrus(ctx, quien) {
         if (prev && ['aplicado', 'pendiente', 'ignorado', 'manual', 'historico'].includes(prev.estado)) { res.yaProcesados++; continue; }
         if (fecha && fecha < HISTORICO_ANTES_DE) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'historico', motivo: 'anterior al arranque del enganche automático' }); res.historicos++; continue; }
         if (!ficha) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: `El cliente de Citrus (id ${x.ClienteId}) no cruza con ninguna ficha del Panel: importa clientes de Citrus o enlaza la ficha`, candidatos: [] }); res.pendientes++; res.sinFicha++; continue; }
-        const nombres = nombresFicha(ficha);
-        let cands = pedidos.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))).filter((o) => !(o.anticipo && o.anticipo.recibido && o.anticipo.citrusAnticipoId !== Number(x.Id)));
-        const origenes = new Set(cands.map((o) => o.cotizacionOrigenId).filter(Boolean)); cands = cands.filter((o) => !origenes.has(o.id));   // la cotización cede ante su pedido de fábrica
+        const nombres = nombresFicha(ficha); const nombresCrudos = [ficha.nombre, ficha.nombreFacturacion, ...(ficha.alias || [])].filter(Boolean);
+        let cands = pedidos.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente)));
+        let aproximado = false;
+        if (!cands.length) {   // ficha de otro cliente de Citrus: no; ficha del Panel sin Citrus (p. ej. «Nolwenn y Lionel» vs «ALTEA SRL»): sí
+            const fichaDe = (o) => o.clienteId ? fichas.find((f) => f.id === o.clienteId) : null;
+            cands = pedidos.filter((o) => { const f = fichaDe(o); return (!f || f.citrusId == null) && pedidoAproximaFicha(o, nombresCrudos); }); aproximado = cands.length > 0;
+        }
+        // La cotización cede ante su pedido de fábrica: por cotizacionOrigenId o, si el FAB salió directo del cuaderno, por misma obra.
+        const origenes = new Set(cands.map((o) => o.cotizacionOrigenId).filter(Boolean));
+        const fabs = cands.filter((o) => String(o.docType || '').indexOf('FAB') === 0);
+        cands = cands.filter((o) => !origenes.has(o.id) && !(String(o.docType || '').indexOf('COT') === 0 && fabs.some((f) => mismaObra(f.cliente, f.obra, o.cliente, o.obra))));
         const mCot = desc.match(/cot\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i); const numCot = mCot ? Number(mCot[1]) : null;
         const mPct = desc.match(/(\d{1,3})\s*%/); const pct = mPct ? Number(mPct[1]) : null;
         let elegido = null, regla = '';
@@ -2199,19 +2231,32 @@ async function aplicarAnticiposCitrus(ctx, quien) {
         const porObra = cands.filter((o) => obraCoincideTexto(o.obra, desc));
         if (porCot.length === 1) { elegido = porCot[0]; regla = 'cotizacion'; }
         else if (porObra.length === 1) { elegido = porObra[0]; regla = 'obra'; }
-        else if (cands.length === 1) { elegido = cands[0]; regla = 'unico'; }
-        else if (pct && cands.length > 1) {
+        else if (!aproximado && cands.length === 1) { elegido = cands[0]; regla = 'unico'; }
+        else if (!aproximado && pct && cands.length > 1) {
             const okMonto = cands.filter((o) => { const t = Number(o.totalCotizacion || o.precioTotal || 0); return t > 0 && Math.abs(t * pct / 100 - monto) <= t * 0.02; });
             if (okMonto.length === 1) { elegido = okMonto[0]; regla = 'monto'; }
         }
-        const candidatos = cands.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', fechaPedido: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion) }));
+        let candidatos = cands.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', fechaPedido: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion), aproximado }));
+        if (!cands.length) {   // contexto: obras cerradas en los últimos 90 días de ese cliente (exactas o aproximadas)
+            const cerr = cerrados.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente)) || pedidoAproximaFicha(o, nombresCrudos));
+            candidatos = cerr.map((o) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', fechaPedido: fechaDe(o.fechaInstalado || o.fechaEntregado || o.fechaCotizado || o.fechaCreacion), aproximado: !(o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))), cerrado: true }));
+        }
         if (elegido) {
-            const anticipo = { recibido: true, monto, moneda: 'RD$', fecha, nota: desc, origen: 'citrus', citrusAnticipoId: Number(x.Id), regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
-            await db.doc('orders/' + elegido.id).update({ anticipo });
+            // Varios anticipos por obra son normales («primera parte 70 %», «segunda parte»): se acumulan en `anticipos[]` y
+            // `anticipo` (lo que leen las pantallas y el Coordinador) lleva el TOTAL recibido y la fecha del último.
+            const previos = (Array.isArray(elegido.anticipos) ? elegido.anticipos : []).filter((a) => a.citrusAnticipoId !== Number(x.Id));
+            const lista = previos.concat([{ citrusAnticipoId: Number(x.Id), monto, fecha, nota: desc, regla }]).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+            const total = r2(lista.reduce((t, a) => t + (Number(a.monto) || 0), 0));
+            const anticipo = { recibido: true, monto: total, moneda: 'RD$', fecha, nota: lista.map((a) => `${a.fecha}: RD$ ${a.monto} — ${a.nota}`).join(' · '), origen: 'citrus', citrusAnticipoId: Number(x.Id), citrusAnticipoIds: lista.map((a) => a.citrusAnticipoId), partes: lista.length, regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
+            const cambios = { anticipo, anticipos: lista }; if (numCot) cambios.citrusCotizacionNumero = numCot;
+            // El pedido queda enganchado a la ficha (y el nombre del pedido como alias si cruzó por aproximación o por nombre distinto).
+            if (!elegido.clienteId) { cambios.clienteId = ficha.id; cambios.clienteFacturacion = ficha.nombreFacturacion || ficha.nombre || ''; cambios.clienteEnlace = aproximado ? 'anticipo-aproximado' : 'anticipo'; }
+            if (elegido.cliente && !nombres.includes(normNombre(elegido.cliente))) await db.doc('clientes/' + ficha.id).update({ alias: FieldValue.arrayUnion(elegido.cliente) });
+            await db.doc('orders/' + elegido.id).update(cambios);
             await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, candidatos, aplicadoFecha: FieldValue.serverTimestamp() });
             res.aplicados++;
         } else {
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? `Varias obras abiertas (${cands.length}) y la descripción no permite elegir` : 'El cliente no tiene pedidos abiertos en el Panel (¿aún no se envió el pedido o la cotización?)', candidatos });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? (aproximado ? `El nombre del pedido no coincide exactamente con la ficha de Citrus (${cands.length} posible${cands.length > 1 ? 's' : ''}): confirma a cuál va` : `Varias obras abiertas (${cands.length}) y la descripción no permite elegir`) : (candidatos.length ? 'El cliente no tiene pedidos abiertos; puede ser de una obra ya cerrada (abajo) o de un pedido que aún no está en el Panel' : 'El cliente no tiene pedidos abiertos ni cerrados recientes en el Panel (¿aún no se envió el pedido o la cotización?)'), candidatos });
             res.pendientes++;
         }
     }
