@@ -92,6 +92,7 @@
     import { db, storage } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { mismaObra } from './obras-util.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { openOrderPreview } from './order-preview.js';
     window.openOrderPreview = openOrderPreview;
@@ -201,12 +202,16 @@
         try {
             await updateDoc(doc(db, 'orders', id), { anticipo });
             // Si ya existe el pedido de fábrica de esta cotización, también se le copia.
-            for (const x of ordersCache) { if (x.data && x.data.cotizacionOrigenId === id && x.data.status !== 'completado') { try { await updateDoc(doc(db, 'orders', x.id), { anticipo }); } catch (_) { } } }
+            for (const x of fabCache) { if (x.data && x.data.cotizacionOrigenId === id) { try { await updateDoc(doc(db, 'orders', x.id), { anticipo }); } catch (_) { } } }   // B1: copia al pedido de fábrica abierto
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.anticipoQuitar = async function (id) {
         if (!confirm('¿Quitar la marca de anticipo recibido?')) return;
-        try { await updateDoc(doc(db, 'orders', id), { anticipo: { recibido: false, quitadoPor: usuario.nombre, quitadoFecha: new Date().toISOString() } }); } catch (e) { alert('No se pudo: ' + e.message); }
+        const quitado = { recibido: false, quitadoPor: usuario.nombre, quitadoFecha: new Date().toISOString() };
+        try {
+            await updateDoc(doc(db, 'orders', id), { anticipo: quitado });
+            for (const x of fabCache) { if (x.data && x.data.cotizacionOrigenId === id) { try { await updateDoc(doc(db, 'orders', x.id), { anticipo: quitado }); } catch (_) { } } }   // B1: también en el pedido de fábrica
+        } catch (e) { alert('No se pudo: ' + e.message); }
     };
 
     let ordersCache = [];
@@ -230,6 +235,13 @@
     onSnapshot(q, (snap) => { ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() })); render(); }, (err) => {
         document.getElementById('porenviar-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
     });
+    // B1 (revisión 2026-10-09): los pedidos de FÁBRICA abiertos van en una caché aparte. `ordersCache` solo trae cotizaciones, así
+    // que el anti-duplicado y la copia del anticipo al pedido de fábrica nunca encontraban nada.
+    let fabCache = [];
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'])),
+        (snap) => { fabCache = snap.docs.map(d => ({ id: d.id, data: d.data() })); }, () => { });
+    // Pedidos de fábrica abiertos que salieron de esta cotización (enlace directo) o que son la misma obra (regla mismaObra).
+    const fabDeCotizacion = (id, o) => fabCache.filter(x => x.id !== id && x.data && (x.data.docType || '').indexOf('FAB') === 0 && (x.data.cotizacionOrigenId === id || mismaObra(o.cliente, o.obra, x.data.cliente, x.data.obra)));
 
     // Cliente aprobó → crea un pedido de FÁBRICA aparte (conserva la cotización), con la misma
     // ficha (appJSON) y ligado por cliente+obra. Advertencia previa para asegurar que las medidas
@@ -238,9 +250,10 @@
         const o = (ordersCache.find(x => x.id === id) || {}).data;
         if (!o) return;
         // Evita el pedido de fábrica duplicado (caso real: Riviera Coson 4 dos veces en Instalación).
-        const yaEnFabrica = ordersCache.filter(x => x.id !== id && x.data && (x.data.docType || '').indexOf('FAB') === 0 && x.data.status !== 'completado' && String(x.data.cliente || '').trim().toLowerCase() === String(o.cliente || '').trim().toLowerCase() && String(x.data.obra || '').trim().toLowerCase() === String(o.obra || '').trim().toLowerCase());
+        const yaEnFabrica = fabDeCotizacion(id, o);   // B1: busca en los pedidos de fábrica abiertos (antes buscaba entre cotizaciones y nunca encontraba)
         if (o.enviadaAFabrica || yaEnFabrica.length) {
-            if (!confirm(`⚠ "${o.cliente} — ${o.obra}" YA fue enviada a fábrica${o.fechaEnviadaFabrica && o.fechaEnviadaFabrica.toDate ? ' el ' + o.fechaEnviadaFabrica.toDate().toLocaleDateString('es-DO') : ''}${o.enviadaFabricaPor ? ' por ' + o.enviadaFabricaPor : ''}.\n\nSi aceptas se creará un SEGUNDO pedido de fábrica igual (aparecerá duplicado en fábrica, Transportes e Instalación).\n\n¿Crear el duplicado de todos modos?`)) return;
+            const detalle = yaEnFabrica.length ? `\n\nPedido(s) de fábrica abierto(s): ${yaEnFabrica.map(x => (x.data.cliente || '') + ' — ' + (x.data.obra || '') + ' (' + (x.data.status || '') + (x.data.destino === 'interno' ? ', interna' : ', ALUCUFEL') + ')').join('; ')}` : '';
+            if (!confirm(`⚠ "${o.cliente} — ${o.obra}" YA fue enviada a fábrica${o.fechaEnviadaFabrica && o.fechaEnviadaFabrica.toDate ? ' el ' + o.fechaEnviadaFabrica.toDate().toLocaleDateString('es-DO') : ''}${o.enviadaFabricaPor ? ' por ' + o.enviadaFabricaPor : ''}.${detalle}\n\nSi aceptas se creará un SEGUNDO pedido de fábrica igual (aparecerá duplicado en fábrica, Transportes e Instalación).\n\n¿Crear el duplicado de todos modos?`)) return;
         }
         if ((usuario.roles || []).includes('admin') && !(o.anticipo && o.anticipo.recibido) && !confirm(`💰 Esta cotización NO tiene el anticipo marcado como recibido.\n\nLa regla es no fabricar sin anticipo validado (salvo orden de Dylan). ¿Enviar a fábrica de todos modos?`)) return;
         if (!confirm(`⚠ IMPORTANTE: ¿confirmas que las medidas de "${o.cliente} — ${o.obra}" son de FABRICACIÓN (no de cotización)?\n\nAl aceptar se crea el pedido de fábrica con esta ficha, destino: ${destino === 'interno' ? 'Oficina interna' : 'ALUCUFEL'}.`)) return;
@@ -255,6 +268,11 @@
                 appJSON: o.appJSON || null,
                 cotizacionOrigenId: id,
                 anticipo: o.anticipo || null,   // el anticipo validado en la cotización viaja al pedido de fábrica
+                ...(Array.isArray(o.anticipos) && o.anticipos.length ? { anticipos: o.anticipos } : {}),
+                // B8: la identidad del cliente también viaja (ficha, teléfono/RNC, nombre de facturación, nº de cotización en Citrus).
+                ...(o.clienteId ? { clienteId: o.clienteId } : {}), ...(o.clienteTelefono ? { clienteTelefono: o.clienteTelefono } : {}),
+                ...(o.clienteFacturacion ? { clienteFacturacion: o.clienteFacturacion } : {}), ...(o.citrusCotizacionNumero ? { citrusCotizacionNumero: o.citrusCotizacionNumero } : {}),
+                ...(o.direccion ? { direccion: o.direccion } : {}), ...(o.gps ? { gps: o.gps } : {}),
                 fechaCotizado: serverTimestamp()
             });
             await updateDoc(doc(db, 'orders', id), { enviadaAFabrica: true, fechaEnviadaFabrica: serverTimestamp(), enviadaFabricaPor: usuario.nombre });
