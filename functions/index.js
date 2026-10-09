@@ -2652,15 +2652,6 @@ async function generarInformeObra(instId, inst, opts) {
         otrasObrasCliente: Object.entries(otrasObrasCliente).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
         pedidos, generado: FieldValue.serverTimestamp()
     };
-    await db.doc('informesObra/' + instId).set(informe);
-
-    // Mensaje interno a gerencia (admins activos).
-    const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
-    const lugar = informe.obraLabel || 'Obra';
-    const urlInforme = BASE_URL + 'ops/informe-obra.html?id=' + encodeURIComponent(instId);
-    const L = [];
-    L.push(`🏠 ${lugar}`);
-    L.push(`✅ Instalación completada el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}`);
     // Qué se mandó a hacer (Dylan 2026-10-09: «no me aparece descripción de qué es que se mandó a hacer»): tipo de trabajo, notas del
     // trabajo, pedido enlazado (tipo de documento, material, nº de ítems) y cuántas fotos dejó el equipo. Si no hay nada, se dice.
     const TIPOS_TXT = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación de trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación de trabajo de otra empresa' };
@@ -2672,8 +2663,17 @@ async function generarInformeObra(instId, inst, opts) {
     } catch (_) { }
     const nFotos = Array.isArray(inst.fotos) ? inst.fotos.length : 0;
     const descr = [tipoTxt ? '🧾 ' + tipoTxt : '', inst.notas ? '📝 ' + String(inst.notas).trim() : '', pedidoTxt ? '📦 Pedido: ' + pedidoTxt : '', nFotos ? '📷 ' + nFotos + ' foto(s)/archivo(s) del equipo' : ''].filter(Boolean);
-    if (descr.length) descr.forEach((d) => L.push(d)); else L.push('🧾 Sin descripción del trabajo (sin tipo, sin notas ni pedido enlazado)');
-    informe.descripcionTrabajo = { tipo: inst.tipoTrabajo || '', tipoTexto: tipoTxt, notas: String(inst.notas || ''), pedido: pedidoTxt, fotos: nFotos };
+    informe.descripcionTrabajo = { tipo: inst.tipoTrabajo || '', tipoTexto: tipoTxt, notas: String(inst.notas || ''), pedido: pedidoTxt, fotos: nFotos, lineas: descr.length ? descr : ['🧾 Sin descripción del trabajo (sin tipo, sin notas ni pedido enlazado)'] };
+    await db.doc('informesObra/' + instId).set(informe);
+
+    // Mensaje interno a gerencia (admins activos).
+    const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
+    const lugar = informe.obraLabel || 'Obra';
+    const urlInforme = BASE_URL + 'ops/informe-obra.html?id=' + encodeURIComponent(instId);
+    const L = [];
+    L.push(`🏠 ${lugar}`);
+    L.push(`✅ Instalación completada el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}`);
+    (informe.descripcionTrabajo.lineas || []).forEach((d) => L.push(d));
     L.push('');
     L.push(`👷 Mano de obra: RD$ ${fmtMiles(costoMO)}` + (horas ? ` — ${informe.manoObra.horas} h · ${listaPersonas.length} persona(s) · ${listaDias.length} día(s)` : ' — ⚠ sin partes diarios de esta obra'));
     L.push(`🚚 Transporte: RD$ ${fmtMiles(costoTransporte)}` + (detViajes.length ? ` — ${detViajes.length} viaje(s)` : ' — ⚠ sin viajes registrados'));
