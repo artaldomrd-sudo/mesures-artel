@@ -886,7 +886,7 @@
                 ${puedeParcial ? `<button class="btn-parcial" onclick="guardarAvanceParcial('${id}')">💾 Avance parcial (${c.instalados}/${c.total})</button>` : ''}
                 ${esOficina && !yaAgendado && !esCompra ? `<button class="btn-agendar" onclick="agendarPedido('${id}')">📅 Agendar</button>` : ''}
                 ${esOficina ? `<button class="btn-recoger" onclick="marcarSinInstalacion('${id}')">📦 Solo recoger</button>` : ''}
-                ${(esCompra || esDirecto) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
+                ${(esCompra || esDirecto || o.enRuta === true || o.entregado === true || jobsDeOrden(id).some(j => j.estado === 'en_proceso')) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo">↩ No está listo</button>`}
             </div>
             <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e2e6ea;">
                 <div style="font-size:12.5px;font-weight:bold;color:var(--artal-blue);margin-bottom:5px;">📄 PDF pedido de vidrios ${o.directoInstalacion ? '<span style="font-weight:normal;color:#8a93a0;font-size:11px;">— súbelo cuando midas los vidrios en obra</span>' : ''}</div>
@@ -1890,10 +1890,22 @@
         if (!confirm('¿Guardar avance parcial? El pedido quedará como "Parcialmente instalado" y seguirá en tu lista para terminar el resto.')) return;
         await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_instalado', fechaParcialInstalado: serverTimestamp() });
     };
+    // A8 (revisión 2026-10-09): «No está listo» solo si el pedido no salió (ni en ruta ni entregado) y no hay instalación en proceso;
+    // pide el motivo, lo deja como instrucción para fábrica (sale en rojo en su tablero) y registra quién lo devolvió.
     window.regresarAFabrica = async function (id) {
-        if (!confirm('¿Regresar este pedido a fábrica? Volverá al tablero de fábrica como pendiente.')) return;
-        try { await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', entregado: false, enRuta: false, fechaEnRuta: null }); }
-        catch (e) { alert('No se pudo: ' + e.message); }
+        const o = ((ordersCache.find(x => x.id === id) || {}).data) || {};
+        if (o.enRuta === true || o.entregado === true) { alert('Este pedido ya salió con el chofer: no se puede devolver a fábrica desde aquí.'); return; }
+        const motivo = prompt('¿Qué falta o qué está mal? (fábrica lo verá como instrucción)\nEl pedido vuelve al tablero de fábrica como «En fábrica».');
+        if (motivo === null) return;
+        if (!motivo.trim()) { alert('Escribe el motivo para que fábrica sepa qué corregir.'); return; }
+        const ahora = serverTimestamp();
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                status: 'en_fabrica', listoAutomatico: null,
+                noListoPor: usuario.nombre, noListoPorEmail: usuario.email, noListoFecha: ahora, noListoMotivo: motivo.trim(),
+                comentarioParaFabrica: '↩ Devuelto por instalación (' + usuario.nombre + '): ' + motivo.trim(), comentarioParaFabricaAtendido: false
+            });
+        } catch (e) { alert('No se pudo: ' + e.message); }
     };
 </script>
 

@@ -466,17 +466,22 @@
         const nuevoEstado = document.getElementById('status-select-' + id).value;
         const o = (allOrders.find(o => o.id === id) || {}).data || {};
         if (nuevoEstado === o.status) return;
-        if (!confirm(`¿Cambiar el estado de "${o.cliente || ''} — ${o.obra || ''}" a "${STATUS_LABEL[nuevoEstado] || nuevoEstado}"?`)) return;
+        // A9 (revisión 2026-10-09): el cambio manual avisa de lo que va a deshacer, no borra banderas del chofer/instalador sin motivo
+        // y deja registro de quién lo hizo. Las banderas solo cambian cuando el estado nuevo las contradice.
+        const ANTES_CARGA = ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'];
+        const avisos = [];
+        if (ANTES_CARGA.includes(nuevoEstado) && (o.entregado === true || o.enRuta === true)) avisos.push('el chofer ya lo marcó ' + (o.entregado ? 'ENTREGADO' : 'EN RUTA') + ': se quitará esa marca');
+        if (nuevoEstado !== 'completado' && o.instalado === true) avisos.push('ya estaba marcado INSTALADO: se quitará esa marca');
+        if (nuevoEstado === 'completado' && esFabricacion(o) && o.instalado !== true) avisos.push('se marcará como INSTALADO sin pasar por Instalación (cierre manual)');
+        if (nuevoEstado === 'completado' && esCompraDirecta(o) && o.entregado !== true) avisos.push('se marcará como ENTREGADO sin pasar por Transportes (cierre manual)');
+        if (!confirm(`¿Cambiar el estado de "${o.cliente || ''} — ${o.obra || ''}" a "${STATUS_LABEL[nuevoEstado] || nuevoEstado}"?` + (avisos.length ? '\n\nOjo: ' + avisos.join('; ') + '.' : ''))) return;
         try {
-            const cambios = { status: nuevoEstado };
-            if (nuevoEstado !== 'completado' && ('entregado' in o || 'instalado' in o)) {
-                cambios.entregado = false;
-                cambios.instalado = false;
-            }
-            // Si vuelve a una etapa anterior a la carga, tampoco puede seguir "en ruta".
-            if (['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'].includes(nuevoEstado) && o.enRuta) {
-                cambios.enRuta = false;
-                cambios.fechaEnRuta = null;
+            const cambios = { status: nuevoEstado, estadoManualPor: usuario.nombre, estadoManualPorEmail: usuario.email, estadoManualFecha: serverTimestamp(), estadoManualDesde: o.status || null };
+            if (ANTES_CARGA.includes(nuevoEstado)) { if (o.entregado === true) cambios.entregado = false; if (o.enRuta === true) { cambios.enRuta = false; cambios.fechaEnRuta = null; } }
+            if (nuevoEstado !== 'completado' && o.instalado === true) { cambios.instalado = false; cambios.cierreAutomatico = null; cambios.cierreAutomaticoTrabajo = null; }
+            if (nuevoEstado === 'completado') {
+                if (esFabricacion(o) && o.instalado !== true) { cambios.instalado = true; cambios.fechaInstalado = serverTimestamp(); cambios.instaladoPorNombre = usuario.nombre; cambios.cierreManual = 'historial'; }
+                if (esCompraDirecta(o) && o.entregado !== true) { cambios.entregado = true; cambios.fechaEntrega = serverTimestamp(); cambios.cierreManual = 'historial'; }
             }
             await updateDoc(doc(db, 'orders', id), cambios);
         } catch (e) {
