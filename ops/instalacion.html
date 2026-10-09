@@ -1471,9 +1471,11 @@
     // Pedido de fabricación abierto que corresponde a esta obra (misma regla "mismaObra" que los informes). Sirve para
     // enlazar un trabajo creado a mano / rápido con su pedido y para cerrar el pedido al completar aunque el trabajo no
     // traiga orderId (auditoría 2026-09-28, crítico 3: 5 pedidos entregados e instalados seguían en "listo para cargar").
-    function pedidoAbiertoDeObra(cliente, obra) {
+    // A2: con `soloListos` (al COMPLETAR un trabajo sin pedido enlazado) solo cuentan los pedidos que fábrica ya marcó listos:
+    // una segunda tanda de la misma obra que sigue en fábrica no se cierra por terminar la primera.
+    function pedidoAbiertoDeObra(cliente, obra, soloListos) {
         if (!cliente) return null;
-        const cand = ordersCache.filter(o => { const d = o.data || {}; return d.docType !== 'COMPRA_DIRECTA' && String(d.docType || '').indexOf('COT') !== 0 && d.status !== 'completado' && !d.sinInstalacion && mismaObra(cliente, obra, d.cliente, d.obra); });
+        const cand = ordersCache.filter(o => { const d = o.data || {}; return d.docType !== 'COMPRA_DIRECTA' && String(d.docType || '').indexOf('COT') !== 0 && d.status !== 'completado' && !d.sinInstalacion && (!soloListos || ['listo_para_cargar', 'parcialmente_listo'].includes(d.status)) && mismaObra(cliente, obra, d.cliente, d.obra); });
         if (cand.length !== 1) return cand.length ? cand.sort((a, b) => { const fa = (a.data.fecha && a.data.fecha.toMillis) ? a.data.fecha.toMillis() : 0, fb = (b.data.fecha && b.data.fecha.toMillis) ? b.data.fecha.toMillis() : 0; return fb - fa; })[0] : null;
         return cand[0];
     }
@@ -1501,7 +1503,7 @@
             // reemplazo o preparación de obra terminan sin tocar el pedido de la obra (el trigger pedidoSigueTrabajo aplica lo mismo).
             const esInstalacion = tipoDeJob(j) === 'instalacion';
             let oids = esInstalacion ? ordenesDeJob(j) : [];
-            if (esInstalacion && !oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
+            if (esInstalacion && !oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra, estado === 'completado'); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
             // Mismas salvaguardas que el trigger pedidoSigueTrabajo (usuario 2026-10-01): obra por partes (queda otro trabajo
             // abierto de la misma obra) → el pedido no se cierra; pedido de ALUCUFEL que fábrica no marcó listo → tampoco.
             const otroAbierto = estado === 'completado' && allJobs.some(x => x.id !== id && (x.estado || 'pendiente') !== 'completado' && tipoDeJob(x) === 'instalacion' && mismaObra(j.cliente, j.obra, x.cliente, x.obra));   // A1: una medición abierta no frena el cierre

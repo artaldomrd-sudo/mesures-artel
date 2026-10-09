@@ -281,10 +281,14 @@ function esTrabajoInstalacion(j) {
 }
 const ABIERTOS_FAB = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar'];
 const esPedidoFabricacion = (o) => o && o.docType !== 'COMPRA_DIRECTA' && String(o.docType || '').indexOf('COT') !== 0 && o.sinInstalacion !== true;
+// A2 (revisión 2026-10-09): por NOMBRE de obra solo se alcanzan los pedidos que fábrica ya marcó listos (listo_para_cargar /
+// parcialmente_listo): una segunda tanda de la misma obra que sigue en Pendiente/En fábrica no se enlaza ni se cierra por
+// terminar la primera. Un pedido en fábrica solo sigue al trabajo si está enlazado a propósito (orderId/orderIds).
+const LISTOS_FAB = ['listo_para_cargar', 'parcialmente_listo'];
 async function pedidosDelTrabajo(jobId, j) {
     const directos = [...new Set([j.orderId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])].filter(Boolean))];
     const abiertos = (await db.collection('orders').where('status', 'in', ABIERTOS_FAB).get()).docs
-        .filter((d) => esPedidoFabricacion(d.data()) && (directos.includes(d.id) || mismaObra(j.cliente, j.obra, d.data().cliente, d.data().obra)))
+        .filter((d) => esPedidoFabricacion(d.data()) && (directos.includes(d.id) || (LISTOS_FAB.includes(d.data().status) && mismaObra(j.cliente, j.obra, d.data().cliente, d.data().obra))))
         .map((d) => ({ id: d.id, ...d.data() }));
     const nuevos = abiertos.map((o) => o.id).filter((id) => !directos.includes(id));
     if (nuevos.length) { try { await db.doc('instalaciones/' + jobId).update({ orderIds: FieldValue.arrayUnion(...directos, ...nuevos), orderId: j.orderId || nuevos[0] }); } catch (_) { } }
