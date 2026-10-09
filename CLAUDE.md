@@ -662,7 +662,14 @@ estilo simplificado del CAD.
   kit botella 60 × 50 (el de abajo pegado al borde inferior), prensas de mampara y de esquina 45 × 45,
   moldura U 12 mm, media luna Ø 60, hoyos de conectores Ø 16 a 90/150 mm reales. Sin `ancho` cae a los %
   de antes. El riel continuo de `renderFacade` usa la misma regla (`40 * scale`). La tarjeta suelta
-  heredada (`case 'door_slide'` del switch grande) no cambia. El **riel de la deslizante es UNA sola pieza continua**
+  heredada (`case 'door_slide'` del switch grande) no cambia.
+  **Tarjetas de altura normal (mismo día, segunda captura: "tarjetas super largas sin necesidad, no es
+  correcto para el cuaderno")**: el tope de `adaptDrawingToContent` para `cerramiento` bajó de 650 a
+  **340 px** (paños adosados 650 → 420; fachada compuesta sigue en 430) y, para que las cotas sigan
+  legibles en un panel angosto y alto, `renderFacade` calcula `kf = clamp(1, (headTop+Hd)/(DW+24)·0.9, 4.5)`
+  y usa `fsDim = 6·kf` en `dimLineH`/`dimLineV` (los trazos ya son `non-scaling-stroke`, no hace falta
+  tocarlos); el viewBox se ensancha `extraR` para que la cota de alto no se corte. Así 400 × 2120 ocupa
+  340 px con cotas de ~16 px, y una ducha de 3 paneles (2800 × 2000) queda en 260 px como siempre. El **riel de la deslizante es UNA sola pieza continua**
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).

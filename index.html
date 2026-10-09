@@ -569,7 +569,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-09 18:03</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-09 23:12</div>
         </div>
     </div>
     
@@ -4860,9 +4860,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         const w = area.clientWidth;
         if (!w) return;
-        // Tope de alto: la fachada compuesta se limita más (470px) para que una fachada alta y
-        // angosta no deje la tarjeta excesivamente estirada; los paños/ducha siguen con 650.
-        const cap = esGrid ? 430 : 650;
+        // Tope de alto (usuario 2026-10-09, "tarjetas super largas sin necesidad, no es correcto para el
+        // cuaderno"): ducha 340 px (sus cotas crecen solas con kf en renderFacade), paños adosados 420,
+        // fachada compuesta 430. Antes ducha/paños llegaban a 650 y una ducha angosta ocupaba media pantalla.
+        const cap = esGrid ? 430 : (state.categoria === 'cerramiento' ? 340 : 420);
         area.style.height = Math.min(cap, Math.max(260, w * (vb[3] / vb[2]))).toFixed(0) + 'px';
         if (panoResizeObserver) panoResizeObserver.observe(area);
     }
@@ -8781,6 +8782,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const total = widths.reduce((a, b) => a + b, 0);
         const DW = 100, scale = DW / total, Hd = alto * scale;
         const headTop = Math.max(5, Hd * 0.14);
+        // Cotas legibles SIN estirar la tarjeta (usuario 2026-10-09: "tarjetas super largas sin necesidad"):
+        // el cuadro del dibujo tiene un alto acotado (340 px, adaptDrawingToContent), así que un panel
+        // angosto y alto (400 × 2120 → viewBox ≈ 124 × 540) se encoge mucho; las cotas crecen en
+        // proporción a esa relación alto/ancho (kf, 1..4.5) para verse igual de grandes en pantalla.
+        const kf = Math.max(1, Math.min(4.5, ((headTop + Hd) / (DW + 24)) * 0.9)), fsDim = 6 * kf;
         const tipoMap = { fijo: 'mamp_fija', puerta: 'door_glass', deslizante: 'door_slide', deslizante_conn: 'door_slide_conn' };
         let defs = '', body = '', xoff = 0;
         const layout = [];
@@ -8812,8 +8818,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         });
         // Etiquetas de ancho por panel y alto total
         let labels = '';
-        layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, headTop, `${L.p.ancho} mm`, 6); });
-        if (alto > 0) labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, 6);
+        layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, headTop, `${L.p.ancho} mm`, fsDim); });
+        if (alto > 0) labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, fsDim);
         let vbH = headTop + Hd + 4;
         // ESQUINA a 90°: elevación desplegada (plana) con la esquina marcada + vista en planta con la "L".
         const esqK = facadeEsquinaK(state);
@@ -8871,7 +8877,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             body += `<text x="${(cornerX + sx * 5).toFixed(2)}" y="${(planY - sy * lenV / 2).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="${sx > 0 ? 'start' : 'end'}" stroke="none">lado ${cornerRight ? 'B' : 'A'}</text>`;
             vbH = planY + 14 + (vertUp ? 0 : lenV);
         }
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -3 ${(DW + 24).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
+        const extraR = Math.max(0, fsDim * 4.4 - 14);   // sitio para la cota de alto cuando la fuente crece
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -3 ${(DW + 24 + extraR).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
         svg += defs;
         svg += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
         svg += body + labels + '</svg>';
