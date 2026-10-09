@@ -279,12 +279,12 @@ function esTrabajoInstalacion(j) {
     if (j.tipoTrabajo) return j.tipoTrabajo === 'instalacion';
     return !!(j.orderId || (Array.isArray(j.orderIds) && j.orderIds.length));
 }
-const ABIERTOS_FAB = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar'];
+const ABIERTOS_FAB = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'];   // A3: un avance parcial sigue abierto y debe poder cerrarse
 const esPedidoFabricacion = (o) => o && o.docType !== 'COMPRA_DIRECTA' && String(o.docType || '').indexOf('COT') !== 0 && o.sinInstalacion !== true;
 // A2 (revisión 2026-10-09): por NOMBRE de obra solo se alcanzan los pedidos que fábrica ya marcó listos (listo_para_cargar /
 // parcialmente_listo): una segunda tanda de la misma obra que sigue en Pendiente/En fábrica no se enlaza ni se cierra por
 // terminar la primera. Un pedido en fábrica solo sigue al trabajo si está enlazado a propósito (orderId/orderIds).
-const LISTOS_FAB = ['listo_para_cargar', 'parcialmente_listo'];
+const LISTOS_FAB = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'];
 async function pedidosDelTrabajo(jobId, j) {
     const directos = [...new Set([j.orderId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])].filter(Boolean))];
     const abiertos = (await db.collection('orders').where('status', 'in', ABIERTOS_FAB).get()).docs
@@ -310,7 +310,7 @@ exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (even
             if (otros.length) { console.log('pedidoSigueTrabajo: obra por partes, queda abierto', otros.map((d) => d.id).join(','), '→ no se cierra el pedido'); return; }
             for (const o of pedidos) {
                 if (o.instalado === true && o.status === 'completado') continue;
-                if (o.destino !== 'interno' && !['listo_para_cargar', 'parcialmente_listo'].includes(o.status)) { console.log('pedidoSigueTrabajo: pedido ALUCUFEL', o.id, 'aún', o.status, '→ ALUCUFEL manda, no se cierra'); continue; }
+                if (o.destino !== 'interno' && !LISTOS_FAB.includes(o.status)) { console.log('pedidoSigueTrabajo: pedido ALUCUFEL', o.id, 'aún', o.status, '→ ALUCUFEL manda, no se cierra'); continue; }
                 await db.doc('orders/' + o.id).update({ instalado: true, status: 'completado', fechaInstalado: after.validadoFecha || FieldValue.serverTimestamp(), instaladoPorNombre: after.validadoPor || 'Sistema ARTAL', cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: id, cierreAutomaticoFecha: FieldValue.serverTimestamp() });
                 console.log('pedidoSigueTrabajo: pedido', o.id, 'cerrado por trabajo completado', id);
             }
