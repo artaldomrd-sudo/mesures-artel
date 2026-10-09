@@ -726,6 +726,7 @@
                 ${(estado === 'completado' && tipoDeJob(j) === 'medicion') ? (j.medicionPendienteOficina === true ? '<br><span style="color:#e67e22;font-weight:bold;">📏 Medidas entregadas · ⏳ la oficina aún no las tomó en cuenta</span>' : (j.medicionAtendidaPor ? `<br><span style="color:#1e8449;font-weight:bold;">📏 Medidas tomadas en cuenta por ${esc(j.medicionAtendidaPor)}${fmtFechaHora(j.medicionAtendidaFecha) ? ' · ' + fmtFechaHora(j.medicionAtendidaFecha) : ''}</span>` : '')) : ''}
                 ${encuestaHTML(j)}
                 ${valoracionEncargadoHTML(j)}
+                ${j.trabajoOrigenId ? (() => { const o = allJobs.find(x => x.id === j.trabajoOrigenId); return o ? `<br><span style="color:#556;font-size:12.5px;">🔗 Sobre el trabajo: <b>${esc([o.cliente, o.obra].filter(Boolean).join(' — '))}</b>${jobDate(o) ? ' (' + esc(jobDate(o).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: '2-digit' })) + ')' : ''}${o.notas ? ' · ' + esc(String(o.notas).slice(0, 80)) : ''}</span>` : ''; })() : ''}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
             </div>
             ${navHtml}
@@ -1167,17 +1168,38 @@
     window.encuestaAplica = encuestaAplica;
     function tipoChipHTML(j) { const t = tipoDeJob(j); return t ? ` · <span style="background:#eef4fb;color:#1f6aa5;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:bold">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : ' · <span style="color:#c07a12;font-size:11.5px;font-weight:bold">tipo sin definir</span>'; }
     let trOrderId = null;
+    let trJobOrigenId = null;
     window.trTipoCambio = function () {
         const t = document.getElementById('tr-tipo').value;
         const wrap = document.getElementById('tr-obra-wrap'); wrap.style.display = t ? 'block' : 'none';
-        document.getElementById('tr-obra-hint').textContent = t === 'preparacion_obra' || t === 'instalacion' ? '(obligatorio: elige el pedido/obra que se prepara o instala)' : '(opcional: rellena cliente y obra y engancha el pedido)';
+        const sobreAnterior = ['reparacion_artal', 'servicio_post', 'reemplazo_dano'].includes(t);   // trabajos SOBRE algo ya hecho
+        document.getElementById('tr-obra-hint').textContent = t === 'preparacion_obra' || t === 'instalacion' ? '(obligatorio: elige el pedido/obra que se prepara o instala)' : (sobreAnterior ? '(elige el trabajo o pedido anterior sobre el que se interviene: rellena cliente y obra y lo engancha)' : '(opcional: rellena cliente y obra y engancha el pedido)');
         const sel = document.getElementById('tr-obra-existente');
         const abiertos = ordersCache.filter(o => o.data && o.data.docType !== 'COMPRA_DIRECTA' && String(o.data.docType || '').indexOf('COT') !== 0 && o.data.status !== 'completado')
             .sort((a, b) => String(a.data.cliente || '').localeCompare(String(b.data.cliente || '')));
-        sel.innerHTML = '<option value="">— Elegir obra —</option>' + abiertos.map(o => `<option value="${o.id}">${esc(o.data.cliente || '')} — ${esc(o.data.obra || '')} (${esc(ORDER_STATUS_LABEL[o.data.status] || o.data.status || '')})</option>`).join('');
+        let html = '<option value="">— Elegir obra —</option>';
+        html += `<optgroup label="Pedidos abiertos">${abiertos.map(o => `<option value="order:${o.id}">${esc(o.data.cliente || '')} — ${esc(o.data.obra || '')} (${esc(ORDER_STATUS_LABEL[o.data.status] || o.data.status || '')})</option>`).join('')}</optgroup>`;
+        if (sobreAnterior) {   // Dylan 2026-10-09: una reparación de trabajo antiguo Artal se engancha a un TRABAJO ya hecho, no solo a pedidos abiertos
+            const hace = Date.now() - 400 * 86400000;
+            const previos = allJobs.filter(j => j.id !== editingId && (j.cliente || j.obra) && !(j.fechaCreacion && j.fechaCreacion.toDate && j.fechaCreacion.toDate().getTime() < hace))
+                .sort((a, b) => (jobDate(b) ? jobDate(b).getTime() : 0) - (jobDate(a) ? jobDate(a).getTime() : 0));
+            const fmt = (j) => { const d = jobDate(j); return d ? d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: '2-digit' }) : 'sin fecha'; };
+            html += `<optgroup label="Trabajos anteriores (instalaciones, reparaciones…)">${previos.map(j => `<option value="job:${j.id}">${esc(j.cliente || '')} — ${esc(j.obra || '')} · ${esc(ESTADO_LABEL[j.estado] || j.estado || '')} · ${fmt(j)}${j.tipoTrabajo ? ' · ' + esc(TIPOS_TRABAJO[j.tipoTrabajo] || j.tipoTrabajo) : ''}</option>`).join('')}</optgroup>`;
+        }
+        sel.innerHTML = html;
     };
     window.trObraExistente = function () {
-        const id = document.getElementById('tr-obra-existente').value; trOrderId = id || null;
+        const v = document.getElementById('tr-obra-existente').value; trOrderId = null; trJobOrigenId = null;
+        if (!v) return;
+        if (v.startsWith('job:')) {
+            const j = allJobs.find(x => x.id === v.slice(4)); if (!j) return;
+            trJobOrigenId = j.id; trOrderId = j.orderId || (Array.isArray(j.orderIds) && j.orderIds[0]) || null;
+            document.getElementById('tr-cliente').value = j.cliente || ''; document.getElementById('tr-obra').value = j.obra || '';
+            if (!document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = j.direccion || '';
+            if (!document.getElementById('tr-gps').value) document.getElementById('tr-gps').value = j.gps || '';
+            return;
+        }
+        const id = v.replace(/^order:/, ''); trOrderId = id || null;
         const o = ordersCache.find(x => x.id === id); if (!o) return;
         document.getElementById('tr-cliente').value = o.data.cliente || ''; document.getElementById('tr-obra').value = o.data.obra || '';
         if (!document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = o.data.direccion || '';
@@ -1185,7 +1207,7 @@
     };
     window.abrirModalTrabajo = function () {
         ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota'].forEach(i => document.getElementById(i).value = '');
-        document.getElementById('tr-tipo').value = ''; trOrderId = null; trTipoCambio();
+        document.getElementById('tr-tipo').value = ''; trOrderId = null; trJobOrigenId = null; trTipoCambio();
         // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
         document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
         document.getElementById('modal-trabajo').classList.add('show');
@@ -1213,6 +1235,7 @@
                 tipoTrabajo: tipo,
                 orderId: trOrderId || (tipo === 'instalacion' ? (pedidoAbiertoDeObra(cliente, document.getElementById('tr-obra').value.trim()) || {}).id || null : null),   // solo una instalación de pedido se engancha sola por nombre; los demás tipos solo si se eligió la obra
                 ...(trOrderId ? { orderIds: [trOrderId] } : {}),
+                ...(trJobOrigenId ? { trabajoOrigenId: trJobOrigenId } : {}),   // reparación / servicio sobre un trabajo anterior
                 origen: 'instalador', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp()
             });
             cerrarModalTrabajo();

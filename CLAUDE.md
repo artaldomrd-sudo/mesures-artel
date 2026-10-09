@@ -2719,8 +2719,10 @@ los admins → `ops/index.html` abre `#modal-mediciones` (sin botón de cerrar; 
 `instalaciones`): cliente/obra, quién y cuándo validó, notas, miniaturas de fotos/PDF (aviso rojo si no hay), último mensaje,
 enlaces a Instalación y al cuaderno, y «✓ Tomé en cuenta las medidas» → `medicionPendienteOficina:false`, `medicionAtendidaPor/
 Email/Fecha` + movimiento en `movimientosInstalaciones`. La tarjeta de Instalación muestra «⏳ la oficina aún no las tomó en
-cuenta» / «tomadas en cuenta por X». Las dos mediciones ya completadas (Valeria Tifa, Yonatan Burgos) se marcaron pendientes
-el 09/10 como arranque.
+cuenta» / «tomadas en cuenta por X». Las mediciones ya completadas (Valeria Tifa, Yonatan Burgos, YURI dreamhouse) se marcaron
+pendientes el 09/10 como arranque. **Una medición no genera informe de cierre** (`informeObraAlCompletar` la salta; el de YURI se
+borró con su mensaje). «+ Trabajo» con tipo reparación / servicio post / reemplazo lista también **trabajos anteriores** (`job:<id>`
+→ `trabajoOrigenId`, hereda `orderId`), y la tarjeta muestra «🔗 Sobre el trabajo: …» (caso Carlos Paraíso 201).
 
 ### Nómina: pedidos de la contable (2026-09-30)
 

@@ -2766,6 +2766,9 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
     // Un trabajo reabierto y completado de nuevo SÍ regenera su informe (generarInformeObra es estable e idempotente
     // desde 2026-09-29: conserva fechaCierre y actualiza el mensaje). Antes `after.informeObraId` lo impedía.
     if (after.estado !== 'completado' || before.estado === 'completado') return;
+    // Una TOMA DE MEDIDAS no es una obra realizada: sin informe de costo (Dylan 2026-10-09, caso YURI — dreamhouse). Su ruta es el
+    // pop-up de la oficina (medicionAOficina). Preparación de obra y reparaciones sí generan informe (son trabajo real en la obra).
+    if (after.tipoTrabajo === 'medicion') return;
     try { await generarInformeObra(event.params.id, after, { push: !after.informeObraId }); }
     catch (e) { console.error('informeObraAlCompletar', event.params.id, e); }
 });
