@@ -68,6 +68,7 @@
         <select id="c-status">
             <option value="pendiente_proveedor">Pendiente de confirmación de proveedor</option>
             <option value="listo_para_cargar">Listo para cargar/instalar</option>
+            <option value="completado" disabled>Entregada / completada (no se cambia desde aquí)</option>
         </select>
         <p style="font-size:11.5px;color:#888;margin:4px 0 0;">
             Mientras esté <b>Pendiente de confirmación de proveedor</b> no le aparece al chofer.
@@ -285,6 +286,9 @@
             if (status === 'listo_para_cargar' && previo.status !== 'listo_para_cargar') {
                 datos.fechaListoParaCargar = serverTimestamp();
             }
+            // A10 (revisión 2026-10-09): editar una compra ya ENTREGADA/completada (corregir descripción, adjuntar la factura…)
+            // no la reabre: el estado solo se toca desde el selector de la tarjeta, con confirmación.
+            if (editandoId && (previo.status === 'completado' || previo.entregado === true)) delete datos.status;
 
             if (editandoId) {
                 await updateDoc(ref_, datos);
@@ -326,7 +330,7 @@
         document.getElementById('c-proveedor').value = '';
         document.getElementById('c-cantidad').value = '1';
         document.getElementById('c-descripcion').value = '';
-        document.getElementById('c-status').value = 'pendiente_proveedor';
+        document.getElementById('c-status').value = 'pendiente_proveedor'; document.getElementById('c-status').disabled = false;
         document.getElementById('c-pdf').value = '';
         document.getElementById('c-pdf-actual').style.display = 'none';
         document.getElementById('form-title').textContent = 'Registrar compra a proveedor';
@@ -370,7 +374,9 @@
         onProveedorSel();
         document.getElementById('c-cantidad').value = o.totalItems || 1;
         document.getElementById('c-descripcion').value = o.descripcion || '';
-        document.getElementById('c-status').value = o.status === 'completado' ? 'listo_para_cargar' : (o.status || 'pendiente_proveedor');
+        const stSel = document.getElementById('c-status');
+        stSel.value = o.status || 'pendiente_proveedor';   // A10: una compra completada se muestra tal cual, sin volverla a «listo»
+        stSel.disabled = o.status === 'completado' || o.entregado === true;
         document.getElementById('c-pdf').value = '';
         const actual = document.getElementById('c-pdf-actual');
         const arch = compraArchivosDe(o);
@@ -388,7 +394,15 @@
     window.cambiarEstadoCompra = async function (id, nuevo) {
         const o = comprasCache[id];
         if (!o || nuevo === o.status) return;
-        const datos = { status: nuevo };
+        // A10: confirmación con aviso de lo que se deshace (p. ej. reabrir una compra que el chofer ya entregó) y registro de quién.
+        const LBL = { pendiente_proveedor: 'Pendiente de proveedor', listo_para_cargar: 'Listo para cargar', completado: 'Entregada / completada' };
+        let aviso = '';
+        if (o.status === 'completado' || o.entregado === true) aviso = '\n\nOjo: el chofer ya la marcó ENTREGADA; volverá a aparecer en Transportes.';
+        if (nuevo === 'completado' && o.entregado !== true) aviso = '\n\nSe cerrará sin pasar por Transportes (cierre manual).';
+        if (!confirm('¿Cambiar "' + (o.cliente || '') + ' — ' + (o.obra || '') + '" a «' + (LBL[nuevo] || nuevo) + '»?' + aviso)) { pintarCompras(); return; }
+        const datos = { status: nuevo, estadoManualPor: usuario.nombre, estadoManualPorEmail: usuario.email, estadoManualFecha: serverTimestamp(), estadoManualDesde: o.status || null };
+        if (nuevo !== 'completado' && o.entregado === true) { datos.entregado = false; datos.enRuta = false; datos.fechaEnRuta = null; }
+        if (nuevo === 'completado' && o.entregado !== true) { datos.entregado = true; datos.fechaEntrega = serverTimestamp(); datos.cierreManual = 'compras'; }
         if (nuevo === 'listo_para_cargar' && o.status !== 'listo_para_cargar') {
             datos.fechaListoParaCargar = serverTimestamp();
         }
