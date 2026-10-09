@@ -9,7 +9,7 @@
 // mensajes.html (resolviendo la ruta según la profundidad de la página bajo ops/).
 import { auth, db } from './firebase-config.js';
 import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import { collection, query, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { suscribirMensajes, esParaMi } from './mensajes-lectura.js';
 
 // Ruta a un archivo dentro de ops/ desde la página actual (ops/*.html → 'x.html';
 // ops/alucufel/*.html → '../x.html'). Distinta de rootPath() de paths.js, que apunta a la RAÍZ
@@ -68,18 +68,15 @@ onAuthStateChanged(auth, (user) => {
     inyectar();
     const miEmail = String(user.email || '').toLowerCase();
     const miKey = sanitKey(miEmail);
-    // Volumen bajo (comunicados internos): traemos los enviados y filtramos en el cliente los que
-    // me corresponden y aún no marqué leídos — sin índices compuestos ni consultas combinadas.
-    onSnapshot(query(collection(db, 'mensajes'), where('estado', '==', 'enviado')), (snap) => {
+    // F1: solo se bajan los mensajes que son para mí (reglas por destinatario); el conteo es de los no leídos.
+    suscribirMensajes(db, { email: miEmail }, (lista) => {
         let n = 0;
-        snap.forEach(d => {
-            const m = d.data();
-            const paraMi = m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.some(d => String(d || '').trim().toLowerCase() === miEmail));
-            if (!paraMi) return;
-            if (m.remitenteEmail === miEmail) return;            // lo que yo mismo envié no cuenta como "sin leer"
+        lista.forEach((m) => {
+            if (!esParaMi(m, miEmail)) return;
+            if (String(m.remitenteEmail || '').toLowerCase() === miEmail) return;   // lo que yo mismo envié no cuenta como "sin leer"
             const ac = (m.acuses || {})[miKey];
             if (!ac || ac.leido !== true) n++;
         });
         setBadge(n);
-    }, () => { /* colección vacía o reglas sin publicar: sin badge, no romper la página */ });
+    });
 });

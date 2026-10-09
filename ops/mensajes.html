@@ -101,6 +101,7 @@
 
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { suscribirMensajes } from './mensajes-lectura.js';
     import { db } from './firebase-config.js';
     import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { subirFotos } from './fotos.js';
@@ -145,11 +146,11 @@
         if (vista === 'nuevo' || vista === 'detalle') render();
     }, () => {});
 
-    onSnapshot(query(collection(db, 'mensajes'), where('estado', '==', 'enviado')), (snap) => {
-        mensajesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-            .sort((a, b) => (fTime(b.fecha) - fTime(a.fecha)));
+    // F1: admin/comunicaciones ven todo; el resto solo lo suyo (para mí, o enviado por mí), igual que las reglas de Firestore.
+    suscribirMensajes(db, usuario, (lista) => {
+        mensajesCache = lista.slice().sort((a, b) => (fTime(b.fecha) - fTime(a.fecha)));
         render();
-    }, () => { mensajesCache = []; render(); });
+    }, { todo: true, enviados: true });
     function fTime(v) { const d = v && v.toDate ? v.toDate() : null; return d ? d.getTime() : 0; }
 
     // ---------------- Helpers de destinatarios / acuse ----------------
@@ -415,6 +416,7 @@
         if (!paraTodos) {
             destinatarios = [...composeSel];
             if (!destinatarios.length) { alert('Elige al menos una persona, o cambia a "Todo el equipo".'); return; }
+            destinatarios = destinatarios.map(e => String(e || '').trim().toLowerCase());   // F1: las reglas comparan el correo exacto (login en minúsculas)
         }
         const btn = document.getElementById('btn-enviar'); btn.disabled = true; const t0 = btn.textContent; btn.textContent = 'Enviando…';
         try {

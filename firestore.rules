@@ -69,7 +69,7 @@ service cloud.firestore {
     // --- Lectura general: solo lo operativo y no sensible. Todo lo demás se declara abajo colección por colección.
     match /{coleccion}/{resto=**} {
       allow read: if request.auth != null && coleccion in [
-        'orders', 'instalaciones', 'citas', 'clientes', 'equipo', 'mensajes', 'notas',
+        'orders', 'instalaciones', 'citas', 'clientes', 'equipo', 'notas',
         'inventario', 'categoriasInventario', 'subgruposInventario', 'bultosHerramientas', 'equiposInstalacion',
         'movimientosInventario', 'movimientosInstalaciones',
         'academiaCursos', 'academiaLecciones', 'academiaProgreso',
@@ -195,6 +195,14 @@ service cloud.firestore {
     // el mismo documento. La lectura la cubre el match general (el equipo ve lo que le corresponde;
     // el filtro por destinatario es en la app).
     match /mensajes/{id} {
+      // F1 (revisión 2026-10-09): por Mensajería viajan volantes de nómina (sueldos) e informes de costo; antes cualquier sesión
+      // podía leerlos todos. Ahora cada quien lee SOLO lo que es para él (a todo el equipo, destinatario o remitente; un espejo lee
+      // como la persona real); admin y comunicaciones lo leen todo. Las pantallas consultan con esos mismos filtros
+      // (ops/mensajes-lectura.js): paraTodos == true · destinatarios array-contains correo · remitenteEmail == correo.
+      allow read: if alguno(['admin', 'comunicaciones'])
+        || (request.auth != null && (resource.data.paraTodos == true
+            || resource.data.remitenteEmail == correoEfectivo() || resource.data.remitenteEmail == request.auth.token.email
+            || (('destinatarios' in resource.data) && (correoEfectivo() in resource.data.destinatarios || request.auth.token.email in resource.data.destinatarios))));
       allow create: if alguno(['admin', 'comunicaciones', 'capacitador']);   // capacitador: aviso de curso nuevo (Academia)
       // El receptor solo marca SU acuse (acuses.{suClave}); el cuerpo lo editan admin/comunicaciones.
       allow update: if alguno(['admin', 'comunicaciones'])
