@@ -59,6 +59,27 @@
 
     /* Tarjeta de trabajo (instalaciones) */
     .job-card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 6px solid #9b59b6; }
+    /* Mosaicos + lista compacta (Dylan 2026-10-09, «reorganiza como en Historial para que quepan más obras») */
+    .inst-group-label { font-size: 11.5px; font-weight: bold; color: #667; text-transform: uppercase; letter-spacing: .4px; margin: 8px 2px 6px; }
+    .inst-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-bottom: 4px; }
+    .inst-tile { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 10px 8px; border: 2.5px solid transparent; cursor: pointer; text-align: center; color: var(--artal-blue); font-family: 'Arimo'; transition: .15s; min-height: 64px; display: flex; flex-direction: column; justify-content: center; }
+    .inst-tile .n { font-size: 20px; font-weight: 800; line-height: 1.1; }
+    .inst-tile .t { font-size: 11.5px; font-weight: bold; margin-top: 2px; }
+    .inst-tile.active { border-color: var(--artal-yellow); background: var(--artal-blue); color: #fff; }
+    .inst-tile.cero { opacity: .55; }
+    .job-row { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 10px 12px; border-left: 5px solid #9b59b6; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; margin-bottom: 8px; }
+    .job-row:active { transform: scale(.995); }
+    .job-row.estado-pendiente { border-left-color: var(--artal-yellow); } .job-row.estado-en_proceso { border-left-color: #3498db; } .job-row.estado-completado { border-left-color: #2ecc71; }
+    .job-row .r1 { font-weight: bold; color: var(--artal-blue); font-size: 14.5px; }
+    .job-row .r2 { font-size: 12px; color: #556; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; grid-column: 1 / -1; }
+    .job-row .fecha { font-size: 12px; color: #334; font-weight: bold; text-align: right; white-space: nowrap; }
+    .job-row .punto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #e74c3c; margin-right: 4px; vertical-align: middle; }
+    .job-row .chip { background: #eef4fb; color: #1f6aa5; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: bold; }
+    #job-panel { display: none; position: fixed; inset: 0; z-index: 9000; background: rgba(10, 30, 50, .55); }
+    #job-panel .sheet { position: absolute; left: 0; right: 0; bottom: 0; top: 24px; background: var(--bg, #eef3f8); border-radius: 18px 18px 0 0; overflow: auto; padding: 0 12px 24px; box-shadow: 0 -8px 30px rgba(0,0,0,.3); }
+    #job-panel .sheet-head { position: sticky; top: 0; z-index: 2; background: var(--bg, #eef3f8); padding: 12px 4px 10px; display: flex; align-items: center; gap: 10px; }
+    #job-panel .sheet-head button { background: #fff; color: var(--artal-blue); border: none; border-radius: 10px; padding: 9px 14px; font-weight: bold; font-family: 'Arimo'; font-size: 13.5px; cursor: pointer; box-shadow: var(--shadow); }
+    @media (min-width: 900px) { #job-panel .sheet { left: 50%; transform: translateX(-50%); width: 860px; } }
     .job-card.estado-pendiente { border-left-color: var(--artal-yellow); }
     .job-card.estado-en_proceso { border-left-color: #3498db; }
     .job-card.estado-completado { border-left-color: #2ecc71; opacity: 0.75; }
@@ -223,6 +244,7 @@
                 <h2 class="sec-title ag">📌 Agenda día a día</h2>
                 <button class="btn-add" onclick="abrirModalTrabajo()">+ Trabajo</button>
             </div>
+            <div id="inst-tiles"></div>
             <div id="dia-agenda"><p class="empty">Cargando…</p></div>
         </section>
         <button class="new-job-btn" id="btn-toggle-cal" onclick="toggleCalendario()" style="background:#eef4fb;color:var(--artal-blue);">📅 Ver calendario del mes / agendar</button>
@@ -303,6 +325,13 @@
 
 <!-- Modal: trabajo rápido (instalaciones) -->
 <div id="toasts"></div>
+<!-- Tarjeta grande de un trabajo (se abre al tocar una fila de la lista compacta) -->
+<div id="job-panel" onclick="if (event.target === this) cerrarJob()">
+    <div class="sheet">
+        <div class="sheet-head"><button onclick="cerrarJob()">← Volver a la lista</button><span id="job-panel-titulo" style="font-weight:bold;color:var(--artal-blue);font-size:14px;"></span></div>
+        <div id="job-panel-body"></div>
+    </div>
+</div>
 <div class="modal-ov" id="modal-trabajo">
     <div class="modal-bx">
         <h2>📌 Nuevo trabajo</h2>
@@ -919,17 +948,66 @@
         list.innerHTML = hechos.length ? hechos.map(j => jobCardHTML(j, { hist: true })).join('') : '<p class="empty">No hay trabajos validados en este período.</p>';
     };
 
-    function renderMiDia() {
-        // Agenda día a día: trabajos con fecha (no completados) ordenados + en curso sin fecha.
-        // (Los recordatorios ya no van sueltos aquí: se marcan por cada trabajo/obra en su tarjeta.)
-        const conFecha = allJobs.filter(j => jobDate(j) && j.estado !== 'completado').sort((a, b) => jobDate(a) - jobDate(b));
-        const enCurso = allJobs.filter(j => !jobDate(j) && j.estado === 'en_proceso');
-        const sinFecha = allJobs.filter(j => !jobDate(j) && (j.estado === 'pendiente' || !j.estado));   // por programar: visibles, no escondidos
-        const lista = enCurso.concat(conFecha, sinFecha);
-        document.getElementById('dia-agenda').innerHTML = lista.length
-            ? `<div class="day-group">${lista.map(jobCardHTML).join('')}</div>`
-            : '<p class="empty">No hay trabajos agendados. Usa “+ Trabajo” o agenda desde el calendario.</p>';
+    // ===== Agenda día a día: MOSAICOS + lista compacta + tarjeta grande al tocar (Dylan 2026-10-09, opción A) =====
+    // Antes cada trabajo era una tarjeta completa (una pantalla por trabajo en el teléfono). Ahora: mosaicos con contador
+    // (Hoy: hoy en obra / sin fecha / atrasados · Seguimiento: todos abiertos / por empezar / en proceso / en espera de volver /
+    // mediciones por entregar / completados 7 días), lista compacta de ese filtro, y la tarjeta de siempre en un panel al tocar.
+    const hoy0 = () => d0(new Date()).getTime();
+    const fechaValJob = (j) => { const v = j.validadoFecha || j.estadoFecha || j.fecha; return v && v.toDate ? v.toDate().getTime() : 0; };
+    const FILTROS_INST = {
+        hoy: { g: 'Hoy', label: 'Hoy en obra', ic: '📅', f: (j) => j.estado !== 'completado' && jobEnDia(j, new Date()) },
+        sinFecha: { g: 'Hoy', label: 'Sin fecha', ic: '📋', f: (j) => j.estado !== 'completado' && !jobDate(j) },
+        atrasados: { g: 'Hoy', label: 'Atrasados', ic: '⏰', f: (j) => (j.estado === 'pendiente' || !j.estado) && jobDate(j) && d0(jobDate(j)).getTime() < hoy0() },
+        abiertos: { g: 'Seguimiento', label: 'Todos abiertos', ic: '🗂', f: (j) => j.estado !== 'completado' },
+        porEmpezar: { g: 'Seguimiento', label: 'Por empezar', ic: '🟡', f: (j) => j.estado === 'pendiente' || !j.estado },
+        enProceso: { g: 'Seguimiento', label: 'En proceso', ic: '🔧', f: (j) => j.estado === 'en_proceso' },
+        enEspera: { g: 'Seguimiento', label: 'En espera de volver', ic: '⏸', f: (j) => j.estado === 'en_proceso' && jobDate(j) && d0(jobDate(j)).getTime() < hoy0() },
+        mediciones: { g: 'Seguimiento', label: 'Mediciones por entregar', ic: '📏', f: (j) => j.medicionPendienteOficina === true },
+        completados7: { g: 'Seguimiento', label: 'Completados 7 días', ic: '✅', f: (j) => j.estado === 'completado' && fechaValJob(j) >= Date.now() - 7 * 86400000 }
+    };
+    let instFiltro = (() => { try { return localStorage.getItem('artal_inst_filtro') || ''; } catch (_) { return ''; } })();
+    if (!FILTROS_INST[instFiltro]) instFiltro = esOficina ? 'abiertos' : 'hoy';   // la oficina arranca en Seguimiento, el equipo en Hoy
+    let jobAbierto = null;
+    window.setFiltroInst = function (k) { if (!FILTROS_INST[k]) return; instFiltro = k; try { localStorage.setItem('artal_inst_filtro', k); } catch (_) { } renderMiDia(); };
+    function ordenLista(k, lista) {
+        if (k === 'completados7') return lista.sort((a, b) => fechaValJob(b) - fechaValJob(a));
+        return lista.sort((a, b) => { const da = jobDate(a), dbb = jobDate(b); if (!da && !dbb) return 0; if (!da) return 1; if (!dbb) return -1; return da - dbb; });
     }
+    function jobRowHTML(j) {
+        const estado = j.estado || 'pendiente';
+        const nuevos = hiloNoLeidos(j).length;
+        const alerta = nuevos || j.medicionPendienteOficina === true;
+        const asig = (Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map(a => a.nombre || a.email) : (j.instaladorNombre ? [j.instaladorNombre] : [])).join(', ');
+        const t = tipoDeJob(j);
+        return `<div class="job-row estado-${estado}" onclick="abrirJob('${j.id}')">
+            <div class="r1">${alerta ? '<span class="punto" title="Mensaje nuevo o medición por entregar"></span>' : ''}${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}</div>
+            <div class="fecha">${fechaTxtJob(j).replace(/^🔧 /, '')}</div>
+            <div class="r2"><span class="estado-badge ${estado}" style="font-size:10.5px;padding:2px 8px">${esc(ESTADO_LABEL[estado] || estado)}</span>${t ? `<span class="chip">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : '<span class="chip" style="background:#fff8e1;color:#c07a12">tipo sin definir</span>'}${asig ? `<span>🔧 ${esc(asig)}</span>` : '<span style="color:#c07a12">sin asignar</span>'}${nuevos ? `<span style="color:#e74c3c;font-weight:bold">💬 ${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}${j.medicionPendienteOficina === true ? '<span style="color:#e67e22;font-weight:bold">📏 oficina pendiente</span>' : ''}${j.notas ? `<span style="color:#667">· ${esc(String(j.notas).slice(0, 70))}${String(j.notas).length > 70 ? '…' : ''}</span>` : ''}</div>
+        </div>`;
+    }
+    function renderMiDia() {
+        const tiles = document.getElementById('inst-tiles'), list = document.getElementById('dia-agenda'); if (!tiles || !list) return;
+        const grupos = ['Hoy', 'Seguimiento'];
+        tiles.innerHTML = grupos.map(g => `<div class="inst-group-label">${g}</div><div class="inst-tiles">${Object.entries(FILTROS_INST).filter(([, f]) => f.g === g).map(([k, f]) => { const n = allJobs.filter(f.f).length; return `<div class="inst-tile ${k === instFiltro ? 'active' : ''} ${n ? '' : 'cero'}" onclick="setFiltroInst('${k}')"><div class="n">${n}</div><div class="t">${f.ic} ${f.label}</div></div>`; }).join('')}</div>`).join('');
+        const f = FILTROS_INST[instFiltro];
+        const lista = ordenLista(instFiltro, allJobs.filter(f.f));
+        list.innerHTML = lista.length ? `<div style="font-size:12px;color:#667;margin:6px 2px 8px">${f.ic} <b>${esc(f.label)}</b> · ${lista.length} trabajo(s) · toca uno para abrirlo</div>` + lista.map(jobRowHTML).join('')
+            : `<p class="empty">No hay trabajos en «${esc(f.label)}».${instFiltro === 'hoy' ? ' Usa “+ Trabajo” o mira «Todos abiertos».' : ''}</p>`;
+        renderJobPanel();
+    }
+    function renderJobPanel() {
+        const panel = document.getElementById('job-panel'), body = document.getElementById('job-panel-body'); if (!panel || !body) return;
+        if (!jobAbierto) { panel.style.display = 'none'; return; }
+        const j = allJobs.find(x => x.id === jobAbierto);
+        if (!j) { jobAbierto = null; panel.style.display = 'none'; return; }
+        // No se repinta mientras la persona escribe en la conversación o en una casilla (perdería el texto).
+        const activo = document.activeElement; if (activo && body.contains(activo) && /^(TEXTAREA|INPUT|SELECT)$/.test(activo.tagName)) return;
+        document.getElementById('job-panel-titulo').textContent = [j.cliente, j.obra].filter(Boolean).join(' — ');
+        body.innerHTML = jobCardHTML(j);
+        panel.style.display = 'block';
+    }
+    window.abrirJob = function (id) { jobAbierto = id; renderJobPanel(); document.body.style.overflow = 'hidden'; };
+    window.cerrarJob = function () { jobAbierto = null; renderJobPanel(); document.body.style.overflow = ''; };
 
     function renderGrid() {
         const grid = document.getElementById('calendar-grid');

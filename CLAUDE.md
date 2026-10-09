@@ -2725,6 +2725,16 @@ pendientes el 09/10 como arranque. **Una medición no genera informe de cierre**
 borró con su mensaje). «+ Trabajo» con tipo reparación / servicio post / reemplazo lista también **trabajos anteriores** (`job:<id>`
 → `trabajoOrigenId`, hereda `orderId`), y la tarjeta muestra «🔗 Sobre el trabajo: …» (caso Carlos Paraíso 201).
 
+### Instalación: mosaicos + lista compacta + tarjeta al tocar (2026-10-09, opción A validada por Dylan)
+
+«Reorganiza las pestañas como en Historial para que quepan más obras». La pestaña Agenda día a día ya no apila tarjetas
+completas: `#inst-tiles` (`FILTROS_INST`, dos grupos: **Hoy** = hoy en obra / sin fecha / atrasados; **Seguimiento** = todos
+abiertos / por empezar / en proceso / en espera de volver / mediciones por entregar / completados 7 días), lista compacta
+`jobRowHTML` (punto rojo si hay mensaje nuevo o medición pendiente, chip de tipo, asignados, fecha, inicio de las notas) y la
+tarjeta grande de siempre (`jobCardHTML`) en el panel `#job-panel` al tocar una fila (`abrirJob`/`cerrarJob`; no se repinta
+mientras se escribe en un campo). Filtro recordado en `localStorage.artal_inst_filtro`; por defecto oficina → «Todos abiertos»,
+equipo → «Hoy en obra». Sin «Solo los míos» (Dylan: «no es necesario de momento»). Por agendar e Historial no cambian.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
