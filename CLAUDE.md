@@ -2716,7 +2716,8 @@ Dylan: «cuando se manda a un chico a tomar medidas, al validar el trabajo debe 
 cerrarse hasta que alguien valide que tomó en cuenta las medidas». Ruta: trabajo `tipoTrabajo:'medicion'` → al completar (si no hay
 fotos, Instalación avisa antes) → trigger `medicionAOficina` pone `medicionPendienteOficina:true` + `medicionFotos` y manda push a
 los admins → `ops/index.html` abre `#modal-mediciones` (sin botón de cerrar; `renderMediciones()` en cada snapshot de
-`instalaciones`): cliente/obra, quién y cuándo validó, notas, miniaturas de fotos/PDF (aviso rojo si no hay), último mensaje,
+`instalaciones`; botones «Volver a mostrar en 15 / 30 / 60 min» que lo ocultan en ese navegador con `localStorage` y vuelve solo —
+Dylan 2026-10-09 — y tarjeta `md:` de respaldo en el centro de notificaciones): cliente/obra, quién y cuándo validó, notas, miniaturas de fotos/PDF (aviso rojo si no hay), último mensaje,
 enlaces a Instalación y al cuaderno, y «✓ Tomé en cuenta las medidas» → `medicionPendienteOficina:false`, `medicionAtendidaPor/
 Email/Fecha` + movimiento en `movimientosInstalaciones`. La tarjeta de Instalación muestra «⏳ la oficina aún no las tomó en
 cuenta» / «tomadas en cuenta por X». Las mediciones ya completadas (Valeria Tifa, Yonatan Burgos, YURI dreamhouse) se marcaron
