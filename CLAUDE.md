@@ -2710,6 +2710,18 @@ instalación y preparación de obra); el modal de gerencia tiene `#job-tipo`; Ca
 (`encuestaAplica` en la tarjeta y en `encuestaAlCompletar`, que marca `encuestaEstado:'no_aplica'` + `encuestaMotivo` en los
 demás). Las dos encuestas ya creadas para mediciones (Valeria Tifa, Yonatan Burgos) quedaron canceladas.
 
+### Toma de medidas → pop-up bloqueante en el Panel (2026-10-09)
+
+Dylan: «cuando se manda a un chico a tomar medidas, al validar el trabajo debe aparecer como pop-up en el Panel de admin y no
+cerrarse hasta que alguien valide que tomó en cuenta las medidas». Ruta: trabajo `tipoTrabajo:'medicion'` → al completar (si no hay
+fotos, Instalación avisa antes) → trigger `medicionAOficina` pone `medicionPendienteOficina:true` + `medicionFotos` y manda push a
+los admins → `ops/index.html` abre `#modal-mediciones` (sin botón de cerrar; `renderMediciones()` en cada snapshot de
+`instalaciones`): cliente/obra, quién y cuándo validó, notas, miniaturas de fotos/PDF (aviso rojo si no hay), último mensaje,
+enlaces a Instalación y al cuaderno, y «✓ Tomé en cuenta las medidas» → `medicionPendienteOficina:false`, `medicionAtendidaPor/
+Email/Fecha` + movimiento en `movimientosInstalaciones`. La tarjeta de Instalación muestra «⏳ la oficina aún no las tomó en
+cuenta» / «tomadas en cuenta por X». Las dos mediciones ya completadas (Valeria Tifa, Yonatan Burgos) se marcaron pendientes
+el 09/10 como arranque.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

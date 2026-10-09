@@ -117,7 +117,7 @@
     import { requirePin } from './pin-gate.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp, arrayUnion, addDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
@@ -454,8 +454,40 @@
         if (!confirm('¿Marcar este anticipo como no asociado a una obra del Panel? No volverá a aparecer.')) return;
         try { await updateDoc(doc(db, 'anticiposCitrus', asientoId), { estado: 'ignorado', ignoradoPor: usuario.nombre, ignoradoFecha: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
+    // ---- Mediciones validadas pendientes de la oficina: pop-up bloqueante + registro de quién las tomó en cuenta ----
+    function renderMediciones() {
+        const box = document.getElementById('modal-mediciones'), list = document.getElementById('modal-mediciones-list'); if (!box || !list) return;
+        const pend = instCache.filter(({ j }) => j.medicionPendienteOficina === true).sort((a, b) => String((a.j.validadoFecha && a.j.validadoFecha.toDate ? a.j.validadoFecha.toDate().toISOString() : '')).localeCompare(String(b.j.validadoFecha && b.j.validadoFecha.toDate ? b.j.validadoFecha.toDate().toISOString() : '')));
+        if (!pend.length) { box.style.display = 'none'; list.innerHTML = ''; return; }
+        list.innerHTML = pend.map(({ id, j }) => {
+            const fotos = (Array.isArray(j.fotos) ? j.fotos : []).filter(f => f && f.url);
+            const thumbs = fotos.map(f => f.tipo === 'pdf' || f.tipo === 'archivo' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" style="display:inline-block;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;color:#0A3D62;">📎 ${esc(f.nombre || 'archivo')}</a>` : `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="" style="width:92px;height:92px;object-fit:cover;border-radius:8px;border:1.5px solid #ddd;"></a>`).join(' ');
+            const cuando = j.validadoFecha && j.validadoFecha.toDate ? j.validadoFecha.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+            return `<div style="border:1.5px solid #e3e8ee;border-left:5px solid #e67e22;border-radius:12px;padding:12px 14px;margin-bottom:12px;">
+                <div style="font-weight:bold;color:#0A3D62;font-size:15px;">${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}</div>
+                <div style="font-size:12.5px;color:#556;margin:3px 0 6px;">Validado por <b>${esc(j.validadoPor || '—')}</b>${cuando ? ' · ' + esc(cuando) : ''}${j.direccion ? ' · 📌 ' + esc(j.direccion) : ''}</div>
+                ${j.notas ? `<div style="font-size:13px;color:#333;background:#f6f8fb;border-radius:8px;padding:7px 10px;margin-bottom:8px;white-space:pre-wrap;">${esc(j.notas)}</div>` : ''}
+                ${fotos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">${thumbs}</div>` : '<div style="font-size:12.5px;color:#c0392b;font-weight:bold;margin-bottom:8px;">⚠ Sin fotos ni archivos adjuntos. Pide las medidas al equipo antes de marcarla.</div>'}
+                ${Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length ? `<div style="font-size:12.5px;color:#556;margin-bottom:8px;">💬 Último mensaje: ${esc(j.comentariosInstalador[j.comentariosInstalador.length - 1].texto || '')}</div>` : ''}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <button onclick="medicionAtendida('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13.5px;cursor:pointer;">✓ Tomé en cuenta las medidas</button>
+                    <a href="instalacion.html" style="font-size:12.5px;color:#0A3D62;">Abrir en Instalación</a>
+                    <a href="../index.html" style="font-size:12.5px;color:#0A3D62;">Abrir el cuaderno para cotizar</a>
+                </div></div>`;
+        }).join('');
+        box.style.display = 'flex';
+    }
+    window.medicionAtendida = async (id) => {
+        const it = instCache.find(x => x.id === id); const j = it ? it.j : {};
+        if (!confirm(`¿Confirmas que tomaste en cuenta las medidas de «${[j.cliente, j.obra].filter(Boolean).join(' — ')}» (cotizar / pedir a fábrica / archivar)?`)) return;
+        try {
+            await updateDoc(doc(db, 'instalaciones', id), { medicionPendienteOficina: false, medicionAtendidaPor: usuario.nombre, medicionAtendidaPorEmail: usuario.email, medicionAtendidaFecha: serverTimestamp() });
+            try { await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota: 'Medidas tomadas en cuenta por la oficina', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); } catch (_) { }
+        } catch (e) { alert('No se pudo marcar: ' + e.message); }
+    };
     onSnapshot(collection(db, 'instalaciones'), (snap) => {
         instCache = snap.docs.map(d => ({ id: d.id, j: d.data() }));
+        renderMediciones();
         avisarComentariosNuevos(snap, instPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); instPrimera = false;
         instComentariosSinAtender = instCache.reduce((n, { j }) => n + comentariosSinAtender(j).length, 0);
         const b = document.getElementById('badge-instalador');
@@ -536,5 +568,13 @@
     }, () => { /* colección vacía o reglas sin publicar */ });
 </script>
 
+<!-- Pop-up de MEDICIONES por tomar en cuenta (Dylan 2026-10-09): no se cierra hasta que la oficina marque cada una. -->
+<div id="modal-mediciones" style="display:none;position:fixed;inset:0;z-index:9980;background:rgba(10,30,50,.72);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#fff;border-radius:18px;max-width:720px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);padding:22px 22px 18px;font-family:'Arimo',Arial,sans-serif;">
+        <h2 style="margin:0 0 4px;color:#0A3D62;font-size:20px;">📏 Medidas tomadas por el equipo</h2>
+        <p style="margin:0 0 14px;color:#556;font-size:13.5px;">El equipo validó estas tomas de medidas. Revísalas (fotos y notas) y marca cada una como <b>tomada en cuenta</b>: es la única forma de cerrar esta ventana, para que ninguna medición se quede sin cotizar ni pedir a fábrica.</p>
+        <div id="modal-mediciones-list"></div>
+    </div>
+</div>
 </body>
 </html>

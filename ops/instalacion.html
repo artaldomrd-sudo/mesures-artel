@@ -723,6 +723,7 @@
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
                 ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
+                ${(estado === 'completado' && tipoDeJob(j) === 'medicion') ? (j.medicionPendienteOficina === true ? '<br><span style="color:#e67e22;font-weight:bold;">📏 Medidas entregadas · ⏳ la oficina aún no las tomó en cuenta</span>' : (j.medicionAtendidaPor ? `<br><span style="color:#1e8449;font-weight:bold;">📏 Medidas tomadas en cuenta por ${esc(j.medicionAtendidaPor)}${fmtFechaHora(j.medicionAtendidaFecha) ? ' · ' + fmtFechaHora(j.medicionAtendidaFecha) : ''}</span>` : '')) : ''}
                 ${encuestaHTML(j)}
                 ${valoracionEncargadoHTML(j)}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : ''}
@@ -1376,6 +1377,11 @@
     window.cambiarEstado = async function (id, estado, yaConfirmado) {
         const j = allJobs.find(x => x.id === id) || {};
         const lugar = [j.cliente, j.obra].filter(Boolean).join(' — ') || 'este trabajo';
+        // Toma de medidas (Dylan 2026-10-09): al completarla, la oficina recibe un pop-up que no se cierra hasta tomarla en cuenta; sin
+        // fotos la medición no sirve de mucho, así que se avisa antes (se puede completar igual si las medidas van por otro canal).
+        if (estado === 'completado' && !yaConfirmado && tipoDeJob(j) === 'medicion' && !(Array.isArray(j.fotos) && j.fotos.length)) {
+            if (!confirm('Esta toma de medidas no tiene fotos ni archivos adjuntos.\n\nSube las fotos de las medidas con «Agregar foto/PDF» antes de completar, para que la oficina las reciba. ¿Completar igual?')) { renderTodo(); return; }
+        }
         // Completar pasa por la ventana de horas (quiénes y cuánto) → parte diario del día.
         if (estado === 'completado' && !yaConfirmado) { abrirValidacion(id, { completar: true }); return; }
         const msg = `¿Cambiar el estado de "${lugar}" a "${ESTADO_LABEL[estado] || estado}"?`;

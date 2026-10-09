@@ -364,6 +364,23 @@ exports.pedidoEnlazarCliente = onDocumentWritten('orders/{id}', async (event) =>
     } catch (e) { console.error('pedidoEnlazarCliente', event.params.id, e); }
 });
 
+// ---------- Toma de medidas validada → la oficina DEBE tomarla en cuenta (Dylan 2026-10-09) ----------
+// Un trabajo `tipoTrabajo:'medicion'` que el equipo completa (con sus fotos) deja `medicionPendienteOficina:true`: el Panel de
+// admin abre un pop-up que no se cierra hasta que alguien de la oficina pulse «Tomé en cuenta las medidas» (queda quién y cuándo en
+// `medicionAtendidaPor/Fecha`). Además, push a todos los admins. Así ninguna medición se pierde por falta de visibilidad.
+exports.medicionAOficina = onDocumentWritten('instalaciones/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    if (after.estado !== 'completado' || before.estado === 'completado') return;
+    if (after.tipoTrabajo !== 'medicion' || after.medicionPendienteOficina != null) return;
+    const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ') || 'Toma de medidas';
+    const nFotos = Array.isArray(after.fotos) ? after.fotos.filter((f) => !f || !f.tipo || f.tipo === 'img').length : 0;
+    try {
+        await event.data.after.ref.update({ medicionPendienteOficina: true, medicionAvisoFecha: FieldValue.serverTimestamp(), medicionFotos: nFotos });
+        await pushATokens(await tokensPorRol('admin'), '📏 Medidas tomadas: ' + lugar, `${after.validadoPor || 'El equipo'} validó la toma de medidas${nFotos ? ' con ' + nFotos + ' foto(s)' : ' SIN fotos'}. Entra al Panel y márcala como tomada en cuenta.`, 'ops/index.html');
+    } catch (e) { console.error('medicionAOficina', event.params.id, e); }
+});
+
 // ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------
 // La rutina matinal escribe en `mensajes` con remitenteEmail 'coordinador@artal' (vía scripts/ops/escribir.js). La pantalla de
 // Mensajería hace su propio push al enviar desde el navegador; este trigger cubre los mensajes creados desde fuera.
