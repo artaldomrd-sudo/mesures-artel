@@ -1329,7 +1329,17 @@ function mapFacturaSuplidorCitrus(f) {
 }
 // Campos que Citrus MANDA en una factura ya enlazada (se re-sincronizan). concepto/categoria/centroCosto/notas/
 // comprobantes/metodo quedan en manos del panel una vez creado el movimiento.
-const CAMPOS_CITRUS_FACTURA = ['fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'rnc', 'ncf', 'moneda', 'tasa', 'montoMoneda', 'retencionISR', 'retencionITBIS', 'citrusTipoGasto', 'citrusSuplidorId', 'citrusEstatus'];
+// C3 (revisión 2026-10-09): lo ANULADO en Citrus deja de sumar en todos los reportes del Panel. En vez de tocar cada pantalla que suma
+// `monto`, el registro anulado queda con `anulado:true`, `montoOriginal` (lo que valía) y monto/itbis/montoPagado en 0; el concepto
+// conserva la marca «⚠ ANULADA en Citrus». Se aplica al mapear, así la escritura genérica lo mantiene en cada sincronización.
+function anularSiCancelada(m) {
+    if (/^cancelad/i.test(String(m.citrusEstatus || ''))) {
+        m.anulado = true; if (m.montoOriginal == null) m.montoOriginal = Number(m.monto) || 0;
+        m.monto = 0; m.itbis = 0; if ('montoPagado' in m) m.montoPagado = 0;
+    } else { m.anulado = false; }
+    return m;
+}
+const CAMPOS_CITRUS_FACTURA = ['anulado', 'montoOriginal', 'fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'rnc', 'ncf', 'moneda', 'tasa', 'montoMoneda', 'retencionISR', 'retencionITBIS', 'citrusTipoGasto', 'citrusSuplidorId', 'citrusEstatus'];
 const CAMPOS_RELLENAR_GASTO = ['itbis', 'tercero', 'rnc', 'ncf', 'fechaPago', 'montoPagado'];
 // Firestore devuelve los mapas con las claves en orden alfabético: comparar con JSON.stringify directo daba
 // "distinto" en cada sync para todo documento con `lineas`/`citrusCobro` (actualizaciones fantasma, 2026-09-18).
@@ -1395,7 +1405,7 @@ function planFacturasSuplidor(registros, existentes, ahora, plan, escrituras, co
                 cambios.citrusId = Number(f.Id); cambios.citrusEstatus = m.citrusEstatus; cambios.citrusTipoGasto = m.citrusTipoGasto; cambios.citrusSuplidorId = m.citrusSuplidorId;
                 CAMPOS_RELLENAR_GASTO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
             } else {
-                CAMPOS_CITRUS_FACTURA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                anularSiCancelada(m); CAMPOS_CITRUS_FACTURA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
                 if (m.citrusEstatus === 'Cancelada' && x.citrusEstatus !== 'Cancelada') cambios.concepto = '⚠ ANULADA en Citrus · ' + String(x.concepto || '');
             }
             if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
@@ -1468,7 +1478,7 @@ function mapFacturaClienteCitrus(f, clientePanel) {
         lineas
     };
 }
-const CAMPOS_CITRUS_VENTA = ['fecha', 'monto', 'itbis', 'descuento', 'montoPagado', 'tercero', 'rnc', 'ncf', 'citrusNumero', 'citrusProforma', 'citrusTipoVenta', 'citrusTiendaId', 'citrusVendedorId', 'citrusClienteId', 'citrusEstatus', 'citrusEcf', 'lineas', 'citrusCobro'];
+const CAMPOS_CITRUS_VENTA = ['anulado', 'montoOriginal', 'fecha', 'monto', 'itbis', 'descuento', 'montoPagado', 'tercero', 'rnc', 'ncf', 'citrusNumero', 'citrusProforma', 'citrusTipoVenta', 'citrusTiendaId', 'citrusVendedorId', 'citrusClienteId', 'citrusEstatus', 'citrusEcf', 'lineas', 'citrusCobro'];
 const metodoCobro = (m) => m.citrusEstatus !== 'Cobrada' ? 'Pendiente de cobro'
     : 'Cobrado (según Citrus)' + (m.citrusCobro && m.citrusCobro.tipoPago ? ' · ' + m.citrusCobro.tipoPago : '') + (m.citrusCobro && m.citrusCobro.como === 'estimada' ? ' · fecha estimada' : '');
 const CAMPOS_RELLENAR_INGRESO = ['itbis', 'tercero', 'rnc', 'ncf', 'montoPagado'];
@@ -1545,7 +1555,7 @@ async function planFacturasCliente(registros, existentes, ahora, plan, escritura
                 if (!limpio(x.clienteId) && m.clienteId) cambios.clienteId = m.clienteId;
                 CAMPOS_RELLENAR_INGRESO.forEach(k => { if (!limpio(x[k]) || Number(x[k]) === 0) { if (m[k] !== '' && m[k] != null && m[k] !== 0) cambios[k] = m[k]; } });
             } else {
-                CAMPOS_CITRUS_VENTA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
+                anularSiCancelada(m); CAMPOS_CITRUS_VENTA.forEach(k => { if (!igualJSON(x[k], m[k])) cambios[k] = m[k]; });
                 // Cobro confirmado a mano en el Panel (usuario 2026-09-18: 12 facturas "Facturada" en Citrus que en
                 // realidad ya se cobraron): Citrus no vuelve a ponerlas en pendiente hasta que su estatus pase a Cobrada.
                 if (x.cobradoManual && m.citrusEstatus !== 'Cobrada') { delete cambios.montoPagado; delete cambios.fechaPago; delete cambios.metodo; }
@@ -1599,7 +1609,9 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
         existentes.forEach(d => {
             const x = d.data();
             if (x.citrusId != null) porCitrusId.set(Number(x.citrusId), d);
-            if (x.nombre) porNombre.set(normNombre(x.nombre), d);
+            // C2 (revisión 2026-10-09): el cruce por nombre mira también el nombre de facturación y los alias (caso Pink Networking /
+            // Yomayra Rosado: antes solo `nombre`, y se creaba una segunda ficha).
+            [x.nombre, x.nombreFacturacion, ...(Array.isArray(x.alias) ? x.alias : [])].map(normNombre).filter(Boolean).forEach((n) => { if (!porNombre.has(n)) porNombre.set(n, d); });
             if (x.documento) porDocumento.set(String(x.documento).replace(/\D/g, ''), d);
         });
         const idsPlaneados = new Set();
@@ -1607,7 +1619,10 @@ async function importarDeCitrus({ entidad, aplicar, desde, incluirProformas, ctx
             const m = mapClienteCitrus(c);
             if (!m.nombre) continue;
             const docNum = m.documento.replace(/\D/g, '');
-            const ex = porCitrusId.get(Number(c.Id)) || (docNum && porDocumento.get(docNum)) || porNombre.get(normNombre(m.nombre));
+            // C2: una ficha ya enlazada a OTRO cliente de Citrus nunca cambia de dueño por documento o nombre (antes el citrusId
+            // alternaba en cada sincronización entre dos clientes parecidos).
+            const libre = (d) => d && (d.data().citrusId == null || Number(d.data().citrusId) === Number(c.Id)) ? d : null;
+            const ex = porCitrusId.get(Number(c.Id)) || (docNum && libre(porDocumento.get(docNum))) || libre(porNombre.get(normNombre(m.nombre)));
             if (ex) {
                 const x = ex.data();
                 const cambios = {};
@@ -1769,7 +1784,7 @@ function mapAsientoCitrus(x) {
         citrusEstatus: limpio(x.Estatus)
     };
 }
-const CAMPOS_CITRUS_ASIENTO = ['fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'ncf', 'conceptoCitrus', 'cuentaContable', 'cuentaContableNombre', 'lineas', 'metodoCitrus', 'cuentaBancoNombre', 'citrusFuente', 'citrusReferencia', 'citrusUsuario', 'citrusEstatus'];
+const CAMPOS_CITRUS_ASIENTO = ['anulado', 'montoOriginal', 'fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'ncf', 'conceptoCitrus', 'cuentaContable', 'cuentaContableNombre', 'lineas', 'metodoCitrus', 'cuentaBancoNombre', 'citrusFuente', 'citrusReferencia', 'citrusUsuario', 'citrusEstatus'];
 
 function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, desde) {
     const porCitrusId = new Map(), porFechaMonto = new Map();
@@ -1795,7 +1810,7 @@ function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, d
                 cambios.citrusId = Number(x.Id); cambios.citrusFuente = m.citrusFuente; cambios.citrusEstatus = m.citrusEstatus; cambios.cuentaContable = m.cuentaContable; cambios.cuentaContableNombre = m.cuentaContableNombre;
                 ['itbis', 'tercero', 'ncf'].forEach(k => { if ((!limpio(d[k]) || Number(d[k]) === 0) && m[k] !== '' && m[k] !== 0) cambios[k] = m[k]; });
             } else {
-                CAMPOS_CITRUS_ASIENTO.forEach(k => { if (!igualJSON(d[k], m[k])) cambios[k] = m[k]; });
+                anularSiCancelada(m); CAMPOS_CITRUS_ASIENTO.forEach(k => { if (!igualJSON(d[k], m[k])) cambios[k] = m[k]; });
                 if (m.citrusEstatus === 'Cancelado' && d.citrusEstatus !== 'Cancelado') cambios.concepto = '⚠ ANULADO en Citrus · ' + String(d.concepto || '');
             }
             if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${m.fecha} · ${m.tercero || m.conceptoCitrus} · RD$ ${m.monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
@@ -1872,7 +1887,7 @@ function planBanco(registros, existentes, ahora, plan, escrituras, coleccion, de
                 const y = ex.data(); const cambios = {};
                 if (!y.citrusKey) { cambios.citrusKey = key; cambios.citrusId = m.citrusId; cambios.citrusFuente = m.citrusFuente; cambios.contraCuenta = m.contraCuenta; cambios.conciliado = true; }
                 else {
-                    ['fecha', 'monto', 'tipo', 'descripcion', 'referencia', 'contraCuenta', 'citrusEstatus'].forEach(k => { if (!igualJSON(y[k], m[k])) cambios[k] = m[k]; });
+                    anularSiCancelada(m); ['anulado', 'montoOriginal', 'fecha', 'monto', 'tipo', 'descripcion', 'referencia', 'contraCuenta', 'citrusEstatus'].forEach(k => { if (!igualJSON(y[k], m[k])) cambios[k] = m[k]; });
                     if (m.citrusEstatus === 'Cancelado' && y.citrusEstatus !== 'Cancelado') cambios.descripcion = '⚠ ANULADO en Citrus · ' + String(y.descripcion || '');
                 }
                 if (Object.keys(cambios).length) { plan.actualizar.push({ id: ex.id, nombre: `${fecha} · ${m.descripcion.slice(0, 40)} · ${monto}`, campos: Object.keys(cambios) }); escrituras.push([ex.ref, { ...cambios, citrusSync: ahora }, true]); }
