@@ -1449,14 +1449,16 @@
         const recordatorios = Array.from(document.querySelectorAll('#job-recordar input:checked')).map(c => Number(c.value));
         const tieneInicio = !!fecha;
         if (!document.getElementById('job-tipo').value && !window._orderIdParaGuardar && !editingId) { alert('Elige el tipo de trabajo.'); return; }
+        const tipoJob = document.getElementById('job-tipo').value || (window._orderIdParaGuardar ? 'instalacion' : '');
         const datos = {
             cliente, obra: document.getElementById('job-obra').value.trim(), direccion: document.getElementById('job-direccion').value.trim(), gps,
             modoFecha, fecha, fechaFin, asignados,
             instaladorEmail: asigEmails[0] || '', instaladorNombre: (asignados[0] && asignados[0].nombre) || '',
-            tipoTrabajo: document.getElementById('job-tipo').value || (window._orderIdParaGuardar ? 'instalacion' : ''),
+            tipoTrabajo: tipoJob,
             estado: document.getElementById('job-estado').value, notas: document.getElementById('job-notas').value.trim(), recordatorios,
             recordatoriosEnviados: [], recordatoriosPendientes: tieneInicio && recordatorios.length > 0,
-            orderId: window._orderIdParaGuardar || (editingId ? ((allJobs.find(x => x.id === editingId) || {}).orderId || null) : null) || (pedidoAbiertoDeObra(cliente, document.getElementById('job-obra').value.trim()) || {}).id || null
+            // A1: solo una INSTALACIÓN se engancha sola al pedido abierto de la obra; medición/reparación/etc. no tocan pedidos.
+            orderId: window._orderIdParaGuardar || (editingId ? ((allJobs.find(x => x.id === editingId) || {}).orderId || null) : null) || (tipoJob === 'instalacion' ? (pedidoAbiertoDeObra(cliente, document.getElementById('job-obra').value.trim()) || {}).id || null : null)
         };
         try {
             if (editingId) await updateDoc(doc(db, 'instalaciones', editingId), datos);
@@ -1495,11 +1497,14 @@
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
             // El pedido ligado sigue al trabajo: completado → instalado (como la biometría); reabierto → vuelve a "listo".
             // Si el trabajo no trae orderId, se busca el pedido abierto de la misma obra y se enlaza de paso.
-            let oids = ordenesDeJob(j);
-            if (!oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
+            // A1 (revisión 2026-10-09): SOLO un trabajo de tipo instalación mueve pedidos. Medición, reparación, servicio post,
+            // reemplazo o preparación de obra terminan sin tocar el pedido de la obra (el trigger pedidoSigueTrabajo aplica lo mismo).
+            const esInstalacion = tipoDeJob(j) === 'instalacion';
+            let oids = esInstalacion ? ordenesDeJob(j) : [];
+            if (esInstalacion && !oids.length) { const p = pedidoAbiertoDeObra(j.cliente, j.obra); if (p) { oids = [p.id]; try { await updateDoc(doc(db, 'instalaciones', id), { orderId: p.id, orderIds: [p.id] }); } catch (_) { } } }
             // Mismas salvaguardas que el trigger pedidoSigueTrabajo (usuario 2026-10-01): obra por partes (queda otro trabajo
             // abierto de la misma obra) → el pedido no se cierra; pedido de ALUCUFEL que fábrica no marcó listo → tampoco.
-            const otroAbierto = estado === 'completado' && allJobs.some(x => x.id !== id && (x.estado || 'pendiente') !== 'completado' && mismaObra(j.cliente, j.obra, x.cliente, x.obra));
+            const otroAbierto = estado === 'completado' && allJobs.some(x => x.id !== id && (x.estado || 'pendiente') !== 'completado' && tipoDeJob(x) === 'instalacion' && mismaObra(j.cliente, j.obra, x.cliente, x.obra));   // A1: una medición abierta no frena el cierre
             for (const oid of oids) {
                 const od = ((ordersCache.find(x => x.id === oid) || {}).data) || {};
                 if (estado === 'completado' && otroAbierto) { console.log('pedido', oid, 'no se cierra: obra por partes, queda otro trabajo abierto'); continue; }

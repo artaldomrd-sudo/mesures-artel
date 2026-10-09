@@ -209,7 +209,7 @@ exports.instalacionAlListo = onDocumentWritten('orders/{id}', async (event) => {
     try {
         const todos = (await db.collection('instalaciones').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
         if (todos.some((j) => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)))) return;   // ya tiene trabajo
-        const abierto = todos.find((j) => j.estado !== 'completado' && mismaObra(after.cliente, after.obra, j.cliente, j.obra));
+        const abierto = todos.find((j) => j.estado !== 'completado' && esTrabajoInstalacion(j) && mismaObra(after.cliente, after.obra, j.cliente, j.obra));   // A1: nunca engancharse a una medición/reparación
         if (abierto) {
             await db.doc('instalaciones/' + abierto.id).update({ orderIds: FieldValue.arrayUnion(...[...new Set([abierto.orderId, ...(abierto.orderIds || []), id].filter(Boolean))]), orderId: abierto.orderId || id });
             console.log('instalacionAlListo: pedido', id, 'enganchado al trabajo abierto', abierto.id);
@@ -270,6 +270,15 @@ exports.instalacionActividad = onDocumentWritten('instalaciones/{id}', async (ev
 //  · Trabajo EN PROCESO → solo un pedido de FÁBRICA INTERNA que siga en Pendiente/En fábrica pasa a Listo para cargar
 //    (Wilson puede buscar material listo sin que la oficina lo haya marcado). Los de ALUCUFEL no se tocan.
 // Los pedidos se buscan por enlace directo (orderId/orderIds) y por la regla mismaObra; el trabajo queda enlazado de paso.
+// A1 (revisión 2026-10-09): SOLO un trabajo de tipo «instalación» mueve pedidos de fábrica. Una toma de medidas, una
+// reparación, un servicio post-instalación o una preparación de obra nunca cierran ni empujan un pedido, aunque sean de la
+// misma obra. Misma regla que `tipoDeJob` en ops/instalacion.html: sin `tipoTrabajo` (trabajos anteriores al 08/10) cuenta
+// como instalación solo si ya tiene un pedido enlazado.
+function esTrabajoInstalacion(j) {
+    if (!j) return false;
+    if (j.tipoTrabajo) return j.tipoTrabajo === 'instalacion';
+    return !!(j.orderId || (Array.isArray(j.orderIds) && j.orderIds.length));
+}
 const ABIERTOS_FAB = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar'];
 const esPedidoFabricacion = (o) => o && o.docType !== 'COMPRA_DIRECTA' && String(o.docType || '').indexOf('COT') !== 0 && o.sinInstalacion !== true;
 async function pedidosDelTrabajo(jobId, j) {
@@ -288,11 +297,12 @@ exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (even
     const estado = after.estado || 'pendiente';
     if (estado === (before.estado || 'pendiente')) return;
     if (estado !== 'completado' && estado !== 'en_proceso') return;
+    if (!esTrabajoInstalacion(after)) { console.log('pedidoSigueTrabajo:', id, 'es', after.tipoTrabajo || 'sin tipo y sin pedido', '→ no toca pedidos'); return; }
     try {
         const pedidos = await pedidosDelTrabajo(id, after);
         if (!pedidos.length) return;
         if (estado === 'completado') {
-            const otros = (await db.collection('instalaciones').get()).docs.filter((d) => d.id !== id && (d.data().estado || 'pendiente') !== 'completado' && mismaObra(after.cliente, after.obra, d.data().cliente, d.data().obra));
+            const otros = (await db.collection('instalaciones').get()).docs.filter((d) => d.id !== id && (d.data().estado || 'pendiente') !== 'completado' && esTrabajoInstalacion(d.data()) && mismaObra(after.cliente, after.obra, d.data().cliente, d.data().obra));   // A1: una medición abierta no frena el cierre
             if (otros.length) { console.log('pedidoSigueTrabajo: obra por partes, queda abierto', otros.map((d) => d.id).join(','), '→ no se cierra el pedido'); return; }
             for (const o of pedidos) {
                 if (o.instalado === true && o.status === 'completado') continue;
