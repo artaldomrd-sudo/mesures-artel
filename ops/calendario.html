@@ -271,7 +271,7 @@
     import { enableNotifications } from './notifications.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import {
-        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, Timestamp, serverTimestamp
+        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, Timestamp, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // Solo admin: el calendario lo agenda únicamente el gerente/oficina.
@@ -823,6 +823,23 @@
             const o = ordersCache.find(x => x.id === orderId); const od = (o && o.data) || {};
             const inst = instaladoresCache.find(x => x.email === (asignados[0] || {}).email) || {};
             try {
+                // A7: si el pedido ya tiene un trabajo abierto (el automático «sin fecha» de fábrica, o uno creado en Instalación),
+                // se le pone fecha y equipo a ESE trabajo en vez de crear un segundo.
+                const abiertos = (await getDocs(query(collection(db, 'instalaciones'), where('orderIds', 'array-contains', orderId)))).docs
+                    .concat((await getDocs(query(collection(db, 'instalaciones'), where('orderId', '==', orderId)))).docs)
+                    .filter((d, i, arr) => arr.findIndex(x => x.id === d.id) === i && (d.data().estado || 'pendiente') !== 'completado');
+                if (abiertos.length) {
+                    const j = abiertos[0];
+                    await updateDoc(doc(db, 'instalaciones', j.id), {
+                        modoFecha: 'unica', fecha: Timestamp.fromDate(new Date(fechaStr)), fechaFin: null,
+                        asignados, instaladorEmail: (asignados[0] || {}).email || '', instaladorNombre: (asignados[0] || {}).nombre || inst.nombre || '',
+                        recordatorios, recordatoriosEnviados: [], recordatoriosPendientes: recordatorios.length > 0,
+                        ...(titulo || descripcion ? { notas: [j.data().notas, [titulo, descripcion].filter(Boolean).join(' — ')].filter(Boolean).join('\n') } : {})
+                    });
+                    alert('Este pedido ya tenía un trabajo de instalación' + (j.data().fecha ? '' : ' sin fecha') + ': se le puso la fecha y el equipo elegidos (no se creó otro).');
+                    cerrarNuevaCita(); resetForm();
+                    return;
+                }
                 await addDoc(collection(db, 'instalaciones'), {
                     cliente, obra, direccion: od.direccion || '', gps: od.gps || '',
                     modoFecha: 'unica', fecha: Timestamp.fromDate(new Date(fechaStr)), fechaFin: null,

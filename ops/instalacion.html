@@ -924,7 +924,7 @@
         // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
         // "sin fecha" seguía siendo visible únicamente dentro del calendario colapsado ("Por programar")
         // y desaparecía de "Por agendar" y de la agenda — caso real Gregory — Riviera Coson 4 (2026-09-17).
-        agendadosOrderIds = new Set(allJobs.filter(j => (jobDate(j) || j.estado === 'completado' || j.estado === 'en_proceso')).flatMap(j => ordenesDeJob(j)));
+        agendadosOrderIds = new Set(allJobs.flatMap(j => ordenesDeJob(j)));   // A7: un trabajo «sin fecha» (automático de fábrica) ya es el trabajo del pedido; Agendar le pone fecha, no crea otro
         renderMiDia();
         renderCalendario();
         renderPorInstalar();
@@ -1399,6 +1399,9 @@
     };
     window.agendarPedido = function (orderId) {
         const o = ordersCache.find(x => x.id === orderId); if (!o) return;
+        // A7: si el pedido ya tiene un trabajo abierto (p. ej. el automático «sin fecha»), se le pone fecha a ESE, no se crea otro.
+        const abierto = jobsDeOrden(orderId).find(j => (j.estado || 'pendiente') !== 'completado');
+        if (abierto) { abrirEditar(abierto.id); document.getElementById('modal-title').textContent = 'Poner fecha al trabajo de este pedido'; return; }
         limpiarForm(); editingId = null; window._orderIdParaGuardar = orderId;
         poblarVincular(orderId);
         document.getElementById('modal-title').textContent = 'Agendar instalación (desde pedido)';
@@ -1465,6 +1468,11 @@
         };
         // A5: un trabajo que no es instalación no lleva orderId (el pedido no lo sigue); el pedido elegido queda como referencia.
         if (tipoJob && tipoJob !== 'instalacion' && datos.orderId) { datos.pedidoReferenciaId = datos.orderId; datos.orderId = null; datos.orderIds = []; }
+        // A7: nunca dos trabajos abiertos para el mismo pedido.
+        if (!editingId && datos.orderId) {
+            const dup = jobsDeOrden(datos.orderId).find(j => (j.estado || 'pendiente') !== 'completado');
+            if (dup) { alert('Este pedido ya tiene un trabajo abierto' + (jobDate(dup) ? ' (' + jobDate(dup).toLocaleDateString('es-DO') + ')' : ' (sin fecha)') + '. Se abre ese trabajo para editarlo en vez de crear otro.'); abrirEditar(dup.id); return; }
+        }
         try {
             if (editingId) await updateDoc(doc(db, 'instalaciones', editingId), datos);
             else await addDoc(collection(db, 'instalaciones'), { ...datos, origen: datos.orderId ? 'pedido' : 'manual', creadoPorNombre: usuario.nombre, fechaCreacion: serverTimestamp() });
