@@ -194,26 +194,23 @@
             <button onclick="const f=document.getElementById('antic-form-${id}');f.style.display=f.style.display==='flex'?'none':'flex';" style="margin-top:6px;background:#fff;color:#8a6d00;border:1.5px solid #f6d365;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">✓ Marcar anticipo recibido</button>
         </div>`;
     }
+    // B2: el anticipo de un pedido se toca SOLO por el servidor (anticipoPedido): aplicar/quitar recalculan desde anticipos[].
+    async function anticipoPedidoFn(body) {
+        const token = await auth.currentUser.getIdToken();
+        const r = await fetch('https://us-central1-artal-operaciones.cloudfunctions.net/anticipoPedido', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status)); return j;
+    }
     window.anticipoGuardar = async function (id) {
         const monto = parseFloat((document.getElementById('antic-monto-' + id) || {}).value) || 0;
         const fecha = (document.getElementById('antic-fecha-' + id) || {}).value || new Date().toISOString().slice(0, 10);
         if (!monto && !confirm('No pusiste el monto. ¿Marcar el anticipo como recibido igual?')) return;
-        const anticipo = { recibido: true, monto, moneda: (document.getElementById('antic-moneda-' + id) || {}).value || 'RD$', fecha, nota: ((document.getElementById('antic-nota-' + id) || {}).value || '').trim(), validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: new Date().toISOString() };
-        try {
-            await updateDoc(doc(db, 'orders', id), { anticipo });
-            // Si ya existe el pedido de fábrica de esta cotización, también se le copia.
-            for (const x of fabCache) { if (x.data && x.data.cotizacionOrigenId === id) { try { await updateDoc(doc(db, 'orders', x.id), { anticipo }); } catch (_) { } } }   // B1: copia al pedido de fábrica abierto
-        } catch (e) { alert('No se pudo guardar: ' + e.message); }
+        try { await anticipoPedidoFn({ accion: 'marcar', orderId: id, monto, fecha, nota: ((document.getElementById('antic-nota-' + id) || {}).value || '').trim() }); }   // el servidor lo espeja en el pedido de fábrica
+        catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.anticipoQuitar = async function (id) {
-        if (!confirm('¿Quitar la marca de anticipo recibido?')) return;
-        const quitado = { recibido: false, quitadoPor: usuario.nombre, quitadoFecha: new Date().toISOString() };
-        try {
-            await updateDoc(doc(db, 'orders', id), { anticipo: quitado });
-            for (const x of fabCache) { if (x.data && x.data.cotizacionOrigenId === id) { try { await updateDoc(doc(db, 'orders', x.id), { anticipo: quitado }); } catch (_) { } } }   // B1: también en el pedido de fábrica
-        } catch (e) { alert('No se pudo: ' + e.message); }
+        if (!confirm('¿Quitar la marca de anticipo recibido? Si venía de Citrus, volverá a aparecer en el Panel para reasignarlo.')) return;
+        try { await anticipoPedidoFn({ accion: 'quitar', orderId: id }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
-
     let ordersCache = [];
     function render() {
         // "Por costear/enviar": las ya costeadas por ALUCUFEL, MÁS las de destino "Oficina

@@ -2202,6 +2202,105 @@ function pedidoAproximaFicha(o, nombresFicha) {
     const tp = tokensNombre(String(o.cliente || '') + ' ' + String(o.obra || ''));
     return tf.some((a) => tp.some((b) => a === b || a.startsWith(b) || b.startsWith(a)));
 }
+// ---- B2 (revisión 2026-10-09): UNA sola forma de tocar el anticipo de un pedido ----
+// `anticipos[]` es la lista de entradas (de Citrus: {citrusAnticipoId, monto, fecha, nota, regla}; a mano: {manualId, manual:true,
+// monto, fecha, nota, por}) y `anticipo` (lo que leen las pantallas y el Coordinador) SIEMPRE se recalcula desde esa lista:
+// total recibido, fecha del último, nota con el desglose. Aplicar y quitar pasan por aquí (transacción sobre el pedido, nunca sobre
+// una copia en memoria), y una cotización espeja su anticipo en los pedidos de fábrica abiertos que salieron de ella.
+function anticipoDesdeLista(lista, extra) {
+    const l = (Array.isArray(lista) ? lista : []).filter(Boolean).slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    if (!l.length) return { recibido: false, ...(extra || {}) };
+    const total = r2(l.reduce((t, a) => t + (Number(a.monto) || 0), 0));
+    const ult = l[l.length - 1];
+    const ids = l.map((a) => a.citrusAnticipoId).filter(Boolean);
+    return {
+        recibido: true, monto: total, moneda: 'RD$', fecha: ult.fecha || '', partes: l.length,
+        nota: l.map((a) => `${a.fecha || '¿fecha?'}: RD$ ${Number(a.monto || 0).toLocaleString('es-DO')} — ${a.nota || (a.manual ? 'marcado a mano' : '')}`).join(' · '),
+        origen: ids.length === l.length ? 'citrus' : (ids.length ? 'mixto' : 'manual'),
+        citrusAnticipoId: ult.citrusAnticipoId || null, citrusAnticipoIds: ids, regla: ult.regla || (ult.manual ? 'manual' : ''),
+        validadoPor: ult.por || 'Citrus (sincronización)', validadoFecha: new Date().toISOString()
+    };
+}
+const ABIERTOS_ANTICIPO = ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'];
+async function espejarAnticipoEnFab(orderId, o, anticipo, lista) {
+    if (String(o.docType || '').indexOf('COT') !== 0) return;
+    const fabs = await db.collection('orders').where('cotizacionOrigenId', '==', orderId).get();
+    for (const f of fabs.docs) { if (ABIERTOS_ANTICIPO.includes(f.data().status)) { try { await f.ref.update({ anticipo, anticipos: lista }); } catch (_) { } } }
+}
+// Aplica una entrada al pedido (reemplaza una anterior con el mismo citrusAnticipoId/manualId) y devuelve {anticipo, lista}.
+async function anticipoPedidoAplicar(orderId, entrada, extraCambios) {
+    const ref = db.doc('orders/' + orderId);
+    const r = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref); if (!snap.exists) throw new Error('El pedido ' + orderId + ' no existe');
+        const o = snap.data();
+        const mismo = (a) => (entrada.citrusAnticipoId && a.citrusAnticipoId === entrada.citrusAnticipoId) || (entrada.manualId && a.manualId === entrada.manualId);
+        const lista = (Array.isArray(o.anticipos) ? o.anticipos : []).filter((a) => a && !mismo(a)).concat([entrada]).sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+        const anticipo = anticipoDesdeLista(lista);
+        tx.update(ref, { anticipo, anticipos: lista, ...(extraCambios || {}) });
+        return { anticipo, lista, o };
+    });
+    await espejarAnticipoEnFab(orderId, r.o, r.anticipo, r.lista);
+    return r;
+}
+// Quita del pedido la entrada indicada (citrusAnticipoId o manualId) o TODAS (sin filtro); devuelve las entradas quitadas.
+async function anticipoPedidoQuitar(orderId, filtro, quien) {
+    const ref = db.doc('orders/' + orderId);
+    const r = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref); if (!snap.exists) throw new Error('El pedido ' + orderId + ' no existe');
+        const o = snap.data();
+        const todas = (Array.isArray(o.anticipos) ? o.anticipos : []).filter(Boolean);
+        const sale = (a) => !filtro || (filtro.citrusAnticipoId && a.citrusAnticipoId === filtro.citrusAnticipoId) || (filtro.manualId && a.manualId === filtro.manualId);
+        const quitadas = todas.filter(sale), lista = todas.filter((a) => !sale(a));
+        const anticipo = anticipoDesdeLista(lista, { quitadoPor: quien || 'sistema', quitadoFecha: new Date().toISOString(), anterior: o.anticipo || null });
+        tx.update(ref, { anticipo, anticipos: lista });
+        return { anticipo, lista, quitadas, o };
+    });
+    await espejarAnticipoEnFab(orderId, r.o, r.anticipo, r.lista);
+    return r;
+}
+// Punto único para las pantallas (solo admin): asignar un anticipo de Citrus pendiente a un pedido, marcar uno a mano, quitar, ignorar.
+exports.anticipoPedido = onRequest({ cors: true, timeoutSeconds: 60 }, async (req, res) => {
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
+    const admin = await callerAdmin(req);
+    if (!admin) { res.status(403).json({ error: 'solo admin' }); return; }
+    const b = req.body || {}; const accion = String(b.accion || '');
+    const quienDoc = await db.doc('usuarios/' + admin).get(); const quien = (quienDoc.exists && quienDoc.data().nombre) || admin;
+    try {
+        if (accion === 'asignar') {   // anticipo de Citrus (anticiposCitrus/{registroId}) → pedido elegido en el Panel
+            const reg = await db.doc('anticiposCitrus/' + String(b.registroId)).get();
+            if (!reg.exists) throw new Error('No existe el registro del anticipo');
+            const a = reg.data(); if (!['pendiente', 'ignorado', 'historico'].includes(a.estado)) throw new Error('Ese anticipo ya está ' + a.estado);
+            const mCot = String(a.descripcion || '').match(/cot[a-z]*\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i);
+            const o = (await db.doc('orders/' + String(b.orderId)).get()); if (!o.exists) throw new Error('El pedido no existe');
+            const od = o.data(); const extra = {}; if (mCot) extra.citrusCotizacionNumero = Number(mCot[1]);
+            if (a.clienteId && !od.clienteId) { extra.clienteId = a.clienteId; extra.clienteFacturacion = a.clienteFacturacion || a.cliente || ''; extra.clienteEnlace = 'anticipo-manual'; }
+            if (a.clienteId && od.cliente) { try { await db.doc('clientes/' + a.clienteId).update({ alias: FieldValue.arrayUnion(od.cliente) }); } catch (_) { } }
+            const r = await anticipoPedidoAplicar(String(b.orderId), { citrusAnticipoId: Number(a.citrusAnticipoId), monto: r2(Number(a.monto) || 0), fecha: a.fecha || '', nota: a.descripcion || '', regla: 'manual', por: quien }, extra);
+            await reg.ref.set({ estado: 'manual', orderId: String(b.orderId), obra: od.obra || '', asignadoPor: quien, asignadoFecha: FieldValue.serverTimestamp() }, { merge: true });
+            res.status(200).json({ ok: true, anticipo: r.anticipo }); return;
+        }
+        if (accion === 'marcar') {   // a mano, sin Citrus (Cotizaciones / Historial)
+            const entrada = { manualId: 'm' + Date.now(), manual: true, monto: r2(Number(b.monto) || 0), fecha: String(b.fecha || new Date().toISOString().slice(0, 10)), nota: String(b.nota || '').trim(), por: quien };
+            const r = await anticipoPedidoAplicar(String(b.orderId), entrada);
+            res.status(200).json({ ok: true, anticipo: r.anticipo }); return;
+        }
+        if (accion === 'quitar') {   // todas las entradas del pedido (o una): las de Citrus vuelven a 'pendiente' para reasignarlas
+            const filtro = b.citrusAnticipoId ? { citrusAnticipoId: Number(b.citrusAnticipoId) } : (b.manualId ? { manualId: String(b.manualId) } : null);
+            const r = await anticipoPedidoQuitar(String(b.orderId), filtro, quien);
+            for (const q of r.quitadas) {
+                if (!q.citrusAnticipoId) continue;
+                await db.doc('anticiposCitrus/a' + q.citrusAnticipoId).set({ estado: 'pendiente', orderId: null, obra: '', motivo: `Quitado a mano por ${quien} de «${r.o.obra || b.orderId}»: elige a qué obra va`, quitadoPor: quien, quitadoFecha: FieldValue.serverTimestamp() }, { merge: true });
+            }
+            res.status(200).json({ ok: true, anticipo: r.anticipo, quitadas: r.quitadas.length }); return;
+        }
+        if (accion === 'ignorar') {
+            await db.doc('anticiposCitrus/' + String(b.registroId)).set({ estado: 'ignorado', ignoradoPor: quien, ignoradoFecha: FieldValue.serverTimestamp() }, { merge: true });
+            res.status(200).json({ ok: true }); return;
+        }
+        res.status(400).json({ error: 'acción desconocida' });
+    } catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
+});
+
 async function aplicarAnticiposCitrus(ctx, quien) {
     // Fuente: la entidad `anticipo` de Citrus (no el asiento del diario, cuya descripción es automática y trae el concepto vacío —
     // visto el 2026-10-08). Cada anticipo trae ClienteId (→ ficha por citrusId, sin depender del nombre), Monto, Fecha, Estatus y
@@ -2234,14 +2333,17 @@ async function aplicarAnticiposCitrus(ctx, quien) {
         const ficha = fichaPorCitrusId.get(Number(x.ClienteId)) || null;
         const base = { citrusAnticipoId: Number(x.Id), citrusClienteId: Number(x.ClienteId) || null, cliente: ficha ? (ficha.nombre || '') : '', clienteFacturacion: ficha ? (ficha.nombreFacturacion || '') : '', clienteId: ficha ? ficha.id : null, monto, fecha, descripcion: desc, estatusCitrus: String(x.Estatus || ''), creado: FieldValue.serverTimestamp(), por: quien };
         if (anulado) {
-            if (prev && prev.estado === 'aplicado' && prev.orderId) {
-                try { const o = await db.doc('orders/' + prev.orderId).get(); const a = o.exists ? o.data().anticipo : null; if (a && a.citrusAnticipoId === Number(x.Id)) await o.ref.update({ anticipo: { recibido: false, anuladoEnCitrus: true, anuladoFecha: FieldValue.serverTimestamp(), anterior: a } }); } catch (_) { }
+            // B2(d): se quita SOLO esa entrada del pedido (aunque no sea la última) y el total se recalcula; vale para aplicado y manual.
+            if (prev && ['aplicado', 'manual'].includes(prev.estado) && prev.orderId) {
+                try { await anticipoPedidoQuitar(prev.orderId, { citrusAnticipoId: Number(x.Id) }, 'Citrus (anulado)'); } catch (e) { console.error('anticipo anulado', id, e.message); }
                 res.anulados++;
             }
             if (!prev || prev.estado !== 'anulado') await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'anulado', anuladoFecha: FieldValue.serverTimestamp() }, { merge: true });
             continue;
         }
-        if (prev && ['aplicado', 'pendiente', 'ignorado', 'manual', 'historico'].includes(prev.estado)) { res.yaProcesados++; continue; }
+        if (prev && ['aplicado', 'ignorado', 'manual', 'historico'].includes(prev.estado)) { res.yaProcesados++; continue; }
+        const reeval = !!(prev && prev.estado === 'pendiente');   // B4: un pendiente se vuelve a evaluar (el pedido puede haber entrado después)
+        if (reeval) { delete base.creado; base.reevaluado = FieldValue.serverTimestamp(); }
         if (fecha && fecha < HISTORICO_ANTES_DE) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'historico', motivo: 'anterior al arranque del enganche automático' }); res.historicos++; continue; }
         if (!ficha) { await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: `El cliente de Citrus (id ${x.ClienteId}) no cruza con ninguna ficha del Panel: importa clientes de Citrus o enlaza la ficha`, candidatos: [] }); res.pendientes++; res.sinFicha++; continue; }
         const nombres = nombresFicha(ficha); const nombresCrudos = [ficha.nombre, ficha.nombreFacturacion, ...(ficha.alias || [])].filter(Boolean);
@@ -2262,8 +2364,14 @@ async function aplicarAnticiposCitrus(ctx, quien) {
         const porObra = cands.filter((o) => obraCoincideTexto(o.obra, desc));
         if (porCot.length === 1) { elegido = porCot[0]; regla = 'cotizacion'; }
         else if (porObra.length === 1) { elegido = porObra[0]; regla = 'obra'; }
-        else if (!aproximado && cands.length === 1) { elegido = cands[0]; regla = 'unico'; }
-        else if (!aproximado && pct && cands.length > 1) {
+        else if (!aproximado && cands.length >= 1) {
+            // B3: «único» solo entre pedidos SIN anticipo y que ya existían cuando se pagó (hasta 7 días después): un anticipo de un
+            // proyecto nuevo que aún no está en el Panel no cae en la obra abierta de ese cliente.
+            const limite = fecha ? new Date(new Date(fecha + 'T00:00:00').getTime() + 7 * 86400000) : null;
+            const sinAnt = cands.filter((o) => !(o.anticipo && o.anticipo.recibido) && (!limite || !(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion) || ((o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion).toDate ? (o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion).toDate() : new Date(0)) <= limite));
+            if (sinAnt.length === 1) { elegido = sinAnt[0]; regla = 'unico'; }
+        }
+        if (!elegido && !aproximado && pct && cands.length > 1) {
             const okMonto = cands.filter((o) => { const t = Number(o.totalCotizacion || o.precioTotal || 0); return t > 0 && Math.abs(t * pct / 100 - monto) <= t * 0.02; });
             if (okMonto.length === 1) { elegido = okMonto[0]; regla = 'monto'; }
         }
@@ -2274,20 +2382,18 @@ async function aplicarAnticiposCitrus(ctx, quien) {
         }
         if (elegido) {
             // Varios anticipos por obra son normales («primera parte 70 %», «segunda parte»): se acumulan en `anticipos[]` y
-            // `anticipo` (lo que leen las pantallas y el Coordinador) lleva el TOTAL recibido y la fecha del último.
-            const previos = (Array.isArray(elegido.anticipos) ? elegido.anticipos : []).filter((a) => a.citrusAnticipoId !== Number(x.Id));
-            const lista = previos.concat([{ citrusAnticipoId: Number(x.Id), monto, fecha, nota: desc, regla }]).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-            const total = r2(lista.reduce((t, a) => t + (Number(a.monto) || 0), 0));
-            const anticipo = { recibido: true, monto: total, moneda: 'RD$', fecha, nota: lista.map((a) => `${a.fecha}: RD$ ${a.monto} — ${a.nota}`).join(' · '), origen: 'citrus', citrusAnticipoId: Number(x.Id), citrusAnticipoIds: lista.map((a) => a.citrusAnticipoId), partes: lista.length, regla, validadoPor: 'Citrus (sincronización)', validadoFecha: new Date().toISOString() };
-            const cambios = { anticipo, anticipos: lista }; if (numCot) cambios.citrusCotizacionNumero = numCot;
+            // `anticipo` (lo que leen las pantallas y el Coordinador) lleva el TOTAL recibido. B2(b): la escritura es una transacción
+            // sobre el pedido real y la copia en memoria se actualiza, así dos anticipos al mismo pedido en la misma corrida se suman.
+            const cambios = {}; if (numCot) cambios.citrusCotizacionNumero = numCot;
             // El pedido queda enganchado a la ficha (y el nombre del pedido como alias si cruzó por aproximación o por nombre distinto).
-            if (!elegido.clienteId) { cambios.clienteId = ficha.id; cambios.clienteFacturacion = ficha.nombreFacturacion || ficha.nombre || ''; cambios.clienteEnlace = aproximado ? 'anticipo-aproximado' : 'anticipo'; }
+            if (!elegido.clienteId) { cambios.clienteId = ficha.id; cambios.clienteFacturacion = ficha.nombreFacturacion || ficha.nombre || ''; cambios.clienteEnlace = aproximado ? 'anticipo-aproximado' : 'anticipo'; elegido.clienteId = ficha.id; }
             if (elegido.cliente && !nombres.includes(normNombre(elegido.cliente))) await db.doc('clientes/' + ficha.id).update({ alias: FieldValue.arrayUnion(elegido.cliente) });
-            await db.doc('orders/' + elegido.id).update(cambios);
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, candidatos, aplicadoFecha: FieldValue.serverTimestamp() });
+            const r = await anticipoPedidoAplicar(elegido.id, { citrusAnticipoId: Number(x.Id), monto, fecha, nota: desc, regla }, cambios);
+            elegido.anticipo = r.anticipo; elegido.anticipos = r.lista;
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, candidatos, aplicadoFecha: FieldValue.serverTimestamp() }, { merge: true });
             res.aplicados++;
         } else {
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? (aproximado ? `El nombre del pedido no coincide exactamente con la ficha de Citrus (${cands.length} posible${cands.length > 1 ? 's' : ''}): confirma a cuál va` : `Varias obras abiertas (${cands.length}) y la descripción no permite elegir`) : (candidatos.length ? 'El cliente no tiene pedidos abiertos; puede ser de una obra ya cerrada (abajo) o de un pedido que aún no está en el Panel' : 'El cliente no tiene pedidos abiertos ni cerrados recientes en el Panel (¿aún no se envió el pedido o la cotización?)'), candidatos });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? (aproximado ? `El nombre del pedido no coincide exactamente con la ficha de Citrus (${cands.length} posible${cands.length > 1 ? 's' : ''}): confirma a cuál va` : `Varias obras abiertas (${cands.length}) y la descripción no permite elegir`) : (candidatos.length ? 'El cliente no tiene pedidos abiertos; puede ser de una obra ya cerrada (abajo) o de un pedido que aún no está en el Panel' : 'El cliente no tiene pedidos abiertos ni cerrados recientes en el Panel (¿aún no se envió el pedido o la cotización?)'), candidatos }, { merge: true });
             res.pendientes++;
         }
     }
