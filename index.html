@@ -569,7 +569,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-06 16:21</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-09 18:03</div>
         </div>
     </div>
     
@@ -8377,14 +8377,23 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (two) return `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}"/><path d="M0 0 L${W / 2} ${cy} L0 ${H} M${W} 0 L${W / 2} ${cy} L${W} ${H}"/>`;
             return isD ? `<path d="M${W} 0 L0 ${cy} L${W} ${H}"/>` : `<path d="M0 0 L${W} ${cy} L0 ${H}"/>`;
         }
-        const hs = Math.max(2.4, Math.min(W, H) * 0.045); // tamaño base de herrajes (más visible)
+        const hs = Math.max(2.4, Math.min(W, H) * 0.045); // tamaño base de herrajes (respaldo sin ancho real)
+        // Herrajes A ESCALA REAL (usuario 2026-10-09, "rectifica proporciones": en un panel 400 × 2120 el riel
+        // salía de 74 mm y los colgadores de 100 mm porque se dibujaban como % del ALTO). W siempre es el ancho
+        // real del panel (renderFacade pasa `ancho` en la mini; el CAD también lo tiene) → kmm = unidades por mm.
+        const anchoMm = parseInt(state.ancho) || 0, kmm = anchoMm > 0 ? W / anchoMm : 0;
+        const mm = (v, fallback, min) => kmm ? Math.max(min || 0, v * kmm) : fallback;
+        const knobR = mm(25, hs, 1.6);                    // tirador redondo Ø 50 mm
+        const barLen = (tir, fallback) => kmm ? mm(parseInt(tir) * 25.4, fallback, 4) : fallback;   // tirador de N pulgadas
+        const barW = mm(25, Math.max(2.4, W * 0.06) * 0.56, 1.2);   // grosor de la barra 25 mm
+        const lockR = mm(30, Math.max(hs, W * 0.1), 2.5); // cerraduras: media luna Ø 60 mm
         const knob = (x, y, r) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.5"/><circle cx="${(x - r * 0.3).toFixed(1)}" cy="${(y - r * 0.3).toFixed(1)}" r="${(r * 0.34).toFixed(1)}" fill="#fff" fill-opacity="0.65" stroke="none"/>`;
         const barSizes = { '5': 0.14, '8': 0.22, '12': 0.32, '16': 0.44 };
         // Moldura U perimetral (marco fino) en negro o blanco
         const moldFrame = (color) => {
             const mcol = color === 'blanco' ? '#eef0f2' : '#1a1a1a';
             const mstroke = color === 'blanco' ? '#b7bec4' : '#000000';
-            const tW = Math.max(1.2, Math.min(W, H) * 0.016);
+            const tW = mm(12, Math.max(1.2, Math.min(W, H) * 0.016), 1.0);   // moldura U 12 mm
             const bar = (x, y, w, h) => `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${mcol}" stroke="${mstroke}" stroke-width="0.3"/>`;
             return bar(0, 0, W, tW) + bar(0, H - tW, W, tW) + bar(0, 0, tW, H) + bar(W - tW, 0, tW, H);
         };
@@ -8392,36 +8401,39 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let s = '';
             const hingeLeft = !isD;
             const hx = hingeLeft ? W * 0.05 : W * 0.95;
-            const hw = Math.max(2.4, W * 0.06);
+            const hw = mm(50, Math.max(2.4, W * 0.06), 1.8);   // bisagra / pivote: 50 mm de ancho
             if (state.bisagras === 'bisagra' && t !== 'door_flot') {
-                [0.20, 0.80].forEach(fy => { s += `<rect x="${(hx - hw / 2).toFixed(1)}" y="${(H * fy).toFixed(1)}" width="${hw.toFixed(1)}" height="${(H * 0.06).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
+                const hh = mm(90, H * 0.06, 2.5);   // bisagra pared/vidrio 90 mm de alto
+                [0.20, 0.80].forEach(fy => { s += `<rect x="${(hx - hw / 2).toFixed(1)}" y="${(H * fy).toFixed(1)}" width="${hw.toFixed(1)}" height="${hh.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
             } else {
-                [0.015, 0.94].forEach(fy => { s += `<rect x="${(hx - hw / 2).toFixed(1)}" y="${(H * fy).toFixed(1)}" width="${hw.toFixed(1)}" height="${(H * 0.045).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
+                const ph = mm(60, H * 0.045, 2);    // kit botella (pivote) 60 mm
+                [[0.015, 0], [1, -1]].forEach(([fy, k]) => { s += `<rect x="${(hx - hw / 2).toFixed(1)}" y="${(H * fy + k * ph - (k ? 0.6 : 0)).toFixed(1)}" width="${hw.toFixed(1)}" height="${ph.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
             }
             const lx = hingeLeft ? W * 0.72 : W * 0.28;
-            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barSizes[state.tirador] * H; s += `<rect x="${(lx - hw * 0.28).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${(hw * 0.56).toFixed(1)}" height="${bh.toFixed(1)}" rx="${(hw * 0.28).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
-            else if (state.tirador === 'redondo') s += knob(lx, cy, hs);
+            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barLen(state.tirador, barSizes[state.tirador] * H); s += `<rect x="${(lx - barW / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(barW / 2).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
+            else if (state.tirador === 'redondo') s += knob(lx, cy, knobR);
             const eX = hingeLeft ? W * 0.96 : W * 0.04, dr = hingeLeft ? -1 : 1;
-            s += cerraduraMarks(eX, dr, cy, H * 0.99, Math.max(hs, W * 0.1), herrajeCol, state.cerr_luna || state.cerradura_tipo === 'central', state.cerr_digital || state.cerradura_tipo === 'digital', state.cerr_piso || state.cerradura_piso === 'si');
+            s += cerraduraMarks(eX, dr, cy, H * 0.99, lockR, herrajeCol, state.cerr_luna || state.cerradura_tipo === 'central', state.cerr_digital || state.cerradura_tipo === 'digital', state.cerr_piso || state.cerradura_piso === 'si');
             if (state.moldura && state.moldura !== 'no') s += moldFrame(state.moldura);
             return s;
         }
         if (t === 'door_slide') {
             const openLeft = !isD;
             let s = '';
-            const railH = Math.max(3, H * 0.035);
+            const railH = mm(40, Math.max(3, H * 0.035), 1.5);   // riel de prensas 40 mm (misma regla que renderFacade)
             // riel: recorre todo el ancho y llega al borde por el lado de deslizamiento (donde va la
             // puerta), con tope en el lado de cierre para marcar la dirección.
             s += `<rect x="0" y="0" width="${W}" height="${railH.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`;
             const capX = openLeft ? W - 1.6 : 0;
             s += `<rect x="${capX.toFixed(1)}" y="-0.6" width="1.6" height="${(railH + 1.2).toFixed(1)}" fill="${herrajeCol}" stroke="none"/>`;
-            // colgadores
-            [0.28, 0.72].forEach(fx => { s += `<rect x="${(W * fx - hs).toFixed(1)}" y="${railH.toFixed(1)}" width="${(hs * 2).toFixed(1)}" height="${(railH * 1.4).toFixed(1)}" rx="0.8" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
+            // colgadores (prensas) 50 × 60 mm
+            const cgW = mm(50, hs * 2, 2), cgH = mm(60, railH * 1.4, 2);
+            [0.28, 0.72].forEach(fx => { s += `<rect x="${(W * fx - cgW / 2).toFixed(1)}" y="${railH.toFixed(1)}" width="${cgW.toFixed(1)}" height="${cgH.toFixed(1)}" rx="0.8" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; });
             const lx = openLeft ? W * 0.68 : W * 0.32;
-            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barSizes[state.tirador] * H, bw = Math.max(2.4, W * 0.06); s += `<rect x="${(lx - bw * 0.28).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${(bw * 0.56).toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bw * 0.28).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
-            else s += knob(lx, cy, hs);
+            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barLen(state.tirador, barSizes[state.tirador] * H); s += `<rect x="${(lx - barW / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(barW / 2).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
+            else s += knob(lx, cy, knobR);
             const eX2 = openLeft ? W * 0.96 : W * 0.04, dr2 = openLeft ? -1 : 1;
-            s += cerraduraMarks(eX2, dr2, cy, H * 0.99, Math.max(hs, W * 0.1), herrajeCol, state.cerr_luna, state.cerr_digital, state.cerr_piso);
+            s += cerraduraMarks(eX2, dr2, cy, H * 0.99, lockR, herrajeCol, state.cerr_luna, state.cerr_digital, state.cerr_piso);
             s += arw(W / 2, cy + H * 0.1, openLeft ? 'L' : 'R', Math.min(W * 0.34, H * 0.18));
             if (state.moldura && state.moldura !== 'no') s += moldFrame(state.moldura);
             return s;
@@ -8433,18 +8445,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // no una posición esquemática arbitraria), en vez del riel continuo de "Prensas".
             const openLeft = !isD;
             let s = '';
-            const connR = Math.max(1.1, hs * 0.55);
+            const connR = mm(8, Math.max(1.1, hs * 0.55), 1.0);   // hoyo de conector Ø 16 mm
             const conn = (x, y) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${connR.toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(connR * 0.4).toFixed(1)}" fill="#fff" fill-opacity="0.7" stroke="none"/>`;
-            const rowY1 = H * 0.05, rowY2 = H * 0.085;
+            const rowY1 = mm(90, H * 0.05, 3), rowY2 = mm(150, H * 0.085, 5);   // 90 y 150 mm reales desde el borde
             [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY1); });
             [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY2); });
             s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY1 - 1.6).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">90</text>`;
             s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY2 + connR + 3.2).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">150</text>`;
             const lx = openLeft ? W * 0.68 : W * 0.32;
-            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barSizes[state.tirador] * H, bw = Math.max(2.4, W * 0.06); s += `<rect x="${(lx - bw * 0.28).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${(bw * 0.56).toFixed(1)}" height="${bh.toFixed(1)}" rx="${(bw * 0.28).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
-            else s += knob(lx, cy, hs);
+            if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barLen(state.tirador, barSizes[state.tirador] * H); s += `<rect x="${(lx - barW / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(barW / 2).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
+            else s += knob(lx, cy, knobR);
             const eX3 = openLeft ? W * 0.96 : W * 0.04, dr3 = openLeft ? -1 : 1;
-            s += cerraduraMarks(eX3, dr3, cy, H * 0.99, Math.max(hs, W * 0.1), herrajeCol, state.cerr_luna, state.cerr_digital, state.cerr_piso);
+            s += cerraduraMarks(eX3, dr3, cy, H * 0.99, lockR, herrajeCol, state.cerr_luna, state.cerr_digital, state.cerr_piso);
             s += arw(W / 2, cy + H * 0.1, openLeft ? 'L' : 'R', Math.min(W * 0.34, H * 0.18));
             if (state.moldura && state.moldura !== 'no') s += moldFrame(state.moldura);
             return s;
@@ -8455,8 +8467,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // conectores (fijaciones a pared): 2 en el lado de fijación (según orientación,
             // siempre) y, abajo: 1 conector hasta 900mm de ancho, 2 desde 1000mm (regla
             // confirmada por el usuario). orientación D = pared a la derecha.
-            const conn = (x, y) => `<rect x="${(x - hs).toFixed(1)}" y="${(y - hs).toFixed(1)}" width="${(hs * 2).toFixed(1)}" height="${(hs * 2).toFixed(1)}" rx="0.6" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(hs * 0.42).toFixed(1)}" fill="#cdd9e3" stroke="none"/>`;
-            const mx = hs * 1.6, my = hs * 1.6;
+            const ps = mm(22.5, hs, 1.6);   // prensa cuadrada 45 × 45 mm (media = 22.5)
+            const conn = (x, y) => `<rect x="${(x - ps).toFixed(1)}" y="${(y - ps).toFixed(1)}" width="${(ps * 2).toFixed(1)}" height="${(ps * 2).toFixed(1)}" rx="0.6" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${(ps * 0.42).toFixed(1)}" fill="#cdd9e3" stroke="none"/>`;
+            const mx = ps * 1.6, my = ps * 1.6;
             const wallLeft = !isD;
             const wallX = wallLeft ? mx : (W - mx);
             // sinConectoresLado: el borde de fijación es una esquina vidrio/vidrio → las prensas de esquina
@@ -8790,7 +8803,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (L.p.tipo !== 'deslizante') return;
             const openLeft = (L.p.orientacion || 'I') !== 'D';
             const col = L.p.herraje_color === 'negro' ? '#111111' : '#8d99a4';
-            const railH = Math.max(3, Hd * 0.035);
+            const railH = Math.max(1.5, 40 * scale);   // 40 mm reales (igual que cadTechnical)
             let x1, x2, capX;
             if (openLeft) { x1 = 0; x2 = L.x + L.w; capX = x2 - 1.6; }
             else { x1 = L.x; x2 = DW; capX = x1; }
@@ -8809,7 +8822,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             body += `<line x1="${cornerX.toFixed(2)}" y1="${(headTop - 1).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(headTop + Hd + 3).toFixed(2)}" stroke="#334155" stroke-width="0.8" stroke-dasharray="3 2"/>`;
             // Prensas vidrio/vidrio de la esquina: 2 (arriba y abajo, a 1/4 y 3/4 del alto) a caballo de la esquina,
             // del color de herraje del panel anterior a la esquina — sustituyen los conectores de pared de ese borde.
-            { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4', hs2 = Math.max(1.6, Hd * 0.03);
+            { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4', hs2 = Math.max(1.6, 22.5 * scale);   // prensa 45 × 45 mm
               [0.25, 0.75].forEach(f => { const y = headTop + Hd * f; body += `<rect x="${(cornerX - hs2).toFixed(2)}" y="${(y - hs2).toFixed(2)}" width="${(hs2 * 2).toFixed(2)}" height="${(hs2 * 2).toFixed(2)}" rx="0.5" fill="${col}" stroke="#000" stroke-width="0.4"/><line x1="${cornerX.toFixed(2)}" y1="${(y - hs2).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(y + hs2).toFixed(2)}" stroke="#fff" stroke-width="0.5"/>`; }); }
             body += `<text x="${cornerX.toFixed(2)}" y="${(headTop + Hd + 7).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA 90°</text>`;   // debajo de la elevación (arriba chocaba con las cotas de ancho)
             // Planta con GIRO (usuario 2026-09-18, "como en la fachada"): lado horizontal + lado vertical que sube

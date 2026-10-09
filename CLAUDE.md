@@ -654,7 +654,15 @@ estilo simplificado del CAD.
   `facadeSetTipo`, `facadeInvert` (voltea orden + orientaciones), `facadeInvertPanel`,
   `refreshFacade`.
 - `renderFacade(state,id)`: dibuja los paneles en fila (cada uno con su propio gradiente/uid),
-  reutilizando `cadTechnical` por tipo. El **riel de la deslizante es UNA sola pieza continua**
+  reutilizando `cadTechnical` por tipo. **Herrajes A ESCALA REAL (usuario 2026-10-09, "rectifica
+  proporciones", captura de una deslizante 400 × 2120 con riel de 74 mm y colgadores de 100 mm)**: antes
+  se dibujaban como % del alto/ancho del panel. `cadTechnical` calcula `kmm = W / state.ancho` (unidades
+  por mm; `renderFacade` y el CAD pasan `ancho` en el state) y `mm(v, fallback, min)`: riel de prensas 40
+  mm, colgadores 50 × 60, tirador redondo Ø 50, barra de N pulgadas × 25 mm, bisagra pared/vidrio 90 × 50,
+  kit botella 60 × 50 (el de abajo pegado al borde inferior), prensas de mampara y de esquina 45 × 45,
+  moldura U 12 mm, media luna Ø 60, hoyos de conectores Ø 16 a 90/150 mm reales. Sin `ancho` cae a los %
+  de antes. El riel continuo de `renderFacade` usa la misma regla (`40 * scale`). La tarjeta suelta
+  heredada (`case 'door_slide'` del switch grande) no cambia. El **riel de la deslizante es UNA sola pieza continua**
   que llega hasta el extremo del lado por donde desliza (cubre la mampara vecina).
 - La **mampara** respeta `orientacion` (lado de fijación de los conectores) salvo con
   **Moldura U** (marco perimetral negro/blanco, sin lado de fijación → se oculta el ⇄).
