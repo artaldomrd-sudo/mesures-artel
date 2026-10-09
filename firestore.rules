@@ -18,7 +18,7 @@ service cloud.firestore {
       return u.rol is list ? u.rol : [u.rol];
     }
     function puedeEscribir() {
-      return request.auth != null
+      return miembro()
         && ('admin' in rolesDelUsuario() || !('lector' in rolesDelUsuario()))
         && !(('cuentaPrueba' in get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data) && get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data.cuentaPrueba == true);
     }
@@ -53,11 +53,15 @@ service cloud.firestore {
     // Cuentas ESPEJO de gerencia (usuarios/{email}.cuentaPrueba == true, espejoDe = correo real, 2026-09-30): heredan los
     // roles de la persona real para LEER, pero NO pueden escribir nada (solo su propio doc de usuarios: token push, PIN…).
     // `correoEfectivo()` es el correo de la persona real cuando entra un espejo (para "lo mío": reuniones, valoraciones).
+    // G1 (revisión 2026-10-09): tener sesión de Google NO basta. `miembro()` = la persona tiene su doc en `usuarios` y no está
+    // dada de baja (activo != false). Antes cualquier cuenta de Google autenticada leía pedidos, clientes, agenda y mensajes.
+    function docUsuario() { return get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)); }
+    function miembro() { return request.auth != null && docUsuario() != null && !(('activo' in docUsuario().data) && docUsuario().data.activo == false); }
     function datosUsuario() { return get(/databases/$(database)/documents/usuarios/$(request.auth.token.email)).data; }
     function esEspejo() { return request.auth != null && ('cuentaPrueba' in datosUsuario()) && datosUsuario().cuentaPrueba == true; }
     function correoEfectivo() { return esEspejo() && ('espejoDe' in datosUsuario()) ? datosUsuario().espejoDe : request.auth.token.email; }
     function escribiendo() { return request.method in ['create', 'update', 'delete']; }
-    function alguno(rs) { return request.auth != null && rolesDelUsuario().hasAny(rs) && !(esEspejo() && escribiendo()); }
+    function alguno(rs) { return miembro() && rolesDelUsuario().hasAny(rs) && !(esEspejo() && escribiendo()); }
     function esAdmin()  { return alguno(['admin']); }
     function finanzas() { return alguno(['admin', 'contable']); }
     function rrhh()     { return alguno(['admin', 'contable']); }
@@ -68,7 +72,7 @@ service cloud.firestore {
 
     // --- Lectura general: solo lo operativo y no sensible. Todo lo demás se declara abajo colección por colección.
     match /{coleccion}/{resto=**} {
-      allow read: if request.auth != null && coleccion in [
+      allow read: if miembro() && coleccion in [
         'orders', 'instalaciones', 'citas', 'clientes', 'equipo', 'notas',
         'inventario', 'categoriasInventario', 'subgruposInventario', 'bultosHerramientas', 'equiposInstalacion',
         'movimientosInventario', 'movimientosInstalaciones',
@@ -133,15 +137,15 @@ service cloud.firestore {
 
     // Academia (capacitación): el CONTENIDO (cursos/lecciones) solo lo edita gerencia (admin) o el
     // rol 'capacitador'. El PROGRESO lo escribe cada quien sobre su propio avance (cualquier sesión).
-    match /academiaCursos/{id}    { allow write: if request.auth != null && ('admin' in rolesDelUsuario() || 'capacitador' in rolesDelUsuario()); }
-    match /academiaLecciones/{id} { allow write: if request.auth != null && ('admin' in rolesDelUsuario() || 'capacitador' in rolesDelUsuario()); }
-    match /academiaProgreso/{id}  { allow write: if request.auth != null && !esEspejo(); }
+    match /academiaCursos/{id}    { allow write: if miembro() && ('admin' in rolesDelUsuario() || 'capacitador' in rolesDelUsuario()); }
+    match /academiaLecciones/{id} { allow write: if miembro() && ('admin' in rolesDelUsuario() || 'capacitador' in rolesDelUsuario()); }
+    match /academiaProgreso/{id}  { allow write: if miembro() && !esEspejo(); }
 
     // Puntos (gamificación, BETA no visible para el equipo — usuario 2026-09-29): SOLO admin lee. La Academia crea
     // eventos con el correo propio (tipo academia); el resto los escribe la Cloud Function. Borrar, solo admin.
     match /puntos/{id} {
       allow read: if esAdmin();
-      allow create: if request.auth != null && !esEspejo() && (request.resource.data.email == request.auth.token.email || esAdmin());
+      allow create: if miembro() && !esEspejo() && (request.resource.data.email == request.auth.token.email || esAdmin());
       allow update, delete: if esAdmin();
     }
     // Valoraciones entre el equipo (2026-09-27), SIEMPRE anónimas entre ellos: `valoracionesEquipo`
@@ -150,24 +154,24 @@ service cloud.firestore {
     // la escribió (`por` = su correo); cada quien crea/edita solo las suyas y nunca sobre sí mismo. Los
     // puntos los aplica la Cloud Function sin nombrar a nadie. Borrar, solo admin.
     function valoracionPropia() {
-      return request.auth != null && !esEspejo()
+      return miembro() && !esEspejo()
         && request.resource.data.por == request.auth.token.email
         && request.resource.data.nivel in ['bien', 'ok', 'flojo']
         && (!('email' in request.resource.data) || request.resource.data.email != request.auth.token.email)
         && (!('para' in request.resource.data) || request.resource.data.para != request.auth.token.email);
     }
     match /valoracionesEquipo/{id} {
-      allow read: if request.auth != null && ('admin' in rolesDelUsuario() || resource.data.por == correoEfectivo());
+      allow read: if miembro() && ('admin' in rolesDelUsuario() || resource.data.por == correoEfectivo());
       allow create, update: if valoracionPropia();
-      allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+      allow delete: if miembro() && 'admin' in rolesDelUsuario();
     }
     match /valoracionesEncargado/{id} {
-      allow read: if request.auth != null && ('admin' in rolesDelUsuario() || resource.data.por == correoEfectivo());
+      allow read: if miembro() && ('admin' in rolesDelUsuario() || resource.data.por == correoEfectivo());
       allow create, update: if valoracionPropia();
-      allow delete: if request.auth != null && 'admin' in rolesDelUsuario();
+      allow delete: if miembro() && 'admin' in rolesDelUsuario();
     }
     // Reglas/valores del sistema de puntos (visibleEquipo, desde, puntos por evento): solo admin.
-    match /puntosConfig/{id} { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }
+    match /puntosConfig/{id} { allow write: if miembro() && 'admin' in rolesDelUsuario(); }
     // Encuesta de satisfacción del cliente (ops/satisfaccion.html?t=TOKEN): la crea la Cloud Function
     // al completarse un trabajo. El CLIENTE la abre SIN sesión: puede leer SU encuesta (por el token,
     // que es el id del doc; no puede listar) y responderla UNA vez — solo pasa de 'pendiente' a
@@ -185,8 +189,8 @@ service cloud.firestore {
     match /encuestas/{token} {
       allow get: if true;
       allow list: if esAdmin();
-      allow update: if respuestaEncuestaValida() || (request.auth != null && 'admin' in rolesDelUsuario());
-      allow create, delete: if request.auth != null && 'admin' in rolesDelUsuario();
+      allow update: if respuestaEncuestaValida() || (miembro() && 'admin' in rolesDelUsuario());
+      allow create, delete: if miembro() && 'admin' in rolesDelUsuario();
     }
 
     // Mensajería ARTAL (comunicados de gerencia → equipo). CREAR/BORRAR solo lo puede el rol
@@ -200,22 +204,22 @@ service cloud.firestore {
       // como la persona real); admin y comunicaciones lo leen todo. Las pantallas consultan con esos mismos filtros
       // (ops/mensajes-lectura.js): paraTodos == true · destinatarios array-contains correo · remitenteEmail == correo.
       allow read: if alguno(['admin', 'comunicaciones'])
-        || (request.auth != null && (resource.data.paraTodos == true
+        || (miembro() && (resource.data.paraTodos == true
             || resource.data.remitenteEmail == correoEfectivo() || resource.data.remitenteEmail == request.auth.token.email
             || (('destinatarios' in resource.data) && (correoEfectivo() in resource.data.destinatarios || request.auth.token.email in resource.data.destinatarios))));
       allow create: if alguno(['admin', 'comunicaciones', 'capacitador']);   // capacitador: aviso de curso nuevo (Academia)
       // El receptor solo marca SU acuse (acuses.{suClave}); el cuerpo lo editan admin/comunicaciones.
       allow update: if alguno(['admin', 'comunicaciones'])
-        || (request.auth != null && !esEspejo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acuses']));
+        || (miembro() && !esEspejo() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acuses']));
       allow delete: if alguno(['admin', 'comunicaciones']);
     }
 
     // Notas personales: cada quien SOLO escribe/edita/borra las suyas (campo email == su correo).
     // La lectura la cubre el match general, pero la app filtra por email y nadie ve las de otro.
     match /notas/{id} {
-      allow create: if request.auth != null && !esEspejo() && request.resource.data.email == request.auth.token.email;
-      allow update: if request.auth != null && resource.data.email == request.auth.token.email && request.resource.data.email == request.auth.token.email;
-      allow delete: if request.auth != null && resource.data.email == request.auth.token.email;
+      allow create: if miembro() && !esEspejo() && request.resource.data.email == request.auth.token.email;
+      allow update: if miembro() && resource.data.email == request.auth.token.email && request.resource.data.email == request.auth.token.email;
+      allow delete: if miembro() && resource.data.email == request.auth.token.email;
     }
 
     // Recursos Humanos: LEER y ESCRIBIR solo finanzas/RRHH (admin, contable). Excepciones operativas:
@@ -240,7 +244,7 @@ service cloud.firestore {
     match /rrhhNominas/{id}       { allow read, write: if finanzas(); }
     match /rrhhPrestamos/{id}     { allow read, write: if finanzas(); }
     match /rrhhReuniones/{id} {
-      allow read: if rrhh() || (request.auth != null && resource.data.empleadoCorreo == correoEfectivo());
+      allow read: if rrhh() || (miembro() && resource.data.empleadoCorreo == correoEfectivo());
       allow write: if esAdmin();
     }
 
@@ -308,10 +312,10 @@ service cloud.firestore {
     // salta estas reglas): desde el navegador solo se pueden crear NOTAS INTERNAS. Así ningún
     // cliente web puede fabricar un "mensaje del cliente" ni marcar como enviado algo que no salió.
     function esInboxAdmin() {
-      return request.auth != null && ('admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario());
+      return miembro() && ('admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario());
     }
     function puedeInbox() {
-      return request.auth != null && (
+      return miembro() && (
         'admin' in rolesDelUsuario() || 'inbox_admin' in rolesDelUsuario()
         || 'inbox_supervisor' in rolesDelUsuario() || 'inbox_agente' in rolesDelUsuario());
     }
@@ -329,14 +333,14 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /inboxConversaciones/{id}/eventos/{e} { allow create: if puedeInbox(); }   // timeline: solo crear
-    match /inboxAuditoria/{id}                  { allow create: if request.auth != null && request.resource.data.actorEmail == request.auth.token.email; }   // nadie edita ni borra
+    match /inboxAuditoria/{id}                  { allow create: if miembro() && request.resource.data.actorEmail == request.auth.token.email; }   // nadie edita ni borra
     match /inboxContactos/{id}                  { allow create, update: if puedeInbox(); allow delete: if false; }
-    match /inboxPresencia/{email}               { allow write: if request.auth != null && request.auth.token.email == email; }
+    match /inboxPresencia/{email}               { allow write: if miembro() && request.auth.token.email == email; }
     match /inboxEquipos/{id}                    { allow write: if esInboxAdmin(); }
     match /inboxTags/{id}                       { allow create: if puedeInbox(); allow update, delete: if esInboxAdmin(); }
     match /inboxReglas/{id}                     { allow write: if esInboxAdmin(); }
     match /inboxConfig/{id}                     { allow write: if esInboxAdmin(); }
-    match /inboxCanales/{id}                    { allow write: if request.auth != null && 'admin' in rolesDelUsuario(); }   // solo Owner
+    match /inboxCanales/{id}                    { allow write: if miembro() && 'admin' in rolesDelUsuario(); }   // solo Owner
     match /inboxRespuestasRapidas/{id} {
       allow create: if puedeInbox() && request.resource.data.email == request.auth.token.email && (request.resource.data.global == false || esInboxAdmin());
       allow update, delete: if esInboxAdmin() || (puedeInbox() && resource.data.email == request.auth.token.email && resource.data.global == false);

@@ -67,6 +67,7 @@ async function tokensPorRol(...roles) {
         const data = d.data();
         const rol = data.rol;
         const rolesU = Array.isArray(rol) ? rol : [rol];
+        if (data.cuentaPrueba === true || data.activo === false) return;   // F3: las cuentas espejo de gerencia y las inactivas no reciben avisos del equipo
         if (roles.some((r) => rolesU.includes(r))) tokensDeDoc(data).forEach((en) => tokens.push({ ...en, email: d.id }));
     });
     return tokens;
@@ -96,6 +97,8 @@ async function enviarPush(token, title, body, url) {
 }
 // Acepta strings (token suelto) o {token, key, email} (de tokensPorRol): con email se purgan los muertos.
 async function pushATokens(tokens, title, body, url) {
+    const vistos = new Set();   // F3: un mismo token (misma persona con dos roles) recibe el aviso una sola vez
+    tokens = (tokens || []).filter((t) => { const k = typeof t === 'string' ? t : (t && t.token); if (!k || vistos.has(k)) return false; vistos.add(k); return true; });
     for (const t of tokens) {
         if (typeof t === 'string') { await enviarPush(t, title, body, url); continue; }
         try { await getMessaging().send(buildPush(t.token, title, body, url)); }
@@ -398,15 +401,26 @@ exports.medicionAOficina = onDocumentWritten('instalaciones/{id}', async (event)
 // ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------
 // La rutina matinal escribe en `mensajes` con remitenteEmail 'coordinador@artal' (vía scripts/ops/escribir.js). La pantalla de
 // Mensajería hace su propio push al enviar desde el navegador; este trigger cubre los mensajes creados desde fuera.
-exports.mensajeCoordinadorPush = onDocumentWritten('mensajes/{id}', async (event) => {
+// F2 (revisión 2026-10-09): TODO comunicado nuevo de Mensajería manda push a sus destinatarios (antes solo los del Coordinador de
+// Obras: un feriado trabajado o un documento para firmar llegaban solo si la persona abría la app, y los puntos castigaban el
+// «sin acuse»). `paraTodos` → todo el equipo activo (espejo `equipo`), sin el remitente. Los informes de cierre y las encuestas
+// ya mandan su propio push al crearse, así que se saltan. `pushEnviado` evita repetir.
+exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     if (event.data.before.exists) return;   // solo creación
     const m = event.data.after.exists ? event.data.after.data() : null; if (!m) return;
-    if (m.remitenteEmail !== 'coordinador@artal' || m.pushEnviado === true) return;
-    const dest = Array.isArray(m.destinatarios) ? m.destinatarios : [];
+    if (m.pushEnviado === true || (m.estado && m.estado !== 'enviado')) return;
+    if (['informe_obra', 'encuesta'].includes(m.tipo)) return;
+    const rem = String(m.remitenteEmail || '').toLowerCase();
+    let dest = [];
+    if (m.paraTodos === true) dest = (await db.collection('equipo').get()).docs.filter((d) => d.data().activo !== false).map((d) => d.id.toLowerCase());
+    else dest = (Array.isArray(m.destinatarios) ? m.destinatarios : []).map((e) => String(e || '').trim().toLowerCase());
+    dest = [...new Set(dest.filter((e) => e && e !== rem))];
+    const titulo = m.remitenteEmail === 'coordinador@artal' ? (m.asunto || 'Coordinador de Obras') : ('✉️ ' + (m.asunto || ('Mensaje de ' + (m.remitenteNombre || 'ARTAL'))));
+    const cuerpo = String(m.cuerpo || '').split('\n').filter(Boolean).slice(0, 3).join(' · ').slice(0, 160) || (m.requiereFirma ? 'Documento para firmar' : 'Abre Mensajería para leerlo');
     try {
-        for (const em of dest) { try { await enviarPushUsuario(em, m.asunto || 'Coordinador de Obras', String(m.cuerpo || '').split('\n').slice(0, 3).join(' · ').slice(0, 160), 'ops/mensajes.html'); } catch (_) { } }
-        await event.data.after.ref.update({ pushEnviado: true });
-    } catch (e) { console.error('mensajeCoordinadorPush', event.params.id, e); }
+        for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, 'ops/mensajes.html'); } catch (_) { } }
+        await event.data.after.ref.update({ pushEnviado: true, pushDestinatarios: dest.length });
+    } catch (e) { console.error('mensajePush', event.params.id, e); }
 });
 
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
