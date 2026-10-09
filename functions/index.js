@@ -311,7 +311,7 @@ exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (even
             for (const o of pedidos) {
                 if (o.instalado === true && o.status === 'completado') continue;
                 if (o.destino !== 'interno' && !LISTOS_FAB.includes(o.status)) { console.log('pedidoSigueTrabajo: pedido ALUCUFEL', o.id, 'aún', o.status, '→ ALUCUFEL manda, no se cierra'); continue; }
-                await db.doc('orders/' + o.id).update({ instalado: true, status: 'completado', fechaInstalado: after.validadoFecha || FieldValue.serverTimestamp(), instaladoPorNombre: after.validadoPor || 'Sistema ARTAL', cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: id, cierreAutomaticoFecha: FieldValue.serverTimestamp() });
+                await db.doc('orders/' + o.id).update({ instalado: true, status: 'completado', fechaInstalado: after.validadoFecha || FieldValue.serverTimestamp(), instaladoPorNombre: after.validadoPor || 'Sistema ARTAL', cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: id, cierreAutomaticoFecha: FieldValue.serverTimestamp(), cierreEstadoAnterior: o.status || 'listo_para_cargar' });   // A4: para que Reabrir devuelva el estado exacto
                 console.log('pedidoSigueTrabajo: pedido', o.id, 'cerrado por trabajo completado', id);
             }
         } else {

@@ -1494,6 +1494,8 @@
         const ahora = serverTimestamp();
         const cambios = { estado, estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora };
         if (estado === 'completado') { cambios.validadoPor = usuario.nombre; cambios.validadoPorEmail = usuario.email; cambios.validadoFecha = ahora; }
+        // A4: al reabrir se limpia el cierre (quién validó, medición pendiente en la oficina) y queda registro de la reapertura.
+        if (j.estado === 'completado' && estado !== 'completado') { cambios.validadoPor = null; cambios.validadoPorEmail = null; cambios.validadoFecha = null; cambios.reabiertoPor = usuario.nombre; cambios.reabiertoFecha = ahora; if (j.medicionPendienteOficina === true) cambios.medicionPendienteOficina = false; }
         try {
             await updateDoc(doc(db, 'instalaciones', id), cambios);
             await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado, por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
@@ -1511,8 +1513,11 @@
                 const od = ((ordersCache.find(x => x.id === oid) || {}).data) || {};
                 if (estado === 'completado' && otroAbierto) { console.log('pedido', oid, 'no se cierra: obra por partes, queda otro trabajo abierto'); continue; }
                 if (estado === 'completado' && od.destino !== 'interno' && !['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'completado'].includes(od.status))   // A3 { console.log('pedido ALUCUFEL', oid, 'aún', od.status, '→ no se cierra'); continue; }
-                if (estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre });
-                else if (j.estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: false, status: 'listo_para_cargar' });
+                if (estado === 'completado') await updateDoc(doc(db, 'orders', oid), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre, cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: id, cierreAutomaticoFecha: ahora, cierreEstadoAnterior: od.status || 'listo_para_cargar' });
+                // A4: Reabrir solo devuelve los pedidos que ESTE trabajo cerró (cierreAutomaticoTrabajo === id), al estado que tenían;
+                // un pedido heredado (reparación sobre un trabajo anterior) o cerrado por otra vía se queda como está.
+                else if (j.estado === 'completado' && od.cierreAutomaticoTrabajo === id) await updateDoc(doc(db, 'orders', oid), { instalado: false, status: od.cierreEstadoAnterior || 'listo_para_cargar', reaperturaTrabajo: id, reaperturaPor: usuario.nombre, reaperturaFecha: ahora, cierreAutomatico: null, cierreAutomaticoTrabajo: null });
+                else if (j.estado === 'completado') console.log('pedido', oid, 'no se revierte: no lo cerró este trabajo');
             }
         } catch (e) { alert('No se pudo cambiar el estado: ' + e.message); }
     };
@@ -1853,12 +1858,13 @@
             alert('No se pudo confirmar con biometría: ' + ((e && e.message) || e)); return;
         }
         try {
+            const job = jobsDeOrden(id).find(j => j.estado !== 'completado');
             await updateDoc(doc(db, 'orders', id), {
                 instalado: true, status: 'completado', fechaInstalado: serverTimestamp(),
-                confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' }
+                confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' },
+                cierreEstadoAnterior: snap.data().status || 'listo_para_cargar', ...(job ? { cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: job.id, cierreAutomaticoFecha: serverTimestamp() } : {})
             });
             // Si el pedido tiene una instalación agendada (Calendario), la marca completada también.
-            const job = jobsDeOrden(id).find(j => j.estado !== 'completado');
             if (job) {
                 try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: serverTimestamp() }); } catch (_) { }
                 setTimeout(() => abrirValidacion(job.id, { completar: false }), 300);   // solo cargar horas al parte
