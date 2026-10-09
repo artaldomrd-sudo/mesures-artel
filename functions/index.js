@@ -2661,6 +2661,19 @@ async function generarInformeObra(instId, inst, opts) {
     const L = [];
     L.push(`🏠 ${lugar}`);
     L.push(`✅ Instalación completada el ${fmtF(hoy)}${informe.cerradoPor ? ' por ' + informe.cerradoPor : ''}`);
+    // Qué se mandó a hacer (Dylan 2026-10-09: «no me aparece descripción de qué es que se mandó a hacer»): tipo de trabajo, notas del
+    // trabajo, pedido enlazado (tipo de documento, material, nº de ítems) y cuántas fotos dejó el equipo. Si no hay nada, se dice.
+    const TIPOS_TXT = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación de trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación de trabajo de otra empresa' };
+    const tipoTxt = TIPOS_TXT[inst.tipoTrabajo] || (inst.orderId ? 'Instalación de pedido' : '');
+    let pedidoTxt = '';
+    try {
+        const oid = inst.orderId || (Array.isArray(inst.orderIds) && inst.orderIds[0]);
+        if (oid) { const od = await db.doc('orders/' + oid).get(); if (od.exists) { const o = od.data(); pedidoTxt = [o.docType, o.material, o.color, o.totalItems ? o.totalItems + ' ítem(s)' : ''].filter(Boolean).join(' · '); const tipos = (Array.isArray(o.items) ? o.items : []).map((it) => it.tipo).filter(Boolean); const cont = {}; tipos.forEach((t) => { cont[t] = (cont[t] || 0) + 1; }); const resumen = Object.entries(cont).map(([t, n]) => `${n} ${t}`).join(', '); if (resumen) pedidoTxt += ' (' + resumen + ')'; } }
+    } catch (_) { }
+    const nFotos = Array.isArray(inst.fotos) ? inst.fotos.length : 0;
+    const descr = [tipoTxt ? '🧾 ' + tipoTxt : '', inst.notas ? '📝 ' + String(inst.notas).trim() : '', pedidoTxt ? '📦 Pedido: ' + pedidoTxt : '', nFotos ? '📷 ' + nFotos + ' foto(s)/archivo(s) del equipo' : ''].filter(Boolean);
+    if (descr.length) descr.forEach((d) => L.push(d)); else L.push('🧾 Sin descripción del trabajo (sin tipo, sin notas ni pedido enlazado)');
+    informe.descripcionTrabajo = { tipo: inst.tipoTrabajo || '', tipoTexto: tipoTxt, notas: String(inst.notas || ''), pedido: pedidoTxt, fotos: nFotos };
     L.push('');
     L.push(`👷 Mano de obra: RD$ ${fmtMiles(costoMO)}` + (horas ? ` — ${informe.manoObra.horas} h · ${listaPersonas.length} persona(s) · ${listaDias.length} día(s)` : ' — ⚠ sin partes diarios de esta obra'));
     L.push(`🚚 Transporte: RD$ ${fmtMiles(costoTransporte)}` + (detViajes.length ? ` — ${detViajes.length} viaje(s)` : ' — ⚠ sin viajes registrados'));
