@@ -2798,6 +2798,23 @@ conocidas: en Instalación un ayudante no puede leer rrhhEmpleados/partesDiarios
 no los necesita); el cuaderno (index.html) lee rrhhEmpleados para el calculador de transporte → un usuario solo-cotizaciones
 no lo verá (área cuaderno, pendiente).
 
+**Revisión completa 2026-10-09/13 (informe `herramientas/auditoria-2026-10-09.md`, no versionado; bloques A–J con estado).**
+Corregido y en producción: A1–A10 (solo trabajos tipo `instalacion` mueven pedidos — `esTrabajoInstalacion` en functions =
+`tipoDeJob` en Instalación; por nombre de obra solo se cierran pedidos ya listos; `parcialmente_instalado` cierra; Reabrir solo
+revierte lo que ese trabajo cerró (`cierreAutomaticoTrabajo`, `cierreEstadoAnterior`); reparación/medición no heredan `orderId`
+(`pedidoReferenciaId`); nunca dos trabajos abiertos del mismo pedido; «No está listo» con motivo e instrucción a fábrica; cambio
+manual de estado en Historial/Compras con aviso y registro), B1–B4 (anticipos SOLO vía `anticipoPedido` onRequest admin:
+aplicar/quitar/marcar/ignorar recalculan desde `anticipos[]`, espejo COT→FAB, «único» acotado, pendientes reevaluados en cada sync,
+desplegable de cualquier pedido en la tarjeta del Panel), C1–C3 (Vincular ficha; `citrusId` nunca cambia de dueño y cruza por
+facturación/alias; lo anulado en Citrus queda `anulado:true`, `monto:0`, `montoOriginal` — NUNCA dejar `undefined` en un campo:
+Firestore rechaza el documento y la sync entera de esa entidad falla), F1–F3 (`mensajes` legible solo por destinatario/remitente o
+admin/comunicaciones, consultas acotadas en `ops/mensajes-lectura.js`; `mensajePush` avisa de todo comunicado; espejos sin push),
+G1–G3 (`miembro()` en reglas = doc en `usuarios` y `activo != false`; espejo no se quita `cuentaPrueba`; **`rrhhEmpleados` solo
+RRHH; el equipo lee `empleadosPublico` (espejo sin sueldo, trigger `espejoEmpleados`); el costo por hora NO va en las líneas del
+parte: `congelarCostoParte` lo fija en `partesCostos/{parteId}` (solo finanzas) y lo leen Costo de obras e informe de cierre**).
+Inventario: la gestión la tiene también quien entra por permiso de página sin rol de obra (Sara Inés). Índice compuesto
+`contaMovimientos (origen, tipo, fecha)` creado por API para el tablero del ERP.
+
 **Beta de puntos oculto al equipo (usuario 29/09)**: en Instalación, `betaPuntos()` = admin o `visibleEquipo`; si es falso no
 se muestran las estrellas del cliente en la tarjeta, ni el bloque «🤝 ¿Cómo se portó…?», ni los botones 👍/👌/⚠️ de la ventana
 de horas (la ventana de horas sí). puntos.html solo consulta `puntos` si es admin.
