@@ -357,7 +357,11 @@
     // contratista (Alucufel) queda fuera a propósito. Solo admin agrega stock/precio/elimina;
     // el resto (incluidos los ayudantes) solo puede "Tomar".
     const usuario = await requireAuth(['chofer', 'instalador', 'ayudante']);
-    const esAdmin = usuario.roles.includes('admin');
+    const esAdminReal = usuario.roles.includes('admin');
+    // Gestión del inventario (Dylan 2026-10-13, caso Sara Inés): admin, o quien entra por permiso de página SIN rol de obra
+    // (oficina) — mismo criterio `esOficina` de Instalación. El equipo de obra (chofer/instalador/ayudante) solo «Toma».
+    // `esAdmin` (gestión) manda en toda la pantalla; la siembra de datos y las migraciones siguen con `esAdminReal`.
+    const esAdmin = esAdminReal || !usuario.roles.some(r => ['chofer', 'instalador', 'ayudante'].includes(r));
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
@@ -712,7 +716,7 @@
         }).join('');
     }
     function actualizarSeedBtns() {
-        if (!esAdmin) return;
+        if (!esAdminReal) return;   // siembra de datos: solo admin real
         const perfiles = allItems.filter(it => it.categoria === 'perfil');
         const seedBtn = document.getElementById('seed-btn'); if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
     }
@@ -951,7 +955,7 @@
     // (sin bucle con onSnapshot). Solo lo corre un admin (evita errores de permiso a roles de campo).
     let migrandoSell = false;
     async function migrarSelladoresAuto() {
-        if (!esAdmin || migrandoSell) return;
+        if (!esAdminReal || migrandoSell) return;   // migración de datos: solo admin real
         const pend = allItems.filter(it => CATS_OCULTAS.includes(it.categoria));
         if (!pend.length) return;
         migrandoSell = true;
