@@ -569,7 +569,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-09 23:12</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 09:39</div>
         </div>
     </div>
     
@@ -2114,7 +2114,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
                 if (p.tipo !== 'fijo') { extras.push('Apertura ' + (p.orientacion === 'D' ? 'Der' : 'Izq')); if (p.tirador) extras.push('Tirador ' + (p.tirador === 'redondo' ? 'redondo' : p.tirador + '"')); if (p.tipo === 'deslizante') extras.push('Kit de prensa'); if (p.tipo === 'deslizante_conn') extras.push('Kit de conectores'); const cerr = [p.cerr_luna && 'Media-Luna', p.cerr_digital && 'Digital', p.cerr_piso && 'Piso'].filter(Boolean); if (cerr.length) extras.push('Cerradura: ' + cerr.join('+')); }
-                { const kit = accesorioKitFor(p, facadeCtxPanel(state, i)); if (kit) extras.push('Accesorios: ' + kit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ')); }
+                { const txt = accesoriosKitTxt(p, facadeCtxPanel(state, i)); if (txt) extras.push('Accesorios: ' + txt); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}`;
@@ -2124,10 +2124,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const esqKit = facadeEsquinaKit(state);
             const esqSinDueno = esqK && facadeCtxPanel(state, esqK).sinDueno;   // ningún panel fijo con conectores junto a la esquina: las prensas van aparte
             const esqKitTxt = esqSinDueno ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Unión de esquina (panel ${esqK} ↔ panel ${esqK + 1}):</b> ${esqKit ? esqKit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ') + ' (prensa cuadrada vidrio/vidrio 45x45)' : '<span style="color:#b9770e;">prensa vidrio/vidrio sin referencia para este color todavía</span>'}</div>` : '';
+            const rieles = rielesDeDucha(state);
+            const rielTxt = rieles.length ? (() => { const r = rielBarrasNecesarias(rieles); return `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)}${rieles.length > 1 ? ` (${rieles.length} puertas)` : ''}:</b> ${(r.totalMm / 1000).toFixed(2)} m lineales → <b>${rielBarrasTxt(r)}</b></div>`; })() : '';
             const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90° · Giro ${facadeGiro(state)} ${(DUCHA_GIROS.find(g => g[0] === facadeGiro(state)) || [0, ''])[1]}</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA DE DUCHA</strong> (${paneles.length} panel${paneles.length === 1 ? '' : 'es'}${esqK ? ', en esquina' : ''}) — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
-                ${esqTxt}${esqKitTxt}
+                ${esqTxt}${esqKitTxt}${rielTxt}
                 <div style="color:#555; font-size:12px;">${list}</div>
             </div>`;
             return;
@@ -3407,7 +3409,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const el = document.getElementById('perfil-u-banner');
         if (!el) return;
         let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, tornTot = 0, tornPend = 0, barrasTot = 0, prensasTot = 0, vidriosPr = 0;
+        let rieles = [];   // riel ALC00186 de todas las deslizantes de prensas del proyecto
         Object.values(cardsState).forEach(st => {
+            rieles = rieles.concat(rielesDeDucha(st));
             if (st.categoria === 'baranda') {
                 hayBaranda = true;
                 resinaTot += resinaBarandaGal(st);
@@ -3421,12 +3425,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const cant = parseInt(st.cantidad) || 1;
             for (let k = 0; k < cant; k++) { piezas = piezas.concat(r.piezas); totalMm += r.materialMm; }
         });
-        if (!hayBaranda) { el.style.display = 'none'; return; }
+        if (!hayBaranda && !rieles.length) { el.style.display = 'none'; return; }
         el.style.display = '';
         let html = '';
+        if (rieles.length) {
+            const r = rielBarrasNecesarias(rieles);
+            html += `🚿 <b>Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)} para este trabajo: ${rielBarrasTxt(r)}</b> ` +
+                `<span style="color:#555;">(${r.piezas} puerta${r.piezas > 1 ? 's' : ''} deslizante${r.piezas > 1 ? 's' : ''} de prensas · ${(r.totalMm / 1000).toFixed(2)} m lineales, optimizado reusando sobrantes)</span>`;
+        }
+        if (!hayBaranda) { el.innerHTML = html; return; }
         if (hayBaseU) {
             const perfiles = optimizarPerfilesU(piezas);
-            html += `📏 <b>Total perfil U para este trabajo: ${perfiles} perfil(es) de 6.40 m</b> ` +
+            html += (html ? '<div style="margin-top:4px;"></div>' : '') + `📏 <b>Total perfil U para este trabajo: ${perfiles} perfil(es) de 6.40 m</b> ` +
                 `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
         }
         // Consumibles de instalación de TODAS las barandas del proyecto (para preparar la obra).
@@ -8595,6 +8605,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // referencias reales (2 formas x 2 colores), por eso va anidado un nivel más que
     // deslizante_conn en vez de una lista plana.
     const ACCESORIOS_KIT = {
+        // Puerta Deslizante Prensas (usuario 2026-10-13): 1 kit de prensas ALC00401 por puerta + el riel
+        // ALC00186, que se compra por barra de 5 m o media barra de 2,5 m (ver RIEL_DESLIZANTE y
+        // rielBarrasNecesarias). Negro: pendiente de confirmar.
+        deslizante: {
+            cromado: [{ ref: 'ALC00401', qty: 1 }],
+        },
         deslizante_conn: {
             cromado: [{ ref: 'ALC00344', qty: 1 }, { ref: 'TUB00380', qty: 1 }],
             // negro: pendiente de confirmar con el usuario.
@@ -8610,17 +8626,60 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // la esquina. Y una deslizante de conectores en una ducha con esquina agrega ALC00486: la conexión que
     // une su tubo ornamental (TUB00380) con el panel perpendicular del otro lado de la esquina.
     const ESQUINA_KIT = { cromado: 'ALC00152', negro: 'ALC00444' };
+    // Riel de la Puerta Deslizante Prensas: se compra por barra (5 m) o media barra (2,5 m). Largo por
+    // puerta = lo que recorre el riel en el dibujo (la puerta + los paneles del lado hacia donde corre) y
+    // nunca menos de 2 × ancho de la puerta (hace falta sitio para abrirla del todo) — supuesto propio.
+    const RIEL_DESLIZANTE = { ref: 'ALC00186', barraMm: 5000, mediaMm: 2500 };
+    function rielDeslizanteMm(state, i) {
+        const ps = (state && state.paneles) || [], p = ps[i];
+        if (!p || p.tipo !== 'deslizante') return 0;
+        const w = parseInt(p.ancho) || 0;
+        const openLeft = (p.orientacion || 'I') !== 'D';
+        const tramo = openLeft ? ps.slice(0, i + 1) : ps.slice(i);
+        const extent = tramo.reduce((a, q) => a + (parseInt(q.ancho) || 0), 0);
+        return Math.max(2 * w, extent);
+    }
+    // Largos de riel (mm) de todas las deslizantes de prensas de una tarjeta, × cantidad.
+    function rielesDeDucha(state) {
+        if (!state || state.categoria !== 'cerramiento') return [];
+        const cant = Math.max(1, parseInt(state.cantidad) || 1);
+        let out = [];
+        (state.paneles || []).forEach((p, i) => { const L = rielDeslizanteMm(state, i); if (L > 0) for (let k = 0; k < cant; k++) out.push(L); });
+        return out;
+    }
+    // Cuántas barras completas y medias barras comprar para una lista de largos: se reparten los largos
+    // (de mayor a menor) en barras de 5 m reutilizando el sobrante; una barra cuyo uso no pasa de 2,5 m se
+    // compra como media barra. Un largo mayor que la barra se marca como empalme.
+    function rielBarrasNecesarias(largos) {
+        const B = RIEL_DESLIZANTE.barraMm, M = RIEL_DESLIZANTE.mediaMm;
+        const ls = largos.filter(l => l > 0).sort((a, b) => b - a);
+        const barras = []; let empalmes = 0;
+        ls.forEach(l => {
+            if (l > B) { empalmes++; barras.push(B); l -= B; }
+            const i = barras.findIndex(u => u + l <= B);
+            if (i >= 0) barras[i] += l; else barras.push(l);
+        });
+        const medias = barras.filter(u => u <= M).length;
+        return { completas: barras.length - medias, medias, totalMm: ls.reduce((a, b) => a + b, 0), piezas: ls.length, empalmes };
+    }
+    function rielBarrasTxt(r) {
+        const parts = [];
+        if (r.completas) parts.push(`${r.completas} barra${r.completas > 1 ? 's' : ''} completa${r.completas > 1 ? 's' : ''} (5 m)`);
+        if (r.medias) parts.push(`${r.medias} media${r.medias > 1 ? 's' : ''} barra${r.medias > 1 ? 's' : ''} (2,5 m)`);
+        return parts.join(' + ') + (r.empalmes ? ` <span style="color:#c0392b;">(${r.empalmes} riel${r.empalmes > 1 ? 'es' : ''} más largo que una barra: lleva empalme)</span>` : '');
+    }
     const TUBO_ESQUINA_KIT = { cromado: 'ALC00486' };   // negro: pendiente de confirmar con el usuario
     // Contexto de un panel dentro de su ducha: ¿hay esquina? ¿su borde de fijación ES la esquina?
     function facadeCtxPanel(state, i) {
         const k = state ? facadeEsquinaK(state) : 0;
-        if (!k) return { esquina: false, ladoEnEsquina: false };
+        const rielMm = rielDeslizanteMm(state, i);
+        if (!k) return { esquina: false, ladoEnEsquina: false, rielMm };
         const p = (state.paneles || [])[i] || {};
         const fijaDer = (p.orientacion || 'I') === 'D';
         const ladoEnEsquina = p.tipo === 'fijo' && (p.fijacion || 'conectores') !== 'moldura' && ((i === k && !fijaDer) || (i === k - 1 && fijaDer));
         const esFijoCon = j => { const q = (state.paneles || [])[j]; return !!q && q.tipo === 'fijo' && (q.fijacion || 'conectores') !== 'moldura'; };
         const dueno = esFijoCon(k) ? k : esFijoCon(k - 1) ? k - 1 : -1;   // panel que lleva las 2 prensas de esquina en su kit
-        return { esquina: true, ladoEnEsquina, llevaPrensasEsquina: i === dueno, sinDueno: dueno < 0 };
+        return { esquina: true, ladoEnEsquina, llevaPrensasEsquina: i === dueno, sinDueno: dueno < 0, rielMm };
     }
     // Prensas de la unión de esquina (color del panel anterior a la esquina), o null si no hay esquina.
     function facadeEsquinaKit(state) {
@@ -8662,9 +8721,21 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // más abajo) — separado para poder refrescar SOLO esta caja cuando cambia ancho/color/forma,
     // sin reconstruir el resto del formulario del panel (evita perder el foco del campo Ancho,
     // que dispara esto en cada tecla mientras se escribe).
-    function accesoriosBoxInner(p, ctx) {
+    // Texto del kit de un panel ("ALC00401 x1, Riel ALC00186: 1800 mm (media barra 2,5 m)") o null.
+    function accesoriosKitTxt(p, ctx, esc) {
         const kit = accesorioKitFor(p, ctx);
-        return `<b style="color:#0A3D62;">Accesorios:</b> ${kit ? kit.map(k => `${escHtml(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ') : '<span style="color:#b9770e;">sin definir para este color todavía</span>'}`;
+        if (!kit) return null;
+        const f = esc ? (t => escHtml(t)) : (t => t);
+        let txt = kit.map(k => `${f(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ');
+        if (p.tipo === 'deslizante' && ctx && ctx.rielMm > 0) {
+            const L = ctx.rielMm, cut = L <= RIEL_DESLIZANTE.mediaMm ? 'media barra 2,5 m' : L <= RIEL_DESLIZANTE.barraMm ? 'barra completa 5 m' : 'más largo que una barra, lleva empalme';
+            txt += `, Riel ${f(resolveAccesorioLabel(RIEL_DESLIZANTE.ref))}: ${L} mm (${cut})`;
+        }
+        return txt;
+    }
+    function accesoriosBoxInner(p, ctx) {
+        const txt = accesoriosKitTxt(p, ctx, true);
+        return `<b style="color:#0A3D62;">Accesorios:</b> ${txt || '<span style="color:#b9770e;">sin definir para este color todavía</span>'}`;
     }
     window.updateAccesoriosBox = function (id, i) {
         const p = cardsState[id] && cardsState[id].paneles[i]; if (!p) return;

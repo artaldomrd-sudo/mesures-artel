@@ -752,6 +752,20 @@ estilo simplificado del CAD.
   artalInventarioPorReferencia` → `window.refreshAccesoriosInfo()` re-pinta los constructores de
   Vidrio de Ducha ya abiertos cuando llegan los datos). Nada de esto depende de cantidad en
   stock (los `qty` son fijos por kit, no relacionados a inventario disponible).
+  - **Puerta Deslizante Prensas (`deslizante`), referencias del usuario 2026-10-13**: cromado = 1 kit de
+    prensas `ALC00401` por puerta (`ACCESORIOS_KIT.deslizante.cromado`; negro pendiente) + el riel
+    `ALC00186`, que NO es un ítem por unidad: se compra por **barra de 5 m o media barra de 2,5 m** según
+    el ancho, y con varias puertas hay que calcular cuánto tubo hace falta. `RIEL_DESLIZANTE`
+    `{ref, barraMm:5000, mediaMm:2500}`; `rielDeslizanteMm(state,i)` = largo del riel de esa puerta =
+    lo que recorre en el dibujo (la puerta + los paneles del lado hacia donde corre) y nunca menos de
+    2 × ancho de la puerta (**supuesto propio**, a confirmar); viaja en `facadeCtxPanel(...).rielMm`.
+    `accesoriosKitTxt(p, ctx, esc)` (compartido por la cajita y el resumen) agrega "Riel ALC00186: 1800
+    mm (media barra 2,5 m)". `rielesDeDucha(state)` (largos × cantidad) y `rielBarrasNecesarias(largos)`
+    (reparte de mayor a menor en barras de 5 m reusando sobrantes; una barra con ≤ 2,5 m de uso se
+    compra como media; un largo > 5 m marca "empalme") dan la compra: en el resumen de la tarjeta
+    ("Riel ALC00186 (4 puertas): 7.60 m lineales → 2 barras completas (5 m)") y en el banner del
+    proyecto `#perfil-u-banner` (`actualizarPerfilUTotal`, ahora también aparece sin barandas:
+    "🚿 Riel ALC00186 para este trabajo: 2 barras completas + 1 media barra").
   - **"fijo" (mampara) tiene una dimensión extra: la forma de la prensa.** El usuario dio 4
     referencias reales (2 formas x 2 colores): cromado → recta `ALC00150` / L `ALC00151`;
     negro → recta `ALC00004` / L `ALC00445` (confirmó explícitamente que negro sigue el mismo
