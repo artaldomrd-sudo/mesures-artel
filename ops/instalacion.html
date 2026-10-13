@@ -462,7 +462,7 @@
     import { borrarConRegistro } from './papelera.js';
     import { mismaObra } from './obras-util.js';
     import {
-        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, Timestamp, serverTimestamp, arrayUnion
+        collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, Timestamp, serverTimestamp, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     window.openOrderPreview = openOrderPreview;
 
@@ -1638,7 +1638,15 @@
         if (c.enc && sel.length) {
             const obraKey = normTxtP(j.cliente) + '|' + normTxtP(j.obra), obraLabel = [j.cliente, j.obra].filter(Boolean).join(' — ');
             // G3: la línea ya no lleva costoHora; el servidor lo congela en partesCostos (solo finanzas).
-            const nuevas = sel.map(id => { const e = rrhhEmpleados.find(x => x.id === id) || {}; return { empleadoId: id, nombre: e.nombre || id, tipo: 'obra', obraKey, obraLabel, horas: horasDe(id), origenValidacion: c.id }; }).filter(l => l.horas > 0);
+            let nuevas = sel.map(id => { const e = rrhhEmpleados.find(x => x.id === id) || {}; return { empleadoId: id, nombre: e.nombre || id, tipo: 'obra', obraKey, obraLabel, horas: horasDe(id), origenValidacion: c.id }; }).filter(l => l.horas > 0);
+            // D3 (revisión 2026-10-09): UNA persona, UN parte por día. Si alguien ya tiene horas ese día en el parte de OTRO encargado
+            // (enviado o borrador), sus horas no se duplican aquí: se avisa y se corrigen en el parte donde ya está.
+            try {
+                const otros = (await getDocs(query(collection(db, 'partesDiarios'), where('fecha', '==', fecha)))).docs.map(d => ({ id: d.id, ...d.data() })).filter(p => String(p.encargadoEmail || '').toLowerCase() !== String(c.enc.email || '').toLowerCase());
+                const enOtro = [];
+                nuevas = nuevas.filter(l => { const p = otros.find(x => (x.lineas || []).some(y => y.empleadoId === l.empleadoId && y.origenValidacion !== c.id && Number(y.horas) > 0)); if (p) { enOtro.push(`${l.nombre} → ya tiene horas en el parte de ${p.encargadoNombre || p.encargadoEmail}${p.borrador ? ' (borrador)' : ''}`); return false; } return true; });
+                if (enOtro.length) alert('Estas personas ya están en el parte de otro encargado ese día y NO se duplican:\n\n' + enOtro.join('\n') + '\n\nSi estuvieron contigo, pide que las quiten de allí (o corrígelo en Parte diario).');
+            } catch (_) { /* sin permiso de leer otros partes (ayudante): se escribe igual; Parte diario avisa al enviar */ }
             if (nuevas.length) {
                 try {
                     const ref = doc(db, 'partesDiarios', fecha + '_' + claveEm(c.enc.email));

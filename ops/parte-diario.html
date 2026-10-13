@@ -250,8 +250,9 @@
         const act = empleados.filter(e => (e.estado || 'activo') === 'activo').filter(e => !rolesDe(e.correo).includes('admin'));
         let conRol = act.filter(e => { const r = rolesDe(e.correo); return r.includes('instalador') || r.includes('ayudante'); });
         if (!conRol.length) conRol = act;
-        const jefe = jefeEmail();
-        if (jefe && mio !== jefe) conRol = conRol.filter(e => String(e.correo || '').toLowerCase() !== jefe);
+        // D3 (revisión 2026-10-09): el jefe de parte (Wilson) SÍ puede ir en el parte de otro encargado, igual que en la ventana de
+        // horas de Instalación (usuario 2026-10-01: Miki no podía marcarlo aunque trabajaran juntos). La regla que evita el doble
+        // conteo es «una persona, un parte por día» (abajo, al enviar), no excluir al jefe de la lista.
         return conRol.sort((a, b) => {
             const am = String(a.correo || '').toLowerCase() === mio, bm = String(b.correo || '').toLowerCase() === mio;
             if (am !== bm) return am ? -1 : 1;
@@ -469,10 +470,24 @@
         const sinHoras = lineas.filter(l => l.tipo !== 'ausente' && !(l.horas > 0)).map(l => l.nombre);
         if (sinHoras.length) { alert('Horas en 0 para: ' + [...new Set(sinHoras)].join(', ') + '. Pon las horas o márcalo como ausente.'); return; }
         // Nadie puede aparecer en el parte de DOS encargados el mismo día (evita contar doble el costo).
-        const otros = partes.filter(p => p.fecha === fecha && p.encargadoEmail !== enc.email);
-        const dup = [];
-        lineas.forEach(l => otros.forEach(p => { if ((p.lineas || []).some(x => x.empleadoId === l.empleadoId)) dup.push(l.nombre + ' (ya lo reportó ' + (p.encargadoNombre || p.encargadoEmail) + ')'); }));
-        if (dup.length) { alert('No se puede enviar: estas personas ya están en otro parte de hoy:\n\n' + [...new Set(dup)].join('\n') + '\n\nQuítalas de tu parte o pídele al otro encargado que las quite del suyo.'); return; }
+        // D3 (revisión 2026-10-09): si el otro parte es un BORRADOR (horas cargadas desde la ventana de Instalación, aún no enviado),
+        // el encargado que envía puede resolverlo aquí mismo: quita a la persona de ese borrador y la deja en su parte. Si el otro
+        // parte ya fue ENVIADO, se bloquea como antes (caso Wilson/Roosevelt 2026-09-30: quedó bloqueado por un borrador de Miki).
+        const otros = partes.filter(p => p.fecha === fecha && String(p.encargadoEmail || '').toLowerCase() !== String(enc.email || '').toLowerCase());
+        const dupEnviado = [], dupBorrador = [];
+        lineas.forEach(l => otros.forEach(p => { if ((p.lineas || []).some(x => x.empleadoId === l.empleadoId)) (p.borrador ? dupBorrador : dupEnviado).push({ nombre: l.nombre, empleadoId: l.empleadoId, parte: p }); }));
+        if (dupEnviado.length) { alert('No se puede enviar: estas personas ya están en el parte ENVIADO de otro encargado:\n\n' + [...new Set(dupEnviado.map(d => d.nombre + ' (lo reportó ' + (d.parte.encargadoNombre || d.parte.encargadoEmail) + ')'))].join('\n') + '\n\nQuítalas de tu parte o pídele al otro encargado que las quite del suyo.'); return; }
+        if (dupBorrador.length) {
+            const txt = [...new Set(dupBorrador.map(d => d.nombre + ' (borrador de ' + (d.parte.encargadoNombre || d.parte.encargadoEmail) + ')'))].join('\n');
+            if (!confirm('Estas personas también están en un BORRADOR de otro encargado (horas cargadas al validar un trabajo):\n\n' + txt + '\n\n¿Quitarlas de ese borrador y dejarlas en tu parte? (Cancelar = no enviar todavía)')) return;
+            const porParte = new Map(); dupBorrador.forEach(d => { const a = porParte.get(d.parte) || new Set(); a.add(d.empleadoId); porParte.set(d.parte, a); });
+            for (const [p, ids] of porParte) {
+                const restantes = (p.lineas || []).filter(x => !ids.has(x.empleadoId));
+                const emails = [...new Set(restantes.map(x => { const e = empPorId(x.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
+                try { await setDoc(doc(db, 'partesDiarios', p.id || parteId(p.fecha, p.encargadoEmail)), { lineas: restantes, incluidosEmails: emails, actualizado: serverTimestamp(), editadoPor: usuario.nombre + ' (desde su parte)' }, { merge: true }); }
+                catch (e) { alert('No se pudo corregir el borrador de ' + (p.encargadoNombre || p.encargadoEmail) + ': ' + e.message); return; }
+            }
+        }
         // G3: el costo por hora ya no va en la línea (lo veían los encargados); el servidor lo congela en partesCostos (solo finanzas).
         lineas.forEach(l => { delete l.costoHora; });
         const id = parteId(fecha, enc.email);
