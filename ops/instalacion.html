@@ -1734,6 +1734,12 @@
         const arr = hiloMsgs(d), vistos = Number((d.leidoPor || {})[claveEmail(usuario.email)]) || 0;
         return arr.slice(vistos).filter(cm => cm.email !== usuario.email);
     }
+    // Borrador de cada conversación en memoria (captura de Miki 2026-10-13: escribió el mensaje, tocó Enviar y salió «Escribe el
+    // mensaje antes de enviar»). Al tocar el botón el cuadro pierde el foco; si en ese instante llega un cambio de datos, el panel
+    // se repinta con un textarea nuevo y vacío antes de leerlo. Ahora cada tecla guarda el texto aquí, el textarea se pinta con
+    // ese borrador tras cualquier repintado, y Enviar lee del borrador si el cuadro ya no está.
+    const hiloBorradores = {};
+    document.addEventListener('input', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('coment-ta') && t.id) hiloBorradores[t.id] = t.value; });
     function hiloHTML(col, id, d) {
         const arr = hiloMsgs(d), vistos = Number((d.leidoPor || {})[claveEmail(usuario.email)]) || 0;
         const nuevos = hiloNoLeidos(d).length;
@@ -1746,7 +1752,7 @@
         return `<div class="coment-box">
                 <div class="coment-title">💬 Conversación de la obra${nuevos ? `<span class="coment-nuevos">${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}</div>
                 ${items ? `<div class="coment-list">${items}</div>` : '<div style="font-size:12px;color:#8a93a0;margin-bottom:6px;">Sin mensajes todavía.</div>'}
-                <textarea id="hilo-${col}-${id}" class="coment-ta" placeholder="${ph}"></textarea>
+                <textarea id="hilo-${col}-${id}" class="coment-ta" placeholder="${ph}">${esc(hiloBorradores['hilo-' + col + '-' + id] || '')}</textarea>
                 <button class="btn-coment" onclick="hiloEnviar('${col}','${id}')">Enviar</button>${nuevos ? `<button class="btn-leido" onclick="hiloLeido('${col}','${id}')">✓ Marcar leído</button>` : ''}
             </div>`;
     }
@@ -1755,8 +1761,9 @@
         return allJobs.find(x => x.id === id) || null;
     }
     window.hiloEnviar = async function (col, id) {
-        const ta = document.getElementById(`hilo-${col}-${id}`);
-        const texto = (ta && ta.value || '').trim();
+        const key = `hilo-${col}-${id}`;
+        const ta = document.getElementById(key);
+        const texto = ((ta && ta.value) || hiloBorradores[key] || '').trim();
         if (!texto) { alert('Escribe el mensaje antes de enviar.'); return; }
         try {
             const snap = await getDoc(doc(db, col, id));
@@ -1765,7 +1772,8 @@
             const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
             if (esOficina) upd.comentariosInstaladorAtendidos = nuevo.length;  // contestar = atendido en el Panel
             await updateDoc(doc(db, col, id), upd);
-            if (ta) ta.value = '';
+            delete hiloBorradores[key];
+            const ta2 = document.getElementById(key); if (ta2) ta2.value = '';
         } catch (e) { alert('No se pudo enviar: ' + e.message); }
     };
     window.hiloLeido = async function (col, id) {
