@@ -229,13 +229,26 @@
     onSnapshot(collection(db, DEMO ? 'rrhhEmpleados' : 'empleadosPublico'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data(), ...(empleadosRRHH[d.id] || {}) })); ready.emp = true; arranque(); renderTodo(); });
     if (!DEMO && (usuario.roles || []).some(r => r === 'admin' || r === 'contable')) onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleadosRRHH = {}; s.docs.forEach(d => { const x = d.data(); empleadosRRHH[d.id] = { costoDiaReal: x.costoDiaReal, sueldoBase: x.sueldoBase }; }); empleados = empleados.map(e => ({ ...e, ...(empleadosRRHH[e.id] || {}) })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'equipo'), (s) => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); ready.eq = true; arranque(); renderTodo(); }, () => { ready.eq = true; arranque(); });
-    onSnapshot(collection(db, 'orders'), (s) => { ordersCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
-    onSnapshot(collection(db, 'instalaciones'), (s) => { instCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    // H2 (revisión 2026-10-09): en el teléfono cada colección entera cuesta segundos (orders ≈ 1 MB). La lista de obras del parte
+    // solo necesita lo EN CURSO y lo cerrado en los últimos 45 días: pedidos por estado activo + completados por fecha de
+    // instalación/entrega; trabajos abiertos + completados por fecha de validación. Varias consultas chicas que se unen por id.
+    const hace45 = new Date(Date.now() - 45 * 86400000);
+    const unir = (partes) => { const m = new Map(); partes.forEach(arr => arr.forEach(x => m.set(x.id, x))); return [...m.values()]; };
+    const ordersPartes = { activos: [], instalados: [], entregados: [] };
+    const ordersUnir = () => { ordersCache = unir(Object.values(ordersPartes)); renderTodo(); };
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'])), (s) => { ordersPartes.activos = s.docs.map(d => ({ id: d.id, ...d.data() })); ordersUnir(); }, () => {});
+    onSnapshot(query(collection(db, 'orders'), where('fechaInstalado', '>=', hace45)), (s) => { ordersPartes.instalados = s.docs.map(d => ({ id: d.id, ...d.data() })); ordersUnir(); }, () => {});
+    onSnapshot(query(collection(db, 'orders'), where('fechaEntregado', '>=', hace45)), (s) => { ordersPartes.entregados = s.docs.map(d => ({ id: d.id, ...d.data() })); ordersUnir(); }, () => {});
+    const instPartes = { abiertos: [], recientes: [] };
+    const instUnir = () => { instCache = unir(Object.values(instPartes)); renderTodo(); };
+    onSnapshot(query(collection(db, 'instalaciones'), where('estado', 'in', ['pendiente', 'en_proceso'])), (s) => { instPartes.abiertos = s.docs.map(d => ({ id: d.id, ...d.data() })); instUnir(); }, () => {});
+    onSnapshot(query(collection(db, 'instalaciones'), where('validadoFecha', '>=', hace45)), (s) => { instPartes.recientes = s.docs.map(d => ({ id: d.id, ...d.data() })); instUnir(); }, () => {});
     onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
     // Feriados que SÍ se trabajan (avisados por comunicado en Mensajería): cuentan como día normal, horas al 200 %.
     onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Map(s.docs.map(d => [d.data().fecha, d.data()])); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; ready.cfg = true; arranque(); renderTodo(); }, () => { ready.cfg = true; arranque(); });
-    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.partes = true; arranque(); renderTodo(); }, () => { ready.partes = true; arranque(); });
+    // H2: partes de los últimos 45 días (la ventana de corrección/bloqueo es de 7 laborables; «igual que ayer» y las obras de partes recientes caben de sobra).
+    onSnapshot(query(collection(db, 'partesDiarios'), where('fecha', '>=', addDias(hoyStr(), -45))), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.partes = true; arranque(); renderTodo(); }, () => { ready.partes = true; arranque(); });
 
     // Equipo de instalación = empleados activos cuyo correo (login) tiene rol instalador/ayudante en `equipo`.
     // Si no hay ninguno mapeado, se muestran todos los activos (para que la pantalla nunca quede vacía).
