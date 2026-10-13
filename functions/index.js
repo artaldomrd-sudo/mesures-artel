@@ -1350,7 +1350,7 @@ function anularSiCancelada(m) {
     if (/^cancelad/i.test(String(m.citrusEstatus || ''))) {
         m.anulado = true; if (m.montoOriginal == null) m.montoOriginal = Number(m.monto) || 0;
         m.monto = 0; m.itbis = 0; if ('montoPagado' in m) m.montoPagado = 0;
-    } else { m.anulado = false; }
+    } else { m.anulado = false; m.montoOriginal = null; }   // null, nunca undefined: Firestore rechaza el documento entero (sync rota 10–12/10)
     return m;
 }
 const CAMPOS_CITRUS_FACTURA = ['anulado', 'montoOriginal', 'fecha', 'monto', 'itbis', 'montoPagado', 'fechaPago', 'tercero', 'rnc', 'ncf', 'moneda', 'tasa', 'montoMoneda', 'retencionISR', 'retencionITBIS', 'citrusTipoGasto', 'citrusSuplidorId', 'citrusEstatus'];
