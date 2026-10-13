@@ -309,6 +309,7 @@
         #ro-header .ro-h-logo { max-height: 42px; max-width: 110px; object-fit: contain; flex: none; }
         @media (max-width: 480px) { #ro-header .ro-h-logo { display: none; } }
         body.readonly-view:not(.printing-sheets) #perfil-u-banner { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+        body.readonly-view #btn-nube-sesion, body.readonly-view #nube-estado { display: none !important; }
         body.readonly-view:not(.printing-sheets).ro-role-fabrica #perfil-u-banner, body.readonly-view:not(.printing-sheets).ro-role-chofer #perfil-u-banner { display: none !important; }
         body.readonly-view:not(.printing-sheets) .item-card { padding: 12px; gap: 10px; }
         body.readonly-view:not(.printing-sheets) .item-card > .ro-head { order: -4; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; border-bottom: 2px solid #e6ebf0; padding-bottom: 7px; }
@@ -452,6 +453,11 @@
             <button class="side-btn primary" style="margin-top:4px;" onclick="loadProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z"/><path d="M3 9h18l-1.5 8a2 2 0 0 1-2 1.7H6.5a2 2 0 0 1-2-1.7z"/></svg> Abrir proyecto</button>
             <button class="side-btn ghost" style="margin-top:6px;" onclick="mostrarVersionesAnteriores()" title="Últimas versiones de este proyecto guardadas en la nube (se crean solas con cada cambio y con cada Guardar)">🕘 Versiones anteriores</button>
             <button class="side-btn ghost" style="margin-top:6px;" onclick="moverProyectoSeleccionado()" title="Mover el proyecto elegido arriba a otro cliente (aquí y en la nube) — para corregir uno que quedó bajo el cliente equivocado">↪ Mover a otro cliente</button>
+            <!-- Sesión de Google para traer los proyectos guardados en la nube (usuario 2026-10-13: en el iPad no salían
+                 clientes ni obras — Safari borra los datos locales y la sesión tras días sin usar el sitio, y el cuaderno
+                 no tenía ningún botón para volver a entrar; solo pedía sesión al enviar a fábrica). -->
+            <button id="btn-nube-sesion" class="side-btn" style="margin-top:6px; border:1.5px solid #7fb3e0; display:none;" title="Inicia sesión con Google para que aparezcan aquí los proyectos guardados desde cualquier dispositivo">☁️ Iniciar sesión (ver proyectos de la nube)</button>
+            <div id="nube-estado" style="font-size:11px; color:#9fb3c8; margin-top:5px; text-align:center; line-height:1.3; display:none;"></div>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
             <button class="side-btn" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="nuevaParteProyecto()" title="Arranca una hoja nueva del mismo proyecto (2da etapa, barandas, adicional…) sin pisar la parte anterior">➕ Nueva parte del proyecto</button>
         </div>
@@ -569,7 +575,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 09:39</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 10:51</div>
         </div>
     </div>
     
@@ -9679,7 +9685,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
     import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-    import { signInWithPopup, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+    import { signInWithPopup, signInWithRedirect, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
     import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
     // Sincroniza clientes/obras del cuaderno a Firestore (colección `clientes`) para que
@@ -9837,9 +9843,16 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (ch.doc.metadata.hasPendingWrites) return; // eco de nuestra propia escritura optimista
                 if (ch.type === 'removed') return; // el borrado no se propaga solo (ver CLAUDE.md)
                 const d = ch.doc.data();
-                if (d && d.jsonData && window.mergeCloudProject) window.mergeCloudProject(d.cliente, d.obra, d.jsonData);
+                if (d && d.jsonData && window.mergeCloudProject) { window.mergeCloudProject(d.cliente, d.obra, d.jsonData); nubeProyectosRecibidos++; }
             });
-        }, (err) => { console.error('startFsProjectsListener falló (revisar permisos/reglas de Firestore):', err); });
+            if (window.updateClientList) window.updateClientList();
+            const e = document.getElementById('nube-estado');
+            if (e && auth.currentUser) e.textContent = `☁️ ${snap.size} proyecto${snap.size === 1 ? '' : 's'} en la nube · ${auth.currentUser.email || ''}`;
+        }, (err) => {
+            console.error('startFsProjectsListener falló (revisar permisos/reglas de Firestore):', err);
+            const e = document.getElementById('nube-estado');
+            if (e) { e.style.display = ''; e.style.color = '#f3b2a8'; e.textContent = 'No se pudieron leer los proyectos de la nube: ' + ((err && err.code) || 'sin permiso'); }
+        });
     }
 
     // Muestra las opciones SOLO-ADMIN del cuaderno (ej. "Nuevo proyecto de este cliente") según
@@ -9853,7 +9866,41 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         document.body.classList.toggle('admin-cuaderno', !!window.esAdminCuaderno);
     }
     window.aplicarVisibilidadAdminCuaderno = aplicarVisibilidadAdminCuaderno;
+    // Botón "☁️ Iniciar sesión" de la barra lateral + línea de estado. Sin sesión, el cuaderno solo muestra los
+    // proyectos guardados en ESTE dispositivo (localStorage); con sesión, startFsProjectsListener trae los de la
+    // nube (proyectosGuardados) y los mezcla en la lista. En la app del Dock (standalone) la ventana emergente de
+    // Google suele estar bloqueada → se usa la redirección.
+    let nubeProyectosRecibidos = 0;
+    function pintarEstadoNube(user) {
+        const b = document.getElementById('btn-nube-sesion'), e = document.getElementById('nube-estado');
+        if (!b || !e) return;
+        if (user) {
+            b.style.display = 'none';
+            e.style.display = '';
+            e.textContent = '☁️ Proyectos sincronizados con la nube · ' + (user.email || '');
+        } else {
+            b.style.display = 'block';
+            e.style.display = '';
+            e.textContent = 'Sin sesión: solo se ven los proyectos guardados en este dispositivo.';
+        }
+    }
+    window.pintarEstadoNube = pintarEstadoNube;
+    async function entrarParaNube() {
+        const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+        try {
+            if (standalone) await signInWithRedirect(auth, googleProvider);
+            else await signInWithPopup(auth, googleProvider);
+        } catch (e) {
+            const code = (e && e.code) || '';
+            if (/popup-blocked|popup-closed|cancelled-popup|operation-not-supported/.test(code)) {
+                try { await signInWithRedirect(auth, googleProvider); return; } catch (e2) { e = e2; }
+            }
+            alert('No se pudo iniciar sesión con Google: ' + (e && e.message || e));
+        }
+    }
+    if (document.getElementById('btn-nube-sesion')) document.getElementById('btn-nube-sesion').onclick = entrarParaNube;
     onAuthStateChanged(auth, async (user) => {
+        pintarEstadoNube(user);
         if (user) {
             bulkSyncClientesUnaVez();
             startFsClientListeners();

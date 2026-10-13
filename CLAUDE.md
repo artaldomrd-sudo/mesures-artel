@@ -1926,6 +1926,16 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
     (no se despliega solo con el push a GitHub Pages).
   - **Confirmado por el usuario en producción**: guardó un proyecto en un dispositivo y apareció
     solo en otro sin recargar manualmente. Funciona.
+  - **Botón "☁️ Iniciar sesión (ver proyectos de la nube)" en la barra lateral (2026-10-13, usuario: "en el
+    iPad no me salen los clientes y obras")**: Safari en iPad borra localStorage, IndexedDB y la sesión de
+    Firebase tras ~7 días sin usar el sitio (ITP) → `artal_projects` vacío y sin sesión; el listener de la
+    nube solo arranca con sesión y el cuaderno no tenía ningún sitio para entrar (solo pedía Google al enviar
+    a fábrica). Ahora `#btn-nube-sesion` + línea `#nube-estado` (módulo: `pintarEstadoNube(user)` en
+    `onAuthStateChanged`, `entrarParaNube()` con `signInWithPopup` y `signInWithRedirect` de respaldo en la
+    app del Dock/standalone o si el popup se bloquea). Con sesión el botón se oculta y la línea dice
+    "☁️ N proyectos en la nube · email"; `startFsProjectsListener` llama `updateClientList()` tras cada
+    lote y, si la lectura falla por reglas, lo muestra en rojo en esa línea en vez de solo en consola.
+    Ocultos en la ficha `?orderId=` (`body.readonly-view`).
   - **Trampa real encontrada: la app agregada al Dock/pantalla de inicio del iPad usa
     almacenamiento AISLADO de Safari en el mismo dispositivo** (limitación conocida de iOS para
     apps "Agregadas a Inicio") — un proyecto creado solo ahí adentro no aparece en Safari ni se
