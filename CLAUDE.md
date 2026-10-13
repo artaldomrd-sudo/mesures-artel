@@ -1936,6 +1936,13 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
     "☁️ N proyectos en la nube · email"; `startFsProjectsListener` llama `updateClientList()` tras cada
     lote y, si la lectura falla por reglas, lo muestra en rojo en esa línea en vez de solo en consola.
     Ocultos en la ficha `?orderId=` (`body.readonly-view`).
+    **Segunda vuelta el mismo día ("me conecté y la página se queda en blanco")**: con el local vacío, el
+    primer snapshot trae TODOS los proyectos y `mergeCloudProject` los procesaba uno por uno, releyendo y
+    reescribiendo el blob entero cada vez (O(N²) de JSON en el hilo principal → iPad congelado = pantalla
+    en blanco). Ahora el listener junta el lote y, en un `setTimeout`, llama `mergeCloudProjects(items)`
+    (script clásico): una lectura, un merge, una escritura (60 proyectos / 1,7 MB en 24 ms en pruebas); los
+    proyectos abiertos en esta hoja se delegan a `mergeCloudProject` (su `confirm()`). Si no caben en
+    localStorage (Safari ≈ 5 MB) lo dice en rojo en `#nube-estado` con el tamaño.
   - **Trampa real encontrada: la app agregada al Dock/pantalla de inicio del iPad usa
     almacenamiento AISLADO de Safari en el mismo dispositivo** (limitación conocida de iOS para
     apps "Agregadas a Inicio") — un proyecto creado solo ahí adentro no aparece en Safari ni se

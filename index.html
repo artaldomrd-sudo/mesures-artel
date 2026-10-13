@@ -575,7 +575,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 10:51</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 11:11</div>
         </div>
     </div>
     
@@ -1692,6 +1692,44 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         updateClientList();
     }
     window.mergeCloudProject = mergeCloudProject;
+    // Versión por LOTE (usuario 2026-10-13, iPad: tras iniciar sesión "la página se queda en blanco"): con el
+    // almacenamiento local vacío, el primer snapshot trae TODOS los proyectos y mergeCloudProject los procesaba
+    // uno por uno — cada uno volvía a leer (getProjects) y reescribir (JSON.stringify + setItem) el blob
+    // completo, que crecía con cada proyecto: O(N²) de JSON en el hilo principal → el iPad se congela minutos
+    // (pantalla en blanco). Aquí se lee una vez, se mezclan todos y se escribe una sola vez; los proyectos que
+    // esta hoja tiene ABIERTOS se delegan a mergeCloudProject (tiene su confirm()). Si no caben en el
+    // almacenamiento (Safari ≈ 5 MB), se avisa en la barra lateral en vez de fallar en silencio.
+    function mergeCloudProjects(items) {
+        if (!items || !items.length) return;
+        const projects = getProjects();
+        let changed = 0; const abiertos = [];
+        items.forEach(it => {
+            const { cliente, obra, jsonData } = it || {};
+            if (!cliente || !obra || !jsonData) return;
+            let cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente)) || cliente;
+            if (!projects[cliKey]) projects[cliKey] = {};
+            let obraKey = Object.keys(projects[cliKey]).find(o => normNombreKey(o) === normNombreKey(obra)) || obra;
+            if ((cliKey + '|' + obraKey).toLowerCase() === openedProjectKey) { abiertos.push(it); return; }
+            const existing = projects[cliKey][obraKey];
+            const existingTs = (existing && existing.header && existing.header._syncUpdatedAt) || 0;
+            const incomingTs = (jsonData.header && jsonData.header._syncUpdatedAt) || 0;
+            if (existing && incomingTs <= existingTs) return;
+            projects[cliKey][obraKey] = jsonData; changed++;
+        });
+        if (changed) {
+            const str = JSON.stringify(projects);
+            try { localStorage.setItem('artal_projects', str); }
+            catch (e) {
+                console.error('mergeCloudProjects: no cabe en localStorage', e);
+                const el = document.getElementById('nube-estado');
+                if (el) { el.style.display = ''; el.style.color = '#f3b2a8'; el.textContent = `⚠️ Los proyectos de la nube (${(str.length / 1048576).toFixed(1)} MB) no caben en el almacenamiento de este navegador. Abre los proyectos uno a uno desde "Versiones anteriores" o usa Safari normal en vez del ícono del Dock.`; }
+                return;
+            }
+            updateClientList();
+        }
+        abiertos.forEach(it => mergeCloudProject(it.cliente, it.obra, it.jsonData));
+    }
+    window.mergeCloudProjects = mergeCloudProjects;
 
     // Aviso "✓ Proyecto guardado" / "○ Sin guardar" en la barra lateral: para saber de una
     // mirada si hace falta volver a darle a "Guardar proyecto" o no. Se basa en openedProjectKey
@@ -9839,15 +9877,24 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (fsProjectsListenerStarted) return;
         fsProjectsListenerStarted = true;
         onSnapshot(collection(db, 'proyectosGuardados'), (snap) => {
+            const items = [];
             snap.docChanges().forEach(ch => {
                 if (ch.doc.metadata.hasPendingWrites) return; // eco de nuestra propia escritura optimista
                 if (ch.type === 'removed') return; // el borrado no se propaga solo (ver CLAUDE.md)
                 const d = ch.doc.data();
-                if (d && d.jsonData && window.mergeCloudProject) { window.mergeCloudProject(d.cliente, d.obra, d.jsonData); nubeProyectosRecibidos++; }
+                if (d && d.jsonData) items.push({ cliente: d.cliente, obra: d.obra, jsonData: d.jsonData });
             });
-            if (window.updateClientList) window.updateClientList();
+            nubeProyectosRecibidos += items.length;
             const e = document.getElementById('nube-estado');
-            if (e && auth.currentUser) e.textContent = `☁️ ${snap.size} proyecto${snap.size === 1 ? '' : 's'} en la nube · ${auth.currentUser.email || ''}`;
+            if (e && auth.currentUser) { e.style.color = ''; e.textContent = items.length > 20 ? `☁️ Cargando ${items.length} proyectos de la nube…` : `☁️ ${snap.size} proyecto${snap.size === 1 ? '' : 's'} en la nube · ${auth.currentUser.email || ''}`; }
+            // Fuera del callback (setTimeout) para que la pantalla se pinte antes del trabajo pesado; un solo
+            // merge por lote (ver mergeCloudProjects) en vez de reescribir el almacenamiento por cada proyecto.
+            setTimeout(() => {
+                try { if (window.mergeCloudProjects) window.mergeCloudProjects(items); else if (window.mergeCloudProject) items.forEach(it => window.mergeCloudProject(it.cliente, it.obra, it.jsonData)); }
+                catch (err) { console.error('mergeCloudProjects', err); }
+                if (window.updateClientList) window.updateClientList();
+                if (e && auth.currentUser && !/⚠️/.test(e.textContent)) e.textContent = `☁️ ${snap.size} proyecto${snap.size === 1 ? '' : 's'} en la nube · ${auth.currentUser.email || ''}`;
+            }, 30);
         }, (err) => {
             console.error('startFsProjectsListener falló (revisar permisos/reglas de Firestore):', err);
             const e = document.getElementById('nube-estado');
