@@ -111,6 +111,8 @@
 
 <main>
     <button class="new-cita-btn" onclick="abrirNuevaCita()">+ Nuevo evento</button>
+    <!-- Dylan 2026-10-13: eventos FIJADOS (📌) y recordatorios SIN FECHA viven arriba de todo, fuera del mes. -->
+    <div id="fijados-wrap"></div>
     <div class="persona-tabs" id="persona-tabs">
         <button type="button" class="active" onclick="setFiltroPersona('todos')">Todos</button>
         <button type="button" onclick="setFiltroPersona('Anny')">Anny</button>
@@ -163,7 +165,7 @@
         <label>Descripción (opcional)</label>
         <textarea id="cita-descripcion" placeholder="Detalles adicionales…"></textarea>
 
-        <label>Fecha y hora</label>
+        <label>Fecha y hora <span id="fecha-opcional-hint" style="font-weight:normal;color:#889;display:none;">(opcional en un recordatorio: sin fecha queda arriba, en «Sin fecha», hasta que lo marques hecho)</span></label>
         <input type="datetime-local" id="cita-fecha">
 
         <div id="duracion-wrap">
@@ -402,13 +404,15 @@
     function fmtHora(d) { return d.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' }); }
 
     function citaCardHTML(c) {
-        const fecha = c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date();
+        const fecha = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
         const esRec = c.tipo === 'recordatorio';
         const lugar = [c.cliente, c.obra].filter(Boolean).join(' — ');
         // Horario: para citas con duración se muestra "9:00–10:30".
         const dur = Number(c.duracionMin || 0);
-        let horaTxt = fmtHora(fecha);
-        if (!esRec && dur > 0) horaTxt = fmtHora(fecha) + '–' + fmtHora(new Date(fecha.getTime() + dur * 60000));
+        let horaTxt = fecha ? fmtHora(fecha) : '⏳ sin fecha';
+        if (fecha && !esRec && dur > 0) horaTxt = fmtHora(fecha) + '–' + fmtHora(new Date(fecha.getTime() + dur * 60000));
+        const fechaTxt = fecha ? fecha.toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · ' : '';
+        const fijar = c.fijada ? `<button class="btn-modificar" style="background:#fff3cd;color:#8a6d00;border:1.5px solid #f6d365" onclick="fijarCita('${c.id}', false)">📌 Quitar de arriba</button>` : `<button class="btn-modificar" onclick="fijarCita('${c.id}', true)">📌 Fijar arriba</button>`;
         const hecha = citaCompletadaCalc(c);
         const asg = asignadosDe(c);
         const et = etapasDe(c);
@@ -452,9 +456,27 @@
             ${fotoAddBtnHTML({ coleccion: 'citas', id: c.id })}
             <div class="cita-actions">
                 ${acciones}
+                ${fijar}
             </div>
         </div>`;
     }
+    // 📌 Fijados (cualquier evento, también hechos, hasta quitarlos) + 🔔 recordatorios sin fecha pendientes: arriba de la página,
+    // fuera del mes, respetando el filtro por persona.
+    function renderFijados() {
+        const wrap = document.getElementById('fijados-wrap'); if (!wrap) return;
+        const base = citasParaFiltro(allCitas);
+        const fijados = base.filter(c => c.fijada === true).sort((a, b) => fTimeC(a) - fTimeC(b));
+        const sinFecha = base.filter(c => !c.fijada && !(c.fecha && c.fecha.toDate) && !citaCompletadaCalc(c)).sort((a, b) => fTimeC(a, 'fechaCreacion') - fTimeC(b, 'fechaCreacion'));
+        let html = '';
+        if (fijados.length) html += `<div class="day-group"><div class="day-label">📌 Fijados arriba</div>${fijados.map(citaCardHTML).join('')}</div>`;
+        if (sinFecha.length) html += `<div class="day-group"><div class="day-label">🔔 Sin fecha (${sinFecha.length})</div>${sinFecha.map(citaCardHTML).join('')}</div>`;
+        wrap.innerHTML = html;
+    }
+    const fTimeC = (c, k) => { const v = c[k || 'fecha']; return v && v.toDate ? v.toDate().getTime() : 0; };
+    window.fijarCita = async function (id, fijar) {
+        try { await updateDoc(doc(db, 'citas', id), fijar ? { fijada: true, fijadaPor: usuario.nombre, fijadaFecha: serverTimestamp() } : { fijada: false }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
     // Una fila del checklist (etapa o persona). fnCall es el onclick literal ya armado.
     function etapaRowHTML(hecha, titulo, nombre, fnCall) {
         const sub = nombre ? `<span class="et-nom">· ${esc(nombre)}</span>` : '';
@@ -467,6 +489,7 @@
     function render() {
         document.getElementById('month-label').textContent = MESES[currentMonth.getMonth()] + ' ' + currentMonth.getFullYear();
         renderGrid();
+        renderFijados();
 
         const bar = document.getElementById('selected-day-bar');
         const list = document.getElementById('citas-list');
@@ -694,6 +717,7 @@
         document.getElementById('evento-rec-btn').classList.toggle('active', tipo === 'recordatorio');
         // El recordatorio es un aviso puntual: no lleva duración.
         document.getElementById('duracion-wrap').style.display = tipo === 'cita' ? 'block' : 'none';
+        document.getElementById('fecha-opcional-hint').style.display = tipo === 'recordatorio' ? 'inline' : 'none';
     };
     window.setTipoCita = function (tipo) {
         tipoCita = tipo;
@@ -753,7 +777,10 @@
         const creadoPorNombre = document.getElementById('cita-creador').value || usuario.nombre;
 
         if (!titulo) { alert('Escribe un título para el evento.'); return; }
-        if (!fechaStr) { alert('Elige fecha y hora.'); return; }
+        // Un RECORDATORIO puede ir sin fecha (Dylan 2026-10-13: «que no sea obligatorio poner fecha»): queda en «Sin fecha»
+        // arriba de la página hasta que se marque hecho o se le ponga fecha. Una cita sí necesita fecha y hora.
+        const sinFecha = !fechaStr;
+        if (sinFecha && tipoEvento !== 'recordatorio') { alert('Una cita necesita fecha y hora. Si no tiene fecha todavía, créala como Recordatorio.'); return; }
 
         let cliente = '', obra = '', orderId = null;
         if (tipoCita === 'pedido') {
@@ -789,7 +816,7 @@
             });
         }
 
-        const recordatorios = Array.from(document.querySelectorAll('#cita-recordar input:checked')).map(c => Number(c.value));
+        const recordatorios = sinFecha ? [] : Array.from(document.querySelectorAll('#cita-recordar input:checked')).map(c => Number(c.value));
         const duracionMin = tipoEvento === 'cita' ? Number(document.getElementById('cita-duracion').value) || 0 : 0;
 
         // Etapas (opcional): cada una {titulo, nombre, email, hecha}. Las personas de las etapas se
@@ -801,7 +828,7 @@
 
         // Configuración de repetición. Modo 'auto' (avisa solo en cada fecha) o 'completar' (la
         // próxima ocurrencia aparece al marcar la actual hecha). Fin: siempre / N meses / fecha / N veces.
-        const repetirVal = document.getElementById('cita-repetir').value || 'no';
+        const repetirVal = sinFecha ? 'no' : (document.getElementById('cita-repetir').value || 'no');   // sin fecha no hay serie
         let repCfg = { repetir: repetirVal, repetirGenerado: false };
         if (repetirVal !== 'no') {
             const cada = Math.max(1, Number(document.getElementById('cita-repetir-cada').value) || 1);
@@ -819,7 +846,7 @@
         // Equipo de instalación + pedido = un TRABAJO de instalación (colección instalaciones), no una cita: así el pedido
         // queda agendado de verdad, sale en Instalación con GPS/horas/informe, y el enlace pedido↔trabajo existe
         // (auditoría 2026-09-28: antes se creaba una cita y el pedido nunca quedaba agendado).
-        if (!editingId && asignadoA === 'instalador' && tipoCita === 'pedido' && orderId) {
+        if (!editingId && asignadoA === 'instalador' && tipoCita === 'pedido' && orderId && fechaStr) {
             const o = ordersCache.find(x => x.id === orderId); const od = (o && o.data) || {};
             const inst = instaladoresCache.find(x => x.email === (asignados[0] || {}).email) || {};
             try {
@@ -857,7 +884,8 @@
         const datos = {
             tipo: tipoEvento,
             titulo, descripcion,
-            fecha: Timestamp.fromDate(new Date(fechaStr)),
+            fecha: sinFecha ? null : Timestamp.fromDate(new Date(fechaStr)),
+            sinFecha,
             duracionMin,
             orderId, cliente, obra,
             asignadoA, asignados,
@@ -975,10 +1003,11 @@
         setTipoEvento(c.tipo === 'recordatorio' ? 'recordatorio' : 'cita');
         document.getElementById('cita-titulo').value = c.titulo || '';
         document.getElementById('cita-descripcion').value = c.descripcion || '';
-        const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date();
+        const f = c.fecha && c.fecha.toDate ? c.fecha.toDate() : null;
         const pad = (n) => String(n).padStart(2, '0');
-        document.getElementById('cita-fecha').value =
-            `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`;
+        document.getElementById('cita-fecha').value = f
+            ? `${f.getFullYear()}-${pad(f.getMonth() + 1)}-${pad(f.getDate())}T${pad(f.getHours())}:${pad(f.getMinutes())}`
+            : '';   // recordatorio sin fecha: se le puede poner una aquí
         if (c.duracionMin != null) document.getElementById('cita-duracion').value = String(c.duracionMin);
         const repEdit = REP_FRECS.includes(c.repetir) ? c.repetir : 'no';
         document.getElementById('cita-repetir').value = repEdit;
