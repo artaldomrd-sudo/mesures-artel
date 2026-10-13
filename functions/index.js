@@ -2823,7 +2823,7 @@ async function generarInformeObra(instId, inst, opts) {
     };
     // Qué se mandó a hacer (Dylan 2026-10-09: «no me aparece descripción de qué es que se mandó a hacer»): tipo de trabajo, notas del
     // trabajo, pedido enlazado (tipo de documento, material, nº de ítems) y cuántas fotos dejó el equipo. Si no hay nada, se dice.
-    const TIPOS_TXT = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación de trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación de trabajo de otra empresa' };
+    const TIPOS_TXT = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación de trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación de trabajo de otra empresa', servicio_dominique: 'Servicio para Dominique (ayuda a sus trabajos)' };
     const tipoTxt = TIPOS_TXT[inst.tipoTrabajo] || (inst.orderId ? 'Instalación de pedido' : '');
     let pedidoTxt = '';
     try {
