@@ -1943,6 +1943,12 @@ cuaderno de relevo y solo agregamos precio; al final transporte, instalación y 
     (script clásico): una lectura, un merge, una escritura (60 proyectos / 1,7 MB en 24 ms en pruebas); los
     proyectos abiertos en esta hoja se delegan a `mergeCloudProject` (su `confirm()`). Si no caben en
     localStorage (Safari ≈ 5 MB) lo dice en rojo en `#nube-estado` con el tamaño.
+    **Tercera vuelta ("auth/multi-factor-auth-required")**: las cuentas admin tienen 2FA (`ops/mfa.js`) y
+    el cuaderno no lo pedía. `entrarGoogle(usarRedirect)` (módulo) envuelve `signInWithPopup`/`Redirect`
+    y, con ese error, importa `./ops/mfa.js` y llama `resolverMFASignIn(e)` (misma ventana del Panel para
+    el código de 6 dígitos); `getRedirectResult(auth)` al arrancar cubre la vuelta de la redirección
+    (app del Dock). Lo usan los 3 sitios que piden sesión: botón ☁️, `enviarOrden` y la ficha `?orderId=`.
+    "cancelado" (cerró la ventana del código) no muestra alerta.
   - **Trampa real encontrada: la app agregada al Dock/pantalla de inicio del iPad usa
     almacenamiento AISLADO de Safari en el mismo dispositivo** (limitación conocida de iOS para
     apps "Agregadas a Inicio") — un proyecto creado solo ahí adentro no aparece en Safari ni se

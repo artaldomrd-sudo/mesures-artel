@@ -575,7 +575,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 11:11</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-13 11:17</div>
         </div>
     </div>
     
@@ -9723,7 +9723,30 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 <script type="module">
     import { db, auth, googleProvider } from './ops/firebase-config.js';
     import { collection, addDoc, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-    import { signInWithPopup, signInWithRedirect, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+    import { signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
+    // Inicio de sesión con Google que ENTIENDE la verificación en 2 pasos (usuario 2026-10-13, iPad: "No se pudo
+    // iniciar sesión con Google: auth/multi-factor-auth-required"): las cuentas admin tienen 2FA (ops/mfa.js); si
+    // Firebase pide el segundo factor se muestra la misma ventana del Panel para el código de 6 dígitos. Lo usan
+    // los 3 sitios que piden sesión en el cuaderno (botón ☁️, enviar a fábrica/cotización, ficha ?orderId=).
+    async function entrarGoogle(usarRedirect) {
+        try {
+            if (usarRedirect) { await signInWithRedirect(auth, googleProvider); return null; }
+            return await signInWithPopup(auth, googleProvider);
+        } catch (e) {
+            if (e && e.code === 'auth/multi-factor-auth-required') {
+                const m = await import('./ops/mfa.js');
+                return await m.resolverMFASignIn(e);
+            }
+            throw e;
+        }
+    }
+    // Vuelta de signInWithRedirect (app del Dock): el segundo factor llega como error aquí, no en onAuthStateChanged.
+    getRedirectResult(auth).catch(async (e) => {
+        if (e && e.code === 'auth/multi-factor-auth-required') {
+            try { const m = await import('./ops/mfa.js'); await m.resolverMFASignIn(e); }
+            catch (e2) { if (!/cancelado/.test(String(e2 && e2.message))) alert('No se pudo iniciar sesión: ' + (e2 && e2.message || e2)); }
+        } else if (e && e.code) console.warn('getRedirectResult', e.code);
+    });
     import { buildClientMap, normalizarCliente, normalizarObra } from './ops/clients.js';
 
     // Sincroniza clientes/obras del cuaderno a Firestore (colección `clientes`) para que
@@ -9935,12 +9958,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     async function entrarParaNube() {
         const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
         try {
-            if (standalone) await signInWithRedirect(auth, googleProvider);
-            else await signInWithPopup(auth, googleProvider);
+            await entrarGoogle(standalone);
         } catch (e) {
             const code = (e && e.code) || '';
+            if (/cancelado/.test(String(e && e.message))) return;
             if (/popup-blocked|popup-closed|cancelled-popup|operation-not-supported/.test(code)) {
-                try { await signInWithRedirect(auth, googleProvider); return; } catch (e2) { e = e2; }
+                try { await entrarGoogle(true); return; } catch (e2) { e = e2; }
             }
             alert('No se pudo iniciar sesión con Google: ' + (e && e.message || e));
         }
@@ -10128,9 +10151,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
             if (!auth.currentUser) {
                 try {
-                    await signInWithPopup(auth, googleProvider);
+                    await entrarGoogle(false);
                 } catch (e) {
-                    alert('No se pudo iniciar sesión con Google: ' + e.message);
+                    if (!/cancelado/.test(String(e && e.message))) alert('No se pudo iniciar sesión con Google: ' + e.message);
                     return;
                 }
             }
@@ -10690,7 +10713,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 document.body.appendChild(overlay);
                 document.getElementById('loader-google-btn').onclick = async () => {
                     try {
-                        await signInWithPopup(auth, googleProvider);
+                        await entrarGoogle(false);
                         overlay.remove();
                         loadOrder();
                     } catch (e) {
