@@ -2741,8 +2741,25 @@ async function generarInformeObra(instId, inst, opts) {
     const existente = (await db.doc('informesObra/' + instId).get()).data() || null;
     const hoy = (existente && existente.fechaCierre) || hoySantoDomingo().fecha;
     const esMia = (c, o) => mismaObra(cliente, obra, c, o);
-    // Informes ANTERIORES de la misma obra (con tolerancia de nombre) → este cubre desde ahí. Los posteriores no cuentan.
-    const previos = (await db.collection('informesObra').get()).docs.map((d) => d.data()).filter((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra) && String(p.fechaCierre || '') <= hoy);
+    const todosInformes = (await db.collection('informesObra').get()).docs.map((d) => ({ _id: d.id, ...d.data() }));
+    // D2 (revisión 2026-10-09): dos trabajos de la misma obra cerrados el MISMO día = UN solo informe. Los partes son por día y
+    // por obra, no por trabajo: el segundo informe salía en RD$ 0 (su ventana empezaba «después» del primero, el mismo día).
+    // Ahora el segundo cierre se suma al informe del primero (`instalacionIds`), se regenera aquel y esta instalación apunta a él.
+    if (!existente) {
+        const mismoDia = todosInformes.find((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra) && p.fechaCierre === hoy);
+        if (mismoDia) {
+            const principal = (await db.doc('instalaciones/' + mismoDia.instalacionId).get()).data();
+            if (principal) {
+                await db.doc('informesObra/' + mismoDia.instalacionId).set({ instalacionIds: FieldValue.arrayUnion(instId) }, { merge: true });
+                await db.doc('instalaciones/' + instId).update({ informeObraId: mismoDia.instalacionId, informeObraFecha: hoy, informeObraCompartido: true });
+                console.log('generarInformeObra:', instId, 'se suma al informe del mismo día', mismoDia.instalacionId);
+                return generarInformeObra(mismoDia.instalacionId, principal, { push: false });
+            }
+        }
+    }
+    // Informes ANTERIORES de la misma obra (con tolerancia de nombre) → este cubre desde ahí. Los posteriores no cuentan. Uno del
+    // mismo día ya no existe aparte (se fusiona arriba); si quedó alguno de antes del arreglo, no se toma como «anterior».
+    const previos = todosInformes.filter((p) => p.instalacionId !== instId && esMia(p.cliente, p.obra) && String(p.fechaCierre || '') < hoy);
     const desde = previos.reduce((m, p) => (p.fechaCierre > m ? p.fechaCierre : m), '');
     const acumPrevio = previos.reduce((s, p) => s + (Number(p.total) || 0), 0);
 
@@ -2801,7 +2818,8 @@ async function generarInformeObra(instId, inst, opts) {
         total: Math.round(total * 100) / 100, acumuladoObra: Math.round((acumPrevio + total) * 100) / 100,
         obrasIncluidas: Object.entries(obrasIncluidas).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
         otrasObrasCliente: Object.entries(otrasObrasCliente).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
-        pedidos, generado: FieldValue.serverTimestamp()
+        pedidos, generado: FieldValue.serverTimestamp(),
+        instalacionIds: (existente && Array.isArray(existente.instalacionIds)) ? existente.instalacionIds.filter((x) => x && x !== instId) : []   // D2: otros trabajos cerrados el mismo día en esta obra
     };
     // Qué se mandó a hacer (Dylan 2026-10-09: «no me aparece descripción de qué es que se mandó a hacer»): tipo de trabajo, notas del
     // trabajo, pedido enlazado (tipo de documento, material, nº de ítems) y cuántas fotos dejó el equipo. Si no hay nada, se dice.
@@ -2813,7 +2831,13 @@ async function generarInformeObra(instId, inst, opts) {
         if (oid) { const od = await db.doc('orders/' + oid).get(); if (od.exists) { const o = od.data(); pedidoTxt = [o.docType, o.material, o.color, o.totalItems ? o.totalItems + ' ítem(s)' : ''].filter(Boolean).join(' · '); const tipos = (Array.isArray(o.items) ? o.items : []).map((it) => it.tipo).filter(Boolean); const cont = {}; tipos.forEach((t) => { cont[t] = (cont[t] || 0) + 1; }); const resumen = Object.entries(cont).map(([t, n]) => `${n} ${t}`).join(', '); if (resumen) pedidoTxt += ' (' + resumen + ')'; } }
     } catch (_) { }
     const nFotos = Array.isArray(inst.fotos) ? inst.fotos.length : 0;
+    // D2: los trabajos sumados el mismo día también se describen.
+    const extras = [];
+    for (const xid of informe.instalacionIds) {
+        try { const x = (await db.doc('instalaciones/' + xid).get()).data(); if (x) extras.push('➕ También cerrado ese día: ' + (TIPOS_TXT[x.tipoTrabajo] || (x.orderId ? 'Instalación de pedido' : 'Trabajo')) + (x.notas ? ' — ' + String(x.notas).trim().slice(0, 140) : '') + (x.validadoPor ? ' (validó ' + x.validadoPor + ')' : '')); } catch (_) { }
+    }
     const descr = [tipoTxt ? '🧾 ' + tipoTxt : '', inst.notas ? '📝 ' + String(inst.notas).trim() : '', pedidoTxt ? '📦 Pedido: ' + pedidoTxt : '', nFotos ? '📷 ' + nFotos + ' foto(s)/archivo(s) del equipo' : ''].filter(Boolean);
+    descr.push(...extras);
     informe.descripcionTrabajo = { tipo: inst.tipoTrabajo || '', tipoTexto: tipoTxt, notas: String(inst.notas || ''), pedido: pedidoTxt, fotos: nFotos, lineas: descr.length ? descr : ['🧾 Sin descripción del trabajo (sin tipo, sin notas ni pedido enlazado)'] };
     await db.doc('informesObra/' + instId).set(informe);
 
