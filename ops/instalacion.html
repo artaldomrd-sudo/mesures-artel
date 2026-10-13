@@ -755,7 +755,7 @@
                 ${j.direccion ? '<br>📌 ' + esc(j.direccion) : ''}
                 ${j.notas ? '<br>' + esc(j.notas) : ''}
                 ${(estado === 'completado' && j.validadoPor) ? `<br><span style="color:#2ecc71;font-weight:bold;">✓ Validado por ${esc(j.validadoPor)}${fmtFechaHora(j.validadoFecha) ? ' · ' + fmtFechaHora(j.validadoFecha) : ''}</span>` : ''}
-                ${(estado === 'completado' && tipoDeJob(j) === 'medicion') ? (j.medicionPendienteOficina === true ? '<br><span style="color:#e67e22;font-weight:bold;">📏 Medidas entregadas · ⏳ la oficina aún no las tomó en cuenta</span>' : (j.medicionAtendidaPor ? `<br><span style="color:#1e8449;font-weight:bold;">📏 Medidas tomadas en cuenta por ${esc(j.medicionAtendidaPor)}${fmtFechaHora(j.medicionAtendidaFecha) ? ' · ' + fmtFechaHora(j.medicionAtendidaFecha) : ''}</span>` : '')) : ''}
+                ${(estado === 'completado' && tipoDeJob(j) === 'medicion') ? medicionEstadoHTML(j) : ''}
                 ${encuestaHTML(j)}
                 ${valoracionEncargadoHTML(j)}
                 ${j.trabajoOrigenId ? (() => { const o = allJobs.find(x => x.id === j.trabajoOrigenId); return o ? `<br><span style="color:#556;font-size:12.5px;">🔗 Sobre el trabajo: <b>${esc([o.cliente, o.obra].filter(Boolean).join(' — '))}</b>${jobDate(o) ? ' (' + esc(jobDate(o).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: '2-digit' })) + ')' : ''}${o.notas ? ' · ' + esc(String(o.notas).slice(0, 80)) : ''}</span>` : ''; })() : ''}
@@ -1270,6 +1270,19 @@
     // satisfacción solo aplica a reparaciones (Artal / otra empresa) y a instalaciones de un pedido de fábrica (interna o ALUCUFEL).
     const TIPOS_TRABAJO = { instalacion: 'Instalación de pedido', reparacion_artal: 'Reparación trabajo antiguo Artal', servicio_post: 'Servicio post-instalación', medicion: 'Toma de medidas', reemplazo_dano: 'Reemplazo de elemento dañado', preparacion_obra: 'Preparación de obra', reparacion_otra: 'Reparación trabajo de otra empresa', servicio_dominique: 'Servicio para Dominique' };
     const TIPO_ICONO = { instalacion: '🔧', reparacion_artal: '🛠️', servicio_post: '🤝', medicion: '📏', reemplazo_dano: '♻️', preparacion_obra: '🧱', reparacion_otra: '🔩', servicio_dominique: '👨‍🔧' };   // servicio_dominique (Dylan 2026-10-13): el equipo ayuda a Dominique (su papá) en sus trabajos; sin encuesta
+    // Seguimiento de una toma de medidas después de validarla (Dylan 2026-10-13): la oficina la recibe en el Panel y pasa a
+    // Cotizaciones «por cotizar» (o se enlaza a un pedido existente); se cierra sola al enviarse la cotización/pedido de la obra.
+    function medicionEstadoHTML(j) {
+        const dias = (ts) => { const d = ts && ts.toDate ? ts.toDate() : null; return d ? Math.floor((Date.now() - d.getTime()) / 86400000) : null; };
+        const por = (n, f) => `${esc(n || '—')}${fmtFechaHora(f) ? ' · ' + fmtFechaHora(f) : ''}`;
+        const e = j.medicionEstado || (j.medicionPendienteOficina === true ? 'pendiente_oficina' : (j.medicionAtendidaPor ? 'por_cotizar' : ''));
+        if (e === 'pendiente_oficina') return '<br><span style="color:#e67e22;font-weight:bold;">📏 Medidas entregadas · ⏳ la oficina aún no las recibió</span>';
+        if (e === 'por_cotizar') { const d = dias(j.medicionRecibidaFecha || j.medicionAtendidaFecha); return `<br><span style="color:#b8860b;font-weight:bold;">📏 Recibidas por ${por(j.medicionRecibidaPor || j.medicionAtendidaPor, j.medicionRecibidaFecha || j.medicionAtendidaFecha)} · en Cotizaciones, por cotizar${d != null ? ' (' + d + ' día' + (d === 1 ? '' : 's') + ')' : ''}</span>`; }
+        if (e === 'para_pedido') return `<br><span style="color:#0A3D62;font-weight:bold;">📏 Medidas enlazadas a un pedido existente por ${por(j.medicionRecibidaPor, j.medicionRecibidaFecha)} · fábrica avisada</span>`;
+        if (e === 'cotizada') return `<br><span style="color:#1e8449;font-weight:bold;">📏 Cotizada ✓${j.medicionCotizadaPor ? ' · ' + esc(j.medicionCotizadaPor) : ''}${fmtFechaHora(j.medicionCotizadaFecha) ? ' · ' + fmtFechaHora(j.medicionCotizadaFecha) : ''}${j.medicionCotizacionId ? ` · <a href="#" onclick="openOrderPreview('${j.medicionCotizacionId}', 'instalador'); return false;">ver documento</a>` : ''}</span>`;
+        if (e === 'descartada') return `<br><span style="color:#8a93a0;font-weight:bold;">📏 No se cotiza${j.medicionDescartadaMotivo ? ': ' + esc(j.medicionDescartadaMotivo) : ''}</span>`;
+        return '';
+    }
     function tipoDeJob(j) { return j.tipoTrabajo || ((j.orderId || (Array.isArray(j.orderIds) && j.orderIds.length)) ? 'instalacion' : ''); }
     function encuestaAplica(j) { const t = tipoDeJob(j); return t === 'reparacion_artal' || t === 'reparacion_otra' || t === 'instalacion'; }
     window.encuestaAplica = encuestaAplica;

@@ -218,6 +218,7 @@
 
     // ---------------- Centro de notificaciones ----------------
     let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [];
+    let ultimoCotizaciones = 0, medicionesPorCotizar = 0;
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
     // Solo cuentan los mensajes del INSTALADOR (los de gerencia, `deRol:'gerencia'`, son respuestas nuestras).
@@ -436,7 +437,7 @@
         instalador += instComentariosSinAtender;
         setBadge('badge-alucufel', alucufel);
         setBadge('badge-fabrica-interna', fabricaInterna);
-        setBadge('badge-cotizaciones', cotizaciones);
+        ultimoCotizaciones = cotizaciones; setBadge('badge-cotizaciones', cotizaciones + medicionesPorCotizar);   // + mediciones recibidas por cotizar
         setBadge('badge-chofer', chofer);
         setBadge('badge-instalador', instalador);
         renderNotifs();
@@ -496,23 +497,62 @@
                 ${fotos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">${thumbs}</div>` : '<div style="font-size:12.5px;color:#c0392b;font-weight:bold;margin-bottom:8px;">⚠ Sin fotos ni archivos adjuntos. Pide las medidas al equipo antes de marcarla.</div>'}
                 ${Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length ? `<div style="font-size:12.5px;color:#556;margin-bottom:8px;">💬 Último mensaje: ${esc(j.comentariosInstalador[j.comentariosInstalador.length - 1].texto || '')}</div>` : ''}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                    <button onclick="medicionAtendida('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13.5px;cursor:pointer;">✓ Tomé en cuenta las medidas</button>
+                    <button onclick="medicionRecibir('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13.5px;cursor:pointer;">📥 Recibido → a Cotizaciones, por cotizar</button>
                     <a href="instalacion.html" style="font-size:12.5px;color:#0A3D62;">Abrir en Instalación</a>
-                    <a href="../index.html" style="font-size:12.5px;color:#0A3D62;">Abrir el cuaderno para cotizar</a>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+                    <select id="md-ped-${id}" style="font-size:12.5px;padding:7px;border:1.5px solid #c9d3df;border-radius:8px;max-width:360px;"><option value="">¿Es para un pedido que ya existe? Elige el pedido…</option>${pedidosParaMedicion(j).map(o => `<option value="${o.id}">${esc(o.o.cliente || '')} — ${esc(o.o.obra || '')} (${esc(ORDER_ST[o.o.status] || o.o.status || '')}${o.o.destino === 'interno' ? ', interna' : ', ALUCUFEL'})</option>`).join('')}</select>
+                    <button onclick="medicionParaPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:9px;padding:9px 12px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">📥 Recibido → enlazar a ese pedido</button>
+                    <button onclick="medicionDescartar('${id}')" style="background:#fff;color:#8a93a0;border:1.5px solid #cfd6de;border-radius:9px;padding:9px 12px;font-family:'Arimo';font-size:12.5px;cursor:pointer;">✖ No se cotiza</button>
                 </div></div>`;
         }).join('');
         box.style.display = 'flex';
     }
-    window.medicionAtendida = async (id) => {
+    // ---- Toma de medidas: «Recibido» mueve la medición a la siguiente etapa (Dylan 2026-10-13: «marcar atendido es porque estamos
+    // gestionando estas medidas»). Estados en el trabajo (`medicionEstado`): pendiente_oficina (este pop-up) → por_cotizar (sección
+    // «📏 Por cotizar» de Cotizaciones; se cierra SOLA cuando el cuaderno envía la cotización o el pedido de esa obra) · para_pedido
+    // (enlazada a un pedido existente: fábrica recibe las fotos/notas como instrucción) · cotizada · descartada (con motivo).
+    const ORDER_ST = { solicitada: 'cotización solicitada', costeada: 'cotización costeada', enviada_cliente: 'cotización enviada', pendiente_fabrica: 'pendiente en fábrica', en_fabrica: 'en fábrica', parcialmente_listo: 'parcialmente listo', listo_para_cargar: 'listo para cargar', parcialmente_instalado: 'parcialmente instalado' };
+    const normCliMd = (x) => String(x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+    function pedidosParaMedicion(j) {
+        const c = normCliMd(j.cliente);
+        return ordersCache.filter(({ o }) => o.docType !== 'COMPRA_DIRECTA').slice().sort((a, b) => { const am = normCliMd(a.o.cliente) === c, bm = normCliMd(b.o.cliente) === c; if (am !== bm) return am ? -1 : 1; return String(a.o.cliente || '').localeCompare(String(b.o.cliente || '')); });
+    }
+    async function medicionMarcar(id, cambios, nota) {
         const it = instCache.find(x => x.id === id); const j = it ? it.j : {};
-        if (!confirm(`¿Confirmas que tomaste en cuenta las medidas de «${[j.cliente, j.obra].filter(Boolean).join(' — ')}» (cotizar / pedir a fábrica / archivar)?`)) return;
+        await updateDoc(doc(db, 'instalaciones', id), { medicionPendienteOficina: false, medicionRecibidaPor: usuario.nombre, medicionRecibidaPorEmail: usuario.email, medicionRecibidaFecha: serverTimestamp(), ...cambios });
+        try { await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); } catch (_) { }
+    }
+    window.medicionRecibir = async (id) => {
+        const it = instCache.find(x => x.id === id); const j = it ? it.j : {};
+        if (!confirm(`¿Recibir las medidas de «${[j.cliente, j.obra].filter(Boolean).join(' — ')}» y pasarlas a Cotizaciones como «por cotizar»?\n\nSe cerrarán solas cuando se envíe la cotización o el pedido de esa obra desde el cuaderno.`)) return;
+        try { await medicionMarcar(id, { medicionEstado: 'por_cotizar', medicionDestino: 'cotizar' }, 'Medidas recibidas por la oficina → Cotizaciones, por cotizar'); }
+        catch (e) { alert('No se pudo marcar: ' + e.message); }
+    };
+    window.medicionParaPedido = async (id) => {
+        const it = instCache.find(x => x.id === id); const j = it ? it.j : {};
+        const oid = (document.getElementById('md-ped-' + id) || {}).value; if (!oid) { alert('Elige el pedido al que corresponden estas medidas.'); return; }
+        const o = ((ordersCache.find(x => x.id === oid) || {}).o) || {};
+        if (!confirm(`¿Enlazar estas medidas al pedido «${o.cliente || ''} — ${o.obra || ''}»?\n\nFábrica verá las fotos y notas como instrucción del pedido (sale en rojo en su tablero).`)) return;
+        const fotos = (Array.isArray(j.fotos) ? j.fotos : []).filter(f => f && f.url).map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '' }));
         try {
-            await updateDoc(doc(db, 'instalaciones', id), { medicionPendienteOficina: false, medicionAtendidaPor: usuario.nombre, medicionAtendidaPorEmail: usuario.email, medicionAtendidaFecha: serverTimestamp() });
-            try { await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota: 'Medidas tomadas en cuenta por la oficina', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); } catch (_) { }
-        } catch (e) { alert('No se pudo marcar: ' + e.message); }
+            await medicionMarcar(id, { medicionEstado: 'para_pedido', medicionDestino: 'pedido', medicionPedidoId: oid }, 'Medidas enlazadas al pedido ' + (o.obra || oid));
+            await updateDoc(doc(db, 'orders', oid), {
+                medicionInstalacionId: id, medicionFotos: fotos, medicionNotas: String(j.notas || ''),
+                comentarioParaFabrica: `📏 Medidas tomadas en obra por ${j.validadoPor || 'el equipo'} (${fotos.length} foto(s)/archivo(s), enlazadas en la ficha)${j.notas ? ': ' + String(j.notas).trim().slice(0, 300) : ''}`,
+                comentarioParaFabricaAtendido: false, comentarioParaFabricaPor: usuario.nombre, comentarioParaFabricaFecha: serverTimestamp()
+            });
+        } catch (e) { alert('No se pudo enlazar: ' + e.message); }
+    };
+    window.medicionDescartar = async (id) => {
+        const motivo = prompt('¿Por qué no se cotiza? (el motivo queda en el trabajo y en la auditoría)'); if (motivo === null) return;
+        if (!motivo.trim()) { alert('Escribe el motivo.'); return; }
+        try { await medicionMarcar(id, { medicionEstado: 'descartada', medicionDestino: 'descartar', medicionDescartadaMotivo: motivo.trim() }, 'Medidas descartadas (no se cotiza): ' + motivo.trim()); }
+        catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
     onSnapshot(collection(db, 'instalaciones'), (snap) => {
         instCache = snap.docs.map(d => ({ id: d.id, j: d.data() }));
+        medicionesPorCotizar = instCache.filter(({ j }) => j.medicionEstado === 'por_cotizar').length; setBadge('badge-cotizaciones', ultimoCotizaciones + medicionesPorCotizar);
         renderMediciones();
         avisarComentariosNuevos(snap, instPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); instPrimera = false;
         instComentariosSinAtender = instCache.reduce((n, { j }) => n + comentariosSinAtender(j).length, 0);

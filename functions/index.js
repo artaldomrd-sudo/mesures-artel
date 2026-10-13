@@ -393,9 +393,25 @@ exports.medicionAOficina = onDocumentWritten('instalaciones/{id}', async (event)
     const lugar = [after.cliente, after.obra].filter(Boolean).join(' — ') || 'Toma de medidas';
     const nFotos = Array.isArray(after.fotos) ? after.fotos.filter((f) => !f || !f.tipo || f.tipo === 'img').length : 0;
     try {
-        await event.data.after.ref.update({ medicionPendienteOficina: true, medicionAvisoFecha: FieldValue.serverTimestamp(), medicionFotos: nFotos });
+        await event.data.after.ref.update({ medicionPendienteOficina: true, medicionEstado: 'pendiente_oficina', medicionAvisoFecha: FieldValue.serverTimestamp(), medicionFotos: nFotos });
         await pushATokens(await tokensPorRol('admin'), '📏 Medidas tomadas: ' + lugar, `${after.validadoPor || 'El equipo'} validó la toma de medidas${nFotos ? ' con ' + nFotos + ' foto(s)' : ' SIN fotos'}. Entra al Panel y márcala como tomada en cuenta.`, 'ops/index.html');
     } catch (e) { console.error('medicionAOficina', event.params.id, e); }
+});
+
+// Cierre AUTOMÁTICO de una medición «por cotizar» (Dylan 2026-10-13): cuando el cuaderno envía una cotización o un pedido de fábrica
+// de la misma obra (regla mismaObra), la medición pasa a 'cotizada' con el enlace al documento, sin que nadie marque nada.
+exports.medicionAlCotizar = onDocumentCreated('orders/{id}', async (event) => {
+    const o = event.data ? event.data.data() : null; if (!o) return;
+    if (o.docType === 'COMPRA_DIRECTA') return;
+    try {
+        const pend = (await db.collection('instalaciones').where('medicionEstado', '==', 'por_cotizar').get()).docs.filter((d) => mismaObra(o.cliente, o.obra, d.data().cliente, d.data().obra));
+        for (const d of pend) {
+            await d.ref.update({ medicionEstado: 'cotizada', medicionCotizacionId: event.params.id, medicionCotizadaPor: 'Sistema ARTAL', medicionCotizadaFecha: FieldValue.serverTimestamp(), medicionCotizadaDoc: o.docType || '' });
+            await db.collection('movimientosInstalaciones').add({ instalacionId: d.id, cliente: d.data().cliente || '', obra: d.data().obra || '', estado: 'completado', nota: 'Medidas cotizadas: se envió ' + (String(o.docType || '').indexOf('FAB') === 0 ? 'el pedido de fábrica' : 'la cotización') + ' de esta obra desde el cuaderno', por: 'Sistema ARTAL', porEmail: '', fecha: FieldValue.serverTimestamp() });
+            console.log('medicionAlCotizar:', d.id, '→ cotizada por', event.params.id);
+        }
+        if (pend.length) await event.data.ref.update({ medicionInstalacionIds: pend.map((d) => d.id) });
+    } catch (e) { console.error('medicionAlCotizar', event.params.id, e); }
 });
 
 // ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------

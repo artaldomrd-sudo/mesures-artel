@@ -65,6 +65,10 @@
         <div class="emoji">📚</div>
         <div><div class="title">Especificaciones</div><div class="desc">Precios estándar, reglas de cálculo y procedimientos para cotizar</div></div>
     </a>
+    <h2 class="section-title">📏 Medidas recibidas — por cotizar</h2>
+    <p style="font-size:12.5px;color:#667;margin:-6px 0 10px;">Tomas de medidas que la oficina recibió del equipo. Cada tarjeta se cierra sola cuando se envía desde el cuaderno la cotización o el pedido de esa obra.</p>
+    <div id="porcotizar-list"><p class="empty">Cargando…</p></div>
+
     <h2 class="section-title">Por costear / enviar al cliente</h2>
     <div id="porenviar-list"><p class="empty">Cargando…</p></div>
 
@@ -211,6 +215,55 @@
         if (!confirm('¿Quitar la marca de anticipo recibido? Si venía de Citrus, volverá a aparecer en el Panel para reasignarlo.')) return;
         try { await anticipoPedidoFn({ accion: 'quitar', orderId: id }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
+    // ---- 📏 Medidas recibidas, por cotizar (Dylan 2026-10-13): mediciones que el Panel marcó «Recibido». Se cierran solas cuando el
+    // cuaderno envía la cotización/pedido de esa obra (trigger medicionAlCotizar); aquí se puede cerrar a mano o descartar.
+    let medsPorCotizar = [];
+    const diasDesde = (ts) => { const d = ts && ts.toDate ? ts.toDate() : null; return d ? Math.floor((Date.now() - d.getTime()) / 86400000) : null; };
+    const fFH = (ts) => (ts && ts.toDate) ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    function renderPorCotizar() {
+        const el = document.getElementById('porcotizar-list'); if (!el) return;
+        if (!medsPorCotizar.length) { el.innerHTML = '<p class="empty">No hay medidas esperando cotización.</p>'; return; }
+        el.innerHTML = medsPorCotizar.slice().sort((a, b) => (diasDesde(b.medicionRecibidaFecha) || 0) - (diasDesde(a.medicionRecibidaFecha) || 0)).map(j => {
+            const dias = diasDesde(j.medicionRecibidaFecha || j.validadoFecha); const col = dias == null ? '#667' : (dias >= 7 ? '#c0392b' : (dias >= 3 ? '#b8860b' : '#1e8449'));
+            const fotos = (Array.isArray(j.fotos) ? j.fotos : []).filter(f => f && f.url);
+            const thumbs = fotos.map(f => (f.tipo === 'pdf' || f.tipo === 'archivo') ? `<a href="${esc(f.url)}" target="_blank" rel="noopener" style="display:inline-block;padding:8px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;color:#0A3D62;">📎 ${esc(f.nombre || 'archivo')}</a>` : `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" style="width:92px;height:92px;object-fit:cover;border-radius:8px;border:1px solid #ddd;"></a>`).join('');
+            const ult = Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length ? j.comentariosInstalador[j.comentariosInstalador.length - 1].texto : '';
+            return `<div class="order-card" style="border-left:5px solid ${col};margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;">
+                    <div style="font-weight:bold;color:#0A3D62;font-size:15px;">📏 ${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}</div>
+                    <div style="font-size:12.5px;font-weight:bold;color:${col};">${dias == null ? '' : (dias === 0 ? 'recibida hoy' : 'esperando ' + dias + ' día' + (dias === 1 ? '' : 's'))}</div>
+                </div>
+                <div style="font-size:12.5px;color:#556;margin:3px 0 6px;">Medidas de <b>${esc(j.validadoPor || 'el equipo')}</b>${fFH(j.validadoFecha) ? ' · ' + esc(fFH(j.validadoFecha)) : ''} · recibidas por <b>${esc(j.medicionRecibidaPor || '—')}</b>${fFH(j.medicionRecibidaFecha) ? ' · ' + esc(fFH(j.medicionRecibidaFecha)) : ''}${j.direccion ? ' · 📌 ' + esc(j.direccion) : ''}</div>
+                ${j.notas ? `<div style="font-size:13px;color:#333;background:#f6f8fb;border-radius:8px;padding:7px 10px;margin-bottom:8px;white-space:pre-wrap;">${esc(j.notas)}</div>` : ''}
+                ${fotos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">${thumbs}</div>` : '<div style="font-size:12.5px;color:#c0392b;font-weight:bold;margin-bottom:8px;">⚠ Sin fotos ni archivos: pide las medidas al equipo.</div>'}
+                ${ult ? `<div style="font-size:12.5px;color:#556;margin-bottom:8px;">💬 Último mensaje de la obra: ${esc(ult)}</div>` : ''}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <a href="../index.html" class="btn-aprobar" style="text-decoration:none;display:inline-block;">📐 Abrir el cuaderno para cotizar</a>
+                    <button onclick="medicionYaCotizada('${j.id}')" style="background:#fff;color:#1e8449;border:1.5px solid #1e8449;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">✓ Ya está cotizada</button>
+                    <button onclick="medicionNoCotizar('${j.id}')" style="background:#fff;color:#8a93a0;border:1.5px solid #cfd6de;border-radius:8px;padding:8px 12px;font-family:'Arimo';font-size:13px;cursor:pointer;">✖ No se cotiza</button>
+                    <a href="instalacion.html" style="font-size:12.5px;color:#0A3D62;">Ver en Instalación</a>
+                </div></div>`;
+        }).join('');
+    }
+    onSnapshot(query(collection(db, 'instalaciones'), where('medicionEstado', '==', 'por_cotizar')), (snap) => { medsPorCotizar = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderPorCotizar(); }, () => { medsPorCotizar = []; renderPorCotizar(); });
+    async function medicionCerrar(id, cambios, nota) {
+        const j = medsPorCotizar.find(x => x.id === id) || {};
+        await updateDoc(doc(db, 'instalaciones', id), cambios);
+        try { await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); } catch (_) { }
+    }
+    window.medicionYaCotizada = async (id) => {
+        const j = medsPorCotizar.find(x => x.id === id) || {};
+        if (!confirm(`¿Marcar las medidas de «${[j.cliente, j.obra].filter(Boolean).join(' — ')}» como ya cotizadas?`)) return;
+        try { await medicionCerrar(id, { medicionEstado: 'cotizada', medicionCotizadaPor: usuario.nombre, medicionCotizadaFecha: serverTimestamp(), medicionCotizadaManual: true }, 'Medidas marcadas como cotizadas (a mano)'); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.medicionNoCotizar = async (id) => {
+        const motivo = prompt('¿Por qué no se cotiza? (queda en el trabajo y en la auditoría)'); if (motivo === null) return;
+        if (!motivo.trim()) { alert('Escribe el motivo.'); return; }
+        try { await medicionCerrar(id, { medicionEstado: 'descartada', medicionDescartadaMotivo: motivo.trim(), medicionDescartadaPor: usuario.nombre, medicionDescartadaFecha: serverTimestamp() }, 'Medidas descartadas (no se cotiza): ' + motivo.trim()); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
     let ordersCache = [];
     function render() {
         // "Por costear/enviar": las ya costeadas por ALUCUFEL, MÁS las de destino "Oficina
