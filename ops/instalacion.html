@@ -650,6 +650,7 @@
             return `<br><span style="color:#b8860b;font-weight:bold;">⭐ Cliente: ${'★'.repeat(g)}${'☆'.repeat(Math.max(0, 5 - g))} (${g}/5)</span>`;
         }
         const url = j.encuestaUrl || ('https://artaldomrd-sudo.github.io/mesures-artel/ops/satisfaccion.html?t=' + j.encuestaToken);
+        if (!clientesCache.length) cargarClientes();   // H1: la lista de clientes se trae solo cuando hace falta (teléfono para el WhatsApp)
         const cli = clientesCache.find(c => c && c.nombre && j.cliente && c.nombre.trim().toLowerCase() === String(j.cliente).trim().toLowerCase()) || {};
         const tel = String(cli.telefono || '').replace(/\D/g, '');
         const telWa = tel ? (tel.length === 10 ? '1' + tel : tel) : '';
@@ -1123,27 +1124,53 @@
             box.innerHTML = pend.length ? `<div style="background:#fdeaea;border-left:4px solid #d9483b;color:#8b1e14;padding:10px 12px;border-radius:8px;font-size:13.5px;margin:0 0 10px;">📝 <b>Primero haz el parte de ${pend.length === 1 && pend[0] === ymd(new Date(Date.now() - 86400000)) ? 'ayer' : 'los días pendientes'}</b> antes del de hoy: ${pend.map(f => `<a href="parte-diario.html?fecha=${f}" style="color:inherit;font-weight:bold">${new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' })}</a>`).join(' · ')} — <a href="parte-diario.html" style="color:inherit;font-weight:bold">llenarlo ahora</a></div>` : '';
         }
         onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { encargados = (s.exists() && s.data().encargados) || []; pintar(); }, () => {});
-        onSnapshot(collection(db, 'partesDiarios'), (s) => { partesDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); pintar(); }, () => {});
+        // H1 (revisión 2026-10-09): solo los partes de los últimos 10 días (la ventana del aviso son 7 laborables), no la colección entera.
+        const desde10 = (() => { const d = new Date(); d.setDate(d.getDate() - 10); return ymd(d); })();
+        onSnapshot(query(collection(db, 'partesDiarios'), where('fecha', '>=', desde10)), (s) => { partesDocs = s.docs.map(d => ({ id: d.id, ...d.data() })); pintar(); }, () => {});
         onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
         onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); pintar(); }, () => {});
         setInterval(pintar, 60000);
     })();
 
     /* ===== Listeners ===== */
-    onSnapshot(collection(db, 'instalaciones'), (snap) => { allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() })); hiloAvisarNuevos('instalaciones', snap); renderTodo(); },
+    onSnapshot(collection(db, 'instalaciones'), (snap) => { allJobs = snap.docs.map(d => ({ id: d.id, ...d.data() })); hiloAvisarNuevos('instalaciones', snap); renderTodo(); completarPedidosReferenciados(); },
         (err) => { document.getElementById('jobs-list').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
 
     onSnapshot(query(collection(db, 'orders'), where('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'])), (snap) => {
         ordersDocs = snap.docs; renderPorInstalar(); renderBadges();
     }, (err) => { document.getElementById('orders-list').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
 
-    onSnapshot(collection(db, 'orders'), (snap) => {
-        ordersCache = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+    // H1 (revisión 2026-10-09): en el teléfono cada colección entera cuesta segundos. `orders` se baja solo en estados ACTIVOS
+    // (antes la colección completa: 56 pedidos completados con toda su ficha, ≈0,8 MB de más). Un pedido ya cerrado que un trabajo
+    // referencia (p. ej. «✅ Instalado por…» en un trabajo completado) se trae suelto con getDoc y se guarda en `ordersExtra`.
+    const ESTADOS_ACTIVOS_INST = ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'];
+    let ordersActivos = [], ordersExtra = new Map(), ordersPidiendo = new Set();
+    const armarOrdersCache = () => { ordersCache = ordersActivos.concat([...ordersExtra.values()].filter(x => !ordersActivos.some(a => a.id === x.id))); ordersClientesCache = ordersCache.map(o => o.data); };
+    async function completarPedidosReferenciados() {
+        const ids = [...new Set(allJobs.flatMap(j => [j.orderId, j.pedidoReferenciaId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])]).filter(Boolean))]
+            .filter(id => !ordersActivos.some(a => a.id === id) && !ordersExtra.has(id) && !ordersPidiendo.has(id));
+        if (!ids.length) return;
+        ids.forEach(id => ordersPidiendo.add(id));
+        let cambio = false;
+        for (const id of ids) { try { const s = await getDoc(doc(db, 'orders', id)); if (s.exists()) { ordersExtra.set(id, { id, data: s.data() }); cambio = true; } } catch (_) { } ordersPidiendo.delete(id); }
+        if (cambio) { armarOrdersCache(); renderTodo(); }
+    }
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ESTADOS_ACTIVOS_INST)), (snap) => {
+        ordersActivos = snap.docs.map(d => ({ id: d.id, data: d.data() }));
+        snap.docs.forEach(d => ordersExtra.delete(d.id));
+        armarOrdersCache();
         hiloAvisarNuevos('orders', snap);
-        ordersClientesCache = ordersCache.map(o => o.data);
         refreshClientMap(); renderPorInstalar();
+        completarPedidosReferenciados();
     });
-    onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
+    // `clientes` (186 fichas) solo hace falta para el datalist de clientes al crear un trabajo y para el teléfono de la encuesta:
+    // se carga UNA vez, bajo demanda, en vez de suscribirse al arrancar.
+    let clientesCargando = null;
+    function cargarClientes() {
+        if (clientesCargando) return clientesCargando;
+        clientesCargando = getDocs(collection(db, 'clientes')).then(snap => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); renderTodo(); }).catch(() => { clientesCargando = null; });
+        return clientesCargando;
+    }
 
     onSnapshot(query(collection(db, 'citas'), where('asignadoA', '==', 'instalador')), (snap) => {
         recsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.completada !== true);
@@ -1288,6 +1315,7 @@
         document.getElementById('tr-tipo').value = ''; trOrderId = null; trJobOrigenId = null; trPedidoRef = null; trTipoCambio();
         // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
         document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
+        cargarClientes();   // H1: datalist de clientes bajo demanda
         document.getElementById('modal-trabajo').classList.add('show');
     };
     window.cerrarModalTrabajo = function () { document.getElementById('modal-trabajo').classList.remove('show'); };
@@ -1395,6 +1423,7 @@
         poblarVincular('');
         document.getElementById('modal-title').textContent = 'Nuevo trabajo de instalación';
         if (selectedDay) { const pad = (n) => String(n).padStart(2, '0'), d = selectedDay; document.getElementById('job-fecha').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T09:00`; }
+        cargarClientes();
         document.getElementById('modal-overlay').classList.add('show');
     };
     window.agendarPedido = function (orderId) {
@@ -1407,6 +1436,7 @@
         document.getElementById('modal-title').textContent = 'Agendar instalación (desde pedido)';
         document.getElementById('job-cliente').value = o.data.cliente || '';
         document.getElementById('job-obra').value = o.data.obra || '';
+        cargarClientes();
         document.getElementById('modal-overlay').classList.add('show');
     };
     window.abrirEditar = function (id) {
@@ -1432,6 +1462,7 @@
         setModoFecha(modo);
         if (modo === 'unica' && ini) document.getElementById('job-fecha').value = dtLocal(ini);
         if (modo === 'rango') { if (ini) document.getElementById('job-fecha-inicio').value = dtLocal(ini); if (fin) document.getElementById('job-fecha-fin').value = dtLocal(fin); }
+        cargarClientes();
         document.getElementById('modal-overlay').classList.add('show');
     };
     window.cerrarModal = function () { document.getElementById('modal-overlay').classList.remove('show'); window._orderIdParaGuardar = null; };
