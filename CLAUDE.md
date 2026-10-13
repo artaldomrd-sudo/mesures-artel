@@ -2777,6 +2777,18 @@ pendientes el 09/10 como arranque. **Una medición no genera informe de cierre**
 borró con su mensaje). «+ Trabajo» con tipo reparación / servicio post / reemplazo lista también **trabajos anteriores** (`job:<id>`
 → `trabajoOrigenId`, hereda `orderId`), y la tarjeta muestra «🔗 Sobre el trabajo: …» (caso Carlos Paraíso 201).
 
+### Toma de medidas con seguimiento (2026-10-13, «marcar atendido es porque estamos gestionando estas medidas»)
+
+`instalaciones.medicionEstado`: `pendiente_oficina` (pop-up del Panel) → **«📥 Recibido → a Cotizaciones, por cotizar»** (`por_cotizar`:
+tarjeta en la sección «📏 Medidas recibidas — por cotizar» de `cotizaciones.html`, con días esperando: amarillo ≥ 3, rojo ≥ 7; suma al
+contador Cotizaciones del Panel) · **«📥 Recibido → enlazar a ese pedido»** (`para_pedido`, `medicionPedidoId`; el pedido recibe
+`medicionInstalacionId/medicionFotos/medicionNotas` y un `comentarioParaFabrica` sin atender → fábrica lo ve en rojo y recibe push) ·
+**«✖ No se cotiza»** (`descartada`, motivo obligatorio). Cualquier persona de oficina puede marcar (Sara incluida); queda
+`medicionRecibidaPor/Fecha` y movimiento en auditoría. **Cierre automático**: `medicionAlCotizar` (onDocumentCreated orders, COT o FAB
+no compra) pasa a `cotizada` las `por_cotizar` de la misma obra (`mismaObra`) con `medicionCotizacionId`; en Cotizaciones también
+«✓ Ya está cotizada» (manual) y «✖ No se cotiza». La tarjeta de Instalación muestra el estado (`medicionEstadoHTML`). `medicionAOficina`
+pone `medicionEstado:'pendiente_oficina'`. Los campos viejos `medicionAtendidaPor/Fecha` se leen como `por_cotizar` (compat).
+
 ### Instalación: mosaicos + lista compacta + tarjeta al tocar (2026-10-09, opción A validada por Dylan)
 
 «Reorganiza las pestañas como en Historial para que quepan más obras». La pestaña Agenda día a día ya no apila tarjetas
