@@ -224,7 +224,10 @@
     let parteActual = null;   // { fecha, encargadoEmail, encargadoNombre, lineas: [{empleadoId, nombre, tipo, obraKey, obraLabel, horas}], nota }
     let parteGuardado = null; // el doc tal cual está en Firestore (para saber si hay cambios)
 
-    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.emp = true; arranque(); renderTodo(); });
+    // G3: el equipo lee el espejo sin sueldo (empleadosPublico); gerencia/contable suman la ficha de RRHH solo para la pista de costo.
+    let empleadosRRHH = {};
+    onSnapshot(collection(db, DEMO ? 'rrhhEmpleados' : 'empleadosPublico'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data(), ...(empleadosRRHH[d.id] || {}) })); ready.emp = true; arranque(); renderTodo(); });
+    if (!DEMO && (usuario.roles || []).some(r => r === 'admin' || r === 'contable')) onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleadosRRHH = {}; s.docs.forEach(d => { const x = d.data(); empleadosRRHH[d.id] = { costoDiaReal: x.costoDiaReal, sueldoBase: x.sueldoBase }; }); empleados = empleados.map(e => ({ ...e, ...(empleadosRRHH[e.id] || {}) })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'equipo'), (s) => { equipo = {}; s.docs.forEach(d => equipo[d.id] = d.data()); ready.eq = true; arranque(); renderTodo(); }, () => { ready.eq = true; arranque(); });
     onSnapshot(collection(db, 'orders'), (s) => { ordersCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'instalaciones'), (s) => { instCache = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
@@ -470,8 +473,8 @@
         const dup = [];
         lineas.forEach(l => otros.forEach(p => { if ((p.lineas || []).some(x => x.empleadoId === l.empleadoId)) dup.push(l.nombre + ' (ya lo reportó ' + (p.encargadoNombre || p.encargadoEmail) + ')'); }));
         if (dup.length) { alert('No se puede enviar: estas personas ya están en otro parte de hoy:\n\n' + [...new Set(dup)].join('\n') + '\n\nQuítalas de tu parte o pídele al otro encargado que las quite del suyo.'); return; }
-        // Costo por hora congelado al momento de enviar (si después cambia el sueldo, la obra ya cerrada no se mueve).
-        lineas.forEach(l => { const e = empPorId(l.empleadoId); l.costoHora = Math.round(costoHora(e) * 100) / 100; });
+        // G3: el costo por hora ya no va en la línea (lo veían los encargados); el servidor lo congela en partesCostos (solo finanzas).
+        lineas.forEach(l => { delete l.costoHora; });
         const id = parteId(fecha, enc.email);
         const incluidosEmails = [...new Set(lineas.map(l => { const e = empPorId(l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
         const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, incluidosEmails, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };

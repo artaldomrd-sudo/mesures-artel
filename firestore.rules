@@ -223,11 +223,15 @@ service cloud.firestore {
     }
 
     // Recursos Humanos: LEER y ESCRIBIR solo finanzas/RRHH (admin, contable). Excepciones operativas:
-    // rrhhEmpleados lo leen también los encargados (instalador) porque el parte diario y la ventana de horas necesitan
-    // nombre/correo/costo por día (pendiente: mover el costo al servidor); rrhhAsistencia recibe la AUSENCIA que marca el
+    // rrhhAsistencia recibe la AUSENCIA que marca el
     // encargado en el parte; feriados/turnos/config/departamentos/cargos/sucursales se leen en general (arriba);
     // rrhhReuniones: el empleado lee las suyas. La nómina la lleva la contable.
-    match /rrhhEmpleados/{id}      { allow read: if rrhh() || alguno(['instalador']); allow write: if rrhh(); }
+    // G3 (revisión 2026-10-09): la ficha con sueldo SOLO la lee RRHH. El equipo usa el espejo `empleadosPublico` (nombre, correo,
+    // estado, cargo; lo escribe la Cloud Function espejoEmpleados) y el costo por hora congelado de cada parte vive en
+    // `partesCostos` (solo finanzas; lo escribe congelarCostoParte). Nadie escribe esos dos desde el navegador.
+    match /rrhhEmpleados/{id}      { allow read: if rrhh(); allow write: if rrhh(); }
+    match /empleadosPublico/{id}   { allow read: if miembro(); allow write: if false; }
+    match /partesCostos/{id}       { allow read: if finanzas(); allow write: if false; }
     match /rrhhDepartamentos/{id} { allow write: if rrhh(); }
     match /rrhhCargos/{id}        { allow write: if rrhh(); }
     match /rrhhSucursales/{id}    { allow write: if rrhh(); }

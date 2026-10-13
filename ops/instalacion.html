@@ -1540,7 +1540,7 @@
     // el autor; aquí cada quien carga solo las suyas (para mostrar "ya valoraste" y para reemplazar una anterior).
     onSnapshot(query(collection(db, 'valoracionesEncargado'), where('por', '==', usuario.email.toLowerCase())), (s) => { misValEnc = {}; s.docs.forEach(d => { misValEnc[d.data().instalacionId] = d.data(); }); renderTodo(); }, () => {});
     onSnapshot(query(collection(db, 'valoracionesEquipo'), where('por', '==', usuario.email.toLowerCase())), (s) => { misValEquipo = {}; s.docs.forEach(d => { misValEquipo[d.id] = d.data(); }); }, () => {});
-    onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { rrhhEmpleados = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});
+    onSnapshot(collection(db, 'empleadosPublico'), (s) => { rrhhEmpleados = s.docs.map(d => ({ id: d.id, ...d.data() })); }, () => {});   // G3: espejo sin sueldo (nombre, correo, estado, cargo)
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { parteCfg = s.exists() ? s.data() : {}; }, () => {});
     onSnapshot(collection(db, 'equipo'), (s) => { equipoRoles = {}; s.docs.forEach(d => { equipoRoles[d.id.toLowerCase()] = d.data(); }); }, () => {});
     const normTxtP = (x) => String(x || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
@@ -1636,10 +1636,9 @@
             } catch (e) { alert('La valoración del equipo no se pudo guardar: ' + e.message); }
         }
         if (c.enc && sel.length) {
-            const jornada = Number(parteCfg.horasJornada) || 9;
-            const costoDia = (e) => e ? (Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0)) : 0;
             const obraKey = normTxtP(j.cliente) + '|' + normTxtP(j.obra), obraLabel = [j.cliente, j.obra].filter(Boolean).join(' — ');
-            const nuevas = sel.map(id => { const e = rrhhEmpleados.find(x => x.id === id) || {}; return { empleadoId: id, nombre: e.nombre || id, tipo: 'obra', obraKey, obraLabel, horas: horasDe(id), costoHora: Math.round(costoDia(e) / jornada * 100) / 100, origenValidacion: c.id }; }).filter(l => l.horas > 0);
+            // G3: la línea ya no lleva costoHora; el servidor lo congela en partesCostos (solo finanzas).
+            const nuevas = sel.map(id => { const e = rrhhEmpleados.find(x => x.id === id) || {}; return { empleadoId: id, nombre: e.nombre || id, tipo: 'obra', obraKey, obraLabel, horas: horasDe(id), origenValidacion: c.id }; }).filter(l => l.horas > 0);
             if (nuevas.length) {
                 try {
                     const ref = doc(db, 'partesDiarios', fecha + '_' + claveEm(c.enc.email));

@@ -109,6 +109,8 @@
     const JORNADA_H = 9;   // jornada del equipo de instalación (usuario 2026-09-22)
     let config = { horasJornada: JORNADA_H, factorExtra: 1.35 };
     onSnapshot(collection(db, 'rrhhEmpleados'), (s) => { empleados = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    let costosPartes = {};   // G3: costo por hora congelado por parte (partesCostos, solo finanzas)
+    onSnapshot(collection(db, 'partesCostos'), (s) => { costosPartes = {}; s.docs.forEach(d => { costosPartes[d.id] = (d.data() || {}).costos || {}; }); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
     onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
@@ -136,7 +138,7 @@
             porEmp.forEach((ls, empId) => {
                 const tot = ls.reduce((s, l) => s + n2(l.horas), 0), e = empPorId(empId);
                 ls.forEach(l => {
-                    const ch = n2(l.costoHora) || costoHora(e), h = n2(l.horas), share = tot > 0 ? h / tot : 0;
+                    const ch = n2((costosPartes[p.id] || {})[empId]) || n2(l.costoHora) || costoHora(e), h = n2(l.horas), share = tot > 0 ? h / tot : 0;
                     const normales = Math.min(tot, jornada) * share, extras = Math.max(0, tot - jornada) * share;
                     // Feriado trabajado (avisado por comunicado): todas las horas al 200 % (recargo legal), sin sumarle el de extras.
                     const feriado = feriadosTrab.has(p.fecha), factorFer = n2(config.factorFeriado) || 2;

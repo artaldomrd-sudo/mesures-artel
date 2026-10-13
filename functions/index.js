@@ -2754,7 +2754,9 @@ async function generarInformeObra(instId, inst, opts) {
     const costoHoraEmp = (e) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return dia / jornada; };
 
     // Mano de obra: líneas de partes de esta obra, con la jornada por persona y día (extras al factor).
-    const partes = (await db.collection('partesDiarios').get()).docs.map((d) => d.data()).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
+    const partes = (await db.collection('partesDiarios').get()).docs.map((d) => ({ _id: d.id, ...d.data() })).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
+    // G3: el costo por hora congelado de cada parte vive en partesCostos (solo finanzas); si falta, se calcula con la ficha actual.
+    const costosParte = {}; (await db.collection('partesCostos').get()).docs.forEach((d) => { costosParte[d.id] = (d.data() || {}).costos || {}; });
     const personas = {}, dias = {}, obrasIncluidas = {}; let horas = 0, horasExtra = 0, costoMO = 0, sinCosto = [];
     const otrasObrasCliente = {};   // partes del mismo cliente que NO calzaron (para explicar un 0)
     partes.forEach((p) => {
@@ -2767,7 +2769,7 @@ async function generarInformeObra(instId, inst, opts) {
                 const [cliL, obraL] = String(l.obraKey).split('|');
                 if (!esMia(cliL, obraL)) { if (normTxtObra(cliL) === normTxtObra(cliente)) otrasObrasCliente[l.obraLabel || l.obraKey] = (otrasObrasCliente[l.obraLabel || l.obraKey] || 0) + (Number(l.horas) || 0); return; }
                 obrasIncluidas[l.obraLabel || l.obraKey] = (obrasIncluidas[l.obraLabel || l.obraKey] || 0) + (Number(l.horas) || 0);
-                const ch = Number(l.costoHora) || costoHoraEmp(empleados[empId]);
+                const ch = Number((costosParte[p._id] || {})[empId]) || Number(l.costoHora) || costoHoraEmp(empleados[empId]);
                 const h = Number(l.horas) || 0, share = tot > 0 ? h / tot : 0;
                 const norm = Math.min(tot, jornada) * share, ext = Math.max(0, tot - jornada) * share;
                 const c = feriadosTrab.has(p.fecha) ? ch * h * factorFer : ch * norm + ch * ext * factor;
@@ -2906,7 +2908,49 @@ async function recalcularInformesDeObras(pares) {
 const paresDeParte = (p) => (p && Array.isArray(p.lineas) ? p.lineas : []).filter((l) => l.tipo === 'obra' && l.obraLabel).map((l) => { const i = String(l.obraLabel).indexOf(' — '); return i > 0 ? { cliente: l.obraLabel.slice(0, i), obra: l.obraLabel.slice(i + 3) } : { cliente: l.obraLabel, obra: '' }; });
 // Huella de lo que afecta al costo (obra, horas, costo/hora, persona): si no cambió, no se recalcula nada (una nota,
 // el envío del borrador o un acuse no deben regenerar informes — auditoría 2026-09-28).
-const huellaLineasObra = (p) => JSON.stringify(((p && Array.isArray(p.lineas)) ? p.lineas : []).filter((l) => l.tipo === 'obra').map((l) => [l.empleadoId, l.obraKey || l.obraLabel, Number(l.horas) || 0, Number(l.costoHora) || 0]).sort());
+const huellaLineasObra = (p) => JSON.stringify(((p && Array.isArray(p.lineas)) ? p.lineas : []).filter((l) => l.tipo === 'obra').map((l) => [l.empleadoId, l.obraKey || l.obraLabel, Number(l.horas) || 0]).sort());   // G3: el costo vive en partesCostos
+// ---- G3 (revisión 2026-10-09): el sueldo no sale de RRHH ----
+// `rrhhEmpleados` (sueldo, costo por día, cédula, dirección) solo lo leen admin/contable. Las pantallas del equipo (ventana de
+// horas de Instalación, Parte diario, Reuniones) usan `empleadosPublico/{id}`: nombre, correo, estado, cargo y departamento,
+// nada más. Lo escribe esta función con cada cambio en la ficha (y se puede regenerar con el script de respaldo).
+const CAMPOS_EMPLEADO_PUBLICO = ['nombre', 'correo', 'estado', 'cargoNombre', 'cargoNombres', 'departamentoNombre', 'sucursalNombre', 'fechaIngreso'];
+function empleadoPublicoDe(e) {
+    const out = {}; CAMPOS_EMPLEADO_PUBLICO.forEach((k) => { if (e[k] !== undefined) out[k] = e[k]; });
+    out.correo = String(out.correo || '').trim().toLowerCase(); out.actualizado = FieldValue.serverTimestamp();
+    return out;
+}
+exports.espejoEmpleados = onDocumentWritten('rrhhEmpleados/{id}', async (event) => {
+    const id = event.params.id;
+    try {
+        if (!event.data.after.exists) { await db.doc('empleadosPublico/' + id).delete(); return; }
+        await db.doc('empleadosPublico/' + id).set(empleadoPublicoDe(event.data.after.data()), { merge: false });
+    } catch (e) { console.error('espejoEmpleados', id, e); }
+});
+// El costo por hora ya NO viaja dentro de las líneas del parte (lo leían oficina y encargados). Se CONGELA en
+// `partesCostos/{parteId}` (solo finanzas) la primera vez que una persona aparece en ese parte, con el costo vigente en RRHH
+// ese día; un cambio de sueldo posterior no mueve una obra ya cerrada. Lo leen Costo de obras y el informe de cierre.
+const costoHoraDeFicha = (e, jornada) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return Math.round(dia / (jornada || 9) * 100) / 100; };
+exports.congelarCostoParte = onDocumentWritten('partesDiarios/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const id = event.params.id;
+    const ids = [...new Set((Array.isArray(after.lineas) ? after.lineas : []).map((l) => l && l.empleadoId).filter(Boolean))];
+    if (!ids.length) return;
+    try {
+        const ref = db.doc('partesCostos/' + id);
+        const prev = (await ref.get()).data() || {}; const costos = { ...(prev.costos || {}) };
+        const faltan = ids.filter((e) => !(Number(costos[e]) > 0));
+        if (!faltan.length) return;
+        const cfg = (await db.doc('rrhhConfig/parteDiario').get()).data() || {}; const jornada = Number(cfg.horasJornada) || 9;
+        for (const e of faltan) {
+            const linea = after.lineas.find((l) => l && l.empleadoId === e && Number(l.costoHora) > 0);   // partes viejos traían el costo en la línea
+            if (linea) { costos[e] = Number(linea.costoHora); continue; }
+            const emp = (await db.doc('rrhhEmpleados/' + e).get()).data();
+            costos[e] = costoHoraDeFicha(emp, jornada);
+        }
+        await ref.set({ fecha: after.fecha || '', encargadoEmail: after.encargadoEmail || '', jornada, costos, actualizado: FieldValue.serverTimestamp() }, { merge: true });
+    } catch (e) { console.error('congelarCostoParte', id, e); }
+});
+
 exports.informeObraAlCambiarParte = onDocumentWritten('partesDiarios/{id}', async (event) => {
     const a = event.data.after.exists ? event.data.after.data() : null, b = event.data.before.exists ? event.data.before.data() : null;
     if (a && b && huellaLineasObra(a) === huellaLineasObra(b) && a.fecha === b.fecha) return;
