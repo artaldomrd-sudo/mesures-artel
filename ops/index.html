@@ -292,13 +292,28 @@
         });
         // 3d) Anticipos registrados en Citrus que el Panel no pudo asignar solo a una obra (solo admin; Dylan 2026-10-06).
         anticiposPend.forEach(({ id, a }) => {
-            const btns = (a.candidatos || []).map(c => `<button class="n-done" onclick="notifAnticipoAsignar('${id}','${c.orderId}')" title="${esc(c.docType || '')} · ${esc(c.status || '')}${c.fechaPedido ? ' · creado ' + esc(c.fechaPedido) : ''}${c.aproximado ? ' · el nombre del pedido no coincide exactamente con la ficha' : ''}">${c.cerrado ? '🔒 ' : ''}${esc(c.cliente || '')} — ${esc(c.obra || c.orderId)}${c.fechaPedido ? ' <span style="opacity:.7;font-weight:normal">(' + esc(c.fechaPedido) + ')</span>' : ''}${c.aproximado ? ' <span style="opacity:.8;font-weight:normal">≈</span>' : ''}</button>`).join('');
+            // Anny 2026-10-14: «no sabría cuál seleccionar de las miles de opciones… ambas obras son la misma». Los candidatos se agrupan
+            // por OBRA y cada documento se distingue por tipo, fechas, nº de cotización Citrus e ítems. Un anticipo puede repartirse
+            // entre varios pedidos (p. ej. avance sobre ventanas Y barandas) con el modo «➗ Repartir».
+            const cands = (a.candidatos || []).filter(c => c.docType !== 'COMPRA_DIRECTA');
+            const kObra = (c) => esc((c.cliente || '') + ' — ' + (c.obra || c.orderId));
+            const grupos = new Map(); cands.forEach(c => { const k = kObra(c); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(c); });
+            const fRD = (n) => 'RD$ ' + Number(n || 0).toLocaleString('es-DO');
+            const detalle = (c) => [c.tipoDoc || c.docType, c.cotNum ? 'cot. Citrus nº ' + c.cotNum : '', c.creado ? 'creado ' + c.creado : (c.fechaPedido ? c.fechaPedido : ''), c.cerrado ? 'cerrado ' + c.cerrado : '', c.material, c.resumen, c.total ? 'total ' + fRD(c.total) : '', c.anticipoActual ? 'ya tiene anticipo ' + fRD(c.anticipoActual) : '', c.aproximado ? '≈ nombre distinto en la ficha' : ''].filter(Boolean).join(' · ');
+            const btns = [...grupos.entries()].map(([k, l]) => `<div style="margin:6px 0 2px;font-size:12.5px;color:#334;"><b>${l[0].cerradoSi || l[0].cerrado ? '🔒 ' : ''}${k}</b>${l.length > 1 ? ` <span style="color:#889">(${l.length} documentos de esta obra)</span>` : ''}</div>` +
+                l.map(c => `<div class="ac-cand" data-oid="${c.orderId}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:3px 0 3px 10px;">
+                    <button class="n-done" onclick="notifAnticipoAsignar('${id}','${c.orderId}')" title="Asignar todo el anticipo a este documento">${esc(c.tipoDoc || c.docType || 'Pedido')}${c.cotNum ? ' · cot. ' + esc(c.cotNum) : ''}${c.creado ? ' · ' + esc(c.creado) : ''}</button>
+                    <span style="font-size:12px;color:#556;">${esc(detalle(c))}</span>
+                    <label class="ac-rep" style="display:none;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" class="ac-rep-chk" data-oid="${c.orderId}" onchange="notifAnticipoRepartoCalc('${id}')"> <input type="number" class="ac-rep-monto" data-oid="${c.orderId}" placeholder="RD$" min="0" step="0.01" style="width:110px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px" oninput="notifAnticipoRepartoCalc('${id}', true)"></label>
+                </div>`).join('')).join('');
             const quien = (a.cliente || a.clienteFacturacion) ? `${a.cliente || ''}${a.clienteFacturacion && a.clienteFacturacion !== a.cliente ? ' (factura: ' + a.clienteFacturacion + ')' : ''}` : `cliente Citrus id ${a.citrusClienteId || '?'}`;
             N.push({ key: `ac:${id}`, tipo: 'tarea', ic: '💰', titulo: `Anticipo en Citrus sin obra: ${quien} · RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}`, sub: `${a.fecha || ''}${a.citrusAnticipoId ? ' · anticipo nº ' + a.citrusAnticipoId : ''}`, txt: (a.descripcion ? 'Descripción en Citrus: «' + a.descripcion + '» · ' : 'Sin descripción en Citrus · ') + (a.motivo || ''),
-                acciones: (btns ? `<span style="font-size:12px;color:#556;margin-right:4px">¿A qué obra?</span>${btns}<span style="font-size:11px;color:#889;margin-left:4px">≈ nombre distinto · 🔒 obra cerrada</span>` : '')
+                acciones: `<div id="ac-card-${id}" data-monto="${Number(a.monto || 0)}">` + (btns ? `<div style="font-size:12px;color:#556;">¿A qué documento va? Toca uno para asignarle TODO el anticipo, o usa ➗ Repartir para dividirlo entre varios. 🔒 = obra ya cerrada.</div>${btns}` : '')
                     // B4: siempre se puede elegir cualquier pedido abierto del Panel (el pedido pudo entrar después del anticipo).
-                    + `<span style="display:inline-flex;gap:4px;align-items:center;margin:4px 6px 0 0"><select id="ac-sel-${id}" style="max-width:260px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px"><option value="">Otro pedido…</option>${ordersCache.filter(x => x.o && x.o.docType !== 'COMPRA_DIRECTA').slice().sort((x, y) => String(x.o.cliente || '').localeCompare(String(y.o.cliente || ''))).map(x => `<option value="${x.id}">${esc(x.o.cliente || '')} — ${esc(x.o.obra || '')} (${esc(x.o.status || '')})</option>`).join('')}</select><button class="n-done" onclick="notifAnticipoAsignar('${id}','')">Asignar</button></span>`
-                    + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button>` });
+                    + `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;"><select id="ac-sel-${id}" style="max-width:300px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px"><option value="">Otro pedido del Panel…</option>${ordersCache.filter(x => x.o && x.o.docType !== 'COMPRA_DIRECTA').slice().sort((x, y) => String(x.o.cliente || '').localeCompare(String(y.o.cliente || ''))).map(x => `<option value="${x.id}">${esc(x.o.cliente || '')} — ${esc(x.o.obra || '')} (${esc(x.o.status || '')}${x.o.totalItems ? ', ' + x.o.totalItems + ' ítems' : ''})</option>`).join('')}</select><button class="n-done" onclick="notifAnticipoAsignar('${id}','')">Asignar</button>`
+                    + (cands.length > 1 ? `<button class="n-done" style="background:#8e44ad" onclick="notifAnticipoRepartoToggle('${id}')">➗ Repartir entre varios</button>` : '')
+                    + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button></div>`
+                    + `<div class="ac-rep-bar" style="display:none;margin-top:8px;padding:8px 10px;background:#f3eefa;border-radius:8px;font-size:12.5px;"><span class="ac-rep-txt">Marca los pedidos y escribe cuánto va a cada uno.</span> <button class="n-done" style="background:#8e44ad;margin-left:6px" onclick="notifAnticipoRepartir('${id}')">Asignar el reparto</button></div></div>` });
         });
         // 3b) Comentarios del instalador en trabajos del calendario (colección instalaciones), sin atender.
         instCache.forEach(({ id, j }) => {
@@ -459,6 +474,35 @@
         const obraTxt = c.obra || (od.cliente ? od.cliente + ' — ' + od.obra : orderId);
         if (!confirm(`¿Aplicar el anticipo de ${a.cliente} (RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}, ${a.fecha}) a «${obraTxt}»?`)) return;
         try { await anticipoPedidoFn({ accion: 'asignar', registroId: asientoId, orderId }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.notifAnticipoRepartoToggle = (id) => {
+        const card = document.getElementById('ac-card-' + id); if (!card) return;
+        const on = card.querySelector('.ac-rep-bar').style.display === 'none';
+        card.querySelectorAll('.ac-rep').forEach(l => { l.style.display = on ? 'inline-flex' : 'none'; });
+        card.querySelector('.ac-rep-bar').style.display = on ? 'block' : 'none';
+        if (on) notifAnticipoRepartoCalc(id);
+    };
+    // Reparte el monto a partes iguales entre los marcados (salvo que la persona ya haya escrito montos); muestra cuánto falta/sobra.
+    window.notifAnticipoRepartoCalc = (id, manual) => {
+        const card = document.getElementById('ac-card-' + id); if (!card) return;
+        const total = Number(card.dataset.monto) || 0;
+        const chks = [...card.querySelectorAll('.ac-rep-chk')];
+        const marcados = chks.filter(c => c.checked);
+        if (!manual) { const parte = marcados.length ? Math.round(total / marcados.length * 100) / 100 : 0; chks.forEach(c => { const inp = card.querySelector(`.ac-rep-monto[data-oid="${c.dataset.oid}"]`); if (inp) { inp.disabled = !c.checked; if (c.checked) inp.value = parte; else inp.value = ''; } }); }
+        const suma = marcados.reduce((t, c) => t + (Number((card.querySelector(`.ac-rep-monto[data-oid="${c.dataset.oid}"]`) || {}).value) || 0), 0);
+        const dif = Math.round((total - suma) * 100) / 100;
+        card.querySelector('.ac-rep-txt').innerHTML = `${marcados.length} pedido(s) · suma RD$ ${suma.toLocaleString('es-DO')} de RD$ ${total.toLocaleString('es-DO')}` + (Math.abs(dif) > 1 ? ` · <b style="color:#c0392b">${dif > 0 ? 'faltan' : 'sobran'} RD$ ${Math.abs(dif).toLocaleString('es-DO')}</b>` : ' · <b style="color:#1e8449">cuadra ✓</b>');
+    };
+    window.notifAnticipoRepartir = async (asientoId) => {
+        const card = document.getElementById('ac-card-' + asientoId); const p = anticiposPend.find(x => x.id === asientoId); if (!card || !p) return;
+        const repartos = [...card.querySelectorAll('.ac-rep-chk')].filter(c => c.checked).map(c => ({ orderId: c.dataset.oid, monto: Number((card.querySelector(`.ac-rep-monto[data-oid="${c.dataset.oid}"]`) || {}).value) || 0 })).filter(r => r.monto > 0);
+        if (repartos.length < 2) { alert('Marca al menos dos pedidos con su monto (para uno solo, toca directamente el documento).'); return; }
+        const total = Number(card.dataset.monto) || 0, suma = repartos.reduce((t, r) => t + r.monto, 0);
+        if (Math.abs(total - suma) > 1) { alert(`El reparto suma RD$ ${suma.toLocaleString('es-DO')} y el anticipo es RD$ ${total.toLocaleString('es-DO')}. Ajusta los montos.`); return; }
+        const nombres = repartos.map(r => { const c = (p.a.candidatos || []).find(x => x.orderId === r.orderId) || {}; return `${c.obra || r.orderId} (${c.tipoDoc || ''}): RD$ ${r.monto.toLocaleString('es-DO')}`; });
+        if (!confirm(`¿Repartir el anticipo de ${p.a.cliente} así?\n\n${nombres.join('\n')}`)) return;
+        try { await anticipoPedidoFn({ accion: 'asignar', registroId: asientoId, repartos }); }
         catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.notifAnticipoIgnorar = async (asientoId) => {
