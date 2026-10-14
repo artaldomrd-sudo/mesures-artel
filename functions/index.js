@@ -439,6 +439,17 @@ exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     } catch (e) { console.error('mensajePush', event.params.id, e); }
 });
 
+// H3 (revisión 2026-10-09): el portal de ALUCUFEL bajaba `orders` entero (≈1 MB) solo para buscar faltantes del chofer dentro de
+// `itemStatus`. Esta función mantiene la bandera `faltantesSinAtender` (true si algún ítem está en 'problema' sin atender) y el
+// portal consulta solo por esa bandera.
+exports.faltantesChofer = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const m = after.itemStatus || {};
+    const tiene = Object.values(m).some((x) => x && x.estado === 'problema' && x.atendido !== true);
+    if ((after.faltantesSinAtender === true) === tiene) return;
+    try { await event.data.after.ref.update({ faltantesSinAtender: tiene }); } catch (e) { console.error('faltantesChofer', event.params.id, e); }
+});
+
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return; // borrado
