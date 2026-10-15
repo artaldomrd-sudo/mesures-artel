@@ -174,11 +174,12 @@
                 <div><label>Cuota por período (RD$)</label><input type="number" id="pr-cuota" min="0" step="0.01" title="Lo que se debita en cada cobro" oninput="prHint()"></div>
                 <div><label>Descripción (opcional)</label><input type="text" id="pr-desc" placeholder="Ej: Adelanto de sueldo"></div>
                 <div><label>Fecha del préstamo</label><input type="date" id="pr-fecha"></div>
-                <div><label>Forma de cobro</label><select id="pr-periodicidad" onchange="prHint()"><option value="quincenal">Quincenal (una cuota por quincena)</option><option value="mensual">Mensual (una cuota al mes, en la 2da quincena)</option></select></div>
+                <div><label>Forma de cobro</label><select id="pr-periodicidad" onchange="prHint()"><option value="quincenal">Quincenal (una cuota por quincena)</option><option value="mensual_q1">Mensual, en la 1ra quincena</option><option value="mensual_q2">Mensual, en la 2da quincena</option></select></div>
                 <div><label>Inicio del cobro</label><input type="date" id="pr-inicio" title="Primera nómina en la que se descuenta" onchange="prHint()"></div>
                 <div><label>&nbsp;</label><div id="pr-hint" class="muted" style="padding-top:8px"></div></div>
             </div>
-            <button class="btn-y" style="margin-top:12px" onclick="crearPrestamo()">+ Registrar préstamo</button>
+            <button class="btn-y" style="margin-top:12px" id="pr-btn" onclick="crearPrestamo()">+ Registrar préstamo</button>
+            <button class="btn-vol" style="margin-top:12px;display:none" id="pr-cancel-edit" onclick="cancelarEdicionPrestamo()">Cancelar edición</button>
             <span id="pr-msg" class="muted" style="margin-left:10px"></span>
         </div>
         <div id="pr-lista"><p class="empty">Cargando préstamos…</p></div>
@@ -439,6 +440,8 @@
     // REACTIVAR (p. ej. una quincena en la que no se le puede deducir). Campos: fecha, periodicidad, fechaInicioCobro, estado
     // ('vigente' | 'suspendido'), suspendidoDesde/motivo. Los préstamos de antes (sin estos campos) se tratan como quincenales vigentes.
     const prPeriodicidad = (pr) => pr.periodicidad === 'mensual' ? 'mensual' : 'quincenal';
+    const prQuincena = (pr) => (pr.quincenaCobro === 'Q1' || pr.quincenaCobro === '1') ? '1' : '2';   // mensual: en qué quincena se descuenta (Yunairy 2026-10-14: a Miki en la 1ra)
+    const prFormaTxt = (pr) => prPeriodicidad(pr) === 'mensual' ? ('mensual (' + (prQuincena(pr) === '1' ? '1ra' : '2da') + ' quincena)') : 'quincenal';
     const prSuspendido = (pr) => pr.estado === 'suspendido';
     // Fin del período de una clave de nómina ('2026-08-Q1' → 15/08, '2026-08-Q2' y '2026-08' → último día del mes).
     const finPeriodo = (key) => { const m = String(key).match(/^(\d{4})-(\d{2})(?:-Q([12]))?$/); if (!m) return ''; const y = +m[1], mo = +m[2]; if (m[3] === '1') return `${m[1]}-${m[2]}-15`; const ult = new Date(y, mo, 0).getDate(); return `${m[1]}-${m[2]}-${String(ult).padStart(2, '0')}`; };
@@ -448,7 +451,7 @@
         if (pr.cancelado || prSuspendido(pr)) return 0;
         if (pr.fechaInicioCobro && finPeriodo(periodoKey) && finPeriodo(periodoKey) < pr.fechaInicioCobro) return 0;
         const q = /-Q([12])$/.exec(String(periodoKey)); const esMensualNom = !q;
-        if (prPeriodicidad(pr) === 'mensual') return esMensualNom ? 1 : (q[1] === '2' ? 1 : 0);
+        if (prPeriodicidad(pr) === 'mensual') return esMensualNom ? 1 : (q[1] === prQuincena(pr) ? 1 : 0);
         return esMensualNom ? 2 : 1;
     }
     // Cuotas a debitar a un empleado en un período (una por préstamo activo, tope = saldo restante).
@@ -471,7 +474,7 @@
             while (saldo > 0.005 && n < 120) {
                 const y = d.getFullYear(), mo = d.getMonth() + 1, dia = d.getDate();
                 let key, finD;
-                if (prPeriodicidad(pr) === 'mensual') { key = `${y}-${String(mo).padStart(2, '0')}-Q2`; finD = new Date(y, mo, 0); }
+                if (prPeriodicidad(pr) === 'mensual') { const q1 = prQuincena(pr) === '1'; if (q1 && dia > 15) { d = new Date(y, mo, 1); continue; } key = `${y}-${String(mo).padStart(2, '0')}-Q${q1 ? 1 : 2}`; finD = q1 ? new Date(y, mo - 1, 15) : new Date(y, mo, 0); }
                 else { const q = dia <= 15 ? 1 : 2; key = `${y}-${String(mo).padStart(2, '0')}-Q${q}`; finD = q === 1 ? new Date(y, mo - 1, 15) : new Date(y, mo, 0); }
                 const pago = Math.min(n2(pr.cuota), saldo); const ini = saldo; saldo = Math.max(0, saldo - pago);
                 filas.push({ periodo: fmtPeriodoKey(key), fecha: finD.toISOString().slice(0, 10), ini, pago, fin: saldo, estatus: prSuspendido(pr) ? 'Suspendido' : 'Vigente' });
@@ -1022,6 +1025,21 @@
         const sel = document.getElementById('pr-emp');
         if (sel) sel.innerHTML = empleados.map(e => `<option value="${esc(e.id)}">${esc(e.nombre)}</option>`).join('');
     }
+    let prEditId = null;   // préstamo en edición (Yunairy 2026-10-14: «poder modificarlo»)
+    window.editarPrestamo = function (id) {
+        const pr = prestamos.find(p => p.id === id); if (!pr) return;
+        prEditId = id;
+        document.getElementById('pr-emp').value = pr.empleadoId; document.getElementById('pr-monto').value = n2(pr.monto); document.getElementById('pr-cuota').value = n2(pr.cuota);
+        document.getElementById('pr-desc').value = pr.descripcion || ''; document.getElementById('pr-fecha').value = (pr.fecha && pr.fecha.toDate) ? pr.fecha.toDate().toISOString().slice(0, 10) : (pr.fecha || '');
+        document.getElementById('pr-periodicidad').value = prPeriodicidad(pr) === 'mensual' ? ('mensual_q' + prQuincena(pr)) : 'quincenal';
+        document.getElementById('pr-inicio').value = pr.fechaInicioCobro || '';
+        document.getElementById('pr-btn').textContent = '💾 Guardar cambios de ' + (pr.empleadoNombre || ''); document.getElementById('pr-cancel-edit').style.display = 'inline-block';
+        prHint(); document.getElementById('pr-emp').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    window.cancelarEdicionPrestamo = function () {
+        prEditId = null; document.getElementById('pr-btn').textContent = '+ Registrar préstamo'; document.getElementById('pr-cancel-edit').style.display = 'none';
+        document.getElementById('pr-monto').value = ''; document.getElementById('pr-cuota').value = ''; document.getElementById('pr-desc').value = ''; document.getElementById('pr-inicio').value = ''; prHint();
+    };
     window.crearPrestamo = async function () {
         const empId = document.getElementById('pr-emp').value;
         const emp = empleados.find(e => e.id === empId);
@@ -1033,11 +1051,20 @@
         const fechaPr = document.getElementById('pr-fecha').value, inicio = document.getElementById('pr-inicio').value;
         if (!fechaPr) { alert('Pon la fecha del préstamo.'); return; }
         if (!inicio) { alert('Pon la fecha de inicio del cobro (primera nómina en la que se descuenta).'); return; }
+        const perSel = document.getElementById('pr-periodicidad').value;
+        const periodicidad = perSel.startsWith('mensual') ? 'mensual' : 'quincenal', quincenaCobro = perSel === 'mensual_q1' ? 'Q1' : 'Q2';
         try {
+            if (prEditId) {
+                const pr = prestamos.find(p => p.id === prEditId) || {};
+                const pagado = n2(pr.monto) - prestamoSaldo(pr);
+                if (monto < pagado - 0.005) { alert(`El monto no puede ser menor que lo ya pagado (${fmt(pagado)}).`); return; }
+                await updateDoc(doc(db, 'rrhhPrestamos', prEditId), { empleadoId: empId, empleadoNombre: emp.nombre, monto, cuota, descripcion: document.getElementById('pr-desc').value.trim(), fecha: fechaPr, periodicidad, quincenaCobro, fechaInicioCobro: inicio, cantidadPeriodos: Math.ceil(monto / cuota), modificadoPor: usuario.nombre, modificado: serverTimestamp() });
+                document.getElementById('pr-msg').textContent = '✓ Préstamo modificado'; cancelarEdicionPrestamo(); return;
+            }
             await addDoc(collection(db, 'rrhhPrestamos'), {
                 empleadoId: empId, empleadoNombre: emp.nombre, monto, cuota,
                 descripcion: document.getElementById('pr-desc').value.trim(),
-                fecha: fechaPr, periodicidad: document.getElementById('pr-periodicidad').value, fechaInicioCobro: inicio, cantidadPeriodos: Math.ceil(monto / cuota), estado: 'vigente',
+                fecha: fechaPr, periodicidad, quincenaCobro, fechaInicioCobro: inicio, cantidadPeriodos: Math.ceil(monto / cuota), estado: 'vigente',
                 pagos: {}, cancelado: false, creadoPor: usuario.nombre, creado: serverTimestamp()
             });
             document.getElementById('pr-monto').value = ''; document.getElementById('pr-cuota').value = ''; document.getElementById('pr-desc').value = ''; prHint();
@@ -1048,7 +1075,7 @@
         const monto = n2((document.getElementById('pr-monto') || {}).value), cuota = n2((document.getElementById('pr-cuota') || {}).value);
         const per = (document.getElementById('pr-periodicidad') || {}).value || 'quincenal';
         const h = document.getElementById('pr-hint'); if (!h) return;
-        h.textContent = (monto > 0 && cuota > 0) ? `${Math.ceil(monto / cuota)} cuota(s) ${per === 'mensual' ? 'mensuales' : 'quincenales'} · termina aprox. en ${Math.ceil(monto / cuota) * (per === 'mensual' ? 1 : 0.5)} mes(es)` : '';
+        h.textContent = (monto > 0 && cuota > 0) ? `${Math.ceil(monto / cuota)} cuota(s) ${per.startsWith('mensual') ? 'mensuales' : 'quincenales'} · termina aprox. en ${Math.ceil(monto / cuota) * (per.startsWith('mensual') ? 1 : 0.5)} mes(es)` : '';
     };
     document.getElementById('pr-monto').addEventListener('input', prHint);
     if (!document.getElementById('pr-fecha').value) document.getElementById('pr-fecha').value = new Date().toISOString().slice(0, 10);
@@ -1089,10 +1116,11 @@
             const tablaHTML = `<div id="pr-tabla-${esc(pr.id)}" style="display:none;margin-top:8px;overflow:auto"><table class="tabla" style="font-size:12.5px;min-width:560px"><thead><tr><th>#</th><th>Período</th><th>Fecha</th><th class="r">Saldo inicial</th><th class="r">Pago</th><th class="r">Saldo final</th><th>Estatus</th></tr></thead><tbody>${tabla.map((f, i) => `<tr style="${f.estatus === 'Pagado' ? 'color:#1e8449' : (f.estatus === 'Suspendido' ? 'color:#b8860b' : '')}"><td>${i + 1}</td><td>${esc(f.periodo)}</td><td>${fD(f.fecha)}</td><td class="r">${fmt(f.ini)}</td><td class="r">${fmt(f.pago)}</td><td class="r">${fmt(f.fin)}</td><td>${f.estatus}</td></tr>`).join('')}</tbody></table></div>`;
             return `<div class="param-card" style="border-left:5px solid ${susp ? '#b8860b' : (activo ? '#7d3c98' : '#bbb')}">
                 <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b>${esc(pr.empleadoNombre)}</b><span class="muted">${esc(pr.descripcion || '')}</span></div>
-                <div class="muted" style="margin-top:4px">📅 Préstamo del ${fD(pr.fecha && pr.fecha.toDate ? pr.fecha.toDate().toISOString().slice(0, 10) : pr.fecha)} · cobro <b>${prPeriodicidad(pr)}</b> desde el ${fD(pr.fechaInicioCobro)} · ${Math.ceil(n2(pr.monto) / Math.max(1, n2(pr.cuota)))} cuota(s)${susp ? ` · <b style="color:#b8860b">⏸ SUSPENDIDO desde el ${fD(pr.suspendidoDesde)}${pr.suspendidoMotivo ? ' — ' + esc(pr.suspendidoMotivo) : ''}</b>` : ''}</div>
+                <div class="muted" style="margin-top:4px">📅 Préstamo del ${fD(pr.fecha && pr.fecha.toDate ? pr.fecha.toDate().toISOString().slice(0, 10) : pr.fecha)} · cobro <b>${prFormaTxt(pr)}</b> desde el ${fD(pr.fechaInicioCobro)} · ${Math.ceil(n2(pr.monto) / Math.max(1, n2(pr.cuota)))} cuota(s)${susp ? ` · <b style="color:#b8860b">⏸ SUSPENDIDO desde el ${fD(pr.suspendidoDesde)}${pr.suspendidoMotivo ? ' — ' + esc(pr.suspendidoMotivo) : ''}</b>` : ''}</div>
                 <div class="muted" style="margin-top:4px">Monto ${fmt(pr.monto)} · Cuota/período ${fmt(pr.cuota)} · Pagado ${fmt(pagado)} · <b style="color:${activo ? '#7d3c98' : '#2ecc71'}">Saldo ${fmt(saldo)}</b>${pr.cancelado ? ' · <span style="color:#e74c3c">Cancelado</span>' : (saldo <= 0.005 ? ' · <span style="color:#2ecc71">Saldado</span>' : '')}</div>
                 <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
                     <button class="btn-vol" onclick="toggleTablaPrestamo('${esc(pr.id)}')">📋 Tabla de amortización</button>
+                    ${activo ? `<button class="btn-vol" onclick="editarPrestamo('${esc(pr.id)}')">✏ Modificar</button>` : ''}
                     ${activo ? (susp ? `<button class="btn-vol" style="color:#1e8449" onclick="reactivarPrestamo('${esc(pr.id)}')">▶ Reactivar cobro</button>` : `<button class="btn-vol" style="color:#b8860b" onclick="suspenderPrestamo('${esc(pr.id)}')">⏸ Suspender cobro</button>`) : ''}
                     ${activo ? `<button class="btn-vol" onclick="saldarPrestamo('${esc(pr.id)}')">✓ Saldar (pago fuera de nómina)</button>` : ''}
                     ${activo ? `<button class="btn-vol" onclick="cancelarPrestamo('${esc(pr.id)}')">Cancelar</button>` : ''}
