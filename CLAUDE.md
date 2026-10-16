@@ -238,6 +238,14 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   abatir POR HOJA + manija; planta = `planViewAbatible` con `is2Hojas` (ya lo soportaba). Fachada:
   celda `osci` con filas "Hojas" y "Hoja ppal." (2) o "Lado" (1), `gridCell`/`gridColPlan`/`needs`
   leen `cfg.apertura`. Resumen: "Hojas: 2 (hacia adentro) · Hoja principal (manija): …".
+  **La OB SIEMPRE se mira de ADENTRO (usuario 2026-10-16, "urgente")**: tarjeta suelta → `vista` forzada a
+  `'adentro'` (al crear, al restaurar en `addItem` y en `getMenuOpciones`), sin selector de vista (cajita fija "Vista
+  de ADENTRO (siempre)"); el toggle A LA IZQ/DER se entiende desde adentro. En la Fachada Compuesta (que es vista
+  EXTERIOR) la celda `osci` define `lado` y `hoja_principal` vistos desde adentro y el dibujo los ESPEJA: `gridCell`
+  pone el vértice del chevron al lado contrario ("abre a la derecha" → vértice a la izquierda), `manijaPrincipal(...,
+  flipped=true)`, y `gridColPlan` usa `hingeLeft: r.lado === 'izq'`; el pop-up dice "Abre a la derecha (vista de
+  adentro)" y el resumen "abre der. (vista de adentro)". Puerta/ventana abisagrada de la fachada NO cambian (siguen
+  definidas en vista exterior).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,
