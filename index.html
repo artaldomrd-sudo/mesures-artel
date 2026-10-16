@@ -335,7 +335,9 @@
 
         /* PDF: el desplegable "Abrir otro proyecto" y el botón "Nuevo proyecto de este cliente" son controles de edición, no van en la hoja (usuario 2026-09-28). */
         body.printing-sheets #header-obra-sel, body.printing-sheets #btn-nuevo-proy-cliente { display: none !important; }
-        body.printing-sheets .project-header { grid-template-columns: 1fr 1.1fr 1.1fr 1.3fr 1fr auto !important; grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion telefono logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
+        /* El teléfono/RNC del cliente es dato de oficina: NUNCA sale en las hojas impresas (van a ALUCUFEL) — usuario 2026-10-16. */
+        body.printing-sheets .hf-telefono { display: none !important; }
+        body.printing-sheets .project-header { grid-template-columns: 1fr 1.1fr 1.1fr 1.3fr 1fr auto !important; grid-template-areas: "cliente material vidrio color fecha logo" "obra obra ubicacion ubicacion ubicacion logo" !important; column-gap: 5px !important; row-gap: 10px !important; align-items: start !important; width: 100%; border-bottom: 2px solid #000; padding-bottom: 4px !important; margin-bottom: 4mm !important; }
 
         body.printing-sheets .item-row { display: block !important; width: 100% !important; text-align: left !important; }
 
@@ -576,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-15 21:46</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-16 08:47</div>
         </div>
     </div>
     
@@ -10324,12 +10326,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             }
 
             if (btn) { btn.disabled = true; btn.innerHTML = 'Enviando…'; }
+            // El teléfono/RNC del cliente NO viaja dentro de la ficha (appJSON) que abren ALUCUFEL/chofer/instalador:
+            // se manda solo como clienteTelefono (campo de oficina para enganchar la ficha del cliente). Usuario 2026-10-16.
+            const appJSONEnvio = (() => { const h = { ...(appJSON.header || {}) }; delete h.telefono; return { ...appJSON, header: h }; })();
 
             if (pedidoAActualizar) {
                 const quien = (auth.currentUser && (auth.currentUser.displayName || auth.currentUser.email)) || '';
                 const ahoraTxt = new Date().toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' });
                 await updateDoc(doc(db, 'orders', pedidoAActualizar.id), {
-                    items, totalItems: items.length, appJSON,
+                    items, totalItems: items.length, appJSON: appJSONEnvio,
                     material: appJSON.header.material, color: appJSON.header.color,
                     fichaActualizada: serverTimestamp(), fichaActualizadaPor: quien, fichaVersion: (Number(pedidoAActualizar.fichaVersion) || 1) + 1,
                     // Fábrica ve el aviso en rojo hasta marcarlo atendido (mismo mecanismo que "Instrucción de la oficina").
@@ -10363,7 +10368,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 ...(esInstalacion ? { directoInstalacion: true } : {}),
                 items,
                 totalItems: items.length,
-                appJSON,
+                appJSON: appJSONEnvio,
                 ...(esInstalacion
                     ? { fechaCotizado: serverTimestamp(), fechaListoParaCargar: serverTimestamp() }
                     : (isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() }))

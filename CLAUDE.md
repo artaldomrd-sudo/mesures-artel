@@ -2763,7 +2763,12 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
   `header.clienteId` en `getAppJSON`/`restoreData`/`clearNotebookToBlank`/`nuevoProyectoMismoCliente`. El módulo reconoce la ficha
   al escribir (`buscarFicha`: teléfono 10 dígitos / documento / nombre-facturación-alias; `refreshFichaCliente` guarda
   `dataset.clienteId`, rellena el teléfono vacío y suma los nombres de las fichas al datalist). `enviarOrden` manda
-  `clienteTelefono`, `clienteId`, `clienteFacturacion`.
+  `clienteTelefono`, `clienteId`, `clienteFacturacion`. **El teléfono/RNC es dato de OFICINA, nunca lo ve ALUCUFEL
+  (usuario 2026-10-16)**: `body.printing-sheets .hf-telefono { display:none }` (la hoja de fabricación/cotización y el
+  PDF de la ficha no lo imprimen; el grid de impresión ya no reserva el área `telefono`) y `enviarOrden` manda
+  `appJSON: appJSONEnvio` (copia sin `header.telefono`) en el pedido nuevo y en "Actualizar el original", así la ficha
+  `?orderId=` que abren fábrica/chofer/instalador no lo trae; `clienteTelefono` sigue arriba del pedido solo para el
+  enganche con la ficha del cliente (las pantallas de `ops/alucufel/` no lo muestran).
 - Trigger `pedidoEnlazarCliente` (orders): si el pedido no trae `clienteId`, lo resuelve por teléfono → documento → nombre/alias y
   escribe `clienteId`, `clienteFacturacion`, `clienteEnlace`; si cruzó por teléfono/documento con otro nombre, ese nombre entra como
   alias de la ficha (aprende). Los campos operativos `cliente`/`obra` NO se tocan: el equipo sigue viendo el nombre de referencia.
