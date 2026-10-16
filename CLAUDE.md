@@ -1168,6 +1168,36 @@ vidrio (los campos `vidrio`/`espesor` quedan vacíos y no se leen). Todo vive en
   la Fachada Compuesta ni en el CAD. `verify.mjs`: 4 tipos × 1/2 hojas × izq/der + sin medidas
   (RENDER OK: 205).
 
+## Ventana Security Lamas — `type:'win_lamas'`, `categoria:'lamas'` (2026-10-15)
+
+Ventana de seguridad de lamas de vidrio (jalousie) con marco fijo de aluminio y operador por sección. Proveedor
+real: **Forti Ventanas R.D.** (Santiago). El usuario entregó las listas de medidas estándar de The Builder's House
+(Puerto Rico) SOLO como referencia de tamaños — «nada viene de Puerto Rico, ahí no hay flete ni nada» — y sus
+costos reales en pesos: estándar RD$ 900/pie², a medida RD$ 1,100/pie², a medida con vidrio negro RD$ 1,150/pie².
+Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURITY LAMAS" del script clásico
+(antes del de mosquiteras); `verify.mjs` lo cubre (2 lamas × 4 medidas × 3 vidrios + sin medidas, RENDER OK: 277).
+- **Modelo**: `lama_pulg` `'4'` (102 mm) | `'3'` (76 mm) (`LAMAS_PULG`), `lama_std` (clave `"24x21.75"` de
+  `lamasEstandar(pulg)` o `''` = a medida; elegirla escribe A × H en la tarjeta y los inputs; escribir A × H o cambiar
+  de lama la recalcula con `lamasStdMatch`, ±6 mm por el redondeo pulgadas → mm), `lama_vidrio` esmerilado /
+  evergreen / negro (`LAMAS_VIDRIOS`), `color_perfil` solo blanco / negro (mismo precio; `triggerGlobalUpdate` NO lo
+  pisa con el acabado del encabezado), `mosquitera` `''|'con'`. Sin `vidrio`/`espesor`/serie. Sin toggle IZQ/DER.
+  **Las medidas son de FABRICACIÓN** (lo que se pasa al proveedor en mm; él las convierte a pulgadas).
+  Catálogo: anchos 24/30/36" × altos lama 4" 21¾/29¾/37¾/45¾/53¾/57¾" · lama 3" 22¾/28¾/37¾/46¾/52¾/58¾"
+  (`LAMAS_ANCHOS_IN`, `LAMAS_ALTOS_IN`, `inAMm`, `inTxt`).
+- **Secciones**: `lamasSecciones` = una cada 914 mm de ancho como máximo (`LAMAS_SECCION_MAX_MM`) — **SUPUESTO
+  propio** a confirmar con el proveedor (la foto del usuario tiene 3 secciones). `lamasPie2` = A × H / 92,903.
+- **Dibujo `renderLamas`** (caja `mosqLayout` 80×44 a proporción real; `applyFinish` con blanco/negro): marco
+  perimetral con placeholders + contorno gris fijo `#5a6672` (con marco blanco el perfil sería invisible), montantes
+  entre secciones, lamas con degradado por tipo de vidrio y canto inferior oscuro (vidrio girado), clips en los
+  extremos, palanca (operador) abajo a la derecha de cada sección, rect punteado si lleva mosquitera; nº de lamas =
+  alto libre ÷ (ancho de lama × 0.85). Cotas `dimLineH/V`; etiqueta "Security lamas 4" · 3 secciones · 9 lamas".
+- **Resumen**: "VENTANA SECURITY LAMAS — A × H | Cant" + "Lama 4" · Medida estándar 24 × 21¾" (610 × 552 mm) / A
+  medida (82 × 34¾" aprox.) · 19.70 pie²", secciones, marco, vidrio, mosquitera, nota de medida de fabricación.
+  Partes de fábrica `PARTES_SETS.lamas`, etapas `STAGE_SETS.lamas` (`getStageSetKey('win_lamas')`).
+- **Precio**: NO está en el cuaderno; vive en el Panel → Cotizaciones → Calculador de precio de venta, tarjeta
+  "Ventana Security Lamas" (ver sección del calculador). Pendientes del proveedor: regla de secciones, costo del
+  estándar con vidrio negro (se asume = estándar), costo de la mosquitera (la cotización 556 de ARTAL la incluye).
+
 ## Baranda: consumibles de instalación (resina y tornillos, 2026-09-07)
 
 Pedido del usuario: que la hoja de fabricación/ficha lleve la cantidad de **resina** (anclaje
@@ -2531,6 +2561,18 @@ en `calculadores/telaMosquitera` (rule `calculadores` puedeEscribir): rollo 48" 
 entera en el ancho se corta solo el lado corto; los dos lados por encima → bloqueo. Precio = máx(m² × precio/m², mínimo, costo real del corte ÷ (1 − margenMin)) — usuario 26/09: nunca por debajo del 50 % de margen bruto.
 **Bloqueo** (`maxCorto` 1200): si el lado largo pasa el ancho del rollo y el corto supera 1200 mm, «No se puede fabricar» y sin precio (antes se calculaban dos tiras; el usuario no quiere vender lo que no se puede hacer). **Transporte + instalación** (usuario 26/09): en Las Terrenas, por nº de telas (no bloqueadas): 1–3 RD$ 2,500 · 4–6 3,000 · 7–10 3,500 · 11–13 4,500 · 14–16 5,500; más allá +1,000 por cada 3 telas (`tramos[]`, `extraPor3`, editables). Fuera de Las Terrenas → «cotizar aparte» (Calculador de obra). TOTAL = tela + transporte; ITBIS opcional sobre el total. Copiar resumen. **Solo admin ve costo, margen, precio/m² y el bloque «⚙️ Rollo y precio»** (usuario 26/09: «empleados no tienen por qué ver esto»); el equipo ve precio, m² y corte. Sin ancho Y alto no hay precio (antes el margen mínimo daba precio con el alto vacío). Para agregar otro producto: otra tarjeta `.prod` con su propio doc en
 `calculadores/`.
+**Segunda tarjeta "🪟 Ventana Security Lamas" (2026-10-15, autorización puntual del usuario para tocar el Panel desde la
+sesión del cuaderno)**: líneas `filasV` {lama 4"/3", ancho, alto (mm de fabricación), cant, vidrio esmerilado/evergreen/
+negro, marco blanco/negro, mosquitera}; doc `calculadores/ventanaLamas` (`DEFV`: `cstd` 900, `cstdneg` 900 (supuesto),
+`cmed` 1100, `cmedneg` 1150 RD$/pie² — costos reales de Forti Ventanas dados por el usuario; `cmosq` 0 por ventana (por
+definir); `pventa` 1,950 RD$/pie² (de la cotización 556 de ARTAL: 5 ventanas a medida vendidas a 1,880–2,060/pie²,
+≈ 42 % de margen bruto sobre el costo de Forti); `min` 5,000; `margenmin` 40; `tol` 6 mm para reconocer una estándar;
+`secmax` 914). `calcFilaV`: estándar si A × H calza con el catálogo (`lvEstandar(lama)`), pie² = A×H/92,903, costo =
+pie² × costo/pie² (+ mosquitera), precio = máx(pie² × pventa, mínimo, costo ÷ (1 − margen)). Solo admin ve costo, margen
+y `#cfgv`. Avisos: estándar con vidrio negro (costo asumido), secciones > 1 (supuesto). **Citrus**: el bloque "🍊 Crear
+la cotización en Citrus" salió de la tarjeta de tela y es compartido: `ultimasLineas = [...lineasTela, ...lineasVent]`
+(`armarLineas()` desde `calcular` y `calcularV`). Resumen propio `#resumenv` ("Instalación y transporte: cotizar aparte").
+Pendiente: actualizar la guía del calculador en la Academia (vive en Firestore, sesión de sistema).
 
 ### Auditoría del sistema (2026-09-28) y correcciones críticas (2026-09-29)
 

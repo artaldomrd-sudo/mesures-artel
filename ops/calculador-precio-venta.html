@@ -46,6 +46,11 @@
     .precio .d { font-size: 11.5px; color: #557; line-height: 1.3; }
     details.cfg summary { cursor: pointer; color: var(--artal-blue); font-weight: bold; font-size: 14px; padding: 4px 0; }
     @media (max-width: 640px) { .linea { grid-template-columns: 1fr 1fr 70px; } .linea .precio { grid-column: 1 / -1; } .linea .quitar { grid-column: 3; } }
+    .lineav { display: grid; grid-template-columns: 70px 1fr 1fr 64px 1.1fr 1fr 1fr 1.5fr 34px; gap: 8px; align-items: end; padding: 10px 0; border-bottom: 1px solid #eef1f4; }
+    .lineav label { display: block; font-size: 12px; color: #667; margin-bottom: 3px; }
+    .lineav input, .lineav select { width: 100%; padding: 10px 8px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; box-sizing: border-box; min-height: 46px; background: #fff; }
+    .lineav .precio { grid-column: auto; }
+    @media (max-width: 900px) { .lineav { grid-template-columns: 1fr 1fr 1fr; } .lineav .precio { grid-column: 1 / -1; } }
     .resumen { white-space: pre-wrap; background: #f4f6f9; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.5; margin-top: 8px; }
 </style>
 </head>
@@ -64,7 +69,7 @@
 </header>
 
 <main>
-    <p class="hint" style="margin:0 0 10px">Escribe las medidas y sale el precio de venta. Una línea por producto; por ahora: tela de mosquitera. <span id="hint-admin"></span></p>
+    <p class="hint" style="margin:0 0 10px">Escribe las medidas y sale el precio de venta. Una línea por producto: tela de mosquitera y ventanas Security Lamas. <span id="hint-admin"></span></p>
 
     <div class="card prod">
         <div class="cab"><span style="font-size:26px">🕸️</span><h2>Tela de mosquitera</h2><span class="hint" id="p-precio-m2"></span></div>
@@ -80,17 +85,6 @@
         </div>
         <div id="avisos"></div>
         <div class="resumen" id="resumen"></div>
-        <div class="card" style="margin:12px 0 0;background:#f7f9fc;border:1.5px solid #dbe3ee;box-shadow:none">
-            <b>🍊 Crear la cotización en Citrus</b>
-            <div class="hint" style="margin:4px 0 8px">Crea la cotización directo en Citrus con estas líneas (tela + transporte) y te devuelve el PDF. Queda «Pendiente de aprobación» a nombre de quien la crea. Si el cliente ya existe en Citrus, elígelo de la lista para que quede enlazado.</div>
-            <div class="frm">
-                <div><label>Cliente</label><input type="text" id="cz-cliente" list="cz-clientes" placeholder="Nombre del cliente" autocomplete="off"><datalist id="cz-clientes"></datalist></div>
-                <div><label>Dirección / obra (opcional)</label><input type="text" id="cz-dir" placeholder="Las Terrenas, Villa…"></div>
-                <div style="grid-column:1/-1"><label>Nota para la cotización (opcional)</label><input type="text" id="cz-nota" maxlength="500" placeholder="Ej: cambio de telas de mosquitera, incluye retiro de las viejas"></div>
-            </div>
-            <div class="acts"><button class="btn" id="cz-btn" onclick="crearEnCitrus()">📤 Crear cotización en Citrus</button><span class="ok" id="cz-ok"></span></div>
-            <div id="cz-res"></div>
-        </div>
         <details class="cfg" style="margin-top:12px">
             <summary>⚙️ Rollo y precio (definir con gerencia)</summary>
             <div class="hint" style="margin:6px 0 8px">Cambia el costo del rollo cuando compres uno nuevo. El precio por m² y el mínimo por pieza son los que salen en la línea de arriba.</div>
@@ -114,6 +108,48 @@
             <div class="acts"><button class="btn" onclick="guardarConfig()">💾 Guardar para el equipo</button><span class="ok" id="c-ok"></span></div>
         </details>
     </div>
+
+    <div class="card prod" style="border-left-color:#0A3D62">
+        <div class="cab"><span style="font-size:26px">🪟</span><h2>Ventana Security Lamas</h2><span class="hint" id="v-precio-pie"></span></div>
+        <div class="hint" style="margin:2px 0 6px">Ventana de seguridad de lamas de vidrio (proveedor Forti Ventanas). Escribe la medida de fabricación en mm: si coincide con una estándar del catálogo (24 / 30 / 36" de ancho × los altos del catálogo) se cobra como estándar; si no, a medida. Lama 4" o 3", marco blanco o negro (mismo precio), vidrio esmerilado, evergreen o negro.</div>
+        <div id="filasv"></div>
+        <div class="acts">
+            <button class="btn o" onclick="agregarFilaV()">+ Otra ventana</button>
+            <label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" id="itbisv" onchange="calcularV()"> Agregar ITBIS 18 %</label>
+            <button class="btn o" onclick="copiarResumenV()">⧉ Copiar resumen</button>
+        </div>
+        <div id="avisosv"></div>
+        <div class="resumen" id="resumenv"></div>
+        <details class="cfg" id="cfgv" style="margin-top:12px">
+            <summary>⚙️ Costo del proveedor y precio de venta (definir con gerencia)</summary>
+            <div class="hint" style="margin:6px 0 8px">Costo por pie² que cobra el proveedor (Forti Ventanas, 2026-10-15): estándar RD$ 900, a medida RD$ 1,100, a medida con vidrio negro RD$ 1,150. El estándar con vidrio negro se asume al mismo precio que el estándar (por confirmar). El precio de venta por pie² sale de la cotización 556 de ARTAL (≈ RD$ 1,950/pie²), y nunca baja del margen bruto mínimo.</div>
+            <div class="frm">
+                <div><label>Costo estándar (RD$/pie²)</label><input type="number" step="10" id="v-cstd"></div>
+                <div><label>Costo estándar vidrio negro (RD$/pie²)</label><input type="number" step="10" id="v-cstdneg"></div>
+                <div><label>Costo a medida (RD$/pie²)</label><input type="number" step="10" id="v-cmed"></div>
+                <div><label>Costo a medida vidrio negro (RD$/pie²)</label><input type="number" step="10" id="v-cmedneg"></div>
+                <div><label>Mosquitera por ventana (RD$, costo)</label><input type="number" step="50" id="v-cmosq"></div>
+                <div><label><b>Precio de venta (RD$/pie²)</b></label><input type="number" step="10" id="v-pventa" style="border-color:#1f9d61;font-weight:bold"></div>
+                <div><label>Mínimo por ventana (RD$)</label><input type="number" step="100" id="v-min"></div>
+                <div><label><b>Margen bruto mínimo (%)</b></label><input type="number" step="1" id="v-margenmin" style="border-color:#1f9d61;font-weight:bold"></div>
+                <div><label>Tolerancia estándar (± mm)</label><input type="number" step="1" id="v-tol"></div>
+                <div><label>Ancho máx. por sección (mm)</label><input type="number" step="1" id="v-secmax"></div>
+            </div>
+            <div class="hint">Precio de venta por ventana = pie² × precio por pie² (+ mosquitera), nunca menos que el mínimo por ventana ni menos de lo que haga falta para el margen mínimo sobre el costo del proveedor. Los pie² se calculan con la medida en mm (1 pie² = 92,903 mm²).</div>
+            <div class="acts"><button class="btn" onclick="guardarConfigV()">💾 Guardar para el equipo</button><span class="ok" id="v-ok"></span></div>
+        </details>
+    </div>
+        <div class="card" style="margin:12px 0 0;background:#f7f9fc;border:1.5px solid #dbe3ee;box-shadow:none">
+            <b>🍊 Crear la cotización en Citrus</b>
+            <div class="hint" style="margin:4px 0 8px">Crea la cotización directo en Citrus con TODAS las líneas de esta página (telas, transporte y ventanas Security Lamas) y te devuelve el PDF. Queda «Pendiente de aprobación» a nombre de quien la crea. Si el cliente ya existe en Citrus, elígelo de la lista para que quede enlazado.</div>
+            <div class="frm">
+                <div><label>Cliente</label><input type="text" id="cz-cliente" list="cz-clientes" placeholder="Nombre del cliente" autocomplete="off"><datalist id="cz-clientes"></datalist></div>
+                <div><label>Dirección / obra (opcional)</label><input type="text" id="cz-dir" placeholder="Las Terrenas, Villa…"></div>
+                <div style="grid-column:1/-1"><label>Nota para la cotización (opcional)</label><input type="text" id="cz-nota" maxlength="500" placeholder="Ej: cambio de telas de mosquitera, incluye retiro de las viejas"></div>
+            </div>
+            <div class="acts"><button class="btn" id="cz-btn" onclick="crearEnCitrus()">📤 Crear cotización en Citrus</button><span class="ok" id="cz-ok"></span></div>
+            <div id="cz-res"></div>
+        </div>
 </main>
 
 <script type="module">
@@ -230,8 +266,9 @@
         const fuera = $('zona').value !== 'terrenas';
         const trans = fuera ? 0 : transporte(nTelas);
         const total = tv + trans, itbis = $('itbis').checked ? total * 0.18 : 0;
-        ultimasLineas = R.map((r, i) => (r.bloqueada || !r.m2) ? null : { descripcion: `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm`, cantidad: r.q, precio: Math.round(r.precioUnit * 100) / 100, nota: `${f2(r.m2)} m² · tela de fibra de vidrio` }).filter(Boolean);
-        if (!fuera && trans > 0 && nTelas) ultimasLineas.push({ descripcion: 'Transporte e instalación en Las Terrenas', cantidad: 1, precio: trans, nota: `${nTelas} tela${nTelas > 1 ? 's' : ''}` });
+        lineasTela = R.map((r, i) => (r.bloqueada || !r.m2) ? null : { descripcion: `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm`, cantidad: r.q, precio: Math.round(r.precioUnit * 100) / 100, nota: `${f2(r.m2)} m² · tela de fibra de vidrio` }).filter(Boolean);
+        if (!fuera && trans > 0 && nTelas) lineasTela.push({ descripcion: 'Transporte e instalación en Las Terrenas', cantidad: 1, precio: trans, nota: `${nTelas} tela${nTelas > 1 ? 's' : ''}` });
+        armarLineas();
         $('p-trans').innerHTML = fuera ? `<div class="v" style="font-size:15px;color:#c0392b">Cotizar aparte</div><div class="d">Fuera de Las Terrenas: usa el Calculador de obra para el transporte real.</div>`
             : nTelas ? `<div class="v">${RD(trans)}</div><div class="d">${nTelas} tela${nTelas > 1 ? 's' : ''} en Las Terrenas · tramo ${tramoTxt(nTelas)}</div>` : `<div class="v">—</div><div class="d">se calcula solo con la cantidad de telas</div>`;
         $('avisos').innerHTML = esAdmin && tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
@@ -251,7 +288,9 @@
         clientesCache.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
         $('cz-clientes').innerHTML = clientesCache.map(c => `<option value="${esc(c.nombre)}">${c.citrusId ? 'en Citrus' : ''}</option>`).join('');
     });
-    let ultimasLineas = [];   // lo que se mandaría a Citrus, armado en calcular()
+    let ultimasLineas = [];   // lo que se mandaría a Citrus: líneas de tela (calcular) + ventanas (calcularV)
+    let lineasTela = [], lineasVent = [];
+    const armarLineas = () => { ultimasLineas = [...lineasTela, ...lineasVent]; };
     window.crearEnCitrus = async () => {
         const ok = $('cz-ok'), btn = $('cz-btn'), res = $('cz-res');
         const nombre = $('cz-cliente').value.trim();
@@ -280,6 +319,81 @@
         btn.disabled = false;
     };
     window.copiarResumen = async () => { const t = $('resumen').textContent; try { await navigator.clipboard.writeText(t); alert('Resumen copiado.'); } catch (_) { prompt('Copia el resumen:', t); } };
+
+    // ===================== Ventana Security Lamas (2026-10-15) =====================
+    // Costos del proveedor (Forti Ventanas R.D., dato del usuario): estándar RD$ 900/pie², a medida RD$ 1,100/pie²,
+    // a medida con vidrio negro RD$ 1,150/pie²; estándar con vidrio negro = estándar (SUPUESTO, por confirmar).
+    // Precio de venta: de la cotización 556 de ARTAL (5 ventanas a medida, ≈ RD$ 1,880–2,060/pie² ≈ 42 % de margen
+    // bruto) → RD$ 1,950/pie² por defecto. Catálogo de medidas estándar en pulgadas (24/30/36" × altos por lama).
+    const LV_ANCHOS = [24, 30, 36];
+    const LV_ALTOS = { '4': [21.75, 29.75, 37.75, 45.75, 53.75, 57.75], '3': [22.75, 28.75, 37.75, 46.75, 52.75, 58.75] };
+    const LV_VIDRIOS = [['esmerilado', 'Esmerilado'], ['evergreen', 'Evergreen'], ['negro', 'Vidrio negro']];
+    const inMm = i => Math.round(i * 25.4);
+    const inTxt = i => { const e = Math.floor(i), f = i - e; return `${e}${f >= 0.74 ? '¾' : f >= 0.49 ? '½' : f >= 0.24 ? '¼' : ''}`; };
+    const lvEstandar = (pulg) => { const out = []; LV_ANCHOS.forEach(a => (LV_ALTOS[pulg] || LV_ALTOS['4']).forEach(h => out.push({ in: `${inTxt(a)} × ${inTxt(h)}"`, ancho: inMm(a), alto: inMm(h) }))); return out; };
+    const DEFV = { cstd: 900, cstdneg: 900, cmed: 1100, cmedneg: 1150, cmosq: 0, pventa: 1950, min: 5000, margenmin: 40, tol: 6, secmax: 914 };
+    let cfgV = { ...DEFV };
+    let filasV = [{ lama: '4', ancho: 0, alto: 0, cant: 1, vidrio: 'esmerilado', color: 'blanco', mosq: false }];
+    const CAMPOSV = { 'v-cstd': 'cstd', 'v-cstdneg': 'cstdneg', 'v-cmed': 'cmed', 'v-cmedneg': 'cmedneg', 'v-cmosq': 'cmosq', 'v-pventa': 'pventa', 'v-min': 'min', 'v-margenmin': 'margenmin', 'v-tol': 'tol', 'v-secmax': 'secmax' };
+    if (!esAdmin) { const d = $('cfgv'); if (d) d.remove(); }
+    function pintarConfigV() { if (!esAdmin) return; Object.entries(CAMPOSV).forEach(([id, k]) => { if ($(id)) $(id).value = cfgV[k]; }); }
+    function leerConfigV() { Object.entries(CAMPOSV).forEach(([id, k]) => { if ($(id)) cfgV[k] = n2($(id).value); }); }
+    if (esAdmin) Object.keys(CAMPOSV).forEach(id => { if ($(id)) $(id).oninput = () => { leerConfigV(); calcularV(); }; });
+    onSnapshot(doc(db, 'calculadores', 'ventanaLamas'), (s) => {
+        if (s.exists()) { const d = s.data(); Object.keys(DEFV).forEach(k => { if (d[k] != null && d[k] !== '') cfgV[k] = d[k]; }); }
+        pintarConfigV(); calcularV();
+    }, () => { pintarConfigV(); calcularV(); });
+    window.guardarConfigV = async () => {
+        leerConfigV(); const ok = $('v-ok');
+        try { await setDoc(doc(db, 'calculadores', 'ventanaLamas'), { ...cfgV, actualizado: serverTimestamp(), actualizadoPor: usuario.nombre }, { merge: true }); ok.style.color = '#1f9d61'; ok.textContent = 'Guardado para todo el equipo.'; }
+        catch (e) { ok.style.color = '#d9483b'; ok.textContent = 'No se pudo guardar (¿reglas de Firestore?): ' + e.message; }
+    };
+    function calcFilaV(f) {
+        const a = n2(f.ancho), h = n2(f.alto), q = Math.max(0, Math.round(n2(f.cant)));
+        const sinMedida = !(a > 0 && h > 0);
+        const std = sinMedida ? null : lvEstandar(f.lama).find(e => Math.abs(e.ancho - a) <= cfgV.tol && Math.abs(e.alto - h) <= cfgV.tol) || null;
+        const pie2 = a * h / 92903;
+        const negro = f.vidrio === 'negro';
+        const costoPie = std ? (negro ? cfgV.cstdneg : cfgV.cstd) : (negro ? cfgV.cmedneg : cfgV.cmed);
+        const costo = sinMedida ? 0 : pie2 * costoPie + (f.mosq ? cfgV.cmosq : 0);
+        const porPie = pie2 * cfgV.pventa + (f.mosq ? cfgV.cmosq / Math.max(0.05, 1 - cfgV.margenmin / 100) : 0);
+        const porMargen = costo / Math.max(0.05, 1 - cfgV.margenmin / 100);
+        const precioUnit = sinMedida ? 0 : Math.max(porPie, cfgV.min, porMargen);
+        const motivo = sinMedida ? '' : precioUnit === porMargen && porMargen > porPie && porMargen > cfgV.min ? `ajustado para no bajar del ${cfgV.margenmin} % de margen` : precioUnit === cfgV.min && cfgV.min > porPie ? 'aplica el mínimo' : '';
+        const secciones = sinMedida ? 0 : Math.max(1, Math.ceil(a / cfgV.secmax));
+        return { a, h, q, sinMedida, std, pie2, negro, costoPie, costo, precioUnit, motivo, secciones, margen: precioUnit ? (1 - costo / precioUnit) * 100 : 0, totalCosto: costo * q, totalVenta: precioUnit * q };
+    }
+    window.calcularV = () => {
+        const R = filasV.map(calcFilaV);
+        if ($('v-precio-pie')) $('v-precio-pie').textContent = esAdmin ? `${RD0(cfgV.pventa)} por pie² · mínimo ${RD0(cfgV.min)} por ventana` : '';
+        const opt = (arr, cur) => arr.map(([v, l]) => `<option value="${v}" ${v === cur ? 'selected' : ''}>${l}</option>`).join('');
+        $('filasv').innerHTML = filasV.map((f, i) => { const r = R[i]; return `<div class="lineav">
+            <div><label>Lama</label><select onchange="setV(${i},'lama',this.value)">${opt([['4', '4"'], ['3', '3"']], f.lama)}</select></div>
+            <div><label>Ancho (mm)</label><input type="number" step="1" inputmode="numeric" value="${f.ancho || ''}" placeholder="610" oninput="setV(${i},'ancho',this.value)"></div>
+            <div><label>Alto (mm)</label><input type="number" step="1" inputmode="numeric" value="${f.alto || ''}" placeholder="552" oninput="setV(${i},'alto',this.value)"></div>
+            <div><label>Cant.</label><input type="number" step="1" min="1" inputmode="numeric" value="${f.cant}" oninput="setV(${i},'cant',this.value)"></div>
+            <div><label>Vidrio</label><select onchange="setV(${i},'vidrio',this.value)">${opt(LV_VIDRIOS, f.vidrio)}</select></div>
+            <div><label>Marco</label><select onchange="setV(${i},'color',this.value)">${opt([['blanco', 'Blanco'], ['negro', 'Negro']], f.color)}</select></div>
+            <div><label>Mosquitera</label><select onchange="setV(${i},'mosq',this.value==='1')">${opt([['0', 'Sin'], ['1', 'Con']], f.mosq ? '1' : '0')}</select></div>
+            <div class="precio"><div class="v">${r.sinMedida ? '—' : RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '')}</div>
+                <div class="d">${r.sinMedida ? 'escribe ancho y alto' : `${r.std ? 'estándar ' + r.std.in : 'a medida'} · ${f2(r.pie2)} pie² · ${r.secciones} sección${r.secciones > 1 ? 'es' : ''}${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · costo ${RD0(r.costo)} (${RD0(r.costoPie)}/pie²) · margen ${Math.round(r.margen)} %` : ''}`}</div></div>
+            <div class="quitar">${filasV.length > 1 ? `<button class="btn x" onclick="quitarFilaV(${i})" title="Quitar">✕</button>` : ''}</div>
+        </div>`; }).join('');
+        const tv = R.reduce((s, r) => s + r.totalVenta, 0), tc = R.reduce((s, r) => s + r.totalCosto, 0), nV = R.reduce((s, r) => s + (r.sinMedida ? 0 : r.q), 0);
+        const itbis = $('itbisv').checked ? tv * 0.18 : 0;
+        $('avisosv').innerHTML = (esAdmin && tv && tc ? `<div class="aviso">Estas ventanas nos cuestan ${RD(tc)} y se venden en ${RD(tv)}: margen bruto de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo).</div>` : '')
+            + (R.some(r => r.negro && r.std) ? `<div class="aviso">Hay ventanas estándar con vidrio negro: el costo se asumió igual al estándar. Confirmar con el proveedor.</div>` : '')
+            + (R.some(r => !r.sinMedida && r.secciones > 1) ? `<div class="aviso">Las ventanas de más de ${cfgV.secmax} mm de ancho se dividen en secciones (supuesto: una cada ${cfgV.secmax} mm). Confirmar con el proveedor cómo las fabrica.</div>` : '');
+        lineasVent = R.map((r, i) => r.sinMedida ? null : { descripcion: `Ventana Security Lamas ${filasV[i].lama}" ${filasV[i].ancho} × ${filasV[i].alto} mm`, cantidad: r.q, precio: Math.round(r.precioUnit * 100) / 100, nota: `${r.std ? 'estándar ' + r.std.in : 'a medida'} · marco ${filasV[i].color} · vidrio ${filasV[i].vidrio}${filasV[i].mosq ? ' · con mosquitera' : ''}` }).filter(Boolean);
+        armarLineas();
+        $('resumenv').textContent = R.map((r, i) => r.sinMedida ? null : `Ventana Security Lamas ${filasV[i].lama}" ${filasV[i].ancho} × ${filasV[i].alto} mm (${r.std ? 'estándar ' + r.std.in : 'a medida'}, ${f2(r.pie2)} pie², marco ${filasV[i].color}, vidrio ${filasV[i].vidrio}${filasV[i].mosq ? ', con mosquitera' : ''})${r.q > 1 ? ' × ' + r.q : ''} → ${RD0(r.totalVenta)}`).filter(Boolean).join('\n')
+            + (tv ? `\nTOTAL ventanas: ${RD0(tv)} (${nV} ventana${nV > 1 ? 's' : ''})${itbis ? ' + ITBIS ' + RD0(itbis) + ' = ' + RD0(tv + itbis) : ''}\nInstalación y transporte: cotizar aparte.` : '');
+    };
+    window.setV = (i, k, v) => { filasV[i][k] = (k === 'lama' || k === 'vidrio' || k === 'color') ? v : k === 'mosq' ? !!v : n2(v); calcularV(); };
+    window.agregarFilaV = () => { filasV.push({ ...filasV[filasV.length - 1], ancho: 0, alto: 0, cant: 1 }); calcularV(); };
+    window.quitarFilaV = (i) => { filasV.splice(i, 1); if (!filasV.length) filasV.push({ lama: '4', ancho: 0, alto: 0, cant: 1, vidrio: 'esmerilado', color: 'blanco', mosq: false }); calcularV(); };
+    window.copiarResumenV = async () => { const t = $('resumenv').textContent; try { await navigator.clipboard.writeText(t); alert('Resumen copiado.'); } catch (_) { prompt('Copia el resumen:', t); } };
+    calcularV();
 </script>
 </body>
 </html>

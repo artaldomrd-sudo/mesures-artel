@@ -68,7 +68,7 @@ vm.runInContext(code + '\n;globalThis.__render=function(id,st){cardsState[id]=st
 const types = ['cor2', 'cor3', 'cor4_cent', 'cor4_lat', 'cor6_cent', 'cor6_lat',
   'gal1', 'gal2_cent', 'gal2_lat', 'gal3_3v', 'gal4_2v', 'gal4_4v', 'gal6_3v',
   'win_abat', 'win_ob', 'win_proy', 'win_souf', 'door_abat', 'mamp_fija', 'door_glass',
-  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'cort_ondas', 'pleg', 'mosq', 'door_flot'];
+  'door_slide', 'door_slide_conn', 'fachada_din', 'cort_roller', 'cort_shutter', 'cort_ondas', 'pleg', 'mosq', 'door_flot', 'win_lamas'];
 
 let ok = 0, fail = 0;
 for (const t of types) for (const id of ['card1', 'temp']) {
@@ -138,6 +138,12 @@ for (const t of ['tela', 'fija', 'corredera', 'deslizante']) for (const h of [1,
   catch (e) { fail++; console.error(`  mosquitera ${t} ${h}h/${o}:`, e.message); }
 }
 try { ctx.__render('card1', { type: 'mosq', categoria: 'mosquitera', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  mosquitera sin medidas:', e.message); }
+// Ventana Security Lamas (2026-10-15): lama 4"/3" × estándar / a medida ancha (3 secciones) × vidrios × marco, con/sin mosquitera
+for (const pulg of ['4', '3']) for (const [a, h] of [[610, 552], [914, 1467], [2080, 880], [1750, 850]]) for (const v of ['esmerilado', 'evergreen', 'negro']) {
+  try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: a, alto: h, lama_pulg: pulg, lama_vidrio: v, color_perfil: v === 'negro' ? 'negro' : 'blanco', mosquitera: a > 1000 ? 'con' : '' }); ok++; }
+  catch (e) { fail++; console.error(`  lamas ${pulg}" ${a}x${h} ${v}:`, e.message); }
+}
+try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  lamas sin medidas:', e.message); }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
 for (const esq of ['330', '431', '550', '633', '651', '660', '761', '770', '844', '871', '880', '981', '990', '1055']) {
