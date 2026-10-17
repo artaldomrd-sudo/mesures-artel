@@ -245,7 +245,13 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   pone el vértice del chevron al lado contrario ("abre a la derecha" → vértice a la izquierda), `manijaPrincipal(...,
   flipped=true)`, y `gridColPlan` usa `hingeLeft: r.lado === 'izq'`; el pop-up dice "Abre a la derecha (vista de
   adentro)" y el resumen "abre der. (vista de adentro)". Puerta/ventana abisagrada de la fachada NO cambian (siguen
-  definidas en vista exterior).
+  definidas en vista exterior). **Planta de la fachada con OB = vista desde ADENTRO (usuario 2026-10-17: "abajo
+  interior y arriba exterior")**: `planAdentro` (hay alguna celda `osci`) → todo el dibujo de la planta (`planG`:
+  columnas, huecos del modo suma, ala de esquina, remate) se espeja verticalmente alrededor de la línea de pared
+  (`matrix(1 0 0 -1 0 2·planY)`, x intacto = mismo orden de columnas que la elevación exterior), las reservas
+  arriba/abajo se intercambian (`arribaNeed`/`abajoNeed`), las etiquetas int/ext quedan fuera del espejo con int
+  abajo (ignora `planInterior`) y el título dice "VISTA EN PLANTA (vista de adentro: interior abajo)". Sin OB la
+  planta sigue como siempre (interior arriba). La tarjeta suelta de OB ya era así (ext arriba, int abajo).
 - **Flechas de apertura: SIEMPRE negras** (`#111`), no cambian con el acabado.
 - **Herrajes** (rieles, colgadores, bisagras, tirador, conectores, cerraduras):
   `herrajeCol = herraje_color==='negro' ? '#111111' : '#8d99a4'` (cromado = gris metálico claro,
@@ -2780,7 +2786,10 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
   PDF de la ficha no lo imprimen; el grid de impresión ya no reserva el área `telefono`) y `enviarOrden` manda
   `appJSON: appJSONEnvio` (copia sin `header.telefono`) en el pedido nuevo y en "Actualizar el original", así la ficha
   `?orderId=` que abren fábrica/chofer/instalador no lo trae; `clienteTelefono` sigue arriba del pedido solo para el
-  enganche con la ficha del cliente (las pantallas de `ops/alucufel/` no lo muestran).
+  enganche con la ficha del cliente (las pantallas de `ops/alucufel/` no lo muestran). **Formato único "+1 (809)
+  204-4903" (usuario 2026-10-17)**: `formatearTelefono(v)` (módulo, junto a `tel10`; expuesta en `window`) — se
+  escribe como sea y al salir de la casilla (`blur`) queda así; 11 dígitos que empiezan por 1 pierden el 1; un RNC
+  (9 dígitos) o una cédula no se tocan. `restoreData` también lo aplica. Cuaderno y servidor comparan solo dígitos.
 - Trigger `pedidoEnlazarCliente` (orders): si el pedido no trae `clienteId`, lo resuelve por teléfono → documento → nombre/alias y
   escribe `clienteId`, `clienteFacturacion`, `clienteEnlace`; si cruzó por teléfono/documento con otro nombre, ese nombre entra como
   alias de la ficha (aprende). Los campos operativos `cliente`/`obra` NO se tocan: el equipo sigue viendo el nombre de referencia.
