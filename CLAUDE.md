@@ -307,6 +307,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
     derecha del marco completo. Para dejar sitio abajo, `galandajePlan` baja a `PT=78` (antes 66; el
     separador/título de "VISTA SUPERIOR" van relativos a PT) y el viewBox del galandaje pasa a
     `-14 -12 144 132`. La cota del hueco va con el texto DEBAJO de la línea (`y0+H+5`, texto ≈57..63). La cota universal de ancho (`y=4`) se salta la categoría galandaje.
+  - **Serie C400 (usuario 2026-10-17, "solo esto de momento")**: solo en CORREDERAS — select de la tarjeta
+    suelta (`tipoAluminioHtml`, no en galandajes), `headerAluminio()` la reconoce en TIPO DE MATERIAL, y en la
+    Fachada Compuesta `ALU_MASTER` + `ALU_POR_CELDA` de las 6 celdas `cor*`. Sin dato en `PENETRACION_MM` (el
+    resumen avisa en rojo si se marca penetración de riel con C400).
   - **Penetración del riel con medida** (`PENETRACION_MM`: E70 45, E100 55, E200 55 según
     `tipo_aluminio`; correderas y galandajes): `penetracionTxt(state)` en la línea MEDIDAS TOTALES del
     resumen: "H: 2200 mm + 55 mm penetración riel (E100) = 2255 mm alto total hueco"; sin serie elegida
