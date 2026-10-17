@@ -1000,6 +1000,18 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   vidrio a tope) y la unión a tope como línea fina, y
   una "PF" por paño; `fajaDivXs` alinea la división de la faja con esos paños; el resumen dice
   "3 paños iguales de 2000 mm · división \"T\" (perfil)" (specList recibe `w` de la columna/faja).
+- **Muro de cortina (2026-10-17, usuario: "un selector de ancho × alto total y cantidad de módulos… como un paño
+  fijo con muchos cuadros")**: desplegable "🏢 Muro de cortina (generar módulos iguales)" arriba del pop-up
+  (`renderGridBuilder`): ancho total, alto total, módulos a lo ancho (1–30) y a lo alto (1–20); la línea
+  `#muro-mod-${id}` dice "Cada módulo: 1200 × 800 mm · 20 módulos" en vivo (`gridSetMuro` guarda `state.muro =
+  {w, h, nc, nr}` sin tocar la grilla); "⚙️ Generar módulos" (`gridGenerarMuro`) reemplaza `cols` por nc columnas
+  × nr filas de `pf` con `celdaAluDefault('pf')` (reparto redondeado, la última columna/fila absorbe la diferencia
+  para que la suma dé el total; `confirm()` si había algo más que una columna de PF) y `gridAlto = h`. Después cada
+  módulo se cambia a puerta/ventana/corredera desde su columna, como siempre (nada nuevo en el dibujo: es la misma
+  grilla). Resumen: `compDesc` agrupa nombres consecutivos iguales ("9 × Paño Fijo + Puerta Abisagrada + 8 × Paño
+  Fijo"), las filas idénticas consecutivas de una columna se agrupan ("3 × Paño Fijo — alto 800 mm") y, si
+  `state.muro.nc === cols.length`, una línea "Muro de cortina: 5 × 4 módulos de 1200 × 800 mm". `verify.mjs`: 5 × 4
+  con una puerta y una corredera (RENDER OK: 278).
 - **Encabezado del pop-up con la referencia** (2026-09-17, "ayudará a no equivocarse"): bajo
   "🧩 Fachada compuesta" va en amarillo `czRefUbiTxt(id)` ("Ref. F2 · Fachada frontal") o, si la
   tarjeta no tiene ref/ubicación, un aviso gris para escribirlas.

@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-17 14:47</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-17 15:10</div>
         </div>
     </div>
     
@@ -2003,7 +2003,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     const r = rows[0];
                     filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm` + penetracionCelda(r), specList(r.celda, { ...r, w: c.w }));
                 } else {
-                    const inner = rows.map(r => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${nomC(r.celda)}</b> — alto ${r.h} mm${penetracionCelda(r)}${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
+                    // Filas consecutivas idénticas (mismo tipo, alto y opciones) se agrupan: "3 × Paño Fijo — alto 850 mm" (muro de cortina)
+                    const grupos = []; rows.forEach(r => { const key = JSON.stringify({ ...r }); const u = grupos[grupos.length - 1]; if (u && u.key === key) u.k++; else grupos.push({ key, r, k: 1 }); });
+                    const inner = grupos.map(({ r, k }) => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${k > 1 ? k + ' × ' : ''}${nomC(r.celda)}</b> — alto ${r.h} mm${penetracionCelda(r)}${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
                     filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
@@ -2054,7 +2056,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const tubosLine = tuboLines.length ? `<div style="margin-top:4px;"><b>Tubos/refuerzos${tbz.medida ? ` (${tbz.medida} mm)` : ''}:</b>${tuboLines.map(t => `<div style="padding-left:12px; color:#444;">${t}</div>`).join('')}</div>` : '';
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
             const compParts = [];
-            cols.forEach(c => (c.rows || []).forEach(r => compParts.push(CELDA_NOM[r.celda] || r.celda)));
+            {   // nombres consecutivos iguales se agrupan ("16 × Paño Fijo + Puerta Abisagrada + 3 × Paño Fijo") — muro de cortina
+                const seq = []; cols.forEach(c => (c.rows || []).forEach(r => seq.push(CELDA_NOM[r.celda] || r.celda)));
+                seq.forEach(n => { const u = compParts[compParts.length - 1]; if (u && u.n === n) u.k++; else compParts.push({ n, k: 1 }); });
+                for (let i = 0; i < compParts.length; i++) compParts[i] = compParts[i].k > 1 ? `${compParts[i].k} × ${compParts[i].n}` : compParts[i].n;
+            }
             const fajaComp = (f, pos) => {
                 if (!f) return;
                 if (f.cols && f.cols.length) {
@@ -2073,6 +2079,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     <strong>FACHADA COMPUESTA</strong> &nbsp;·&nbsp; Cant: ${state.cantidad || 1}
                     <div style="margin-top:3px;">Ancho total <b style="color:#e74c3c;">${totalW} mm</b> &nbsp;·&nbsp; Alto total <b style="color:#e74c3c;">${totalH} mm</b></div>
                     <div style="color:var(--artal-blue); font-weight:bold; margin-top:2px;">${compDesc}</div>
+                    ${state.muro && state.muro.nc && cols.length === state.muro.nc ? `<div style="margin-top:2px;"><b>Muro de cortina:</b> ${state.muro.nc} × ${state.muro.nr} módulos de <b>${Math.round(state.muro.w / state.muro.nc)} × ${Math.round(state.muro.h / state.muro.nr)} mm</b> (${state.muro.nc * state.muro.nr} módulos; las columnas y filas editadas conservan su medida)</div>` : ''}
                     ${(() => {
                         const lado = (cols.length >= 2 && (state.esquinaLado === 'izq' || state.esquinaLado === 'der')) ? state.esquinaLado : '';
                         if (!lado) return '';
@@ -7832,6 +7839,27 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const maxWB = Math.max(wMainB, wFaB, wFbB);
         const cp = st.color_perfil || 'natural';
         let h = `<div id="grid-warn-${id}">${gridWarnInner(st)}</div>`;
+        // MURO DE CORTINA (usuario 2026-10-17): ancho × alto total + módulos a lo ancho y a lo alto → genera la
+        // grilla de columnas × filas con módulos iguales (Paño Fijo); después cada módulo se cambia a puerta,
+        // ventana, corredera… con el editor normal. "Viene siendo como un paño fijo con muchos cuadros".
+        {
+            const m = st.muro || {}; const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0);
+            const mw = parseInt(m.w) || totalW || 6000, mh = parseInt(m.h) || gridBandAlto(st) || 3000, nc = Math.max(1, parseInt(m.nc) || 4), nr = Math.max(1, parseInt(m.nr) || 3);
+            const modW = Math.round(mw / nc), modH = Math.round(mh / nr);
+            const ninp = `${inp} text-align:right;`;
+            h += `<details style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:8px;padding:8px 10px;margin-bottom:10px;" ${m.nc ? 'open' : ''}>
+                <summary style="cursor:pointer;font-size:12.5px;font-weight:bold;color:var(--artal-blue);">🏢 Muro de cortina (generar módulos iguales)</summary>
+                <div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:6px 8px;align-items:center;margin-top:8px;">
+                    <label style="${gbl}">Ancho total</label><input type="number" inputmode="numeric" value="${mw}" style="${ninp}" oninput="gridSetMuro(${id},'w',this.value)">
+                    <label style="${gbl}">Alto total</label><input type="number" inputmode="numeric" value="${mh}" style="${ninp}" oninput="gridSetMuro(${id},'h',this.value)">
+                    <label style="${gbl}">Módulos a lo ancho</label><input type="number" inputmode="numeric" min="1" max="30" value="${nc}" style="${ninp}" oninput="gridSetMuro(${id},'nc',this.value)">
+                    <label style="${gbl}">Módulos a lo alto</label><input type="number" inputmode="numeric" min="1" max="20" value="${nr}" style="${ninp}" oninput="gridSetMuro(${id},'nr',this.value)">
+                </div>
+                <div id="muro-mod-${id}" style="font-size:12px;color:#334155;margin-top:6px;">Cada módulo: <b>${modW} × ${modH} mm</b> · ${nc * nr} módulos (${nc} columnas × ${nr} filas)</div>
+                <button onclick="gridGenerarMuro(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">⚙️ Generar módulos (Paño Fijo)</button>
+                <div style="font-size:11px;color:#667;margin-top:5px;">Genera ${nc} columnas de ${nr} filas, todas Paño Fijo. Luego cambia cualquier módulo a puerta, ventana, corredera… desde su columna. Reemplaza las columnas actuales.</div>
+            </details>`;
+        }
         h += `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
         h += `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #e2e9f2;">
             <label style="${gbl}">Color / Acabado</label>
@@ -8054,6 +8082,27 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema' || key === 'panos';   // estos cambian qué campos se muestran
     window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
+    // Muro de cortina: guarda los parámetros (sin tocar la grilla) y refresca la línea "Cada módulo: …".
+    window.gridSetMuro = (id, k, v) => {
+        const st = cardsState[id]; st.muro = st.muro || {}; st.muro[k] = parseInt(v) || 0;
+        const m = st.muro, nc = Math.max(1, m.nc || 1), nr = Math.max(1, m.nr || 1);
+        const el = document.getElementById('muro-mod-' + id);
+        if (el) el.innerHTML = `Cada módulo: <b>${Math.round((m.w || 0) / nc)} × ${Math.round((m.h || 0) / nr)} mm</b> · ${nc * nr} módulos (${nc} columnas × ${nr} filas)`;
+        saveProgress();
+    };
+    window.gridGenerarMuro = (id) => {
+        const st = cardsState[id], m = st.muro || {};
+        const w = parseInt(m.w) || 0, h = parseInt(m.h) || 0, nc = Math.min(30, Math.max(1, parseInt(m.nc) || 1)), nr = Math.min(20, Math.max(1, parseInt(m.nr) || 1));
+        if (!(w > 0 && h > 0)) { alert('Escribe el ancho y el alto total del muro de cortina (mm).'); return; }
+        const tieneAlgo = (st.cols || []).some(c => (c.rows || []).some(r => r.celda !== 'pf')) || (st.cols || []).length > 1;
+        if (tieneAlgo && !confirm(`Se reemplazan las ${st.cols.length} columnas actuales por ${nc} columnas × ${nr} filas de Paño Fijo (${Math.round(w / nc)} × ${Math.round(h / nr)} mm cada módulo). ¿Continuar?`)) return;
+        // Reparto exacto: los módulos se redondean y la última columna/fila absorbe la diferencia para que la suma dé el total.
+        const ws = Array.from({ length: nc }, () => Math.round(w / nc)); ws[nc - 1] += w - ws.reduce((a, b) => a + b, 0);
+        const hs = Array.from({ length: nr }, () => Math.round(h / nr)); hs[nr - 1] += h - hs.reduce((a, b) => a + b, 0);
+        st.cols = ws.map(cw => ({ w: cw, rows: hs.map(rh => ({ h: rh, celda: 'pf', alu: celdaAluDefault('pf') })) }));
+        st.gridAlto = h; st.muro = { w, h, nc, nr };
+        gridFull(id);
+    };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
     window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };

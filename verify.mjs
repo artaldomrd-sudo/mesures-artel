@@ -143,6 +143,14 @@ for (const pulg of ['4', '3']) for (const [a, h] of [[610, 552], [914, 1467], [2
   try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: a, alto: h, lama_pulg: pulg, lama_vidrio: v, color_perfil: v === 'negro' ? 'negro' : 'blanco', mosquitera: a > 1000 ? 'con' : '' }); ok++; }
   catch (e) { fail++; console.error(`  lamas ${pulg}" ${a}x${h} ${v}:`, e.message); }
 }
+// Muro de cortina (2026-10-17): 5 × 4 módulos iguales con una puerta y una corredera cambiadas
+try {
+  const ws = Array.from({ length: 5 }, () => 1200), hs = Array.from({ length: 4 }, () => 800);
+  const cols = ws.map(w => ({ w, rows: hs.map(h => ({ h, celda: 'pf', alu: 'p40_ventana' })) }));
+  cols[2].rows[3] = { h: 800, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'der' };
+  cols[0].rows[1] = { h: 800, celda: 'cor2', alu: 'P92', cor_interior: 'I' };
+  ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols, muro: { w: 6000, h: 3200, nc: 5, nr: 4 }, vidrio: 'templado', verPlanta: true, tubos: { entre: true, entreH: true, entreModo: 'integrado', medida: '100 x 45', incluidos: true } }); ok++;
+} catch (e) { fail++; console.error('  muro de cortina 5x4:', e.message); }
 try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  lamas sin medidas:', e.message); }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
