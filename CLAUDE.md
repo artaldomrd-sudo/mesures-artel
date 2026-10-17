@@ -1017,7 +1017,8 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   con una puerta y una corredera (RENDER OK: 278).
   **Segunda vuelta (mismo día, con captura)**: (1) celda nueva **`mc` "Muro cortina (módulo)"** (en `GRID_CELDAS`,
   `GRID_FAMILIAS`, `CELDA_NOM`, `ALU_POR_CELDA.mc = []`): vidrio con marco SIN la etiqueta "PF" ("ya no es un paño
-  fijo"); el generador crea `mc`; el título del resumen pasa a "FACHADA MURO CORTINA" si hay alguna; perfil de muro
+  fijo"); el generador crea `mc`; el título del resumen pasa a "FACHADA MURO CORTINA" si hay alguna y la línea `compDesc` ("7 × Muro cortina
+  (módulo) + Corredera…") NO se muestra en ese caso (usuario: "no se entiende y no es necesario"); perfil de muro
   cortina **4" o 6" por separado vertical y horizontal** (`state.muro.perfV/perfH`, selects en el generador,
   `gridSetMuroPerf`; resumen "Perfil de muro cortina: vertical 6" · horizontal 4""). (2) **Cotas de alto UNA sola vez a
   la IZQUIERDA** ("no es necesario marcar por dentro todos los altos"): `rowDims` lleva `col` y `seq` (altos de su
