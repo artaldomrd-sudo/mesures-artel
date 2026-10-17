@@ -965,7 +965,10 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   "×N" solo si > 1; usuario 2026-09-14). Cotas: `dimSegH` (línea de
   cota SEGMENTADA por banda, un tramo por columna) + `dimLineH` total abajo + `dimLineV` total a la
   derecha + alturas por banda a la izquierda cuando hay fajas. Etiqueta fija "VISTA EXTERIOR".
-  `applyFinish` al final como el resto.
+  `applyFinish` al final como el resto. **Número de columna "C1…Cn" debajo de la cota de ancho de cada
+  columna** (usuario 2026-10-17, "saber cuál es la columna 1"): la fila de `dimRows` de las columnas lleva
+  `cols: true` y `dimSegH` va seguido de un `<text>` gris por columna centrado en `colInfo[i]` (misma numeración
+  que "Columna N" del pop-up y del resumen); esa fila reserva 11 en vez de 8.
 - **Vista en planta**: `gridColPlan(x, w, col, planY, depth)` por columna. Correderas: rieles
   paralelos esquemáticos. **Abisagradas: `planViewAbatible(type, stateInfo, startX, w, y0, maxR,
   opts)`** — función top-level que es la ÚNICA fuente de la planta de puerta/ventana abisagrada:
