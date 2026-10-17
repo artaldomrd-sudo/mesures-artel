@@ -150,6 +150,12 @@ try {
   cols[2].rows[3] = { h: 800, celda: 'puerta', alu: 'p40_puerta', apertura: 'afuera_1', lado: 'der' };
   cols[0].rows[1] = { h: 800, celda: 'cor2', alu: 'P92', cor_interior: 'I' };
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols, muro: { w: 6000, h: 3200, nc: 5, nr: 4 }, vidrio: 'templado', verPlanta: true, tubos: { entre: true, entreH: true, entreModo: 'integrado', medida: '100 x 45', incluidos: true } }); ok++;
+  // módulos 'mc' + fusión a lo ancho (corredera de 2 módulos, span) y a lo alto (puerta de 2 filas), con tubos en modo suma
+  const mc = ws.map(w => ({ w, rows: hs.map(h => ({ h, celda: 'mc', alu: '' })) }));
+  mc[1].rows[2] = { h: 800, celda: 'cor2', alu: 'P92', cor_interior: 'I', span: 2 }; mc[2].rows[2] = { celda: 'fus', h: 800, de: 1 };
+  mc[4].rows.splice(2, 2, { h: 1600, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado: 'izq' });
+  ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: mc, muro: { w: 6000, h: 3200, nc: 5, nr: 4, perfV: '6', perfH: '4' }, vidrio: 'templado', verPlanta: true, tubos: { entre: true, entreH: true, entreModo: 'suma', entreHModo: 'suma', medida: '100 x 45', incluidos: true } }); ok++;
+  ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: mc, muro: { w: 6000, h: 3200, nc: 5, nr: 4 }, verPlanta: true, fajaArriba: { h: 400, celda: 'proy', alu: 'p40_ventana' }, tubos: { entre: true, entreModo: 'integrado' } }); ok++;
 } catch (e) { fail++; console.error('  muro de cortina 5x4:', e.message); }
 try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  lamas sin medidas:', e.message); }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin

@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-17 15:10</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-17 15:24</div>
         </div>
     </div>
     
@@ -1920,7 +1920,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         let html = '<div style="font-size: 13px; color: var(--text-dark); line-height: 1.6;">';
 
         if (state.categoria === 'fachada_grid') {
-            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas (Lateral)', cor4_cent: 'Corredera 4 Hojas (Central)', cor6_cent: 'Corredera 6 Hojas (Central)', cor6_lat: 'Corredera 6 Hojas (Lateral)', gal1: 'Galandaje 1 Hoja', gal2_lat: 'Galandaje 2 Hojas (Lateral)', gal2_cent: 'Galandaje 2 Hojas (Central)', gal3_3v: 'Galandaje 3 Hojas', gal4_2v: 'Galandaje 4 Hojas (Central)', gal4_4v: 'Galandaje 4 Hojas (Lateral)', gal6_3v: 'Galandaje 6 Hojas', pleg: 'Plegable (Acordeón)', puerta: 'Puerta Abisagrada', pflot: 'Puerta Flotante', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío' };
+            const CELDA_NOM = { pf: 'Paño Fijo', cor2: 'Corredera 2 Hojas', cor3: 'Corredera 3 Hojas', cor4: 'Corredera 4 Hojas (Lateral)', cor4_cent: 'Corredera 4 Hojas (Central)', cor6_cent: 'Corredera 6 Hojas (Central)', cor6_lat: 'Corredera 6 Hojas (Lateral)', gal1: 'Galandaje 1 Hoja', gal2_lat: 'Galandaje 2 Hojas (Lateral)', gal2_cent: 'Galandaje 2 Hojas (Central)', gal3_3v: 'Galandaje 3 Hojas', gal4_2v: 'Galandaje 4 Hojas (Central)', gal4_4v: 'Galandaje 4 Hojas (Lateral)', gal6_3v: 'Galandaje 6 Hojas', pleg: 'Plegable (Acordeón)', puerta: 'Puerta Abisagrada', pflot: 'Puerta Flotante', ventana: 'Ventana Abisagrada', louvers: 'Láminas de Louver', osci: 'Oscilobatiente (OB)', proy: 'Ventana Proyectada', vacio: 'Muro / Vacío', mc: 'Muro cortina (módulo)', fus: '(fusionado)' };
             const cols = state.cols || [];
             const totalW = cols.reduce((a, c) => a + (parseInt(c.w) || 0), 0) + gridEntreExtraW(state);
             const fa = state.fajaArriba, fb = state.fajaAbajo;
@@ -1999,13 +1999,17 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (fa) filas += fajaLine(fa, 'superior' + rangoTxt(infoFa));
             cols.forEach((c, ci) => {
                 const rows = c.rows || [];
+                // Módulo fusionado a lo ancho: ancho = suma de sus columnas (+ tubo en modo suma); el hueco 'fus' no se lista.
+                const wDe = r => r.span > 1 ? cols.slice(ci, ci + r.span).reduce((a, cc) => a + (parseInt(cc.w) || 0), 0) + (gridEntreSuma(state) ? (r.span - 1) * gridTuboG(state.tubos) : 0) : (parseInt(c.w) || 0);
+                const spanTxt = r => r.span > 1 ? ` <span style="color:#1e8449;">(fusión de ${r.span} módulos a lo ancho)</span>` : '';
                 if (rows.length === 1) {
                     const r = rows[0];
-                    filas += detRow(nomC(r.celda), `${c.w} × ${r.h} mm` + penetracionCelda(r), specList(r.celda, { ...r, w: c.w }));
+                    if (r.celda === 'fus') { filas += `<div style="color:#999; font-size:11.5px;">Columna ${ci + 1} (${c.w} mm): fusionada con la columna ${(r.de || 0) + 1}</div>`; }
+                    else filas += detRow(nomC(r.celda) + spanTxt(r), `${wDe(r)} × ${r.h} mm` + penetracionCelda(r), specList(r.celda, { ...r, w: wDe(r) }));
                 } else {
                     // Filas consecutivas idénticas (mismo tipo, alto y opciones) se agrupan: "3 × Paño Fijo — alto 850 mm" (muro de cortina)
-                    const grupos = []; rows.forEach(r => { const key = JSON.stringify({ ...r }); const u = grupos[grupos.length - 1]; if (u && u.key === key) u.k++; else grupos.push({ key, r, k: 1 }); });
-                    const inner = grupos.map(({ r, k }) => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${k > 1 ? k + ' × ' : ''}${nomC(r.celda)}</b> — alto ${r.h} mm${penetracionCelda(r)}${specList(r.celda, { ...r, w: c.w }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
+                    const grupos = []; rows.forEach(r => { if (r.celda === 'fus') return; const key = JSON.stringify({ ...r }); const u = grupos[grupos.length - 1]; if (u && u.key === key) u.k++; else grupos.push({ key, r, k: 1 }); });
+                    const inner = grupos.map(({ r, k }) => `<div style="color:#666; padding-left:12px; font-size:12px;"><b style="color:#333;">${k > 1 ? k + ' × ' : ''}${nomC(r.celda)}</b>${spanTxt(r)} — ${r.span > 1 ? `${wDe(r)} × ` : 'alto '}${r.h} mm${penetracionCelda(r)}${specList(r.celda, { ...r, w: wDe(r) }).length ? ' · ' + specList(r.celda, { ...r, w: c.w }).join(' · ') : ''}</div>`).join('');
                     filas += `<div style="margin:3px 0;"><b>Columna ${ci + 1}</b> &nbsp;<span style="color:#e74c3c;">ancho ${c.w} mm</span>${inner}</div>`;
                 }
             });
@@ -2057,7 +2061,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // Descripción legible de qué compone la fachada (los elementos reales, no "1 columna + faja").
             const compParts = [];
             {   // nombres consecutivos iguales se agrupan ("16 × Paño Fijo + Puerta Abisagrada + 3 × Paño Fijo") — muro de cortina
-                const seq = []; cols.forEach(c => (c.rows || []).forEach(r => seq.push(CELDA_NOM[r.celda] || r.celda)));
+                const seq = []; cols.forEach(c => (c.rows || []).forEach(r => { if (r.celda !== 'fus') seq.push(CELDA_NOM[r.celda] || r.celda); }));
                 seq.forEach(n => { const u = compParts[compParts.length - 1]; if (u && u.n === n) u.k++; else compParts.push({ n, k: 1 }); });
                 for (let i = 0; i < compParts.length; i++) compParts[i] = compParts[i].k > 1 ? `${compParts[i].k} × ${compParts[i].n}` : compParts[i].n;
             }
@@ -2076,10 +2080,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const colorVidrioTxt = state.color_vidrio ? (state.color_vidrio.charAt(0).toUpperCase() + state.color_vidrio.slice(1)) : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.6;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:6px; padding-bottom:5px;">
-                    <strong>FACHADA COMPUESTA</strong> &nbsp;·&nbsp; Cant: ${state.cantidad || 1}
+                    <strong>${cols.some(c => (c.rows || []).some(r => r.celda === 'mc')) ? 'FACHADA MURO CORTINA' : 'FACHADA COMPUESTA'}</strong> &nbsp;·&nbsp; Cant: ${state.cantidad || 1}
                     <div style="margin-top:3px;">Ancho total <b style="color:#e74c3c;">${totalW} mm</b> &nbsp;·&nbsp; Alto total <b style="color:#e74c3c;">${totalH} mm</b></div>
                     <div style="color:var(--artal-blue); font-weight:bold; margin-top:2px;">${compDesc}</div>
-                    ${state.muro && state.muro.nc && cols.length === state.muro.nc ? `<div style="margin-top:2px;"><b>Muro de cortina:</b> ${state.muro.nc} × ${state.muro.nr} módulos de <b>${Math.round(state.muro.w / state.muro.nc)} × ${Math.round(state.muro.h / state.muro.nr)} mm</b> (${state.muro.nc * state.muro.nr} módulos; las columnas y filas editadas conservan su medida)</div>` : ''}
+                    ${state.muro && state.muro.nc && cols.length === state.muro.nc ? `<div style="margin-top:2px;"><b>Muro de cortina:</b> ${state.muro.nc} × ${state.muro.nr} módulos de <b>${Math.round(state.muro.w / state.muro.nc)} × ${Math.round(state.muro.h / state.muro.nr)} mm</b> (${state.muro.nc * state.muro.nr} módulos; las columnas y filas editadas conservan su medida)${state.muro.perfV || state.muro.perfH ? ` · <b>Perfil de muro cortina:</b> vertical ${state.muro.perfV || '4'}" · horizontal ${state.muro.perfH || '4'}"` : ''}</div>` : ''}
                     ${(() => {
                         const lado = (cols.length >= 2 && (state.esquinaLado === 'izq' || state.esquinaLado === 'der')) ? state.esquinaLado : '';
                         if (!lado) return '';
@@ -6887,12 +6891,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // (paño fijo, corredera, puerta, louver, oscilo, vacío). Dibujo 2D plano reusando el motor de
     // panel (extrudedPanel/louverPanel/wallBlock) + símbolos por tipo + cotas. Sin efecto 3D.
     // Nombres IDÉNTICOS a los ítems del menú lateral (para no inventar variantes de nombre).
-    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas (Lateral)'], ['cor4_cent', 'Corredera 4 Hojas (Central)'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['gal1', 'Galandaje 1 Hoja'], ['gal2_lat', 'Galandaje 2 Hojas (Lateral)'], ['gal2_cent', 'Galandaje 2 Hojas (Central)'], ['gal3_3v', 'Galandaje 3 Hojas'], ['gal4_2v', 'Galandaje 4 Hojas (Central)'], ['gal4_4v', 'Galandaje 4 Hojas (Lateral)'], ['gal6_3v', 'Galandaje 6 Hojas'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['pflot', 'Puerta Flotante (vidrio, kit botella)'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const GRID_CELDAS = [['pf', 'Paño Fijo'], ['cor2', 'Corredera 2 Hojas'], ['cor3', 'Corredera 3 Hojas'], ['cor4', 'Corredera 4 Hojas (Lateral)'], ['cor4_cent', 'Corredera 4 Hojas (Central)'], ['cor6_cent', 'Corredera 6 Hojas (Central)'], ['cor6_lat', 'Corredera 6 Hojas (Lateral)'], ['gal1', 'Galandaje 1 Hoja'], ['gal2_lat', 'Galandaje 2 Hojas (Lateral)'], ['gal2_cent', 'Galandaje 2 Hojas (Central)'], ['gal3_3v', 'Galandaje 3 Hojas'], ['gal4_2v', 'Galandaje 4 Hojas (Central)'], ['gal4_4v', 'Galandaje 4 Hojas (Lateral)'], ['gal6_3v', 'Galandaje 6 Hojas'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['pflot', 'Puerta Flotante (vidrio, kit botella)'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío'], ['mc', 'Muro cortina (módulo)']];
 
     // Menú de tipo de celda REDUCIDO (usuario 2026-09-14, "haz lo mismo que con plegable"): el selector
     // principal muestra FAMILIAS (Corredera, Galandaje, Plegable…) y la variante (nº de hojas) se elige en
     // una fila "Hojas" aparte, como el plegable. Los valores internos de `celda` (cor2, gal4_2v…) no cambian.
-    const GRID_FAMILIAS = [['pf', 'Paño Fijo'], ['cor', 'Corredera'], ['gal', 'Galandaje'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['pflot', 'Puerta Flotante (vidrio, kit botella)'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío']];
+    const GRID_FAMILIAS = [['pf', 'Paño Fijo'], ['cor', 'Corredera'], ['gal', 'Galandaje'], ['pleg', 'Plegable (Acordeón)'], ['puerta', 'Puerta Abisagrada'], ['pflot', 'Puerta Flotante (vidrio, kit botella)'], ['ventana', 'Ventana Abisagrada'], ['osci', 'Oscilobatiente (OB)'], ['proy', 'Ventana Proyectada'], ['louvers', 'Láminas de Louver'], ['vacio', 'Muro / Vacío'], ['mc', 'Muro cortina (módulo)']];
     const COR_VARS = [['cor2', '2 hojas'], ['cor3', '3 hojas'], ['cor4_cent', '4 hojas (central)'], ['cor4', '4 hojas (lateral)'], ['cor6_cent', '6 hojas (central)'], ['cor6_lat', '6 hojas (lateral)']];
     const GAL_VARS = [['gal1', '1 hoja'], ['gal2_lat', '2 hojas (lateral)'], ['gal2_cent', '2 hojas (central)'], ['gal3_3v', '3 hojas'], ['gal4_2v', '4 hojas (central)'], ['gal4_4v', '4 hojas (lateral)'], ['gal6_3v', '6 hojas']];
     function celdaFamilia(celda) { return ({ cor2: 'cor', cor3: 'cor', cor4: 'cor', cor4_cent: 'cor', cor6_cent: 'cor', cor6_lat: 'cor' })[celda] || (GRID_GAL[celda] ? 'gal' : celda); }
@@ -6921,6 +6925,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         gal4_2v: ['P92', 'E70', 'E100', 'E200'], gal4_4v: ['P92', 'E70', 'E100', 'E200'], gal6_3v: ['P92', 'E70', 'E100', 'E200'],
         pleg: ['E63'],
         pflot: [],   // puerta flotante: vidrio templado sin marco de aluminio (kit botella)
+        mc: [],      // módulo de muro cortina: el perfil (4"/6") es global de la fachada (state.muro.perfV/perfH)
         louvers: [], vacio: []
     };
     // Opciones de aluminio para UNA celda concreta (según su tipo de elemento) — el selector va por paño.
@@ -7032,8 +7037,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Así se puede tener, por ej., la puerta en Láminas de Louver y la faja en vidrio.
         const cv = cfg.vidrio || gv;
         if (celda === 'louvers') return louverPanel(uid, x, y, w, h);
+        if (celda === 'fus') return '';   // hueco de una fusión: lo dibuja el módulo maestro (span) a lo ancho
         let s = cv === 'louvers' ? louverPanel(uid, x, y, w, h) : cv === 'tubos2040' ? tubosPanel(uid, x, y, w, h, parseInt(cfg.h) || 0) : extrudedPanel(uid, x, y, w, h);   // vidrio/louver/tubos + marco 2D (tubos a escala real con el alto en mm)
         const cx = x + w / 2, cy = y + h / 2, marca = '#111', pad = Math.min(w, h) * 0.14;
+        if (celda === 'mc') return s;   // módulo de muro cortina: vidrio con su marco, SIN etiqueta "PF" (usuario 2026-10-17)
         if (celda === 'pflot') {
             // Puerta FLOTANTE (2026-09-30): vidrio templado SIN marco (glassOnlyPanel) con kit botella = pivote
             // arriba y abajo del lado de la bisagra, chevron de apertura como la abisagrada (adentro punteado /
@@ -7386,6 +7393,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const faY0 = faLocal ? (gy0 + (gDH - infoFa.maxIn * scaleV) - faDHd) : 0;
         if (fa) body += drawFaja(fa, faY0, faDHd, offFa, bwFa);   // faja superior (ancho propio + alineación)
         let cx = offMain; const colInfo = []; const rowDims = [];
+        // FUSIÓN a lo ancho (usuario 2026-10-17, muro de cortina): `row.span = n` → el módulo ocupa esta columna y
+        // las n−1 siguientes en esa fila (ahí hay un hueco `celda:'fus'`). Ancho dibujado = suma de columnas + huecos.
+        const cwArr = cols.map(c => (parseInt(c.w) || 0) * scale);
+        const spanW = (cIdx, n) => { let t = 0; for (let k = 0; k < n && cIdx + k < cwArr.length; k++) t += cwArr[cIdx + k] + (k < n - 1 ? gapAt(cIdx + k) : 0); return t; };
+        const spanMm = (cIdx, n) => { let t = 0; for (let k = 0; k < n && cIdx + k < cols.length; k++) t += (parseInt(cols[cIdx + k].w) || 0) + (k < n - 1 && gridEntreSuma(state) ? gridTuboG(state.tubos) : 0); return t; };
         cols.forEach((c, cIdx) => {
             const cw = (parseInt(c.w) || 0) * scale;
             const rows = (c.rows && c.rows.length) ? c.rows : [{ h: gAlto, celda: 'pf' }];
@@ -7403,7 +7415,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let cy = colTop, tubosFilas = '';
             const cellsCol = [];
             rows.forEach((r, ri) => {
-                const rh = ((parseInt(r.h) || 0) / rowSum) * colDH; body += gridCell(uid, cx, cy, cw, rh, r.celda, r, state.vidrio); cellsCol.push({ y: cy, h: rh, r });
+                const rh = ((parseInt(r.h) || 0) / rowSum) * colDH;
+                const cwCell = r.span > 1 ? spanW(cIdx, r.span) : cw;   // módulo fusionado: ocupa varias columnas
+                body += gridCell(uid, cx, cy, cwCell, rh, r.celda, { ...r, w: r.span > 1 ? spanMm(cIdx, r.span) : (parseInt(c.w) || 0) }, state.vidrio); cellsCol.push({ y: cy, h: rh, r, w: cwCell });
                 if (ri === rows.length - 1 && r.penetracionRiel && r.penetracionRiel !== 'no' && (gridCorN(r.celda) || gridGal(r.celda))) {
                     // Penetración del riel (usuario 2026-09-18): línea de SUELO al pie de la celda y el riel que
                     // baja por debajo del suelo lo que penetra (a escala, mínimo visible) con su cota.
@@ -7414,7 +7428,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     body += `<text x="${(cx - 3.5).toFixed(1)}" y="${(yS + 1.2).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="end" stroke="none">suelo</text>`;
                     body += pm ? dimLineV(yS, yS + penDH, cx + cw + 2.6, cx + cw, `${pm}`, 2.8) : `<text x="${(cx + cw / 2).toFixed(1)}" y="${(yS + penDH + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#c0392b" text-anchor="middle" stroke="none">riel: ¿serie?</text>`;
                 }
-                if (rows.length > 1 || rowSum !== gAlto) rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0 });
+                if ((rows.length > 1 || rowSum !== gAlto) && r.celda !== 'fus') rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0, col: cIdx, seq: rows.map(rr => parseInt(rr.h) || 0).join('/') });
                 cy += rh;
                 if (rowGapMm && ri < rows.length - 1) {
                     if (gapSuma) { tubosFilas += tuboRect(cx, cy, cw, rowGapDH); cy += rowGapDH; }
@@ -7461,19 +7475,20 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const frameSeg = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#0A3D62" stroke-width="2.2" stroke-linecap="square"/>`;
         colInfo.forEach(ci => {
             const cells = ci.cells || [];
-            const especial = cells.some(cl => cl.r.celda === 'pflot' || (cl.r.celda === 'pf' && cl.r.marco_abierto));
+            const especial = cells.some(cl => cl.r.celda === 'pflot' || cl.r.celda === 'fus' || cl.r.span > 1 || (cl.r.celda === 'pf' && cl.r.marco_abierto));
             if (!especial) { body += bandRect(ci.x, ci.top, ci.w, ci.h); return; }
-            // Sin marco propio: puerta flotante (vidrio solo) y muro vacío (usuario 2026-09-30, con foto: el perfil
-            // bajaba alrededor del muro). Un lado es exterior si no hay vecino o el vecino es de esos.
-            const sinMarco = cl => !cl || cl.r.celda === 'pflot' || cl.r.celda === 'vacio';
+            // Sin marco propio: puerta flotante (vidrio solo), muro vacío (usuario 2026-09-30, con foto: el perfil
+            // bajaba alrededor del muro) y el hueco de una fusión (el marco lo dibuja el módulo maestro, más ancho).
+            const sinMarco = cl => !cl || cl.r.celda === 'pflot' || cl.r.celda === 'vacio' || cl.r.celda === 'fus';
             cells.forEach((cl, k) => {
                 const r = cl.r; if (sinMarco(cl)) return;
                 const op = r.celda === 'pf' ? (r.marco_abierto || '') : '';
+                const wc = cl.w || ci.w;   // módulo fusionado: marco a lo ancho de todas sus columnas
                 const sd = { t: sinMarco(cells[k - 1]) && op !== 'arriba', b: sinMarco(cells[k + 1]) && op !== 'abajo', l: op !== 'izq', r: op !== 'der' };
-                if (sd.t) body += frameSeg(ci.x, cl.y, ci.x + ci.w, cl.y);
-                if (sd.b) body += frameSeg(ci.x, cl.y + cl.h, ci.x + ci.w, cl.y + cl.h);
+                if (sd.t) body += frameSeg(ci.x, cl.y, ci.x + wc, cl.y);
+                if (sd.b) body += frameSeg(ci.x, cl.y + cl.h, ci.x + wc, cl.y + cl.h);
                 if (sd.l) body += frameSeg(ci.x, cl.y, ci.x, cl.y + cl.h);
-                if (sd.r) body += frameSeg(ci.x + ci.w, cl.y, ci.x + ci.w, cl.y + cl.h);
+                if (sd.r) body += frameSeg(ci.x + wc, cl.y, ci.x + wc, cl.y + cl.h);
             });
         });
         if (fb) body += bandRect(offFb, fbY, bwFb, fbDH);
@@ -7495,8 +7510,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (gridJuntaVidrio(cols, i - 1)) continue;   // junta vidrio/vidrio (puerta flotante / PF con marco abierto): sin tubo
             const bx = colInfo[i].x, g = gapAt(i - 1);
             const tw = Math.max(tuboG * scale, 1.2);
-            if (entreSuma) body += tuboRect(bx - g, gy0, g, gDH);
-            else body += tuboRect(bx - tw / 2, gy0, tw, gDH);
+            // Tramos de la junta que cruza un módulo fusionado (maestro en una columna m ≤ i−1 que llega a la i): sin tubo ahí.
+            const cortes = [];
+            colInfo.forEach((cm, m) => { if (m <= i - 1) (cm.cells || []).forEach(cl => { if (cl.r.span > 1 && m + cl.r.span - 1 >= i) cortes.push([cl.y, cl.y + cl.h]); }); });
+            cortes.sort((a, b) => a[0] - b[0]);
+            let yy = gy0; const tramos = [];
+            cortes.forEach(([a, b]) => { if (a > yy) tramos.push([yy, a]); yy = Math.max(yy, b); });
+            if (yy < gy0 + gDH) tramos.push([yy, gy0 + gDH]);
+            tramos.forEach(([a, b]) => { if (entreSuma) body += tuboRect(bx - g, a, g, b - a); else body += tuboRect(bx - tw / 2, a, tw, b - a); });
             if (tb.medida) body += `<text x="${(entreSuma ? bx - g / 2 : bx).toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
         }
         // cotas: ancho total (abajo) + mm por columna + alto total (derecha). Si un tubo perimetral
@@ -7547,8 +7568,17 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Filas apiladas / columnas más bajas: cota vertical propia a la DERECHA de su columna (antes era un
         // número dentro de la fila y en una faja baja se pisaba con "PF" — usuario 2026-09-17). La cota del
         // alto total se corre para no chocar con las de la última columna.
-        const hayRowDims = rowDims.length > 0;
-        rowDims.forEach(rd => { cotas += dimLineV(rd.yTop, rd.yBot, rd.x + rd.w + 2.6, rd.x + rd.w, `${rd.mm}`, 3.2); });
+        // Las alturas de las filas van UNA vez a la IZQUIERDA del dibujo (usuario 2026-10-17: "no es necesario
+        // marcar por dentro todos los altos"): se toma como referencia la primera columna con filas apiladas; las
+        // columnas cuya secuencia de altos difiera siguen con sus cotas dentro, a la derecha de cada celda.
+        const refCol = rowDims.find(rd => rd.seq && rd.seq.includes('/')); const refSeq = refCol ? refCol.seq : null;
+        const rowDimsIn = rowDims.filter(rd => !(refSeq && rd.seq === refSeq));
+        const rowDimsIzq = rowDims.filter(rd => refSeq && rd.seq === refSeq && rd.col === refCol.col);
+        const hayRowDims = rowDimsIn.length > 0;
+        rowDimsIn.forEach(rd => { cotas += dimLineV(rd.yTop, rd.yBot, rd.x + rd.w + 2.6, rd.x + rd.w, `${rd.mm}`, 3.2); });
+        const rdIzqX = (fa || fb) ? (-17 - extL) : (-7 - extL), rdIzqEdge = (fa || fb) ? (-10 - extL) : (0 - extL);
+        rowDimsIzq.forEach(rd => { cotas += dimLineV(rd.yTop, rd.yBot, rdIzqX, rdIzqEdge, `${rd.mm}`, 4); });
+        const extRowIzq = rowDimsIzq.length ? ((fa || fb) ? 12 : 2) : 0;
         cotas += dimLineV(0, DHt, DW + 6 + extR + (hayRowDims ? 9 : 0), DW + extR, `${totalH} mm`, 5.5);
         // Alturas por PAÑO/sección (izquierda): faja superior, banda de columnas, faja inferior —
         // solo cuando hay más de una banda horizontal (si no, el alto total ya lo dice todo).
@@ -7579,7 +7609,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // Necesidades de espacio de cada columna en su propio plano: hacia el interior (arriba en el
             // frente) y hacia el exterior (abajo en el frente). En el ala girada, "interior" apunta hacia
             // adentro de la "L" y "exterior" hacia afuera (al costado del dibujo).
-            const needs = ci => {
+            // Ancho que usa la planta de una columna: si su fila operable está fusionada a lo ancho, el ancho fusionado.
+            const planWidth = ci => { const ro = rowOp(ci); return ro && ro.span > 1 ? spanW(colInfo.indexOf(ci), ro.span) : ci.w; };
+            const needs = ci0 => {
+                const ci = { ...ci0, w: planWidth(ci0) };
                 let int = 0, ext = 0;
                 (ci.col.rows || []).forEach(r => {
                     if (r.celda === 'osci') {
@@ -7656,7 +7689,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const planY = planTop + 7 + arribaNeed;
             cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA${planAdentro ? ' (vista de adentro: interior abajo)' : ''}</text>`;
             let planG = '';
-            mainCols.forEach(ci => { planG += gridColPlan(ci.x, ci.w, ci.col, planY, ci.w * RATIO_R, uid, cornerOf(ci)); });
+            mainCols.forEach(ci => { const wp = planWidth(ci); planG += gridColPlan(ci.x, wp, ci.col, planY, wp * RATIO_R, uid, cornerOf(ci)); });
             if (entreSuma) mainCols.forEach((ci, i) => { const gi = colInfo.indexOf(ci); if (i > 0 && gapAt(gi - 1) > 0) planG += `<line x1="${(ci.x - gapAt(gi - 1)).toFixed(1)}" y1="${planY}" x2="${ci.x.toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`; });
             if (wingCols.length) {
                 // Ala girada 90° hacia adentro (sube desde la esquina). Se dibuja con el MISMO gridColPlan en
@@ -7690,7 +7723,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             planExtra = (planY + abajoNeed + 4) - anchoBottom;
         }
         const vbY = (esqLado ? -14 : -10) - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
-        const vbX = -22 - Math.max(0, planLeftExt - 22), vbW = (DW + 26 + (rowDims.length ? 9 : 0) + Math.max(0, planRightExt - 26)) - vbX;   // +9: cota del alto total corrida por las cotas de filas
+        const vbX = -22 - extRowIzq - Math.max(0, planLeftExt - 22 - extRowIzq), vbW = (DW + 26 + (hayRowDims ? 9 : 0) + Math.max(0, planRightExt - 26)) - vbX;   // +9: cota del alto total corrida por las cotas de filas
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX.toFixed(1)} ${vbY.toFixed(1)} ${vbW.toFixed(1)} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + cotas + '</svg>';
@@ -7749,12 +7782,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const cfgRow = (label, sel) => `<div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;margin-top:4px;"><label style="${lblR}">${label}</label>${sel}<span></span></div>`;
         // Lado de apertura: solo aplica a 1 hoja (con 2 hojas abren desde el centro, no hay un lado).
         const cellExtra = (celda, obj, mk, enFaja) => {   // enFaja: celda dentro de una faja (arriba/abajo) → sin riel de suelo
-            if (celda === 'vacio' || celda === 'louvers') return '';
+            if (celda === 'vacio' || celda === 'louvers' || celda === 'fus') return '';
             // Vidrio en efecto por paño (el del paño si se cambió, si no el de la fachada) + su grosor.
             const effVid = obj.vidrio || st.vidrio || '';
             const grosor = (effVid === 'templado' || effVid === 'laminado') ? cfgRow('Grosor', cfgSel(obj.espesor || st.espesor || '', ESP, mk('espesor'))) : '';
             const vid = cfgRow('Vidrio', cfgSel(effVid, VIDCELL, mk('vidrio'))) + grosor;
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']], mk('hoja_principal')));
+            if (celda === 'mc') return vid;
             if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             if (celda === 'pflot') {
                 // Puerta flotante: vidrio templado sin marco, kit botella (pivote) arriba/abajo; tirador y cerradura
@@ -7854,10 +7888,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     <label style="${gbl}">Alto total</label><input type="number" inputmode="numeric" value="${mh}" style="${ninp}" oninput="gridSetMuro(${id},'h',this.value)">
                     <label style="${gbl}">Módulos a lo ancho</label><input type="number" inputmode="numeric" min="1" max="30" value="${nc}" style="${ninp}" oninput="gridSetMuro(${id},'nc',this.value)">
                     <label style="${gbl}">Módulos a lo alto</label><input type="number" inputmode="numeric" min="1" max="20" value="${nr}" style="${ninp}" oninput="gridSetMuro(${id},'nr',this.value)">
+                    <label style="${gbl}">Perfil vertical</label><select style="${inp}" onchange="gridSetMuroPerf(${id},'perfV',this.value)">${opt([['4', 'Muro cortina 4"'], ['6', 'Muro cortina 6"']], m.perfV || '4')}</select>
+                    <label style="${gbl}">Perfil horizontal</label><select style="${inp}" onchange="gridSetMuroPerf(${id},'perfH',this.value)">${opt([['4', 'Muro cortina 4"'], ['6', 'Muro cortina 6"']], m.perfH || '4')}</select>
                 </div>
                 <div id="muro-mod-${id}" style="font-size:12px;color:#334155;margin-top:6px;">Cada módulo: <b>${modW} × ${modH} mm</b> · ${nc * nr} módulos (${nc} columnas × ${nr} filas)</div>
-                <button onclick="gridGenerarMuro(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">⚙️ Generar módulos (Paño Fijo)</button>
-                <div style="font-size:11px;color:#667;margin-top:5px;">Genera ${nc} columnas de ${nr} filas, todas Paño Fijo. Luego cambia cualquier módulo a puerta, ventana, corredera… desde su columna. Reemplaza las columnas actuales.</div>
+                <button onclick="gridGenerarMuro(${id})" style="width:100%;margin-top:8px;border:none;background:var(--artal-blue);color:#fff;border-radius:7px;padding:8px;font-weight:bold;cursor:pointer;">⚙️ Generar módulos de muro cortina</button>
+                <div style="font-size:11px;color:#667;margin-top:5px;">Genera ${nc} columnas de ${nr} filas (módulos de vidrio con perfil de muro cortina). Luego cambia cualquier módulo a puerta, ventana, corredera… desde su columna, o fusiona dos módulos (⇆ a lo ancho, ⇅ a lo alto). Reemplaza las columnas actuales.</div>
             </details>`;
         }
         h += `<div style="background:#f5f8fc;border:1px solid #e2e9f2;border-radius:8px;padding:10px;">`;
@@ -7904,7 +7940,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 </div>`;
             const unaFila = (c.rows || []).length === 1;   // 1 fila = su alto ES el alto de la banda (compartido entre columnas)
             (c.rows || []).forEach((r, ri) => {
+                if (r.celda === 'fus') {   // hueco de una fusión a lo ancho: lo manda el módulo maestro de la columna `de`
+                    h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;font-size:11.5px;color:#667;display:flex;justify-content:space-between;align-items:center;gap:6px;"><span>↤ Fila ${ri + 1}: fusionada con la columna ${(r.de || 0) + 1} (alto ${r.h} mm)</span><button onclick="gridSeparar(${id},${r.de || 0},${ri})" style="border:1px solid #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">Separar</button></div>`;
+                    return;
+                }
+                // Fusión (usuario 2026-10-17): ⇆ con la columna de la derecha (misma fila, mismo alto) o ⇅ con la fila de abajo.
+                const nxt = cols[ci + (r.span || 1)], nxtR = nxt && (nxt.rows || [])[ri];
+                const puedeDer = !!(nxtR && nxtR.celda !== 'fus' && !(nxtR.span > 1) && (parseInt(nxtR.h) || 0) === (parseInt(r.h) || 0));
+                const abajo = (c.rows || [])[ri + 1];
+                const puedeAbajo = !!(abajo && !(r.span > 1) && !(abajo.span > 1) && abajo.celda !== 'fus');
+                const bFus = `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px;">${puedeDer ? `<button onclick="gridFusionarDer(${id},${ci},${ri})" title="Un solo módulo a lo ancho de esta columna y la siguiente (para una corredera, por ejemplo)" style="border:1px solid #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">⇆ Fusionar con la columna ${ci + (r.span || 1) + 1}</button>` : ''}${puedeAbajo ? `<button onclick="gridFusionarAbajo(${id},${ci},${ri})" title="Un solo módulo con la fila de abajo (para una puerta, por ejemplo)" style="border:1px solid #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">⇅ Fusionar con la fila de abajo</button>` : ''}${r.span > 1 ? `<button onclick="gridSeparar(${id},${ci},${ri})" style="border:1px solid #cbd5e0;background:#fff;color:#c0392b;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">Separar (${r.span} módulos)</button>` : ''}</div>`;
                 h += `<div style="border-top:1px dashed #eef2f7;margin-top:6px;padding-top:6px;">
+                    ${r.span > 1 ? `<div style="font-size:11px;color:#1e8449;font-weight:bold;margin-bottom:3px;">Módulo fusionado: ocupa las columnas ${ci + 1} a ${ci + r.span}</div>` : ''}
                     <div style="display:grid;grid-template-columns:66px 1fr auto;gap:5px;align-items:center;">
                         <input type="number" value="${r.h || 0}" min="5" step="5" style="${inp}" title="Alto (mm)" placeholder="Alto" ${unaFila ? `class="bandh-${id}"` : ''} oninput="gridSetRowH(${id},${ci},${ri},this.value)">
                         <select style="${inp}" onchange="gridSetCelda(${id},${ci},${ri},gridFamCelda(this.value,'${r.celda}'))">${celdaList(r.celda).map(t => `<option value="${t[0]}" ${celdaFamilia(r.celda) === t[0] ? 'selected' : ''}>${t[1]}</option>`).join('')}</select>
@@ -7917,6 +7964,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     </div>
                     ${manijaRow(r.celda, r.manija, `gridSetCeldaManija(${id},${ci},${ri},this.value)`)}
                     ${cellExtra(r.celda, r, key => `gridSetCellCfg(${id},${ci},${ri},'${key}',this.value)`)}
+                    ${bFus}
                 </div>`;
             });
             h += `<button onclick="gridAddRow(${id},${ci})" style="width:100%;margin-top:6px;border:1px dashed #cbd5e0;background:#fff;color:var(--artal-blue);border-radius:6px;padding:5px;font-size:12px;cursor:pointer;">+ Fila en esta columna</button></div>`;
@@ -8034,6 +8082,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     window.gridSetRowH = (id, ci, ri, v) => {
         const st = cardsState[id]; const col = st.cols[ci]; const val = parseInt(v) || 0;
         col.rows[ri].h = val;
+        if (col.rows[ri].span > 1) for (let k = 1; k < col.rows[ri].span; k++) { const t = st.cols[ci + k]; if (t && t.rows[ri]) t.rows[ri].h = val; }   // el hueco sigue al maestro
         // Cada columna tiene su PROPIO alto (antes se copiaba a todas las de 1 fila — el usuario no podía
         // poner corredera 2150 + puerta 2400). gridAlto pasa a ser el alto de la banda = la más alta.
         st.gridAlto = gridBandAlto(st);
@@ -8090,23 +8139,47 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (el) el.innerHTML = `Cada módulo: <b>${Math.round((m.w || 0) / nc)} × ${Math.round((m.h || 0) / nr)} mm</b> · ${nc * nr} módulos (${nc} columnas × ${nr} filas)`;
         saveProgress();
     };
+    window.gridSetMuroPerf = (id, k, v) => { const st = cardsState[id]; st.muro = st.muro || {}; st.muro[k] = v; if (st.locked) generateSummary(id); saveProgress(); };
+    // Fusión a lo ancho: el módulo (ci, ri) absorbe la misma fila de la columna siguiente (hueco 'fus').
+    window.gridFusionarDer = (id, ci, ri) => {
+        const st = cardsState[id], r = st.cols[ci].rows[ri], n = r.span || 1, t = st.cols[ci + n], tr = t && t.rows[ri];
+        if (!tr || tr.celda === 'fus' || tr.span > 1) { alert('No se puede fusionar con esa columna.'); return; }
+        if ((parseInt(tr.h) || 0) !== (parseInt(r.h) || 0)) { alert('Para fusionar a lo ancho las dos filas tienen que tener el mismo alto.'); return; }
+        r.span = n + 1; t.rows[ri] = { celda: 'fus', h: tr.h, de: ci };
+        gridFull(id);
+    };
+    window.gridSeparar = (id, ci, ri) => {
+        const st = cardsState[id], r = st.cols[ci] && st.cols[ci].rows[ri]; if (!r || !(r.span > 1)) return;
+        const base = st.cols.some(c => (c.rows || []).some(x => x.celda === 'mc')) ? 'mc' : 'pf';
+        for (let k = 1; k < r.span; k++) { const t = st.cols[ci + k]; if (t && t.rows[ri]) t.rows[ri] = { celda: base, h: r.h, alu: celdaAluDefault(base) }; }
+        delete r.span; gridFull(id);
+    };
+    // Fusión a lo alto: la fila absorbe la de abajo (alto = suma; conserva el tipo y las opciones de arriba).
+    window.gridFusionarAbajo = (id, ci, ri) => {
+        const st = cardsState[id], rows = st.cols[ci].rows, r = rows[ri], b = rows[ri + 1];
+        if (!b || r.span > 1 || b.span > 1 || b.celda === 'fus' || r.celda === 'fus') { alert('No se puede fusionar esas filas (separa primero las fusiones a lo ancho).'); return; }
+        r.h = (parseInt(r.h) || 0) + (parseInt(b.h) || 0) + (gridEntreHSuma(st) ? gridTuboG(st.tubos) : 0); rows.splice(ri + 1, 1);
+        st.gridAlto = gridBandAlto(st); gridFull(id);
+    };
+    // Deshace toda fusión a lo ancho que toque la columna `ci` (antes de borrar una columna o una fila).
+    const gridSepararEn = (st, ci, ri) => { st.cols.forEach((c, m) => (c.rows || []).forEach((r, k) => { if (r.span > 1 && m <= ci && m + r.span - 1 >= ci && (ri == null || k === ri)) { for (let j = 1; j < r.span; j++) { const t = st.cols[m + j]; if (t && t.rows[k]) t.rows[k] = { celda: 'mc', h: r.h, alu: '' }; } delete r.span; } })); };
     window.gridGenerarMuro = (id) => {
         const st = cardsState[id], m = st.muro || {};
         const w = parseInt(m.w) || 0, h = parseInt(m.h) || 0, nc = Math.min(30, Math.max(1, parseInt(m.nc) || 1)), nr = Math.min(20, Math.max(1, parseInt(m.nr) || 1));
         if (!(w > 0 && h > 0)) { alert('Escribe el ancho y el alto total del muro de cortina (mm).'); return; }
-        const tieneAlgo = (st.cols || []).some(c => (c.rows || []).some(r => r.celda !== 'pf')) || (st.cols || []).length > 1;
-        if (tieneAlgo && !confirm(`Se reemplazan las ${st.cols.length} columnas actuales por ${nc} columnas × ${nr} filas de Paño Fijo (${Math.round(w / nc)} × ${Math.round(h / nr)} mm cada módulo). ¿Continuar?`)) return;
+        const tieneAlgo = (st.cols || []).some(c => (c.rows || []).some(r => r.celda !== 'pf' && r.celda !== 'mc')) || (st.cols || []).length > 1;
+        if (tieneAlgo && !confirm(`Se reemplazan las ${st.cols.length} columnas actuales por ${nc} columnas × ${nr} filas de muro cortina (${Math.round(w / nc)} × ${Math.round(h / nr)} mm cada módulo). ¿Continuar?`)) return;
         // Reparto exacto: los módulos se redondean y la última columna/fila absorbe la diferencia para que la suma dé el total.
         const ws = Array.from({ length: nc }, () => Math.round(w / nc)); ws[nc - 1] += w - ws.reduce((a, b) => a + b, 0);
         const hs = Array.from({ length: nr }, () => Math.round(h / nr)); hs[nr - 1] += h - hs.reduce((a, b) => a + b, 0);
-        st.cols = ws.map(cw => ({ w: cw, rows: hs.map(rh => ({ h: rh, celda: 'pf', alu: celdaAluDefault('pf') })) }));
-        st.gridAlto = h; st.muro = { w, h, nc, nr };
+        st.cols = ws.map(cw => ({ w: cw, rows: hs.map(rh => ({ h: rh, celda: 'mc', alu: '' })) }));
+        st.gridAlto = h; st.muro = { w, h, nc, nr, perfV: m.perfV || '4', perfH: m.perfH || '4' };
         gridFull(id);
     };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
-    window.gridDelCol = (id, ci) => { if (cardsState[id].cols.length > 1) cardsState[id].cols.splice(ci, 1); gridFull(id); };
+    window.gridDelCol = (id, ci) => { const st = cardsState[id]; if (st.cols.length > 1) { gridSepararEn(st, ci, null); st.cols.splice(ci, 1); } gridFull(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
-    window.gridDelRow = (id, ci, ri) => { const c = cardsState[id].cols[ci]; if (c.rows.length > 1) c.rows.splice(ri, 1); gridFull(id); };
+    window.gridDelRow = (id, ci, ri) => { const st = cardsState[id], c = st.cols[ci]; if (c.rows.length > 1) { gridSepararEn(st, ci, ri); c.rows.splice(ri, 1); } gridFull(id); };
     // Tubos / refuerzos
     window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridFull(id); };
     window.gridSetTuboModo = (id, key, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = v; gridFull(id); };

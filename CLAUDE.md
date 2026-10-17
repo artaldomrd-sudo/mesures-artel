@@ -1012,6 +1012,26 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   Fijo"), las filas idénticas consecutivas de una columna se agrupan ("3 × Paño Fijo — alto 800 mm") y, si
   `state.muro.nc === cols.length`, una línea "Muro de cortina: 5 × 4 módulos de 1200 × 800 mm". `verify.mjs`: 5 × 4
   con una puerta y una corredera (RENDER OK: 278).
+  **Segunda vuelta (mismo día, con captura)**: (1) celda nueva **`mc` "Muro cortina (módulo)"** (en `GRID_CELDAS`,
+  `GRID_FAMILIAS`, `CELDA_NOM`, `ALU_POR_CELDA.mc = []`): vidrio con marco SIN la etiqueta "PF" ("ya no es un paño
+  fijo"); el generador crea `mc`; el título del resumen pasa a "FACHADA MURO CORTINA" si hay alguna; perfil de muro
+  cortina **4" o 6" por separado vertical y horizontal** (`state.muro.perfV/perfH`, selects en el generador,
+  `gridSetMuroPerf`; resumen "Perfil de muro cortina: vertical 6" · horizontal 4""). (2) **Cotas de alto UNA sola vez a
+  la IZQUIERDA** ("no es necesario marcar por dentro todos los altos"): `rowDims` lleva `col` y `seq` (altos de su
+  columna); la primera columna con filas apiladas es la referencia y sus cotas van a la izquierda (`rdIzqX`, más a la
+  izquierda si hay fajas; `extRowIzq` ensancha el viewBox); solo las columnas con otra secuencia conservan las cotas
+  dentro (a la derecha de la celda). (3) **Fusión de módulos**: a lo ANCHO con `row.span = n` en el módulo maestro y
+  `{celda:'fus', h, de: ciMaestro}` en la misma fila de las columnas absorbidas — `spanW/spanMm` dan el ancho
+  dibujado/real, `gridCell` recibe `cwCell` y `w` real, `cellsCol[].w` para el marco por celda (`especial` también con
+  span/fus; `fus` es `sinMarco`), el tubo vertical entre columnas se dibuja por tramos saltando las filas que cruza un
+  módulo fusionado (`cortes`), la planta usa `planWidth(ci)` (ancho fusionado si la fila operable tiene span; `needs`
+  igual) y el resumen muestra "(fusión de 2 módulos a lo ancho)" con el ancho sumado y no lista los `fus`. A lo ALTO
+  (`gridFusionarAbajo`): la fila absorbe la de abajo (alto = suma, + tubo si modo suma) y conserva el tipo de arriba.
+  Botones por fila en el pop-up: "⇆ Fusionar con la columna N" (solo si esa fila existe en la siguiente columna con el
+  MISMO alto y no es hueco/maestro), "⇅ Fusionar con la fila de abajo" (sin spans), "Separar" (devuelve `mc`, o `pf` si
+  la fachada no es muro cortina); el hueco muestra "↤ Fila N: fusionada con la columna M". `gridSetRowH` del maestro
+  arrastra el alto de sus huecos; `gridDelCol`/`gridDelRow` separan antes de borrar (`gridSepararEn`). `verify.mjs`:
+  muro `mc` 5 × 4 con corredera de 2 módulos y puerta de 2 filas, tubos en modo suma, y con faja superior (RENDER OK: 280).
 - **Encabezado del pop-up con la referencia** (2026-09-17, "ayudará a no equivocarse"): bajo
   "🧩 Fachada compuesta" va en amarillo `czRefUbiTxt(id)` ("Ref. F2 · Fachada frontal") o, si la
   tarjeta no tiene ref/ubicación, un aviso gris para escribirlas.
