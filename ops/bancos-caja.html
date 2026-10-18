@@ -298,6 +298,9 @@
     const movsVivos = (id) => movsCaja(id).filter(m => !m.eliminado);
     // El saldo solo lo mueven apertura/reposición (+) y gasto (−), y solo los NO eliminados.
     const saldoCaja = (id) => movsVivos(id).reduce((a, m) => a + (m.tipo === 'gasto' ? -n2(m.monto) : (m.tipo === 'arqueo' ? 0 : n2(m.monto))), 0);
+    let feriadosCaja = new Set(), feriadosTrabCaja = new Set();
+    onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriadosCaja = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrabCaja = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); }, () => {});
     const arqueoHoy = (id, turno) => movsVivos(id).find(m => m.tipo === 'arqueo' && m.fecha === hoyISO() && m.turno === turno) || null;
 
     // ---------- Modales ----------
@@ -871,8 +874,9 @@
         const am = arqueoHoy(c.id, 'am'), pm = arqueoHoy(c.id, 'pm');
         const mins = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
         const pend = [];
-        if (mins >= 8 * 60 && !am) pend.push('☀️ el de la MAÑANA (8:00 am)');
-        if (mins >= 16 * 60 + 55 && !pm) pend.push('🌙 el de la TARDE (4:55 pm)');
+        const sinActividad = new Date().getDay() === 0 || (feriadosCaja.has(hoyISO()) && !feriadosTrabCaja.has(hoyISO()));   // Dylan 2026-10-18: domingos y feriados sin arqueo
+        if (!sinActividad && mins >= 8 * 60 && !am) pend.push('☀️ el de la MAÑANA (8:00 am)');
+        if (!sinActividad && mins >= 16 * 60 + 55 && !pm) pend.push('🌙 el de la TARDE (4:55 pm)');
         let ban = '';
         if (pend.length) ban += `<div class="arq-alert"><span>⚠ Falta el arqueo: ${pend.join(' y ')}.</span><button class="btn-a" style="margin-left:auto" onclick="abrirArqueo()">🧮 Hacer arqueo</button></div>`;
         const okItems = [];

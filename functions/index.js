@@ -557,8 +557,17 @@ async function procesarRecordatoriosMulti(coll, getEmails, urlDestino, tituloPre
 // ---------- Recordatorio de arqueo de caja chica (mañana 8:00 / tarde 4:55, hora RD) ----------
 // A la hora del turno, avisa por push a la encargada (rol `contable`) + gerencia (`admin`) de las
 // cajas que TODAVÍA no tienen registrado el arqueo de ese turno hoy, para que no se le escape.
+// Dylan 2026-10-18: los domingos y los feriados (salvo feriado que SÍ se trabaja) no hay arqueo ni aviso.
+async function diaSinActividad(fecha) {
+    const d = new Date(fecha + 'T12:00:00'); if (d.getDay() === 0) return true;
+    try {
+        const [fer, trab] = await Promise.all([db.collection('rrhhFeriados').where('fecha', '==', fecha).get(), db.doc('rrhhFeriadosTrabajados/' + fecha).get()]);
+        return !fer.empty && !trab.exists;
+    } catch (_) { return false; }
+}
 async function recordarArqueo(turno, titulo) {
     const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Santo_Domingo' }); // AAAA-MM-DD local
+    if (await diaSinActividad(hoy)) return;   // domingo o feriado: sin arqueo
     const cajasSnap = await db.collection('bancosCajaChica').get();
     const activas = cajasSnap.docs.filter((d) => d.data().activo !== false);
     if (!activas.length) return;
@@ -614,10 +623,10 @@ async function recordarParteDiario(avisarAdmin) {
 exports.parteDiario18 = onSchedule({ schedule: '0 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(false); });
 exports.parteDiario1830 = onSchedule({ schedule: '30 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(true); });
 
-exports.arqueoManana = onSchedule({ schedule: '0 8 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
+exports.arqueoManana = onSchedule({ schedule: '0 8 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => {
     await recordarArqueo('am', '🧮 Arqueo de la MAÑANA (8:00)');
 });
-exports.arqueoTarde = onSchedule({ schedule: '55 16 * * *', timeZone: 'America/Santo_Domingo' }, async () => {
+exports.arqueoTarde = onSchedule({ schedule: '55 16 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => {
     await recordarArqueo('pm', '🧮 Arqueo de la TARDE (4:55)');
 });
 

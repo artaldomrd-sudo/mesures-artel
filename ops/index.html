@@ -629,9 +629,14 @@
     // (mañana 8:00 / tarde 4:55) para que no se le escape a la encargada. Se recuenta cada 5 min.
     let cajasCC = [], movsCC = [];
     function hoyISOcc() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    let feriadosCC = new Set(), feriadosTrabCC = new Set();
+    onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriadosCC = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); recomputeArqueoBadge(); }, () => {});
+    onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrabCC = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); recomputeArqueoBadge(); }, () => {});
     function recomputeArqueoBadge() {
         const hoy = hoyISOcc();
         const now = new Date(); const mins = now.getHours() * 60 + now.getMinutes();
+        // Dylan 2026-10-18: domingos y feriados (salvo feriado trabajado) no hay arqueo.
+        if (now.getDay() === 0 || (feriadosCC.has(hoy) && !feriadosTrabCC.has(hoy))) { setBadge('badge-erp', 0); return; }
         let n = 0;
         cajasCC.filter(c => c.activo !== false).forEach(c => {
             const arq = (t) => movsCC.some(m => m.cajaId === c.id && m.tipo === 'arqueo' && m.fecha === hoy && m.turno === t);
