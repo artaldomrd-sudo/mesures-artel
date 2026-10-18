@@ -465,8 +465,16 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
             if (interno) await pushATokens(await tokensPorRol('admin'), 'Nuevo pedido para fábrica interna', lugar, 'ops/fabrica-interna.html');
             else await pushATokens(await tokensPorRol('fabrica'), 'Nuevo pedido de fabricación', lugar, 'ops/alucufel/fabrica.html');
         } else if (after.status === 'listo_para_cargar' || after.status === 'parcialmente_listo') {
-            await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
-            if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
+            // A11 (revisión 2026-10-09): el aviso solo tiene sentido cuando FÁBRICA lo marca. No se manda si el estado lo puso un
+            // automatismo en este mismo cambio (entrega del chofer, instalación en proceso: `listoAutomatico` recién escrito), si el
+            // pedido ya está entregado/instalado, ni cuando vuelve a «listo» tras una reapertura o un «No está listo».
+            const automatico = after.listoAutomatico && after.listoAutomatico !== before.listoAutomatico;
+            const yaSalio = after.entregado === true || after.enRuta === true || after.instalado === true;
+            const reapertura = (after.reaperturaFecha && after.reaperturaFecha !== before.reaperturaFecha) || before.status === 'completado';
+            if (!automatico && !yaSalio && !reapertura) {
+                await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+                if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
+            } else console.log('enviarNotificacionPedido: sin push de listo para', event.params.id, { automatico: !!automatico, yaSalio, reapertura });
         }
     }
 
