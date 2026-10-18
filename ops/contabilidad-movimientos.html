@@ -418,7 +418,63 @@
 
     window.render = render;   // los handlers inline (oninput/onchange) no ven las funciones del módulo (auditoría 2026-09-28)
 
+    // ---- Caja chica ↔ Citrus (Yunairy 2026-10-19: los gastos en efectivo salían dos veces) ----
+    // Regla: Sara registra el desembolso en Caja chica el mismo día; Yunairy lo contabiliza en Citrus con la MISMA fecha y monto y la
+    // sincronización los enlaza sola (el gasto de caja recibe `citrusId` y el asiento no se duplica). Aquí se ve el estado de cada
+    // gasto, la lista de lo que falta por pasar a Citrus y los posibles duplicados para confirmarlos a mano.
+    const esCitrusDoc = (m) => String(m.id).startsWith('citrus-');
+    const esCaja = (m) => m.origen === 'caja_chica' || /caja chica/i.test(m.metodo || '');
+    function chipCitrus(m) {
+        if (esCitrusDoc(m)) return `<span class="b cat" style="background:#fff3e0;color:#9a5b00" title="Asiento importado de Citrus">🍊 Citrus${m.citrusId ? ' · ' + esc(m.citrusId) : ''}</span>`;
+        if (m.citrusId) return `<span class="b cat" style="background:#e9f7ef;color:#1e8449" title="Enlazado con el asiento de Citrus">✓ Citrus · asiento ${esc(m.citrusId)}</span>`;
+        if (esCaja(m) && m.tipo === 'gasto') return `<span class="b cat" style="background:#fff8e1;color:#8a6d00" title="Todavía no tiene asiento en Citrus (o se registró con otra fecha/monto)">⏳ sin registrar en Citrus</span>`;
+        return '';
+    }
+    const diasDesde = (f) => Math.floor((Date.now() - new Date(String(f) + 'T12:00:00').getTime()) / 86400000);
+    const difDias = (a, b) => Math.round((new Date(String(b) + 'T12:00:00') - new Date(String(a) + 'T12:00:00')) / 86400000);
+    function candidatosCitrus(m, maxDias) {
+        return movimientos.filter(x => x.tipo === 'gasto' && String(x.id).startsWith('citrus-dj-') && Math.abs(n2(x.monto) - n2(m.monto)) < 0.01 && Math.abs(difDias(m.fecha, x.fecha)) <= maxDias && !(m.noDuplicados || {})[String(x.citrusId)])
+            .sort((a, b) => Math.abs(difDias(m.fecha, a.fecha)) - Math.abs(difDias(m.fecha, b.fecha)));
+    }
+    function renderCajaCitrus() {
+        let box = document.getElementById('caja-citrus');
+        if (!box) { box = document.createElement('div'); box.id = 'caja-citrus'; const lista = document.getElementById('lista'); lista.parentNode.insertBefore(box, lista); }
+        const ftipo = document.getElementById('f-tipo').value;
+        if (ftipo === 'ingreso') { box.innerHTML = ''; return; }
+        const pendientes = movimientos.filter(m => m.tipo === 'gasto' && esCaja(m) && !m.citrusId && !esCitrusDoc(m)).sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+        const viejos = pendientes.filter(m => diasDesde(m.fecha) >= 3);
+        const pares = []; pendientes.forEach(m => candidatosCitrus(m, 7).forEach(c => pares.push({ m, c })));
+        const totalP = viejos.reduce((t, m) => t + n2(m.monto), 0);
+        const fila = (m, conCand) => { const cands = conCand ? candidatosCitrus(m, 15) : []; return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid #f0f3f7;font-size:13px">
+            <span style="min-width:84px;color:#556">${fmtFecha(m.fecha)}</span><b style="flex:1;min-width:160px">${esc(m.concepto)}</b><span style="color:#c0392b;font-weight:bold">${fmt(m.monto)}</span><span style="color:#889;font-size:12px">${diasDesde(m.fecha)} día(s)</span>
+            ${cands.length ? `<select id="cc-sel-${esc(m.id)}" style="font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px;max-width:300px"><option value="">Enlazar con un asiento de Citrus…</option>${cands.map(c => `<option value="${esc(c.id)}">${fmtFecha(c.fecha)} · ${esc((c.concepto || '').slice(0, 40))}${c.tercero ? ' · ' + esc(c.tercero) : ''} (asiento ${esc(c.citrusId)})</option>`).join('')}</select><button class="b-ed" style="font-size:12px" onclick="enlazarCitrusSel('${esc(m.id)}')">Es el mismo</button>` : '<span style="font-size:12px;color:#889">sin asiento parecido en Citrus (±15 días)</span>'}
+        </div>`; };
+        let html = '';
+        if (viejos.length) html += `<details class="order-card" style="padding:10px 14px;margin-bottom:10px;border-left:5px solid #f5b400"><summary style="cursor:pointer;font-weight:bold;color:#0A3D62">⏳ Caja chica pendiente de Citrus: ${viejos.length} gasto(s) · ${fmt0(totalP)} <span style="font-weight:normal;color:#667;font-size:12.5px">— desembolsos de más de 3 días sin asiento en Citrus. Yunairy: contabilízalos con la misma fecha y monto, o enlázalos aquí si ya están.</span></summary>${viejos.map(m => fila(m, true)).join('')}</details>`;
+        if (pares.length) html += `<details class="order-card" style="padding:10px 14px;margin-bottom:10px;border-left:5px solid #e67e22"><summary style="cursor:pointer;font-weight:bold;color:#0A3D62">🔁 Posibles duplicados: ${pares.length} par(es) <span style="font-weight:normal;color:#667;font-size:12.5px">— mismo monto, menos de 7 días, uno de caja chica y otro de Citrus. Confirma: ¿es el mismo gasto?</span></summary>${pares.map(({ m, c }) => `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid #f0f3f7;font-size:13px">
+            <span style="color:#c0392b;font-weight:bold;min-width:100px">${fmt(m.monto)}</span>
+            <span style="flex:1;min-width:220px">💵 <b>${esc(m.concepto)}</b> <span style="color:#889">${fmtFecha(m.fecha)}</span><br>🍊 ${esc(c.concepto || '')}${c.tercero ? ' · ' + esc(c.tercero) : ''} <span style="color:#889">${fmtFecha(c.fecha)} · asiento ${esc(c.citrusId)}</span></span>
+            <button class="b-ed" style="font-size:12px" onclick="enlazarCitrus('${esc(m.id)}','${esc(c.id)}')">✓ Es el mismo gasto</button><button class="b-del" style="font-size:12px" onclick="noEsDuplicado('${esc(m.id)}','${esc(c.citrusId)}')">✖ No es el mismo</button>
+        </div>`).join('')}</details>`;
+        box.innerHTML = html;
+    }
+    // Enlazar = el gasto de caja chica se queda (con los datos contables del asiento) y el doc importado de Citrus se elimina;
+    // en la próxima sincronización el asiento se reconoce por `citrusId` en el gasto de caja y no se vuelve a crear.
+    window.enlazarCitrus = async function (cajaId, djId) {
+        const m = movimientos.find(x => x.id === cajaId), c = movimientos.find(x => x.id === djId); if (!m || !c) return;
+        if (!confirm(`¿Enlazar «${m.concepto}» (${fmt(m.monto)}, ${fmtFecha(m.fecha)}) con el asiento ${c.citrusId} de Citrus (${fmtFecha(c.fecha)})?\n\nEl gasto quedará una sola vez en el ERP.`)) return;
+        const cambios = { citrusId: Number(c.citrusId), citrusFuente: c.citrusFuente || '', citrusEstatus: c.citrusEstatus || '', citrusEnlacePor: usuario.nombre, citrusEnlaceFecha: serverTimestamp() };
+        ['cuentaContable', 'cuentaContableNombre', 'ncf', 'tercero'].forEach(k => { if ((m[k] == null || m[k] === '') && c[k]) cambios[k] = c[k]; });
+        try { await updateDoc(doc(db, 'contaMovimientos', cajaId), cambios); await deleteDoc(doc(db, 'contaMovimientos', djId)); }
+        catch (e) { alert('No se pudo enlazar: ' + e.message); }
+    };
+    window.enlazarCitrusSel = function (cajaId) { const v = (document.getElementById('cc-sel-' + cajaId) || {}).value; if (!v) { alert('Elige el asiento de Citrus.'); return; } enlazarCitrus(cajaId, v); };
+    window.noEsDuplicado = async function (cajaId, citrusId) {
+        try { await updateDoc(doc(db, 'contaMovimientos', cajaId), { ['noDuplicados.' + citrusId]: true }); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+
     function render() {
+        renderCajaCitrus();
         const periodo = document.getElementById('f-periodo').value, ftipo = document.getElementById('f-tipo').value;
         const term = (document.getElementById('buscar').value || '').toLowerCase().trim();
         const delPeriodo = movimientos.filter(m => enPeriodo(m.fecha, periodo));
@@ -457,6 +513,7 @@
                 <b>${esc(m.concepto)}</b>
                 ${m.categoria ? `<span class="b cat">${esc(m.categoria)}</span>` : ''}
                 <span class="b met">${esc(m.metodo || '')}</span>
+                ${chipCitrus(m)}
                 <div class="mv-monto ${t}">${t === 'ingreso' ? '+ ' : '− '}${fmt(m.monto)}${m.itbis ? ` <span class="b cat" style="font-weight:normal">ITBIS ${fmt0(m.itbis)}</span>` : ''}</div>
                 ${(m.montoPagado && m.montoPagado !== m.monto)
                     ? `<div class="l" style="color:#1e8f4e;font-weight:bold">Pagado: ${fmt(m.montoPagado)}${m.fechaPago ? ' el ' + fmtFecha(m.fechaPago) : ''}${m.monto > m.montoPagado ? ` · Descuento ${fmt0(m.monto - m.montoPagado)} (${(((m.monto - m.montoPagado) / m.monto) * 100).toFixed(1)}%)` : ''}</div>`
