@@ -1841,8 +1841,11 @@ function planDiario(registros, existentes, ahora, plan, escrituras, coleccion, d
     existentes.forEach(d => {
         const x = d.data();
         if (x.tipo !== 'gasto') return;
-        if (x.citrusId != null && String(d.id).startsWith('citrus-dj-')) porCitrusId.set(Number(x.citrusId), d);
-        else if (x.citrusId == null && x.origen !== 'citrus' && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
+        // Un gasto de caja chica ya ENLAZADO (citrusId puesto en una sincronización anterior) también cuenta como «ya existe»: antes
+        // solo se miraban los docs citrus-dj-*, así que en la siguiente corrida el mismo asiento se volvía a crear y el gasto salía
+        // dos veces en el ERP (Yunairy 2026-10-19: Alexis pintor RD$ 4,000, 43 casos). El doc manual enlazado manda sobre el citrus-dj.
+        if (x.citrusId != null) { if (!porCitrusId.has(Number(x.citrusId)) || !String(d.id).startsWith('citrus-dj-')) porCitrusId.set(Number(x.citrusId), d); }
+        else if (x.origen !== 'citrus' && x.fecha) porFechaMonto.set(`${x.fecha}|${r2(x.monto)}`, d);
     });
     plan.omitidas = { canceladas: 0, antesDeDesde: 0, otrasFuentes: 0, sinCuentaGasto: 0 };
     plan.totalCrear = 0; plan.porAnio = {}; plan.porFuente = {};
