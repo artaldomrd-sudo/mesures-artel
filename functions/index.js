@@ -2191,8 +2191,32 @@ async function tableroErp(ctx, quien) {
     const cta = (k) => { const c = (bg.Cuentas || []).find(q => String(q.IdentificadorCuenta) === k); return c ? (Number(c.BalancePeriodoActual != null ? c.BalancePeriodoActual : c.Balance) || 0) : 0; };
     const ventasMes = await db.collection('contaMovimientos').where('tipo', '==', 'ingreso').where('origen', '==', 'citrus').where('fecha', '>=', mesIni).get();
     const nVentas = ventasMes.docs.filter(d => d.data().citrusEstatus !== 'Cancelada' && String(d.data().fecha || '') <= hoy).length;
+    // Facturación promedio por mes (Dylan 2026-10-19): sobre las facturas de Citrus importadas (sin anuladas), meses COMPLETOS
+    // (el mes en curso no entra). Fiscal = sin proformas; total = con proformas; «base» = sin ITBIS.
+    const facturacion = await (async () => {
+        try {
+            const snap = await db.collection('contaMovimientos').where('tipo', '==', 'ingreso').where('origen', '==', 'citrus').get();
+            const porMes = {};
+            snap.docs.forEach((d) => {
+                const x = d.data(); if (!String(d.id).startsWith('citrus-fc-') || x.anulado || x.citrusEstatus === 'Cancelada') return;
+                const k = String(x.fecha || '').slice(0, 7); if (!k || k >= mesIni.slice(0, 7)) return;
+                const p = porMes[k] = porMes[k] || { fiscal: 0, fiscalBase: 0, total: 0, totalBase: 0, n: 0, nFiscal: 0 };
+                const m = Number(x.monto) || 0, b = Math.max(0, m - (Number(x.itbis) || 0));
+                p.total += m; p.totalBase += b; p.n++; if (!x.citrusProforma) { p.fiscal += m; p.fiscalBase += b; p.nFiscal++; }
+            });
+            const meses = Object.keys(porMes).sort();
+            const prom = (arr, k) => arr.length ? r2(arr.reduce((t, mm) => t + porMes[mm][k], 0) / arr.length) : 0;
+            const u12 = meses.slice(-12), u6 = meses.slice(-6), anioArr = meses.filter((mm) => mm.startsWith(String(y)));
+            return { desde: u12[0] || '', hasta: u12[u12.length - 1] || '', meses12: u12.length,
+                prom12: { fiscal: prom(u12, 'fiscal'), fiscalBase: prom(u12, 'fiscalBase'), total: prom(u12, 'total'), totalBase: prom(u12, 'totalBase') },
+                prom6: { fiscal: prom(u6, 'fiscal'), fiscalBase: prom(u6, 'fiscalBase'), total: prom(u6, 'total'), totalBase: prom(u6, 'totalBase') },
+                anio: { fiscal: prom(anioArr, 'fiscal'), fiscalBase: prom(anioArr, 'fiscalBase'), total: prom(anioArr, 'total'), totalBase: prom(anioArr, 'totalBase'), meses: anioArr.length },
+                mensual: u12.map((mm) => ({ mes: mm, ...porMes[mm] })) };
+        } catch (e) { console.error('tableroErp facturacion', e.message); return null; }
+    })();
     const doc = {
         actualizado: new Date().toISOString(), hasta: hoy, quien: String(quien || ''),
+        facturacion,
         mes: { ...mes, nombre: mesIni.slice(0, 7), nVentas }, mesAnterior: { ...mesAnterior, nombre: antIni.slice(0, 7) }, anio: { ...anio, nombre: String(y) },
         dinero: { bancoRD: r2(cta('1001050101')), bancoUSD: r2(cta('1001050201')), caja: r2(cta('10010101')), efectivoYBancos: r2(cta('1001')) },
         terceros: { porCobrar: r2(cta('100201')), anticipos: r2(cta('200204')), porPagar: r2(cta('20020101')), prestamos: r2(cta('21')) },
