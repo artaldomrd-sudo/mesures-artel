@@ -301,7 +301,11 @@
     };
 
     window.tomarAbrir = function (id) { const f = document.getElementById('tomar-form-' + id); if (f) f.style.display = f.style.display === 'flex' ? 'none' : 'flex'; };
+    // A15 (revisión 2026-10-09): misma guarda que fábrica interna — un pedido que ya salió (en ruta, entregado o en instalación) no se
+    // «toma» ni se devuelve a Pendiente.
+    const yaSalio = (id) => { const d = allOrders.find(x => x.id === id); return d ? rioAbajo(id, d.data()).salio : false; };
     window.tomarPedido = async function (id) {
+        if (yaSalio(id)) { alert('Este pedido ya salió de fábrica (en ruta, entregado o en instalación): no hay nada que tomar. Márcalo listo para que deje de aparecer como pendiente.'); return; }
         const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
@@ -321,8 +325,9 @@
         await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() });
     };
     window.deshacerTomarPedido = async function (id) {
+        if (yaSalio(id)) { alert('No se puede devolver a Pendiente: el pedido ya salió de fábrica (en ruta, entregado o en instalación).'); return; }
         if (!confirm('¿Regresar el pedido a "Pendiente"?')) return;
-        await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' });
+        try { await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.guardarComentario = async function (id) {
         const texto = document.getElementById('comentario-' + id).value.trim();
