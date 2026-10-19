@@ -1943,18 +1943,24 @@
             if (e && e.message === 'SIN_REGISTRO') { alert('Primero registra tu biometría en este teléfono (botón "🔒 Registrar biometría" arriba).'); return; }
             alert('No se pudo confirmar con biometría: ' + ((e && e.message) || e)); return;
         }
+        // A14 (revisión 2026-10-09): la biometría ya no cierra el pedido por su cuenta. Deja constancia de quién confirmó con huella y
+        // pasa por la MISMA ruta que el botón normal (ventana de horas → cambiarEstado), que es donde viven las salvaguardas: obra por
+        // partes (otro trabajo abierto), pedido de ALUCUFEL que fábrica no marcó listo, movimiento en la auditoría. El trabajo que se
+        // completa es el que la persona tiene abierto en la agenda; si hay varios y ninguno abierto, se le pide elegir.
+        const od = snap.data() || {};
+        if (od.status === 'parcialmente_listo' && !confirm('Fábrica solo marcó listo UNA PARTE de este pedido. ¿Confirmas que está instalado todo lo entregado y el pedido queda cerrado? Si falta material, usa «Avance parcial».')) return;
         try {
-            const job = jobsDeOrden(id).find(j => j.estado !== 'completado');
-            await updateDoc(doc(db, 'orders', id), {
-                instalado: true, status: 'completado', fechaInstalado: serverTimestamp(),
-                confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' },
-                cierreEstadoAnterior: snap.data().status || 'listo_para_cargar', ...(job ? { cierreAutomatico: 'instalacion_completada', cierreAutomaticoTrabajo: job.id, cierreAutomaticoFecha: serverTimestamp() } : {})
-            });
-            // Si el pedido tiene una instalación agendada (Calendario), la marca completada también.
-            if (job) {
-                try { await updateDoc(doc(db, 'instalaciones', job.id), { estado: 'completado', validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: serverTimestamp() }); } catch (_) { }
-                setTimeout(() => abrirValidacion(job.id, { completar: false }), 300);   // solo cargar horas al parte
-            }
+            await updateDoc(doc(db, 'orders', id), { confirmacionInstalador: { nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), metodo: 'biometrico' } });
+            const abiertos = jobsDeOrden(id).filter(j => (j.estado || 'pendiente') !== 'completado' && tipoDeJob(j) === 'instalacion');
+            let job = abiertos.find(j => j.id === jobAbierto) || (abiertos.length === 1 ? abiertos[0] : null);
+            if (!job && abiertos.length > 1) { alert('Este pedido tiene ' + abiertos.length + ' trabajos abiertos en la agenda. Abre el que terminaste y complétalo desde su tarjeta.'); return; }
+            if (job) { abrirValidacion(job.id, { completar: true }); return; }   // horas al parte + cambiarEstado(completado) con todas las salvaguardas
+            // Sin trabajo en la agenda (caso raro desde que fábrica crea el trabajo al marcar listo): se cierra el pedido directo con las mismas guardas.
+            if (od.destino !== 'interno' && !['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'].includes(od.status)) { alert('Fábrica (ALUCUFEL) todavía no marcó este pedido como listo: no se puede dar por instalado.'); return; }
+            if (!confirm('Este pedido no tiene trabajo en la agenda. ¿Marcarlo como instalado de todos modos (sin horas al parte ni informe de costo)?')) return;
+            const ahora = serverTimestamp();
+            await updateDoc(doc(db, 'orders', id), { instalado: true, status: 'completado', fechaInstalado: ahora, instaladoPorNombre: usuario.nombre, cierreEstadoAnterior: od.status || 'listo_para_cargar', cierreManual: 'biometria_sin_trabajo' });
+            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: null, orderId: id, cliente: od.cliente || '', obra: od.obra || '', estado: 'completado', nota: 'Pedido marcado instalado con biometría (sin trabajo en la agenda)', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
         } catch (e) { alert('No se pudo registrar la instalación: ' + e.message); }
     };
     window.guardarAvanceParcial = async function (id) {
