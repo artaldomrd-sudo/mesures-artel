@@ -2903,6 +2903,21 @@ tarjeta grande de siempre (`jobCardHTML`) en el panel `#job-panel` al tocar una 
 mientras se escribe en un campo). Filtro recordado en `localStorage.artal_inst_filtro`; por defecto oficina → «Todos abiertos»,
 equipo → «Hoy en obra». Sin «Solo los míos» (Dylan: «no es necesario de momento»). Por agendar e Historial no cambian.
 
+### «+ Trabajo»: buscador de todo el historial + «Crear cliente» (2026-10-19)
+
+Dylan: «en + Trabajo ponme un campo de búsqueda con todo el historial de obras y clientes… en reparaciones por lo usual es de
+obras ya entregadas». En el modal rápido de Instalación, encima de Cliente: `#tr-busq` (`trBuscar`/`trEntradas`/`trElegir`)
+busca por palabras (sin tildes) en cliente, obra, dirección, nombre de facturación, alias y teléfono, agrupando por
+cliente+obra las cuatro fuentes: trabajos (`allJobs`), pedidos activos (`ordersCache`), pedidos COMPLETADOS (`ordersHist`,
+`getDocs where status==completado` UNA vez al tocar el buscador — H1) y fichas `clientes` (`cargarClientes`). Cada resultado
+dice qué tiene (📦 pedido abierto · 🔧 trabajo con fecha/tipo · ✅ pedido completado · 🧾 solo cotización · 👤 ficha) y al
+elegirlo rellena cliente/obra/dirección/GPS y engancha igual que el select «Obra existente»: pedido abierto → `trOrderId`;
+trabajo → `trJobOrigenId` + `trPedidoRef`; pedido cerrado o cotización → solo `trPedidoRef` (nunca se reabre). Botón
+«+ Crear cliente» (`trNuevoClienteToggle`/`trNuevoClienteGuardar`): ficha mínima en `clientes/{nombre en minúsculas}` (mismo id
+que clientes.html) con nombre/teléfono/dirección, `origen:'instalacion'`; si ya existe una con ese nombre se usa esa. El select
+«Obra existente» sigue igual (pedidos abiertos + trabajos anteriores). Probado con el espejo de Emerson (solo lectura: el
+guardado de ficha no se pudo ejercitar ahí).
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya

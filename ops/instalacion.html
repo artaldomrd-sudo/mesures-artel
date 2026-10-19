@@ -159,6 +159,18 @@
     .modal-bx h2, .modal-box h2 { color: var(--artal-blue); font-size: 17px; margin: 0 0 14px; }
     .modal-bx label, .modal-box label { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); display: block; margin: 12px 0 4px; }
     .modal-box .hint { font-size: 11.5px; color: #888; font-weight: normal; margin: 2px 0 0; }
+    /* Búsqueda de historial en «+ Trabajo» (Dylan 2026-10-19) */
+    .tr-busq-res { border: 1.5px solid #cfe0f2; border-radius: 8px; margin-top: 4px; max-height: 240px; overflow-y: auto; background: #fff; }
+    .tr-busq-res .r { padding: 8px 10px; border-bottom: 1px solid #eef2f6; cursor: pointer; font-size: 13px; line-height: 1.3; }
+    .tr-busq-res .r:last-child { border-bottom: none; }
+    .tr-busq-res .r:hover, .tr-busq-res .r:active { background: #eef4fb; }
+    .tr-busq-res .r .t { font-weight: bold; color: #1b2a3a; }
+    .tr-busq-res .r .s { font-size: 11.5px; color: #667; margin-top: 2px; }
+    .tr-busq-res .r .s b { color: #1f6aa5; font-weight: bold; }
+    .tr-busq-res .vacio { padding: 10px; font-size: 12.5px; color: #889; }
+    .tr-mini-btn { float: right; background: #eef4fb; color: #1f6aa5; border: 1px solid #cfe0f2; border-radius: 999px; font-size: 11.5px; font-weight: bold; padding: 2px 10px; cursor: pointer; font-family: 'Arimo'; }
+    .tr-nuevo-cli { background: #f5f9fd; border: 1.5px dashed #cfe0f2; border-radius: 10px; padding: 10px; margin-top: 6px; }
+    .tr-nuevo-cli input { margin-bottom: 6px; }
     .modal-bx input, .modal-bx textarea, .modal-box input, .modal-box select, .modal-box textarea { width: 100%; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 44px; box-sizing: border-box; }
     .modal-bx textarea, .modal-box textarea { min-height: 60px; }
     .modal-acts, .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
@@ -351,8 +363,21 @@
             <label>Obra existente <span id="tr-obra-hint" style="font-weight:normal;color:#889;font-size:12px">(opcional: rellena cliente y obra y engancha el pedido)</span></label>
             <select id="tr-obra-existente" onchange="trObraExistente()"><option value="">— Elegir obra —</option></select>
         </div>
-        <label>Cliente</label>
-        <input type="text" id="tr-cliente" placeholder="Nombre del cliente">
+        <label>🔍 Buscar cliente u obra <span class="hint" style="display:inline;font-weight:normal">(todo el historial: obras entregadas, pedidos, cotizaciones y fichas de clientes)</span></label>
+        <input type="text" id="tr-busq" placeholder="Escribe parte del nombre del cliente, la obra o la dirección…" autocomplete="off" oninput="trBuscar()" onfocus="trBusqFoco()">
+        <div id="tr-busq-res" class="tr-busq-res" style="display:none"></div>
+        <label>Cliente <button type="button" class="tr-mini-btn" onclick="trNuevoClienteToggle()">+ Crear cliente</button></label>
+        <input type="text" id="tr-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
+        <div id="tr-nuevo-cli" class="tr-nuevo-cli" style="display:none">
+            <div style="font-size:12px;color:#1f6aa5;font-weight:bold;margin-bottom:6px">Nueva ficha de cliente</div>
+            <input type="text" id="tr-nc-nombre" placeholder="Nombre del cliente *" autocomplete="off">
+            <input type="tel" id="tr-nc-tel" placeholder="Teléfono / WhatsApp (opcional)" autocomplete="off">
+            <input type="text" id="tr-nc-dir" placeholder="Dirección o ciudad (opcional)" autocomplete="off">
+            <div style="display:flex;gap:8px;margin-top:6px">
+                <button type="button" class="btn-cancel" style="flex:1" onclick="trNuevoClienteToggle(false)">Cancelar</button>
+                <button type="button" class="btn-primary" style="flex:1" onclick="trNuevoClienteGuardar()">Guardar cliente</button>
+            </div>
+        </div>
         <label>Obra / Ubicación</label>
         <input type="text" id="tr-obra" placeholder="Obra o dirección">
         <label>Dirección / referencia (opcional)</label>
@@ -1325,8 +1350,117 @@
         if (!document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = o.data.direccion || '';
         if (!document.getElementById('tr-gps').value) document.getElementById('tr-gps').value = o.data.gps || '';
     };
+    /* ===== Búsqueda en TODO el historial (Dylan 2026-10-19: «en + Trabajo ponme un campo de búsqueda con todo el historial
+       de obras y clientes… en reparaciones por lo usual es de obras ya entregadas»). Fuentes: trabajos (`allJobs`, ya en
+       memoria), pedidos activos (`ordersCache`), pedidos COMPLETADOS (se bajan UNA vez, al tocar el buscador — H1: nada de
+       colecciones enteras al arrancar) y fichas de `clientes` (`cargarClientes`). Se agrupa por cliente+obra. ===== */
+    let ordersHist = [], ordersHistCargando = null;
+    function cargarOrdersHist() {
+        if (ordersHistCargando) return ordersHistCargando;
+        ordersHistCargando = getDocs(query(collection(db, 'orders'), where('status', '==', 'completado')))
+            .then(s => { ordersHist = s.docs.map(d => ({ id: d.id, data: d.data() })); trBuscar(); })
+            .catch(() => { ordersHistCargando = null; });
+        return ordersHistCargando;
+    }
+    const normBusq = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    const msDe = (v) => v && v.toMillis ? v.toMillis() : (v && v.toDate ? v.toDate().getTime() : (typeof v === 'string' && !isNaN(Date.parse(v)) ? Date.parse(v) : 0));
+    const fechaOrden = (d) => ['fechaCompletado', 'fechaEntregado', 'fechaListoParaCargar', 'fechaCreacion', 'createdAt', 'creadoEn', 'fecha'].map(k => msDe(d[k])).find(x => x > 0) || 0;
+    const fmtCorta = (ms) => ms ? new Date(ms).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: '2-digit' }).replace(/ de /g, ' ') : '';
+    window.trBusqFoco = function () { cargarClientes(); cargarOrdersHist(); trBuscar(); };
+    function trEntradas() {
+        const map = new Map();   // clave cliente|obra → entrada agrupada
+        const ent = (cliente, obra) => {
+            const k = normBusq(cliente) + '|' + normBusq(obra);
+            if (!map.has(k)) map.set(k, { cliente: cliente || '', obra: obra || '', direccion: '', gps: '', abierto: null, job: null, cerrado: null, cot: null, ts: 0, extra: '' });
+            return map.get(k);
+        };
+        const activos = ordersCache.filter(o => o.data && o.data.status !== 'completado');
+        for (const o of activos) {
+            const d = o.data, e = ent(d.cliente, d.obra); const esCot = String(d.docType || '').indexOf('COT') === 0;
+            if (esCot) { if (!e.cot) e.cot = o; } else if (!e.abierto && d.docType !== 'COMPRA_DIRECTA') e.abierto = o;
+            e.direccion = e.direccion || d.direccion || ''; e.gps = e.gps || d.gps || ''; e.ts = Math.max(e.ts, fechaOrden(d));
+        }
+        for (const o of ordersHist) {
+            const d = o.data, e = ent(d.cliente, d.obra);
+            if (!e.cerrado || fechaOrden(d) > fechaOrden(e.cerrado.data)) e.cerrado = o;
+            e.direccion = e.direccion || d.direccion || ''; e.gps = e.gps || d.gps || ''; e.ts = Math.max(e.ts, fechaOrden(d));
+        }
+        for (const j of allJobs) {
+            if (!(j.cliente || j.obra) || j.id === editingId) continue;
+            const e = ent(j.cliente, j.obra); const t = (jobDate(j) ? jobDate(j).getTime() : 0) || msDe(j.fechaCreacion);
+            if (!e.job || t > e.jobTs) { e.job = j; e.jobTs = t; }
+            e.direccion = e.direccion || j.direccion || ''; e.gps = e.gps || j.gps || ''; e.ts = Math.max(e.ts, t);
+        }
+        // Fichas de clientes: una entrada "solo cliente" (para obras nuevas de un cliente conocido) + texto extra para buscar por alias/facturación/teléfono.
+        for (const c of clientesCache) {
+            if (!c || !c.nombre) continue;
+            const extra = [c.nombreFacturacion, ...(Array.isArray(c.alias) ? c.alias : []), c.telefono, c.ciudad].filter(Boolean).join(' ');
+            let tiene = false;
+            for (const e of map.values()) if (normBusq(e.cliente) === normBusq(c.nombre)) { e.extra = extra; e.direccion = e.direccion || c.direccion || ''; tiene = true; }
+            if (!tiene) { const e = ent(c.nombre, ''); e.ficha = c; e.extra = extra; e.direccion = c.direccion || ''; }
+            else { const e = ent(c.nombre, ''); if (!e.ficha) { e.ficha = c; e.extra = extra; e.direccion = e.direccion || c.direccion || ''; } }
+        }
+        return [...map.values()];
+    }
+    window.trBuscar = function () {
+        const box = document.getElementById('tr-busq-res'); const q = normBusq(document.getElementById('tr-busq').value);
+        if (q.length < 2) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        const palabras = q.split(' ');
+        const res = trEntradas().filter(e => { const txt = normBusq([e.cliente, e.obra, e.direccion, e.extra].join(' ')); return palabras.every(p => txt.includes(p)); })
+            .sort((a, b) => (b.abierto ? 1 : 0) - (a.abierto ? 1 : 0) || (b.ts - a.ts) || a.cliente.localeCompare(b.cliente)).slice(0, 15);
+        trBusqRes = res;
+        const cargando = ordersHistCargando && !ordersHist.length ? '<div class="vacio">⏳ Cargando pedidos antiguos…</div>' : '';
+        box.innerHTML = (res.length ? res.map((e, i) => {
+            const tags = [];
+            if (e.abierto) tags.push(`<b>📦 pedido abierto · ${esc(ORDER_STATUS_LABEL[e.abierto.data.status] || e.abierto.data.status || '')}</b>`);
+            if (e.job) tags.push(`🔧 ${esc(ESTADO_LABEL[e.job.estado] || e.job.estado || 'trabajo')}${e.jobTs ? ' ' + fmtCorta(e.jobTs) : ''}${e.job.tipoTrabajo && TIPOS_TRABAJO[e.job.tipoTrabajo] ? ' · ' + esc(TIPOS_TRABAJO[e.job.tipoTrabajo]) : ''}`);
+            if (e.cerrado && !e.job) tags.push(`✅ pedido completado${fechaOrden(e.cerrado.data) ? ' ' + fmtCorta(fechaOrden(e.cerrado.data)) : ''}`);
+            if (e.cot && !e.abierto && !e.job && !e.cerrado) tags.push('🧾 solo cotización');
+            if (!e.obra && e.ficha) tags.push('👤 ficha de cliente' + (e.ficha.telefono ? ' · ' + esc(e.ficha.telefono) : ''));
+            return `<div class="r" onclick="trElegir(${i})"><div class="t">${esc(e.cliente)}${e.obra ? ' — ' + esc(e.obra) : ''}</div><div class="s">${tags.join(' · ')}${e.direccion ? ' · 📍 ' + esc(e.direccion) : ''}</div></div>`;
+        }).join('') : '<div class="vacio">Sin resultados. Si es un cliente nuevo, usa «+ Crear cliente».</div>') + cargando;
+        box.style.display = 'block';
+    };
+    let trBusqRes = [];
+    window.trElegir = function (i) {
+        const e = trBusqRes[i]; if (!e) return;
+        trOrderId = null; trJobOrigenId = null; trPedidoRef = null;
+        const sel = document.getElementById('tr-obra-existente');
+        if (e.abierto) { trOrderId = e.abierto.id; sel.value = 'order:' + e.abierto.id; }
+        else if (e.job) { trJobOrigenId = e.job.id; trPedidoRef = e.job.orderId || (Array.isArray(e.job.orderIds) && e.job.orderIds[0]) || null; sel.value = 'job:' + e.job.id; if (sel.value !== 'job:' + e.job.id) sel.value = ''; }
+        else if (e.cerrado) { trPedidoRef = e.cerrado.id; sel.value = ''; }   // pedido ya cerrado: solo referencia (para abrir la hoja), nunca se reabre
+        else { sel.value = ''; if (e.cot) trPedidoRef = e.cot.id; }
+        document.getElementById('tr-cliente').value = e.cliente || '';
+        if (e.obra) document.getElementById('tr-obra').value = e.obra;
+        if (!document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = e.direccion || '';
+        if (!document.getElementById('tr-gps').value) document.getElementById('tr-gps').value = e.gps || '';
+        document.getElementById('tr-busq').value = (e.cliente || '') + (e.obra ? ' — ' + e.obra : '');
+        document.getElementById('tr-busq-res').style.display = 'none';
+        trNuevoClienteToggle(false);
+    };
+    /* «+ Crear cliente»: ficha mínima en `clientes` (mismo id que clientes.html / el cuaderno: nombre en minúsculas) para que
+       la oficina la complete después. Si ya existe una con ese nombre, se usa esa. */
+    window.trNuevoClienteToggle = function (abrir) {
+        const box = document.getElementById('tr-nuevo-cli'); const on = abrir === undefined ? box.style.display === 'none' : !!abrir;
+        box.style.display = on ? 'block' : 'none';
+        if (on) { document.getElementById('tr-nc-nombre').value = document.getElementById('tr-cliente').value.trim(); document.getElementById('tr-nc-tel').value = ''; document.getElementById('tr-nc-dir').value = ''; cargarClientes(); document.getElementById('tr-nc-nombre').focus(); }
+    };
+    window.trNuevoClienteGuardar = async function () {
+        const nombre = document.getElementById('tr-nc-nombre').value.trim(); if (!nombre) { alert('Escribe el nombre del cliente.'); return; }
+        const tel = document.getElementById('tr-nc-tel').value.trim(), dir = document.getElementById('tr-nc-dir').value.trim();
+        const ya = clientesCache.find(c => c && c.nombre && normBusq(c.nombre) === normBusq(nombre));
+        if (ya) { alert('Ese cliente ya tiene ficha («' + ya.nombre + '»). Se usa esa.'); document.getElementById('tr-cliente').value = ya.nombre; trNuevoClienteToggle(false); return; }
+        const datos = { nombre, telefono: tel, direccion: dir, idioma: 'es', origen: 'instalacion', creadoPor: usuario.nombre, fechaCreacion: serverTimestamp(), actualizado: serverTimestamp(), actualizadoPor: usuario.nombre };
+        try {
+            await setDoc(doc(db, 'clientes', String(nombre).trim().toLowerCase()), datos, { merge: true });
+            clientesCache.push({ ...datos, fechaCreacion: null, actualizado: null }); refreshClientMap();
+            document.getElementById('tr-cliente').value = nombre; if (dir && !document.getElementById('tr-direccion').value) document.getElementById('tr-direccion').value = dir;
+            trNuevoClienteToggle(false);
+        } catch (e) { alert('No se pudo crear la ficha: ' + (e && e.message ? e.message : e)); }
+    };
     window.abrirModalTrabajo = function () {
-        ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota'].forEach(i => document.getElementById(i).value = '');
+        ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota', 'tr-busq'].forEach(i => document.getElementById(i).value = '');
+        document.getElementById('tr-busq-res').style.display = 'none'; trNuevoClienteToggle(false);
         document.getElementById('tr-tipo').value = ''; trOrderId = null; trJobOrigenId = null; trPedidoRef = null; trTipoCambio();
         // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
         document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
