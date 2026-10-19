@@ -219,7 +219,14 @@
     onSnapshot(collection(db, 'instalaciones'), (snap) => { jobsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, () => { });
     const fD = (t) => (t && t.toDate) ? t.toDate().toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) : '';
     function rioAbajo(id, o) {
-        const jobs = jobsCache.filter(j => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)) || mismaObra(o.cliente, o.obra, j.cliente, j.obra));
+        // A12 (revisión 2026-10-09): primero los trabajos ENLAZADOS al pedido; si no hay, los de la misma obra pero solo si son de
+        // tipo instalación y POSTERIORES al pedido (un trabajo cerrado antes de que el pedido existiera no puede ser su instalación:
+        // un completivo nuevo de Altea 11 salía «✅ Instalado» por el trabajo viejo de las ventanas).
+        const tsMs = (t) => (t && t.toDate) ? t.toDate().getTime() : (t ? new Date(t).getTime() || 0 : 0);
+        const fechaPedido = tsMs(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion || o.fecha);
+        const esInst = (j) => j.tipoTrabajo ? j.tipoTrabajo === 'instalacion' : true;
+        const enlazados = jobsCache.filter(j => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)));
+        const jobs = enlazados.length ? enlazados : jobsCache.filter(j => esInst(j) && mismaObra(o.cliente, o.obra, j.cliente, j.obra) && (!fechaPedido || Math.max(tsMs(j.fecha), tsMs(j.fechaCreacion), tsMs(j.inicioReal), tsMs(j.validadoFecha)) >= fechaPedido));
         const enProceso = jobs.find(j => j.estado === 'en_proceso');
         const completado = jobs.find(j => j.estado === 'completado');
         const chips = [];
