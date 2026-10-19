@@ -1085,7 +1085,7 @@
         // (un solo lugar, sin duplicar) — allí se completan con biometría. Un pedido sin fecha se ve
         // aquí; al agendarlo pasa al Calendario.
         const list = document.getElementById('orders-list');
-        const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && !agendadosOrderIds.has(d.id));
+        const pendientes = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && d.data().sinInstalacion !== true && !agendadosOrderIds.has(d.id));   // A13: «solo recoger» no es obra del equipo
         if (!pendientes.length) { list.innerHTML = '<p class="empty">✓ No hay obras pendientes de agendar. Las que ya tienen fecha están en el Calendario día a día.</p>'; return; }
         list.innerHTML = pendientes.map(d => orderCardHTML(d.id, d.data())).join('');
     }
@@ -1098,7 +1098,7 @@
         // Mismo filtro que la lista de "Por agendar" (renderPorInstalar): obras listas, no
         // instaladas, no compra directa y SIN agendar. Los agendados viven en el Calendario, no aquí
         // — así el número del badge coincide siempre con las tarjetas que se ven en la pestaña.
-        const nInst = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && !agendadosOrderIds.has(d.id)).length;
+        const nInst = ordersDocs.filter(d => !d.data().instalado && d.data().docType !== 'COMPRA_DIRECTA' && d.data().sinInstalacion !== true && !agendadosOrderIds.has(d.id)).length;   // A13
         const bInst = document.getElementById('badge-inst');
         bInst.style.display = nInst ? 'inline-block' : 'none'; bInst.textContent = nInst;
     }
@@ -1914,8 +1914,20 @@
     window.marcarSinInstalacion = async function (orderId) {
         const d = (ordersCache.find(x => x.id === orderId) || {}).data || {};
         if (!confirm(`¿Marcar "${d.cliente || ''} — ${d.obra || ''}" como SOLO RECOGER (no requiere instalación)?`)) return;
-        try { await updateDoc(doc(db, 'orders', orderId), { sinInstalacion: true, sinInstalacionPor: usuario.nombre, sinInstalacionFecha: serverTimestamp() }); }
-        catch (e) { alert('No se pudo marcar: ' + e.message); }
+        try {
+            await updateDoc(doc(db, 'orders', orderId), { sinInstalacion: true, sinInstalacionPor: usuario.nombre, sinInstalacionFecha: serverTimestamp() });
+            // A13: el trabajo automático que fábrica creó al marcarlo listo se cierra si nadie lo tocó (pendiente, sin inicio, sin fotos ni
+            // mensajes); si ya tiene actividad se deja y se avisa. Queda registro en la auditoría y una copia en la papelera.
+            for (const j of jobsDeOrden(orderId)) {
+                if ((j.estado || 'pendiente') === 'completado') continue;
+                const intacto = (j.estado || 'pendiente') === 'pendiente' && !j.inicioReal && !(Array.isArray(j.fotos) && j.fotos.length) && !(Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length);
+                if (!intacto) { alert('Ojo: el trabajo de esta obra en Instalación ya tiene actividad (empezó, tiene fotos o mensajes); no se cerró solo. Revísalo en la agenda.'); continue; }
+                try {
+                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'eliminado', nota: 'Pedido marcado «solo recoger»: el trabajo automático no hace falta', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+                    await borrarConRegistro({ coleccion: 'instalaciones', id: j.id, datos: j, resumen: [j.cliente, j.obra].filter(Boolean).join(' — ') + ' · trabajo automático (solo recoger)', usuario, pantalla: 'instalacion.html' });
+                } catch (e) { console.error('solo recoger: no se pudo cerrar el trabajo', j.id, e); }
+            }
+        } catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
 
     /* ===== Firma / instalación (orders) ===== */
