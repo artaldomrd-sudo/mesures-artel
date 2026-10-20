@@ -53,6 +53,7 @@
         <div id="c-cliente-aviso" class="aviso-existe" style="display:none;"></div>
         <label>Obra / Ubicación</label>
         <select id="c-obra-sel" onchange="onObraSel()"></select>
+        <button type="button" id="c-obra-todas" onclick="toggleObrasTodas()" style="margin-top:6px;background:#eef4fb;color:#1f6aa5;border:1px solid #cfe0f2;border-radius:999px;font-size:12px;font-weight:bold;padding:4px 12px;cursor:pointer;font-family:'Arimo';">➕ Ver todas las obras (historial)</button>
         <input type="text" id="c-obra" placeholder="Escribe la obra o dirección nueva" autocomplete="off" style="display:none; margin-top:6px;">
         <label>Proveedor</label>
         <select id="c-proveedor-sel" onchange="onProveedorSel()"></select>
@@ -90,6 +91,7 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
+    import { borrarConRegistro } from './papelera.js';
     import { db, storage } from './firebase-config.js';
     import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
@@ -119,7 +121,7 @@
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
         onClienteSel();
     }
-    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => d.data()); refreshClientMap(); refreshProveedores(); });
+    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => ({ _id: d.id, ...d.data() })); refreshClientMap(); refreshProveedores(); });
     onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
 
     // Nombre del cliente elegido en este momento (de la lista o escrito a mano).
@@ -156,13 +158,31 @@
         const prev = sel.value;
         const entry = clientMap.get(clienteActual().toLowerCase());
         const obras = entry ? Array.from(entry.obras.values()) : [];
+        // Dylan 2026-10-20: primero los PEDIDOS existentes del cliente (cotización / fabricación), para que la compra quede
+        // VINCULADA a ese pedido (`pedidoVinculadoId`) y no solo al texto de la obra. Abiertos arriba, cerrados después.
+        const pedidos = pedidosDelCliente(clienteActual());
+        const cubiertas = new Set(pedidos.map(o => normObra(o.obra)));
+        const optPed = (o) => `<option value="order:${esc(o._id)}">${esc(o.obra || '')} · ${esc(tipoPedido(o))} · ${esc(ORDER_STATUS_LABEL[o.status] || o.status || '')}</option>`;
+        const abiertos = pedidos.filter(o => o.status !== 'completado'), cerrados = pedidos.filter(o => o.status === 'completado');
+        const otras = obras.filter(o => !cubiertas.has(normObra(o)));
+        // Por defecto solo las obras EN CURSO (pedidos abiertos); el historial completo (pedidos completados + otras obras
+        // conocidas) se despliega con «➕ Ver todas las obras» (Dylan 2026-10-20: «lo más probable es que la compra sea para
+        // una obra en curso, pero puede pasar que sea para una obra vieja»).
+        const hayHist = cerrados.length + otras.length > 0;
+        const btn = document.getElementById('c-obra-todas');
+        btn.style.display = hayHist ? 'inline-block' : 'none';
+        btn.textContent = obrasTodas ? '➖ Solo obras en curso' : `➕ Ver todas las obras (historial: ${cerrados.length + otras.length})`;
         sel.innerHTML = `<option value="">— Elige una obra —</option>`
-            + obras.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')
+            + (abiertos.length ? `<optgroup label="📦 Obras en curso de este cliente (vincula la compra al pedido)">${abiertos.map(optPed).join('')}</optgroup>` : '')
+            + (obrasTodas && cerrados.length ? `<optgroup label="✅ Pedidos ya completados">${cerrados.map(optPed).join('')}</optgroup>` : '')
+            + (obrasTodas && otras.length ? `<optgroup label="Otras obras conocidas">${otras.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</optgroup>` : '')
             + `<option value="${NUEVO}">➕ Escribir obra nueva…</option>`;
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
         onObraSel();
     }
 
+    let obrasTodas = false;
+    window.toggleObrasTodas = function () { obrasTodas = !obrasTodas; poblarObras(); };
     window.onObraSel = function () {
         const sel = document.getElementById('c-obra-sel').value;
         document.getElementById('c-obra').style.display = sel === NUEVO ? 'block' : 'none';
@@ -217,6 +237,17 @@
         listo_para_cargar: 'Listo para cargar/instalar',
         completado: 'Completado'
     };
+    const ORDER_STATUS_LABEL = { solicitada: 'Cotización solicitada', costeada: 'Cotización costeada', enviada_cliente: 'Cotización enviada', pendiente_fabrica: 'Pendiente en fábrica', en_fabrica: 'En fábrica', parcialmente_listo: 'Parcialmente listo', listo_para_cargar: 'Listo para cargar', parcialmente_instalado: 'Parcialmente instalado', completado: 'Completado' };
+    const normObra = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+    const tipoPedido = (o) => String(o.docType || '').startsWith('FAB') ? 'Fabricación' : (String(o.docType || '').startsWith('COT') ? 'Cotización' : (o.docType || ''));
+    const msDe = (v) => v && v.toMillis ? v.toMillis() : (typeof v === 'string' ? Date.parse(v) || 0 : 0);
+    // Pedidos (cotización / fabricación, no compras) del cliente elegido, más recientes primero.
+    function pedidosDelCliente(cliente) {
+        const k = normObra(cliente); if (!k) return [];
+        return ordersCache.filter(o => o._id && o.docType !== 'COMPRA_DIRECTA' && normObra(o.cliente) === k)
+            .sort((a, b) => msDe(b.fechaCreacion || b.createdAt || b.fecha) - msDe(a.fechaCreacion || a.createdAt || a.fecha));
+    }
+    const pedidoDe = (id) => ordersCache.find(o => o._id === id);
 
     // Doc actualmente en edición (null = registrando uno nuevo) y caché de docs por id para editar.
     let editandoId = null;
@@ -224,9 +255,11 @@
 
     window.registrarCompra = async function () {
         const obraSel = document.getElementById('c-obra-sel').value;
-        const obraRaw = obraSel === NUEVO ? document.getElementById('c-obra').value : obraSel;
-        const cliente = normalizarCliente(clienteActual(), clientMap);
-        const obra = normalizarObra(cliente, obraRaw, clientMap);
+        const pedVinc = obraSel.startsWith('order:') ? pedidoDe(obraSel.slice(6)) : null;
+        if (obraSel.startsWith('order:') && !pedVinc) { alert('No se encontró ese pedido. Vuelve a elegir la obra.'); return; }
+        const obraRaw = pedVinc ? (pedVinc.obra || '') : (obraSel === NUEVO ? document.getElementById('c-obra').value : obraSel);
+        const cliente = pedVinc ? (pedVinc.cliente || clienteActual()) : normalizarCliente(clienteActual(), clientMap);
+        const obra = pedVinc ? obraRaw : normalizarObra(cliente, obraRaw, clientMap);
         const proveedor = proveedorActual();
         const cantidad = parseInt(document.getElementById('c-cantidad').value, 10) || 1;
         const descripcion = document.getElementById('c-descripcion').value.trim();
@@ -256,7 +289,9 @@
             const previo = editandoId ? (comprasCache[editandoId] || {}) : {};
 
             // Datos base comunes a crear/editar.
-            const datos = { cliente, obra, proveedor, descripcion, totalItems: cantidad, status };
+            const datos = { cliente, obra, proveedor, descripcion, totalItems: cantidad, status,
+                // Vínculo directo con el pedido elegido (Dylan 2026-10-20): Instalación lo muestra en la tarjeta del pedido.
+                pedidoVinculadoId: pedVinc ? pedVinc._id : null, pedidoVinculadoTipo: pedVinc ? tipoPedido(pedVinc) : null, pedidoVinculadoObra: pedVinc ? (pedVinc.obra || '') : null };
 
             // Si se subió un archivo nuevo, se guarda con la extensión y content-type reales (PDF o
             // imagen) para que el link abra bien en cualquier visor. El campo sigue llamándose
@@ -321,7 +356,7 @@
 
     // Vuelve el formulario al modo "registrar nuevo" y limpia todos los campos.
     window.cancelarEdicion = function () {
-        editandoId = null;
+        editandoId = null; obrasTodas = false;
         document.getElementById('c-cliente-sel').value = '';
         document.getElementById('c-cliente').value = '';
         document.getElementById('c-obra-sel').value = '';
@@ -356,7 +391,11 @@
         onClienteSel();
         // Obra (después de poblar las obras del cliente elegido).
         const obraSel = document.getElementById('c-obra-sel');
-        if ([...obraSel.options].some(op => op.value === o.obra)) {
+        const enLista = (v) => [...obraSel.options].some(op => op.value === v);
+        if (!obrasTodas && !enLista(o.pedidoVinculadoId ? 'order:' + o.pedidoVinculadoId : o.obra)) { obrasTodas = true; poblarObras(); }
+        if (o.pedidoVinculadoId && [...obraSel.options].some(op => op.value === 'order:' + o.pedidoVinculadoId)) {
+            obraSel.value = 'order:' + o.pedidoVinculadoId;
+        } else if ([...obraSel.options].some(op => op.value === o.obra)) {
             obraSel.value = o.obra;
         } else {
             obraSel.value = NUEVO;
@@ -417,9 +456,9 @@
     window.eliminarCompra = async function (id) {
         const o = comprasCache[id];
         if (!o) return;
-        if (!confirm(`¿Eliminar la compra de "${o.cliente || ''} — ${o.obra || ''}"? Esta acción no se puede deshacer.`)) return;
+        if (!confirm(`¿Eliminar la compra de "${o.cliente || ''} — ${o.obra || ''}"? Queda una copia en la papelera (Historial → Auditoría), con tu nombre.`)) return;
         try {
-            await deleteDoc(doc(db, 'orders', id));
+            await borrarConRegistro({ coleccion: 'orders', id, datos: o, resumen: `Compra directa: ${o.cliente || ''} — ${o.obra || ''} · ${o.proveedor || ''} · ${(o.descripcion || '').slice(0, 80)}`, usuario, pantalla: 'compras' });
             if (editandoId === id) cancelarEdicion();
         } catch (e) {
             alert('No se pudo eliminar: ' + e.message);
@@ -448,6 +487,7 @@
                 ${arch.map((a, i) => `<a href="${esc(a.url)}" target="_blank">Ver orden de compra${arch.length > 1 ? ' ' + (i + 1) : ''}</a>`).join(' · ')}
             </div>
             ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
+            ${o.pedidoVinculadoId ? (() => { const pv = pedidoDe(o.pedidoVinculadoId); return `<p style="font-size:12px;color:#1f6aa5;margin:8px 0 0;">🔗 Vinculada al pedido: <b>${esc(o.pedidoVinculadoTipo || '')}</b> ${esc(pv ? pv.obra : (o.pedidoVinculadoObra || ''))}${pv ? ' · ' + esc(ORDER_STATUS_LABEL[pv.status] || pv.status || '') : ''}</p>`; })() : ''}
             <p style="font-size:11.5px;color:#999;margin:8px 0 0;">Registrado por ${esc(o.creadoPorNombre)}</p>
             <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;">
                 <select onchange="cambiarEstadoCompra('${id}', this.value)" style="flex:1;min-width:180px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">

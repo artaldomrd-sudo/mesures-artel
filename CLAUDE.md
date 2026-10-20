@@ -2918,6 +2918,21 @@ que clientes.html) con nombre/teléfono/dirección, `origen:'instalacion'`; si y
 «Obra existente» sigue igual (pedidos abiertos + trabajos anteriores). Probado con el espejo de Emerson (solo lectura: el
 guardado de ficha no se pudo ejercitar ahí).
 
+### Compra Directa vinculada al pedido (2026-10-20)
+
+Dylan: «en el selector de obras de compras directas deberían aparecer las obras existentes para seleccionar y que se vincule
+directo… por defecto las obras en curso y un botón + obras para ver todo el historial». En `ops/compras.html` el select
+`#c-obra-sel` lista primero los PEDIDOS del cliente (`pedidosDelCliente`, cotización/fabricación, nunca compras; `ordersCache`
+ahora lleva `_id`) con valor `order:<id>`: por defecto solo los abiertos («📦 Obras en curso…»); «➕ Ver todas las obras
+(historial: N)» (`toggleObrasTodas`/`obrasTodas`) despliega los pedidos completados y las «Otras obras conocidas» del
+`clientMap`; al editar una compra cuya obra no está en curso se despliega solo. Elegir un pedido guarda
+`pedidoVinculadoId/Tipo/Obra` (cliente y obra se copian del pedido, sin normalizar) y la tarjeta de la compra muestra
+«🔗 Vinculada al pedido: Fabricación … · estado». En Instalación (`orderCardHTML`) la tarjeta del pedido lista sus compras
+vinculadas («🛒 Compra directa vinculada: … · entregada/en ruta/estado») y la tarjeta de la compra dice a qué pedido va.
+«Eliminar» en Compras pasa ahora por `borrarConRegistro` (papelera con nombre; antes borraba sin rastro — caso Aloha 1 de
+ECO 83: la compra no existía en Firestore ni en la papelera). La página es solo admin: no se pudo probar con el espejo de
+Emerson, solo con el checker de sintaxis.
+
 ### Nómina: pedidos de la contable (2026-09-30)
 
 - **Feriado / descanso trabajado = UN día adicional** (`factor: 1.00` en `tiposIngreso`, antes 2.00): el sueldo mensual ya
