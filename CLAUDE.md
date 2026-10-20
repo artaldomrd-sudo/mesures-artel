@@ -1243,8 +1243,8 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   (`lamasOperadoresSeccion`: 1 si alto < `LAMAS_OPERADOR_2_DESDE_MM` 1000, 2 si no — Forti: 808 → 1, 1418/1570 → 2; el corte
   exacto es supuesto) dibujados a la derecha de cada sección (abajo y a media altura); cristal `LAMAS_CRISTAL`
   "laminado 7/16" (11.1 mm) resistente a impacto" con 4 acabados (`LAMAS_VIDRIOS`: transparente, esmerilado = Acid
-  Etched blanco, evergreen = Blue Green, negro = Acid Etched negro); **hueco terminado** = marco + 6 / + 5 mm
-  (`LAMAS_HOLGURA`) en el resumen; **tornillos** #12 × 3" inox (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por
+  Etched blanco, evergreen = Blue Green, negro = Acid Etched negro); la holgura de hueco de Forti (marco + 6 / + 5 mm)
+  NO se muestra (usuario: "yo cuando tomo medidas de fabricación ya pongo el descuento"); **tornillos** #12 × 3" inox (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por
   sección, 2+2 si alto < 1000) con el total en el resumen. Elegir un modelo regenera el menú (`lama_std` en la lista de
   claves que regeneran opciones). El calculador del Panel (`ops/calculador-precio-venta.html`, `lvEstandar`) sigue con
   el catálogo viejo — área sistema, pendiente de alinear.
