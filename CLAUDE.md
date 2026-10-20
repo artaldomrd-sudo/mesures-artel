@@ -1249,18 +1249,21 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   evergreen / negro (`LAMAS_VIDRIOS`), `color_perfil` solo blanco / negro (mismo precio; `triggerGlobalUpdate` NO lo
   pisa con el acabado del encabezado), `mosquitera` `''|'con'`. Sin `vidrio`/`espesor`/serie. Sin toggle IZQ/DER.
   **Las medidas son de FABRICACIÓN** (lo que se pasa al proveedor en mm; él las convierte a pulgadas).
-  **Catálogo y datos técnicos = ficha Forti FT-FV-01 (oct. 2026, aplicada el 2026-10-20; reemplaza las listas de
-  Builder's House)**: `LAMAS_MODELOS` A sencilla 762 × 1570 · B doble 1524 × 1570 (2 secciones) · C media 762 × 1418 ·
-  D baja 762 × 808 (medida de MARCO en mm; `lama_std` = letra del modelo, igual para lama 4" y 3"); `LAMAS_SECCION_MAX_MM
-  = 762` (hoja de 30": 1735 → 3 secciones automáticas); **operadores por sección según el alto**
-  (`lamasOperadoresSeccion`: 1 si alto < `LAMAS_OPERADOR_2_DESDE_MM` 1000, 2 si no — Forti: 808 → 1, 1418/1570 → 2; el corte
-  exacto es supuesto) dibujados a la derecha de cada sección (abajo y a media altura); cristal `LAMAS_CRISTAL`
-  "laminado 7/16" (11.1 mm) resistente a impacto" con 4 acabados (`LAMAS_VIDRIOS`: transparente, esmerilado = Acid
-  Etched blanco, evergreen = Blue Green, negro = Acid Etched negro); la holgura de hueco de Forti (marco + 6 / + 5 mm)
-  NO se muestra (usuario: "yo cuando tomo medidas de fabricación ya pongo el descuento"); **tornillos** #12 × 3" inox (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por
-  sección, 2+2 si alto < 1000) con el total en el resumen. Elegir un modelo regenera el menú (`lama_std` en la lista de
-  claves que regeneran opciones). El calculador del Panel (`ops/calculador-precio-venta.html`, `lvEstandar`) sigue con
-  el catálogo viejo — área sistema, pendiente de alinear.
+  **Catálogo y reglas = RESPUESTAS DE FORTI (doc del usuario 2026-10-20) + ficha FT-FV-01**: medidas estándar
+  24/30/36" × altos de catálogo (`LAMAS_ANCHOS_IN`, `LAMAS_ALTOS_IN`: lama 4" hasta 57¾", lama 3" hasta 58¾";
+  `lama_std` = clave `"30x37.75"`); **36" (914 mm) es el ancho MÁXIMO de una sección** (`LAMAS_SECCION_MAX_MM`; más es
+  inestable; las secciones se unen con jamba macho/hembra; cuántas = elección del cliente → selector manual + automático
+  = ninguna por encima de 36"); **operadores por sección: 1 hasta 29¾", 2 desde 37¾"** (`LAMAS_OPERADOR_2_DESDE_MM = 959`,
+  `lamasOperadoresSeccion`), dibujados a la derecha de cada sección (abajo y a media altura); cristal `LAMAS_CRISTAL`
+  "laminado 7/16" (11.1 mm) resistente a impacto" con acabados `LAMAS_VIDRIOS` (transparente, Acid Etched blanco =
+  esmerilado, Blue Green = evergreen, Acid Etched negro — el negro es por encargo, 60 días, aviso en el resumen); aviso
+  ámbar si el alto supera el estándar máximo (`LAMAS_ALTO_STD_MAX_IN`) y rojo si una sección pasa de 914 mm; la holgura de
+  hueco de la ficha (marco + 6 / + 5 mm) NO se muestra (usuario: "yo ya pongo el descuento"); **tornillos** #12 × 3" inox
+  de la ficha (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por sección, 2+2 si alto < 959) con el total en el
+  resumen. Elegir una estándar regenera el menú (`lama_std` en la lista de claves que regeneran opciones). Un primer
+  intento del mismo día usó los modelos A–D de la ficha (hoja de 762) y se revirtió al llegar las respuestas de Forti.
+  **Precios de Forti en US$/pie² (doc 2026-10-20)**: viven en el Panel (`ops/calculador-precio-venta.html`, área sistema) —
+  ver memoria `artal-ventanas-security-lamas`.
 - **Secciones**: `lamasSeccionesAuto` = las mínimas para que ninguna pase de 914 mm (`LAMAS_SECCION_MAX_MM`; 1735 → 2)
   — **SUPUESTO propio** a confirmar con el proveedor. **Selector manual (usuario 2026-10-20, "el cliente quiere 3 y
   debo poder seleccionar")**: `state.lama_secciones` `''` (automático, el select dice "automático (2 por el ancho)")
