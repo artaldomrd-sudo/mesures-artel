@@ -1236,8 +1236,18 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   evergreen / negro (`LAMAS_VIDRIOS`), `color_perfil` solo blanco / negro (mismo precio; `triggerGlobalUpdate` NO lo
   pisa con el acabado del encabezado), `mosquitera` `''|'con'`. Sin `vidrio`/`espesor`/serie. Sin toggle IZQ/DER.
   **Las medidas son de FABRICACIÓN** (lo que se pasa al proveedor en mm; él las convierte a pulgadas).
-  Catálogo: anchos 24/30/36" × altos lama 4" 21¾/29¾/37¾/45¾/53¾/57¾" · lama 3" 22¾/28¾/37¾/46¾/52¾/58¾"
-  (`LAMAS_ANCHOS_IN`, `LAMAS_ALTOS_IN`, `inAMm`, `inTxt`).
+  **Catálogo y datos técnicos = ficha Forti FT-FV-01 (oct. 2026, aplicada el 2026-10-20; reemplaza las listas de
+  Builder's House)**: `LAMAS_MODELOS` A sencilla 762 × 1570 · B doble 1524 × 1570 (2 secciones) · C media 762 × 1418 ·
+  D baja 762 × 808 (medida de MARCO en mm; `lama_std` = letra del modelo, igual para lama 4" y 3"); `LAMAS_SECCION_MAX_MM
+  = 762` (hoja de 30": 1735 → 3 secciones automáticas); **operadores por sección según el alto**
+  (`lamasOperadoresSeccion`: 1 si alto < `LAMAS_OPERADOR_2_DESDE_MM` 1000, 2 si no — Forti: 808 → 1, 1418/1570 → 2; el corte
+  exacto es supuesto) dibujados a la derecha de cada sección (abajo y a media altura); cristal `LAMAS_CRISTAL`
+  "laminado 7/16" (11.1 mm) resistente a impacto" con 4 acabados (`LAMAS_VIDRIOS`: transparente, esmerilado = Acid
+  Etched blanco, evergreen = Blue Green, negro = Acid Etched negro); **hueco terminado** = marco + 6 / + 5 mm
+  (`LAMAS_HOLGURA`) en el resumen; **tornillos** #12 × 3" inox (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por
+  sección, 2+2 si alto < 1000) con el total en el resumen. Elegir un modelo regenera el menú (`lama_std` en la lista de
+  claves que regeneran opciones). El calculador del Panel (`ops/calculador-precio-venta.html`, `lvEstandar`) sigue con
+  el catálogo viejo — área sistema, pendiente de alinear.
 - **Secciones**: `lamasSeccionesAuto` = las mínimas para que ninguna pase de 914 mm (`LAMAS_SECCION_MAX_MM`; 1735 → 2)
   — **SUPUESTO propio** a confirmar con el proveedor. **Selector manual (usuario 2026-10-20, "el cliente quiere 3 y
   debo poder seleccionar")**: `state.lama_secciones` `''` (automático, el select dice "automático (2 por el ancho)")

@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 11:18</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 11:50</div>
         </div>
     </div>
     
@@ -2198,11 +2198,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const a = parseInt(state.ancho) || 0, h = parseInt(state.alto) || 0;
             const std = lamasEstandar(pulg).find(x => x.key === stdKey);
             const rows = [];
-            rows.push(`<div>Lama: <b>${LAMAS_PULG[pulg].nombre}</b> · ${std ? `Medida <b>estándar ${std.in}</b> (${std.ancho} × ${std.alto} mm)` : `<b>A medida</b> (${lamasMmAIn(a)} × ${lamasMmAIn(h)}" aprox.)`} · ${pie2.toFixed(2)} pie²</div>`);
-            const secManual = (parseInt(state.lama_secciones) || 0) > 0, secAncho = Math.round(a / nSec);
-            rows.push(`<div>Secciones: <b>${nSec}</b>${nSec > 1 ? ` (≈ ${secAncho} mm cada una)` : ''} · ${secManual ? 'elegidas a mano' : `automático: una por cada ${LAMAS_SECCION_MAX_MM} mm de ancho`} · operador por sección${secAncho > LAMAS_SECCION_MAX_MM ? ` <span style="color:#c0392b;">⚠ sección de ${secAncho} mm, por encima de los ${LAMAS_SECCION_MAX_MM} mm máx.</span>` : ''}</div>`);
-            rows.push(`<div>Marco: <b>${state.color_perfil === 'negro' ? 'Negro' : 'Blanco'}</b> · Vidrio: <b>${LAMAS_VIDRIO_NOM[state.lama_vidrio] || 'Esmerilado (acid etched)'}</b>${state.mosquitera === 'con' ? ' · <b>Con mosquitera</b>' : ' · Sin mosquitera'}</div>`);
-            rows.push(`<div style="color:#888; font-size:12px;">Medida de fabricación (la que se pasa al proveedor).</div>`);
+            rows.push(`<div>Lama: <b>${LAMAS_PULG[pulg].nombre}</b> · ${std ? `Modelo <b>estándar ${std.nombre}</b> · marco ${std.ancho} × ${std.alto} mm (${std.in})` : `<b>A medida</b> (${lamasMmAIn(a)} × ${lamasMmAIn(h)}" aprox.)`} · ${pie2.toFixed(2)} pie²</div>`);
+            const secManual = (parseInt(state.lama_secciones) || 0) > 0, secAncho = Math.round(a / nSec), nOp = lamasOperadoresSeccion(state), fij = lamasFijacion(state);
+            rows.push(`<div>Secciones: <b>${nSec}</b>${nSec > 1 ? ` (≈ ${secAncho} mm cada una)` : ''} · ${secManual ? 'elegidas a mano' : `automático: una por cada ${LAMAS_SECCION_MAX_MM} mm de ancho (hoja de 30")`}${secAncho > LAMAS_SECCION_MAX_MM ? ` <span style="color:#c0392b;">⚠ sección de ${secAncho} mm, más ancha que la hoja de 30" (${LAMAS_SECCION_MAX_MM} mm) de la ficha de Forti</span>` : ''}</div>`);
+            rows.push(`<div>Operadores: <b>${nOp} por sección</b> (${nOp * nSec} en total), al interior · ${h >= LAMAS_OPERADOR_2_DESDE_MM ? `2 porque el alto pasa de ${LAMAS_OPERADOR_2_DESDE_MM} mm` : `1 porque el alto no llega a ${LAMAS_OPERADOR_2_DESDE_MM} mm`}</div>`);
+            rows.push(`<div>Marco: <b>${state.color_perfil === 'negro' ? 'Negro' : 'Blanco'}</b> · Cristal: <b>${LAMAS_CRISTAL}</b>, acabado <b>${LAMAS_VIDRIO_NOM[state.lama_vidrio] || LAMAS_VIDRIO_NOM.esmerilado}</b>${state.mosquitera === 'con' ? ' · <b>Con mosquitera</b>' : ' · Sin mosquitera'}</div>`);
+            if (a > 0 && h > 0) rows.push(`<div>Hueco terminado: <b>${a + LAMAS_HOLGURA.w} × ${h + LAMAS_HOLGURA.h} mm</b> (marco + ${LAMAS_HOLGURA.w} mm de ancho y + ${LAMAS_HOLGURA.h} mm de alto, holgura de la ficha de Forti)</div>`);
+            rows.push(`<div>Fijación: tornillos #12 × 3" inox cabeza pan · cabezal ${fij.cabezal} · antepecho ${fij.antepecho} · jambas ${fij.jamba} + ${fij.jamba} por sección · <b>${fij.total} tornillos</b></div>`);
+            rows.push(`<div style="color:#888; font-size:12px;">Medida de MARCO = medida de fabricación (la que se pasa al proveedor). Datos técnicos según ficha Forti FT-FV-01.</div>`);
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>VENTANA SECURITY LAMAS</strong> — A: <span style="color:#e74c3c;">${a}</span> mm | H: <span style="color:#e74c3c;">${h}</span> mm | Cant: ${state.cantidad || 1}</div>
                 ${rows.join('')}
@@ -3953,7 +3956,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const pulg = lamasPulg(state), stdKey = lamasStdMatch(state);
             const sel = (key, opts, cur, title, span) => `<select ${span ? 'style="grid-column: span 2;"' : ''} onchange="${fn}, '${key}', this.value)" title="${title}">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
             let out = sel('lama_pulg', Object.entries(LAMAS_PULG).map(([v, o]) => [v, o.nombre]), pulg, 'Ancho de la lama de vidrio');
-            out += sel('lama_std', [['', 'Medida: a medida (escribe A × H)']].concat(lamasEstandar(pulg).map(e => [e.key, `Estándar ${e.in} (${e.ancho} × ${e.alto} mm)`])), stdKey, 'Medida estándar del catálogo (cambia A × H) o a medida', true);
+            out += sel('lama_std', [['', 'Medida: a medida (escribe A × H)']].concat(lamasEstandar(pulg).map(e => [e.key, `Estándar ${e.nombre}: ${e.ancho} × ${e.alto} mm (${e.in})`])), stdKey, 'Modelo estándar de Forti (medida de MARCO; cambia A × H) o a medida', true);
             const secAuto = lamasSeccionesAuto(state);
             out += sel('lama_secciones', [['', `Secciones: automático (${secAuto} por el ancho)`]].concat([1, 2, 3, 4, 5, 6].map(n => [n, `Secciones: ${n}${n === secAuto ? ' (= automático)' : ''}`])), (parseInt(state.lama_secciones) || 0) > 0 ? String(state.lama_secciones) : '', `Cantidad de secciones (un operador cada una). Automático = una por cada ${LAMAS_SECCION_MAX_MM} mm de ancho como máximo`, true);
             out += sel('lama_vidrio', LAMAS_VIDRIOS.map(([v, l]) => [v, 'Vidrio: ' + l]), state.lama_vidrio || 'esmerilado', 'Tipo de vidrio de las lamas');
@@ -4851,7 +4854,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
             if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             // 'apertura' también regenera: con 2 hojas aparece el select "Hoja principal" (y con 1 hoja se va).
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || ((key === 'lama_pulg' || key === 'lama_secciones') && cardsState[id].categoria === 'lamas') || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || ((key === 'lama_pulg' || key === 'lama_secciones' || key === 'lama_std') && cardsState[id].categoria === 'lamas') || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -6110,21 +6113,28 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // proveedor Forti Ventanas R.D. (Santiago). Catálogo de medidas estándar en PULGADAS (listas de The Builder's
     // House PR que el usuario usa como referencia de tamaños; nada se importa de PR) convertidas a mm; a medida
     // cualquier A × H. Las medidas son de FABRICACIÓN (lo que se le pasa al proveedor, él las convierte a pulgadas).
-    // Secciones: una cada 36" (914 mm) de ancho como máximo — SUPUESTO propio a confirmar con el proveedor.
+    // Datos de la FICHA TÉCNICA de Forti FT-FV-01 (oct. 2026, leída el 2026-10-20): hoja de 30" (762 mm) de marco —
+    // la doble son 2 hojas de 762 —, cristal laminado 7/16" (11.1 mm) resistente a impacto, 2 operadores por hoja en
+    // 1418/1570 mm de alto y 1 en 808 mm, hueco terminado = marco + 6 mm ancho / + 5 mm alto, tornillos #12 × 3" inox
+    // (cabezal 2 · antepecho 2 · jambas 5+5; 2+2 en la baja). Secciones automáticas: una cada 762 mm como máximo.
     const LAMAS_PULG = { '4': { mm: 102, nombre: 'Lama 4" (102 mm)' }, '3': { mm: 76, nombre: 'Lama 3" (76 mm)' } };
-    const LAMAS_ANCHOS_IN = [24, 30, 36];
-    const LAMAS_ALTOS_IN = { '4': [21.75, 29.75, 37.75, 45.75, 53.75, 57.75], '3': [22.75, 28.75, 37.75, 46.75, 52.75, 58.75] };
-    const LAMAS_SECCION_MAX_MM = 914;
-    const LAMAS_VIDRIOS = [['esmerilado', 'Esmerilado (acid etched)'], ['evergreen', 'Evergreen (blue green)'], ['negro', 'Negro']];
+    const LAMAS_SECCION_MAX_MM = 762;
+    const LAMAS_OPERADOR_2_DESDE_MM = 1000;   // alto de sección a partir del cual lleva 2 operadores (Forti: 808 → 1, 1418 → 2; el corte exacto se confirmará)
+    const LAMAS_HOLGURA = { w: 6, h: 5 };      // hueco terminado = marco + holgura
+    const LAMAS_CRISTAL = 'laminado 7/16" (11.1 mm) resistente a impacto';
+    // Modelos estándar de Forti (medida de MARCO en mm; entre paréntesis el hueco terminado)
+    const LAMAS_MODELOS = [
+        { key: 'A', nombre: 'A · Ventana sencilla', ancho: 762, alto: 1570, in: '30 × 61 13⁄16"', secciones: 1 },
+        { key: 'B', nombre: 'B · Ventana doble (2 hojas)', ancho: 1524, alto: 1570, in: '60 × 61 13⁄16"', secciones: 2 },
+        { key: 'C', nombre: 'C · Ventana media', ancho: 762, alto: 1418, in: '30 × 55 13⁄16"', secciones: 1 },
+        { key: 'D', nombre: 'D · Ventana baja', ancho: 762, alto: 808, in: '30 × 31 13⁄16"', secciones: 1 },
+    ];
+    const LAMAS_VIDRIOS = [['transparente', 'Transparente'], ['esmerilado', 'Acid Etched blanco (esmerilado)'], ['evergreen', 'Blue Green (evergreen)'], ['negro', 'Acid Etched negro']];
     const LAMAS_VIDRIO_NOM = Object.fromEntries(LAMAS_VIDRIOS);
     const inAMm = (i) => Math.round(i * 25.4);
     const inTxt = (i) => { const e = Math.floor(i), f = i - e; const fr = f >= 0.74 ? '¾' : f >= 0.49 ? '½' : f >= 0.24 ? '¼' : ''; return `${e}${fr}`; };
     function lamasPulg(state) { return LAMAS_PULG[state && state.lama_pulg] ? String(state.lama_pulg) : '4'; }
-    function lamasEstandar(pulg) {
-        const out = [];
-        LAMAS_ANCHOS_IN.forEach(a => (LAMAS_ALTOS_IN[pulg] || LAMAS_ALTOS_IN['4']).forEach(h => out.push({ key: `${a}x${h}`, in: `${inTxt(a)} × ${inTxt(h)}"`, ancho: inAMm(a), alto: inAMm(h) })));
-        return out;
-    }
+    function lamasEstandar(pulg) { return LAMAS_MODELOS; }   // mismo catálogo para lama 4" y 3" (la ficha no distingue)
     // Medida estándar que coincide con A × H (±6 mm, por el redondeo pulgadas → mm), o '' si es a medida.
     function lamasStdMatch(state) {
         const a = parseInt(state.ancho) || 0, h = parseInt(state.alto) || 0;
@@ -6135,6 +6145,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // cantidad (usuario 2026-10-20: "quiere 3 secciones y debo poder seleccionar") → `lama_secciones` 1..6 manda; '' = automático.
     function lamasSeccionesAuto(state) { return Math.max(1, Math.ceil((parseInt(state.ancho) || 0) / LAMAS_SECCION_MAX_MM)); }
     function lamasSecciones(state) { const m = parseInt(state && state.lama_secciones) || 0; return m > 0 ? m : lamasSeccionesAuto(state); }
+    // Operadores por SECCIÓN según el alto (ficha Forti): 1 en la ventana baja (808 mm), 2 en la media y la completa.
+    function lamasOperadoresSeccion(state) { return (parseInt(state && state.alto) || 0) >= LAMAS_OPERADOR_2_DESDE_MM ? 2 : 1; }
+    // Tornillos de fijación #12 × 3" inox (ficha Forti): cabezal 2 · antepecho 2 · jambas 5+5 (2+2 en la baja), por hoja/sección.
+    function lamasFijacion(state) { const j = (parseInt(state && state.alto) || 0) >= LAMAS_OPERADOR_2_DESDE_MM ? 5 : 2; const n = lamasSecciones(state); return { cabezal: 2 * n, antepecho: 2 * n, jamba: j, total: 4 * n + 2 * j * n }; }
     function lamasPie2(state) { return ((parseInt(state.ancho) || 0) * (parseInt(state.alto) || 0)) / 92903; }
     function lamasMmAIn(mm) { return inTxt(Math.round(mm / 25.4 * 4) / 4); }
     function renderLamas(state, uid) {
@@ -6143,7 +6157,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const aMm = parseInt(state.ancho) || 610, hMm = parseInt(state.alto) || 552;
         const k = g.W / aMm;                                  // unidades por mm (misma escala en x e y)
         const marco = Math.max(1.2, 32 * k), mont = Math.max(0.9, 25 * k);   // perfil 32 mm, montante 25 mm
-        const vid = { esmerilado: ['#e8eef3', '#c9d3dc'], evergreen: ['#cfe8dc', '#9cc9b3'], negro: ['#3b4148', '#20252a'] }[state.lama_vidrio] || ['#e8eef3', '#c9d3dc'];
+        const vid = { transparente: ['#eaf2fa', '#b9cfe3'], esmerilado: ['#e8eef3', '#c9d3dc'], evergreen: ['#cfe8dc', '#9cc9b3'], negro: ['#3b4148', '#20252a'] }[state.lama_vidrio] || ['#e8eef3', '#c9d3dc'];
+        const nOp = lamasOperadoresSeccion(state);
         const vbH = g.y0 + g.H + 16;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -6 144 ${f(vbH)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
         svg += `<defs><linearGradient id="lama-${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity="0.55"/><stop offset="0.45" stop-color="${vid[0]}"/><stop offset="1" stop-color="${vid[1]}"/></linearGradient></defs>`;
@@ -6169,9 +6184,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 // clips de aluminio en los extremos (tono del marco)
                 svg += `<rect x="${f(x)}" y="${f(y + lamaH * 0.2)}" width="${f(Math.max(0.6, 7 * k))}" height="${f(lamaH * 0.6)}" fill="#1c5a85" stroke="none"/><rect x="${f(x + secW - Math.max(0.6, 7 * k))}" y="${f(y + lamaH * 0.2)}" width="${f(Math.max(0.6, 7 * k))}" height="${f(lamaH * 0.6)}" fill="#1c5a85" stroke="none"/>`;
             }
-            // operador (palanca) abajo a la derecha de cada sección
-            const ox = x + secW - Math.max(2.2, 45 * k), oy = g.y0 + g.H - marco - Math.max(2.5, 60 * k);
-            svg += `<rect x="${f(ox)}" y="${f(oy)}" width="${f(Math.max(1.2, 22 * k))}" height="${f(Math.max(2.4, 55 * k))}" rx="0.4" fill="#8d99a4" stroke="#111" style="stroke-width:0.4px"/>`;
+            // operadores (perilla en T) a la derecha de cada sección: 1 abajo, o 2 (abajo y a media altura) según el alto (ficha Forti)
+            const ox = x + secW - Math.max(2.2, 45 * k), opW = Math.max(1.2, 22 * k), opH = Math.max(2.4, 55 * k);
+            const oys = [g.y0 + g.H - marco - Math.max(2.5, 60 * k)]; if (nOp > 1) oys.push(g.y0 + marco + (g.H - 2 * marco) / 2 - opH / 2);
+            oys.forEach(oy => { svg += `<rect x="${f(ox)}" y="${f(oy)}" width="${f(opW)}" height="${f(opH)}" rx="0.4" fill="#8d99a4" stroke="#111" style="stroke-width:0.4px"/>`; });
             if (state.mosquitera === 'con') svg += `<rect x="${f(x + 1)}" y="${f(g.y0 + marco + 1)}" width="${f(secW - 2)}" height="${f(g.H - 2 * marco - 2)}" fill="none" stroke="#333a40" stroke-dasharray="1.2 0.9" style="stroke-width:0.6px"/>`;
         }
         // cotas (mm) como el resto de la app
@@ -6179,7 +6195,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // trabaja en pulgadas). Solo en este ítem. El ancho va entre la línea de cota (y=4) y el marco (y0=8); el alto bajo el texto del mm.
         if (aMm > 0) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0, `${aMm} mm`, 6) + `<text x="50" y="7.3" font-family="Arimo" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="middle" stroke="none">${lamasMmAIn(aMm)}"</text>`;
         if (hMm > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + 4, g.x0 + g.W, `${hMm} mm`, 6) + `<text x="${f(g.x0 + g.W + 6.2)}" y="${f(g.y0 + g.H / 2 + 4.8)}" font-family="Arimo" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="start" dominant-baseline="middle" stroke="none">${lamasMmAIn(hMm)}"</text>`;
-        svg += `<text x="50" y="${f(g.y0 + g.H + 7)}" font-family="Arimo" font-size="3.6" fill="#334155" text-anchor="middle" stroke="none">Security lamas ${pulg}" · ${nSec} ${nSec > 1 ? 'secciones' : 'sección'} · ${n} lamas${state.mosquitera === 'con' ? ' · con mosquitera' : ''}</text>`;
+        svg += `<text x="50" y="${f(g.y0 + g.H + 7)}" font-family="Arimo" font-size="3.6" fill="#334155" text-anchor="middle" stroke="none">Security lamas ${pulg}" · ${nSec} ${nSec > 1 ? 'secciones' : 'sección'} · ${nOp * nSec} ${nOp * nSec > 1 ? 'operadores' : 'operador'} · ${n} lamas${state.mosquitera === 'con' ? ' · con mosquitera' : ''}</text>`;
         svg += '</svg>';
         return svg;
     }
