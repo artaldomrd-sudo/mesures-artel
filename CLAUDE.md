@@ -1267,7 +1267,8 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   `lama_std` = clave `"30x37.75"`); **36" (914 mm) es el ancho MÁXIMO de una sección** (`LAMAS_SECCION_MAX_MM`; más es
   inestable; las secciones se unen con jamba macho/hembra; cuántas = elección del cliente → selector manual + automático
   = ninguna por encima de 36"); **operadores por sección: 1 hasta 29¾", 2 desde 37¾"** (`LAMAS_OPERADOR_2_DESDE_MM = 959`,
-  `lamasOperadoresSeccion`), dibujados a la derecha de cada sección (abajo y a media altura); cristal `LAMAS_CRISTAL`
+  `lamasOperadoresSeccion`), dibujados SOBRE LA JAMBA DERECHA de cada sección como en los dibujos de la ficha (2 → a 1/3
+  y 4/5 del alto; 1 → al 62 %; usuario 2026-10-20: "no van tan abajo"), del color del marco con contorno negro; cristal `LAMAS_CRISTAL`
   "laminado 7/16" (11.1 mm) resistente a impacto" con acabados `LAMAS_VIDRIOS` (transparente, Acid Etched blanco =
   esmerilado, Blue Green = evergreen, Acid Etched negro — el negro es por encargo, 60 días, aviso en el resumen); aviso
   ámbar si el alto supera el estándar máximo (`LAMAS_ALTO_STD_MAX_IN`) y rojo si una sección pasa de 914 mm; la holgura de
