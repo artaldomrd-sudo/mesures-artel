@@ -3052,8 +3052,13 @@ comportamiento de una pantalla, actualizar su guía** (desde la Academia como ca
   `procesarRecordatorios` (la función singular vieja, solo de compatibilidad — ningún flujo
   actual escribe `recordarAntesMin`, todo pasa por el array `recordatorios`).
 - **"¿Para quién es?" → "Gerencia"** (antes "Para mí (gerente)"): al elegir Gerencia aparecen
-  checkboxes con **Andrea / Anny / Dylan / Sara** fijos (`GERENCIA` en calendario.html; a propósito, no
-  derivados de `usuarios` con rol admin). **Sara Inés (2026-09-28)** no es admin: `adminsCache` incluye a quien
+  checkboxes con **Anny / Dylan / Sara** fijos (`GERENCIA` en calendario.html; a propósito, no
+  derivados de `usuarios` con rol admin). **Andrea dada de baja el 2026-10-20** (Dylan: «ya no trabaja aquí, Sara Inés la
+  reemplaza en todos lados»): sin botón/casilla/leyenda en el Calendario, sus 63 recordatorios abiertos (caja, pagos, Yunairy…)
+  reasignados a Sara (`reasignadoDeAndrea` guarda cómo estaban), `usuarios`/`equipo` con `activo:false` y `rol:[]`, cuenta
+  deshabilitada en Firebase Auth (Identity Toolkit `accounts:update disableUser`), fuera de `firma.html` y del selector
+  «pagado por» de Caja (`pagadoPorDe`/`setPagadoPor`: Dylan / Sara Inés / Anny; un movimiento viejo con «Andrea» conserva el
+  valor como opción «(baja)»). **Sara Inés (2026-09-28)** no es admin: `adminsCache` incluye a quien
   esté en `GERENCIA` casando por PRIMER NOMBRE contra `equipo` (`esPersonaGerencia`, alias anny/rolanny), y
   `personaGerencia(nombre)` resuelve el correo para el push. Sara ya tenía `paginasExtra` con calendario e
   instalación. Pestaña y color propios (#9b59b6).
