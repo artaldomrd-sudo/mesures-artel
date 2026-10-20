@@ -109,6 +109,13 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
   }
 }
 // Abisagradas de 2 hojas: hoja principal (manija) izq/der × orientación
+// Puerta abisagrada + SEMI-FIJO (2026-10-20): suelta (ancho dado y mitad, I/D, adentro/afuera) y celda de fachada (lado izq/der)
+for (const o of ['I', 'D']) for (const ap of ['adentro_1', 'afuera_1']) for (const sfa of [0, 400]) {
+  try { ctx.__render('card1', { type: 'door_abat', categoria: 'ventana', ancho: 1500, alto: 2200, apertura: ap, orientacion: o, semifijo: 'si', semifijo_ancho: sfa, vidrio: 'templado', espesor: '10mm' }); ok++; } catch (e) { fail++; console.error('  semifijo suelto', o, ap, sfa, e.message); }
+}
+for (const lado of ['izq', 'der']) {
+  try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: [{ w: 1500, rows: [{ h: 2200, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado, semifijo: 'si', semifijo_ancho: 450 }] }, { w: 1000, rows: [{ h: 2200, celda: 'pf', alu: 'p40_ventana' }] }], verPlanta: true, tubos: {} }); ok++; } catch (e) { fail++; console.error('  semifijo fachada', lado, e.message); }
+}
 for (const t of ['door_abat', 'win_abat', 'win_ob']) for (const hp of ['izq', 'der']) for (const o of ['I', 'D']) {
   try { ctx.__render('card1', { type: t, categoria: 'ventana', ancho: 1600, alto: 2200, orientacion: o, apertura: 'adentro_2', hoja_principal: hp, vidrio: 'templado', color_vidrio: 'natural' }); ok++; }
   catch (e) { fail++; console.error(`  ${t} 2 hojas ppal ${hp}/${o}:`, e.message); }

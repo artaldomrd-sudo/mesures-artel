@@ -232,6 +232,19 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   central, del lado de la principal — en la tarjeta suelta con `orientacion 'D'` el dibujo va
   espejado, así que recibe `flipped=isD` para quedar del lado correcto en pantalla. Resumen: "Hoja
   principal (manija): Derecha"; fachada: "hoja principal der. (manija)".
+- **Semi-fijo junto a la puerta abisagrada (usuario 2026-10-20, obra Toni)**: `door_abat` de 1 hoja acepta
+  `semifijo:'si'` + `semifijo_ancho` (mm; vacío = mitad): segunda hoja con bisagras en la jamba OPUESTA, que abre en el
+  mismo sentido que la puerta y lleva **pestillos arriba y abajo en vez de manija**. Helpers junto a `manijaPrincipal`:
+  `tieneSemifijo(cfg)` (solo con apertura de 1 hoja), `semifijoFrac(cfg, totalMm)` (fracción del ancho que ocupa la
+  PUERTA, acotada 0.15–0.85) y `semifijoSymbol(x, y, w, h, frac, puertaIzq, dash)` (montante en la unión, chevrones de
+  las dos hojas con vértice en la unión, manija en la puerta y 2 pestillos en el semi-fijo). Tarjeta suelta: base con la
+  puerta a la izquierda (el espejo `orientacion 'D'` la pasa a la derecha), select "Sin / Con semi-fijo" + input de ancho
+  (ambos regeneran el menú), planta = `drawPlanView(..., split)` con la apertura pasada a `_2` → `planViewAbatible`
+  admite `opts.split` (fracción de la hoja izquierda; radios distintos por hoja); resumen "Semi-fijo al lado de la
+  puerta: 400 mm (puerta 1100 mm) · …". Fachada Compuesta: celda `puerta` de 1 hoja con filas "Semi-fijo" y "Ancho
+  s-fijo" (`cellCfgFull('semifijo')`), `gridCell` usa el mismo símbolo con la puerta del lado contrario a `lado`,
+  `gridColPlan` pasa `split` según `lado`, y `specList` agrega "+ semi-fijo de 450 mm (puerta 1050 mm) · …".
+  `verify.mjs`: suelta I/D × adentro/afuera × ancho dado/mitad + celda de fachada izq/der (RENDER OK: 292).
 - **Oscilobatiente de 2 hojas (2026-09-16, "solo interior")**: `win_ob` acepta `apertura`
   `'adentro_1'` (default) | `'adentro_2'` (select "Hojas"; nunca hacia afuera) y con 2 hojas el
   mismo `hoja_principal`/`manijaPrincipal`. Dibujo: montante central + chevron y triángulo de

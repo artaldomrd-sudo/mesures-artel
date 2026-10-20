@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 12:28</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 13:25</div>
         </div>
     </div>
     
@@ -1968,6 +1968,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     { const cz = pflotCerr(o), lst = [cz.luna && 'media luna', cz.digital && 'digital', cz.piso && 'piso'].filter(Boolean); if (lst.length) p.push('cerradura ' + lst.join(' + ')); }
                 }
                 if ((celda === 'puerta' || celda === 'pflot' || celda === 'ventana') && o.apertura) { p.push(apMap[o.apertura] || o.apertura); if (o.apertura.includes('_1')) p.push(o.lado === 'izq' ? 'abre izq.' : 'abre der.'); else p.push('hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija)'); }
+                if (celda === 'puerta' && tieneSemifijo(o)) { const t = parseInt(o.w) || 0, sfm = parseInt(o.semifijo_ancho) || 0, sfw = sfm > 0 && t > sfm ? sfm : Math.round(t / 2); p.push(`<b>+ semi-fijo</b> de ${sfw} mm (puerta ${Math.max(0, t - sfw)} mm) · bisagras en la jamba opuesta, abre en el mismo sentido · pestillos arriba y abajo`); }
                 if (celda === 'osci') p.push((o.apertura || '').includes('2') ? ('2 hojas hacia adentro · hoja principal ' + (o.hoja_principal === 'izq' ? 'izq.' : 'der.') + ' (manija, vista de adentro)') : ('abre adentro · ' + (o.lado === 'izq' ? 'abre izq.' : 'abre der.') + ' (vista de adentro)'));
                 if (isCorS(celda) && o.cor_interior) p.push('hoja int. ' + (o.cor_interior === 'D' ? 'der.' : 'izq.'));
                 // (la penetración del riel va pegada a la MEDIDA del elemento, ver penetracionCelda)
@@ -2400,6 +2401,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else if (['win_abat', 'door_abat'].includes(state.type) && state.apertura) {
                  specs.push(`Apertura: ${state.apertura.replace('_', ' ').replace('1', '1 hoja').replace('2', '2 hojas')}`);
                  if (state.apertura.includes('2')) specs.push(`Hoja principal (manija): ${(state.hoja_principal || 'der') === 'izq' ? 'Izquierda' : 'Derecha'}`);
+                 if (tieneSemifijo(state)) { const t = parseInt(state.ancho) || 0, sfm = parseInt(state.semifijo_ancho) || 0, sfw = sfm > 0 && t > sfm ? sfm : Math.round(t / 2); specs.push(`<b>Semi-fijo</b> al lado de la puerta: ${sfw} mm de ancho (puerta ${Math.max(0, t - sfw)} mm) · bisagras en la jamba opuesta, abre en el mismo sentido que la puerta · pestillos arriba y abajo (sin manija)`); }
             } else {
                  let apertura = getAperturaSpec(state, state.type, state.categoria);
                  if (apertura) specs.push(apertura);
@@ -3922,6 +3924,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     <option value="P40">Perfil P40</option>
                     <option value="Titan">Perfil Titan</option>
                 </select>`;
+                // Puerta de 1 hoja: opción de SEMI-FIJO al lado (usuario 2026-10-20) con su ancho.
+                if (type === 'door_abat' && !(state.apertura || '').includes('2')) {
+                    const sf = state.semifijo === 'si';
+                    extra += `<select onchange="${fn}, 'semifijo', this.value)" title="Segunda hoja semi-fija: bisagras en la jamba opuesta, abre en el mismo sentido, pestillos arriba y abajo en vez de manija"><option value="" ${sf ? '' : 'selected'}>Sin semi-fijo</option><option value="si" ${sf ? 'selected' : ''}>Con semi-fijo (pestillos arriba y abajo)</option></select>`;
+                    if (sf) extra += `<input type="number" inputmode="numeric" min="0" step="5" value="${state.semifijo_ancho || ''}" placeholder="Ancho del semi-fijo (mm) · vacío = mitad" title="Ancho del semi-fijo en mm (la puerta = ancho total − semi-fijo). Vacío = las dos hojas iguales" oninput="${fn}, 'semifijo_ancho', this.value)" style="padding:5px; border:1px solid #ccc; border-radius:3px; font-size:11px;">`;
+                }
                 // 2 hojas: cuál es la hoja PRINCIPAL (la de la manija / la que abre primero) — usuario 2026-09-16.
                 if ((state.apertura || '').includes('2')) {
                     const hp = state.hoja_principal || 'der';
@@ -4844,7 +4852,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // 'vidrio' y 'espesor' redibujan porque 'Láminas de Louver' cambia el panel (louverPanel) — bug real:
             // en la puerta suelta el select cambiaba el estado pero el dibujo seguía en vidrio (la fachada sí lo hacía).
             if (cardsState[id].categoria === 'plegable' && ['ancho', 'alto', 'pleg_esquema', 'tipo_aluminio'].includes(key)) refreshPlegHint(id);
-            if (['lama_pulg', 'lama_std', 'lama_vidrio', 'lama_secciones', 'mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel', 'motor_lado'].includes(key)) {
+            if (['lama_pulg', 'lama_std', 'lama_vidrio', 'lama_secciones', 'semifijo', 'semifijo_ancho', 'mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel', 'motor_lado'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -4853,7 +4861,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
             if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             // 'apertura' también regenera: con 2 hojas aparece el select "Hoja principal" (y con 1 hoja se va).
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || ((key === 'lama_pulg' || key === 'lama_secciones' || key === 'lama_std') && cardsState[id].categoria === 'lamas') || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || ((key === 'lama_pulg' || key === 'lama_secciones' || key === 'lama_std') && cardsState[id].categoria === 'lamas') || key === 'semifijo' || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -7040,6 +7048,32 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // del lado de la hoja principal. `principalDer` = la principal es la de la derecha (en pantalla);
     // `flipped` = el dibujo va dentro de un <g> espejado (orientacion 'D' de la tarjeta suelta), en cuyo
     // caso se dibuja del lado contrario para que en pantalla quede donde corresponde.
+    // SEMI-FIJO junto a una puerta abisagrada de 1 hoja (usuario 2026-10-20, obra Toni): segunda hoja con bisagras en la
+    // jamba opuesta, abre en el mismo sentido que la puerta y lleva PESTILLOS arriba y abajo en vez de manija.
+    // `semifijo:'si'` + `semifijo_ancho` (mm; vacío = mitad). `semifijoFrac` = fracción del ancho total que ocupa la PUERTA.
+    const tieneSemifijo = cfg => !!cfg && cfg.semifijo === 'si' && !String(cfg.apertura || 'adentro_1').includes('2');
+    function semifijoFrac(cfg, totalMm) {
+        const sf = parseInt(cfg && cfg.semifijo_ancho) || 0, t = parseInt(totalMm) || 0;
+        if (sf > 0 && t > sf) return Math.min(0.85, Math.max(0.15, (t - sf) / t));
+        return 0.5;
+    }
+    // Símbolo: puerta (bisagra en la jamba `puertaIzq` ? izquierda : derecha) + semi-fijo con bisagra en la jamba opuesta,
+    // montante en la unión, manija en la puerta y 2 pestillos en el semi-fijo (junto a la unión, arriba y abajo).
+    function semifijoSymbol(x, y, w, h, frac, puertaIzq, dash) {
+        const dw = w * frac, mx = puertaIzq ? x + dw : x + w - dw;   // x del montante (unión puerta/semi-fijo)
+        const f = n => (+n).toFixed(1), d = dash ? ` stroke-dasharray="3 2"` : '';
+        let o = `<line x1="${f(mx)}" y1="${f(y)}" x2="${f(mx)}" y2="${f(y + h)}"/>`;
+        if (puertaIzq) o += `<path d="M${f(x)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x)} ${f(y + h)} M${f(x + w)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x + w)} ${f(y + h)}" fill="none"${d}/>`;
+        else o += `<path d="M${f(x + w)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x + w)} ${f(y + h)} M${f(x)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x)} ${f(y + h)}" fill="none"${d}/>`;
+        // manija en la puerta, pegada al montante
+        const mw = Math.max(1.1, Math.min(w, h) * 0.035), mh = Math.min(h * 0.16, 9), gap = Math.min(w * 0.06, 3.5);
+        const manX = puertaIzq ? mx - gap - mw : mx + gap;
+        o += `<rect x="${f(manX)}" y="${f(y + h / 2 - mh / 2)}" width="${f(mw)}" height="${f(mh)}" rx="${f(mw / 2)}" fill="#111" stroke="none"/>`;
+        // pestillos del semi-fijo: barras verticales junto al montante, arriba y abajo
+        const pw = Math.max(0.9, mw * 0.8), ph = Math.min(h * 0.12, 6), pesX = puertaIzq ? mx + gap * 0.6 : mx - gap * 0.6 - pw;
+        o += `<rect x="${f(pesX)}" y="${f(y + h * 0.04)}" width="${f(pw)}" height="${f(ph)}" rx="${f(pw / 2)}" fill="#111" stroke="none"/><rect x="${f(pesX)}" y="${f(y + h * 0.96 - ph)}" width="${f(pw)}" height="${f(ph)}" rx="${f(pw / 2)}" fill="#111" stroke="none"/>`;
+        return o;
+    }
     function manijaPrincipal(x, y, w, h, principalDer, flipped) {
         const der = !!principalDer !== !!flipped;
         const cx = x + w / 2, mh = Math.min(h * 0.16, 9), mw = Math.max(1.1, Math.min(w, h) * 0.035);
@@ -7142,6 +7176,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 s += `<line x1="${(ix + iw / 2).toFixed(1)}" y1="${iy.toFixed(1)}" x2="${(ix + iw / 2).toFixed(1)}" y2="${(iy + ih).toFixed(1)}" stroke="#0A3D62" stroke-width="1"/>`;
                 s += `<path d="M${ix.toFixed(1)} ${iy.toFixed(1)}l${(iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}l${(-iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)} M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}l${(iw / 2).toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
                 s += manijaPrincipal(ix, iy, iw, ih, (cfg.hoja_principal || 'der') === 'der', false);   // manija en la hoja principal
+            } else if (celda === 'puerta' && tieneSemifijo(cfg)) {
+                // puerta de 1 hoja + SEMI-FIJO: la puerta abre al lado `lado` (vértice hacia ahí = bisagra en la otra jamba)
+                s += `<g stroke="${marca}" stroke-width="1">${semifijoSymbol(ix, iy, iw, ih, semifijoFrac(cfg, cfg.w), cfg.lado !== 'izq', ap.startsWith('adentro'))}</g>`;
             } else if (cfg.lado === 'izq') {
                 // 1 hoja, vértice a la IZQUIERDA (abre a la izquierda)
                 s += `<path d="M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
@@ -7219,13 +7256,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         let centerX = startX + w / 2;
         let html = '';
         if (is2Hojas) {
-            let r = Math.min(w / 2, maxR);
-            let dx = r * 0.866;
-            let dy = r * 0.5 * dirY;
-            html += `<line x1="${startX}" y1="${y0}" x2="${startX + dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
-            html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 1 : 0} ${startX + dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
-            html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dx}" y2="${y0 + dy}" style="stroke:#0A3D62;"/>`;
-            html += `<path d="M ${centerX} ${y0} A ${r} ${r} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dx} ${y0 + dy}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            // opts.split = fracción del ancho de la hoja IZQUIERDA (puerta + semi-fijo de anchos distintos); 0.5 = iguales
+            const split = opts.split > 0 && opts.split < 1 ? opts.split : 0.5, meetX = startX + w * split;
+            let rL = Math.min(w * split, maxR), rR = Math.min(w * (1 - split), maxR);
+            let dxL = rL * 0.866, dyL = rL * 0.5 * dirY, dxR = rR * 0.866, dyR = rR * 0.5 * dirY;
+            html += `<line x1="${startX}" y1="${y0}" x2="${startX + dxL}" y2="${y0 + dyL}" style="stroke:#0A3D62;"/>`;
+            html += `<path d="M ${meetX} ${y0} A ${rL} ${rL} 0 0 ${dirY > 0 ? 1 : 0} ${startX + dxL} ${y0 + dyL}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
+            html += `<line x1="${startX + w}" y1="${y0}" x2="${startX + w - dxR}" y2="${y0 + dyR}" style="stroke:#0A3D62;"/>`;
+            html += `<path d="M ${meetX} ${y0} A ${rR} ${rR} 0 0 ${dirY > 0 ? 0 : 1} ${startX + w - dxR} ${y0 + dyR}" stroke-dasharray="2,2" stroke-width="1" fill="none" style="stroke:#0A3D62;"/>`;
         } else {
             let hingeLeft = opts.hingeLeft !== false;
             let r = Math.min(w * 0.875, maxR);
@@ -7279,6 +7317,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const type = celda === 'ventana' ? 'win_abat' : 'puerta';
             // La fachada compuesta siempre se dibuja como VISTA EXTERIOR → vista:'afuera', para que la
             // dirección del giro (int arriba / ext abajo) coincida con la tarjeta suelta vista desde afuera.
+            if (celda === 'puerta' && tieneSemifijo(r)) {
+                // puerta + semi-fijo = dos hojas que giran en el mismo sentido, con el reparto de anchos real
+                const fr = semifijoFrac(r, col && col.w), split = r.lado !== 'izq' ? fr : 1 - fr;
+                return s + planViewAbatible(type, { ...r, apertura: (r.apertura || 'adentro_1').replace('_1', '_2'), vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, split });
+            }
             return s + planViewAbatible(type, { ...r, vista: 'afuera' }, x, w, planY, maxR, { showLabels: false, hingeLeft: r.lado !== 'izq' });
         }
         if (celda === 'osci') {
@@ -7817,7 +7860,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const vid = cfgRow('Vidrio', cfgSel(effVid, VIDCELL, mk('vidrio'))) + grosor;
             const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']], mk('hoja_principal')));
             if (celda === 'mc') return vid;
-            if (celda === 'puerta') return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            if (celda === 'puerta') {
+                let sfRows = '';
+                if ((obj.apertura || 'adentro_1').includes('_1')) {
+                    sfRows = cfgRow('Semi-fijo', cfgSel(obj.semifijo || '', [['', 'Sin semi-fijo'], ['si', 'Con semi-fijo (pestillos arriba y abajo)']], mk('semifijo')));
+                    if (obj.semifijo === 'si') sfRows += cfgRow('Ancho s-fijo', `<input type="number" inputmode="numeric" min="0" step="5" value="${obj.semifijo_ancho || ''}" placeholder="mm · vacío = mitad" style="${inp}" title="Ancho del semi-fijo en mm (la puerta = columna − semi-fijo). Vacío = mitad y mitad" oninput="${mk('semifijo_ancho')}">`);
+                }
+                return vid + cfgRow('Apertura', cfgSel(obj.apertura || 'adentro_1', APERT, mk('apertura'))) + lado + sfRows + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            }
             if (celda === 'pflot') {
                 // Puerta flotante: vidrio templado sin marco, kit botella (pivote) arriba/abajo; tirador y cerradura
                 // de vidrio (media luna / digital / piso). El color de herrajes es el global de la fachada.
@@ -8156,7 +8206,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Opciones de configuración por celda (apertura, cierre, cerradura, mosquitera, hoja interior).
     // Al fijar el grosor de un paño, se auto-selecciona su tipo de vidrio (igual que el global).
     const cellCfgEspesor = (o, key, v) => { if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(v)) o.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(v)) o.vidrio = 'templado'; } };
-    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema' || key === 'panos';   // estos cambian qué campos se muestran
+    const cellCfgFull = key => key === 'apertura' || key === 'vidrio' || key === 'espesor' || key === 'celda' || key === 'pleg_esquema' || key === 'panos' || key === 'semifijo';   // estos cambian qué campos se muestran
     window.gridSetCellCfg = (id, ci, ri, key, v) => { const o = cardsState[id].cols[ci].rows[ri]; o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     window.gridSetFajaCfg = (id, side, key, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; const o = cardsState[id][k]; if (o) { o[key] = v; if (key === 'celda') o.alu = celdaAluDefault(v); cellCfgEspesor(o, key, v); } cellCfgFull(key) ? gridFull(id) : gridDraw(id); };
     // Muro de cortina: guarda los parámetros (sin tocar la grilla) y refresca la línea "Cada módulo: …".
@@ -9349,13 +9399,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // putArrow.
         const putArrowCorStair = putArrow;
 
-        const drawPlanView = (type, stateInfo, startX, w) => {
+        const drawPlanView = (type, stateInfo, startX, w, split) => {
             // y0 = línea de pared de la planta (97, dentro del viewBox ampliado a ~124). El dibujo del
             // giro (hojas + arco punteado) lo hace planViewAbatible — la MISMA función que usa la
             // fachada compuesta, para que la vista en planta sea idéntica en los dos casos.
             const y0 = 97;
             let html = `<line x1="15" y1="${y0}" x2="85" y2="${y0}" style="stroke-width: 2.5px; stroke:#bdc3c7;"/>`;
-            html += planViewAbatible(type, stateInfo, startX, w, y0, 34, { showLabels: true, hingeLeft: true, mirrorLabels: stateInfo.orientacion === 'D' });
+            html += planViewAbatible(type, stateInfo, startX, w, y0, 34, { showLabels: true, hingeLeft: true, mirrorLabels: stateInfo.orientacion === 'D', split });
             return html;
         };
 
@@ -9433,10 +9483,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     drawing += `<line x1="${bx + bw / 2}" y1="${by}" x2="${bx + bw / 2}" y2="${by + bh}"/>`;
                     drawing += `<path d="M${bx} ${by}l${bw / 2} ${bh / 2}l${-bw / 2} ${bh / 2} M${bx + bw} ${by}l${-bw / 2} ${bh / 2}l${bw / 2} ${bh / 2}"/>`;
                     drawing += manijaPrincipal(bx, by, bw, bh, (state.hoja_principal || 'der') === 'der', isD);   // hoja principal = la de la manija
+                } else if (tieneSemifijo(state)) {
+                    // puerta (bisagra a la izquierda en la base; el espejo 'D' la pasa a la derecha) + semi-fijo con pestillos
+                    const fr = semifijoFrac(state, state.ancho);
+                    drawing += semifijoSymbol(bx, by, bw, bh, fr, true, false);
                 } else {
                     drawing += `<path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}"/>`;
                 }
-                drawing += `<g class="plan-view-layer">${drawPlanView(state.type, state, bx, bw)}</g>`;
+                drawing += `<g class="plan-view-layer">${tieneSemifijo(state) ? drawPlanView(state.type, { ...state, apertura: (state.apertura || 'adentro_1').replace('_1', '_2') }, bx, bw, semifijoFrac(state, state.ancho)) : drawPlanView(state.type, state, bx, bw)}</g>`;
                 break;
 
             case 'win_ob':
