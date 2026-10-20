@@ -241,7 +241,13 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   puerta solo de vidrio"), chevrones de las dos hojas con vértice en la unión, manija en la puerta y 2 **pestillos tipo
   pasador** en el semi-fijo (varilla vertical que entra en el cabezal / umbral + pomo horizontal; "parecían conectores").
   **Manija y pestillos van del COLOR DEL ACABADO con contorno negro fino** (placeholder `#0A3D62` + `stroke #111 0.35`;
-  usuario 2026-10-20: "en una puerta blanca los accesorios son blancos") — también `manijaPrincipal` de las 2 hojas. Tarjeta suelta: base con la
+  usuario 2026-10-20: "en una puerta blanca los accesorios son blancos") — también `manijaPrincipal` de las 2 hojas.
+  **Nota en el resumen** ("agrega nota de accesorios blancos… y de cualquier color cuando seleccionamos un color"): la
+  tarjeta suelta de `door_abat`/`win_abat`/`win_ob` dice "Accesorios (manija[, pestillos del semi-fijo], bisagras):
+  Blanco / RAL 7016 / …, del mismo color que el perfil" (junto a la línea Acabado) y en la fachada `specList` de
+  puerta/ventana/osci agrega "accesorios (manija, pestillos, bisagras) negro, color del perfil" — calculado dentro de
+  `specList` (no usar `acabadoTxt`, que se declara después: TDZ real encontrado, `verify.mjs` no ejecuta
+  `generateSummary`). Tarjeta suelta: base con la
   puerta a la izquierda (el espejo `orientacion 'D'` la pasa a la derecha), select "Sin / Con semi-fijo" + input de ancho
   (ambos regeneran el menú), planta = `drawPlanView(..., split)` con la apertura pasada a `_2` → `planViewAbatible`
   admite `opts.split` (fracción de la hoja izquierda; radios distintos por hoja); resumen "Semi-fijo al lado de la
