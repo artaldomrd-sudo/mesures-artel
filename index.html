@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-17 15:31</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 10:53</div>
         </div>
     </div>
     
@@ -2199,7 +2199,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const std = lamasEstandar(pulg).find(x => x.key === stdKey);
             const rows = [];
             rows.push(`<div>Lama: <b>${LAMAS_PULG[pulg].nombre}</b> · ${std ? `Medida <b>estándar ${std.in}</b> (${std.ancho} × ${std.alto} mm)` : `<b>A medida</b> (${lamasMmAIn(a)} × ${lamasMmAIn(h)}" aprox.)`} · ${pie2.toFixed(2)} pie²</div>`);
-            rows.push(`<div>Secciones: <b>${nSec}</b>${nSec > 1 ? ` (≈ ${Math.round(a / nSec)} mm cada una, máx. ${LAMAS_SECCION_MAX_MM} mm por sección)` : ''} · operador por sección</div>`);
+            const secManual = (parseInt(state.lama_secciones) || 0) > 0, secAncho = Math.round(a / nSec);
+            rows.push(`<div>Secciones: <b>${nSec}</b>${nSec > 1 ? ` (≈ ${secAncho} mm cada una)` : ''} · ${secManual ? 'elegidas a mano' : `automático: una por cada ${LAMAS_SECCION_MAX_MM} mm de ancho`} · operador por sección${secAncho > LAMAS_SECCION_MAX_MM ? ` <span style="color:#c0392b;">⚠ sección de ${secAncho} mm, por encima de los ${LAMAS_SECCION_MAX_MM} mm máx.</span>` : ''}</div>`);
             rows.push(`<div>Marco: <b>${state.color_perfil === 'negro' ? 'Negro' : 'Blanco'}</b> · Vidrio: <b>${LAMAS_VIDRIO_NOM[state.lama_vidrio] || 'Esmerilado (acid etched)'}</b>${state.mosquitera === 'con' ? ' · <b>Con mosquitera</b>' : ' · Sin mosquitera'}</div>`);
             rows.push(`<div style="color:#888; font-size:12px;">Medida de fabricación (la que se pasa al proveedor).</div>`);
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
@@ -3953,6 +3954,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const sel = (key, opts, cur, title, span) => `<select ${span ? 'style="grid-column: span 2;"' : ''} onchange="${fn}, '${key}', this.value)" title="${title}">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
             let out = sel('lama_pulg', Object.entries(LAMAS_PULG).map(([v, o]) => [v, o.nombre]), pulg, 'Ancho de la lama de vidrio');
             out += sel('lama_std', [['', 'Medida: a medida (escribe A × H)']].concat(lamasEstandar(pulg).map(e => [e.key, `Estándar ${e.in} (${e.ancho} × ${e.alto} mm)`])), stdKey, 'Medida estándar del catálogo (cambia A × H) o a medida', true);
+            const secAuto = lamasSeccionesAuto(state);
+            out += sel('lama_secciones', [['', `Secciones: automático (${secAuto} por el ancho)`]].concat([1, 2, 3, 4, 5, 6].map(n => [n, `Secciones: ${n}${n === secAuto ? ' (= automático)' : ''}`])), (parseInt(state.lama_secciones) || 0) > 0 ? String(state.lama_secciones) : '', `Cantidad de secciones (un operador cada una). Automático = una por cada ${LAMAS_SECCION_MAX_MM} mm de ancho como máximo`, true);
             out += sel('lama_vidrio', LAMAS_VIDRIOS.map(([v, l]) => [v, 'Vidrio: ' + l]), state.lama_vidrio || 'esmerilado', 'Tipo de vidrio de las lamas');
             out += sel('color_perfil', [['blanco', 'Marco: Blanco'], ['negro', 'Marco: Negro']], state.color_perfil === 'negro' ? 'negro' : 'blanco', 'Color del marco de aluminio (mismo precio)');
             out += sel('mosquitera', [['', 'Sin mosquitera'], ['con', 'Con mosquitera']], state.mosquitera || '', 'Mosquitera integrada por dentro');
@@ -4839,7 +4842,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // 'vidrio' y 'espesor' redibujan porque 'Láminas de Louver' cambia el panel (louverPanel) — bug real:
             // en la puerta suelta el select cambiaba el estado pero el dibujo seguía en vidrio (la fachada sí lo hacía).
             if (cardsState[id].categoria === 'plegable' && ['ancho', 'alto', 'pleg_esquema', 'tipo_aluminio'].includes(key)) refreshPlegHint(id);
-            if (['lama_pulg', 'lama_std', 'lama_vidrio', 'mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel', 'motor_lado'].includes(key)) {
+            if (['lama_pulg', 'lama_std', 'lama_vidrio', 'lama_secciones', 'mosq_tipo', 'mosq_tela', 'mosq_tela_color', 'mosq_hojas', 'mosq_fijacion', 'hoja_principal', 'pleg_esquema', 'pleg_apertura', 'anchoMarco', 'gal_tubo', 'vidrio', 'espesor', 'panos', 'union', 'bisagras', 'cerradura_tipo', 'cerradura_piso', 'cerr_luna', 'cerr_digital', 'cerr_piso', 'tirador', 'orientacion', 'ancho', 'alto', 'apertura', 'vista', 'color_perfil', 'color_vidrio', 'color_ral', 'gal_install', 'gal_sheetrock', 'cor_interior', 'mosquitera', 'herraje_color', 'color_manija', 'color_cortina', 'tela', 'mecanismo', 'instalacion_cortina', 'cajon', 'tipo_motor', 'instalacion_tipo', 'ondas_tipo', 'color_visillo', 'ondas_apertura', 'ondas_riel', 'motor_lado'].includes(key)) {
                 const container = document.getElementById('schematic-' + id);
                 if (container) container.innerHTML = renderSVG(id);
                 adaptDrawingToContent(id);
@@ -4848,7 +4851,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // para que no quede una "Mosquitera: Fija" fantasma en el resumen/PDF.
             if (key === 'vidrio' && cardsState[id].type === 'door_abat' && !esNoVidrio(value) && cardsState[id].mosquitera) cardsState[id].mosquitera = '';
             // 'apertura' también regenera: con 2 hojas aparece el select "Hoja principal" (y con 1 hoja se va).
-            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || (key === 'lama_pulg' && cardsState[id].categoria === 'lamas') || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
+            if (key === 'tipo_aluminio' || key === 'vidrio' || key === 'color_perfil' || key === 'fijacion' || key === 'color_cortina' || key === 'apertura' || key === 'mosq_tipo' || ((key === 'lama_pulg' || key === 'lama_secciones') && cardsState[id].categoria === 'lamas') || ((key === 'ancho' || key === 'alto') && cardsState[id].categoria === 'lamas') || key === 'ondas_tipo' || key === 'color_visillo' || (key === 'mecanismo' && cardsState[id].type === 'cort_ondas')) {
                 const card = document.getElementById('card-' + id);
                 if (card) {
                     const optionsContainer = card.querySelector('.config-options');
@@ -6128,7 +6131,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const e = lamasEstandar(lamasPulg(state)).find(x => Math.abs(x.ancho - a) <= 6 && Math.abs(x.alto - h) <= 6);
         return e ? e.key : '';
     }
-    function lamasSecciones(state) { return Math.max(1, Math.ceil((parseInt(state.ancho) || 0) / LAMAS_SECCION_MAX_MM)); }
+    // Secciones AUTOMÁTICAS = las mínimas para que ninguna pase de 914 mm (1735 → 2). El cliente puede querer otra
+    // cantidad (usuario 2026-10-20: "quiere 3 secciones y debo poder seleccionar") → `lama_secciones` 1..6 manda; '' = automático.
+    function lamasSeccionesAuto(state) { return Math.max(1, Math.ceil((parseInt(state.ancho) || 0) / LAMAS_SECCION_MAX_MM)); }
+    function lamasSecciones(state) { const m = parseInt(state && state.lama_secciones) || 0; return m > 0 ? m : lamasSeccionesAuto(state); }
     function lamasPie2(state) { return ((parseInt(state.ancho) || 0) * (parseInt(state.alto) || 0)) / 92903; }
     function lamasMmAIn(mm) { return inTxt(Math.round(mm / 25.4 * 4) / 4); }
     function renderLamas(state, uid) {

@@ -1238,8 +1238,12 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   **Las medidas son de FABRICACIÓN** (lo que se pasa al proveedor en mm; él las convierte a pulgadas).
   Catálogo: anchos 24/30/36" × altos lama 4" 21¾/29¾/37¾/45¾/53¾/57¾" · lama 3" 22¾/28¾/37¾/46¾/52¾/58¾"
   (`LAMAS_ANCHOS_IN`, `LAMAS_ALTOS_IN`, `inAMm`, `inTxt`).
-- **Secciones**: `lamasSecciones` = una cada 914 mm de ancho como máximo (`LAMAS_SECCION_MAX_MM`) — **SUPUESTO
-  propio** a confirmar con el proveedor (la foto del usuario tiene 3 secciones). `lamasPie2` = A × H / 92,903.
+- **Secciones**: `lamasSeccionesAuto` = las mínimas para que ninguna pase de 914 mm (`LAMAS_SECCION_MAX_MM`; 1735 → 2)
+  — **SUPUESTO propio** a confirmar con el proveedor. **Selector manual (usuario 2026-10-20, "el cliente quiere 3 y
+  debo poder seleccionar")**: `state.lama_secciones` `''` (automático, el select dice "automático (2 por el ancho)")
+  o 1..6; `lamasSecciones(state)` devuelve el manual si está puesto. Dibujo, resumen ("elegidas a mano" /
+  "automático: una por cada 914 mm", con ⚠ roja si una sección queda por encima de 914 mm) y partes lo usan.
+  `lamasPie2` = A × H / 92,903.
 - **Dibujo `renderLamas`** (caja `mosqLayout` 80×44 a proporción real; `applyFinish` con blanco/negro): marco
   perimetral con placeholders + contorno gris fijo `#5a6672` (con marco blanco el perfil sería invisible), montantes
   entre secciones, lamas con degradado por tipo de vidrio y canto inferior oscuro (vidrio girado), clips en los

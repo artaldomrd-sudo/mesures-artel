@@ -157,6 +157,8 @@ try {
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: mc, muro: { w: 6000, h: 3200, nc: 5, nr: 4, perfV: '6', perfH: '4' }, vidrio: 'templado', verPlanta: true, tubos: { entre: true, entreH: true, entreModo: 'suma', entreHModo: 'suma', medida: '100 x 45', incluidos: true } }); ok++;
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: mc, muro: { w: 6000, h: 3200, nc: 5, nr: 4 }, verPlanta: true, fajaArriba: { h: 400, celda: 'proy', alu: 'p40_ventana' }, tubos: { entre: true, entreModo: 'integrado' } }); ok++;
 } catch (e) { fail++; console.error('  muro de cortina 5x4:', e.message); }
+try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 1735, alto: 1150, lama_secciones: 3 }); ok++; } catch (e) { fail++; console.error('  lamas 3 secciones:', e.message); }
+try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 1735, alto: 1150, lama_secciones: 1 }); ok++; } catch (e) { fail++; console.error('  lamas 1 seccion:', e.message); }
 try { ctx.__render('card1', { type: 'win_lamas', categoria: 'lamas', ancho: 0, alto: 0 }); ok++; } catch (e) { fail++; console.error('  lamas sin medidas:', e.message); }
 // Plegables (acordeón): los 6 esquemas del fabricante × pliega izq/der × hacia afuera/adentro, con y sin
 // paño adosado (faja de louvers arriba, como el plano V2 del usuario) y como celda de Fachada Compuesta.
