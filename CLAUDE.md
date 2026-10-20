@@ -1248,7 +1248,8 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   perimetral con placeholders + contorno gris fijo `#5a6672` (con marco blanco el perfil sería invisible), montantes
   entre secciones, lamas con degradado por tipo de vidrio y canto inferior oscuro (vidrio girado), clips en los
   extremos, palanca (operador) abajo a la derecha de cada sección, rect punteado si lleva mosquitera; nº de lamas =
-  alto libre ÷ (ancho de lama × 0.85). Cotas `dimLineH/V`; etiqueta "Security lamas 4" · 3 secciones · 9 lamas".
+  alto libre ÷ (ancho de lama × 0.85). Cotas `dimLineH/V` **con la medida en PULGADAS debajo de cada mm** (usuario 2026-10-20, "así lo ven de una
+  vez"; `lamasMmAIn`, redondeo a ¼": 1735 → 68¼"; solo en este ítem); etiqueta "Security lamas 4" · 3 secciones · 9 lamas".
 - **Resumen**: "VENTANA SECURITY LAMAS — A × H | Cant" + "Lama 4" · Medida estándar 24 × 21¾" (610 × 552 mm) / A
   medida (82 × 34¾" aprox.) · 19.70 pie²", secciones, marco, vidrio, mosquitera, nota de medida de fabricación.
   Partes de fábrica `PARTES_SETS.lamas`, etapas `STAGE_SETS.lamas` (`getStageSetKey('win_lamas')`).
