@@ -20,6 +20,14 @@ const norm = (s) => String(s || '')
 // clienteDocs: array de documentos de la colección `clientes` (con .nombre y .obras).
 // orderDataList: array de o.data() de la colección `orders`.
 // Devuelve Map<clienteNormalizado, { nombre: 'Casing original', obras: Map<obraNormalizada, 'Casing original'> }>
+// ¿El texto es una coordenada GPS o un enlace (Maps, http…) en vez de un nombre de obra? (Dylan 2026-10-20: «en nombre
+// de obra no se puedan poner coordenadas GPS»). Se bloquea al escribir una obra nueva y se filtra de las listas de obras.
+export function esGpsTexto(s) {
+    const t = String(s || '').trim();
+    if (!t) return false;
+    return /^(https?:\/\/|www\.)/i.test(t) || /maps\.app\.goo\.gl|google\.[a-z.]+\/maps|goo\.gl\/maps|share\.google|waze\.com/i.test(t)
+        || /^-?\d{1,2}(\.\d+)?\s*[,;]\s*-?\d{1,3}(\.\d+)?$/.test(t) || /^\d{1,2}°\s*\d/.test(t);
+}
 export function buildClientMap(orderDataList, clienteDocs) {
     const map = new Map();
     (clienteDocs || []).forEach(c => {
@@ -29,7 +37,7 @@ export function buildClientMap(orderDataList, clienteDocs) {
         entry.nombre = String(c.nombre).trim();
         Object.values(c.obras || {}).forEach(o => {
             const no = norm(o);
-            if (no && !entry.obras.has(no)) entry.obras.set(no, String(o).trim());
+            if (no && !esGpsTexto(o) && !entry.obras.has(no)) entry.obras.set(no, String(o).trim());
         });
         map.set(nc, entry);
     });
@@ -39,7 +47,7 @@ export function buildClientMap(orderDataList, clienteDocs) {
         if (!map.has(nc)) map.set(nc, { nombre: String(o.cliente).trim(), obras: new Map() });
         const entry = map.get(nc);
         const no = norm(o.obra);
-        if (no && !entry.obras.has(no)) entry.obras.set(no, String(o.obra).trim());
+        if (no && !esGpsTexto(o.obra) && !entry.obras.has(no)) entry.obras.set(no, String(o.obra).trim());
     });
     return map;
 }

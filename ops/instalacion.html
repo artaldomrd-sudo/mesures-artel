@@ -483,7 +483,7 @@
     import { enableNotifications } from './notifications.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
-    import { buildClientMap, clientList } from './clients.js';
+    import { esGpsTexto, buildClientMap, clientList } from './clients.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import { borrarConRegistro } from './papelera.js';
@@ -890,8 +890,9 @@
             ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>${o.descripcion ? `<br><b style="color:#333">${esc(o.descripcion)}</b>` : ''}`
             : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'instalador'); return false;">Ver hoja de fabricación</a>${o.fechaSalidaEstimada && ['en_fabrica', 'parcialmente_listo'].includes(o.status) ? ' · <span style="color:#1f6aa5">📅 fábrica estima salida ' + esc(o.fechaSalidaEstimada.slice(5).split('-').reverse().join('/')) + '</span>' : ''}`;
         // Compras directas vinculadas a este pedido (Compras → obra elegida de la lista de pedidos, Dylan 2026-10-20).
-        const comprasVinc = esCompra ? [] : ordersCache.filter(x => x.data && x.data.docType === 'COMPRA_DIRECTA' && x.data.pedidoVinculadoId === id);
-        const comprasVincHtml = comprasVinc.length ? `<div style="font-size:12px;color:#1f6aa5;margin-top:4px;">${comprasVinc.map(x => `🛒 Compra directa vinculada: <b>${esc(x.data.descripcion || x.data.proveedor || '')}</b> · ${x.data.entregado ? 'entregada' : (x.data.enRuta ? 'en ruta' : esc(ORDER_STATUS_LABEL[x.data.status] || x.data.status || ''))}`).join('<br>')}</div>` : '';
+        const comprasVinc = esCompra ? [] : ordersCache.filter(x => x.data && x.data.docType === 'COMPRA_DIRECTA' && (x.data.pedidoVinculadoId === id || (Array.isArray(x.data.repartos) && x.data.repartos.some(r => r.pedidoVinculadoId === id))));
+        const repDe = (x) => (Array.isArray(x.data.repartos) ? x.data.repartos.find(r => r.pedidoVinculadoId === id) : null);
+        const comprasVincHtml = comprasVinc.length ? `<div style="font-size:12px;color:#1f6aa5;margin-top:4px;">${comprasVinc.map(x => `🛒 Compra directa vinculada: <b>${esc(x.data.descripcion || x.data.proveedor || '')}</b>${repDe(x) && repDe(x).cantidad != null ? ` · para esta obra: ${esc(String(repDe(x).cantidad))}` : ''}${Array.isArray(x.data.repartos) && x.data.repartos.length ? ` (repartida entre ${x.data.repartos.length} obras)` : ''} · ${x.data.entregado ? 'entregada' : (x.data.enRuta ? 'en ruta' : esc(ORDER_STATUS_LABEL[x.data.status] || x.data.status || ''))}`).join('<br>')}</div>` : '';
         const vincATxt = esCompra && o.pedidoVinculadoId ? ` · 🔗 vinculada al pedido ${esc(o.pedidoVinculadoTipo || '')} ${esc(o.pedidoVinculadoObra || '')}` : '';
         let borde = '';
         if (yaParcialInst) borde = 'style="border-left-color:#e67e22;"';
@@ -1478,6 +1479,7 @@
         if ((tipo === 'preparacion_obra' || tipo === 'instalacion') && !trOrderId) { alert('Para este tipo elige la obra/pedido existente en la lista.'); return; }
         const cliente = document.getElementById('tr-cliente').value.trim();
         if (!cliente) { alert('Escribe el cliente.'); return; }
+        if (esGpsTexto(document.getElementById('tr-obra').value)) { alert('En «Obra / Ubicación» va el NOMBRE de la obra (ej. «Villa Aloha-1»), no coordenadas ni un enlace de Maps: eso va en la casilla GPS.'); return; }
         const fechaStr = document.getElementById('tr-fecha').value;
         const trEmails = Array.from(document.querySelectorAll('#tr-instaladores input:checked')).map(c => c.value);
         const trAsig = trEmails.length
@@ -1622,6 +1624,7 @@
     window.guardarJob = async function () {
         const cliente = document.getElementById('job-cliente').value.trim();
         if (!cliente) { alert('Escribe el cliente.'); return; }
+        if (esGpsTexto(document.getElementById('job-obra').value)) { alert('En «Obra / Proyecto» va el NOMBRE de la obra, no coordenadas ni un enlace de Maps: eso va en la casilla GPS.'); return; }
         const asigEmails = Array.from(document.querySelectorAll('#job-instaladores input:checked')).map(c => c.value);
         const asignados = asigEmails.map(em => { const u = instaladores.find(x => x.email === em); return { email: em, nombre: u ? u.nombre : '' }; });
         const gps = document.getElementById('job-gps').value.trim();

@@ -2966,6 +2966,16 @@ vinculadas («🛒 Compra directa vinculada: … · entregada/en ruta/estado») 
 «Eliminar» en Compras pasa ahora por `borrarConRegistro` (papelera con nombre; antes borraba sin rastro — caso Aloha 1 de
 ECO 83: la compra no existía en Firestore ni en la papelera). La página es solo admin: no se pudo probar con el espejo de
 Emerson, solo con el checker de sintaxis.
+**Compra para VARIAS obras (mismo día, captura «Lingotes para clientes Altea y Gabor»)**: botón «📦 Compra para varias obras
+(repartir)» (`toggleReparto`, filas `repFilas` cliente + obra (pedidos del cliente / otras obras) + cantidad, «Repartido: N de M
+artículos»); se guarda `repartos: [{cliente, obra, pedidoVinculadoId, pedidoVinculadoTipo, cantidad}]` + `multiObra:true`
+(cliente/obra principales = primera fila). Historial (`renderCarpetas`) mete la compra en la carpeta de CADA obra del reparto
+(`entradas`, `docs[].reparto`) y la tarjeta dice «📦 Compra repartida entre N obras»; Instalación la lista en la tarjeta de cada
+pedido vinculado con «para esta obra: N». **Un nombre de obra no puede ser GPS ni enlace** (`esGpsTexto` en `ops/clients.js`:
+http/www, maps.app.goo.gl, google…/maps, share.google, waze, «18.47, -69.89»): Compras (obra nueva) y los dos formularios de
+trabajo de Instalación lo bloquean con alerta, y `buildClientMap` lo filtra de las listas de obras. Datos corregidos 2026-10-20
+(`obraAnterior` guarda el enlace, que pasó a `gps`): compras de ALTEA (→ «Altea 11» repartida ALTEA/Altea 11 + GABOR/Anahata
+Villa 5, cantidades por poner), Sophie, Jean Pierre (vinculada a su cotización) y el trabajo de la tienda Woof Woof.
 
 ### Nómina: pedidos de la contable (2026-09-30)
 
