@@ -236,8 +236,10 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   `semifijo:'si'` + `semifijo_ancho` (mm; vacío = mitad): segunda hoja con bisagras en la jamba OPUESTA, que abre en el
   mismo sentido que la puerta y lleva **pestillos arriba y abajo en vez de manija**. Helpers junto a `manijaPrincipal`:
   `tieneSemifijo(cfg)` (solo con apertura de 1 hoja), `semifijoFrac(cfg, totalMm)` (fracción del ancho que ocupa la
-  PUERTA, acotada 0.15–0.85) y `semifijoSymbol(x, y, w, h, frac, puertaIzq, dash)` (montante en la unión, chevrones de
-  las dos hojas con vértice en la unión, manija en la puerta y 2 pestillos en el semi-fijo). Tarjeta suelta: base con la
+  PUERTA, acotada 0.15–0.85) y `semifijoSymbol(x, y, w, h, frac, puertaIzq, dash, kmm)`: **marco de aluminio por hoja** (banda `evenodd` de
+  ≈ 50 mm a escala con placeholder `#0A3D62` → doble montante en la unión; usuario 2026-10-20 con captura: "parece una
+  puerta solo de vidrio"), chevrones de las dos hojas con vértice en la unión, manija en la puerta y 2 **pestillos tipo
+  pasador** en el semi-fijo (varilla vertical que entra en el cabezal / umbral + pomo horizontal; "parecían conectores"). Tarjeta suelta: base con la
   puerta a la izquierda (el espejo `orientacion 'D'` la pasa a la derecha), select "Sin / Con semi-fijo" + input de ancho
   (ambos regeneran el menú), planta = `drawPlanView(..., split)` con la apertura pasada a `_2` → `planViewAbatible`
   admite `opts.split` (fracción de la hoja izquierda; radios distintos por hoja); resumen "Semi-fijo al lado de la

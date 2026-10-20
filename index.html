@@ -578,7 +578,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 16:50</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-20 17:23</div>
         </div>
     </div>
     
@@ -7064,19 +7064,29 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     }
     // Símbolo: puerta (bisagra en la jamba `puertaIzq` ? izquierda : derecha) + semi-fijo con bisagra en la jamba opuesta,
     // montante en la unión, manija en la puerta y 2 pestillos en el semi-fijo (junto a la unión, arriba y abajo).
-    function semifijoSymbol(x, y, w, h, frac, puertaIzq, dash) {
-        const dw = w * frac, mx = puertaIzq ? x + dw : x + w - dw;   // x del montante (unión puerta/semi-fijo)
+    function semifijoSymbol(x, y, w, h, frac, puertaIzq, dash, kmm) {
+        const dw = w * frac, mx = puertaIzq ? x + dw : x + w - dw;   // x de la unión puerta/semi-fijo
         const f = n => (+n).toFixed(1), d = dash ? ` stroke-dasharray="3 2"` : '';
-        let o = `<line x1="${f(mx)}" y1="${f(y)}" x2="${f(mx)}" y2="${f(y + h)}"/>`;
+        // MARCO DE ALUMINIO por hoja (usuario 2026-10-20, "parece una puerta solo de vidrio"): banda del perfil
+        // (≈ 50 mm a escala, placeholder que pinta applyFinish) alrededor de cada hoja → en la unión se ven los dos montantes.
+        const t = kmm ? Math.max(1.2, Math.min(50 * kmm, h * 0.07)) : Math.max(1.2, Math.min(w, h) * 0.05);
+        const band = (bx0, by0, bw0, bh0) => `<path fill-rule="evenodd" d="M${f(bx0)} ${f(by0)}h${f(bw0)}v${f(bh0)}h${f(-bw0)}Z M${f(bx0 + t)} ${f(by0 + t)}h${f(bw0 - 2 * t)}v${f(bh0 - 2 * t)}h${f(-(bw0 - 2 * t))}Z" fill="#0A3D62" stroke="#0d3f5f" stroke-width="0.4" stroke-dasharray="none"/>`;
+        const xp = puertaIzq ? x : mx, xs = puertaIzq ? mx : x;   // x de la puerta y del semi-fijo
+        let o = band(xp, y, dw, h) + band(xs, y, w - dw, h);
+        // chevrones: vértice en la unión, bisagra de la puerta en una jamba y la del semi-fijo en la opuesta
         if (puertaIzq) o += `<path d="M${f(x)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x)} ${f(y + h)} M${f(x + w)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x + w)} ${f(y + h)}" fill="none"${d}/>`;
         else o += `<path d="M${f(x + w)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x + w)} ${f(y + h)} M${f(x)} ${f(y)}L${f(mx)} ${f(y + h / 2)}L${f(x)} ${f(y + h)}" fill="none"${d}/>`;
-        // manija en la puerta, pegada al montante
-        const mw = Math.max(1.1, Math.min(w, h) * 0.035), mh = Math.min(h * 0.16, 9), gap = Math.min(w * 0.06, 3.5);
+        // manija en la puerta, pegada al montante de la unión (sobre el vidrio, junto al marco)
+        const mw = Math.max(1.1, Math.min(w, h) * 0.035), mh = Math.min(h * 0.16, 9), gap = t + Math.min(w * 0.03, 1.5);
         const manX = puertaIzq ? mx - gap - mw : mx + gap;
         o += `<rect x="${f(manX)}" y="${f(y + h / 2 - mh / 2)}" width="${f(mw)}" height="${f(mh)}" rx="${f(mw / 2)}" fill="#111" stroke="none"/>`;
-        // pestillos del semi-fijo: barras verticales junto al montante, arriba y abajo
-        const pw = Math.max(0.9, mw * 0.8), ph = Math.min(h * 0.12, 6), pesX = puertaIzq ? mx + gap * 0.6 : mx - gap * 0.6 - pw;
-        o += `<rect x="${f(pesX)}" y="${f(y + h * 0.04)}" width="${f(pw)}" height="${f(ph)}" rx="${f(pw / 2)}" fill="#111" stroke="none"/><rect x="${f(pesX)}" y="${f(y + h * 0.96 - ph)}" width="${f(pw)}" height="${f(ph)}" rx="${f(pw / 2)}" fill="#111" stroke="none"/>`;
+        // PESTILLOS del semi-fijo (pasadores): varilla vertical que entra en el marco de arriba / de abajo + pomo
+        // horizontal hacia el centro de la hoja (usuario: "que se entienda que son pestillos, parecen conectores").
+        const pw = Math.max(1, mw * 0.85), ph = Math.min(h * 0.15, 10), rodX = puertaIzq ? mx + gap : mx - gap - pw;
+        const knobW = pw * 2.4, knobH = Math.max(1, pw * 1.1), knobX = puertaIzq ? rodX + pw : rodX - knobW;
+        const pest = (ry, knobY) => `<rect x="${f(rodX)}" y="${f(ry)}" width="${f(pw)}" height="${f(ph)}" fill="#111" stroke="none"/><rect x="${f(knobX)}" y="${f(knobY)}" width="${f(knobW)}" height="${f(knobH)}" rx="${f(knobH / 2)}" fill="#111" stroke="none"/>`;
+        o += pest(y + t * 0.3, y + t * 0.3 + ph - knobH);            // arriba: la varilla entra en el cabezal, el pomo abajo
+        o += pest(y + h - t * 0.3 - ph, y + h - t * 0.3 - ph);        // abajo: la varilla entra en el umbral, el pomo arriba
         return o;
     }
     function manijaPrincipal(x, y, w, h, principalDer, flipped) {
@@ -7183,7 +7193,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 s += manijaPrincipal(ix, iy, iw, ih, (cfg.hoja_principal || 'der') === 'der', false);   // manija en la hoja principal
             } else if (celda === 'puerta' && tieneSemifijo(cfg)) {
                 // puerta de 1 hoja + SEMI-FIJO: la puerta abre al lado `lado` (vértice hacia ahí = bisagra en la otra jamba)
-                s += `<g stroke="${marca}" stroke-width="1">${semifijoSymbol(ix, iy, iw, ih, semifijoFrac(cfg, cfg.w), cfg.lado !== 'izq', ap.startsWith('adentro'))}</g>`;
+                s += `<g stroke="${marca}" stroke-width="1">${semifijoSymbol(ix, iy, iw, ih, semifijoFrac(cfg, cfg.w), cfg.lado !== 'izq', ap.startsWith('adentro'), (parseInt(cfg.w) || 0) > 0 ? iw / parseInt(cfg.w) : 0)}</g>`;
             } else if (cfg.lado === 'izq') {
                 // 1 hoja, vértice a la IZQUIERDA (abre a la izquierda)
                 s += `<path d="M${(ix + iw).toFixed(1)} ${iy.toFixed(1)}l${(-iw).toFixed(1)} ${(ih / 2).toFixed(1)}l${iw.toFixed(1)} ${(ih / 2).toFixed(1)}" fill="none" stroke="${marca}" stroke-width="1"${dash}/>`;
@@ -9493,7 +9503,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 } else if (tieneSemifijo(state)) {
                     // puerta (bisagra a la izquierda en la base; el espejo 'D' la pasa a la derecha) + semi-fijo con pestillos
                     const fr = semifijoFrac(state, state.ancho);
-                    drawing += semifijoSymbol(bx, by, bw, bh, fr, true, false);
+                    drawing += semifijoSymbol(bx, by, bw, bh, fr, true, false, (parseInt(state.ancho) || 0) > 0 ? bw / parseInt(state.ancho) : 0);
                 } else {
                     drawing += `<path d="M${bx} ${by}l${bw} ${bh / 2}l${-bw} ${bh / 2}"/>`;
                 }
