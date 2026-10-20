@@ -2369,7 +2369,13 @@ exports.anticipoPedido = onRequest({ cors: true, timeoutSeconds: 60 }, async (re
         if (accion === 'asignar') {   // anticipo de Citrus (anticiposCitrus/{registroId}) → pedido elegido en el Panel
             const reg = await db.doc('anticiposCitrus/' + String(b.registroId)).get();
             if (!reg.exists) throw new Error('No existe el registro del anticipo');
-            const a = reg.data(); if (!['pendiente', 'ignorado', 'historico'].includes(a.estado)) throw new Error('Ese anticipo ya está ' + a.estado);
+            const a = reg.data();
+            if (!['pendiente', 'ignorado', 'historico'].includes(a.estado)) {   // Dylan 2026-10-20: «¿qué significa "ya está manual"?» → decir a qué obra, quién y cómo cambiarlo
+                const cuando = a.asignadoFecha && a.asignadoFecha.toDate ? a.asignadoFecha.toDate().toLocaleString('es-DO', { timeZone: 'America/Santo_Domingo', dateStyle: 'short', timeStyle: 'short' }) : '';
+                if (a.estado === 'manual' || a.estado === 'aplicado') throw new Error(`Ese anticipo YA está asignado a «${a.obra || a.orderId || '?'}»${a.asignadoPor ? ' por ' + a.asignadoPor : (a.regla ? ' (automático, regla ' + a.regla + ')' : '')}${cuando ? ' el ' + cuando : ''}. La tarjeta debería haber desaparecido: recarga el Panel. Para cambiarlo, quítalo desde el pedido (Historial o Cotizaciones → Anticipo → quitar) y vuelve a asignarlo.`);
+                if (a.estado === 'anulado') throw new Error('Ese anticipo está ANULADO en Citrus; no se puede asignar.');
+                throw new Error('Ese anticipo ya está ' + a.estado);
+            }
             const mCot = String(a.descripcion || '').match(/cot[a-z]*\.?\s*#?\s*n?[oº]?\.?\s*(\d{2,})/i);
             // Un anticipo puede REPARTIRSE entre varios pedidos (Anny 2026-10-14: «los 300,000 corresponden a un avance sobre las ventanas Y
             // barandas»): `repartos: [{orderId, monto}]` cuya suma debe ser el monto del anticipo; sin repartos, todo a `orderId`.
@@ -2434,6 +2440,7 @@ async function aplicarAnticiposCitrus(ctx, quien) {
     const fichas = fichasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const fichaPorCitrusId = new Map(); fichas.forEach((f) => { if (f.citrusId != null) fichaPorCitrusId.set(Number(f.citrusId), f); });
     const pedidos = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType !== 'COMPRA_DIRECTA' && !(String(o.docType || '').indexOf('COT') === 0 && o.enviadaAFabrica));
+    const comprasTodas = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType === 'COMPRA_DIRECTA').concat(cerrados.filter((o) => o.docType === 'COMPRA_DIRECTA'));
     const registro = new Map(regSnap.docs.map((d) => [d.id, d.data()]));
     const nombresFicha = (f) => [f.nombre, f.nombreFacturacion, ...(Array.isArray(f.alias) ? f.alias : [])].map(normNombre).filter(Boolean);
     const fechaDe = (t) => (t && t.toDate) ? t.toDate().toISOString().slice(0, 10) : '';
@@ -2499,6 +2506,12 @@ async function aplicarAnticiposCitrus(ctx, quien) {
             const cerr = cerrados.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente)) || pedidoAproximaFicha(o, nombresCrudos));
             candidatos = cerr.filter((o) => o.docType !== 'COMPRA_DIRECTA').map((o) => candDe(o, { fechaPedido: fechaDe(o.fechaInstalado || o.fechaEntregado || o.fechaCotizado || o.fechaCreacion), aproximado: !(o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))), cerradoSi: true }));   // sin compras directas: un anticipo del cliente nunca va a una compra a proveedor
         }
+        // Compras directas del cliente (abiertas, o cerradas en los últimos 90 días) también se ofrecen como candidatas — NUNCA se
+        // aplican solas (Dylan 2026-10-20: Dinorah pagó 124,000 de la cotización 546 hecha en Citrus; en el Panel solo tiene 2
+        // compras directas y no había dónde asignarlo).
+        const esDeFicha = (o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente)) || pedidoAproximaFicha(o, nombresCrudos);
+        const compras = comprasTodas.filter((o) => esDeFicha(o) && !candidatos.some((c) => c.orderId === o.id));
+        candidatos = candidatos.concat(compras.map((o) => candDe(o, { fechaPedido: fechaDe(o.fechaEntregado || o.fechaListoParaCargar || o.fechaCompra), aproximado: !(o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente))), compra: true })));
         if (elegido) {
             // Varios anticipos por obra son normales («primera parte 70 %», «segunda parte»): se acumulan en `anticipos[]` y
             // `anticipo` (lo que leen las pantallas y el Coordinador) lleva el TOTAL recibido. B2(b): la escritura es una transacción
