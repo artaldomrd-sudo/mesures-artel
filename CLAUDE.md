@@ -3069,6 +3069,19 @@ libre); el resto son cursos con avance/examen. Buscador de dudas (busca en títu
 comportamiento de una pantalla, actualizar su guía** (desde la Academia como capacitador, o re-corriendo el script
 `guias.py` de la sesión con el texto nuevo).
 
+### Fichas ilustradas de producto (`ops/fichas/`, 2026-10-21)
+
+Dylan: «cuando pido fotos de ilustración es para que quede similar a la ficha técnica del fabricante, una hoja intuitiva y
+bonita». La Academia muestra las lecciones como texto plano con miniaturas al pie, así que las fichas de producto viven como
+páginas propias: `ops/fichas/security-lamas.html` (primera; plantilla para shutters, mosquiteras, plegables…): cabecera azul
+con logo e ilustración, chips de especificaciones, bloques numerados con la imagen junto al texto, tablas, pasos numerados,
+listas ✓/✕, cadena de funcionamiento; responsive y lista para imprimir a PDF. Las imágenes son recortes de los esquemas de la
+ficha del fabricante (sin logo ni contacto; fuente citada como FT-FV-01) subidos a Storage `academiaLecciones/guia-security-
+lamas-NN/` con token de descarga (subida por REST con la credencial de firebase-tools: el PATCH de
+`firebaseStorageDownloadTokens` no está permitido, pero la respuesta del upload ya trae `downloadTokens`). La guía
+`guia-security-lamas` (categoría «Guías · Productos», 5 lecciones) enlaza la ficha como adjunto tipo «pdf» en la lección 1 (así
+`fotosThumbsHTML` pinta una tarjeta 📄 clicable) y el comunicado del 2026-10-21 apunta a la guía.
+
 ### Notificaciones y badges
 
 - Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada
