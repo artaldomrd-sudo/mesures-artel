@@ -644,9 +644,20 @@ exports.arqueoTarde = onSchedule({ schedule: '55 16 * * 1-6', timeZone: 'America
 // (calendario.html) cuando se marca la ocurrencia actual como hecha. Frecuencias: diario/semanal/
 // mensual/anual × "cada N". El fin puede ser: nunca / N meses / hasta una fecha / N veces.
 const REP_FRECS = ['diario', 'semanal', 'mensual', 'anual'];
-function addPeriodo(base, repetir, cada) {
+// Semanal por días (`repetirDias`, 0 = domingo … 6 = sábado; calendario.html tiene la misma función): el próximo día marcado
+// después de la fecha, y al agotar la semana salta «cada N» semanas. El día de la semana se calcula en hora de RD, no UTC.
+function nextDiaSemana(base, dias, cada) {
+    const d = new Date(base); const dow = new Date(d.toLocaleString('en-US', { timeZone: 'America/Santo_Domingo' })).getDay();
+    const sorted = [...new Set(dias.map(Number))].filter((x) => x >= 0 && x <= 6).sort((a, b) => a - b);
+    if (!sorted.length) { d.setDate(d.getDate() + 7 * cada); return d; }
+    const later = sorted.filter((x) => x > dow);
+    if (later.length) { d.setDate(d.getDate() + (later[0] - dow)); return d; }
+    d.setDate(d.getDate() + (7 - dow + sorted[0]) + 7 * (cada - 1)); return d;
+}
+function addPeriodo(base, repetir, cada, dias) {
     const d = new Date(base); const n = Math.max(1, Number(cada) || 1);
     if (repetir === 'diario') d.setDate(d.getDate() + n);
+    else if (repetir === 'semanal' && Array.isArray(dias) && dias.length) return nextDiaSemana(base, dias, n);
     else if (repetir === 'semanal') d.setDate(d.getDate() + 7 * n);
     else if (repetir === 'mensual') d.setMonth(d.getMonth() + n);
     else if (repetir === 'anual') d.setFullYear(d.getFullYear() + n);
@@ -676,7 +687,7 @@ async function procesarRecurrencias() {
         if (fechaMs == null || ahora < fechaMs) continue;   // aún no pasa la fecha de esta ocurrencia
         const base = c.fecha.toDate();
         const cada = Math.max(1, Number(c.repetirCada) || 1);
-        const next = addPeriodo(base, c.repetir, cada);
+        const next = addPeriodo(base, c.repetir, cada, c.repetirDias);
         const nextCount = (Number(c.repetirCount) || 1) + 1;
         await docu.ref.update({ repetirGenerado: true });   // marca antes de crear (evita duplicados)
         if (!debeSeguirRepitiendo(c, next, nextCount)) continue;   // fin de la serie
@@ -689,7 +700,7 @@ async function procesarRecurrencias() {
             completadoPor: [], completada: false, creadoPorNombre: c.creadoPorNombre || '',
             recordatorios: c.recordatorios || [], recordatoriosEnviados: [],
             recordatoriosPendientes: (c.recordatorios || []).length > 0,
-            repetir: c.repetir, repetirCada: cada, repetirModo: 'auto',
+            repetir: c.repetir, repetirCada: cada, repetirModo: 'auto', repetirDias: Array.isArray(c.repetirDias) ? c.repetirDias : null,
             repetirFin: c.repetirFin || 'nunca', repetirFinValor: (c.repetirFinValor != null ? c.repetirFinValor : null),
             repetirInicio: c.repetirInicio || base.toISOString(),
             repetirCount: nextCount, repetirGenerado: false, fechaCreacion: FieldValue.serverTimestamp()

@@ -3124,6 +3124,12 @@ lamas-NN/` con token de descarga (subida por REST con la credencial de firebase-
   siempre pudo crear una Cita O un Recordatorio (toggle `tipoEvento`) — "cita" era impreciso.
   Nombres internos (`window.abrirNuevaCita`, `guardarCita`, ids `cita-*`, colección Firestore
   `citas`) NO se tocaron, solo el texto visible.
+- **Semanal por DÍAS (2026-10-21, Dylan: «lunes y martes debo chequear el correo… al marcar hecho el lunes que se ponga al
+  próximo»)**: con «Cada semana» aparece la fila «¿Qué días de la semana?» (casillas Lun…Dom → `repetirDias` [0=dom…6=sáb];
+  marcar un día pasa el modo a «Al marcarlo hecho» si estaba en automático). `nextDiaSemana(base, dias, cada)` (calendario.html
+  y functions/index.js, idéntica; en el servidor el día se calcula en hora RD) da el próximo día marcado después de la fecha y,
+  agotada la semana, salta «cada N» semanas al primero. `addPeriodo` recibe `dias`; `rollRecurrente`/`procesarRecurrencias`
+  copian `repetirDias` a la ocurrencia nueva. Sin días marcados = mismo día de la semana, como antes.
 - **Recordatorio "A la hora"** (`value="0"` en `#cita-recordar`, primero de la lista): exige un
   ajuste en la Cloud Function `enviarRecordatorios` (`functions/index.js`,
   `procesarRecordatoriosMulti`) — corre cada 5 minutos, y el filtro `ahora <= fecha` original

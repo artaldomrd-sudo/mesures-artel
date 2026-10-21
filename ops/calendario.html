@@ -194,6 +194,13 @@
                 <input type="number" id="cita-repetir-cada" min="1" value="1" style="width:90px;">
                 <span id="repetir-unidad" style="font-size:13px;color:#556;">día(s)</span>
             </div>
+            <div id="repetir-dias" style="display:none;">
+                <label>¿Qué días de la semana?</label>
+                <div class="personas-group" id="repetir-dias-chk" style="display:flex;flex-wrap:wrap;gap:6px 10px;" onchange="if (document.getElementById('cita-repetir-modo').value === 'auto') document.getElementById('cita-repetir-modo').value = 'completar';">
+                    <label><input type="checkbox" value="1"> Lun</label><label><input type="checkbox" value="2"> Mar</label><label><input type="checkbox" value="3"> Mié</label><label><input type="checkbox" value="4"> Jue</label><label><input type="checkbox" value="5"> Vie</label><label><input type="checkbox" value="6"> Sáb</label><label><input type="checkbox" value="0"> Dom</label>
+                </div>
+                <p style="font-size:12px;color:#666;margin:6px 0 0;">Ej.: lunes y martes → al marcar hecho el lunes aparece el martes; al marcar el martes, el lunes siguiente. Si no marcas ninguno, se repite el mismo día de la semana de la fecha.</p>
+            </div>
             <label>¿Cómo se repite?</label>
             <select id="cita-repetir-modo">
                 <option value="auto">Automático — avisa solo en cada fecha</option>
@@ -546,9 +553,20 @@
     // calendario; esto es el respaldo del lado del cliente. Set local para evitar dobles.
     const REP_FRECS = ['diario', 'semanal', 'mensual', 'anual'];
     const rolling = new Set();
-    function addPeriodo(base, repetir, cada) {
+    // Semanal por DÍAS (Dylan 2026-10-21: «lunes y martes debo chequear el correo… que cuando marque hecho el lunes se ponga al
+    // próximo»): `repetirDias` = días de la semana (0 = domingo … 6 = sábado). La siguiente ocurrencia es el próximo día marcado
+    // después de la fecha actual; al agotar la semana salta «cada N» semanas al primer día marcado.
+    function nextDiaSemana(base, dias, cada) {
+        const d = new Date(base); const dow = d.getDay(); const sorted = [...new Set(dias.map(Number))].filter(x => x >= 0 && x <= 6).sort((a, b) => a - b);
+        if (!sorted.length) { d.setDate(d.getDate() + 7 * cada); return d; }
+        const later = sorted.filter(x => x > dow);
+        if (later.length) { d.setDate(d.getDate() + (later[0] - dow)); return d; }
+        d.setDate(d.getDate() + (7 - dow + sorted[0]) + 7 * (cada - 1)); return d;
+    }
+    function addPeriodo(base, repetir, cada, dias) {
         const d = new Date(base); const n = Math.max(1, Number(cada) || 1);
         if (repetir === 'diario') d.setDate(d.getDate() + n);
+        else if (repetir === 'semanal' && Array.isArray(dias) && dias.length) return nextDiaSemana(base, dias, n);
         else if (repetir === 'semanal') d.setDate(d.getDate() + 7 * n);
         else if (repetir === 'mensual') d.setMonth(d.getMonth() + n);
         else if (repetir === 'anual') d.setFullYear(d.getFullYear() + n);
@@ -573,7 +591,7 @@
             await updateDoc(doc(db, 'citas', c.id), { repetirGenerado: true });
             const base = (c.fecha && c.fecha.toDate) ? c.fecha.toDate() : new Date();
             const cada = Math.max(1, Number(c.repetirCada) || 1);
-            const next = addPeriodo(base, c.repetir, cada);
+            const next = addPeriodo(base, c.repetir, cada, c.repetirDias);
             const nextCount = (Number(c.repetirCount) || 1) + 1;
             if (!debeSeguirRepitiendo(c, next, nextCount)) return;   // llegó al fin de la serie
             await addDoc(collection(db, 'citas'), {
@@ -585,7 +603,7 @@
                 completadoPor: [], completada: false, creadoPorNombre: c.creadoPorNombre || '',
                 recordatorios: c.recordatorios || [], recordatoriosEnviados: [],
                 recordatoriosPendientes: (c.recordatorios || []).length > 0,
-                repetir: c.repetir, repetirCada: cada, repetirModo: repModo(c),
+                repetir: c.repetir, repetirCada: cada, repetirModo: repModo(c), repetirDias: Array.isArray(c.repetirDias) ? c.repetirDias : null,
                 repetirFin: c.repetirFin || 'nunca', repetirFinValor: (c.repetirFinValor != null ? c.repetirFinValor : null),
                 repetirInicio: c.repetirInicio || base.toISOString(),
                 repetirCount: nextCount, repetirGenerado: false, fechaCreacion: serverTimestamp()
@@ -667,6 +685,7 @@
         document.getElementById('repetir-detalle').style.display = v === 'no' ? 'none' : 'block';
         const u = { diario: 'día(s)', semanal: 'semana(s)', mensual: 'mes(es)', anual: 'año(s)' }[v] || '';
         const el = document.getElementById('repetir-unidad'); if (el) el.textContent = u;
+        document.getElementById('repetir-dias').style.display = v === 'semanal' ? 'block' : 'none';
     };
     window.toggleRepetirFin = function () {
         const v = document.getElementById('cita-repetir-fin').value;
@@ -688,6 +707,7 @@
         document.getElementById('cita-repetir-meses').value = '3';
         document.getElementById('cita-repetir-veces').value = '10';
         document.getElementById('cita-repetir-fechatope').value = '';
+        document.querySelectorAll('#repetir-dias-chk input').forEach(c => c.checked = false);
         toggleRepetir(); toggleRepetirFin();
         document.querySelectorAll('#cita-recordar input:checked').forEach(c => c.checked = false);
         document.querySelectorAll('#cita-gerencia input:checked, #cita-instalador input:checked').forEach(c => c.checked = false);
@@ -838,7 +858,8 @@
             if (fin === 'meses') finValor = Math.max(1, Number(document.getElementById('cita-repetir-meses').value) || 1);
             else if (fin === 'veces') finValor = Math.max(1, Number(document.getElementById('cita-repetir-veces').value) || 1);
             else if (fin === 'fecha') finValor = document.getElementById('cita-repetir-fechatope').value || null;
-            repCfg = { repetir: repetirVal, repetirCada: cada, repetirModo: modo, repetirFin: fin, repetirFinValor: finValor, repetirGenerado: false };
+            const dias = repetirVal === 'semanal' ? Array.from(document.querySelectorAll('#repetir-dias-chk input:checked')).map(c => Number(c.value)) : [];
+            repCfg = { repetir: repetirVal, repetirCada: cada, repetirModo: modo, repetirFin: fin, repetirFinValor: finValor, repetirGenerado: false, repetirDias: dias.length ? dias : null };
             // El inicio y el contador solo se fijan al CREAR — al editar una serie en curso no se resetean.
             if (!editingId) { repCfg.repetirInicio = new Date(fechaStr).toISOString(); repCfg.repetirCount = 1; }
         }
@@ -1018,6 +1039,8 @@
             if (c.repetirFin === 'meses') document.getElementById('cita-repetir-meses').value = String(c.repetirFinValor || 3);
             else if (c.repetirFin === 'veces') document.getElementById('cita-repetir-veces').value = String(c.repetirFinValor || 10);
             else if (c.repetirFin === 'fecha') document.getElementById('cita-repetir-fechatope').value = c.repetirFinValor || '';
+            const dias = Array.isArray(c.repetirDias) ? c.repetirDias.map(Number) : [];
+            document.querySelectorAll('#repetir-dias-chk input').forEach(ch => ch.checked = dias.includes(Number(ch.value)));
         }
         toggleRepetir(); toggleRepetirFin();
         // Ligada a pedido o libre
