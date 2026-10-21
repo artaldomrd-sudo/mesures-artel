@@ -1273,8 +1273,9 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   esmerilado, Blue Green = evergreen, Acid Etched negro — el negro es por encargo, 60 días, aviso en el resumen); aviso
   ámbar si el alto supera el estándar máximo (`LAMAS_ALTO_STD_MAX_IN`) y rojo si una sección pasa de 914 mm; la holgura de
   hueco de la ficha (marco + 6 / + 5 mm) NO se muestra (usuario: "yo ya pongo el descuento"); **tornillos** #12 × 3" inox
-  de la ficha (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por sección, 2+2 si alto < 959) con el total en el
-  resumen. Elegir una estándar regenera el menú (`lama_std` en la lista de claves que regeneran opciones). Un primer
+  de la ficha (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por sección, 2+2 si alto < 959) — calculados pero
+  **NO impresos** (usuario 2026-10-21: la hoja se envía al cliente; los tornillos, la nota "Forti convierte a pulgadas" y
+  la justificación del nº de operadores son datos internos que van en la Academia). Elegir una estándar regenera el menú (`lama_std` en la lista de claves que regeneran opciones). Un primer
   intento del mismo día usó los modelos A–D de la ficha (hoja de 762) y se revirtió al llegar las respuestas de Forti.
   **Precios de Forti en US$/pie² (doc 2026-10-20)**: viven en el Panel (`ops/calculador-precio-venta.html`, área sistema) —
   ver memoria `artal-ventanas-security-lamas`.
