@@ -255,6 +255,20 @@ un sandbox sin `window`/`setInterval`/`Date.now`: todo llamado top-level a esas 
   s-fijo" (`cellCfgFull('semifijo')`), `gridCell` usa el mismo símbolo con la puerta del lado contrario a `lado`,
   `gridColPlan` pasa `split` según `lado`, y `specList` agrega "+ semi-fijo de 450 mm (puerta 1050 mm) · …".
   `verify.mjs`: suelta I/D × adentro/afuera × ancho dado/mitad + celda de fachada izq/der (RENDER OK: 292).
+- **Oscilobatiente de 2 hojas SIN montante central = 1 OB + 1 semi-fijo batiente (usuario 2026-10-21)**: la OB de 2 hojas
+  normal (`adentro_2`) lleva montante central y permite doble ventilación en modo oscilo; hay clientes que no quieren
+  perfil en el centro → `apertura: 'adentro_2sf'`: una hoja oscilobatiente (`hoja_principal` = lado de la OB, vista de
+  adentro) y la otra semi-fija SOLO batiente con pestillos arriba y abajo; abiertas las dos en batiente el hueco queda
+  libre. `obSemifijo(cfg)`, `obSemifijoSymbol(x,y,w,h,obIzq,frac,dash,kmm)` = `semifijoSymbol` (marco por hoja, chevrones,
+  manija en la OB, pestillos en la semi-fija) + triángulo de abatir sobre la hoja OB; ancho del semi-fijo = `semifijo_ancho`
+  (vacío = mitad, `semifijoFrac`). Tarjeta suelta: select "Hojas" con 3 opciones (1 hoja / 2 OB con montante / 2 sin
+  montante), "Hoja OB: Derecha/Izquierda" + ancho del semi-fijo; la OB se dibuja en base con `obIzq = (hp==='izq') !== isD`
+  (compensa el espejo 'D' como `manijaPrincipal`); planta = `drawPlanView` con apertura `adentro_2` y `split`. Fachada: celda
+  `osci` con la misma opción en "Hojas", filas "Hoja OB" y "Ancho s-fijo"; `gridCell` espeja (OB der. de adentro = izq. en la
+  vista exterior), `gridColPlan` pasa `split`. Resumen suelto: "Hojas: 2, sin montante central · Hoja oscilobatiente (manija):
+  Derecha, 900 mm · Hoja semi-fija solo batiente: Izquierda, 500 mm, pestillos arriba y abajo · Al abrir las dos en batiente el
+  hueco queda libre"; la de 2 OB dice ahora "montante central · doble ventilación en modo oscilo". `verify.mjs`: suelta I/D ×
+  lado × ancho + celda de fachada (RENDER OK: 302).
 - **Oscilobatiente de 2 hojas (2026-09-16, "solo interior")**: `win_ob` acepta `apertura`
   `'adentro_1'` (default) | `'adentro_2'` (select "Hojas"; nunca hacia afuera) y con 2 hojas el
   mismo `hoja_principal`/`manijaPrincipal`. Dibujo: montante central + chevron y triángulo de

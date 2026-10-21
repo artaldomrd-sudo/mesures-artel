@@ -109,6 +109,13 @@ for (const t of ['gal1', 'gal2_lat', 'gal2_cent', 'gal3_3v', 'gal4_2v', 'gal4_4v
   }
 }
 // Abisagradas de 2 hojas: hoja principal (manija) izq/der × orientación
+// Oscilobatiente 2 hojas SIN montante: 1 OB + 1 semi-fijo batiente (2026-10-21) — suelta I/D × lado OB × ancho dado/mitad, y celda de fachada
+for (const o of ['I', 'D']) for (const hp of ['der', 'izq']) for (const sfa of [0, 500]) {
+  try { ctx.__render('card1', { type: 'win_ob', categoria: 'ventana', ancho: 1400, alto: 1200, apertura: 'adentro_2sf', hoja_principal: hp, semifijo_ancho: sfa, orientacion: o, vista: 'adentro', vidrio: 'templado', espesor: '10mm' }); ok++; } catch (e) { fail++; console.error('  OB semifijo suelta', o, hp, sfa, e.message); }
+}
+for (const hp of ['der', 'izq']) {
+  try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', cols: [{ w: 1400, rows: [{ h: 1200, celda: 'osci', alu: 'p40_ventana', apertura: 'adentro_2sf', hoja_principal: hp, semifijo_ancho: 500 }] }, { w: 900, rows: [{ h: 1200, celda: 'pf', alu: 'p40_ventana' }] }], verPlanta: true, tubos: {} }); ok++; } catch (e) { fail++; console.error('  OB semifijo fachada', hp, e.message); }
+}
 // Puerta abisagrada + SEMI-FIJO (2026-10-20): suelta (ancho dado y mitad, I/D, adentro/afuera) y celda de fachada (lado izq/der)
 for (const o of ['I', 'D']) for (const ap of ['adentro_1', 'afuera_1']) for (const sfa of [0, 400]) {
   try { ctx.__render('card1', { type: 'door_abat', categoria: 'ventana', ancho: 1500, alto: 2200, apertura: ap, orientacion: o, semifijo: 'si', semifijo_ancho: sfa, vidrio: 'templado', espesor: '10mm' }); ok++; } catch (e) { fail++; console.error('  semifijo suelto', o, ap, sfa, e.message); }
