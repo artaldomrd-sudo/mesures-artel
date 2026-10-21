@@ -1275,7 +1275,9 @@ Botón "Ventana Security Lamas" en "Ventanas y Puertas". Bloque "VENTANAS SECURI
   hueco de la ficha (marco + 6 / + 5 mm) NO se muestra (usuario: "yo ya pongo el descuento"); **tornillos** #12 × 3" inox
   de la ficha (`lamasFijacion`: cabezal 2 · antepecho 2 · jambas 5+5 por sección, 2+2 si alto < 959) — calculados pero
   **NO impresos** (usuario 2026-10-21: la hoja se envía al cliente; los tornillos, la nota "Forti convierte a pulgadas" y
-  la justificación del nº de operadores son datos internos que van en la Academia). Elegir una estándar regenera el menú (`lama_std` en la lista de claves que regeneran opciones). Un primer
+  la justificación del nº de operadores y la nota "automático: ninguna sección por encima de 36" / elegidas a mano"
+  son datos internos que van en la Academia; la línea de secciones queda "Secciones: 3 (≈ 578 mm · 22¾" cada una,
+  unidas con jamba macho/hembra)" y solo conserva el aviso rojo si una sección pasa de 914 mm). Elegir una estándar regenera el menú (`lama_std` en la lista de claves que regeneran opciones). Un primer
   intento del mismo día usó los modelos A–D de la ficha (hoja de 762) y se revirtió al llegar las respuestas de Forti.
   **Precios de Forti en US$/pie² (doc 2026-10-20)**: viven en el Panel (`ops/calculador-precio-venta.html`, área sistema) —
   ver memoria `artal-ventanas-security-lamas`.
