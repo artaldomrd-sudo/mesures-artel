@@ -2324,9 +2324,17 @@ function anticipoDesdeLista(lista, extra) {
     const total = r2(l.reduce((t, a) => t + (Number(a.monto) || 0), 0));
     const ult = l[l.length - 1];
     const ids = l.map((a) => a.citrusAnticipoId).filter(Boolean);
+    // Pago completo (Dylan 2026-10-27): una entrada manual con tipo 'completo' (factura al contado de Citrus, no un anticipo) hace
+    // que el pedido quede «Pagado completo»; `tipo` ausente = anticipo, así todo lo que lee `anticipo.recibido` sigue igual.
+    const completos = l.filter((a) => a.tipo === 'completo'); const ultC = completos[completos.length - 1] || null;
+    const lineaDe = (a) => a.tipo === 'completo'
+        ? `${a.fecha || '¿fecha?'}: Pago completo${a.formaPago ? ' · ' + a.formaPago : ''}${a.facturaCitrus ? ' · fact. ' + a.facturaCitrus : ''}${Number(a.monto) ? ' · ' + (a.moneda || 'RD$') + ' ' + Number(a.monto).toLocaleString('es-DO') : ' · incluido en la factura'}${a.nota ? ' — ' + a.nota : ''}`
+        : `${a.fecha || '¿fecha?'}: RD$ ${Number(a.monto || 0).toLocaleString('es-DO')} — ${a.nota || (a.manual ? 'marcado a mano' : '')}`;
     return {
-        recibido: true, monto: total, moneda: 'RD$', fecha: ult.fecha || '', partes: l.length,
-        nota: l.map((a) => `${a.fecha || '¿fecha?'}: RD$ ${Number(a.monto || 0).toLocaleString('es-DO')} — ${a.nota || (a.manual ? 'marcado a mano' : '')}`).join(' · '),
+        recibido: true, monto: total, moneda: (ultC && ultC.moneda) || 'RD$', fecha: ult.fecha || '', partes: l.length,
+        tipo: ultC ? 'completo' : 'anticipo', formaPago: ultC ? (ultC.formaPago || '') : '', facturaCitrus: ultC ? (ultC.facturaCitrus || '') : '',
+        facturaPedidos: ultC && Array.isArray(ultC.facturaPedidos) ? ultC.facturaPedidos : [],
+        nota: l.map(lineaDe).join(' · '),
         origen: ids.length === l.length ? 'citrus' : (ids.length ? 'mixto' : 'manual'),
         citrusAnticipoId: ult.citrusAnticipoId || null, citrusAnticipoIds: ids, regla: ult.regla || (ult.manual ? 'manual' : ''),
         validadoPor: ult.por || 'Citrus (sincronización)', validadoFecha: new Date().toISOString()
@@ -2408,10 +2416,25 @@ exports.anticipoPedido = onRequest({ cors: true, timeoutSeconds: 60 }, async (re
             await reg.ref.set({ estado: 'manual', orderId: repartos[0].orderId, orderIds: repartos.map((x) => x.orderId), repartos, obra: resultado.map((x) => x.obra).join(' + '), asignadoPor: quien, asignadoFecha: FieldValue.serverTimestamp() }, { merge: true });
             res.status(200).json({ ok: true, repartos: resultado }); return;
         }
-        if (accion === 'marcar') {   // a mano, sin Citrus (Cotizaciones / Historial)
-            const entrada = { manualId: 'm' + Date.now(), manual: true, monto: r2(Number(b.monto) || 0), fecha: String(b.fecha || new Date().toISOString().slice(0, 10)), nota: String(b.nota || '').trim(), por: quien };
-            const r = await anticipoPedidoAplicar(String(b.orderId), entrada);
-            res.status(200).json({ ok: true, anticipo: r.anticipo }); return;
+        if (accion === 'marcar') {   // a mano, sin Citrus (Cotizaciones / Historial / Fábrica interna): anticipo o PAGO COMPLETO
+            const tipo = b.tipo === 'completo' ? 'completo' : 'anticipo';
+            const fecha = String(b.fecha || new Date().toISOString().slice(0, 10)), nota = String(b.nota || '').trim(), moneda = String(b.moneda || 'RD$');
+            const formaPago = tipo === 'completo' ? String(b.formaPago || '').trim() : '', facturaCitrus = tipo === 'completo' ? String(b.facturaCitrus || '').trim() : '';
+            // Una misma factura al contado puede cubrir VARIOS pedidos del mismo cliente (Niza: ventanas + shutters, fact. 290): `pedidos`
+            // [{orderId, monto|null}] — monto null = «incluido en la factura» (se guarda 0 e `incluidoEnFactura`).
+            const pedidos = (tipo === 'completo' && Array.isArray(b.pedidos) && b.pedidos.length)
+                ? b.pedidos.map((x) => ({ orderId: String(x.orderId || ''), monto: (x.monto == null || x.monto === '') ? null : r2(Number(x.monto) || 0) })).filter((x) => x.orderId)
+                : [{ orderId: String(b.orderId || ''), monto: r2(Number(b.monto) || 0) }];
+            if (!pedidos.length || !pedidos[0].orderId) throw new Error('Falta el pedido');
+            const grupo = pedidos.map((x) => x.orderId); const base = 'm' + Date.now();
+            const resultado = [];
+            for (const p of pedidos) {
+                const entrada = { manualId: pedidos.length > 1 ? base + '_' + p.orderId.slice(0, 6) : base, manual: true, tipo, monto: p.monto == null ? 0 : p.monto, moneda, fecha, nota, por: quien };
+                if (tipo === 'completo') Object.assign(entrada, { formaPago, facturaCitrus, incluidoEnFactura: p.monto == null, facturaPedidos: grupo });
+                const r = await anticipoPedidoAplicar(p.orderId, entrada);
+                resultado.push({ orderId: p.orderId, obra: r.o.obra || '', anticipo: r.anticipo });
+            }
+            res.status(200).json({ ok: true, anticipo: resultado[0].anticipo, pedidos: resultado }); return;
         }
         if (accion === 'quitar') {   // todas las entradas del pedido (o una): las de Citrus vuelven a 'pendiente' para reasignarlas
             const filtro = b.citrusAnticipoId ? { citrusAnticipoId: Number(b.citrusAnticipoId) } : (b.manualId ? { manualId: String(b.manualId) } : null);
@@ -2459,7 +2482,7 @@ async function aplicarAnticiposCitrus(ctx, quien) {
     // tipo de documento y destino, fecha de creación y de cierre, nº de cotización Citrus si se conoce, y qué ítems lleva.
     const resumenItems = (o) => { const its = Array.isArray(o.items) ? o.items : []; const cont = {}; its.forEach((it) => { const k = (it.tipo || it.label || it.nombre || 'ítem') + (it.ancho && it.alto ? ' ' + it.ancho + '×' + it.alto : ''); cont[k] = (cont[k] || 0) + (Number(it.cantidad) || 1); }); const l = Object.entries(cont).map(([k, n]) => (n > 1 ? n + '× ' : '') + k); return l.length ? (its.length + ' ítem(s): ' + l.slice(0, 4).join(', ') + (l.length > 4 ? '…' : '')) : (o.totalItems ? o.totalItems + ' ítem(s)' : (o.descripcion ? String(o.descripcion).slice(0, 80) : '')); };
     const tipoDocDe = (o) => o.docType === 'COMPRA_DIRECTA' ? 'Compra directa' : (String(o.docType || '').indexOf('FAB') === 0 ? 'Fabricación ' + (o.destino === 'interno' ? 'interna' : 'ALUCUFEL') : 'Cotización' + (o.enviadaAFabrica ? ' (ya pasó a fábrica)' : ''));
-    const candDe = (o, extra) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', tipoDoc: tipoDocDe(o), creado: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion || o.fecha), cerrado: fechaDe(o.fechaInstalado || o.fechaEntregado), cotNum: o.citrusCotizacionNumero || null, material: [o.material, o.color].filter(Boolean).join(' '), resumen: resumenItems(o), total: Number(o.totalCotizacion || o.precioTotal || 0) || null, anticipoActual: (o.anticipo && o.anticipo.recibido) ? Number(o.anticipo.monto) || 0 : 0, ...extra });
+    const candDe = (o, extra) => ({ orderId: o.id, cliente: o.cliente || '', obra: o.obra || '', status: o.status || '', docType: o.docType || '', tipoDoc: tipoDocDe(o), creado: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion || o.fecha), cerrado: fechaDe(o.fechaInstalado || o.fechaEntregado), cotNum: o.citrusCotizacionNumero || null, material: [o.material, o.color].filter(Boolean).join(' '), resumen: resumenItems(o), total: Number(o.totalCotizacion || o.precioTotal || 0) || null, anticipoActual: (o.anticipo && o.anticipo.recibido) ? Number(o.anticipo.monto) || 0 : 0, pagadoCompleto: !!(o.anticipo && o.anticipo.recibido && o.anticipo.tipo === 'completo'), facturaCitrus: (o.anticipo && o.anticipo.facturaCitrus) || null, ...extra });
     for (const x of registros) {
         res.vistos++;
         const id = 'a' + String(x.Id); const prev = registro.get(id);
@@ -2512,6 +2535,8 @@ async function aplicarAnticiposCitrus(ctx, quien) {
             const okMonto = cands.filter((o) => { const t = Number(o.totalCotizacion || o.precioTotal || 0); return t > 0 && Math.abs(t * pct / 100 - monto) <= t * 0.02; });
             if (okMonto.length === 1) { elegido = okMonto[0]; regla = 'monto'; }
         }
+        let pagadoCompleto = null;
+        if (elegido && elegido.anticipo && elegido.anticipo.recibido && elegido.anticipo.tipo === 'completo') { pagadoCompleto = elegido; elegido = null; }   // Dylan 2026-10-27: queda pendiente para revisión, no se pisa
         let candidatos = cands.map((o) => candDe(o, { fechaPedido: fechaDe(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion), aproximado }));
         if (!cands.length) {   // contexto: obras cerradas en los últimos 90 días de ese cliente (exactas o aproximadas)
             const cerr = cerrados.filter((o) => o.clienteId === ficha.id || nombres.includes(normNombre(o.cliente)) || pedidoAproximaFicha(o, nombresCrudos));
@@ -2536,7 +2561,7 @@ async function aplicarAnticiposCitrus(ctx, quien) {
             await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'aplicado', orderId: elegido.id, obra: elegido.obra || '', regla, candidatos, aplicadoFecha: FieldValue.serverTimestamp() }, { merge: true });
             res.aplicados++;
         } else {
-            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: cands.length ? (aproximado ? `El nombre del pedido no coincide exactamente con la ficha de Citrus (${cands.length} posible${cands.length > 1 ? 's' : ''}): confirma a cuál va` : `Varias obras abiertas (${cands.length}) y la descripción no permite elegir`) : (candidatos.length ? 'El cliente no tiene pedidos abiertos; puede ser de una obra ya cerrada (abajo) o de un pedido que aún no está en el Panel' : 'El cliente no tiene pedidos abiertos ni cerrados recientes en el Panel (¿aún no se envió el pedido o la cotización?)'), candidatos }, { merge: true });
+            await db.doc('anticiposCitrus/' + id).set({ ...base, estado: 'pendiente', motivo: pagadoCompleto ? `El pedido «${pagadoCompleto.obra || pagadoCompleto.id}» ya está marcado PAGO COMPLETO${pagadoCompleto.anticipo.facturaCitrus ? ' (fact. ' + pagadoCompleto.anticipo.facturaCitrus + ')' : ''}: revisa si este anticipo de Citrus es otro pago o un duplicado` : cands.length ? (aproximado ? `El nombre del pedido no coincide exactamente con la ficha de Citrus (${cands.length} posible${cands.length > 1 ? 's' : ''}): confirma a cuál va` : `Varias obras abiertas (${cands.length}) y la descripción no permite elegir`) : (candidatos.length ? 'El cliente no tiene pedidos abiertos; puede ser de una obra ya cerrada (abajo) o de un pedido que aún no está en el Panel' : 'El cliente no tiene pedidos abiertos ni cerrados recientes en el Panel (¿aún no se envió el pedido o la cotización?)'), candidatos }, { merge: true });
             res.pendientes++;
         }
     }

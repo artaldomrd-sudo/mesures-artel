@@ -2839,6 +2839,21 @@ destinatarios Wilson y Dylan) → trigger `mensajeCoordinadorPush` manda el push
   gerencia (admin) lo ve** (Dylan 2026-10-06: «no es información relevante para nadie más que Anny y yo»): caja en Cotizaciones solo
   admin, caja/chip en Fábrica interna e Historial (páginas admin); NADA en ALUCUFEL ni en Instalación. Pendiente (Dylan, mismo
   día): una sola entrada — el anticipo se registra en Citrus y viaja al Panel (cuenta 200204 / recibos) en vez de marcarse dos veces.
+- **Pago completo (Dylan 2026-10-27, caso Niza: Marie Hélène Dentressangle pagó en efectivo ventanas + shutters, factura al
+  contado nº 290 de Citrus, que la sync de anticipos nunca trae porque solo lee la entidad `anticipo`)**: la caja pasó a un módulo
+  compartido **`ops/anticipo-ui.js`** (`montarAnticipoUI({pedidosDelCliente})` → `anticipoHTML(id,o)`, `anticipoChipHTML`,
+  `anticipoResumen`, `anticipoPedidoFn`; lo usan cotizaciones.html, historial.html y fabrica-interna.html — esta última escribía
+  `anticipo` con updateDoc, ya no). «Tipo de pago: Anticipo / Pago completo»; con completo se piden monto, forma de pago
+  (efectivo/transferencia/cheque/tarjeta), nº de factura Citrus (texto libre) y nota, y «La misma factura también cubre:» lista los
+  pedidos ABIERTOS del mismo cliente (`mismoCliente`: misma `clienteId` o mismo nombre) con monto opcional (vacío = «incluido en la
+  factura»). Todo va por `anticipoPedido` acción `marcar` con `tipo:'completo'`, `formaPago`, `facturaCitrus`, `pedidos:[{orderId,
+  monto|null}]` → una entrada manual por pedido (`manualId` base_id6, `facturaPedidos` = grupo) y `anticipoDesdeLista` deriva
+  `anticipo.tipo` ('completo' si hay alguna entrada completa; sin campo = anticipo), `formaPago`, `facturaCitrus`, `moneda`;
+  `anticipo.recibido` sigue igual para el Coordinador, chips y avisos. Chips: «💵 Pagado completo · fact. 290» (azul) vs «💰 Anticipo
+  recibido» (verde). La sync de Citrus NO pisa un pedido pagado completo: el anticipo queda `pendiente` con motivo «ya está marcado
+  PAGO COMPLETO… revisa si es otro pago o un duplicado»; el Panel marca «💵 YA PAGADO COMPLETO» en el candidato. Niza aplicado el
+  27/10 con los montos de la factura 290 (ventanas 202,000 · shutters 109,200; total 335,000 con transporte 30,000 y descuento 6,200).
+  **Segunda vuelta pendiente**: leer las facturas al contado de Citrus y proponerlas solas (como los anticipos).
 - **Fecha estimada de salida de fábrica** (`fechaSalidaEstimada`, `…Original`, `fechaSalidaPor`, `fechaSalidaCambios[]`): en
   `fabrica-interna.html` y `alucufel/fabrica.html` «Tomar pedido» abre una fila con fecha OBLIGATORIA (`tomarAbrir`/`tomarPedido`);
   la tarjeta en fábrica muestra «📅 Salida estimada: … (en N días / vencida)» con «Cambiar» (`salidaHTML`/`fijarSalida`): máximo

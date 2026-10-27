@@ -92,6 +92,7 @@
 
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { montarAnticipoUI, anticipoPedidoFn } from './anticipo-ui.js';
     import { enableNotifications } from './notifications.js';
     import { db, storage } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
@@ -179,42 +180,8 @@
     // pedido de fábrica (aprobarYEnviarFabrica lo copia) y lo lee el Coordinador de Obras (etapa 3 del ciclo: nada se fabrica sin
     // anticipo validado salvo orden de Dylan). Campo `anticipo`: {recibido, monto, moneda, fecha (AAAA-MM-DD), nota, validadoPor,
     // validadoPorEmail, validadoFecha}.
-    function anticipoHTML(id, o) {
-        const a = o.anticipo || null;
-        if (a && a.recibido) {
-            return `<div style="margin-top:8px;background:#e9f7ef;border:1.5px solid #a9dfbf;border-radius:9px;padding:8px 11px;font-size:13px;color:#1e8449;">
-                💰 <b>Anticipo recibido</b>${a.monto ? ' · ' + esc(a.moneda || 'RD$') + ' ' + Number(a.monto).toLocaleString('es-DO') : ''}${a.fecha ? ' · ' + esc(a.fecha) : ''}${a.validadoPor ? ' · validó ' + esc(a.validadoPor) : ''}${a.nota ? '<br><span style="color:#556">' + esc(a.nota) + '</span>' : ''}
-                <a href="#" onclick="anticipoQuitar('${id}');return false;" style="margin-left:8px;color:#c0392b;font-size:12px;">quitar</a></div>`;
-        }
-        return `<div style="margin-top:8px;background:#fff8e1;border:1.5px solid #f6d365;border-radius:9px;padding:8px 11px;font-size:13px;">
-            <div style="font-weight:bold;color:#8a6d00;">💰 Anticipo del cliente: <span style="color:#c0392b">sin validar</span></div>
-            <div id="antic-form-${id}" style="display:none;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">
-                <input type="number" id="antic-monto-${id}" placeholder="Monto" min="0" step="0.01" style="width:120px;padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
-                <select id="antic-moneda-${id}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;"><option>RD$</option><option>US$</option><option>€</option></select>
-                <input type="date" id="antic-fecha-${id}" value="${new Date().toISOString().slice(0, 10)}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
-                <input type="text" id="antic-nota-${id}" placeholder="Nota (transferencia, efectivo, nº recibo…)" style="flex:1;min-width:160px;padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
-                <button onclick="anticipoGuardar('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Guardar</button>
-            </div>
-            <button onclick="const f=document.getElementById('antic-form-${id}');f.style.display=f.style.display==='flex'?'none':'flex';" style="margin-top:6px;background:#fff;color:#8a6d00;border:1.5px solid #f6d365;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">✓ Marcar anticipo recibido</button>
-        </div>`;
-    }
-    // B2: el anticipo de un pedido se toca SOLO por el servidor (anticipoPedido): aplicar/quitar recalculan desde anticipos[].
-    async function anticipoPedidoFn(body) {
-        const token = await auth.currentUser.getIdToken();
-        const r = await fetch('https://us-central1-artal-operaciones.cloudfunctions.net/anticipoPedido', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
-        const j = await r.json().catch(() => ({})); if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status)); return j;
-    }
-    window.anticipoGuardar = async function (id) {
-        const monto = parseFloat((document.getElementById('antic-monto-' + id) || {}).value) || 0;
-        const fecha = (document.getElementById('antic-fecha-' + id) || {}).value || new Date().toISOString().slice(0, 10);
-        if (!monto && !confirm('No pusiste el monto. ¿Marcar el anticipo como recibido igual?')) return;
-        try { await anticipoPedidoFn({ accion: 'marcar', orderId: id, monto, fecha, nota: ((document.getElementById('antic-nota-' + id) || {}).value || '').trim() }); }   // el servidor lo espeja en el pedido de fábrica
-        catch (e) { alert('No se pudo guardar: ' + e.message); }
-    };
-    window.anticipoQuitar = async function (id) {
-        if (!confirm('¿Quitar la marca de anticipo recibido? Si venía de Citrus, volverá a aparecer en el Panel para reasignarlo.')) return;
-        try { await anticipoPedidoFn({ accion: 'quitar', orderId: id }); } catch (e) { alert('No se pudo: ' + e.message); }
-    };
+    // Caja «Anticipo / Pago completo» compartida (ops/anticipo-ui.js): misma factura puede cubrir cotización + pedidos del cliente.
+    const anticipoHTML = montarAnticipoUI({ pedidosDelCliente: () => ordersCache.concat(fabCache).map((x) => ({ id: x.id, ...x.data })) });
     // ---- 📏 Medidas recibidas, por cotizar (Dylan 2026-10-13): mediciones que el Panel marcó «Recibido». Se cierran solas cuando el
     // cuaderno envía la cotización/pedido de esa obra (trigger medicionAlCotizar); aquí se puede cerrar a mano o descartar.
     let medsPorCotizar = [];
