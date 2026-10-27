@@ -1696,6 +1696,24 @@ selects con opciones reales.
   tela day/night light-filtering con parte sólida + parte sheer) recibida SIN colores todavía
   — pendiente agregarla como colección nueva cuando lleguen las fotos de color.
 
+## Selección de ítems para enviar / exportar solo algunos (2026-10-27)
+
+Usuario: "a veces tengo productos de varios suplidores en una hoja; quiero seleccionar uno o varios ítems de la hoja de
+fabricación para enviar a ALUCUFEL o descargar PDF, y así evitar crear varias hojas". Casilla **☑** (`label.card-sel`,
+junto a la manecilla ☰ en `dragHandleHtml`) en cada tarjeta. `selIds` (`Set` de ids como string, **solo en memoria**: no viaja
+en el proyecto, no dispara autoguardado; se vacía en `clearNotebookToBlank`, `restoreData` y al borrar la tarjeta) +
+`selToggle/selTodos/selNinguno/selRefresh/selActiva/idsOperacion/appJSONSoloSeleccion` (script clásico, expuestos en
+`window` para el módulo). Con al menos una marcada: tarjeta con contorno amarillo (`.seleccionada`), las demás atenuadas
+(`body.hay-seleccion`), barra amarilla `#sel-bar` en el menú lateral ("☑ 1 de 3 ítems seleccionados · El PDF y el envío a
+fábrica llevan solo esos" + botones Todos / Quitar selección; sin selección se ve la pista `#sel-hint`). Efecto:
+`validateAllCards(ids)` valida solo esos; `buildPrintSheets` solo mete en `#print-area` las tarjetas seleccionadas (las
+otras quedan en `#main-canvas`, oculto durante la captura; el teardown restaura el orden) y `buildPdfTitle` agrega
+"(1 de 3 items)"; `enviarOrden` manda `appJSONSoloSeleccion(getAppJSON())` (order/cardsState/inputsData filtrados +
+`_seleccion:{enviados,total}`) tras un `confirm` "Vas a enviar SOLO N de M ítems…" — vale para ALUCUFEL, interna e
+instalación, y también para "Actualizar el original" (la ficha queda solo con esos). Sin ninguna marcada todo sigue como
+siempre. Ocultas en la hoja (`printing-sheets`) y en la ficha `?orderId=` (`readonly-view`). `verify.mjs` no lo cubre;
+probado en navegador (3 tarjetas, 1 marcada → PDF con 1, JSON con 1).
+
 ## PDF / Impresión
 
 - `exportPDF()` → `buildPrintSheets()` reorganiza el DOM en **hojas de 4 ítems (2×2)** dentro de

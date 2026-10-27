@@ -127,6 +127,16 @@
         /* Botón de arrastre - SEGURO REFORZADO */
         .drag-handle { position: absolute; top: -10px; left: -10px; background: var(--artal-blue); color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: grab; font-size: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5; user-select: none; -webkit-user-select: none; touch-action: none; }
         .drag-handle:active { cursor: grabbing; }
+        /* Selección de ítems (usuario 2026-10-27): casilla ☑ junto a la manecilla para enviar / exportar SOLO algunos ítems
+           de la hoja (productos de varios suplidores en una misma hoja). Sin ninguna marcada, todo sigue como siempre. */
+        .card-sel { position: absolute; top: -10px; left: 22px; width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid var(--artal-blue); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 6; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+        .card-sel input { width: 15px; height: 15px; margin: 0; cursor: pointer; accent-color: var(--artal-blue); }
+        .item-card.seleccionada { outline: 3px solid var(--artal-yellow); outline-offset: 2px; }
+        body.hay-seleccion .item-card:not(.seleccionada) { opacity: 0.55; }
+        .sel-bar { display: none; margin-top: 8px; background: var(--artal-yellow); color: #1b2a38; border-radius: 8px; padding: 8px 10px; font-size: 12px; font-weight: bold; text-align: center; line-height: 1.4; }
+        .sel-bar.on { display: block; }
+        .sel-bar button { border: none; background: #1b2a38; color: #fff; border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin: 4px 2px 0; font-family: 'Arimo'; }
+        .sel-hint { font-size: 11px; color: rgba(255,255,255,0.6); text-align: center; margin-top: 6px; line-height: 1.3; }
 
         /* CAD CARD DYNAMIC WIDTH */
         .item-card.cad-card.panoramic { grid-column: 1 / -1; width: 100%; }
@@ -267,6 +277,8 @@
         body.printing-sheets .doc-type-toggle { display: none !important; }
         body.printing-sheets .doc-type-bar { margin-bottom: 4mm !important; }
         body.printing-sheets .doc-type-title { font-size: 26px !important; letter-spacing: 3px !important; border-bottom: 2px solid var(--artal-blue) !important; display: inline-block !important; padding-bottom: 2px !important; }
+        body.printing-sheets .card-sel, body.readonly-view .card-sel { display: none !important; }
+        body.printing-sheets .item-card:not(.seleccionada) { opacity: 1 !important; }
         body.printing-sheets .delete-card, body.printing-sheets .lock-btn, body.printing-sheets .drag-handle, body.printing-sheets .orientation-toggle, body.printing-sheets .clear-canvas-btn, body.printing-sheets .cad-insert-select { display: none !important; }
 
         /* Vista de solo lectura (index.html?orderId=XXX): usada por contratista/cotizaciones/
@@ -558,6 +570,8 @@
 
             <button class="side-btn save" onclick="saveProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar proyecto</button>
             <div id="saved-status-badge" class="saved-status-badge unsaved">○ Sin guardar</div>
+            <div id="sel-bar" class="sel-bar"></div>
+            <div id="sel-hint" class="sel-hint">Marca ☑ en una o varias tarjetas para enviar a fábrica o exportar en PDF solo esos ítems.</div>
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
             <button class="side-btn pdf" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="openCotizCliente()" title="Cotización formal para el cliente, con precios y dibujos del cuaderno">💲 Cotización cliente</button>
@@ -578,7 +592,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-21 12:36</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-27 16:10</div>
         </div>
     </div>
     
@@ -801,13 +815,50 @@
             inp.title = mal ? `¿${v} cm? El cuaderno trabaja en mm: escribe ${v * 10}` : '';
         });
     }
-    function validateAllCards() {
+    // ---------- SELECCIÓN DE ÍTEMS (usuario 2026-10-27: "productos de varios suplidores en una misma hoja") ----------
+    // `selIds` vive solo en memoria (no viaja en el proyecto ni dispara autoguardado). Con al menos una tarjeta marcada,
+    // exportPDF y enviarOrden trabajan SOLO con las marcadas (validación incluida); sin ninguna, con toda la hoja.
+    const selIds = new Set();
+    const selActiva = () => { for (const id of selIds) if (!cardsState[id]) selIds.delete(id); return selIds.size > 0; };
+    function selToggle(id, on) { id = String(id); if (on) selIds.add(id); else selIds.delete(id); selRefresh(); }
+    function selTodos() { Object.keys(cardsState).forEach(id => selIds.add(String(id))); selRefresh(); }
+    function selNinguno() { selIds.clear(); selRefresh(); }
+    function selRefresh() {
+        const activa = selActiva(), total = Object.keys(cardsState).length;
+        document.body.classList.toggle('hay-seleccion', activa);
+        Object.keys(cardsState).forEach(id => {
+            const card = document.getElementById('card-' + id); if (!card) return;
+            const on = selIds.has(String(id));
+            card.classList.toggle('seleccionada', on);
+            const cb = card.querySelector('.card-sel input'); if (cb) cb.checked = on;
+        });
+        const bar = document.getElementById('sel-bar'), hint = document.getElementById('sel-hint');
+        if (bar) {
+            bar.classList.toggle('on', activa);
+            bar.innerHTML = activa ? `☑ ${selIds.size} de ${total} ítems seleccionados<br><span style="font-weight:normal;">El PDF y el envío a fábrica llevan solo esos.</span><br><button onclick="selTodos()">Todos</button><button onclick="selNinguno()">Quitar selección</button>` : '';
+        }
+        if (hint) hint.style.display = activa || total === 0 ? 'none' : '';
+    }
+    // Ids a los que aplica una operación (PDF / envío): los seleccionados, o todos si no hay selección.
+    const idsOperacion = () => selActiva() ? Object.keys(cardsState).filter(id => selIds.has(String(id))) : Object.keys(cardsState);
+    // Copia del appJSON reducida a los ítems seleccionados (orden, estados e inputs); sin selección devuelve el mismo objeto.
+    function appJSONSoloSeleccion(json) {
+        if (!selActiva()) return json;
+        const order = (json.order || []).filter(id => selIds.has(String(id)));
+        const pick = obj => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => selIds.has(String(k))));
+        return { ...json, order, cardsState: pick(json.cardsState), inputsData: pick(json.inputsData), _seleccion: { enviados: order.length, total: (json.order || []).length } };
+    }
+    window.selToggle = selToggle; window.selTodos = selTodos; window.selNinguno = selNinguno; window.selRefresh = selRefresh;
+    window.selActiva = selActiva; window.idsOperacion = idsOperacion; window.appJSONSoloSeleccion = appJSONSoloSeleccion;
+
+    function validateAllCards(ids) {
         let allLocked = true;
         let missingDim = false;
+        ids = ids || Object.keys(cardsState);
 
-        if (Object.keys(cardsState).length === 0) return true;
+        if (ids.length === 0) return true;
 
-        Object.keys(cardsState).forEach(id => {
+        ids.forEach(id => {
             const state = cardsState[id];
             if (!state.locked) allLocked = false;
             
@@ -834,7 +885,7 @@
             alert(' ¡ATENCIÓN! Faltan medidas (Ancho o Alto) en algunos modelos.\n\nDesbloquea () el modelo que parpadea en rojo y añade las medidas.');
             return false;
         }
-        for (const id of Object.keys(cardsState)) {
+        for (const id of ids) {
             const sosp = medidasSospechosas(cardsState[id]);
             if (sosp.length) { marcarMedidasSospechosas(id); alertaMedidasSospechosas(sosp, cardsState[id].label || cardsState[id].type); return false; }
         }
@@ -851,7 +902,8 @@
         const sig = document.querySelector('.signature-section');
         if (!mainCanvas || !itemList) return;
 
-        const cards = Array.from(itemList.children).filter(c => c.classList.contains('item-card'));
+        const soloSel = selActiva();
+        const cards = Array.from(itemList.children).filter(c => c.classList.contains('item-card') && (!soloSel || selIds.has(c.id.replace('card-', ''))));
         printMoved = { mainCanvas, itemList, mainOrder: Array.from(mainCanvas.childNodes), listOrder: Array.from(itemList.childNodes) };
 
         // Agrupar en hojas de 4 "slots" (una tarjeta panorámica ocupa 2)
@@ -912,14 +964,15 @@
         const isFab = !!titleEl && titleEl.innerText.indexOf('FAB') === 0;
         const suffix = isFab ? 'fabricacion' : 'presupuesto';
         let name = [cliente, obra].filter(Boolean).join(' - ') || 'ARTAL';
-        return `${name} ${suffix}`.replace(/[\\/:*?"<>|]/g, '-');
+        const parcial = selActiva() ? ` (${selIds.size} de ${Object.keys(cardsState).length} items)` : '';
+        return `${name} ${suffix}${parcial}`.replace(/[\\/:*?"<>|]/g, '-');
     }
 
     // Genera el PDF por código (html2canvas + jsPDF) en vez de usar window.print(): así el
     // archivo nunca pasa por el diálogo de impresión de Safari, que agrega su propio pie de
     // página (URL, fecha, número de página) sin que se pueda desactivar desde la web.
     async function exportPDF() {
-        if (!validateAllCards()) return;
+        if (!validateAllCards(idsOperacion())) return;
         // Regenerar TODOS los resúmenes para que el PDF muestre siempre el resumen (no los menús)
         Object.keys(cardsState).forEach(id => { try { generateSummary(id); } catch (e) { } });
         buildPrintSheets();
@@ -3295,6 +3348,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     }
 
     function restoreData(data) {
+        selIds.clear();
         setDocType(data.docType || 'COTIZACIÓN');
         cotizCli = Object.assign({ transporte: 0, instalacion: 0, itbisModo: 'incluido', itbisPct: 18, lineas: [] }, data.cotizCliente || {});
         if (data.header) {
@@ -3702,6 +3756,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // se usa tanto ahí (con confirm() antes) como después de guardar un proyecto con éxito,
     // donde no hace falta confirmar de nuevo porque ya fue una acción explícita del usuario.
     function clearNotebookToBlank() {
+        selIds.clear(); document.body.classList.remove('hay-seleccion'); const _sb = document.getElementById('sel-bar'); if (_sb) _sb.classList.remove('on'); const _sh = document.getElementById('sel-hint'); if (_sh) _sh.style.display = 'none';
         openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
         updateSavedStatusBadge();
         document.getElementById('header-cliente').value = '';
@@ -4467,7 +4522,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         let lockedBtnIcon = cardsState[id].locked ? LOCK_CLOSED : LOCK_OPEN;
         let lockBtnHtml = `<button id="lock-btn-${id}" class="lock-btn" onclick="toggleLock(${id})" title="Bloquear/Desbloquear" style="position:absolute; top:-10px; right: 25px; background: ${lockedBtnColor}; color: white; border: none; border-radius: 50%; width: 26px; height: 26px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); z-index: 5;">${lockedBtnIcon}</button>`;
 
-        let dragHandleHtml = `<div class="drag-handle" title="Arrastrar para mover">&#9776;</div>`;
+        let dragHandleHtml = `<div class="drag-handle" title="Arrastrar para mover">&#9776;</div><label class="card-sel" title="Seleccionar este ítem: con una o varias tarjetas marcadas, el PDF y el envío a fábrica llevan SOLO esas"><input type="checkbox" ${selIds.has(String(id)) ? 'checked' : ''} onchange="selToggle(${id}, this.checked)"></label>`;
 
         let displayLabel = cardsState[id].label;
 
@@ -4725,12 +4780,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             }
         }
         if (cardsState[id].locked) generateSummary(id);
+        selRefresh();
         if(!forcedId) saveProgress();
     }
 
     function deleteCard(id) {
         document.getElementById('card-' + id).remove();
         delete cardsState[id];
+        selIds.delete(String(id)); selRefresh();
         saveProgress();
     }
 
@@ -10571,8 +10628,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const btn = btnEl || null;
         const originalHtml = btn ? btn.innerHTML : '';
         try {
-            if (!validateAllCards()) return;
-            const appJSON = getAppJSON();
+            if (!validateAllCards(window.idsOperacion())) return;
+            const appJSON = window.appJSONSoloSeleccion(getAppJSON());
+            if (appJSON._seleccion) {
+                const s = appJSON._seleccion;
+                if (!confirm(`Vas a enviar SOLO ${s.enviados} de ${s.total} ítems de esta hoja (los marcados con ☑).\n\nLos demás ítems no viajan en este pedido. ¿Continuar?`)) return;
+            }
             if (!appJSON.header.cliente || !appJSON.header.obra) {
                 alert('Completa Cliente y Obra antes de enviar.');
                 return;
