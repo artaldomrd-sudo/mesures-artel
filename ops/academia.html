@@ -60,6 +60,26 @@
     .img-picker img:hover { border-color: var(--artal-blue); }
     .img-picker .empty { font-size: 12.5px; color: #8a93a0; }
     [contenteditable="true"].inline-txt { outline: 2px solid var(--artal-blue); border-radius: 6px; padding: 2px 6px; background: #fff; }
+    .lec-fig img { cursor: zoom-in; }
+    .lb { position: fixed; inset: 0; background: rgba(10,20,30,.92); display: none; align-items: center; justify-content: center; z-index: 9000; }
+    .lb.show { display: flex; }
+    .lb-body { max-width: 94vw; max-height: 92vh; text-align: center; }
+    .lb-body img { max-width: 94vw; max-height: 84vh; border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+    .lb-cap { color: #dbe7f3; font-size: 14px; margin-top: 10px; }
+    .lb-x, .lb-nav { position: absolute; background: rgba(255,255,255,.12); color: #fff; border: none; border-radius: 50%; width: 46px; height: 46px; font-size: 26px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .lb-x { top: 14px; right: 14px; font-size: 20px; } .lb-prev { left: 12px; top: 50%; transform: translateY(-50%); } .lb-next { right: 12px; top: 50%; transform: translateY(-50%); }
+    .pres { position: fixed; inset: 0; background: linear-gradient(135deg, #12314B, #1C4E7A 60%, #2C6BA4); color: #fff; display: none; flex-direction: column; z-index: 9100; }
+    .pres.show { display: flex; }
+    .pres-top { display: flex; align-items: center; gap: 14px; padding: 12px 18px; font-size: 13px; color: #dbe7f3; }
+    .pres-top #pres-tit { flex: 1; font-weight: bold; color: #fff; }
+    .pres-top button { background: rgba(255,255,255,.14); color: #fff; border: none; border-radius: 8px; padding: 7px 12px; font-family: 'Arimo'; cursor: pointer; }
+    .pres-slide { flex: 1; overflow: auto; margin: 0 70px 24px; background: #fff; color: #2f3944; border-radius: 16px; padding: 28px 36px; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+    .pres-slide h3 { color: var(--artal-blue); font-size: 26px; margin: 0 0 14px; }
+    .pres-txt { font-size: 19px; line-height: 1.6; white-space: pre-wrap; }
+    .pres-fig { margin: 16px auto; text-align: center; max-width: 860px; } .pres-fig img { max-width: 100%; max-height: 58vh; border-radius: 12px; box-shadow: 0 4px 18px rgba(0,0,0,.18); } .pres-fig figcaption { font-size: 13px; color: #8a93a0; margin-top: 6px; }
+    .pres-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.16); color: #fff; border: none; border-radius: 50%; width: 52px; height: 52px; font-size: 30px; cursor: pointer; }
+    .pres-prev { left: 10px; } .pres-next { right: 10px; }
+    @media (max-width: 700px) { .pres-slide { margin: 0 8px 60px; padding: 18px; } .pres-txt { font-size: 16px; } .pres-slide h3 { font-size: 20px; } .pres-nav { top: auto; bottom: 10px; transform: none; width: 44px; height: 44px; } }
     .lec-video { position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 10px 0 16px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: #000; }
     .lec-video iframe, .lec-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
     .lec-read .nav { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
@@ -583,9 +603,10 @@
         const done = completadasDe(l.cursoId).has(l.id);
         const prev = idx > 0 ? lecs[idx - 1] : null, next = idx < lecs.length - 1 ? lecs[idx + 1] : null;
         // Las imágenes referenciadas dentro del texto ([img:N]) se ven en su sitio; abajo solo quedan las no usadas y los PDF.
-        const usadas = imagenesUsadas(l.contenido);
-        const restantes = (Array.isArray(l.fotos) ? l.fotos : []).filter((f, i) => !usadas.has(i + 1));
-        const fotos = fotosThumbsHTML(restantes, { coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', puedeBorrar: esAutor && restantes.length === (l.fotos || []).length });
+        // Dylan 2026-10-28: NUNCA miniaturas de imágenes (abrían otra página). Las imágenes se ven grandes dentro del texto: en su
+        // marca [img:N] o, si no se colocaron, al final del texto. Solo los PDF/documentos siguen como tarjeta de descarga.
+        const docs = (Array.isArray(l.fotos) ? l.fotos : []).filter((f) => !(f.tipo === 'img' || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(f.url || '')));
+        const fotos = docs.length ? fotosThumbsHTML(docs, { coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', puedeBorrar: false }) : '';
         const addBtn = esAutor ? fotoAddBtnHTML({ coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', label: '📎 Agregar foto/PDF', pdf: true }) : '';
         cont.innerHTML = `<div class="crumbs"><a onclick="irA('cursos')">Cursos</a> › <a onclick="irA('curso','${l.cursoId}')">${esc(c.titulo || 'Curso')}</a></div>
             <div class="lec-read">
@@ -593,10 +614,11 @@
                 <div class="meta">Lección ${idx + 1} de ${lecs.length}${l.duracion ? ' · ⏱ ' + n2(l.duracion) + ' min' : ''}${esAutor ? ' · <span style="color:#1f6aa5">✏ doble clic sobre el texto para editarlo en pantalla</span>' : ''}</div>
                 ${videoEmbedHTML(l.video)}
                 <div class="cont ${esAutor ? 'editable' : ''}" id="lec-cont" ${esAutor ? `title="Doble clic para editar" ondblclick="editarContenidoInline('${l.id}')"` : ''}>${contenidoHTML(l, esAutor)}</div>
-                ${fotos}${addBtn}
+                ${fotos}${addBtn}${esAutor && imgsDe(l).length ? `<div class="hint" style="font-size:12px;color:#8a93a0;margin-top:4px">Para quitar una imagen adjunta: ✏ Editar lección → adjuntos.</div>` : ''}
                 ${esAutor ? `<div class="bar" style="margin-top:14px"><button class="btn-ghost" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="btn-ia" style="margin-top:0" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
                 <div class="nav">
                     <button class="btn-done ${done ? 'is-done' : ''}" onclick="toggleHecha('${l.cursoId}','${l.id}')">${done ? '✓ Completada' : 'Marcar como completada'}</button>
+                    <button class="btn-ghost" onclick="presentar('${l.id}')" title="Ver la lección como diapositivas, un apartado por pantalla">▶ Presentación</button>
                     ${prev ? `<button class="btn-ghost" onclick="irA('leccion','${l.cursoId}','${prev.id}')">← Anterior</button>` : ''}
                     ${next ? `<button class="btn-ghost" onclick="irA('leccion','${l.cursoId}','${next.id}')">Siguiente →</button>` : ''}
                 </div>
@@ -620,12 +642,62 @@
             h = h.replace(/\[img:(\d+)(?:\|([^\]]*))?\]/g, (m, n, pie) => {
                 const f = fotos[Number(n) - 1];
                 if (!f || !f.url) return `<span style="color:#c0392b;font-size:12px">[imagen ${n} no existe]</span>`;
-                return `<figure class="lec-fig"><img src="${esc(f.url)}" loading="lazy" alt="${esc(pie || f.nombre || '')}"><figcaption>${esc(pie || f.nombre || '')}${editor ? `<span class="figdel" title="Quitar la imagen de este punto (sigue adjunta)" onclick="quitarImagenInline('${l.id}', ${i}, ${n})">✕ quitar de aquí</span>` : ''}</figcaption></figure>`;
+                return `<figure class="lec-fig"><img src="${esc(f.url)}" loading="lazy" alt="${esc(pie || f.nombre || '')}" onclick="verImagen('${l.id}', ${n})" title="Toca para ampliar"><figcaption>${esc(pie || f.nombre || '')}${editor ? `<span class="figdel" title="Quitar la imagen de este punto (sigue adjunta)" onclick="quitarImagenInline('${l.id}', ${i}, ${n})">✕ quitar de aquí</span>` : ''}</figcaption></figure>`;
             });
             if (esTituloSeccion(ln)) return `<h4 class="sec">${h}${editor ? `<button class="figbtn" title="Poner una imagen debajo de este apartado" onclick="imagenParaSeccion('${l.id}', ${i})">🖼️ imagen</button>` : ''}</h4>`;
             return h;
-        }).join('\n').replace(/<\/h4>\n\n/g, '</h4>\n').replace(/<\/figure>\n\n/g, '</figure>\n');   // sin huecos dobles tras un título o una figura
+        }).join('\n').replace(/<\/h4>\n\n/g, '</h4>\n').replace(/<\/figure>\n\n/g, '</figure>\n')   // sin huecos dobles tras un título o una figura
+        + imgsDe(l).filter((f) => !imagenesUsadas(l.contenido).has(f.n)).map((f) => `\n<figure class="lec-fig"><img src="${esc(f.url)}" loading="lazy" alt="${esc(f.nombre || '')}" onclick="verImagen('${l.id}', ${f.n})" title="Toca para ampliar"><figcaption>${esc(f.nombre || '')}${editor ? ` <span class="figdel" style="color:#1f6aa5" title="Colocarla en un punto del texto: doble clic en el texto → 🖼️ Insertar imagen">(sin colocar en el texto)</span>` : ''}</figcaption></figure>`).join('');
     }
+    // ---- Ampliar imagen en la misma página (sin abrir otra pestaña) con ‹ › entre las imágenes de la lección ----
+    let lbEstado = null;
+    window.verImagen = function (id, n) {
+        const l = leccionById(id); if (!l) return; const imgs = imgsDe(l); const i = imgs.findIndex((f) => f.n === Number(n)); if (i < 0) return;
+        lbEstado = { id, i };
+        let lb = document.getElementById('lightbox');
+        if (!lb) { lb = document.createElement('div'); lb.id = 'lightbox'; lb.className = 'lb'; lb.innerHTML = `<button class="lb-x" onclick="cerrarImagen()">✕</button><button class="lb-nav lb-prev" onclick="lbMover(-1)">‹</button><div class="lb-body"><img id="lb-img" alt=""><div class="lb-cap" id="lb-cap"></div></div><button class="lb-nav lb-next" onclick="lbMover(1)">›</button>`; lb.onclick = (e) => { if (e.target === lb) cerrarImagen(); }; document.body.appendChild(lb); }
+        lbPintar(); lb.classList.add('show');
+    };
+    function lbPintar() { const l = leccionById(lbEstado.id); const imgs = imgsDe(l); const f = imgs[lbEstado.i]; if (!f) return; document.getElementById('lb-img').src = f.url; document.getElementById('lb-cap').textContent = (f.nombre || '') + (imgs.length > 1 ? `  ·  ${lbEstado.i + 1} / ${imgs.length}` : ''); document.querySelectorAll('#lightbox .lb-nav').forEach((b) => b.style.display = imgs.length > 1 ? 'flex' : 'none'); }
+    window.lbMover = function (d) { const imgs = imgsDe(leccionById(lbEstado.id)); lbEstado.i = (lbEstado.i + d + imgs.length) % imgs.length; lbPintar(); };
+    window.cerrarImagen = function () { const lb = document.getElementById('lightbox'); if (lb) lb.classList.remove('show'); lbEstado = null; };
+    // ---- Modo presentación (Dylan 2026-10-28: «como si fuese un PowerPoint»): un apartado por diapositiva, imágenes grandes ----
+    let presEstado = null;
+    function diapositivasDe(l) {
+        const lineas = String(l.contenido || '').split('\n'); const slides = []; let cur = null;
+        const nueva = (titulo) => { cur = { titulo, lineas: [] }; slides.push(cur); };
+        lineas.forEach((ln, i) => { if (esTituloSeccion(ln)) nueva(ln.trim()); else { if (!cur) nueva(''); cur.lineas.push(i); } });
+        if (!slides.length) nueva('');
+        // Si no hay apartados, partir cada ~14 líneas para que no sea un muro de texto.
+        if (slides.length === 1 && !slides[0].titulo && slides[0].lineas.length > 16) { const idx = slides[0].lineas; slides.length = 0; for (let k = 0; k < idx.length; k += 14) slides.push({ titulo: '', lineas: idx.slice(k, k + 14) }); }
+        const sueltas = imgsDe(l).filter((f) => !imagenesUsadas(l.contenido).has(f.n));
+        if (sueltas.length) slides.push({ titulo: 'Imágenes de referencia', lineas: [], figs: sueltas });
+        return slides;
+    }
+    window.presentar = function (id) {
+        const l = leccionById(id); if (!l) return;
+        presEstado = { id, i: 0, slides: diapositivasDe(l) };
+        let p = document.getElementById('presentacion');
+        if (!p) { p = document.createElement('div'); p.id = 'presentacion'; p.className = 'pres'; p.innerHTML = `<div class="pres-top"><span id="pres-tit"></span><span id="pres-cnt"></span><button onclick="cerrarPresentacion()">✕ Salir</button></div><div class="pres-slide" id="pres-slide"></div><button class="pres-nav pres-prev" onclick="presMover(-1)">‹</button><button class="pres-nav pres-next" onclick="presMover(1)">›</button>`; document.body.appendChild(p);
+            let x0 = null; p.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true }); p.addEventListener('touchend', (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; if (Math.abs(dx) > 50) presMover(dx < 0 ? 1 : -1); x0 = null; }); }
+        presPintar(); p.classList.add('show'); document.body.style.overflow = 'hidden';
+        if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+    };
+    function presPintar() {
+        const l = leccionById(presEstado.id); const sl = presEstado.slides[presEstado.i]; const lineas = String(l.contenido || '').split('\n'); const fotos = l.fotos || [];
+        const cuerpo = sl.lineas.map((i) => { let h = esc(lineas[i]); h = h.replace(/\[img:(\d+)(?:\|([^\]]*))?\]/g, (m, n, pie) => { const f = fotos[Number(n) - 1]; return f && f.url ? `<figure class="pres-fig"><img src="${esc(f.url)}"><figcaption>${esc(pie || f.nombre || '')}</figcaption></figure>` : ''; }); return h; }).join('\n')
+            + (sl.figs || []).map((f) => `<figure class="pres-fig"><img src="${esc(f.url)}"><figcaption>${esc(f.nombre || '')}</figcaption></figure>`).join('');
+        document.getElementById('pres-tit').textContent = (l.titulo || '') + (sl.titulo ? '  ›  ' + sl.titulo : '');
+        document.getElementById('pres-cnt').textContent = `${presEstado.i + 1} / ${presEstado.slides.length}`;
+        document.getElementById('pres-slide').innerHTML = `${sl.titulo ? `<h3>${esc(sl.titulo)}</h3>` : ''}<div class="pres-txt">${cuerpo.replace(/^\n+|\n+$/g, '')}</div>`;
+        document.getElementById('pres-slide').scrollTop = 0;
+    }
+    window.presMover = function (d) { if (!presEstado) return; const n = presEstado.slides.length; presEstado.i = Math.min(n - 1, Math.max(0, presEstado.i + d)); presPintar(); };
+    window.cerrarPresentacion = function () { const p = document.getElementById('presentacion'); if (p) p.classList.remove('show'); presEstado = null; document.body.style.overflow = ''; if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); };
+    document.addEventListener('keydown', (e) => {
+        if (presEstado) { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); presMover(1); } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); presMover(-1); } else if (e.key === 'Escape') cerrarPresentacion(); return; }
+        if (lbEstado) { if (e.key === 'ArrowRight') lbMover(1); else if (e.key === 'ArrowLeft') lbMover(-1); else if (e.key === 'Escape') cerrarImagen(); }
+    });
     async function guardarContenido(id, contenido) { await updateDoc(doc(db, 'academiaLecciones', id), { contenido, actualizado: new Date().toISOString(), actualizadoPor: usuario.nombre }); }
     // Picker de imágenes de la lección: devuelve HTML; al tocar una llama a `onPick(n)` (número 1-based).
     function pickerHTML(l, onPickFn) {

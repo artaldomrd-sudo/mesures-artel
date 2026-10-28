@@ -3105,8 +3105,14 @@ adjuntos que inserta el token en el cursor; Ctrl+Enter guarda, Esc cancela; `inl
 mientras se edita); cada `h4.sec` lleva «🖼️ imagen» (`imagenParaSeccion`: picker que inserta `[img:N]` justo debajo, sin entrar
 en edición); cada figura tiene «✕ quitar de aquí» (`quitarImagenInline`, sigue adjunta); doble clic en el título de la lección y
 en título/descripción del curso → `inlineTexto` (contenteditable, Enter guarda, Esc cancela; `guardarCampoLeccion`/`guardarCampoCurso`).
-Las imágenes se siguen subiendo con «📎 Agregar foto/PDF» (fotos.js) y luego se colocan. Probado con el espejo de Emerson (solo
-lectura): títulos, figuras en línea y el editor (abrir, picker, insertar, cancelar); el guardado solo con cuenta real.
+Las imágenes se siguen subiendo con «📎 Agregar foto/PDF» (fotos.js) y luego se colocan. **Nunca miniaturas** (Dylan, mismo
+día: «como miniatura se abre en otra página; quiero que aparezca dentro del texto para ilustrar, como un PowerPoint»): toda imagen
+se ve grande dentro del texto (en su marca o, si no se colocó, al final, rotulada «sin colocar» para el editor); solo PDF/
+documentos quedan como tarjeta. Tocar una imagen abre un **lightbox** en la misma página (`verImagen`, ‹ › entre las de la
+lección, Esc). Botón **«▶ Presentación»** (`presentar`): la lección en diapositivas a pantalla completa, un apartado (línea en
+mayúsculas) por diapositiva con sus imágenes grandes, flechas/teclado/deslizar, contador, «Imágenes de referencia» al final con las
+no colocadas; sin apartados, trozos de ~14 líneas. Probado con el espejo de Emerson (solo lectura): títulos, figuras en línea,
+lightbox, presentación y el editor (abrir, picker, insertar, cancelar); el guardado solo con cuenta real.
 
 ### Academia: guías de la plataforma (2026-09-22)
 
