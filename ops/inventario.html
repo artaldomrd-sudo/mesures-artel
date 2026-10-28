@@ -467,18 +467,22 @@
     const bajoMinimoDe = (it) => !esCatHerramientas(it.categoria) && minimoDe(it) > 0 && (Number(it.cantidad) || 0) <= minimoDe(it) && !sinStockDe(it);
     // Unidades: desplegable con las que ya se usan (deriva de los ítems) + defaults, sin números sueltos
     // (los "14/6" de datos viejos no aparecen). El botón "+" agrega una unidad nueva a mano.
+    const ES_EMPAQUE = /^(cajas?|fundas?|paquetes?|bultos?|sacos?|bl[ií]ste?r(es)?|bolsas?)$/i;
     const UNIDADES_DEFAULT = ['unidades', 'tubos', 'cartuchos', 'barras', 'galones', 'litros', 'metros', 'sacos', 'rollos', 'pares', 'juegos', 'láminas', 'pliegos'];
     function unidadesRegistradas() {
-        const s = new Set(UNIDADES_DEFAULT);
-        allItems.forEach(it => { const u = String(it.unidad || '').trim(); if (u && !/^\d+$/.test(u)) s.add(u); });
-        return [...s].sort((a, b) => a.localeCompare(b, 'es'));
+        // Una sola entrada por unidad (sin «Tubos»/«tubos»/«unidad»/«unidades» repetidos) y sin palabras de EMPAQUE (fundas, cajas…):
+        // esas van en «Viene en empaques», no aquí (Dylan 2026-10-28: «no tengo fundas disponible»).
+        const m = new Map(UNIDADES_DEFAULT.map(u => [u.toLowerCase(), u]));
+        allItems.forEach(it => { let u = String(it.unidad || '').trim(); if (!u || /^\d+$/.test(u) || ES_EMPAQUE.test(u)) return; u = u.toLowerCase(); if (u === 'unidad') u = 'unidades'; if (!m.has(u)) m.set(u, u); });
+        return [...m.values()].sort((a, b) => a.localeCompare(b, 'es'));
     }
     function unidadSelectHTML(selectId, selected) {
         const units = unidadesRegistradas();
         const sel = String(selected || '').trim();
         if (sel && !/^\d+$/.test(sel) && !units.some(u => u.toLowerCase() === sel.toLowerCase())) units.unshift(sel);
         const opts = `<option value="">— elegir unidad —</option>` + units.map(u => `<option value="${esc(u)}" ${u.toLowerCase() === sel.toLowerCase() ? 'selected' : ''}>${esc(u)}</option>`).join('');
-        return `<div class="unidad-wrap"><select id="${selectId}">${opts}</select><button type="button" class="unidad-add" onclick="agregarUnidad('${selectId}')" title="Agregar una unidad nueva">+</button></div>`;
+        return `<div class="unidad-wrap"><select id="${selectId}" onchange="unidadElegida('${selectId}')">${opts}</select><button type="button" class="unidad-add" onclick="agregarUnidad('${selectId}')" title="Agregar una unidad nueva">+</button></div>
+            <div style="font-size:11.5px;color:#889;margin-top:3px">¿Vienen en fundas, cajas o paquetes? Eso se marca abajo en «📦 Viene en empaques»; aquí va lo que se cuenta.</div>`;
     }
     // ---- Empaques (Dylan 2026-10-28, caso tapitas: «tengo 7 fundas de 100; entro cantidad por funda, cantidad de fundas y se calcula
     // el total»). `unidad` = lo que se cuenta; `empaque` = funda/caja/paquete…; `porCaja` = unidades por empaque; `cantidad` = total.
@@ -527,10 +531,23 @@
         if (!porCaja) { alert('Escribe cuántas ' + (unidad || 'unidades') + ' trae cada empaque.'); return null; }
         return { empaque: String(($e(pre, suf, 'empaque') || {}).value || 'caja'), porCaja, cantidad: n * porCaja + sl };
     }
+    // Si alguien pone «fundas»/«cajas»/… como unidad, se pasa solo a unidades + empaque de ese tipo (con la casilla marcada).
+    function pasarAEmpaque(selectId, palabra) {
+        const sel = document.getElementById(selectId); if (!sel) return;
+        const pre = selectId === 'nuevo-unidad' ? 'nuevo-' : 'editar-', suf = selectId === 'nuevo-unidad' ? '' : selectId.replace('editar-unidad', '');
+        const emp = palabra.toLowerCase().replace(/s$/, '').replace('blísters', 'blíster');
+        sel.value = 'unidades'; if (sel.value !== 'unidades') { const o = document.createElement('option'); o.value = 'unidades'; o.textContent = 'unidades'; sel.appendChild(o); sel.value = 'unidades'; }
+        const chk = $e(pre, suf, 'conemp'); if (chk) { chk.checked = true; toggleEmpaque(pre, suf); }
+        const es = $e(pre, suf, 'empaque'); if (es) { if (![...es.options].some(o => o.value === emp)) { const o = document.createElement('option'); o.value = emp; o.textContent = emp; es.insertBefore(o, es.lastElementChild); } es.value = emp; }
+        const pc = $e(pre, suf, 'porcaja'); if (pc && !(Number(pc.value) > 0)) pc.focus();
+        alert(`«${palabra}» es un empaque, no una unidad: quedó marcado «Viene en empaques · ${emp}». Escribe cuántas unidades trae cada ${emp} y cuántos ${plural(emp, 2)} hay.`);
+    }
+    window.unidadElegida = function (selectId) { const sel = document.getElementById(selectId); if (sel && ES_EMPAQUE.test(sel.value)) pasarAEmpaque(selectId, sel.value); recalcEmpaque(selectId === 'nuevo-unidad' ? 'nuevo-' : 'editar-', selectId === 'nuevo-unidad' ? '' : selectId.replace('editar-unidad', '')); };
     window.agregarUnidad = function (selectId) {
         const nombre = (prompt('Nueva unidad de medida (ej. cartuchos, sacos, rollos):') || '').trim();
         if (!nombre) return;
         if (/^\d+$/.test(nombre)) { alert('La unidad debe ser una palabra, no un número.'); return; }
+        if (ES_EMPAQUE.test(nombre)) { pasarAEmpaque(selectId, nombre); return; }
         const sel = document.getElementById(selectId); if (!sel) return;
         if (![...sel.options].some(o => o.value.toLowerCase() === nombre.toLowerCase())) {
             const opt = document.createElement('option'); opt.value = nombre; opt.textContent = nombre; sel.appendChild(opt);
