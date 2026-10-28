@@ -167,10 +167,20 @@
         <input type="text" id="nuevo-proveedor" placeholder="Ej: Alucufel, Vidriera X…">
         <label id="nuevo-color-label">Color</label>
         <input type="text" id="nuevo-color" placeholder="Ej: Blanco">
-        <label>Unidad</label>
+        <label>Unidad de conteo <span style="font-weight:normal;color:#999">(lo que se cuenta: unidades, tubos, latas, metros…)</span></label>
         <div id="nuevo-unidad-wrap"></div>
-        <label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = no viene en caja; ej. 12 o 24 tubos)</span></label>
-        <input type="number" id="nuevo-porcaja" value="0" min="0" step="1" placeholder="0">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-conemp" onchange="toggleEmpaque('nuevo-')" style="width:auto"> 📦 Viene en empaques (fundas, cajas, paquetes…)</label>
+        <div id="nuevo-emp-box" style="display:none;background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
+            <div class="grid2-inv">
+                <div><label style="margin-top:0">Tipo de empaque</label><select id="nuevo-empaque" onchange="recalcEmpaque('nuevo-')"></select></div>
+                <div><label style="margin-top:0">Unidades por empaque</label><input type="number" id="nuevo-porcaja" value="0" min="0" step="1" placeholder="Ej: 100" oninput="recalcEmpaque('nuevo-')"></div>
+            </div>
+            <div class="grid2-inv" style="margin-top:6px">
+                <div><label style="margin-top:0">Empaques completos</label><input type="number" id="nuevo-empaques" value="0" min="0" step="1" oninput="recalcEmpaque('nuevo-')"></div>
+                <div><label style="margin-top:0">Sueltas (fuera de empaque)</label><input type="number" id="nuevo-sueltas" value="0" min="0" step="1" oninput="recalcEmpaque('nuevo-')"></div>
+            </div>
+            <div style="margin-top:8px;font-size:13.5px;color:var(--artal-blue)">Existencia total: <b id="nuevo-total">0</b> <span id="nuevo-total-u"></span> <span style="color:#999;font-size:12px">(se calcula sola)</span></div>
+        </div>
         <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-esset" onchange="toggleSetNuevo()" style="width:auto"> 🧩 Es un <b>juego/set</b> (varias piezas: brocas, llaves Allen, puntas…)</label>
         <div id="nuevo-set-hint" style="display:none;font-size:12px;color:#b9770e;background:#fff8ec;border-radius:8px;padding:7px 10px;margin-top:6px;">El costo y el precio son <b>del juego completo</b>, no de una pieza suelta.</div>
         <div id="nuevo-set-box" style="display:none;background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
@@ -178,8 +188,8 @@
             <div id="nuevo-piezas"></div>
             <button type="button" onclick="agregarPiezaNuevo()" style="background:var(--artal-light);color:var(--artal-blue);border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12.5px;cursor:pointer;font-family:'Arimo';margin-top:4px;">+ Agregar pieza</button>
         </div>
-        <label id="lbl-nuevo-cantidad">Cantidad inicial</label>
-        <input type="number" id="nuevo-cantidad" value="0" min="0">
+        <div id="nuevo-sinemp"><label id="lbl-nuevo-cantidad">Existencia actual <span style="font-weight:normal;color:#999">(en la unidad de conteo)</span></label>
+        <input type="number" id="nuevo-cantidad" value="0" min="0"></div>
         <label>Cantidad mínima <span style="font-weight:normal;color:#999">(avisa cuando baje de aquí; 0 = sin aviso)</span></label>
         <input type="number" id="nuevo-minimo" value="0" min="0">
         <label id="lbl-nuevo-costo">Costo (por unidad)</label>
@@ -395,7 +405,7 @@
         document.getElementById('nuevo-set-box').style.display = on ? 'block' : 'none';
         document.getElementById('nuevo-set-hint').style.display = on ? 'block' : 'none';
         // Etiquetas claras: en un juego, el costo/precio y la cantidad son DEL JUEGO, no de una pieza.
-        document.getElementById('lbl-nuevo-cantidad').textContent = on ? 'Cantidad inicial (juegos)' : 'Cantidad inicial';
+        document.getElementById('lbl-nuevo-cantidad').textContent = on ? 'Existencia actual (juegos)' : 'Existencia actual';
         document.getElementById('lbl-nuevo-costo').textContent = on ? 'Costo del juego completo (RD$)' : 'Costo (por unidad)';
         document.getElementById('lbl-nuevo-venta').innerHTML = on ? 'Precio de venta del juego <span style="font-weight:normal;color:#999">(opcional · solo si se revende)</span>' : 'Precio de venta (por unidad) <span style="font-weight:normal;color:#999">(opcional · solo si se revende)</span>';
         if (on) { const u = document.getElementById('nuevo-unidad'); if (!u.value.trim() || u.value.trim() === 'unidades') u.value = 'juego'; }
@@ -470,6 +480,53 @@
         const opts = `<option value="">— elegir unidad —</option>` + units.map(u => `<option value="${esc(u)}" ${u.toLowerCase() === sel.toLowerCase() ? 'selected' : ''}>${esc(u)}</option>`).join('');
         return `<div class="unidad-wrap"><select id="${selectId}">${opts}</select><button type="button" class="unidad-add" onclick="agregarUnidad('${selectId}')" title="Agregar una unidad nueva">+</button></div>`;
     }
+    // ---- Empaques (Dylan 2026-10-28, caso tapitas: «tengo 7 fundas de 100; entro cantidad por funda, cantidad de fundas y se calcula
+    // el total»). `unidad` = lo que se cuenta; `empaque` = funda/caja/paquete…; `porCaja` = unidades por empaque; `cantidad` = total.
+    const EMPAQUES_DEFAULT = ['caja', 'funda', 'paquete', 'rollo', 'bulto', 'saco', 'blíster'];
+    const empaqueDe = (it) => String(it.empaque || (Number(it.porCaja) > 0 ? 'caja' : '')).trim();
+    const plural = (e, n) => n === 1 ? e : (e.endsWith('a') || e.endsWith('e') || e.endsWith('o') ? e + 's' : e + 'es');
+    function empaqueSelectHTML(id, selected, pre, suf) {
+        const set = new Set(EMPAQUES_DEFAULT); allItems.forEach(it => { const e = String(it.empaque || '').trim().toLowerCase(); if (e) set.add(e); });
+        const sel = String(selected || 'caja').toLowerCase(); set.add(sel);
+        return `<select id="${id}" onchange="if(this.value==='__otro'){const n=(prompt('Nombre del empaque (ej. funda, blíster):')||'').trim().toLowerCase(); if(n){const o=document.createElement('option');o.value=n;o.textContent=n;this.insertBefore(o,this.lastElementChild);this.value=n;} else this.value='${esc(sel)}';} recalcEmpaque('${pre}','${suf}')">${[...set].sort().map(e => `<option value="${esc(e)}" ${e === sel ? 'selected' : ''}>${esc(e)}</option>`).join('')}<option value="__otro">➕ otro…</option></select>`;
+    }
+    // Caja de empaques para el formulario de edición (el de «nuevo» está en el HTML con los mismos ids sin sufijo).
+    function empaqueBoxHTML(pre, suf, item) {
+        const porCaja = Number(item.porCaja) || 0, cant = Number(item.cantidad) || 0, con = porCaja > 0;
+        const emp = con ? Math.floor(cant / porCaja) : 0, sueltas = con ? cant % porCaja : 0;
+        return `<label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:12.5px;color:#333;margin-top:10px;"><input type="checkbox" id="${pre}conemp${suf}" onchange="toggleEmpaque('${pre}','${suf}')" ${con ? 'checked' : ''} style="width:auto"> 📦 Viene en empaques (fundas, cajas, paquetes…)</label>
+            <div id="${pre}emp-box${suf}" style="${con ? '' : 'display:none;'}background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
+                <div class="grid2-inv">
+                    <div><label style="margin-top:0">Tipo de empaque</label>${empaqueSelectHTML(pre + 'empaque' + suf, empaqueDe(item), pre, suf)}</div>
+                    <div><label style="margin-top:0">Unidades por empaque</label><input type="number" id="${pre}porcaja${suf}" min="0" step="1" value="${porCaja}" placeholder="Ej: 100" oninput="recalcEmpaque('${pre}','${suf}')"></div>
+                </div>
+                <div class="grid2-inv" style="margin-top:6px">
+                    <div><label style="margin-top:0">Empaques completos</label><input type="number" id="${pre}empaques${suf}" min="0" step="1" value="${emp}" oninput="recalcEmpaque('${pre}','${suf}')"></div>
+                    <div><label style="margin-top:0">Sueltas (fuera de empaque)</label><input type="number" id="${pre}sueltas${suf}" min="0" step="1" value="${sueltas}" oninput="recalcEmpaque('${pre}','${suf}')"></div>
+                </div>
+                <div style="margin-top:8px;font-size:13.5px;color:var(--artal-blue)">Existencia total: <b id="${pre}total${suf}">${cant}</b> <span id="${pre}total-u${suf}">${esc(item.unidad || '')}</span> <span style="color:#999;font-size:12px">(se calcula sola)</span></div>
+            </div>`;
+    }
+    const $e = (pre, suf, n) => document.getElementById(pre + n + (suf || ''));
+    window.toggleEmpaque = function (pre, suf) {
+        suf = suf || ''; const on = $e(pre, suf, 'conemp').checked;
+        $e(pre, suf, 'emp-box').style.display = on ? 'block' : 'none';
+        const sin = $e(pre, suf, 'sinemp'); if (sin) sin.style.display = on ? 'none' : '';
+        if (on) recalcEmpaque(pre, suf);
+    };
+    window.recalcEmpaque = function (pre, suf) {
+        suf = suf || ''; const pc = Number(($e(pre, suf, 'porcaja') || {}).value) || 0, n = Number(($e(pre, suf, 'empaques') || {}).value) || 0, sl = Number(($e(pre, suf, 'sueltas') || {}).value) || 0;
+        const tot = $e(pre, suf, 'total'); if (tot) tot.textContent = String(n * pc + sl);
+        const u = $e(pre, suf, 'total-u'); const us = document.getElementById(pre === 'nuevo-' ? 'nuevo-unidad' : 'editar-unidad' + suf); if (u && us) u.textContent = us.value || '';
+    };
+    // Lee el bloque de cantidad de un formulario → { unidad, empaque, porCaja, cantidad }.
+    function leerCantidad(pre, suf, unidad) {
+        suf = suf || ''; const con = $e(pre, suf, 'conemp') && $e(pre, suf, 'conemp').checked;
+        if (!con) return { empaque: '', porCaja: 0, cantidad: Number(($e(pre, suf, pre === 'nuevo-' ? 'cantidad' : 'cant') || {}).value) || 0 };
+        const porCaja = Number($e(pre, suf, 'porcaja').value) || 0, n = Number($e(pre, suf, 'empaques').value) || 0, sl = Number($e(pre, suf, 'sueltas').value) || 0;
+        if (!porCaja) { alert('Escribe cuántas ' + (unidad || 'unidades') + ' trae cada empaque.'); return null; }
+        return { empaque: String(($e(pre, suf, 'empaque') || {}).value || 'caja'), porCaja, cantidad: n * porCaja + sl };
+    }
     window.agregarUnidad = function (selectId) {
         const nombre = (prompt('Nueva unidad de medida (ej. cartuchos, sacos, rollos):') || '').trim();
         if (!nombre) return;
@@ -499,11 +556,11 @@
                 <b>${label}</b>
                 <span class="item-qty"><span class="q-lbl">Existencia</span><span><span class="q-num">${cant}</span>${item.unidad ? ` <span class="unidad">${esc(item.unidad)}</span>` : ''}</span></span>
             </div>
-            ${(porCaja > 0 && cant > 0) ? `<div class="item-min">${cajas > 0 ? `📦 <b>${cajas}</b> caja(s) llena(s) × ${porCaja}${sueltos > 0 ? ` + 🔓 <b>${sueltos}</b> suelto(s)` : ' (todas selladas)'}` : `🔓 <b>${sueltos}</b> en 1 caja abierta`}</div>` : ''}
+            ${(porCaja > 0 && cant > 0) ? `<div class="item-min">${cajas > 0 ? `📦 <b>${cajas}</b> ${esc(plural(empaqueDe(item), cajas))} × ${porCaja}${sueltos > 0 ? ` + 🔓 <b>${sueltos}</b> suelta(s)` : ''}` : `🔓 <b>${sueltos}</b> sueltas (menos de 1 ${esc(empaqueDe(item))})`}</div>` : ''}
             ${item.referencia ? `<div class="item-ref">Ref: ${esc(item.referencia)}</div>` : ''}
             ${(item.esSet && Array.isArray(item.piezas) && item.piezas.length) ? `<details class="set-details"><summary>🧩 Juego de ${item.piezas.length} pieza(s)</summary><ul style="margin:4px 0 0 4px;padding-left:16px;font-size:12.5px;color:#555;">${item.piezas.map(p => `<li>${esc(p.nombre)}${(Number(p.cantidad) || 1) > 1 ? ' ×' + p.cantidad : ''}</li>`).join('')}</ul></details>` : ''}
             ${esAdmin && item.proveedor ? `<div class="item-ref">🏭 Proveedor: ${esc(item.proveedor)}</div>` : ''}
-            ${min ? `<div class="item-min">Mínimo: ${min}${porCaja > 0 ? ' unidades' : ''}</div>` : ''}
+            ${min ? `<div class="item-min">Mínimo: ${min} ${esc(item.unidad || '')}${porCaja > 0 ? ` (≈ ${Math.ceil(min / porCaja)} ${esc(plural(empaqueDe(item), Math.ceil(min / porCaja)))})` : ''}</div>` : ''}
             ${sinStock ? `<div class="stock-warn out">⛔ Sin stock</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo</div>` : '')}
             ${esAdmin ? `
             <div class="item-precios">
@@ -534,7 +591,7 @@
             ${esAdmin ? `
             <div class="inline-form" id="agregar-${item.id}">
                 <div class="grid2-inv">
-                    <div><label>Cantidad a agregar</label><div style="display:flex;gap:6px">${Number(item.porCaja) > 0 ? `<select id="agregar-modo-${item.id}" style="flex:0 0 auto;min-width:96px"><option value="cajas">caja(s) ×${Number(item.porCaja)}</option><option value="unidades">unidad(es)</option></select>` : ''}<input type="number" id="agregar-cant-${item.id}" min="1" value="1" style="flex:1"></div></div>
+                    <div><label>Cantidad a agregar</label><div style="display:flex;gap:6px">${Number(item.porCaja) > 0 ? `<select id="agregar-modo-${item.id}" style="flex:0 0 auto;min-width:96px"><option value="cajas">${esc(plural(empaqueDe(item), 2))} ×${Number(item.porCaja)}</option><option value="unidades">unidad(es)</option></select>` : ''}<input type="number" id="agregar-cant-${item.id}" min="1" value="1" style="flex:1"></div></div>
                     <div><label>Costo por ${esc(item.unidad)} <span style="font-weight:normal;color:#999">(de esta compra)</span></label><input type="number" id="agregar-costo-${item.id}" min="0" step="0.01" value="${costo || ''}" placeholder="RD$"></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:6px">
@@ -556,12 +613,10 @@
                 <input type="text" id="editar-prov-${item.id}" value="${esc(item.proveedor || '')}" placeholder="Ej: Alucufel, Vidriera X…">
                 <label>Color / variante <span style="font-weight:normal;color:#999">(opcional)</span></label>
                 <input type="text" id="editar-color-${item.id}" value="${esc(item.color || '')}" placeholder="Ej: Negro, Blanco…">
+                <label>Unidad de conteo <span style="font-weight:normal;color:#999">(lo que se cuenta: unidades, tubos, latas…)</span></label>${unidadSelectHTML('editar-unidad-' + item.id, item.unidad)}
+                ${empaqueBoxHTML('editar-', '-' + item.id, item)}
                 <div class="grid2-inv" style="margin-top:8px">
-                    <div><label>Unidad</label>${unidadSelectHTML('editar-unidad-' + item.id, item.unidad)}</div>
-                    <div><label>Unidades por caja <span style="font-weight:normal;color:#999">(0 = sin caja)</span></label><input type="number" id="editar-porcaja-${item.id}" min="0" step="1" value="${Number(item.porCaja) || 0}"></div>
-                </div>
-                <div class="grid2-inv" style="margin-top:8px">
-                    <div><label>Existencia actual <span style="font-weight:normal;color:#999">(total de unidades)</span></label><input type="number" id="editar-cant-${item.id}" min="0" step="1" value="${Number(item.cantidad) || 0}"></div>
+                    <div id="editar-sinemp-${item.id}" style="${Number(item.porCaja) > 0 ? 'display:none' : ''}"><label>Existencia actual <span style="font-weight:normal;color:#999">(en la unidad de conteo)</span></label><input type="number" id="editar-cant-${item.id}" min="0" step="1" value="${Number(item.cantidad) || 0}"></div>
                     <div><label>Categoría</label><select id="editar-cat-${item.id}" onchange="onEditarCatChange('${item.id}')">${todasLasCategorias().map(c => `<option value="${esc(c.key)}" ${c.key === item.categoria ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>
                 </div>
                 <div class="grid2-inv" style="margin-top:8px">
@@ -1026,6 +1081,7 @@
             if (sg2 && subSel2 && subSel2 !== '_sc' && [...sg2.options].some(o => o.value === subSel2)) sg2.value = subSel2;
         }
         document.getElementById('nuevo-unidad-wrap').innerHTML = unidadSelectHTML('nuevo-unidad', document.getElementById('nuevo-unidad') ? document.getElementById('nuevo-unidad').value : '');
+        document.getElementById('nuevo-empaque').outerHTML = empaqueSelectHTML('nuevo-empaque', document.getElementById('nuevo-empaque').value || 'caja', 'nuevo-', '');
         document.getElementById('nuevo-item-overlay').classList.add('show');
     };
     window.cerrarNuevoItem = function () {
@@ -1038,8 +1094,8 @@
         const proveedor = document.getElementById('nuevo-proveedor').value.trim();
         const color = document.getElementById('nuevo-color').value.trim();
         const unidad = document.getElementById('nuevo-unidad').value.trim() || 'unidades';
-        const porCaja = Number(document.getElementById('nuevo-porcaja').value) || 0;
-        const cantidad = Number(document.getElementById('nuevo-cantidad').value) || 0;
+        const q = leerCantidad('nuevo-', '', unidad); if (!q) return;
+        const { empaque, porCaja, cantidad } = q;
         const minimo = Number(document.getElementById('nuevo-minimo').value) || 0;
         const costo = Number(document.getElementById('nuevo-costo').value) || 0;
         const venta = Number(document.getElementById('nuevo-venta').value) || 0;
@@ -1053,7 +1109,7 @@
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null,
-                categoria, subgrupo, subgrupo2, unidad, porCaja, cantidad, minimo, costo, venta,
+                categoria, subgrupo, subgrupo2, unidad, empaque, porCaja, cantidad, minimo, costo, venta,
                 esSet, piezas, creadoFecha: serverTimestamp()
             });
             cerrarNuevoItem();
@@ -1121,10 +1177,11 @@
         const proveedor = (document.getElementById('editar-prov-' + id).value || '').trim();
         const color = (document.getElementById('editar-color-' + id).value || '').trim();
         const unidad = (document.getElementById('editar-unidad-' + id).value || '').trim();
-        const porCaja = Number(document.getElementById('editar-porcaja-' + id).value) || 0;
+        const q = leerCantidad('editar-', '-' + id, unidad); if (!q) return;
+        const { empaque, porCaja } = q;
         const itemEd = allItems.find(it => it.id === id) || {};
         const cantAnterior = Number(itemEd.cantidad) || 0;
-        const nuevaCant = Number(document.getElementById('editar-cant-' + id).value) || 0;
+        const nuevaCant = q.cantidad;   // total: empaques × unidades por empaque + sueltas, o el campo directo si no viene en empaques
         const categoria = document.getElementById('editar-cat-' + id).value;
         const minimo = Number(document.getElementById('editar-min-' + id).value) || 0;
         const sgEl = document.getElementById('editar-sg-' + id);
@@ -1136,7 +1193,7 @@
         const esSet = (document.getElementById('editar-esset-' + id) || {}).checked || false;
         const piezas = esSet ? leerPiezas('editar-piezas-' + id) : [];
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, porCaja, cantidad: nuevaCant, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, empaque, porCaja, cantidad: nuevaCant, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
             // Si cambió la existencia a mano, lo dejamos registrado como ajuste (queda en el Historial).
             if (nuevaCant !== cantAnterior) {
                 try {
@@ -1195,7 +1252,7 @@
         const modoEl = document.getElementById('agregar-modo-' + id);
         const enCajas = porCaja > 0 && modoEl && modoEl.value === 'cajas';
         const cantidad = enCajas ? cantIngresada * porCaja : cantIngresada;   // unidades totales que entran
-        const notaCajas = enCajas ? cantIngresada + ' caja(s) × ' + porCaja + ' = ' + cantidad + ' ' + (item.unidad || 'u') : '';
+        const notaCajas = enCajas ? cantIngresada + ' ' + plural(empaqueDe(item), cantIngresada) + ' × ' + porCaja + ' = ' + cantidad + ' ' + (item.unidad || 'u') : '';
         const costoU = Number(document.getElementById('agregar-costo-' + id).value) || 0;
         const proveedor = (document.getElementById('agregar-prov-' + id).value || '').trim();
         const ncf = (document.getElementById('agregar-ncf-' + id).value || '').trim().toUpperCase();

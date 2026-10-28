@@ -3136,6 +3136,21 @@ lamas-NN/` con token de descarga (subida por REST con la credencial de firebase-
 `guia-security-lamas` (categoría «Guías · Productos», 5 lecciones) enlaza la ficha como adjunto tipo «pdf» en la lección 1 (así
 `fotosThumbsHTML` pinta una tarjeta 📄 clicable) y el comunicado del 2026-10-21 apunta a la guía.
 
+### Inventario: unidad de conteo + empaques (2026-10-28)
+
+Dylan (captura de la tapita negra 3/8: había puesto «paquetes» como unidad y 2000 como existencia; en realidad tiene 7 fundas de
+100): «entro cantidad por funda, cantidad de fundas y se calcula el total». Los formularios de ítem nuevo y de edición
+(`ops/inventario.html`) tienen ahora: **Unidad de conteo** (lo que se cuenta: unidades, tubos, latas, metros…; `unidad`) y la
+casilla **«📦 Viene en empaques»** que abre: Tipo de empaque (`empaque`: caja/funda/paquete/rollo/bulto/saco/blíster + «➕ otro…»,
+`EMPAQUES_DEFAULT` + los ya usados), Unidades por empaque (`porCaja`, mismo campo de siempre), Empaques completos y Sueltas →
+«Existencia total» calculada sola (`recalcEmpaque`), que es lo que se guarda en `cantidad`; sin la casilla, un solo campo
+«Existencia actual». `empaqueBoxHTML(pre, suf, item)` arma el bloque en edición (en «nuevo» está en el HTML con ids
+`nuevo-conemp/empaque/porcaja/empaques/sueltas/total`; los handlers reciben el prefijo CON guion: `toggleEmpaque('nuevo-')`),
+`leerCantidad(pre, suf)` devuelve `{empaque, porCaja, cantidad}` para guardar. La tarjeta dice «📦 7 fundas × 100 + 🔓 3 sueltas»
+y «Mínimo: 250 unidades (≈ 3 fundas)» (`empaqueDe` = `empaque` o «caja» si solo hay `porCaja`, `plural`); «+ Agregar» ofrece
+«fundas ×100» o unidades. Dato corregido: tapita negra 3/8 → 7 fundas × 100 = 700 (ajuste −1300 registrado); las 5 tapitas pasan
+de unidad «unidad» a «unidades».
+
 ### Notificaciones y badges
 
 - Push real vía Cloud Messaging + Cloud Function `enviarNotificacionCita` (dispara con cada
