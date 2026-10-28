@@ -3093,6 +3093,21 @@ Inventario: la gestión la tiene también quien entra por permiso de página sin
 se muestran las estrellas del cliente en la tarjeta, ni el bloque «🤝 ¿Cómo se portó…?», ni los botones 👍/👌/⚠️ de la ventana
 de horas (la ventana de horas sí). puntos.html solo consulta `puntos` si es admin.
 
+### Academia: edición en pantalla e imágenes en medio del texto (2026-10-28)
+
+Dylan, con un video de Anny en la Academia: «editar los textos directamente en pantalla, imágenes de referencia EN MEDIO del
+texto y que cada apartado pueda llevar su imagen». El contenido sigue siendo texto plano (`contenido`) con dos marcas que
+interpreta `contenidoHTML(l, editor)` en `academia.html`: una línea corta TODA EN MAYÚSCULAS (se ignora un paréntesis final) es
+título de apartado (`h4.sec`), y `[img:N]` / `[img:N|pie de foto]` muestra en ese punto el adjunto Nº N de `fotos[]` (1 = el
+primero; `imgsDe`). Las imágenes referenciadas no se repiten en las miniaturas del pie (`imagenesUsadas`). Solo `esAutor`
+(admin/capacitador): doble clic en el texto → `editarContenidoInline` (textarea con «🖼️ Insertar imagen aquí» = picker de los
+adjuntos que inserta el token en el cursor; Ctrl+Enter guarda, Esc cancela; `inlineEditando` hace que `render()` no repinte
+mientras se edita); cada `h4.sec` lleva «🖼️ imagen» (`imagenParaSeccion`: picker que inserta `[img:N]` justo debajo, sin entrar
+en edición); cada figura tiene «✕ quitar de aquí» (`quitarImagenInline`, sigue adjunta); doble clic en el título de la lección y
+en título/descripción del curso → `inlineTexto` (contenteditable, Enter guarda, Esc cancela; `guardarCampoLeccion`/`guardarCampoCurso`).
+Las imágenes se siguen subiendo con «📎 Agregar foto/PDF» (fotos.js) y luego se colocan. Probado con el espejo de Emerson (solo
+lectura): títulos, figuras en línea y el editor (abrir, picker, insertar, cancelar); el guardado solo con cuenta real.
+
 ### Academia: guías de la plataforma (2026-09-22)
 
 `ops/academia.html` está abierta a todo el equipo interno (no a ALUCUFEL) y nunca se bloquea por parte pendiente. La

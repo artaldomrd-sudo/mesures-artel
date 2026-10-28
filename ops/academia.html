@@ -41,6 +41,25 @@
     .lec-read h2 { color: var(--artal-blue); font-size: 20px; margin: 4px 0 2px; }
     .lec-read .meta { font-size: 12.5px; color: #8a93a0; margin-bottom: 14px; }
     .lec-read .cont { font-size: 15px; color: #2f3944; line-height: 1.6; white-space: pre-wrap; }
+    /* Edición en pantalla + imágenes en medio del texto (Dylan 2026-10-28, video de Anny) */
+    .lec-read .cont.editable { cursor: text; border-radius: 8px; transition: background .15s; }
+    .lec-read .cont.editable:hover { background: #f7fafc; outline: 1px dashed #cfe0f2; }
+    .lec-read h4.sec { color: var(--artal-blue); font-size: 14px; letter-spacing: .04em; margin: 18px 0 4px; display: flex; align-items: center; gap: 8px; }
+    .lec-read h4.sec .figbtn { background: #eef4fb; color: #1f6aa5; border: 1px solid #cfe0f2; border-radius: 999px; font-size: 11px; padding: 2px 8px; cursor: pointer; font-family: 'Arimo'; font-weight: normal; }
+    .lec-fig { margin: 12px auto; text-align: center; max-width: 720px; }
+    .lec-fig img { max-width: 100%; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.12); display: block; margin: 0 auto; }
+    .lec-fig figcaption { font-size: 12px; color: #8a93a0; margin-top: 4px; }
+    .lec-fig .figdel { font-size: 11px; color: #c0392b; cursor: pointer; margin-left: 6px; }
+    .inline-edit textarea { width: 100%; min-height: 320px; font: 15px/1.6 'Arimo', Arial, sans-serif; color: #2f3944; padding: 12px; border: 2px solid var(--artal-blue); border-radius: 10px; resize: vertical; box-sizing: border-box; }
+    .inline-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+    .inline-bar button { border: 1px solid #cfe0f2; background: #fff; border-radius: 8px; padding: 7px 11px; font-family: 'Arimo'; font-size: 13px; cursor: pointer; }
+    .inline-bar button.save { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); font-weight: bold; }
+    .inline-bar .hint { font-size: 12px; color: #8a93a0; }
+    .img-picker { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; background: #f7fafc; border: 1px solid #cfe0f2; border-radius: 10px; margin: 6px 0; }
+    .img-picker img { width: 110px; height: 80px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid transparent; }
+    .img-picker img:hover { border-color: var(--artal-blue); }
+    .img-picker .empty { font-size: 12.5px; color: #8a93a0; }
+    [contenteditable="true"].inline-txt { outline: 2px solid var(--artal-blue); border-radius: 6px; padding: 2px 6px; background: #fff; }
     .lec-video { position: relative; width: 100%; aspect-ratio: 16 / 9; margin: 10px 0 16px; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: #000; }
     .lec-video iframe, .lec-video video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
     .lec-read .nav { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
@@ -297,6 +316,7 @@
 
     // ---------------- Render ----------------
     function render() {
+        if (inlineEditando) return;   // no pisar una edición en pantalla con un refresco de Firestore
         const cont = document.getElementById('vista');
         if (vista === 'progreso' && esAutor) return renderProgreso(cont);
         if (vista === 'examen' && cursoById(cursoSelId)) return renderExamen(cont);
@@ -351,8 +371,8 @@
         let html = `<div class="crumbs"><a onclick="irA('cursos')">← Cursos</a></div>
             <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;">
                 <div style="font-size:34px">${esc(c.emoji || '🎓')}</div>
-                <div><h2 style="color:var(--artal-blue);font-size:20px;margin:0">${esc(c.titulo || 'Curso')}</h2>
-                ${c.descripcion ? `<div style="font-size:13.5px;color:#556;margin-top:3px">${esc(c.descripcion)}</div>` : ''}</div>
+                <div><h2 style="color:var(--artal-blue);font-size:20px;margin:0" ${esAutor ? `title="Doble clic para corregir" ondblclick="inlineTexto(this, (v) => guardarCampoCurso('${c.id}', 'titulo', v))"` : ''}>${esc(c.titulo || 'Curso')}</h2>
+                ${c.descripcion || esAutor ? `<div style="font-size:13.5px;color:#556;margin-top:3px" ${esAutor ? `title="Doble clic para corregir la descripción" ondblclick="inlineTexto(this, (v) => guardarCampoCurso('${c.id}', 'descripcion', v))"` : ''}>${esc(c.descripcion || (esAutor ? '(sin descripción — doble clic para escribirla)' : ''))}</div>` : ''}</div>
             </div>`;
         if (esAutor) html += `<div class="bar">${admCurso}<button class="btn-y" onclick="abrirLeccion('${c.id}')">+ Lección</button><button class="btn-ia" onclick="abrirEsquema('${c.id}')">✨ Generar curso con IA</button></div>`;
         if (!lecs.length) { cont.innerHTML = html + '<p class="empty">Este curso todavía no tiene lecciones.</p>'; return; }
@@ -562,14 +582,17 @@
         const lecs = leccionesDe(l.cursoId), idx = lecs.findIndex(x => x.id === l.id);
         const done = completadasDe(l.cursoId).has(l.id);
         const prev = idx > 0 ? lecs[idx - 1] : null, next = idx < lecs.length - 1 ? lecs[idx + 1] : null;
-        const fotos = fotosThumbsHTML(l.fotos, { coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', puedeBorrar: esAutor });
+        // Las imágenes referenciadas dentro del texto ([img:N]) se ven en su sitio; abajo solo quedan las no usadas y los PDF.
+        const usadas = imagenesUsadas(l.contenido);
+        const restantes = (Array.isArray(l.fotos) ? l.fotos : []).filter((f, i) => !usadas.has(i + 1));
+        const fotos = fotosThumbsHTML(restantes, { coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', puedeBorrar: esAutor && restantes.length === (l.fotos || []).length });
         const addBtn = esAutor ? fotoAddBtnHTML({ coleccion: 'academiaLecciones', id: l.id, campo: 'fotos', label: '📎 Agregar foto/PDF', pdf: true }) : '';
         cont.innerHTML = `<div class="crumbs"><a onclick="irA('cursos')">Cursos</a> › <a onclick="irA('curso','${l.cursoId}')">${esc(c.titulo || 'Curso')}</a></div>
             <div class="lec-read">
-                <h2>${esc(l.titulo || 'Lección')}</h2>
-                <div class="meta">Lección ${idx + 1} de ${lecs.length}${l.duracion ? ' · ⏱ ' + n2(l.duracion) + ' min' : ''}</div>
+                <h2 ${esAutor ? `class="inline-txt-target" title="Doble clic para corregir el título" ondblclick="inlineTexto(this, (v) => guardarCampoLeccion('${l.id}', 'titulo', v))"` : ''}>${esc(l.titulo || 'Lección')}</h2>
+                <div class="meta">Lección ${idx + 1} de ${lecs.length}${l.duracion ? ' · ⏱ ' + n2(l.duracion) + ' min' : ''}${esAutor ? ' · <span style="color:#1f6aa5">✏ doble clic sobre el texto para editarlo en pantalla</span>' : ''}</div>
                 ${videoEmbedHTML(l.video)}
-                <div class="cont">${esc(l.contenido || '')}</div>
+                <div class="cont ${esAutor ? 'editable' : ''}" id="lec-cont" ${esAutor ? `title="Doble clic para editar" ondblclick="editarContenidoInline('${l.id}')"` : ''}>${contenidoHTML(l, esAutor)}</div>
                 ${fotos}${addBtn}
                 ${esAutor ? `<div class="bar" style="margin-top:14px"><button class="btn-ghost" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="btn-ia" style="margin-top:0" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
                 <div class="nav">
@@ -579,6 +602,106 @@
                 </div>
             </div>`;
     }
+    /* ===== Contenido con imágenes en medio del texto y edición en pantalla (Dylan 2026-10-28, video de Anny) =====
+       El contenido sigue siendo texto plano. Dos marcas:
+       · una línea TODA EN MAYÚSCULAS (3–80 caracteres) se muestra como título de apartado («QUÉ ES UNA CORREDERA»);
+       · [img:N] (o [img:N|pie de foto]) muestra en ese punto la imagen Nº N de los adjuntos de la lección (1 = la primera).
+       Las imágenes se suben como siempre con «📎 Agregar foto/PDF» y luego se colocan donde toca. */
+    let inlineEditando = null;   // {id, campo} mientras hay una edición en pantalla abierta (render() no repinta)
+    const imgsDe = (l) => (Array.isArray(l.fotos) ? l.fotos : []).map((f, i) => ({ ...f, n: i + 1 })).filter((f) => f.tipo === 'img' || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(f.url || ''));
+    function imagenesUsadas(txt) { const u = new Set(); String(txt || '').replace(/\[img:(\d+)(\|[^\]]*)?\]/g, (m, n) => { u.add(Number(n)); return m; }); return u; }
+    // Título de apartado: línea corta en MAYÚSCULAS; se ignora lo que va entre paréntesis («MEDIDAS ESTÁNDAR (más baratas que a medida)»).
+    const esTituloSeccion = (ln) => { const t = ln.trim().replace(/\s*\([^)]*\)\s*$/, ''); return t.length >= 3 && t.length <= 80 && /[A-ZÁÉÍÓÚÑ]{3}/.test(t) && t === t.toUpperCase() && !/\[img:/.test(ln); };
+    function contenidoHTML(l, editor) {
+        const fotos = Array.isArray(l.fotos) ? l.fotos : [];
+        const lineas = String(l.contenido || '').split('\n');
+        return lineas.map((ln, i) => {
+            let h = esc(ln);
+            h = h.replace(/\[img:(\d+)(?:\|([^\]]*))?\]/g, (m, n, pie) => {
+                const f = fotos[Number(n) - 1];
+                if (!f || !f.url) return `<span style="color:#c0392b;font-size:12px">[imagen ${n} no existe]</span>`;
+                return `<figure class="lec-fig"><img src="${esc(f.url)}" loading="lazy" alt="${esc(pie || f.nombre || '')}"><figcaption>${esc(pie || f.nombre || '')}${editor ? `<span class="figdel" title="Quitar la imagen de este punto (sigue adjunta)" onclick="quitarImagenInline('${l.id}', ${i}, ${n})">✕ quitar de aquí</span>` : ''}</figcaption></figure>`;
+            });
+            if (esTituloSeccion(ln)) return `<h4 class="sec">${h}${editor ? `<button class="figbtn" title="Poner una imagen debajo de este apartado" onclick="imagenParaSeccion('${l.id}', ${i})">🖼️ imagen</button>` : ''}</h4>`;
+            return h;
+        }).join('\n').replace(/<\/h4>\n\n/g, '</h4>\n').replace(/<\/figure>\n\n/g, '</figure>\n');   // sin huecos dobles tras un título o una figura
+    }
+    async function guardarContenido(id, contenido) { await updateDoc(doc(db, 'academiaLecciones', id), { contenido, actualizado: new Date().toISOString(), actualizadoPor: usuario.nombre }); }
+    // Picker de imágenes de la lección: devuelve HTML; al tocar una llama a `onPick(n)` (número 1-based).
+    function pickerHTML(l, onPickFn) {
+        const imgs = imgsDe(l);
+        if (!imgs.length) return `<div class="img-picker"><span class="empty">Esta lección no tiene imágenes adjuntas todavía. Súbelas con «📎 Agregar foto/PDF» (abajo) y vuelve aquí.</span></div>`;
+        return `<div class="img-picker">${imgs.map((f) => `<img src="${esc(f.url)}" title="${esc(f.nombre || '')} (imagen ${f.n})" onclick="${onPickFn}(${f.n})">`).join('')}<span class="empty" style="width:100%">Toca la imagen que va en ese punto.</span></div>`;
+    }
+    // Un apartado (línea en mayúsculas) → imagen justo debajo, sin entrar en modo edición.
+    window.imagenParaSeccion = function (id, linea) {
+        const h4 = document.querySelectorAll('#lec-cont h4.sec'); let target = null;
+        h4.forEach((h) => { if (String(h.innerHTML).includes(`imagenParaSeccion('${id}', ${linea})`)) target = h; });
+        const l = leccionById(id); if (!l || !target) return;
+        document.querySelectorAll('#lec-cont .img-picker').forEach((p) => p.remove());
+        window.__pickSeccion = async (n) => {
+            const lineas = String(l.contenido || '').split('\n'); lineas.splice(linea + 1, 0, `[img:${n}]`);
+            try { await guardarContenido(id, lineas.join('\n')); } catch (e) { alert('No se pudo guardar: ' + e.message); }
+        };
+        target.insertAdjacentHTML('afterend', pickerHTML(l, '__pickSeccion'));
+    };
+    window.quitarImagenInline = async function (id, linea, n) {
+        const l = leccionById(id); if (!l) return;
+        const lineas = String(l.contenido || '').split('\n');
+        lineas[linea] = lineas[linea].replace(new RegExp('\\s*\\[img:' + n + '(\\|[^\\]]*)?\\]'), '');
+        try { await guardarContenido(id, lineas.filter((x, i) => !(i === linea && x.trim() === '' && (lineas[i - 1] || '').trim() === '')).join('\n')); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    // Edición en pantalla del contenido: la caja de texto se convierte en un área editable con barra (insertar imagen, guardar, cancelar).
+    window.editarContenidoInline = function (id) {
+        if (inlineEditando) return;
+        const l = leccionById(id), box = document.getElementById('lec-cont'); if (!l || !box) return;
+        inlineEditando = { id, campo: 'contenido' };
+        box.classList.remove('editable'); box.removeAttribute('ondblclick');
+        box.innerHTML = `<div class="inline-edit">
+            <div class="inline-bar"><button onclick="inlineInsertarImagen('${id}')">🖼️ Insertar imagen aquí</button><span class="hint">Pon el cursor donde va la imagen y toca el botón. Una línea EN MAYÚSCULAS es un título de apartado.</span></div>
+            <div id="inline-picker"></div>
+            <textarea id="inline-ta" spellcheck="true"></textarea>
+            <div class="inline-bar"><button class="save" onclick="inlineGuardar('${id}')">💾 Guardar</button><button onclick="inlineCancelar()">✕ Cancelar</button><span class="hint">Ctrl + Enter guarda · Esc cancela</span></div></div>`;
+        const ta = document.getElementById('inline-ta'); ta.value = l.contenido || '';
+        ta.style.height = Math.max(320, ta.scrollHeight + 20) + 'px';
+        ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); inlineCancelar(); } if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); inlineGuardar(id); } });
+        ta.focus();
+    };
+    window.inlineInsertarImagen = function (id) {
+        const l = leccionById(id); const cont = document.getElementById('inline-picker'); if (!l || !cont) return;
+        window.__pickInline = (n) => {
+            const ta = document.getElementById('inline-ta'); const pos = ta.selectionStart || 0; const v = ta.value;
+            const antes = v.slice(0, pos), despues = v.slice(pos);
+            const tok = (antes && !antes.endsWith('\n') ? '\n' : '') + `[img:${n}]` + (despues && !despues.startsWith('\n') ? '\n' : '');
+            ta.value = antes + tok + despues; ta.focus(); ta.selectionStart = ta.selectionEnd = (antes + tok).length;
+            cont.innerHTML = '';
+        };
+        cont.innerHTML = cont.innerHTML ? '' : pickerHTML(l, '__pickInline');
+    };
+    window.inlineGuardar = async function (id) {
+        const ta = document.getElementById('inline-ta'); if (!ta) return;
+        try { await guardarContenido(id, ta.value.trim()); inlineEditando = null; render(); }
+        catch (e) { alert('No se pudo guardar: ' + e.message); }
+    };
+    window.inlineCancelar = function () { inlineEditando = null; render(); };
+    // Campos cortos (título de lección, título/descripción del curso): contenteditable con Enter = guardar, Esc = cancelar.
+    window.inlineTexto = function (el, guardar) {
+        if (el.getAttribute('contenteditable') === 'true') return;
+        const original = el.textContent; const marcador = original.startsWith('(sin descripción');
+        if (marcador) el.textContent = '';
+        inlineEditando = { campo: 'texto' };
+        el.setAttribute('contenteditable', 'true'); el.classList.add('inline-txt'); el.focus();
+        const fin = async (ok) => {
+            el.removeAttribute('contenteditable'); el.classList.remove('inline-txt'); inlineEditando = null;
+            const v = el.textContent.trim();
+            if (ok && v && v !== original) { try { await guardar(v); } catch (e) { alert('No se pudo guardar: ' + e.message); } }
+            else render();
+        };
+        el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); fin(true); } if (e.key === 'Escape') { e.preventDefault(); fin(false); } };
+        el.onblur = () => fin(true);
+    };
+    window.guardarCampoLeccion = (id, campo, v) => updateDoc(doc(db, 'academiaLecciones', id), { [campo]: v, actualizado: new Date().toISOString(), actualizadoPor: usuario.nombre });
+    window.guardarCampoCurso = (id, campo, v) => updateDoc(doc(db, 'academiaCursos', id), { [campo]: v, actualizado: new Date().toISOString(), actualizadoPor: usuario.nombre });
     window.toggleHecha = async function (cursoId, leccionId) {
         const yes = !completadasDe(cursoId).has(leccionId);
         await marcarLeccion(cursoId, leccionId, yes);
