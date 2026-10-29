@@ -30,6 +30,10 @@ un **PDF de Cotización o Fabricación** para el cliente.
   leyendo `.claude/session-area/<session_id>`; si un pedido pertenece a otra área, **avisar antes
   de tocar nada** (ver memoria `feedback-aviso-sesion-equivocada`). Producción sigue siendo `main`
   para las tres. `HANDOFF.md` (no versionado) es el traspaso del cuaderno solamente.
+  **Sub-área `reuniones` (2026-10-29, Dylan: «dividir la sesión de reuniones para trabajarlo aparte y tenerlo
+  siempre a la vista»)**: las reuniones de seguimiento del equipo (`ops/rrhh-reuniones.html`, colección `rrhhReuniones`,
+  vista «Mis objetivos») se llevan en la sesión «🤝 Reuniones de seguimiento (equipo)»; traspaso en `HANDOFF-reuniones.md`
+  (no versionado). La sesión de sistema no toca ese archivo; la de reuniones no toca el resto de `ops/` sin avisar.
 - **Git: las dos sesiones comparten el MISMO checkout → commitear SIEMPRE directo en `main`, nunca
   `git checkout` a otra rama** (2026-09-07 un commit del cuaderno cayó en `sistema-operativo` porque
   la otra sesión cambió de rama entre dos comandos). Antes de commitear: `git branch --show-current`
