@@ -46,6 +46,7 @@
 </header>
 
 <main>
+    <div id="sup-admin-box"></div>
     <div class="tabs">
         <button class="tab-btn active" id="tab-pendientes" onclick="setTab('pendientes')">Pendientes</button>
         <button class="tab-btn" id="tab-enviados" onclick="setTab('enviados')">Enviados</button>
@@ -62,6 +63,7 @@
     import { openOrderPreview } from './order-preview.js';
     import { mismaObra } from './obras-util.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
+    import { escucharSuplidores, suplidorBotonHTML, enviadoChipHTML, montarSuplidorWA, montarSuplidoresAdmin } from './suplidor-wa.js';
     window.openOrderPreview = openOrderPreview;
 
     // Solo gerencia (admin): fabricación interna la maneja el taller propio de ARTAL, sin un rol
@@ -146,6 +148,7 @@
             ${rioAbajoHTML(id, o)}
             ${String(o.docType || '').indexOf('FAB') === 0 && o.status !== 'completado' ? anticipoHTML(id, o) : (anticipoChip(o) ? `<div style="margin-top:8px;">${anticipoChip(o)}</div>` : '')}
             ${salidaHTML(id, o)}
+            ${PENDIENTES.includes(o.status) ? suplidorBotonHTML(id, o) : (enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : '')}
             ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
@@ -260,7 +263,11 @@
     // (`lista[]`, no son empleados: no entran en partes, puntos ni RRHH). Se eligen como instalador asignado con valor
     // `contratista:<id>`; el pedido guarda asignadosInstalador [{email:'contratista:<id>', nombre, externo:true}].
     let contratistasExt = [];
-    onSnapshot(doc(db, 'rrhhConfig', 'contratistasExternos'), (s) => { contratistasExt = (s.exists() && Array.isArray(s.data().lista)) ? s.data().lista.filter(c => c && c.activo !== false) : []; render(); }, () => { });
+    // La misma lista sirve para los SUPLIDORES a los que se manda el pedido por WhatsApp (2026-10-29, ops/suplidor-wa.js):
+    // como instalador asignable solo entran los activos con `instala !== false`.
+    const pintarSupAdmin = montarSuplidoresAdmin({ contenedorId: 'sup-admin-box', usuario });
+    montarSuplidorWA({ getOrder: (id) => { const d = allOrders.find(x => x.id === id); return d ? d.data() : null; }, usuario });
+    escucharSuplidores((lista) => { contratistasExt = lista.filter(c => c.activo !== false && c.instala !== false); pintarSupAdmin(); render(); });
     function opcionesInstalador(sel) {
         const eq = instaladoresCache.map(u => `<option value="${esc(u.email)}" ${sel === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('');
         const ext = contratistasExt.map(c => `<option value="contratista:${esc(c.id)}" ${sel === 'contratista:' + c.id ? 'selected' : ''}>${esc(c.nombre)} (contratista${c.especialidad ? ' · ' + esc(c.especialidad) : ''})</option>`).join('');

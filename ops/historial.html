@@ -127,6 +127,7 @@
     import { collection, doc, deleteDoc, updateDoc, writeBatch, onSnapshot, query, where, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { mismaObra } from './obras-util.js';   // regla única de "misma obra" (igual que el informe de cierre y Costo de obras)
     import { openOrderPreview } from './order-preview.js';
+    import { escucharSuplidores, suplidorBotonHTML, enviadoChipHTML, montarSuplidorWA } from './suplidor-wa.js';
     import { buildClientMap, clientList } from './clients.js';
     window.openOrderPreview = openOrderPreview;
 
@@ -310,13 +311,14 @@
     };
 
     let allOrders = [];
+    montarSuplidorWA({ getOrder: (id) => { const d = allOrders.find(x => x.id === id); return d ? d.data : null; }, usuario });
     let choferesCache = [];
     let instaladoresCache = [];
     // Contratistas externos de instalación (Dylan 2026-10-06, caso Delvis para shutters): viven en rrhhConfig/contratistasExternos
     // (`lista[]`, no son empleados: no entran en partes, puntos ni RRHH). Se eligen como instalador asignado con valor
     // `contratista:<id>`; el pedido guarda asignadosInstalador [{email:'contratista:<id>', nombre, externo:true}].
     let contratistasExt = [];
-    onSnapshot(doc(db, 'rrhhConfig', 'contratistasExternos'), (s) => { contratistasExt = (s.exists() && Array.isArray(s.data().lista)) ? s.data().lista.filter(c => c && c.activo !== false) : []; render(); }, () => { });
+    escucharSuplidores((lista) => { contratistasExt = lista.filter(c => c.activo !== false && c.instala !== false); render(); });   // misma lista que los suplidores de WhatsApp (ops/suplidor-wa.js)
     function opcionesInstalador(sel) {
         const eq = instaladoresCache.map(u => `<option value="${esc(u.email)}" ${sel === u.email ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('');
         const ext = contratistasExt.map(c => `<option value="contratista:${esc(c.id)}" ${sel === 'contratista:' + c.id ? 'selected' : ''}>${esc(c.nombre)} (contratista${c.especialidad ? ' · ' + esc(c.especialidad) : ''})</option>`).join('');
@@ -403,6 +405,7 @@
             </div>
             ${fichaHTML(id, o)}
             ${isCompra ? '' : anticipoHTML(id, o)}
+            ${isFab && o.destino === 'interno' && !['completado'].includes(o.status) ? suplidorBotonHTML(id, o) : (enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : '')}
             ${lineaTiempoHTML(o)}
             <div class="status-change-row">
                 <select id="status-select-${id}">

@@ -3499,3 +3499,19 @@ cristal, Archivo + Inter, píldora de nav, orbes); organización de catálogo ti
   8795, sirve la raíz del repo) porque `ops-local` (8787) suele estar ocupado por la otra sesión.
   Abrir `http://127.0.0.1:8795/b2b/`. Sintaxis del `<script>`: `node -e` con `new Function` (no hay
   `verify.mjs` para esta área).
+
+### Enviar pedido a suplidor por WhatsApp (Fábrica interna, 2026-10-29)
+
+Dylan: «en Fábrica Interna un botón 📲 Enviar a suplidor por WhatsApp con la lista de suplidores». Módulo `ops/suplidor-wa.js`:
+la lista de suplidores ES `rrhhConfig/contratistasExternos.lista[]` (la de Delvis), con campo nuevo `instala` (`!== false` =
+también aparece como instalador asignable en Fábrica interna/Historial; un suplidor de vidrio/tubos va `instala:false`);
+`escucharSuplidores`, `telWa` (10 dígitos RD → +1), `armarMensajeSuplidor(id,o,sup)` (cliente de referencia, obra, aviso de
+`fichaParcial`, material/acabado, vidrio del encabezado, ítems de `order.items` + `appJSON.inputsData[id].ref`, fecha estimada
+de salida, nota de oficina sin atender, enlace `urlFicha` con `rootPath`; **nunca teléfono/RNC, precios ni anticipo**),
+`suplidorBotonHTML` (botón + select solo activos con teléfono + «👁 Ver mensaje» + aclaración de que WhatsApp abre con el texto y
+hay que tocar Enviar), `montarSuplidorWA({getOrder, usuario})` (abre `wa.me/<tel>?text=` en pestaña nueva y anota
+`orders.enviadoASuplidor[] {proveedorId, nombre, fecha ISO, por}` con `arrayUnion`), `enviadoChipHTML` («📲 Enviado a X el
+dd/mm hh:mm», un chip por suplidor, title «reenviado»), y la gestión `suplidoresAdminHTML`/`montarSuplidoresAdmin` (tabla editable
+en `#sup-admin-box` de `fabrica-interna.html`; `setDoc merge` de `lista`, solo admin por la regla de rrhhConfig). Historial muestra
+el botón en FAB `destino:'interno'` no completados. No se puede probar en navegador con el espejo (páginas admin): checker +
+mensaje generado con el pedido real de Niza. Guía `guia-fabrica-04` en la Academia.
