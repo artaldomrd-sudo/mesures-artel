@@ -3519,3 +3519,23 @@ dd/mm hh:mm», un chip por suplidor, title «reenviado»), y la gestión `suplid
 en `#sup-admin-box` de `fabrica-interna.html`; `setDoc merge` de `lista`, solo admin por la regla de rrhhConfig). Historial muestra
 el botón en FAB `destino:'interno'` no completados. No se puede probar en navegador con el espejo (páginas admin): checker +
 mensaje generado con el pedido real de Niza. Guía `guia-fabrica-04` en la Academia.
+
+### Academia: apartados e ilustraciones en las 24 guías (2026-10-29)
+
+Dylan: «convierte los títulos de sección a mayúsculas» → las 86 lecciones viejas no tenían títulos; se les ESCRIBIERON (opción 1,
+validada): 80 apartados en las 28 lecciones de 2+ bloques (`apartados.js`, respaldo del texto previo en el scratchpad), y las 58 de
+un bloque quedaron sin apartado (la presentación las muestra en una diapositiva). Luego «cómo insertar ilustraciones coherentes»
+→ herramienta local **`herramientas/academia-capturas/`** (no versionada): `cap.js` (Chrome headless por DevTools Protocol, sin
+dependencias; entra con una cuenta espejo de `herramientas/.espejos.json`, viewport móvil 412 px, `specs.json` con `url/ready/pre/
+hi/crop`; recorte por selector en coordenadas de documento con `captureBeyondViewport`; oculta banner espejo y `#msg-fab`),
+`anota.py` (recuadro rojo sobre los `hi`), `hoja.py` (hoja de contacto para revisar), `pictos/picto.html` (tarjeta pictograma
+412 px: banda azul ARTAL + emoji + título + texto, variante `tipo=pasos`) y `sube.js` (sube a Storage `academiaLecciones/<id>/`,
+agrega a `fotos[]` y coloca `[img:N|pie]` bajo el apartado o `inicio:true` al principio; `reemplazar:true` cambia la url).
+**Regla de estilo**: captura real de la pantalla cuando el apartado habla de una pantalla o botón (recuadro rojo en lo que nombra,
+pie = lo que hay que hacer); pictograma cuando es una regla o concepto. Resultado: 125 imágenes en 89 lecciones (82 con imagen de
+pantalla o pictograma; las 7 de pantallas solo-admin llevan pictogramas por apartado). **Límites**: los espejos de Wilson y
+Roosevelt tienen la contraseña cambiada (renovarla por Identity Toolkit fue denegado → lo hace Dylan desde Usuarios y roles →
+Cuentas espejo); sin Wilson no hay capturas de Transportes (pictogramas); las pantallas de Contabilidad/Bancos/Solicitudes piden
+PIN al espejo de Sara (pictogramas); Panel, Historial, Calendario, RRHH, Usuarios, ERP, Puntos, Fábrica interna son solo admin →
+pictogramas que Dylan puede sustituir con sus capturas (`sube.js` con `reemplazar`). Pendientes de dato: «Los botones de cada
+pedido» (Instalación 2, sin pedidos listos) y «Horas ya validadas» (Parte diario 1).
