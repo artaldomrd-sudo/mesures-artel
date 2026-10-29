@@ -1713,6 +1713,16 @@ otras quedan en `#main-canvas`, oculto durante la captura; el teardown restaura 
 instalación, y también para "Actualizar el original" (la ficha queda solo con esos). Sin ninguna marcada todo sigue como
 siempre. Ocultas en la hoja (`printing-sheets`) y en la ficha `?orderId=` (`readonly-view`). `verify.mjs` no lo cubre;
 probado en navegador (3 tarjetas, 1 marcada → PDF con 1, JSON con 1).
+**"Segunda página" de la ficha = un pedido por DESTINO (2026-10-29, caso Gabor Aloha)**: el usuario marcó 2 vidrios de ducha,
+apretó Fábrica Interna, el diálogo de reenvío encontró el pedido abierto de ALUCUFEL (no filtraba por destino) y "Actualizar el
+original" REEMPLAZÓ esa ficha con solo los 2 vidrios, sin crear nada en interna. Ahora `enviarOrden` solo considera pedidos
+abiertos del MISMO destino (`mismoDestino`: interno / ALUCUFEL / `directoInstalacion`) → una obra puede tener a la vez un
+pedido en ALUCUFEL y otro en fábrica interna (misma carpeta en Historial); el pedido nuevo parcial lleva `fichaParcial:
+{enviados,total}`. `elegirReenvio(abiertos, destino, sel)` dice en el título qué destino es y, con selección parcial, ofrece
+**"Agregar / actualizar los N marcados (conserva el resto)"** (modo `agregar`: fusión por id en `appJSON` — mismo id y tipo →
+se corrige, id libre → se agrega, id ocupado por otro tipo → id nuevo; `items` se rearma; el aviso a fábrica dice cuántos se
+agregaron/corrigieron) y **"Dejar ese pedido SOLO con los N marcados"** (modo `reemplazar`, con `confirm`). Sin selección,
+"Actualizar el original" sigue reemplazando toda la ficha. `_seleccion` no viaja dentro de `appJSON` del pedido.
 
 ## PDF / Impresión
 
