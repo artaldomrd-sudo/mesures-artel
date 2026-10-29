@@ -1729,6 +1729,36 @@ agregaron/corrigieron) y **"Dejar ese pedido SOLO con los N marcados"** (modo `r
 - `exportPDF()` → `buildPrintSheets()` reorganiza el DOM en **hojas de 4 ítems (2×2)** dentro de
   `#print-area`: encabezado solo en la hoja 1, firmas al fondo de la última. La fachada
   panorámica del CAD ocupa fila completa (cuenta como 2 slots).
+- **Auditoría de impresión 2026-10-29 (usuario: "varias personas me dicen que al imprimir hay datos que no se ven
+  claro")**. Simulación real: réplica de `exportPDF` con `pdf.output('arraybuffer')` enviada por POST a un receptor
+  local (`scratchpad/receiver.js`, puerto 8766 — NUNCA `pdf.save()`), páginas rasterizadas con PyMuPDF a 85/300 dpi.
+  Fallos encontrados y corregidos, todos en `index.html`:
+  1. **Texto de los dibujos en Times**: los `<text>` SVG pedían `font-family="Arimo"` y, al rasterizar el SVG como
+     `<img>` (fuera del DOM), la web font no existe → serif. Ahora todos llevan `Arimo, Helvetica, Arial, sans-serif`
+     (Arimo es métricamente igual a Arial) y la rasterización inyecta `<style>text{font-family:…}</style>`.
+  2. **Dibujos chicos y borrosos, cotas de planta ilegibles, cota de alto cortada en hojas de 1 ítem**: el SVG tiene
+     `width="100%"` → como `<img>` medía 300×150 y se rasterizaba en un lienzo 2:1 (márgenes vacíos, poca resolución,
+     recorte por la derecha). Ahora se recorta el `viewBox` al contenido real (`getBBox` + 5), se fijan `width/height` =
+     viewBox × K (≈1000 px en el lado mayor) y se quita `vector-effect: non-scaling-stroke` (en la imagen grande las
+     líneas quedaban en hilos de 1 px). `.drawing-area` en 2×2 pasa de 34 a **46 mm**.
+  3. **Columna que se ensanchaba y recortaba el dibujo vecino**: los `<span>` que reemplazan a los `<input>` llevaban
+     `width` fijo en px medido en la hoja INICIAL (p. ej. 2 ítems agrandados) y al cambiar de hoja hacían crecer su
+     columna (`1fr` = minmax(auto,1fr)). Ahora el reemplazo se hace DESPUÉS de paginar, con `max-width:100%` (textarea
+     `width:100%`), y la grilla usa `minmax(0,1fr)`.
+  4. **Contenido cortado al pie** (4 por hoja era fijo y `imgH = min(pageH, …)` recorta a 297 mm): `reflowPrintSheets()`
+     es ahora un **empaquetador por altura medida** que reconstruye las hojas: en cada una prueba 4 → 3 → 2 → 1
+     tarjetas midiendo `scrollHeight` contra 297 mm; con 2 intenta primero apiladas y agrandadas (`two-item`, 88 mm),
+     luego lado a lado con dibujo de 70 mm (`one-row`), luego normal; con 1, agrandada (`single-item`, 140 mm) y si no
+     cabe **compacta** (`.compact`, 90 mm, 86 % de ancho); si ni así cabe con las firmas, las firmas van a una hoja
+     propia. Marca `.last` antes de medir (las notas del proyecto y las firmas se miden con la última hoja). Nunca
+     "4 → 1 por achicar" (la primera versión colapsaba la hoja 1 a un solo ítem). Filas desde arriba
+     (`align-content: start`, sin `min-height: 200mm`).
+  5. **Recuadro gris de notas vacías**: un `<textarea>` vacío lo dibuja html2canvas como caja punteada → se oculta
+     durante la captura (`notasVacias`).
+  Orden en `exportPDF`: placeholders → notas vacías → fuentes listas → `reflowPrintSheets` → reemplazo de campos →
+  `reflowPrintSheets` otra vez → rasterizar SVG (mide la caja definitiva) → captura. Verificado con 10 ítems de todos los
+  tipos (hojas 2/4/3/1), 1 ítem (compacta) y 2 ítems (`one-row`); cotas de planta legibles a 300 dpi. La ficha
+  `?orderId=` de ALUCUFEL usa el mismo `exportPDF` (botón "Imprimir / PDF" de `order-preview.js`), así que hereda todo.
 - **El PDF se genera por código (jsPDF + html2canvas, CDN), NO con `window.print()`.** Motivo:
   Safari (Mac e iPad) agrega siempre su propio pie de página (URL, fecha, número de página) al
   imprimir una web, y **no hay forma de desactivarlo** desde CSS ni JS — es una limitación de

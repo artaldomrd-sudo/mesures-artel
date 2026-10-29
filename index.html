@@ -374,7 +374,8 @@
         body.printing-sheets .item-card.locked.cad-card.panoramic .summary-box { width: 100% !important; font-size: 10px !important; padding: 3mm !important; background: transparent !important; border:1px solid #ddd !important; height: auto !important; margin-top: 3mm !important;}
 
         /* ESPACE DE DESSIN COMPACT POUR 4 ITEMS PAR PAGE */
-        body.printing-sheets .drawing-area { height: 34mm !important; min-height: 34mm !important; max-height: 34mm !important; border: 1px solid #ddd !important; margin: 0.5mm 0 !important; width: 100% !important; }
+        /* 46 mm (antes 34): auditoría de impresión 2026-10-29 — con 34 mm las cotas de planta quedaban en ~1.5 mm de alto, ilegibles en papel. */
+        body.printing-sheets .drawing-area { height: 46mm !important; min-height: 46mm !important; max-height: 46mm !important; border: 1px solid #ddd !important; margin: 0.5mm 0 !important; width: 100% !important; }
         body.printing-sheets .item-card.cad-card.panoramic .drawing-area, body.printing-sheets .item-card.locked.cad-card.panoramic .drawing-area { height: 55mm !important; min-height: 55mm !important; max-height: 55mm !important; }
 
         body.printing-sheets .header-field label { font-size: 8px !important; }
@@ -426,7 +427,11 @@
         /* min-height del grid (NO del .print-sheet) para repartir las 2 filas en toda la
            página, con margen de seguridad amplio (~30-40mm) frente a los 297mm de la hoja:
            evita volver a acercarse al límite exacto que causaba el bug de páginas en blanco. */
-        body.printing-sheets .sheet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; align-content: space-evenly; min-height: 200mm; }
+        /* minmax(0,1fr): una columna NUNCA se ensancha por su contenido (auditoría 2026-10-29: un span de ancho fijo
+           hacía crecer la columna derecha y el dibujo del vecino salía recortado). */
+        body.printing-sheets .sheet-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 7mm; row-gap: 8mm; align-content: start; }
+        /* Hoja con una sola fila de 2 tarjetas (lado a lado): hay sitio, el dibujo crece a 70 mm. */
+        body.printing-sheets .sheet-grid.one-row .item-card .drawing-area { height: 70mm !important; min-height: 70mm !important; max-height: 70mm !important; }
         body.printing-sheets .sheet-grid .item-card { width: auto !important; display: block !important; margin: 0 !important; align-self: start !important; }
         body.printing-sheets .sheet-grid .item-card.cad-card.panoramic { grid-column: 1 / -1 !important; }
         /* Hoja con un solo ítem: en vez de quedar chico en la esquina (como si faltaran otros
@@ -434,6 +439,10 @@
         body.printing-sheets .sheet-grid.single-item { grid-template-columns: 1fr; justify-content: center; align-content: center; }
         body.printing-sheets .sheet-grid.single-item .item-card { width: 68% !important; }
         body.printing-sheets .sheet-grid.single-item .item-card .drawing-area { height: 140mm !important; min-height: 140mm !important; max-height: 140mm !important; }
+        /* Un solo ítem con resumen largo (fachada compuesta, ducha con accesorios) que no cabe con 140 mm: reflowPrintSheets baja a compacto. */
+        body.printing-sheets .sheet-grid.single-item.compact { min-height: 0; }
+        body.printing-sheets .sheet-grid.single-item.compact .item-card { width: 86% !important; }
+        body.printing-sheets .sheet-grid.single-item.compact .item-card .drawing-area { height: 90mm !important; min-height: 90mm !important; max-height: 90mm !important; }
         body.printing-sheets .sheet-grid.single-item .item-card .summary-box,
         body.printing-sheets .sheet-grid.single-item .item-card .summary-box div,
         body.printing-sheets .sheet-grid.single-item .item-card .summary-box span,
@@ -592,7 +601,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-29 11:00</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-29 12:52</div>
         </div>
     </div>
     
@@ -947,6 +956,61 @@
         document.body.appendChild(area);
         document.body.classList.add('printing-sheets');
     }
+    // Paginación por ALTURA MEDIDA (auditoría 2026-10-29): 4 tarjetas por hoja era fijo, y como
+    // exportPDF recorta la imagen a 297 mm (`Math.min(pageH, …)`), una hoja con resúmenes largos
+    // (fachada compuesta, ducha con accesorios…) perdía el final de las tarjetas de abajo sin aviso.
+    // Ahora, con el layout de impresión ya aplicado, se mide cada hoja y la última tarjeta pasa a
+    // la hoja siguiente hasta que todas quepan (las firmas y las notas del proyecto siguen al final).
+    function reflowPrintSheets() {
+        const area = document.getElementById('print-area'); if (!area) return;
+        const cards = Array.from(area.querySelectorAll('.sheet-grid > .item-card'));
+        const head = area.querySelector('.print-head');
+        const cola = ['#notas-proyecto-box', '.signature-section'].map(q => area.querySelector(q)).filter(Boolean);
+        const limit = area.querySelector('.print-sheet').offsetWidth * 297 / 210 - 2;   // 297 mm en px de esta hoja
+        const slots = c => c.classList.contains('panoramic') ? 2 : 1;
+        const setClase = (grid, n, grande) => {
+            const pan = Array.from(grid.children).some(c => c.classList.contains('panoramic'));
+            grid.classList.toggle('single-item', n === 1 && !pan);
+            grid.classList.toggle('two-item', n === 2 && !pan && grande);
+            grid.classList.remove('compact'); grid.classList.remove('one-row');
+        };
+        const cabe = (sheet) => sheet.scrollHeight <= limit;
+        // Se reconstruyen las hojas de cero, llenando cada una con las tarjetas que QUEPAN (medidas de
+        // verdad): hasta 4 en 2×2; si no caben, 3; si no, 2 (agrandadas una debajo de la otra si caben
+        // así, si no lado a lado); si no, 1 (agrandada, o compacta si tampoco). Nunca "4 → 1" por achicar.
+        area.replaceChildren();
+        let i = 0, primera = true;
+        while (i < cards.length || primera) {
+            const sheet = document.createElement('div'); sheet.className = 'print-sheet';
+            if (primera && head) sheet.appendChild(head);
+            const grid = document.createElement('div'); grid.className = 'sheet-grid'; sheet.appendChild(grid);
+            area.appendChild(sheet);
+            let max = 0, sl = 0; while (i + max < cards.length && sl + slots(cards[i + max]) <= 4) { sl += slots(cards[i + max]); max++; }
+            let puestas = 0;
+            for (let n = max; n >= 1; n--) {
+                const ultima = i + n >= cards.length;
+                grid.replaceChildren(...cards.slice(i, i + n));
+                sheet.classList.toggle('last', ultima);
+                if (ultima) cola.forEach(el => sheet.appendChild(el));
+                setClase(grid, n, true);
+                if (cabe(sheet)) { puestas = n; break; }
+                if (n === 2) { setClase(grid, n, false); grid.classList.add('one-row'); if (cabe(sheet)) { puestas = n; break; } grid.classList.remove('one-row'); if (cabe(sheet)) { puestas = n; break; } }
+                if (n === 1) {
+                    if (grid.classList.contains('single-item')) { grid.classList.add('compact'); if (cabe(sheet)) { puestas = 1; break; } }
+                    // Ni compacta cabe con las firmas: la tarjeta se queda y las firmas van a una hoja propia.
+                    if (ultima && cola.length) { cola.forEach(el => el.remove()); if (cabe(sheet)) { puestas = 1; cola._aparte = true; break; } }
+                    puestas = 1; break;   // no cabe ni sola: se imprime igual (exportPDF recorta a 297 mm)
+                }
+                if (ultima) cola.forEach(el => el.remove());
+            }
+            i += puestas; primera = false;
+            if (i >= cards.length && (cola._aparte || !cola.every(el => el.parentNode))) {
+                // firmas / notas que no entraron en la última hoja
+                if (!cola.every(el => el.parentNode)) { const sh = document.createElement('div'); sh.className = 'print-sheet'; cola.forEach(el => sh.appendChild(el)); area.appendChild(sh); }
+            }
+        }
+        const hojas = area.querySelectorAll('.print-sheet'); hojas.forEach(h => h.classList.remove('last')); if (hojas.length) hojas[hojas.length - 1].classList.add('last');
+    }
     function teardownPrintSheets() {
         if (!printMoved) return;
         const p = printMoved;
@@ -1003,18 +1067,6 @@
         // (`display:none`, nunca se destruye) y se restaura después, ANTES de
         // `teardownPrintSheets()` (si no, el reemplazo viajaría de vuelta a la tarjeta real y
         // quedaría un texto duplicado visible en la edición normal).
-        const fieldReplacements = [];
-        document.querySelectorAll('#print-area input[type="text"], #print-area textarea').forEach(field => {
-            if (!field.value) return;
-            const isTextarea = field.tagName === 'TEXTAREA';
-            const cs = getComputedStyle(field);
-            const el = document.createElement(isTextarea ? 'div' : 'span');
-            el.textContent = field.value;
-            el.style.cssText = `display:${isTextarea ? 'block' : 'inline-block'}; font: ${cs.font}; color: ${cs.color}; border: ${cs.border}; border-radius: ${cs.borderRadius}; background: ${cs.background}; padding: ${cs.padding}; margin: ${cs.margin}; width: ${field.clientWidth}px; box-sizing: border-box; white-space: ${isTextarea ? 'pre-wrap' : 'nowrap'}; overflow-wrap: break-word; text-align: ${cs.textAlign};`;
-            field.insertAdjacentElement('afterend', el);
-            field.style.display = 'none';
-            fieldReplacements.push({ field, el });
-        });
 
         // html2canvas reconstruye a mano cada SVG inline (no lo captura tal cual) y esa
         // reconstrucción falla en cualquier tipo, no solo correderas/galandajes: las capas
@@ -1028,6 +1080,32 @@
         // `img.decode()` para esperar a que cargue el SVG intermedio (puede quedarse colgado
         // para siempre con `width="100%"`, sin tamaño intrínseco) — se usa `onload`/`onerror`
         // con límite de tiempo.
+        // Un <textarea> de notas VACÍO lo dibuja html2canvas como un recuadro gris con borde punteado
+        // (se veía como un campo "por llenar" en cada tarjeta): se oculta durante la captura.
+        const notasVacias = Array.from(document.querySelectorAll('#print-area textarea')).filter(t => !t.value.trim());
+        notasVacias.forEach(t => { t.style.display = 'none'; });
+        // Con el layout de impresión aplicado (y las fuentes cargadas), repartir las tarjetas por
+        // altura real ANTES de medir las cajas de dibujo para rasterizar.
+        if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { } }
+        await new Promise(r => setTimeout(r, 60));
+        reflowPrintSheets();
+        // Los campos con texto se reemplazan DESPUÉS de repaginar (el ancho fijo se mide en la hoja definitiva)
+        // y nunca más anchos que su caja (max-width 100 %): antes un span medido en una hoja de 2 ítems viajaba a
+        // una de 4 y ensanchaba su columna, recortando el dibujo de la tarjeta vecina.
+        const fieldReplacements = [];
+        document.querySelectorAll('#print-area input[type="text"], #print-area textarea').forEach(field => {
+            if (!field.value) return;
+            const isTextarea = field.tagName === 'TEXTAREA';
+            const cs = getComputedStyle(field);
+            const el = document.createElement(isTextarea ? 'div' : 'span');
+            el.textContent = field.value;
+            el.style.cssText = `display:${isTextarea ? 'block' : 'inline-block'}; font: ${cs.font}; color: ${cs.color}; border: ${cs.border}; border-radius: ${cs.borderRadius}; background: ${cs.background}; padding: ${cs.padding}; margin: ${cs.margin}; width: ${isTextarea ? '100%' : field.clientWidth + 'px'}; max-width: 100%; box-sizing: border-box; white-space: ${isTextarea ? 'pre-wrap' : 'nowrap'}; overflow-wrap: break-word; text-align: ${cs.textAlign};`;
+            field.insertAdjacentElement('afterend', el);
+            field.style.display = 'none';
+            fieldReplacements.push({ field, el });
+        });
+        await new Promise(r => setTimeout(r, 30));
+        reflowPrintSheets();
         const drawingReplacements = [];
         for (const svg of document.querySelectorAll('#print-area .drawing-area svg')) {
             const container = svg.parentElement;
@@ -1037,8 +1115,25 @@
             // referencia — el rect del vidrio desaparece junto con la sombra, así que el panel
             // sale sin color. La sombra es puramente decorativa, se puede perder sin problema
             // en el PDF; el relleno con gradiente (fill="url(#glass-...)") no se toca.
+            // Auditoría 2026-10-29: el SVG tiene width="100%" (sin tamaño intrínseco), así que al
+            // cargarlo como <img> el navegador le daba 300×150 y el dibujo se rasterizaba en un
+            // lienzo 2:1 con márgenes vacíos a los lados y poca resolución (cotas borrosas, dibujo
+            // chico, y en hojas de 1 ítem la cota de alto cortada). Ahora: (1) se recorta el viewBox
+            // al contenido real (getBBox + margen), (2) se fija width/height = viewBox × K (≈1000 px
+            // en el lado mayor) para que la imagen tenga EXACTAMENTE la proporción del dibujo,
+            // (3) texto con fuente sans de respaldo (fuera del DOM no existe la web font Arimo →
+            // salía Times) y (4) sin non-scaling-stroke (en una imagen grande esas líneas se
+            // volvían hilos de 1 px al reducirlas en la hoja).
+            let vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+            if (vb.length !== 4 || vb.some(v => !Number.isFinite(v)) || vb[2] <= 0 || vb[3] <= 0) vb = [0, 0, 100, 100];
+            try { const bb = svg.getBBox(); if (bb && bb.width > 0 && bb.height > 0) { const m = 5; vb = [bb.x - m, bb.y - m, bb.width + 2 * m, bb.height + 2 * m]; } } catch (e) { }
+            const K = Math.max(2, Math.min(16, 1000 / Math.max(vb[2], vb[3])));
+            const w = Math.max(1, Math.round(vb[2] * K)), h = Math.max(1, Math.round(vb[3] * K));
             const svgStr = new XMLSerializer().serializeToString(svg)
-                .replace(/\s*filter="url\(#shadow-[^"]*\)"/g, '');
+                .replace(/\s*filter="url\(#shadow-[^"]*\)"/g, '')
+                .replace(/\s*vector-effect="non-scaling-stroke"/g, '')
+                .replace(/vector-effect:\s*non-scaling-stroke;?/g, '')
+                .replace(/<svg\b([^>]*)>/, (mm, attrs) => `<svg${attrs.replace(/\s(width|height|viewBox)="[^"]*"/g, '')} width="${w}" height="${h}" viewBox="${vb.map(v => +v.toFixed(2)).join(' ')}"><style>text{font-family:Arimo,Helvetica,Arial,sans-serif}</style>`);
             const svgDataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
             const loader = new Image();
             loader.src = svgDataUrl;
@@ -1046,10 +1141,8 @@
                 new Promise(res => { loader.onload = res; loader.onerror = res; }),
                 new Promise(res => setTimeout(res, 2000))
             ]);
-            const rasterScale = 3;
-            const w = loader.naturalWidth || 200, h = loader.naturalHeight || 150;
             const cvs = document.createElement('canvas');
-            cvs.width = w * rasterScale; cvs.height = h * rasterScale;
+            cvs.width = w; cvs.height = h;
             const ctx2d = cvs.getContext('2d');
             try { ctx2d.drawImage(loader, 0, 0, cvs.width, cvs.height); } catch (e) { }
             const img = document.createElement('img');
@@ -1112,6 +1205,7 @@
             // y quedaría un texto duplicado visible en la edición normal.
             fieldReplacements.forEach(({ field, el }) => { el.remove(); field.style.display = ''; });
             drawingReplacements.forEach(({ svg, img }) => { img.remove(); svg.style.display = ''; });
+            notasVacias.forEach(t => { t.style.display = ''; });
             teardownPrintSheets();
             if (btn) { btn.disabled = false; btn.innerHTML = originalBtnHtml; }
         }
@@ -5447,7 +5541,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // dominant-baseline="hanging" para que cuelguen hacia abajo y queden separados de la línea.
         const textY = y + dir * (dir > 0 ? Math.max(textGap, 1.5) : textGap);
         const baseAttr = dir > 0 ? ' dominant-baseline="hanging"' : '';
-        s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle"${baseAttr} stroke="none">${label}</text>`;
+        s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${textY.toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle"${baseAttr} stroke="none">${label}</text>`;
         return s;
     }
     // Línea de cota SEGMENTADA (estilo plano de arquitecto): una sola línea con marcas en cada
@@ -5462,7 +5556,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         s += `<line x1="${xs[0].toFixed(1)}" y1="${y.toFixed(1)}" x2="${xs[xs.length - 1].toFixed(1)}" y2="${y.toFixed(1)}"/>`;                        // línea principal
         xs.forEach(x => { s += `<line x1="${(x - tick / 2).toFixed(1)}" y1="${(y + tick / 2).toFixed(1)}" x2="${(x + tick / 2).toFixed(1)}" y2="${(y - tick / 2).toFixed(1)}"/>`; });   // marcas 45°
         s += `</g>`;
-        for (let i = 0; i < mms.length; i++) { const cxm = (xs[i] + xs[i + 1]) / 2; s += `<text x="${cxm.toFixed(1)}" y="${(y - 1.3).toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${mms[i]}</text>`; }
+        for (let i = 0; i < mms.length; i++) { const cxm = (xs[i] + xs[i + 1]) / 2; s += `<text x="${cxm.toFixed(1)}" y="${(y - 1.3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${mms[i]}</text>`; }
         return s;
     }
     function dimLineV(y1, y2, x, edgeX, label, fontSize) {
@@ -5479,7 +5573,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         s += `</g>`;
         const textX = x + dir * textGap;
         const midY = (y1 + y2) / 2;
-        s += `<text x="${textX.toFixed(1)}" y="${midY.toFixed(1)}" font-family="Arimo" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="${dir > 0 ? 'start' : 'end'}" dominant-baseline="middle" stroke="none">${label}</text>`;
+        s += `<text x="${textX.toFixed(1)}" y="${midY.toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" fill="#2c3742" text-anchor="${dir > 0 ? 'start' : 'end'}" dominant-baseline="middle" stroke="none">${label}</text>`;
         return s;
     }
 
@@ -5722,10 +5816,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const top = dirY > 0 ? PT : PT - depth, bottom = dirY > 0 ? PT + depth : PT;
         plegablePlan.lastTop = Math.min(top, PT) - 1; plegablePlan.lastBottom = Math.max(bottom, PT) + 1;
         let head = `<line x1="-8" y1="${(PT - 14).toFixed(1)}" x2="108" y2="${(PT - 14).toFixed(1)}" stroke="#e1e6ea" stroke-width="0.6"/>`;
-        head += `<text x="0" y="${(PT - 8).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+        head += `<text x="0" y="${(PT - 8).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
         // int/ext según la vista (observador abajo): vista de afuera → exterior abajo
-        let labels = `<text x="${(X0 - 6).toFixed(1)}" y="${(PT - 4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'int' : 'ext'}</text>`;
-        labels += `<text x="${(X0 - 6).toFixed(1)}" y="${(PT + 7).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'ext' : 'int'}</text>`;
+        let labels = `<text x="${(X0 - 6).toFixed(1)}" y="${(PT - 4).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'int' : 'ext'}</text>`;
+        labels += `<text x="${(X0 - 6).toFixed(1)}" y="${(PT + 7).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${vistaAfuera ? 'ext' : 'int'}</text>`;
         return (opts.noHead ? '' : head) + s + (opts.noLabels ? '' : labels);
     }
     function galElevParts(state, uid) {
@@ -5823,7 +5917,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const panelSvg = panelFn(puid, bx, 0, bw, bandH, parseInt(pano.alto) || 0);   // alto real del paño (tubos a escala)
         frag += isFlipped ? `<g transform="scale(-1, 1) translate(-100, 0)">${panelSvg}</g>` : panelSvg;
         const fFontSize = Math.min(9, bandH * 0.35);
-        frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(bandH / 2 + fFontSize * 0.35).toFixed(1)}" font-family="Arimo" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
+        frag += `<text x="${(bx + bw / 2).toFixed(1)}" y="${(bandH / 2 + fFontSize * 0.35).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
         if (pano.alto > 0) {
             // Misma fórmula (borde real del panel + margen) que usa la medida "alto" del ítem
             // base — al compartir el mismo panelRect, ambas líneas quedan alineadas en la misma
@@ -6279,9 +6373,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // cotas (mm) como el resto de la app
         // Cota en mm + la misma medida en PULGADAS justo debajo (usuario 2026-10-20: "así lo ven de una vez" — Forti
         // trabaja en pulgadas). Solo en este ítem. El ancho va entre la línea de cota (y=4) y el marco (y0=8); el alto bajo el texto del mm.
-        if (aMm > 0) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0, `${aMm} mm`, 6) + `<text x="50" y="7.3" font-family="Arimo" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="middle" stroke="none">${lamasMmAIn(aMm)}"</text>`;
-        if (hMm > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + 4, g.x0 + g.W, `${hMm} mm`, 6) + `<text x="${f(g.x0 + g.W + 6.2)}" y="${f(g.y0 + g.H / 2 + 4.8)}" font-family="Arimo" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="start" dominant-baseline="middle" stroke="none">${lamasMmAIn(hMm)}"</text>`;
-        svg += `<text x="50" y="${f(g.y0 + g.H + 7)}" font-family="Arimo" font-size="3.6" fill="#334155" text-anchor="middle" stroke="none">Security lamas ${pulg}" · ${nSec} ${nSec > 1 ? 'secciones' : 'sección'} · ${nOp * nSec} ${nOp * nSec > 1 ? 'operadores' : 'operador'} · ${n} lamas${state.mosquitera === 'con' ? ' · con mosquitera' : ''}</text>`;
+        if (aMm > 0) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0, `${aMm} mm`, 6) + `<text x="50" y="7.3" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="middle" stroke="none">${lamasMmAIn(aMm)}"</text>`;
+        if (hMm > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + 4, g.x0 + g.W, `${hMm} mm`, 6) + `<text x="${f(g.x0 + g.W + 6.2)}" y="${f(g.y0 + g.H / 2 + 4.8)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.1" font-weight="bold" fill="#5a6672" text-anchor="start" dominant-baseline="middle" stroke="none">${lamasMmAIn(hMm)}"</text>`;
+        svg += `<text x="50" y="${f(g.y0 + g.H + 7)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.6" fill="#334155" text-anchor="middle" stroke="none">Security lamas ${pulg}" · ${nSec} ${nSec > 1 ? 'secciones' : 'sección'} · ${nOp * nSec} ${nOp * nSec > 1 ? 'operadores' : 'operador'} · ${n} lamas${state.mosquitera === 'con' ? ' · con mosquitera' : ''}</text>`;
         svg += '</svg>';
         return svg;
     }
@@ -6374,7 +6468,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             plan += `<line x1="${f(g.x0)}" y1="${f(y1)}" x2="${f(g.x0 + g.W)}" y2="${f(y1)}" stroke="#b8c0c8" stroke-dasharray="1.5 1" style="stroke-width:0.8px"/>`;
             const hojaPlan = (hx) => `<rect x="${f(hx)}" y="${f(y2 - 1.1)}" width="${f(hw)}" height="2.2" fill="#0A3D62" stroke="none"/>`;
             if (hojas === 2) plan += hojaPlan(ix) + hojaPlan(ix + hw); else plan += hojaPlan(isD ? ix + hw : ix);
-            plan += `<text x="${f(g.x0 + g.W + 7)}" y="${f(y2 + 1.2)}" font-family="Arimo" font-size="3.2" fill="#4a5560" stroke="none">mosquitera (ext)</text><text x="${f(g.x0 + g.W + 7)}" y="${f(y1 + 1.2)}" font-family="Arimo" font-size="3.2" fill="#8b95a0" stroke="none">ventana</text>`;
+            plan += `<text x="${f(g.x0 + g.W + 7)}" y="${f(y2 + 1.2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.2" fill="#4a5560" stroke="none">mosquitera (ext)</text><text x="${f(g.x0 + g.W + 7)}" y="${f(y1 + 1.2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.2" fill="#8b95a0" stroke="none">ventana</text>`;
         } else {
             // deslizante plisada (Zacundo Systems): guías arriba/abajo + postes laterales; tela plisada en
             // zigzag y barra de tiro vertical en el borde libre; flecha hacia el lado donde se recoge.
@@ -6396,12 +6490,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const zig = (x, w) => { const n = Math.max(2, Math.floor(w / 2.2)), st = w / n; let pts = ''; for (let i = 0; i <= n; i++) pts += `${f(x + i * st)},${f(PT - (i % 2 ? 1.2 : 3.8))} `; return `<polyline points="${pts.trim()}" fill="none" stroke="${telaCol}" style="stroke-width:1px"/>`; };
             if (hojas === 2) plan += zig(g.x0 + 1, g.W / 2 - 2) + zig(g.x0 + g.W / 2 + 1, g.W / 2 - 2);
             else plan += zig(g.x0 + 1, g.W - 2);
-            plan += `<text x="${f(g.x0 + g.W + 7)}" y="${f(PT - 1.5)}" font-family="Arimo" font-size="3.2" fill="#4a5560" stroke="none">plisada (ext)</text>`;
+            plan += `<text x="${f(g.x0 + g.W + 7)}" y="${f(PT - 1.5)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.2" fill="#4a5560" stroke="none">plisada (ext)</text>`;
         }
         svg += body;
         // etiqueta del tipo bajo la elevación
-        svg += `<text x="50" y="${f(g.y0 + g.H + 6)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">${MOSQ_TIPO_NOM[t]}${t === 'corredera' ? ' · ' + mosqSerie(state) : ''}${movil ? ` · ${hojas} hoja${hojas > 1 ? 's' : ''}` : ''}</text>`;
-        if (movil) svg += `<text x="${f(g.x0)}" y="${f(PT - 11.5)}" font-family="Arimo" font-size="3.2" font-weight="bold" fill="#8b95a0" stroke="none">VISTA SUPERIOR · interior abajo</text>` + plan;
+        svg += `<text x="50" y="${f(g.y0 + g.H + 6)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">${MOSQ_TIPO_NOM[t]}${t === 'corredera' ? ' · ' + mosqSerie(state) : ''}${movil ? ` · ${hojas} hoja${hojas > 1 ? 's' : ''}` : ''}</text>`;
+        if (movil) svg += `<text x="${f(g.x0)}" y="${f(PT - 11.5)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.2" font-weight="bold" fill="#8b95a0" stroke="none">VISTA SUPERIOR · interior abajo</text>` + plan;
         if (state.ancho > 0) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0, `${state.ancho} mm`, 7);
         if (state.alto > 0) svg += dimLineV(g.y0, g.y0 + g.H, g.x0 + g.W + 4, g.x0 + g.W, `${state.alto} mm`, 7);
         svg += '</svg>';
@@ -6478,7 +6572,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const labelW = motorW, labelH = 1.5;
                 const labelX = motorX, labelY = motorY - labelH - 0.2;
                 svg += `<rect x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelW}" height="${labelH}" rx="0.4" fill="#111"/>`;
-                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
             }
 
             const notes = [];
@@ -6487,7 +6581,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (state.guiaInf) notes.push('+ Guía Inferior');
             if (state.cajonExtra) notes.push('+ Cajón');
             notes.forEach((n, i) => {
-                svg += `<text x="${bx}" y="${(by + bh + 4 + i * 3.3).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#2c3742" stroke="none">${n}</text>`;
+                svg += `<text x="${bx}" y="${(by + bh + 4 + i * 3.3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#2c3742" stroke="none">${n}</text>`;
             });
         } else if (state.type === 'cort_ondas') {
             // Cortina Ondas Perfectas (tipo hotelera, fotos de referencia del usuario 2026-09-22): riel
@@ -6543,10 +6637,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // mecanismo motorizado: chip "MOTOR" en el extremo del riel del lado elegido (motor_lado)
             if (mec === 'motor') {
                 const mx = motorDer ? bx + bw - 13 : bx + 1;
-                body += `<rect x="${f(mx)}" y="${f(railY - 0.4)}" width="12" height="${f(railH + 0.8)}" rx="0.6" fill="#111" stroke="none"/><text x="${f(mx + 6)}" y="${f(railY + railH / 2 + 1)}" font-family="Arimo" font-size="2.6" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+                body += `<rect x="${f(mx)}" y="${f(railY - 0.4)}" width="12" height="${f(railH + 0.8)}" rx="0.6" fill="#111" stroke="none"/><text x="${f(mx + 6)}" y="${f(railY + railH / 2 + 1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="2.6" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
             }
             svg += `<defs>${defs}</defs>` + body;
-            svg += `<text x="${f(bx + bw / 2)}" y="${f(by + bh + 5)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">Ondas Perfectas · ${ONDAS_TIPO_NOM[ot]}${ap === 'central' ? ' · mitad / mitad' : ap === 'der' ? ' · hacia la derecha' : ' · hacia la izquierda'}</text>`;
+            svg += `<text x="${f(bx + bw / 2)}" y="${f(by + bh + 5)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#4a5560" text-anchor="middle" stroke="none">Ondas Perfectas · ${ONDAS_TIPO_NOM[ot]}${ap === 'central' ? ' · mitad / mitad' : ap === 'der' ? ' · hacia la derecha' : ' · hacia la izquierda'}</text>`;
         } else {
             // Roller: tubo superior (o cajón) + tela (una sola pieza continua, sin costuras) +
             // cadena del lado indicado. Con cajón: caja con un poco de 3D (cara superior +
@@ -6626,7 +6720,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const labelW = motorW, labelH = 1.5;
                 const labelY = conCajon ? motorY - labelH - 0.2 : by + 0.4;
                 svg += `<rect x="${motorX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelW}" height="${labelH}" rx="0.4" fill="#111"/>`;
-                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
+                svg += `<text x="${(motorX + motorW / 2).toFixed(1)}" y="${(labelY + labelH - 0.35).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="1.7" font-weight="bold" fill="#fff" text-anchor="middle" stroke="none">MOTOR</text>`;
             } else {
                 const chainX = isD ? bx + bw - 3 : bx + 3;
                 svg += `<line x1="${chainX}" y1="${(by + bh).toFixed(1)}" x2="${chainX}" y2="${(by + bh + 6).toFixed(1)}" stroke="#111" stroke-width="1"/>`;
@@ -6950,15 +7044,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (!p.first && p.giro && p.giro !== 'recto') {
                 const gx = p.x0;
                 marks += `<line x1="${gx.toFixed(1)}" y1="${(t0 - 2).toFixed(1)}" x2="${gx.toFixed(1)}" y2="${(p.fy0 + 2).toFixed(1)}" stroke="#c0392b" stroke-width="0.8" stroke-dasharray="2 1.5"/>`;
-                marks += `<text x="${gx.toFixed(1)}" y="${(t0 - 3).toFixed(1)}" font-family="Arimo" font-size="3" fill="#c0392b" text-anchor="middle" stroke="none">${p.giro === 'der' ? '⟳' : '⟲'} ${p.ang}°</text>`;
+                marks += `<text x="${gx.toFixed(1)}" y="${(t0 - 3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" fill="#c0392b" text-anchor="middle" stroke="none">${p.giro === 'der' ? '⟳' : '⟲'} ${p.ang}°</text>`;
             }
         });
         // cotas
         const yBottom = riseU + Hs;                 // línea de suelo del extremo más bajo
         let cotas = dimLineH(0, DW, yBottom + 12, yBottom, `${totalL} mm`, 5.5);
-        if (panels.length > 1) panels.forEach(p => { cotas += `<text x="${((p.x0 + p.x1) / 2).toFixed(1)}" y="${(yBottom + 6).toFixed(1)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">${Math.round((p.x1 - p.x0) / scale)}</text>`; });
+        if (panels.length > 1) panels.forEach(p => { cotas += `<text x="${((p.x0 + p.x1) / 2).toFixed(1)}" y="${(yBottom + 6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">${Math.round((p.x1 - p.x0) / scale)}</text>`; });
         cotas += dimLineV(0, Hs, DW + 6, DW, `${H} mm`, 5.5);
-        cotas += `<text x="0" y="-4" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">${esc ? 'ELEVACIÓN (escalera)' : 'ELEVACIÓN'}</text>`;
+        cotas += `<text x="0" y="-4" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">${esc ? 'ELEVACIÓN (escalera)' : 'ELEVACIÓN'}</text>`;
         const vbY = -10, vbH = (yBottom + 26) - vbY;
         let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 ${vbY} ${DW + 42} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
@@ -7340,7 +7434,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else if (np > 1) {
                 for (let k = 1; k < np; k++) { const dx = x + w * k / np; s += `<line x1="${dx.toFixed(1)}" y1="${(y + 0.7).toFixed(1)}" x2="${dx.toFixed(1)}" y2="${(y + h - 0.7).toFixed(1)}" stroke="#0A3D62" stroke-width="1.6"/>`; }
             }
-            for (let k = 0; k < np; k++) s += `<text x="${(x + w * (k + 1) / np - 2).toFixed(1)}" y="${(y + 6).toFixed(1)}" font-family="Arimo" font-size="4" fill="#7a828a" text-anchor="end" stroke="none">PF</text>`;
+            for (let k = 0; k < np; k++) s += `<text x="${(x + w * (k + 1) / np - 2).toFixed(1)}" y="${(y + 6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#7a828a" text-anchor="end" stroke="none">PF</text>`;
         }
         return s;
     }
@@ -7393,8 +7487,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // atributo del <text>, no en un <g> anidado: composePanos extrae la capa de planta con una
             // regex que corta en el primer </g>.
             const tf = opts.mirrorLabels ? ' transform="scale(-1, 1) translate(-100, 0)"' : '';
-            html += `<text${tf} x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
-            html += `<text${tf} x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
+            html += `<text${tf} x="17" y="${(y0 + 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'ext' : 'int'}</text>`;
+            html += `<text${tf} x="17" y="${(y0 - 7 * dirY + 1.4).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.5" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${swingEsExt ? 'int' : 'ext'}</text>`;
         }
         return html;
     }
@@ -7601,8 +7695,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     body += `<rect x="${(cx + 1).toFixed(1)}" y="${yS.toFixed(1)}" width="${(cw - 2).toFixed(1)}" height="${penDH.toFixed(2)}" fill="#1c5a85" stroke="#0A3D62" stroke-width="0.5"/>`;   // riel empotrado
                     body += `<line x1="${(cx - 3).toFixed(1)}" y1="${yS.toFixed(1)}" x2="${(cx + cw + 3).toFixed(1)}" y2="${yS.toFixed(1)}" stroke="#7a828a" stroke-width="1.4"/>`;   // suelo
                     for (let hx = cx - 3; hx < cx + cw + 3; hx += 2.2) body += `<line x1="${hx.toFixed(1)}" y1="${(yS + 0.2).toFixed(1)}" x2="${(hx - 1.4).toFixed(1)}" y2="${(yS + 1.6).toFixed(1)}" stroke="#b0b8c1" stroke-width="0.5"/>`;   // rayado del suelo
-                    body += `<text x="${(cx - 3.5).toFixed(1)}" y="${(yS + 1.2).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#7a828a" text-anchor="end" stroke="none">suelo</text>`;
-                    body += pm ? dimLineV(yS, yS + penDH, cx + cw + 2.6, cx + cw, `${pm}`, 2.8) : `<text x="${(cx + cw / 2).toFixed(1)}" y="${(yS + penDH + 3).toFixed(1)}" font-family="Arimo" font-size="2.6" fill="#c0392b" text-anchor="middle" stroke="none">riel: ¿serie?</text>`;
+                    body += `<text x="${(cx - 3.5).toFixed(1)}" y="${(yS + 1.2).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="2.6" fill="#7a828a" text-anchor="end" stroke="none">suelo</text>`;
+                    body += pm ? dimLineV(yS, yS + penDH, cx + cw + 2.6, cx + cw, `${pm}`, 2.8) : `<text x="${(cx + cw / 2).toFixed(1)}" y="${(yS + penDH + 3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="2.6" fill="#c0392b" text-anchor="middle" stroke="none">riel: ¿serie?</text>`;
                 }
                 if ((rows.length > 1 || rowSum !== gAlto) && r.celda !== 'fus') rowDims.push({ x: cx, w: cw, yTop: cy, yBot: cy + rh, mm: parseInt(r.h) || 0, col: cIdx, seq: rows.map(rr => parseInt(rr.h) || 0).join('/') });
                 cy += rh;
@@ -7694,7 +7788,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             cortes.forEach(([a, b]) => { if (a > yy) tramos.push([yy, a]); yy = Math.max(yy, b); });
             if (yy < gy0 + gDH) tramos.push([yy, gy0 + gDH]);
             tramos.forEach(([a, b]) => { if (entreSuma) body += tuboRect(bx - g, a, g, b - a); else body += tuboRect(bx - tw / 2, a, tw, b - a); });
-            if (tb.medida) body += `<text x="${(entreSuma ? bx - g / 2 : bx).toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
+            if (tb.medida) body += `<text x="${(entreSuma ? bx - g / 2 : bx).toFixed(1)}" y="${(gy0 - 1).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="2.4" fill="#334155" text-anchor="middle" stroke="none">${tb.medida}</text>`;
         }
         // cotas: ancho total (abajo) + mm por columna + alto total (derecha). Si un tubo perimetral
         // NO está incluido en la medida, se dibuja fuera del envolvente y la cota se corre para
@@ -7727,7 +7821,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (esqLado) {
             // Elevación desplegada: la esquina se marca con una línea punteada de arriba a abajo.
             body += `<line x1="${cornerX.toFixed(1)}" y1="-3" x2="${cornerX.toFixed(1)}" y2="${(DHt + 3).toFixed(1)}" stroke="#334155" stroke-width="0.8" stroke-dasharray="3 2"/>`;
-            body += `<text x="${cornerX.toFixed(1)}" y="${(-9 - extT).toFixed(1)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA</text>`;
+            body += `<text x="${cornerX.toFixed(1)}" y="${(-9 - extT).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA</text>`;
             body += `<line x1="${cornerX.toFixed(1)}" y1="${(-8 - extT).toFixed(1)}" x2="${cornerX.toFixed(1)}" y2="-3" stroke="#334155" stroke-width="0.8" stroke-dasharray="3 2"/>`;
             // Cota por ala (ala + frente) además de las de columna, si alguna tiene más de una columna.
             if (wingCols.length > 1 || mainCols.length > 1) {
@@ -7741,7 +7835,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         dimRows.forEach(row => {
             cotas += dimSegH(row.xs, row.mms, dyc, DHt + extB, 3.6);
             // Número de columna bajo su cota ("C1", "C2"…): el mismo que usa el pop-up (usuario 2026-10-17, "saber cuál es la columna 1").
-            if (row.cols) colInfo.forEach((ci, i) => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(dyc + 3.6).toFixed(1)}" font-family="Arimo" font-size="3" font-weight="bold" fill="#9aa6b2" text-anchor="middle" stroke="none">C${i + 1}</text>`; });
+            if (row.cols) colInfo.forEach((ci, i) => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(dyc + 3.6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" font-weight="bold" fill="#9aa6b2" text-anchor="middle" stroke="none">C${i + 1}</text>`; });
             dyc += row.cols ? 11 : 8;
         });
         cotas += dimLineH(0, DW, dyc + 3, DHt + extB, `${totalW} mm`, 5.5);
@@ -7775,7 +7869,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         // (las alturas de filas apiladas van como cotas verticales junto a su columna, ver arriba)
-        cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
+        cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
         // Vista en planta (opcional): útil cuando hay correderas / puertas o ventanas abisagradas.
         // IDÉNTICA a la tarjeta suelta (planViewAbatible): mismo radio en proporción al ancho de la
         // hoja (la suelta usa maxR=34 con un panel de 65 → 34/65 del ancho) y la franja de planta
@@ -7868,7 +7962,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const abajoNeed = planAdentro ? Math.max(upNeed, -wMinY, 8) : Math.max(downNeed, wMaxY, 8);
             // Línea de pared del frente: deja arriba el espacio del giro hacia el lado que queda arriba y de lo que suba el ala.
             const planY = planTop + 7 + arribaNeed;
-            cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA${planAdentro ? ' (vista de adentro: interior abajo)' : ''}</text>`;
+            cotas += `<text x="${(esqLado === 'izq' ? cornerX : offMain).toFixed(1)}" y="${(planTop + 3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA${planAdentro ? ' (vista de adentro: interior abajo)' : ''}</text>`;
             let planG = '';
             mainCols.forEach(ci => { const wp = planWidth(ci); planG += gridColPlan(ci.x, wp, ci.col, planY, wp * RATIO_R, uid, cornerOf(ci)); });
             if (entreSuma) mainCols.forEach((ci, i) => { const gi = colInfo.indexOf(ci); if (i > 0 && gapAt(gi - 1) > 0) planG += `<line x1="${(ci.x - gapAt(gi - 1)).toFixed(1)}" y1="${planY}" x2="${ci.x.toFixed(1)}" y2="${planY}" style="stroke-width:2.5px;stroke:#bdc3c7;"/>`; });
@@ -7890,7 +7984,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 planG += `<g transform="${m}">${ala}</g>`;
                 // remate de la esquina (une la pared del ala con la del frente) + ángulo si no es recto
                 planG += `<circle cx="${cornerX.toFixed(1)}" cy="${planY.toFixed(1)}" r="1.3" fill="#bdc3c7"/>`;
-                if (angE !== 90) cotas += `<text x="${(cornerX + (esqLado === 'izq' ? 4 : -4)).toFixed(1)}" y="${(planY + (planAdentro ? -1 : 1) * (giroAfuera ? -3 : 6)).toFixed(1)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="${esqLado === 'izq' ? 'start' : 'end'}" stroke="none">${angE}°</text>`;
+                if (angE !== 90) cotas += `<text x="${(cornerX + (esqLado === 'izq' ? 4 : -4)).toFixed(1)}" y="${(planY + (planAdentro ? -1 : 1) * (giroAfuera ? -3 : 6)).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#334155" text-anchor="${esqLado === 'izq' ? 'start' : 'end'}" stroke="none">${angE}°</text>`;
                 planLeftExt = Math.max(0, 3 - (cornerX + wMinX)); planRightExt = Math.max(0, cornerX + wMaxX + 3 - DW);
             }
             cotas += planAdentro ? `<g transform="matrix(1 0 0 -1 0 ${(2 * planY).toFixed(2)})">${planG}</g>` : planG;
@@ -7899,8 +7993,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // Etiquetas int/ext: por defecto interior arriba (vista exterior); el usuario puede invertirlas
             // (`planInterior: 'abajo'`) para que la planta diga lo correcto en su obra (2026-09-18).
             const intAbajo = planAdentro ? true : state.planInterior === 'abajo';   // con OB la geometría ya pone el interior abajo
-            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'ext' : 'int'}</text>`;
-            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'int' : 'ext'}</text>`;
+            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY - 4).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'ext' : 'int'}</text>`;
+            cotas += `<text x="${lblX.toFixed(1)}" y="${(planY + 8).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">${intAbajo ? 'int' : 'ext'}</text>`;
             planExtra = (planY + abajoNeed + 4) - anchoBottom;
         }
         const vbY = (esqLado ? -14 : -10) - extT, vbH = (anchoBottom + 10 + planExtra) - vbY;
@@ -8551,15 +8645,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const tubosPlan = (yTop, yBot) => {
             let t = '';
             // etiqueta "tubo" vertical por FUERA del tubo (abajo chocaba con "sheetrock (int)" en los centrales)
-            const tub = (x, left) => `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${gl.tt.toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="#0A3D62" stroke="#0d3f5f" stroke-width="0.5"/><text transform="translate(${(left ? x - 0.8 : x + gl.tt + 3.4).toFixed(1)} ${((yTop + yBot) / 2).toFixed(1)}) rotate(-90)" font-family="Arimo" font-size="2.8" fill="#334155" text-anchor="middle" stroke="none">tubo</text>`;
+            const tub = (x, left) => `<rect x="${x.toFixed(1)}" y="${yTop.toFixed(1)}" width="${gl.tt.toFixed(1)}" height="${(yBot - yTop).toFixed(1)}" fill="#0A3D62" stroke="#0d3f5f" stroke-width="0.5"/><text transform="translate(${(left ? x - 0.8 : x + gl.tt + 3.4).toFixed(1)} ${((yTop + yBot) / 2).toFixed(1)}) rotate(-90)" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="2.8" fill="#334155" text-anchor="middle" stroke="none">tubo</text>`;
             if (gl.latL) t += tub(X0 - gl.tt, true);
             if (gl.latR) t += tub(X1, false);
             return t;
         };
         // Separador + título (común)
         const head = `<line x1="2" y1="${PT - 5}" x2="98" y2="${PT - 5}" stroke="#d3d8dd" stroke-width="0.7"/>` +
-            `<text x="50" y="${PT - 6.5}" font-family="Arimo" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
-        const lbl = (x, y, t) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="middle" stroke="none">${t}</text>`;
+            `<text x="50" y="${PT - 6.5}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
+        const lbl = (x, y, t) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" fill="#7a828a" text-anchor="middle" stroke="none">${t}</text>`;
 
         // ---- CENTRAL: hojas se encuentran en el centro y cascadean hacia los lados.
         // Mosquitera = solo 2 hojas centradas (riel exterior). Sin mosq el vidrio agarra el
@@ -8742,8 +8836,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             return `<g style="stroke:#111;stroke-width:1.1px;fill:none"><line x1="${sx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${ex.toFixed(1)}" y2="${cy.toFixed(1)}"/><polyline points="${hx.toFixed(1)},${(cy - 1.5).toFixed(1)} ${ex.toFixed(1)},${cy.toFixed(1)} ${hx.toFixed(1)},${(cy + 1.5).toFixed(1)}"/></g>`;
         };
         const head = `<line x1="2" y1="61" x2="98" y2="61" stroke="#d3d8dd" stroke-width="0.7"/>` +
-            `<text x="50" y="59.5" font-family="Arimo" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
-        const lbl = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo" font-size="3" fill="#7a828a" text-anchor="${anchor || 'middle'}" stroke="none">${t}</text>`;
+            `<text x="50" y="59.5" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4.8" font-weight="bold" fill="#2b333b" text-anchor="middle" stroke="#2b333b" stroke-width="0.35" paint-order="stroke" stroke-linejoin="round">VISTA SUPERIOR (planta)</text>`;
+        const lbl = (x, y, t, anchor) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" fill="#7a828a" text-anchor="${anchor || 'middle'}" stroke="none">${t}</text>`;
 
         // n segmentos que cubren X0..X1 en partes iguales, superpuestos OVERLAP unidades con
         // su vecino (como se ven las hojas encimadas al cerrar en el boceto del usuario).
@@ -8877,7 +8971,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let n = parseInt(state.panos) || 1, s = '';
             const isTope = state.union === 'tope';
             for (let i = 1; i < n; i++) { const x = W / n * i; s += `<line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${H}" stroke-width="${isTope ? 0.5 : 2}"/>`; }
-            for (let i = 0; i < n; i++) { const cx = W / n * (i + 0.5); s += `<text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="Arimo" font-size="${Math.min(9, W / n * 0.5).toFixed(1)}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`; }
+            for (let i = 0; i < n; i++) { const cx = W / n * (i + 0.5); s += `<text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${Math.min(9, W / n * 0.5).toFixed(1)}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`; }
             return s;
         }
         const two = state.apertura && state.apertura.includes('2');
@@ -8965,8 +9059,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const rowY1 = mm(90, H * 0.05, 3), rowY2 = mm(150, H * 0.085, 5);   // 90 y 150 mm reales desde el borde
             [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY1); });
             [0.28, 0.72].forEach(fx => { s += conn(W * fx, rowY2); });
-            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY1 - 1.6).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">90</text>`;
-            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY2 + connR + 3.2).toFixed(1)}" font-family="Arimo" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">150</text>`;
+            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY1 - 1.6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">90</text>`;
+            s += `<text x="${(W * 0.5).toFixed(1)}" y="${(rowY2 + connR + 3.2).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${Math.min(3.6, W * 0.045).toFixed(1)}" fill="#555" text-anchor="middle" stroke="none">150</text>`;
             const lx = openLeft ? W * 0.68 : W * 0.32;
             if (['5', '8', '12', '16'].includes(state.tirador)) { const bh = barLen(state.tirador, barSizes[state.tirador] * H); s += `<rect x="${(lx - barW / 2).toFixed(1)}" y="${(cy - bh / 2).toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="${(barW / 2).toFixed(1)}" fill="${herrajeCol}" stroke="#000" stroke-width="0.4"/>`; }
             else s += knob(lx, cy, knobR);
@@ -9405,7 +9499,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // del color de herraje del panel anterior a la esquina — sustituyen los conectores de pared de ese borde.
             { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4', hs2 = Math.max(1.6, 22.5 * scale);   // prensa 45 × 45 mm
               [0.25, 0.75].forEach(f => { const y = headTop + Hd * f; body += `<rect x="${(cornerX - hs2).toFixed(2)}" y="${(y - hs2).toFixed(2)}" width="${(hs2 * 2).toFixed(2)}" height="${(hs2 * 2).toFixed(2)}" rx="0.5" fill="${col}" stroke="#000" stroke-width="0.4"/><line x1="${cornerX.toFixed(2)}" y1="${(y - hs2).toFixed(2)}" x2="${cornerX.toFixed(2)}" y2="${(y + hs2).toFixed(2)}" stroke="#fff" stroke-width="0.5"/>`; }); }
-            body += `<text x="${cornerX.toFixed(2)}" y="${(headTop + Hd + 7).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA 90°</text>`;   // debajo de la elevación (arriba chocaba con las cotas de ancho)
+            body += `<text x="${cornerX.toFixed(2)}" y="${(headTop + Hd + 7).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#334155" text-anchor="middle" stroke="none">ESQUINA 90°</text>`;   // debajo de la elevación (arriba chocaba con las cotas de ancho)
             // Planta con GIRO (usuario 2026-09-18, "como en la fachada"): lado horizontal + lado vertical que sube
             // o baja desde la esquina, con la esquina a la derecha (giros 3/4: horizontal = paneles 1..k) o a la
             // izquierda (giros 1/2: vertical = paneles 1..k). El interior de la ducha es el rincón de la "L";
@@ -9419,7 +9513,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const planY = headTop + Hd + 18 + (vertUp ? lenV : 0);
             const segGlass = (x1, y1, x2, y2) => `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#0A3D62" stroke-width="2.2"/>`;
             const segSlide = (x1, y1, x2, y2, ox, oy) => segGlass(x1 + ox, y1 + oy, x2 + ox, y2 + oy) + `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#8d99a4" stroke-width="0.8"/>`;
-            body += `<text x="0" y="${(planY - (vertUp ? lenV : 0) - 3).toFixed(2)}" font-family="Arimo" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
+            body += `<text x="0" y="${(planY - (vertUp ? lenV : 0) - 3).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">VISTA EN PLANTA</text>`;
             horiz.forEach(L => {
                 const g = 0.8, len = L.w - 2 * g, x1 = L.x + g, x2 = L.x + L.w - g;
                 if (L.p.tipo === 'puerta') {
@@ -9446,10 +9540,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             { const pa = paneles[esqK - 1] || {}, col = pa.herraje_color === 'negro' ? '#111111' : '#8d99a4';
               body += `<rect x="${(cornerX - 2.2).toFixed(2)}" y="${(planY - 2.2).toFixed(2)}" width="4.4" height="4.4" rx="0.5" fill="${col}" stroke="#000" stroke-width="0.4"/>`; }   // prensa de esquina en planta
             const hxMid = horiz.length ? (horiz[0].x + horiz[horiz.length - 1].x + horiz[horiz.length - 1].w) / 2 : cornerX;
-            body += `<text x="${hxMid.toFixed(2)}" y="${(planY - sy * 4 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ducha</text>`;
-            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 6 + 1.4).toFixed(2)}" font-family="Arimo" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">baño</text>`;
-            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 11 + 1.4).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">lado ${cornerRight ? 'A' : 'B'}</text>`;
-            body += `<text x="${(cornerX + sx * 5).toFixed(2)}" y="${(planY - sy * lenV / 2).toFixed(2)}" font-family="Arimo" font-size="3.4" fill="#7a828a" text-anchor="${sx > 0 ? 'start' : 'end'}" stroke="none">lado ${cornerRight ? 'B' : 'A'}</text>`;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY - sy * 4 + 1.4).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">ducha</text>`;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 6 + 1.4).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="#7a828a" text-anchor="middle" stroke="none">baño</text>`;
+            body += `<text x="${hxMid.toFixed(2)}" y="${(planY + sy * 11 + 1.4).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">lado ${cornerRight ? 'A' : 'B'}</text>`;
+            body += `<text x="${(cornerX + sx * 5).toFixed(2)}" y="${(planY - sy * lenV / 2).toFixed(2)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#7a828a" text-anchor="${sx > 0 ? 'start' : 'end'}" stroke="none">lado ${cornerRight ? 'B' : 'A'}</text>`;
             vbH = planY + 14 + (vertUp ? 0 : lenV);
         }
         const extraR = Math.max(0, fsDim * 4.4 - 14);   // sitio para la cota de alto cuando la fuente crece
@@ -9568,7 +9662,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 drawing += plegElev(state, uid);
                 const hojaMm = plegHojaMm(state), mal = hojaMm > plegSerie(state).hojaMaxMm;
                 const g = plegLayout(state);
-                if (hojaMm) drawing += `<text x="${(g.x0 + g.W / 2).toFixed(1)}" y="${(g.y0 + g.H + 6).toFixed(1)}" font-family="Arimo" font-size="4" font-weight="bold" fill="${mal ? '#c0392b' : '#4a5560'}" text-anchor="middle" stroke="none">${g.n} hojas × ${hojaMm} mm${mal ? ' ⚠ máx. ' + plegSerie(state).hojaMaxMm : ''}</text>`;
+                if (hojaMm) drawing += `<text x="${(g.x0 + g.W / 2).toFixed(1)}" y="${(g.y0 + g.H + 6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" font-weight="bold" fill="${mal ? '#c0392b' : '#4a5560'}" text-anchor="middle" stroke="none">${g.n} hojas × ${hojaMm} mm${mal ? ' ⚠ máx. ' + plegSerie(state).hojaMaxMm : ''}</text>`;
                 drawing += `<g class="plan-view-layer">${plegablePlan(state, uid)}</g>`;
                 break;
             }
@@ -9737,7 +9831,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 }
                 for (let i = 0; i < n; i++) {
                     let centerX = bx + (bw / n) * i + (bw / n) / 2;
-                    drawing += `<text x="${centerX}" y="${by + bh / 2 + fFontSize * 0.35}" font-family="Arimo" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
+                    drawing += `<text x="${centerX}" y="${by + bh / 2 + fFontSize * 0.35}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${fFontSize}" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">F</text>`;
                 }
                 break;
         }
@@ -9763,7 +9857,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // al final, no acá arriba) — nunca las dos a la vez.
             if (state.ancho > 0 && !(state.panoArriba || state.panoAbajo) && state.categoria !== 'galandaje') {
                 if (dimPr) svg += dimLineH(dimPr[0], dimPr[0] + dimPr[2], 4, dimPr[1], `${state.ancho} mm`, 7);
-                else svg += `<text x="50" y="4" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
+                else svg += `<text x="50" y="4" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="middle" stroke="none">${state.ancho} mm</text>`;
             }
             if (state.categoria === 'galandaje' && dimPr) {
                 const g = galLayout(state);
@@ -9774,7 +9868,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (g.marcoDado) svg += dimLineH(g.x0, g.x0 + g.W, 4, g.y0 - 1.6 - ((g.tubo === 'sup' || g.tubo === 'lat_sup45') ? g.tt : 0), `marco ${g.anchoM} mm`, 6);   // testigos desde encima del tubo superior
             } else if (state.alto > 0) {
                 if (dimPr) svg += dimLineV(dimPr[1], dimPr[1] + dimPr[3], dimPr[0] + dimPr[2] + 4, dimPr[0] + dimPr[2], `${(parseInt(state.alto) || 0) + penetracionRielMm(state)} mm`, 7);   // correderas: altura TOTAL con penetración del riel
-                else svg += `<text x="94" y="30" font-family="Arimo" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
+                else svg += `<text x="94" y="30" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="7" font-weight="bold" fill="#2c3742" text-anchor="start" dominant-baseline="middle" stroke="none">${state.alto} mm</text>`;
             }
             if (state.categoria === 'galandaje') {
                 svg += galandajePlan(state, uid);
