@@ -3539,3 +3539,22 @@ Cuentas espejo); sin Wilson no hay capturas de Transportes (pictogramas); las pa
 PIN al espejo de Sara (pictogramas); Panel, Historial, Calendario, RRHH, Usuarios, ERP, Puntos, Fábrica interna son solo admin →
 pictogramas que Dylan puede sustituir con sus capturas (`sube.js` con `reemplazar`). Pendientes de dato: «Los botones de cada
 pedido» (Instalación 2, sin pedidos listos) y «Horas ya validadas» (Parte diario 1).
+
+### Coordinador de Obras: el informe matinal es una Cloud Function (2026-10-30)
+
+Dylan: «hoy no hubo informe… vamos a pasar el informe a una cloud function». La rutina local de la app de Claude solo corría con la
+app abierta a las 7:50 (faltaron el 25 y el 30/10, otros días salió tarde). Ahora `functions/coordinador.js` (montado al final de
+`index.js`): **`coordinadorInformeDiario`** (onSchedule `50 7 * * 1-6` RD, secreto `ANTHROPIC_API_KEY`) junta los datos del panel con
+un lector sobre el Admin SDK (`'=='`/`'in'` a Firestore, `'!='` en memoria): trabajos abiertos y completados recientes, pedidos de
+fábrica y compras directas abiertos, cotizaciones, partes de ayer/anteayer/hoy, viajes de 3 días, recordatorios abiertos, anticipos
+de Citrus sin obra, vacaciones vigentes, feriados y el informe anterior; pide el clima a Open-Meteo (port de `scripts/ops/clima.js`,
+Las Terrenas + GPS de los trabajos próximos); llama a Claude (`claude-sonnet-4-6`, ~27 k tokens de entrada) con el guion del agente
+resumido en `SISTEMA` (persona, reglas de planificación, lecciones aprendidas de `coordinador-obras.datos.md`, formato con A…/M…) y
+publica en `mensajes` el mismo documento que `scripts/ops/publicar-informe.js` (`tipo:'informe_coordinador'`, remitente
+`coordinador@artal`, destinatarios Wilson y Dylan; `mensajePush` manda el push) + `generadoPor:'cloud-function'`, `modelo`, `tokens`.
+No corre domingos ni feriados no trabajados; un informe por día (si existe el asunto de hoy, no repite). **`coordinadorInformeAhora`**
+(onRequest, admin con ID token): `{fecha?, soloPrueba?: true → devuelve el texto sin publicar, forzar?: true}`. Prueba local sin publicar:
+`ANTHROPIC_API_KEY=$(firebase functions:secrets:access ANTHROPIC_API_KEY) node scripts/ops/probar-coordinador.js` (lector REST de
+`fs-rest.js`; `generarInforme({lector, …})` es agnóstico del SDK). La rutina local `coordinador-obras-matinal` queda DESACTIVADA (solo
+«Run now» a mano); el agente a demanda sigue existiendo y lee el informe del día en `mensajes` para ejecutar «haz A2 / envía M1». Las
+sesiones de la rutina no se pueden agrupar en la barra lateral: la app las cuelga de la rutina (panel de Rutinas).

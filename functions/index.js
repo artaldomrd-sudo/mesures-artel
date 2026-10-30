@@ -3155,3 +3155,6 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }));
 
 if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));
+
+// Coordinador de Obras: informe matinal en el servidor (2026-10-30; antes rutina local de la app de Claude). Ver functions/coordinador.js.
+Object.assign(exports, require('./coordinador')({ db, FieldValue, onSchedule, onRequest, anthropicKey, callerAdmin }));
