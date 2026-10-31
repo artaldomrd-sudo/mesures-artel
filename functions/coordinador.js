@@ -13,7 +13,7 @@
 // `generarInforme({ lector, ... })` recibe un lector abstracto ({consultar, obtener}) para poder probarlo en local con el REST de
 // `scripts/ops/fs-rest.js` (el Admin SDK no acepta la credencial de firebase-tools); en la función se usa el Admin SDK.
 
-const DESTINATARIOS = ['wilsonhernandezrodriguez81@gmail.com', 'artaldom.rd@gmail.com'];
+const DESTINATARIOS = ['wilsonhernandezrodriguez81@gmail.com', 'dylan.r.rd@gmail.com'];
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const DIAS_SEM = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
