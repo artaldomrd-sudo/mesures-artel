@@ -212,13 +212,16 @@ async function pedirInforme(apiKey, datos, clima) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: MODELO, max_tokens: 4500, system: SISTEMA, messages: [{ role: 'user', content: user }] }),
+        // 8000 tokens de salida: el informe del 31/10/2026 salió cortado a mitad de M3 con el tope anterior (4500 justos).
+        body: JSON.stringify({ model: MODELO, max_tokens: 8000, system: SISTEMA, messages: [{ role: 'user', content: user }] }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error('Anthropic ' + r.status + ': ' + JSON.stringify(j).slice(0, 300));
-    const texto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+    let texto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
     if (texto.length < 200) throw new Error('informe demasiado corto');
-    return { texto, uso: j.usage || null };
+    // Si aun así se corta, que el pie del informe lo diga en vez de terminar a mitad de una frase.
+    if (j.stop_reason === 'max_tokens') texto += '\n\n⚠️ INFORME CORTADO: la respuesta llegó al tope de longitud. Lo que falta no se perdió del panel; pídelo con «coordinadorInformeAhora» o espera el de mañana.';
+    return { texto, uso: j.usage || null, cortado: j.stop_reason === 'max_tokens' };
 }
 
 // ---------- orquestación ----------
