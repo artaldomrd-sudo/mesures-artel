@@ -3237,6 +3237,18 @@ tablero («⚙️ Quién atiende», solo admin). Precio opcional desde el inicio
   «Visto» al final del día. Probado en local con el espejo de Emerson (solo UI: los espejos no escriben y las reglas aún no estaban
   publicadas al construirlo).
 
+### Coordinador de Obras: pantalla propia con UNA conversación (`ops/coordinador.html`, 2026-11-01)
+
+Dylan: «acceder al Coordinador sin pasar por Mensajería; una sola conversación a la que entro cada día; botón de hacer informe ahora».
+No toca nada de la sesión del Coordinador (`coordinador-chat.js`, `mensajes.html`): solo lee/escribe lo que ya existe. Mosaico
+«🗓️ Coordinador de Obras» en el Panel (badge = informes de las últimas 36 h sin mi acuse). `requireAuth([])` (Wilson por `paginasExtra`
+cuando Dylan quiera; las reglas ya le dejan leer y responder). Hilo cronológico único con separadores por día: informes (`mensajes`
+tipo `informe_coordinador`, el último desplegado y los anteriores plegados), mis respuestas (`coordinadorRespuestas`, con ⏳ mientras
+`pendiente/procesando`) y contestaciones del agente (`mensajes` tipo `respuesta_coordinador`). La caja fija de abajo crea una
+`coordinadorRespuestas` anclada al informe más reciente (mismos campos que Mensajería; Enter envía, Shift+Enter salto). Al abrir, marca
+el acuse de lectura del último informe (`acuses.{key}`). «📝 Hacer informe ahora» (hoy / mañana) → `POST coordinadorInformeAhora`
+con ID token `{fecha, forzar:true}`; el informe aparece por el snapshot.
+
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
 
 Dylan: «empiezo algo en una sesión de Claude y lo dejo varios días sin retomar, no es sostenible». `herramientas/sesiones-claude/sync.js`
