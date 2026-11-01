@@ -602,7 +602,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-01 12:00</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-01 12:30</div>
         </div>
     </div>
     
@@ -2064,11 +2064,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // vidrio por tipo todavía NO existen (pendientes de confirmar con el usuario y el proveedor): el documento
     // lo dice en "Supuestos". No toca nada del flujo actual (ALUCUFEL sigue igual).
     // =====================================================================================================
-    const PERF_BARRA_MM = 6400, PERF_DESPERDICIO = 0.10;
+    const PERF_BARRA_MM = 6400, PERF_DESPERDICIO = 0.10;   // Euroamerica: barras de 6400 mm (usuario 2026-11-01); desperdicio por confirmar
+    // Los proveedores dominicanos nombran los tubos en pulgadas (usuario 2026-11-01): 100 x 45 = 1¾" × 4", 100 x 100 = 4" × 4",
+    // 45 x 45 = 1¾" × 1¾". Faltan otras medidas (las dará el usuario); un tubo sin entrada se imprime solo en mm.
+    const TUBO_NOMBRES = { '100x45': '1¾" × 4"', '45x100': '1¾" × 4"', '100x100': '4" × 4"', '45x45': '1¾" × 1¾"', '40x20': '¾" × 1½"', '20x40': '¾" × 1½"' };
+    function tuboNombre(medida) { const n = String(medida || '').match(/\d+/g) || []; const k = n.slice(0, 2).join('x'); const pulg = TUBO_NOMBRES[k] || TUBO_NOMBRES[n.slice(0, 2).reverse().join('x')]; return `Tubo ${medida || '100 x 45'}` + (pulg ? ` (${pulg})` : ''); }
     const PERF_SUPUESTOS = [
         'Largos de perfil = geometría del ítem (marco = perímetro del hueco; hoja = perímetro de cada hoja con el ancho repartido entre las hojas). No incluyen solapes de hojas, holguras ni descuentos de corte: son largos de referencia para cotizar, no la hoja de corte.',
         `Barras estimadas = metros lineales × (1 + ${Math.round(PERF_DESPERDICIO * 100)} % de desperdicio) ÷ ${PERF_BARRA_MM / 1000} m, redondeado hacia arriba, por serie y rol (sin optimizar cortes).`,
-        'Vidrios: medida de la HOJA o del hueco; el descuento real de vidrio solo está definido para Paño Fijo (P40 35 mm/lado, P40 puerta 55 mm/lado, moldura 7 mm total). En los demás tipos el descuento por serie está por definir.',
+        'Vidrios: medida de la HOJA o del hueco; el descuento real de vidrio solo está definido para Paño Fijo (P40 35 mm/lado, P40 puerta 55 mm/lado, moldura 7 mm total). En los demás tipos el descuento por serie está por definir. El vidrio se compra cortado a los proveedores de vidrio (laminado: varios; templado: Industrias Domínguez), no al gamista; los recortes de plancha llegan con el pedido y se aprovechan en fábrica.',
         'Accesorios: cantidades genéricas por tipo (rodamientos 2 por hoja corredera, bisagras 2 por hoja de ventana / 3 por hoja de puerta, 1 manija por hoja operable, felpa = 2 × perímetro de hoja, escuadras 4 por marco y 4 por hoja). Las referencias por serie están por definir.',
         'No incluidos todavía: Vidrio de Ducha, Baranda, Security Lamas, cortinas y mosquiteras (son compras a proveedor, no perfilería propia).'
     ];
@@ -2118,8 +2122,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             acc('Carros / colgadores de galandaje', n); acc('Bisagras de galandaje', 2 * Math.max(0, n - 1)); acc('Cierre', 1); acc('Escuadras de hoja', 4 * n); felpaHojas(n, hj.per);
             if (st.mosquitera === 'con') { perfil('Mosquitera: marco de hoja', 2 * H + 2 * hj.w); acc('Tela de mosquitera', (hj.w * H) / 1e6, 'm²'); }
             const tubo = st.gal_tubo || '';
-            if (tubo === 'sup' || tubo === 'lat_sup45') perfil('Tubo superior', W, 'tubo estructural, serie aparte');
-            if (tubo === 'lat' || tubo === 'lat_sup45') perfil('Tubo lateral', g.central ? 2 * H : H, 'tubo estructural, serie aparte');
+            if (tubo === 'sup' || tubo === 'lat_sup45') P.push({ rol: 'Tubo superior (galandaje)', serie: tuboNombre('100 x 45'), mm: W, nota: 'medida de tubo por confirmar' });
+            if (tubo === 'lat' || tubo === 'lat_sup45') P.push({ rol: 'Tubo lateral (galandaje)', serie: tuboNombre('100 x 45'), mm: g.central ? 2 * H : H, nota: 'medida de tubo por confirmar' });
         } else if (cat === 'ventana') {
             const hb = perfHojasAbisagrada(st), n = hb.n;
             let anchos = [A / n];
@@ -2184,7 +2188,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const totalW = cols.reduce((a, c) => a + perfMm(c.w), 0) + gridEntreExtraW(st);
         ['fajaArriba', 'fajaAbajo'].forEach(k => { const f = st[k]; if (!f) return; const h = perfMm(f.h); if (!h) return; if (Array.isArray(f.cols) && f.cols.length) f.cols.forEach((fc, i) => add(`Faja ${k === 'fajaArriba' ? 'superior' : 'inferior'} ${i + 1} (${fc.celda || f.celda})`, celdaMini({ ...f, ...fc }, perfMm(fc.w), h))); else add(`Faja ${k === 'fajaArriba' ? 'superior' : 'inferior'} (${f.celda})`, celdaMini(f, totalW, h)); });
         const tb = st.tubos || {}, totalH = gridBandAlto(st) + (st.fajaArriba ? perfMm(st.fajaArriba.h) : 0) + (st.fajaAbajo ? perfMm(st.fajaAbajo.h) : 0);
-        const tuboSerie = `Tubo ${tb.medida || '100 x 45'}`;
+        const tuboSerie = tuboNombre(tb.medida || '100 x 45');
         const tubo = (rol, mm) => { if (mm > 0) out.perfiles.push({ rol, serie: tuboSerie, mm: Math.round(mm), nota: '' }); };
         if (tb.sup) tubo('Tubo superior', totalW); if (tb.inf) tubo('Tubo inferior', totalW);
         if (tb.izq) tubo('Tubo lateral izquierdo', totalH); if (tb.der) tubo('Tubo lateral derecho', totalH);
