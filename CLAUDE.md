@@ -2997,7 +2997,9 @@ cruzar por teléfono/RNC «aunque se marque mal el nombre». Diseño (cero campo
 
 Dylan (capturas de encuestas enviadas a dos tomas de medidas): «ahora es muy general, se mezclan todos los tipos de trabajo».
 `instalaciones.tipoTrabajo` obligatorio al crear: `instalacion` (pedido de fábrica interna/ALUCUFEL) · `reparacion_artal` ·
-`servicio_post` · `medicion` · `reemplazo_dano` · `preparacion_obra` · `reparacion_otra` (`TIPOS_TRABAJO`/`TIPO_ICONO`,
+`servicio_post` · `medicion` · `reemplazo_dano` · `preparacion_obra` · `reparacion_otra` · `preparacion_taller` («Preparación de
+pedido en taller Terrenas», 2026-11-01; armado/corte en el taller antes de ir a obra: no mueve pedidos ni lleva encuesta; también en
+`TIPOS_TXT` del informe de cierre) (`TIPOS_TRABAJO`/`TIPO_ICONO`,
 `tipoDeJob(j)`: sin campo pero con pedido enlazado = instalación). «+ Trabajo» (equipo) tiene el select + «Obra existente»
 (pedidos abiertos de `ordersCache`; rellena cliente/obra/dirección/GPS y engancha `orderId`/`orderIds`; obligatorio para
 instalación y preparación de obra); el modal de gerencia tiene `#job-tipo`; Calendario y el trigger `instalacionAlListo` ponen
