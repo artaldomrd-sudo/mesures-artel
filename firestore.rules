@@ -99,6 +99,32 @@ service cloud.firestore {
     match /anticiposCitrus/{id}          { allow read, write: if esAdmin(); }
     match /proveedores/{id}              { allow read: if finanzas(); allow write: if finanzas(); }
 
+    // Coordinador de Obras (IA), 2026-10-31: responderle al informe matinal desde Mensajería (ops/mensajes.html → trigger
+    // coordinadorRespuestaProcesar). La respuesta la CREA quien responde (admin o destinatario del informe; nunca un espejo), con
+    // campos acotados y `destinatariosInforme` igual a los destinatarios del informe (así la lectura del hilo va por ese array sin
+    // más gets). La procesa el servidor (estado/resultado): nadie la edita ni la borra desde el navegador.
+    match /coordinadorRespuestas/{id} {
+      allow read: if esAdmin()
+        || (miembro() && ('destinatariosInforme' in resource.data)
+            && (correoEfectivo() in resource.data.destinatariosInforme || request.auth.token.email in resource.data.destinatariosInforme));
+      allow create: if miembro() && !esEspejo()
+        && (esAdmin() || request.auth.token.email in request.resource.data.destinatariosInforme)
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.porEmail == request.auth.token.email
+        && request.resource.data.texto is string && request.resource.data.texto.size() > 0 && request.resource.data.texto.size() < 4000
+        && request.resource.data.informeId is string && request.resource.data.informeId.size() > 0
+        && request.resource.data.destinatariosInforme == get(/databases/$(database)/documents/mensajes/$(request.resource.data.informeId)).data.destinatarios
+        && request.resource.data.keys().hasOnly(['informeId', 'informeAsunto', 'texto', 'por', 'porEmail', 'fecha', 'estado', 'destinatariosInforme']);
+      allow update, delete: if false;
+    }
+    // Auditoría de lo que el Coordinador escribió desde el chat: la escribe solo el servidor; la lee gerencia.
+    match /coordinadorAcciones/{id}      { allow read: if esAdmin(); allow write: if false; }
+    // Configuración del Coordinador (lecciones aprendidas que leen el informe y el chat): gerencia la lee y la corrige a mano.
+    match /coordinadorConfig/{id}        { allow read, write: if esAdmin(); }
+    // Trabajos con Claude a medias (2026-11-01): las sesiones de Dylan con Claude (título, último pedido, última respuesta). Las sube
+    // herramientas/sesiones-claude/sync.js desde su Mac; gerencia las lee y marca terminada/archivada/nota. Nadie más.
+    match /sesionesClaude/{id}           { allow read, write: if esAdmin(); }
+
     // Registros de auditoría: SOLO se pueden CREAR. Nadie (ni admin) edita ni borra una anotación ya hecha.
     match /movimientosInstalaciones/{id} { allow create: if oficina() || obra(); }
     match /movimientosInventario/{id}    { allow create: if oficina() || obra(); }

@@ -12,6 +12,11 @@
 //
 // `generarInforme({ lector, ... })` recibe un lector abstracto ({consultar, obtener}) para poder probarlo en local con el REST de
 // `scripts/ops/fs-rest.js` (el Admin SDK no acepta la credencial de firebase-tools); en la función se usa el Admin SDK.
+//
+// LECCIONES EN FIRESTORE (2026-10-31): el bloque «LECCIONES APRENDIDAS» del guion se lee de `coordinadorConfig/lecciones.texto`
+// (lo escriben el chat de Mensajería — functions/coordinador-chat.js, herramienta anotar_leccion — y el agente local con
+// `scripts/ops/lecciones.js`). Si el doc no existe o está vacío, se usa `LECCIONES_BASE` (las de siempre). Antes estaban fijas aquí y
+// el informe repetía alertas que Dylan ya había resuelto en el archivo del agente (PABLO en pausa, Toni = TESEMATIN…).
 
 const DESTINATARIOS = ['wilsonhernandezrodriguez81@gmail.com', 'dylan.r.rd@gmail.com'];
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
@@ -49,7 +54,7 @@ const nombres = (arr) => (Array.isArray(arr) ? arr.map((a) => (a && (a.nombre ||
 async function recogerDatos(lector, hoy) {
     const ayer = sumarDias(hoy, diaSemana(hoy) === 1 ? -2 : -1);           // lunes mira el sábado
     const antes = sumarDias(ayer, diaSemana(ayer) === 1 ? -2 : -1);
-    const [abiertos, completados, pedidos, cotiz, partes, viajes, citas, antic, vacas, feriados, feriadosTrab, informePrevio] = await Promise.all([
+    const [abiertos, completados, pedidos, cotiz, partes, viajes, citas, antic, vacas, feriados, feriadosTrab, informePrevio, solMaterial] = await Promise.all([
         lector.consultar('instalaciones', [['estado', '!=', 'completado']], 400),
         lector.consultar('instalaciones', [['estado', '==', 'completado']], 400),
         lector.consultar('orders', [['status', 'in', ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar']]], 300),
@@ -62,6 +67,7 @@ async function recogerDatos(lector, hoy) {
         lector.consultar('rrhhFeriados', [], 100),
         lector.consultar('rrhhFeriadosTrabajados', [], 100),
         lector.consultar('mensajes', [['tipo', '==', 'informe_coordinador']], 60),
+        lector.consultar('solicitudesMaterial', [['estado', 'in', ['pedida', 'vista', 'comprando', 'lista']]], 100),
     ]);
     const hace3 = sumarDias(hoy, -3), mas3 = sumarDias(hoy, 3);
     const trabajo = (t) => ({
@@ -107,6 +113,7 @@ async function recogerDatos(lector, hoy) {
         comprasDirectas: pedidos.filter((o) => o.docType === 'COMPRA_DIRECTA').map(pedido), cotizaciones: cotiz.map(pedido),
         partes: partes.map(parte), viajesRecientes: viajesC, recordatoriosAbiertos: citasC,
         anticiposSinObra: antic.map((a) => ({ cliente: a.clienteNombre || a.cliente || '', monto: a.monto, fecha: a.fecha, descripcion: rec(a.descripcion, 120), candidatos: (a.candidatos || []).map((c) => c.obra || c.nombre || c).slice(0, 5) })),
+        pedidosMaterialAbiertos: solMaterial.map((m) => ({ que: (m.itemTipo ? m.itemTipo + (m.itemColor ? ' — ' + m.itemColor : '') : m.texto) + ' × ' + (m.cantidad || 0) + (m.unidad ? ' ' + m.unidad : ''), urgencia: m.urgencia, estado: m.estado, pidio: m.pedidoPor && m.pedidoPor.nombre, obra: m.obra || '', desde: fechaTxt(m.fechaISO), atiende: m.atiende && m.atiende.nombre || '' })),
         vacacionesVigentes: vacasC, informeAnterior: previo ? { asunto: previo.asunto, cuerpo: previo.cuerpo.slice(0, 7000) } : null,
         _todosLosCompletados: completados.map((t) => ({ cliente: t.cliente, obra: t.obra, fecha: fechaTxt(t.validadoFecha || t.fecha) })),
     };
@@ -143,14 +150,12 @@ async function textoClima(datos) {
 }
 
 // ---------- el guion del Coordinador (resumen operativo de .claude/agents/coordinador-obras.md) ----------
-const SISTEMA = `Eres el Coordinador de Obras de ARTAL Dominicana, SRL (aluminio, vidrio, shutters y cortinas; sede en Las Terrenas, Samaná). Trabajas como un empleado más de operaciones: planificas, haces seguimiento, detectas riesgos y propones. Tu interlocutor es Wilson (gerente de operaciones y chofer; puente con clientes, equipo y fábrica). Dylan (gerente general) define reglas y valida decisiones de dirección. Miki es supervisor y jefe de equipo. Instaladores: Wilson, Miki, Roosevelt, Emerson; la composición de equipos se decide cada día según las obras (4 juntos, 2+2 u otra). Fabricación: ALUCUFEL (contratista en Santo Domingo, destino 'alucufel') y la fábrica interna de ARTAL (destino 'interno'). Transporte: camión de la empresa, trayecto habitual Santo Domingo ↔ Las Terrenas; un viaje directo no ocupa el día (saliendo temprano se instala esa misma mañana).
-
-HOY ESCRIBES EL INFORME MATINAL a partir de los DATOS que recibes (JSON del panel + texto del clima + el informe anterior). Regla de oro: no inventes nada; si un dato no está, dilo como «no verificado». Nunca propongas cerrar trabajos ni pedidos: los cierra el equipo.
-
-REGLAS DE PLANIFICACIÓN: la fecha comprometida con el cliente manda; agrupa obras por zona; obras pequeñas rellenan huecos; buffer 15–20 % en obras nuevas; agrupa entregas por viaje; preparación de obra se verifica 2–5 días antes; fábrica fija fechaSalidaEstimada al tomar el pedido (si un pedido lleva más de 48 h en fábrica sin fecha, alerta; si la fecha venció y no está listo, alerta). Nunca propongas a alguien de vacaciones.
-
-LECCIONES APRENDIDAS (no las contradigas):
-- Un trabajo origen 'auto_fabrica' sin asignados es normal: propón equipo, no alertes.
+// Partido en piezas para que el chat (coordinador-chat.js) comparta persona, reglas y lecciones con el informe.
+const PERSONA = `Eres el Coordinador de Obras de ARTAL Dominicana, SRL (aluminio, vidrio, shutters y cortinas; sede en Las Terrenas, Samaná). Trabajas como un empleado más de operaciones: planificas, haces seguimiento, detectas riesgos y propones. Tu interlocutor es Wilson (gerente de operaciones y chofer; puente con clientes, equipo y fábrica). Dylan (gerente general) define reglas y valida decisiones de dirección. Miki es supervisor y jefe de equipo. Instaladores: Wilson, Miki, Roosevelt, Emerson; la composición de equipos se decide cada día según las obras (4 juntos, 2+2 u otra). Fabricación: ALUCUFEL (contratista en Santo Domingo, destino 'alucufel') y la fábrica interna de ARTAL (destino 'interno'). Transporte: camión de la empresa, trayecto habitual Santo Domingo ↔ Las Terrenas; un viaje directo no ocupa el día (saliendo temprano se instala esa misma mañana).`;
+const REGLAS = `REGLAS DE PLANIFICACIÓN: la fecha comprometida con el cliente manda; agrupa obras por zona; obras pequeñas rellenan huecos; buffer 15–20 % en obras nuevas; agrupa entregas por viaje; preparación de obra se verifica 2–5 días antes; fábrica fija fechaSalidaEstimada al tomar el pedido (si un pedido lleva más de 48 h en fábrica sin fecha, alerta; si la fecha venció y no está listo, alerta). Nunca propongas a alguien de vacaciones.
+- PEDIDOS DE MATERIAL (pedidosMaterialAbiertos): el equipo pide herramientas/consumibles a la oficina por el Panel (Sara compra, Roosevelt maneja el inventario de Terrenas). Señala como alerta un pedido URGENTE («hoy») todavía en estado «pedida», y cualquier pedido con más de 3 días sin pasar de «vista». No propongas comprarlo tú: la acción es recordárselo a quien atiende.`;
+// Respaldo si `coordinadorConfig/lecciones` no existe todavía (las lecciones vigentes viven en Firestore).
+const LECCIONES_BASE = `- Un trabajo origen 'auto_fabrica' sin asignados es normal: propón equipo, no alertes.
 - Los recordatorios de caja de la oficina (arqueos, pagos) no son tuyos: ignóralos.
 - Un pedido que lleva semanas en fábrica NO es anomalía por sí mismo (está validado y cobrado; puede esperar material o una instalación lejana). A lo sumo pregunta si hay fecha prevista.
 - Trabajos sin factura (cortinas, interna) no tienen anticipo y es normal; «sin anticipo registrado» no es alerta salvo en fabricación de ALUCUFEL sin pago y sin explicación; un pago en efectivo es factura al contado, no anticipo.
@@ -160,9 +165,8 @@ LECCIONES APRENDIDAS (no las contradigas):
 - Compras directas en Santo Domingo (vidrio de Industrias Domínguez, puertas) «listas» esperan un viaje del camión: agrúpalas.
 - Un pedido puede llegar a la obra sin «Entregado» en Transportes (transportista externo); no alertes como perdido, pregunta.
 - El status del pedido manda sobre sus fechas (un «listo» devuelto a fábrica es «en fábrica»).
-- Un pedido con fichaParcial es una parte de la hoja; el resto va aparte.
-
-FORMATO (texto plano, guiones y líneas en blanco, sin tablas ni Markdown pesado, en español, conciso; cada línea con dato real):
+- Un pedido con fichaParcial es una parte de la hoja; el resto va aparte.`;
+const FORMATO_INFORME = `FORMATO (texto plano, guiones y líneas en blanco, sin tablas ni Markdown pesado, en español, conciso; cada línea con dato real):
 INFORME MATINAL — <día> <dd/mm/aaaa> (generado a las <hora>)
 
 HOY EN OBRA (propuesta; Wilson confirma o cambia)
@@ -197,11 +201,30 @@ NO VERIFICADO
 MENSAJES LISTOS PARA ENVIAR: <n>
 M1. Para: <destinatario> (<canal>). Idioma: <idioma>. «<texto>» [PENDIENTE VALIDACIÓN] si va a cliente.
 
-Para decidir: en la app de Claude, pídele al Coordinador de Obras «haz A2» o «envía M1»; él lee este informe de hoy.
+Para decidir: responde a este mensaje aquí en Mensajería (caja «Responder al Coordinador»: «haz A2», «envía M1», «anota que…») o pídeselo al Coordinador en la app de Claude; los dos leen este informe de hoy.
 
 Numera A1, A2… y M1, M2… para que Dylan o Wilson decidan respondiendo. Mensajes a clientes siempre [PENDIENTE VALIDACIÓN] y en el idioma del cliente si lo conoces. Máximo unas 90 líneas.`;
+const sistemaInforme = (lecciones) => `${PERSONA}
 
-async function pedirInforme(apiKey, datos, clima) {
+HOY ESCRIBES EL INFORME MATINAL a partir de los DATOS que recibes (JSON del panel + texto del clima + el informe anterior). Regla de oro: no inventes nada; si un dato no está, dilo como «no verificado». Nunca propongas cerrar trabajos ni pedidos: los cierra el equipo.
+
+${REGLAS}
+
+LECCIONES APRENDIDAS (no las contradigas; las más recientes mandan sobre las anteriores):
+${lecciones || LECCIONES_BASE}
+
+${FORMATO_INFORME}`;
+
+// Lecciones vigentes: `coordinadorConfig/lecciones.texto` (una línea «- …» por lección). Devuelve { texto, origen }.
+async function cargarLecciones(lector) {
+    try {
+        const d = await lector.obtener('coordinadorConfig', 'lecciones');
+        if (d && typeof d.texto === 'string' && d.texto.trim().length > 20) return { texto: d.texto.trim(), origen: 'firestore', actualizado: fechaTxt(d.actualizado) };
+    } catch (e) { console.warn('cargarLecciones', e && e.message); }
+    return { texto: LECCIONES_BASE, origen: 'fijas' };
+}
+
+async function pedirInforme(apiKey, datos, clima, lecciones) {
     const { informeAnterior, _todosLosCompletados, ...resto } = datos;
     const user = `FECHA DE HOY: ${datos.hoy} (${DIAS[diaSemana(datos.hoy)]}), hora ${datos.horaGeneracion} RD.\n\n` +
         `DATOS DEL PANEL (JSON):\n${JSON.stringify(resto)}\n\n` +
@@ -213,7 +236,7 @@ async function pedirInforme(apiKey, datos, clima) {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         // 8000 tokens de salida: el informe del 31/10/2026 salió cortado a mitad de M3 con el tope anterior (4500 justos).
-        body: JSON.stringify({ model: MODELO, max_tokens: 8000, system: SISTEMA, messages: [{ role: 'user', content: user }] }),
+        body: JSON.stringify({ model: MODELO, max_tokens: 8000, system: sistemaInforme(lecciones), messages: [{ role: 'user', content: user }] }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error('Anthropic ' + r.status + ': ' + JSON.stringify(j).slice(0, 300));
@@ -235,13 +258,14 @@ async function generarInforme({ lector, apiKey, hoy = ymdRD(), forzar = false, p
     const ya = previos.find((m) => m.asunto === asunto);
     if (ya && !forzar) return { ok: true, publicado: false, motivo: 'ya existe el informe de hoy', id: ya._id };
     const clima = await textoClima(datos);
-    const { texto, uso } = await pedirInforme(apiKey, datos, clima);
-    log('informe generado', texto.length, 'caracteres', uso ? `(${uso.input_tokens} in / ${uso.output_tokens} out)` : '');
-    if (!publicar) return { ok: true, publicado: false, motivo: 'solo prueba', asunto, texto, resumen: resumenDatos(datos) };
+    const lecc = await cargarLecciones(lector);
+    const { texto, uso, cortado } = await pedirInforme(apiKey, datos, clima, lecc.texto);
+    log('informe generado', texto.length, 'caracteres', uso ? `(${uso.input_tokens} in / ${uso.output_tokens} out)` : '', 'lecciones:', lecc.origen, cortado ? 'CORTADO' : '');
+    if (!publicar) return { ok: true, publicado: false, motivo: 'solo prueba', asunto, texto, lecciones: lecc.origen, resumen: resumenDatos(datos) };
     const id = await escribirMensaje({
         estado: 'enviado', asunto, cuerpo: texto, remitenteEmail: 'coordinador@artal', remitenteNombre: 'Coordinador de Obras (IA)',
         paraTodos: false, destinatarios: DESTINATARIOS, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
-        generadoPor: 'cloud-function', modelo: MODELO, tokens: uso || null,
+        generadoPor: 'cloud-function', modelo: MODELO, tokens: uso || null, leccionesOrigen: lecc.origen,
     });
     return { ok: true, publicado: true, id, asunto, texto };
 }
@@ -282,3 +306,13 @@ module.exports = function montar({ db, FieldValue, onSchedule, onRequest, anthro
 module.exports.generarInforme = generarInforme;
 module.exports.recogerDatos = recogerDatos;
 module.exports.textoClima = textoClima;
+module.exports.cargarLecciones = cargarLecciones;
+module.exports.lectorAdmin = lectorAdmin;
+module.exports.PERSONA = PERSONA;
+module.exports.REGLAS = REGLAS;
+module.exports.LECCIONES_BASE = LECCIONES_BASE;
+module.exports.MODELO = MODELO;
+module.exports.fechaTxt = fechaTxt;
+module.exports.ymdRD = ymdRD;
+module.exports.horaRD = horaRD;
+module.exports.DESTINATARIOS = DESTINATARIOS;

@@ -79,6 +79,19 @@
     .attach-btn { display: inline-block; background: var(--artal-blue); color: #fff; border-radius: 8px; padding: 9px 13px; font-size: 12.5px; font-weight: bold; cursor: pointer; }
     .attach-btn input { display: none; }
 
+    /* Hilo con el Coordinador de Obras (IA) bajo un informe matinal (2026-10-31) */
+    .coord-hilo { margin-top: 26px; border-top: 1.5px solid #e3e9ef; padding-top: 14px; }
+    .coord-hilo h3 { font-size: 13.5px; color: var(--artal-blue); margin: 0 0 10px; }
+    .coord-burb { max-width: 92%; border-radius: 14px; padding: 10px 13px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; margin-bottom: 8px; box-shadow: var(--shadow); }
+    .coord-burb.yo { background: #e3effa; color: #1f2d3d; margin-left: auto; border-bottom-right-radius: 4px; }
+    .coord-burb.bot { background: #fff; color: #2f3944; border: 1.5px solid #e3e9ef; border-bottom-left-radius: 4px; }
+    .coord-burb.bot.err { background: #fff4f2; border-color: #f3c4bd; }
+    .coord-burb .quien { font-size: 11px; color: #8a93a0; margin-bottom: 3px; font-weight: bold; }
+    .coord-estado { font-size: 12px; color: #b0761a; margin: -4px 0 10px; text-align: right; }
+    .coord-caja { margin-top: 14px; background: #f5f8fb; border: 1.5px solid #e3e9ef; border-radius: 12px; padding: 14px; }
+    .coord-caja label { display: block; font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin-bottom: 6px; }
+    .coord-caja textarea { width: 100%; box-sizing: border-box; border: 1.5px solid #d4dbe2; border-radius: 9px; padding: 10px 12px; font-family: 'Arimo'; font-size: 15px; min-height: 72px; resize: vertical; line-height: 1.45; }
+    .coord-caja .pista { font-size: 11.5px; color: #8a93a0; margin-top: 7px; line-height: 1.45; }
     .crumbs { font-size: 12.5px; color: #8a93a0; margin-bottom: 10px; }
     .crumbs a { color: var(--artal-blue); font-weight: bold; text-decoration: none; cursor: pointer; }
 </style>
@@ -146,6 +159,15 @@
         if (vista === 'nuevo' || vista === 'detalle') render();
     }, () => {});
 
+    // Respuestas al Coordinador de Obras (IA) desde aquí (2026-10-31): `coordinadorRespuestas` {informeId, texto, por, porEmail, fecha, estado,
+    // destinatariosInforme}. Las reglas dejan leer al admin y a los destinatarios del informe; la consulta va acotada igual.
+    // La contestación del agente llega como mensaje normal (tipo 'respuesta_coordinador', enRespuestaA = id del informe) y se pinta
+    // en el mismo hilo. `coordDraft` conserva lo que estás escribiendo aunque llegue un snapshot y se repinte la pantalla.
+    let respuestasCache = []; let coordDraft = {};
+    const esAdminUsr = usuario.roles.includes('admin');
+    const qResp = esAdminUsr ? collection(db, 'coordinadorRespuestas') : query(collection(db, 'coordinadorRespuestas'), where('destinatariosInforme', 'array-contains', String(usuario.email || '').trim().toLowerCase()));
+    onSnapshot(qResp, (s) => { respuestasCache = s.docs.map(d => ({ id: d.id, ...d.data() })); if (vista === 'detalle') render(); }, () => { respuestasCache = []; });
+
     // F1: admin/comunicaciones ven todo; el resto solo lo suyo (para mí, o enviado por mí), igual que las reglas de Firestore.
     suscribirMensajes(db, usuario, (lista) => {
         mensajesCache = lista.slice().sort((a, b) => (fTime(b.fecha) - fTime(a.fecha)));
@@ -206,7 +228,7 @@
             <div class="msg-list">${msgs.map(m => {
             const a = miAcuse(m);
             return `<div class="msg-row ${nuevos ? 'unread' : ''}" onclick="irA('detalle','${m.id}')">
-                <span class="ic">${m.requiereFirma ? '✍️' : '📣'}</span>
+                <span class="ic">${iconoDe(m)}</span>
                 <div class="body">
                     <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
                     <div class="prev">${esc(m.cuerpo || '')}</div>
@@ -259,6 +281,49 @@
         }).join('')}</div>`;
     }
 
+    const iconoDe = (m) => m.tipo === 'informe_coordinador' ? '🗓️' : (m.tipo === 'respuesta_coordinador' || m.tipo === 'aviso_coordinador') ? '🤖' : (m.requiereFirma ? '✍️' : '📣');
+
+    // Hilo bajo un informe matinal: tus respuestas (burbujas azules) y lo que contestó el Coordinador (blancas), en orden, y la caja
+    // para responder. Pueden responder los destinatarios del informe y los admin (las reglas lo exigen igual); un espejo solo mira.
+    function hiloCoordinadorHTML(m) {
+        const t = (v) => fTime(v) || (typeof v === 'string' ? (new Date(v).getTime() || 0) : 0);
+        const mias = respuestasCache.filter(r => r.informeId === m.id).map(r => ({ k: 'yo', t: t(r.fecha) || Date.now(), r }));
+        const bots = mensajesCache.filter(x => x.tipo === 'respuesta_coordinador' && x.enRespuestaA === m.id).map(x => ({ k: 'bot', t: t(x.fecha) || Date.now(), x }));
+        const items = mias.concat(bots).sort((a, b) => a.t - b.t);
+        const contestadas = new Set(bots.map(b => b.x.respuestaId).filter(Boolean));
+        let html = items.map(it => {
+            if (it.k === 'yo') {
+                const r = it.r; const pend = (r.estado === 'pendiente' || r.estado === 'procesando') && !contestadas.has(r.id);
+                const est = pend ? '⏳ El Coordinador está trabajando en esto… (suele tardar menos de un minuto)' : r.estado === 'error' && !contestadas.has(r.id) ? '⚠️ Hubo un error al procesarla' : r.estado === 'rechazada' && !contestadas.has(r.id) ? '⛔ No se pudo atender' : '';
+                return `<div class="coord-burb yo"><div class="quien">${esc(r.por || r.porEmail || 'Tú')} · ${esc(fFecha(r.fecha))}</div>${esc(r.texto || '')}</div>${est ? `<div class="coord-estado">${est}</div>` : ''}`;
+            }
+            const x = it.x;
+            return `<div class="coord-burb bot ${x.error ? 'err' : ''}"><div class="quien">🤖 ${esc(x.remitenteNombre || 'Coordinador de Obras')} · ${esc(fFecha(x.fecha))}${x.acciones ? ` · ${x.acciones} acción${x.acciones === 1 ? '' : 'es'} en el panel` : ''}</div>${esc(x.cuerpo || '')}</div>`;
+        }).join('');
+        const puede = (esParaMi(m) || esAdminUsr) && !usuario.esEspejo;
+        const caja = puede ? `<div class="coord-caja"><label>💬 Responder al Coordinador</label>
+            <textarea id="coord-resp-${m.id}" placeholder="Ej.: haz A2 · envía M1 · anota que PABLO queda en pausa hasta el lunes · mueve Cocoloba al martes 8:00" oninput="coordDraftSet('${m.id}', this.value)">${esc(coordDraft[m.id] || '')}</textarea>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn-blue" id="coord-btn-${m.id}" onclick="enviarRespuestaCoordinador('${m.id}')">📨 Enviar al Coordinador</button></div>
+            <div class="pista">El Coordinador lee este informe y el estado actual del panel, ejecuta lo que puede hacer solo (reprogramar trabajos, fecha de salida o estado de fábrica de un pedido, instrucciones a fábrica, recordatorios, avisos internos a Wilson/Miki/oficina, anotar una regla) y te contesta aquí mismo con push. <b>Nunca escribe a un cliente</b>: para eso te deja el texto y el enlace de WhatsApp. Nada de dinero, borrados ni cierres.</div></div>`
+            : `<div class="coord-caja"><div class="pista">Solo los destinatarios del informe y gerencia pueden responderle al Coordinador${usuario.esEspejo ? ' (vista espejo: solo lectura)' : ''}.</div></div>`;
+        return `<div class="coord-hilo"><h3>💬 Hilo con el Coordinador de Obras</h3>${html || '<div style="font-size:12.5px;color:#8a93a0;margin-bottom:8px">Nadie ha respondido a este informe todavía.</div>'}${caja}</div>`;
+    }
+    window.coordDraftSet = (id, v) => { coordDraft[id] = v; };
+    window.enviarRespuestaCoordinador = async function (informeId) {
+        const m = mensajesCache.find(x => x.id === informeId); if (!m) return;
+        const ta = document.getElementById('coord-resp-' + informeId); const texto = (ta ? ta.value : (coordDraft[informeId] || '')).trim();
+        if (!texto) { alert('Escribe qué quieres que haga el Coordinador (ej. «haz A2» o «anota que…»).'); return; }
+        if (texto.length > 3900) { alert('Demasiado largo: máximo 3900 caracteres.'); return; }
+        const btn = document.getElementById('coord-btn-' + informeId); if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+        try {
+            await addDoc(collection(db, 'coordinadorRespuestas'), {
+                informeId, informeAsunto: m.asunto || '', texto, por: usuario.nombre, porEmail: String(usuario.email || '').trim().toLowerCase(),
+                fecha: serverTimestamp(), estado: 'pendiente', destinatariosInforme: Array.isArray(m.destinatarios) ? m.destinatarios : []
+            });
+            delete coordDraft[informeId]; render();
+        } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); if (btn) { btn.disabled = false; btn.textContent = '📨 Enviar al Coordinador'; } }
+    };
+
     function renderDetalle() {
         const m = mensajesCache.find(x => x.id === msgSel);
         const bandejaDe = (x) => yoLoEnvie(x) ? 'enviados' : (esNoLeido(x) ? 'bandeja' : 'leidos');
@@ -293,13 +358,18 @@
         }
 
         const enlaceBtn = (m.enlace && m.enlace.url) ? `<div style="margin-top:22px"><a class="btn-acuse" style="display:inline-block;text-decoration:none;background:var(--artal-blue)" href="${esc(m.enlace.url)}" target="_blank" rel="noopener">📄 ${esc(m.enlace.titulo || 'Abrir documento')}</a></div>` : '';
+        // Informe del Coordinador: hilo + caja de respuesta. Una contestación suya: enlace al informe donde está el hilo completo.
+        let hilo = '';
+        if (m.tipo === 'informe_coordinador') hilo = hiloCoordinadorHTML(m);
+        else if (m.tipo === 'respuesta_coordinador' && m.enRespuestaA) hilo = mensajesCache.some(x => x.id === m.enRespuestaA)
+            ? `<div style="margin-top:18px"><button class="btn-ghost" onclick="irA('detalle','${esc(m.enRespuestaA)}')">🗓️ Ver el informe y todo el hilo</button></div>` : '';
 
         return `${volver()}<div class="detalle">
             <div class="asunto">${esc(m.asunto || '(sin asunto)')}</div>
             <div class="from">De <b>${esc(m.remitenteNombre || 'ARTAL')}</b> · ${esc(fFecha(m.fecha))}${m.paraTodos ? ' · A todo el equipo' : ''}</div>
             ${m.feriadoTrabajado ? `<div style="background:#fff2dc;border-left:4px solid #e67e22;border-radius:8px;padding:9px 12px;font-size:13.5px;color:#6b4a08;margin:10px 0">🗓️ <b>Se trabaja el feriado del ${esc(fFer(m.feriadoTrabajado))}.</b> Ese día el parte diario es obligatorio como un día normal y las horas se pagan al 200 %.</div>` : ''}
             <div class="cuerpo">${esc(m.cuerpo || '')}</div>
-            ${adj}${enlaceBtn}${extra}
+            ${adj}${enlaceBtn}${hilo}${extra}
         </div>`;
     }
 
