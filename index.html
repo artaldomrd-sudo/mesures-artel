@@ -584,6 +584,7 @@
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
             <button class="side-btn pdf" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="openCotizCliente()" title="Cotización formal para el cliente, con precios y dibujos del cuaderno">💲 Cotización cliente</button>
+            <button class="side-btn pdf" style="margin-top:6px; border:1.5px solid #8fd3a5;" onclick="abrirPerfileria()" title="Lista de perfiles (ml y barras de 6.40 m), vidrios y accesorios de la hoja (o de los ítems marcados ☑) para pedir cotización al proveedor">🧱 Perfilería y accesorios</button>
 
             <div class="side-row destino-row" style="margin-top:8px;">
                 <button class="side-btn fabrica" style="border-color:#2ecc71; color:#2ecc71;" onclick="enviarOrden('alucufel', this)" title="Lo maneja ALUCUFEL (contratista externo)"><span id="btn-destino-alucufel-text">ALUCUFEL</span></button>
@@ -601,7 +602,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-10-29 12:52</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-01 12:00</div>
         </div>
     </div>
     
@@ -2053,6 +2054,241 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         return { w: wTot, h, n, pendiente: true };
     }
+
+    // =====================================================================================================
+    // PERFILERÍA Y ACCESORIOS — resumen para cotizar al proveedor (2026-11-01). Primer paso del módulo de
+    // producción propia (fábrica interna 2027): largos de perfil por rol y serie calculados de la geometría de
+    // cada ítem (marco = perímetro, hojas = perímetro de cada hoja, divisiones, tubos), barras de 6.40 m
+    // estimadas con desperdicio, vidrios (nº y medida de hoja; descuento real solo en Paño Fijo P40/moldura)
+    // y accesorios GENÉRICOS por tipo. Las referencias de perfil/accesorio por serie y los descuentos de
+    // vidrio por tipo todavía NO existen (pendientes de confirmar con el usuario y el proveedor): el documento
+    // lo dice en "Supuestos". No toca nada del flujo actual (ALUCUFEL sigue igual).
+    // =====================================================================================================
+    const PERF_BARRA_MM = 6400, PERF_DESPERDICIO = 0.10;
+    const PERF_SUPUESTOS = [
+        'Largos de perfil = geometría del ítem (marco = perímetro del hueco; hoja = perímetro de cada hoja con el ancho repartido entre las hojas). No incluyen solapes de hojas, holguras ni descuentos de corte: son largos de referencia para cotizar, no la hoja de corte.',
+        `Barras estimadas = metros lineales × (1 + ${Math.round(PERF_DESPERDICIO * 100)} % de desperdicio) ÷ ${PERF_BARRA_MM / 1000} m, redondeado hacia arriba, por serie y rol (sin optimizar cortes).`,
+        'Vidrios: medida de la HOJA o del hueco; el descuento real de vidrio solo está definido para Paño Fijo (P40 35 mm/lado, P40 puerta 55 mm/lado, moldura 7 mm total). En los demás tipos el descuento por serie está por definir.',
+        'Accesorios: cantidades genéricas por tipo (rodamientos 2 por hoja corredera, bisagras 2 por hoja de ventana / 3 por hoja de puerta, 1 manija por hoja operable, felpa = 2 × perímetro de hoja, escuadras 4 por marco y 4 por hoja). Las referencias por serie están por definir.',
+        'No incluidos todavía: Vidrio de Ducha, Baranda, Security Lamas, cortinas y mosquiteras (son compras a proveedor, no perfilería propia).'
+    ];
+    const perfMm = v => Math.max(0, parseInt(v) || 0);
+    function perfSerie(state) {
+        if (state.tipo_aluminio) return String(state.tipo_aluminio);
+        if (state.alu) return String(state.alu);
+        if (state.categoria === 'fachada') return ({ p40: 'P40 ventana', p40_puerta: 'P40 puerta', moldura: 'Moldura U' })[state.fijacion] || (state.fijacion === 'sin_marco' || state.fijacion === 'conectores' ? 'sin perfil' : 'P40');
+        if (state.categoria === 'ventana') return state.type === 'door_abat' ? 'P40 puerta' : 'P40 ventana';
+        return (typeof headerAluminio === 'function' ? headerAluminio() : '') || 'serie por definir';
+    }
+    function perfHojasAbisagrada(st) {
+        const ap = String(st.apertura || '');
+        if (typeof obSemifijo === 'function' && st.type === 'win_ob' && obSemifijo(st)) return { n: 2, semifijo: true, montante: false };
+        if (typeof tieneSemifijo === 'function' && tieneSemifijo(st)) return { n: 2, semifijo: true, montante: false };
+        const dos = /_2$/.test(ap) || ap === 'adentro_2';
+        return { n: dos ? 2 : 1, semifijo: false, montante: dos && st.type === 'win_ob' };
+    }
+    // Cálculo de UN elemento (ítem suelto o celda de fachada). Devuelve perfiles por rol (mm por unidad),
+    // vidrios y accesorios por unidad. `st` = state (o mini-state de celda con type/categoria/ancho/alto…).
+    function perfElemento(st) {
+        const A = perfMm(st.ancho), H = perfMm(st.alto), serie = perfSerie(st);
+        const P = [], V = [], X = [], N = [];
+        const perfil = (rol, mm, nota) => { if (mm > 0) P.push({ rol, serie, mm: Math.round(mm), nota: nota || '' }); };
+        const vidrio = (n, w, h, nota) => { if (n > 0 && w > 0 && h > 0) V.push({ n, w: Math.round(w), h: Math.round(h), nota: nota || '', tipo: [st.vidrio, st.espesor].filter(Boolean).join(' ') }); };
+        const acc = (nombre, qty, unidad) => { if (qty > 0) X.push({ nombre, qty: Math.round(qty * 100) / 100, unidad: unidad || 'ud' }); };
+        const cat = st.categoria || getCategoriaByType(st.type);
+        const t = st.type;
+        const perHoja = (n) => { const w = A / n; return { w, per: 2 * H + 2 * w }; };
+        const felpaHojas = (n, per) => acc('Felpa (burlete) de hoja', (2 * per * n) / 1000, 'm');
+        if (cat === 'corredera') {
+            const n = t.startsWith('cor6') ? 6 : t.startsWith('cor4') ? 4 : t === 'cor3' ? 3 : 2;
+            const hj = perHoja(n);
+            perfil('Marco perimetral (riel sup./inf. + laterales)', 2 * A + 2 * H);
+            perfil('Hoja: verticales (incl. cruces)', 2 * H * n);
+            perfil('Hoja: horizontales', 2 * hj.w * n);
+            vidrio(n, hj.w, H, 'medida de hoja; descuento por definir');
+            acc('Rodamientos (ruedas) de corredera', 2 * n); acc('Cierre' + (st.cierre ? ` (${st.cierre})` : ''), 1); acc('Escuadras de marco', 4); acc('Escuadras de hoja', 4 * n); felpaHojas(n, hj.per);
+            if (st.mosquitera === 'con') { perfil('Mosquitera: marco de hoja', 2 * H + 2 * hj.w, 'una hoja de mosquitera'); acc('Tela de mosquitera', (hj.w * H) / 1e6, 'm²'); acc('Rodamientos de mosquitera', 2); }
+            if (st.penetracionRiel) N.push('riel empotrado (penetración en el suelo)');
+        } else if (cat === 'galandaje') {
+            const g = (GAL_TIPOS[t] || { n: 1 }), n = g.n, W = perfMm(st.anchoMarco) || Math.round(A * (g.central ? 1.4 : 1.2));
+            const hj = perHoja(n);
+            perfil('Riel superior e inferior (ancho de marco)', 2 * W); perfil('Laterales de marco', 2 * H);
+            perfil('Hoja: verticales', 2 * H * n); perfil('Hoja: horizontales', 2 * hj.w * n);
+            vidrio(n, hj.w, H, 'medida de hoja; descuento por definir');
+            acc('Carros / colgadores de galandaje', n); acc('Bisagras de galandaje', 2 * Math.max(0, n - 1)); acc('Cierre', 1); acc('Escuadras de hoja', 4 * n); felpaHojas(n, hj.per);
+            if (st.mosquitera === 'con') { perfil('Mosquitera: marco de hoja', 2 * H + 2 * hj.w); acc('Tela de mosquitera', (hj.w * H) / 1e6, 'm²'); }
+            const tubo = st.gal_tubo || '';
+            if (tubo === 'sup' || tubo === 'lat_sup45') perfil('Tubo superior', W, 'tubo estructural, serie aparte');
+            if (tubo === 'lat' || tubo === 'lat_sup45') perfil('Tubo lateral', g.central ? 2 * H : H, 'tubo estructural, serie aparte');
+        } else if (cat === 'ventana') {
+            const hb = perfHojasAbisagrada(st), n = hb.n;
+            let anchos = [A / n];
+            if (hb.semifijo) { const sf = perfMm(st.semifijo_ancho); if (sf > 0 && sf < A) anchos = [A - sf, sf]; else anchos = [A / 2, A / 2]; } else anchos = Array(n).fill(A / n);
+            perfil('Marco perimetral', 2 * A + 2 * H);
+            if (hb.montante) perfil('Montante central', H);
+            perfil('Hoja: verticales', 2 * H * n); perfil('Hoja: horizontales', 2 * anchos.reduce((a, b) => a + b, 0));
+            anchos.forEach((w, i) => vidrio(1, w, H, (hb.semifijo && i === 1 ? 'hoja semi-fija · ' : '') + 'medida de hoja; descuento por definir'));
+            const esPuerta = t === 'door_abat';
+            acc(esPuerta ? 'Bisagras de puerta' : 'Bisagras de ventana', (esPuerta ? 3 : (H > 1500 ? 3 : 2)) * n);
+            if (t === 'win_ob') acc('Kit oscilobatiente (cremona + compás + tijera)', hb.semifijo ? 1 : n);
+            if (t === 'win_proy' || t === 'win_souf') acc('Compases / brazos de proyección', 2);
+            acc('Manija', hb.semifijo ? 1 : n);
+            if (hb.semifijo) acc('Pestillos (pasadores) arriba y abajo del semi-fijo', 2);
+            if (st.cerradura) acc(`Cerradura (${st.cerradura})`, 1);
+            acc('Escuadras de marco', 4); acc('Escuadras de hoja', 4 * n);
+            felpaHojas(1, anchos.reduce((a, w) => a + 2 * H + 2 * w, 0));
+            if (st.mosquitera && st.mosquitera !== '') { perfil('Mosquitera: marco', 2 * A + 2 * H, st.mosquitera); acc('Tela de mosquitera', (A * H) / 1e6, 'm²'); }
+            ['panoArriba', 'panoAbajo'].forEach(k => { const p = st[k]; if (!p) return; const h = perfMm(p.alto); if (!h) return; if (p.fijacion !== 'sin_marco' && p.fijacion !== 'conectores') P.push({ rol: `Paño fijo ${k === 'panoArriba' ? 'arriba' : 'abajo'}: marco`, serie: ({ p40: 'P40 ventana', p40_puerta: 'P40 puerta', moldura: 'Moldura U' })[p.fijacion] || serie, mm: 2 * A + 2 * h, nota: '' }); const r = calcVidrioPanoFijo({ type: 'fachada_din', ancho: A, alto: h, fijacion: p.fijacion, panos: 1 }); if (r) V.push({ n: 1, w: r.w, h: r.h, nota: 'vidrio a cortar', tipo: [p.vidrio, p.espesor].filter(Boolean).join(' ') }); else vidrio(1, A, h, 'medida del hueco; descuento por definir'); });
+        } else if (cat === 'fachada') {
+            const n = Math.max(1, parseInt(st.panos) || 1), fij = st.fijacion || '';
+            if (fij === 'moldura') { perfil('Moldura U perimetral', 2 * A + 2 * H); }
+            else if (fij === 'sin_marco' || fij === 'conectores') { acc(fij === 'conectores' ? 'Conectores de vidrio' : 'Sin perfil (vidrio sin marco)', fij === 'conectores' ? (A > 900 ? 4 : 3) : 0); }
+            else { perfil('Marco perimetral', 2 * A + 2 * H); if (n > 1 && (st.union || 'T') === 'T') perfil('División "T" entre paños', (n - 1) * H); acc('Junquillos (perímetro de vidrio)', (n * (2 * (A / n) + 2 * H)) / 1000, 'm'); acc('Escuadras de marco', 4); }
+            const r = calcVidrioPanoFijo({ ...st, type: 'fachada_din', ancho: A, alto: H });
+            if (r) V.push({ n: r.n, w: r.w, h: r.h, nota: r.pendiente ? 'descuento entre paños por definir' : 'vidrio a cortar', tipo: [st.vidrio, st.espesor].filter(Boolean).join(' ') });
+            else vidrio(n, A / n, H, 'medida del hueco; descuento por definir');
+        } else if (cat === 'plegable') {
+            const esq = PLEG_ESQUEMAS[st.pleg_esquema] || PLEG_ESQUEMAS['330'], n = esq.n, hj = perHoja(n);
+            perfil('Marco perimetral (riel sup./inf. + laterales)', 2 * A + 2 * H);
+            perfil('Hoja: verticales', 2 * H * n); perfil('Hoja: horizontales', 2 * hj.w * n);
+            vidrio(n, hj.w, H, 'medida de hoja; descuento por definir');
+            acc('Carros de plegable', Math.ceil(n / 2)); acc('Bisagras de plegable', 3 * Math.max(0, n - 1)); acc('Cierre / manija', 1 + esq.puerta); acc('Escuadras de hoja', 4 * n); felpaHojas(n, hj.per);
+        } else if (cat === 'puerta_vidrio') {
+            vidrio(1, A, H, 'vidrio templado sin marco'); acc('Kit botella (pivote arriba y abajo)', 1); acc('Tirador', 1);
+        } else {
+            N.push('tipo sin cálculo de perfilería todavía');
+        }
+        return { perfiles: P, vidrios: V, accesorios: X, notas: N, serie };
+    }
+    // Fachada compuesta: una celda por fila/columna (+ fajas) con las mismas reglas, y los tubos de la grilla.
+    function perfFachadaGrid(st) {
+        const out = { perfiles: [], vidrios: [], accesorios: [], notas: [], serie: 'varias', partes: [] };
+        const celdaMini = (cfg, w, h) => {
+            const c = cfg.celda || 'pf';
+            let type = c, categoria = 'fachada';
+            if (c.startsWith('cor')) { type = c === 'cor4' ? 'cor4_lat' : c; categoria = 'corredera'; }
+            else if (c.startsWith('gal')) { categoria = 'galandaje'; }
+            else if (c === 'puerta') { type = 'door_abat'; categoria = 'ventana'; }
+            else if (c === 'ventana') { type = 'win_abat'; categoria = 'ventana'; }
+            else if (c === 'osci') { type = 'win_ob'; categoria = 'ventana'; }
+            else if (c === 'proy') { type = 'win_proy'; categoria = 'ventana'; }
+            else if (c === 'pleg') { categoria = 'plegable'; }
+            else if (c === 'pflot') { type = 'door_flot'; categoria = 'puerta_vidrio'; }
+            else if (c === 'pf' || c === 'mc') { type = 'fachada_din'; categoria = 'fachada'; }
+            else return null;   // louvers / vacio / fus: sin perfilería de ventana
+            return { ...cfg, type, categoria, ancho: w, alto: h, tipo_aluminio: cfg.alu || '', alu: cfg.alu || '', fijacion: cfg.alu === 'P40 puerta' ? 'p40_puerta' : (c === 'pf' || c === 'mc' ? 'p40' : cfg.fijacion), vidrio: cfg.vidrio || st.vidrio, espesor: cfg.espesor || st.espesor, apertura: cfg.apertura, mosquitera: cfg.mosquitera, cierre: cfg.cierre, cerradura: cfg.cerradura, semifijo: cfg.semifijo, semifijo_ancho: cfg.semifijo_ancho, hoja_principal: cfg.hoja_principal, pleg_esquema: cfg.pleg_esquema, gal_tubo: '', anchoMarco: 0 };
+        };
+        const add = (nombre, mini) => { if (!mini) return; const r = perfElemento(mini); out.partes.push({ nombre, w: mini.ancho, h: mini.alto, r }); out.perfiles.push(...r.perfiles); out.vidrios.push(...r.vidrios); out.accesorios.push(...r.accesorios); };
+        const cols = st.cols || [];
+        cols.forEach((c, ci) => (c.rows || []).forEach((r, ri) => { if (r.celda === 'fus') return; const w = perfMm(c.w) * (r.span ? Math.max(1, r.span) : 1); add(`Columna ${ci + 1}${(c.rows || []).length > 1 ? ' fila ' + (ri + 1) : ''} (${r.celda})`, celdaMini(r, w, perfMm(r.h))); }));
+        const totalW = cols.reduce((a, c) => a + perfMm(c.w), 0) + gridEntreExtraW(st);
+        ['fajaArriba', 'fajaAbajo'].forEach(k => { const f = st[k]; if (!f) return; const h = perfMm(f.h); if (!h) return; if (Array.isArray(f.cols) && f.cols.length) f.cols.forEach((fc, i) => add(`Faja ${k === 'fajaArriba' ? 'superior' : 'inferior'} ${i + 1} (${fc.celda || f.celda})`, celdaMini({ ...f, ...fc }, perfMm(fc.w), h))); else add(`Faja ${k === 'fajaArriba' ? 'superior' : 'inferior'} (${f.celda})`, celdaMini(f, totalW, h)); });
+        const tb = st.tubos || {}, totalH = gridBandAlto(st) + (st.fajaArriba ? perfMm(st.fajaArriba.h) : 0) + (st.fajaAbajo ? perfMm(st.fajaAbajo.h) : 0);
+        const tuboSerie = `Tubo ${tb.medida || '100 x 45'}`;
+        const tubo = (rol, mm) => { if (mm > 0) out.perfiles.push({ rol, serie: tuboSerie, mm: Math.round(mm), nota: '' }); };
+        if (tb.sup) tubo('Tubo superior', totalW); if (tb.inf) tubo('Tubo inferior', totalW);
+        if (tb.izq) tubo('Tubo lateral izquierdo', totalH); if (tb.der) tubo('Tubo lateral derecho', totalH);
+        if (tb.entre) tubo('Tubos verticales entre columnas', gridJuntasTubo(st) * totalH);
+        if (tb.entreH) tubo('Tubos horizontales (fajas y filas)', totalW * ((st.fajaArriba ? 1 : 0) + (st.fajaAbajo ? 1 : 0)) + cols.reduce((a, c) => a + perfMm(c.w) * Math.max(0, ((c.rows || []).length - 1)), 0));
+        return out;
+    }
+    // Resumen completo de la hoja (o de los ítems marcados). Devuelve { items, perfiles(agrupado), vidrios, accesorios }.
+    function calcPerfileria(ids) {
+        ids = ids || idsOperacion();
+        const json = getAppJSON(), items = [];
+        ids.forEach(id => {
+            const st = cardsState[id]; if (!st) return;
+            const inp = (json.inputsData && json.inputsData[id]) || {};
+            const cant = Math.max(1, parseInt(st.cantidad) || 1);
+            const cat = st.categoria || getCategoriaByType(st.type);
+            let r;
+            if (cat === 'fachada_grid') r = perfFachadaGrid(st);
+            else if (['cerramiento', 'baranda', 'lamas', 'cortina', 'mosquitera', 'ducha'].includes(cat) || st.type === 'draw') r = { perfiles: [], vidrios: [], accesorios: [], notas: ['no incluido en este resumen (compra a proveedor / sin cálculo todavía)'], serie: '' };
+            else r = perfElemento(st);
+            items.push({ id, ref: inp.ref || '', ubi: inp.ubi || '', nombre: st.label || getCatName(st.type), cant, ancho: perfMm(st.ancho), alto: perfMm(st.alto), r });
+        });
+        const perfiles = {}, accesorios = {}, vidrios = [];
+        items.forEach(it => {
+            it.r.perfiles.forEach(p => { const k = p.serie + '|' + p.rol; const g = perfiles[k] || (perfiles[k] = { serie: p.serie, rol: p.rol, mm: 0, piezas: 0 }); g.mm += p.mm * it.cant; g.piezas += it.cant; });
+            it.r.accesorios.forEach(a => { const k = a.nombre + '|' + a.unidad; const g = accesorios[k] || (accesorios[k] = { nombre: a.nombre, unidad: a.unidad, qty: 0 }); g.qty += a.qty * it.cant; });
+            it.r.vidrios.forEach(v => vidrios.push({ ...v, n: v.n * it.cant, item: (it.ref ? it.ref + ' · ' : '') + it.nombre }));
+        });
+        const perfList = Object.values(perfiles).map(g => ({ ...g, ml: Math.round(g.mm / 100) / 10, barras: Math.ceil(g.mm * (1 + PERF_DESPERDICIO) / PERF_BARRA_MM) })).sort((a, b) => a.serie.localeCompare(b.serie) || a.rol.localeCompare(b.rol));
+        const porSerie = {}; perfList.forEach(g => { const s = porSerie[g.serie] || (porSerie[g.serie] = { serie: g.serie, mm: 0 }); s.mm += g.mm; });
+        const series = Object.values(porSerie).map(s => ({ ...s, ml: Math.round(s.mm / 100) / 10, barras: Math.ceil(s.mm * (1 + PERF_DESPERDICIO) / PERF_BARRA_MM) }));
+        const accList = Object.values(accesorios).map(a => ({ ...a, qty: Math.round(a.qty * 100) / 100 })).sort((a, b) => a.nombre.localeCompare(b.nombre));
+        return { items, perfiles: perfList, series, vidrios, accesorios: accList };
+    }
+    function perfileriaTexto(res) {
+        const h = document.getElementById('header-cliente') ? document.getElementById('header-cliente').value : '', o = document.getElementById('header-obra') ? document.getElementById('header-obra').value : '';
+        const col = document.getElementById('header-color') ? document.getElementById('header-color').value : '', vid = document.getElementById('header-vidrio') ? document.getElementById('header-vidrio').value : '';
+        const L = [];
+        L.push(`PERFILERÍA Y ACCESORIOS — ${[h, o].filter(Boolean).join(' · ') || 'sin cliente/obra'}`);
+        L.push(`Fecha: ${new Date().toLocaleDateString('es-DO')} · Ítems: ${res.items.length}${col ? ' · Acabado: ' + col : ''}${vid ? ' · Vidrio: ' + vid : ''}`);
+        L.push('');
+        L.push('1) PERFILES POR SERIE (metros lineales y barras de 6.40 m estimadas)');
+        if (!res.series.length) L.push('   (sin perfiles calculables en esta selección)');
+        res.series.forEach(s => L.push(`   ${s.serie}: ${s.ml} ml → ${s.barras} barra${s.barras === 1 ? '' : 's'}`));
+        L.push('');
+        L.push('2) DETALLE POR ROL DE PERFIL');
+        res.perfiles.forEach(g => L.push(`   ${g.serie} · ${g.rol}: ${g.ml} ml (${g.piezas} ud) → ${g.barras} barra${g.barras === 1 ? '' : 's'}`));
+        L.push('');
+        L.push('3) VIDRIOS');
+        if (!res.vidrios.length) L.push('   (ninguno)');
+        res.vidrios.forEach(v => L.push(`   ${v.n} × ${v.w} × ${v.h} mm${v.tipo ? ' · ' + v.tipo : ''} — ${v.item}${v.nota ? ' (' + v.nota + ')' : ''}`));
+        const m2 = res.vidrios.reduce((a, v) => a + v.n * v.w * v.h / 1e6, 0);
+        if (res.vidrios.length) L.push(`   Total aprox.: ${Math.round(m2 * 100) / 100} m²`);
+        L.push('');
+        L.push('4) ACCESORIOS (cantidades genéricas, referencias por confirmar)');
+        res.accesorios.forEach(a => L.push(`   ${a.nombre}: ${a.qty} ${a.unidad}`));
+        L.push('');
+        L.push('5) DETALLE POR ÍTEM');
+        res.items.forEach(it => {
+            L.push(`   ${it.ref ? it.ref + ' · ' : ''}${it.nombre}${it.ubi ? ' · ' + it.ubi : ''} — ${it.ancho} × ${it.alto} mm · cant. ${it.cant}${it.r.serie ? ' · ' + it.r.serie : ''}`);
+            (it.r.partes || []).forEach(p => L.push(`      · ${p.nombre}: ${p.w} × ${p.h} mm`));
+            it.r.perfiles.forEach(p => L.push(`      - ${p.rol}${p.serie !== it.r.serie ? ' [' + p.serie + ']' : ''}: ${Math.round(p.mm / 100) / 10} ml por unidad${p.nota ? ' (' + p.nota + ')' : ''}`));
+            it.r.vidrios.forEach(v => L.push(`      - Vidrio: ${v.n} × ${v.w} × ${v.h} mm${v.nota ? ' (' + v.nota + ')' : ''}`));
+            it.r.notas.forEach(n => L.push(`      ! ${n}`));
+        });
+        L.push('');
+        L.push('SUPUESTOS');
+        PERF_SUPUESTOS.forEach(s => L.push('   - ' + s));
+        return L.join('\n');
+    }
+    function perfileriaPDF(texto, nombre) {
+        const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+        const margen = 14, anchoUtil = 210 - 2 * margen, lineH = 4.6; let y = margen;
+        // Las fuentes estándar de jsPDF no tienen la flecha "→" (salía "!'" y la línea con letras espaciadas).
+        texto.replace(/→/g, '->').split('\n').forEach(linea => {
+            const titulo = /^(\d\)|PERFILER|SUPUESTOS)/.test(linea);
+            pdf.setFont('helvetica', titulo ? 'bold' : 'normal'); pdf.setFontSize(titulo ? 11 : 9);
+            const partes = pdf.splitTextToSize(linea || ' ', anchoUtil);
+            partes.forEach(p => { if (y > 297 - margen) { pdf.addPage(); y = margen; } pdf.text(p, margen, y); y += lineH; });
+        });
+        pdf.save(nombre);
+    }
+    function abrirPerfileria() {
+        if (!validateAllCards(idsOperacion())) return;
+        const res = calcPerfileria(idsOperacion());
+        const texto = perfileriaTexto(res);
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,61,98,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arimo,sans-serif;';
+        ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3)">
+            <div style="padding:14px 16px 8px;border-bottom:1px solid #e3e8ee"><h2 style="margin:0;font-size:17px;color:#0A3D62">🧱 Perfilería y accesorios — resumen para cotizar al proveedor</h2>
+            <div style="font-size:12px;color:#667;margin-top:4px">${selActiva() ? `Solo los ${selIds.size} ítems marcados ☑.` : 'Toda la hoja.'} Largos geométricos de referencia; los descuentos por serie y las referencias de accesorios están por definir (ver Supuestos al final).</div></div>
+            <pre id="perf-pre" style="flex:1;overflow:auto;margin:0;padding:12px 16px;font:12px/1.45 Menlo,Consolas,monospace;white-space:pre-wrap;color:#1c2833;background:#f7f9fb"></pre>
+            <div style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #e3e8ee;flex-wrap:wrap">
+                <button id="perf-pdf" style="background:#0A3D62;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;cursor:pointer;font-family:Arimo">⬇ Descargar PDF</button>
+                <button id="perf-copiar" style="background:#fff;color:#0A3D62;border:1.5px solid #0A3D62;border-radius:9px;padding:10px 14px;font-weight:bold;cursor:pointer;font-family:Arimo">📋 Copiar texto</button>
+                <button id="perf-cerrar" style="margin-left:auto;background:#eef1f4;color:#556;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;cursor:pointer;font-family:Arimo">Cerrar</button>
+            </div></div>`;
+        document.body.appendChild(ov);
+        ov.querySelector('#perf-pre').textContent = texto;
+        ov.querySelector('#perf-cerrar').onclick = () => ov.remove();
+        ov.querySelector('#perf-copiar').onclick = () => { const b = ov.querySelector('#perf-copiar'); (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => { b.textContent = '✓ Copiado'; }, () => { const ta = document.createElement('textarea'); ta.value = texto; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); b.textContent = '✓ Copiado'; } catch (e) { alert('No se pudo copiar'); } ta.remove(); }); };
+        ov.querySelector('#perf-pdf').onclick = () => { try { perfileriaPDF(texto, buildPdfTitle().replace(/ (fabricacion|presupuesto)/, ' perfileria') + '.pdf'); } catch (e) { alert('No se pudo generar el PDF: ' + (e && e.message || e)); } };
+    }
+    window.abrirPerfileria = abrirPerfileria; window.calcPerfileria = calcPerfileria; window.perfileriaTexto = perfileriaTexto;
 
     function generateSummary(id) {
         const summaryBox = document.getElementById('summary-' + id);

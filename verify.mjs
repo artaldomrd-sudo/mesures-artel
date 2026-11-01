@@ -279,5 +279,16 @@ try {
   ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', gridAlto: 2750, cols: [{ w: 2000, rows: [{ h: 2750, celda: 'cor2', alu: 'P92' }] }], vidrio: 'templado', espesor: '10mm', color_vidrio: 'natural', herraje_color: 'cromado', tubos: { medida: '100 x 45' }, verPlanta: true }); ok++;
 } catch (e) { fail++; console.error('  fachada_grid (minimo):', e.message); }
 
+// Perfilería y accesorios (2026-11-01): cada tipo debe calcular sin lanzar
+{
+  let pOk = 0, pFail = 0;
+  for (const t of types) {
+    try { const st = { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1800, alto: 2100, cantidad: 2, apertura: t === 'win_ob' ? 'adentro_2sf' : 'afuera_1', semifijo: t === 'door_abat' ? 'si' : '', semifijo_ancho: 450, mosquitera: 'con', panos: 3, union: 'tope', fijacion: 'p40_puerta', gal_tubo: 'lat_sup45', anchoMarco: 2400, pleg_esquema: '431', cierre: 'multipunto', cerradura: 'llave', panoArriba: { alto: 400, fijacion: 'p40' } };
+      const r = ctx.perfElemento(st); if (!r || !Array.isArray(r.perfiles)) throw new Error('sin resultado'); pOk++; }
+    catch (e) { pFail++; console.error('  perfileria ' + t + ':', e.message); }
+  }
+  try { const g = ctx.perfFachadaGrid({ cols: [{ w: 1900, rows: [{ h: 2400, celda: 'cor2', alu: 'E100' }] }, { w: 1000, rows: [{ h: 2400, celda: 'puerta', alu: 'P40 puerta', apertura: 'afuera_1', semifijo: 'si', semifijo_ancho: 400 }] }, { w: 1500, rows: [{ h: 1200, celda: 'osci', alu: 'P40 ventana' }, { h: 1200, celda: 'pf', alu: 'P40 ventana', panos: 2, union: 'T' }] }], fajaArriba: { h: 400, celda: 'proy', alu: 'P40 ventana' }, tubos: { sup: true, izq: true, der: true, entre: true, entreH: true, medida: '100 x 45' } }); if (!g.perfiles.length) throw new Error('fachada sin perfiles'); pOk++; } catch (e) { pFail++; console.error('  perfileria fachada_grid:', e.message); }
+  console.log(`PERFILERIA OK: ${pOk} FAIL: ${pFail}`); if (pFail) fail += pFail;
+}
 console.log(`RENDER OK: ${ok} FAIL: ${fail}`);
 process.exit(fail ? 1 : 0);

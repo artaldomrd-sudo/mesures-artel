@@ -1728,6 +1728,30 @@ se corrige, id libre → se agrega, id ocupado por otro tipo → id nuevo; `item
 agregaron/corrigieron) y **"Dejar ese pedido SOLO con los N marcados"** (modo `reemplazar`, con `confirm`). Sin selección,
 "Actualizar el original" sigue reemplazando toda la ficha. `_seleccion` no viaja dentro de `appJSON` del pedido.
 
+## Perfilería y accesorios — resumen para cotizar al proveedor (2026-11-01, primer paso de la fábrica propia)
+
+Dylan: la fábrica interna propia arranca a inicios de 2027 y ALUCUFEL pasa a secundario; el módulo de producción (barras,
+accesorios, medidas de vidrio, hoja de corte al validar la ficha) se construirá APARTE sin alterar el flujo actual. Lo primero,
+pedido «de momento»: un botón en el cuaderno que descargue la lista resumida de perfilería y accesorios para pedir cotización al
+proveedor de perfiles. Botón lateral **«🧱 Perfilería y accesorios»** (`abrirPerfileria`, script clásico, bloque "PERFILERÍA Y
+ACCESORIOS" antes de `generateSummary`): respeta la selección ☑ (`idsOperacion`) y `validateAllCards`; abre un modal con el texto
+(`perfileriaTexto`), «📋 Copiar texto» y «⬇ Descargar PDF» (`perfileriaPDF`: jsPDF solo texto, buscable, A4 paginado; sustituye
+«→» por «->» porque la fuente estándar no lo tiene). `calcPerfileria(ids)` → `{items, perfiles (por serie+rol: mm, ml, piezas,
+barras), series, vidrios, accesorios}`; `perfElemento(st)` calcula UN elemento con **geometría** (marco = 2A+2H; hojas = n ×
+perímetro con el ancho repartido A/n; montante OB con 2 hojas; semi-fijo con `semifijo_ancho`; galandaje: riel = 2 × anchoMarco,
+tubos `gal_tubo`; paño fijo: marco + divisiones "T" + junquillos, vidrio real con `calcVidrioPanoFijo`; paños adosados; plegable
+por `PLEG_ESQUEMAS`; puerta flotante = vidrio + kit botella) y `perfFachadaGrid(st)` recorre columnas/filas/fajas con mini-states
+(`celdaMini`: cor*/gal*/puerta/ventana/osci/proy/pleg/pflot/pf/mc; louvers/vacio/fus sin perfilería) + tubos de la grilla (serie
+«Tubo 100 x 45»). `perfSerie`: `tipo_aluminio` / `alu` / fijación del paño fijo / P40 ventana o puerta. Barras = ml × 1.10 ÷ 6.40 m
+(`PERF_BARRA_MM`, `PERF_DESPERDICIO`), redondeo arriba por serie y rol. Vidrios: medida de HOJA con nota «descuento por definir»
+salvo Paño Fijo (descuento real). Accesorios GENÉRICOS (rodamientos 2/hoja, bisagras 2 ventana / 3 puerta (3 si H > 1500),
+manija, kit OB, compases, pestillos, cerradura, escuadras 4 marco + 4 hoja, felpa 2 × perímetro, mosquitera marco + tela m²,
+carros/bisagras de galandaje y plegable). Ducha, baranda, lamas, cortinas, mosquiteras y CAD quedan «no incluido». Todo lo que
+es supuesto está en `PERF_SUPUESTOS` y se imprime al final. **Pendiente (preguntas enviadas al usuario el 2026-11-01)**: series y
+referencias reales de perfil por rol, largo de barra y desperdicio, descuentos de vidrio por serie/tipo, solapes de hojas,
+referencias de accesorios por serie, formato que pide el proveedor, y el diseño del módulo de producción (hoja de corte).
+`verify.mjs`: `perfElemento` para los 30 tipos + una fachada compuesta (`PERFILERIA OK: 31`).
+
 ## PDF / Impresión
 
 - `exportPDF()` → `buildPrintSheets()` reorganiza el DOM en **hojas de 4 ítems (2×2)** dentro de
