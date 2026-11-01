@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Pedidos de material</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 820px; }
+    .top-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .top-actions button, .top-actions a { border: none; border-radius: 10px; padding: 11px 14px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; font-size: 13.5px; min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .b-pedir { background: #e67e22; color: #fff; }
+    .b-lista { background: var(--artal-blue, #0A3D62); color: #fff; }
+    .b-inv { background: #fff; color: var(--artal-blue, #0A3D62); border: 1.5px solid var(--artal-blue, #0A3D62) !important; }
+    .b-cfg { background: #f0f4f8; color: #334; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .kpi { background: #fff; border-radius: 12px; padding: 10px 12px; box-shadow: 0 2px 10px rgba(0,0,0,.05); }
+    .kpi .n { font-size: 22px; font-weight: bold; color: var(--artal-blue, #0A3D62); }
+    .kpi .l { font-size: 11.5px; color: #778; text-transform: uppercase; letter-spacing: .4px; }
+    .kpi.hoy .n { color: #c0392b; }
+    .tabs { margin-bottom: 12px; }
+    .rol-chip { font-size: 12px; background: #eef4fb; color: var(--artal-blue, #0A3D62); border-radius: 100px; padding: 4px 10px; }
+    .cfg-box { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.05); margin-bottom: 12px; display: none; }
+    .cfg-box table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .cfg-box th, .cfg-box td { text-align: left; padding: 6px 4px; border-bottom: 1px solid #eef1f4; }
+    .cfg-box th { font-size: 11.5px; color: #778; text-transform: uppercase; }
+    .cfg-box input[type=checkbox] { width: 18px; height: 18px; }
+    .filtro { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .filtro button { background: #fff; border: 1.5px solid #dde3ea; border-radius: 100px; padding: 6px 12px; font-size: 12.5px; font-family: 'Arimo'; cursor: pointer; color: #334; }
+    .filtro button.on { background: var(--artal-blue, #0A3D62); color: #fff; border-color: var(--artal-blue, #0A3D62); }
+    .empty { color: #889; text-align: center; padding: 30px 10px; }
+    textarea#lc-txt { width: 100%; box-sizing: border-box; min-height: 220px; padding: 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 13.5px; }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="header-title">
+        <a class="btn-back" id="btn-back" href="index.html" title="Volver">← Volver</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Pedidos de material</h1>
+    </div>
+    <div class="who">
+        <span id="user-name"></span>
+        <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+
+<main>
+    <div class="top-actions">
+        <button class="b-pedir" onclick="solAbrirPedir(null)">🙋 Pedir algo</button>
+        <a class="b-inv" href="inventario.html">📦 Inventario</a>
+        <button class="b-lista" id="btn-lista" style="display:none" onclick="abrirListaCompras()">🛒 Lista de compras</button>
+        <button class="b-cfg" id="btn-cfg" style="display:none" onclick="toggleCfg()">⚙️ Quién atiende</button>
+        <span id="mi-rol" class="rol-chip" style="display:none"></span>
+    </div>
+    <div class="cfg-box" id="cfg-box"></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-abiertas" onclick="setTab('abiertas')">Pendientes</button>
+        <button class="tab-btn" id="tab-entregadas" onclick="setTab('entregadas')">Entregadas</button>
+        <button class="tab-btn" id="tab-cerradas" onclick="setTab('cerradas')">No se compran</button>
+    </div>
+    <div class="filtro" id="filtro"></div>
+    <div id="lista"><p class="empty">Cargando…</p></div>
+    <p style="font-size:12px;color:#889;margin-top:16px;">Regla de la casa: todo pedido de material o herramienta va por aquí (no por WhatsApp). La oficina lo marca «Visto» el mismo día aunque todavía no se compre; tú ves el estado en «Mis pedidos» del Inventario.</p>
+</main>
+
+<div class="modal-overlay" id="lc-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;align-items:center;justify-content:center;padding:14px;">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;padding:18px;max-height:92vh;overflow-y:auto;">
+        <h2 style="margin:0 0 8px;color:var(--artal-blue,#0A3D62);font-size:17px;">🛒 Lista de compras (pendientes)</h2>
+        <div style="font-size:12.5px;color:#667;margin-bottom:8px;">Agrupada por lugar de compra. Cópiala o mándala por WhatsApp a quien vaya a comprar.</div>
+        <textarea id="lc-txt" readonly></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
+            <button onclick="document.getElementById('lc-ov').style.display='none'" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Cerrar</button>
+            <button onclick="copiarLista()" style="background:var(--artal-blue,#0A3D62);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">📋 Copiar</button>
+            <a id="lc-wa" target="_blank" rel="noopener" style="background:#25D366;color:#fff;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;text-decoration:none;">💬 WhatsApp</a>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { enableNotifications } from './notifications.js';
+    import { db } from './firebase-config.js';
+    import { collection, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { montarPedir, montarAcciones, escucharConfig, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, configActual, ABIERTOS, listaDeComprasTxt, URGENCIA_CORTA } from './solicitudes-material.js';
+
+    // Equipo de obra (chofer/instalador/ayudante) ve todo y pide; la oficina (Sara entra por permiso de página), gerencia y
+    // quien esté en rrhhConfig/solicitudesMaterial (Roosevelt como encargado de inventario en Terrenas) GESTIONAN los estados.
+    const usuario = await requireAuth(['chofer', 'instalador', 'ayudante']);
+    const esAdmin = usuario.roles.includes('admin');
+    document.getElementById('user-name').textContent = usuario.nombre;
+    document.getElementById('signout-btn').onclick = () => signOut(auth);
+    document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
+    wireBackButton(usuario.roles);
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    let solicitudes = [], items = [], equipo = [], tab = 'abiertas', filtro = 'todas', gestor = false;
+    const labelItem = (it) => (it.tipo || '') + (it.color ? ' — ' + it.color : '');
+    const matchItem = (txt) => { const t = (txt || '').trim().toLowerCase(); if (!t) return null; return items.find(it => labelItem(it).toLowerCase() === t) || null; };
+
+    montarPedir({ usuario, getItem: (id) => items.find(it => it.id === id) || null, matchItem, onCreada: () => setTab('abiertas') });
+    montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id), getChoferes: () => choferes() });
+    function choferes() {
+        const cfg = configActual(); const emails = (cfg.chofer || []).map(e => String(e).toLowerCase());
+        return equipo.filter(p => emails.includes((p.email || '').toLowerCase())).map(p => ({ email: p.email, nombre: p.nombre }));
+    }
+
+    escucharConfig(() => { gestor = esGestor(usuario); pintarRol(); render(); });
+    escucharSolicitudes((arr) => { solicitudes = arr; render(); });
+    onSnapshot(collection(db, 'inventario'), (snap) => {
+        items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const dl = document.getElementById('sol-texto-list'); if (dl) dl.innerHTML = items.map(it => `<option value="${esc(labelItem(it))}"></option>`).join('');
+    }, () => { });
+    onSnapshot(collection(db, 'equipo'), (snap) => {
+        equipo = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(p => p.activo !== false && p.nombre);
+        if (esAdmin) renderCfg();
+    }, () => { });
+
+    function pintarRol() {
+        const r = rolEn(usuario); const partes = [];
+        if (r.compras) partes.push('🛒 Compras'); if (r.inventario) partes.push('📦 Inventario'); if (r.chofer) partes.push('🚚 Chofer');
+        if (!partes.length && gestor) partes.push('🏢 Oficina');
+        const el = document.getElementById('mi-rol'); el.textContent = partes.length ? 'Tu papel aquí: ' + partes.join(' · ') : ''; el.style.display = partes.length ? '' : 'none';
+        document.getElementById('btn-lista').style.display = gestor ? '' : 'none';
+        document.getElementById('btn-cfg').style.display = esAdmin ? '' : 'none';
+    }
+
+    window.setTab = (t) => { tab = t; ['abiertas', 'entregadas', 'cerradas'].forEach(k => document.getElementById('tab-' + k).classList.toggle('active', k === t)); render(); };
+    window.setFiltro = (f) => { filtro = f; render(); };
+    const ordenUrg = { hoy: 0, semana: 1, cuando: 2 };
+    function render() {
+        const abiertas = solicitudes.filter(s => ABIERTOS.includes(s.estado));
+        const hoyPend = abiertas.filter(s => s.urgencia === 'hoy');
+        const sinVer = abiertas.filter(s => s.estado === 'pedida');
+        document.getElementById('kpis').innerHTML =
+            `<div class="kpi ${hoyPend.length ? 'hoy' : ''}"><div class="n">${hoyPend.length}</div><div class="l">Urgentes (hoy)</div></div>` +
+            `<div class="kpi"><div class="n">${sinVer.length}</div><div class="l">Sin ver</div></div>` +
+            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'comprando').length}</div><div class="l">Comprando</div></div>` +
+            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'lista').length}</div><div class="l">Listas para recoger</div></div>`;
+        document.getElementById('tab-abiertas').textContent = `Pendientes (${abiertas.length})`;
+        let lista = tab === 'abiertas' ? abiertas : tab === 'entregadas' ? solicitudes.filter(s => s.estado === 'entregada') : solicitudes.filter(s => ['rechazada', 'cancelada'].includes(s.estado));
+        const personas = [...new Set(lista.map(s => s.pedidoPor && s.pedidoPor.nombre).filter(Boolean))];
+        const chips = [['todas', 'Todas'], ['hoy', '🔥 Hoy'], ['mias', 'Las mías'], ...personas.map(p => ['p:' + p, p])];
+        document.getElementById('filtro').innerHTML = chips.map(([k, t]) => `<button class="${filtro === k ? 'on' : ''}" onclick="setFiltro('${esc(k)}')">${esc(t)}</button>`).join('');
+        if (filtro === 'hoy') lista = lista.filter(s => s.urgencia === 'hoy');
+        else if (filtro === 'mias') lista = lista.filter(s => s.pedidoPor && s.pedidoPor.email === usuario.email);
+        else if (filtro.startsWith('p:')) lista = lista.filter(s => s.pedidoPor && s.pedidoPor.nombre === filtro.slice(2));
+        if (tab === 'abiertas') lista = lista.slice().sort((a, b) => (ordenUrg[a.urgencia] ?? 1) - (ordenUrg[b.urgencia] ?? 1) || (a.fechaISO || '').localeCompare(b.fechaISO || ''));
+        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor })).join('')
+            : `<p class="empty">${tab === 'abiertas' ? 'Nada pendiente. 🎉' : 'Nada en los últimos 14 días.'}</p>`;
+    }
+
+    // --- Lista de compras ---
+    window.abrirListaCompras = () => {
+        const txt = listaDeComprasTxt(solicitudes);
+        document.getElementById('lc-txt').value = txt;
+        document.getElementById('lc-wa').href = 'https://wa.me/?text=' + encodeURIComponent(txt);
+        document.getElementById('lc-ov').style.display = 'flex';
+    };
+    window.copiarLista = async () => { try { await navigator.clipboard.writeText(document.getElementById('lc-txt').value); alert('Copiada.'); } catch (_) { document.getElementById('lc-txt').select(); document.execCommand('copy'); } };
+
+    // --- Quién atiende (solo admin): rrhhConfig/solicitudesMaterial { compras, inventario, chofer } ---
+    window.toggleCfg = () => { const b = document.getElementById('cfg-box'); b.style.display = b.style.display === 'none' || !b.style.display ? 'block' : 'none'; renderCfg(); };
+    function renderCfg() {
+        const box = document.getElementById('cfg-box'); if (!esAdmin || !equipo.length) return;
+        const cfg = configActual(); const en = (l, e) => (l || []).map(x => String(x).toLowerCase()).includes(e.toLowerCase());
+        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Compras recibe el aviso de cada pedido nuevo y lo compra; Inventario también lo recibe (puede tenerlo en stock y entregarlo directo); Chofer aparece en «¿Quién lo lleva?». Es provisional: cámbialo cuando cambie el equipo.</div>
+        <table><tr><th>Persona</th><th>🛒 Compras</th><th>📦 Inventario</th><th>🚚 Chofer</th></tr>
+        ${equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `<tr><td>${esc(p.nombre)}<div style="font-size:11px;color:#889">${esc(p.email)}</div></td>
+            ${['compras', 'inventario', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="guardarCfg()" style="background:var(--artal-blue,#0A3D62);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Guardar</button></div>`;
+    }
+    window.guardarCfg = async () => {
+        const cfg = { compras: [], inventario: [], chofer: [] };
+        document.querySelectorAll('#cfg-box input[type=checkbox]:checked').forEach(c => cfg[c.dataset.k].push(c.dataset.e));
+        try { await setDoc(doc(db, 'rrhhConfig', 'solicitudesMaterial'), { ...cfg, actualizado: new Date().toISOString(), por: usuario.nombre }, { merge: true }); alert('Guardado.'); document.getElementById('cfg-box').style.display = 'none'; }
+        catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
+    };
+</script>
+</body>
+</html>

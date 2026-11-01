@@ -3182,6 +3182,37 @@ lamas-NN/` con token de descarga (subida por REST con la credencial de firebase-
 `guia-security-lamas` (categoría «Guías · Productos», 5 lecciones) enlaza la ficha como adjunto tipo «pdf» en la lección 1 (así
 `fotosThumbsHTML` pinta una tarjeta 📄 clicable) y el comunicado del 2026-10-21 apunta a la guía.
 
+### Pedidos de material del equipo a la oficina (`solicitudesMaterial`, 2026-11-01)
+
+Dylan: «el equipo me pide herramientas, tornillos, lo que sea por WhatsApp o de boca, no puedo seguir así». Roles PROVISIONALES:
+**Sara = compras, Roosevelt = encargado de inventario en Las Terrenas, Wilson = chofer** (Wilson dejará de ser chofer pronto; el
+inventario principal estará en Santo Domingo con un «Despachador / gestor de inventario» en la fábrica, módulo aparte pendiente de
+diseñar). Viven en `rrhhConfig/solicitudesMaterial {compras:[emails], inventario:[emails], chofer:[emails]}`, editables desde el
+tablero («⚙️ Quién atiende», solo admin). Precio opcional desde el inicio. Sin obra obligatoria ni costeo por obra (regla 2026-10-27).
+- **Módulo compartido `ops/solicitudes-material.js`**: estados `pedida → vista → comprando → lista → entregada` (+ `rechazada` con
+  motivo obligatorio, `cancelada` por quien pidió), urgencia `hoy|semana|cuando`, `pedidoPor`, `sumados[]` («➕ Yo también lo
+  necesito» suma cantidad), `atiende`, `precio`/`origenDinero`/`lugarCompra`/`notaGestor`, `llevaEmail/Nombre` (quién lo lleva),
+  `entregadaA`, `entradaInventario`, `historial[]`, `fechaISO` (string, para consultar los últimos 14 días). `esGestor(usuario)` =
+  admin, oficina (sin rol de obra: Sara entra por `paginasExtra`) o quien está en compras/inventario. `montarPedir` (modal «🙋 Pedir»
+  con datalist del inventario: texto libre que coincide con un ítem se liga a él), `montarAcciones` (formularios de lista/entregada/
+  rechazada/precio), `solicitudCardHTML`, `listaDeComprasTxt` (agrupada por lugar, para copiar/WhatsApp), `darEntradaInventario`
+  (al marcar entregada un pedido ligado a un ítem: `inventario.cantidad += n` + `movimientosInventario` tipo `restock`).
+- **`ops/inventario.html`**: botón «🙋 Pedir» en cada ítem, «🙋 Pedir algo que no está en la lista» + enlace «📋 Pedidos del equipo»
+  arriba del buscador, y `<details>` «🙋 Mis pedidos» (los míos y a los que me sumé, 14 días).
+- **`ops/solicitudes-material.html`** (tablero; `requireAuth(['chofer','instalador','ayudante'])`, en `paginas.js`): KPIs (urgentes,
+  sin ver, comprando, listas), pestañas Pendientes/Entregadas/No se compran, filtros por urgencia y persona, acciones de gestor,
+  «🛒 Lista de compras», «⚙️ Quién atiende». El equipo ve TODO (para no pedir dos veces) y solo puede pedir/sumarse/cancelar lo suyo.
+- **Panel (`ops/index.html`)**: mosaico «🙋 Pedidos de material» con badge = pedidos en `pedida` (sin ver); tarjeta de notificación
+  SOLO para urgentes («hoy») sin ver (Dylan: «yo solo veo lo urgente o rechazado»).
+- **Push `solicitudMaterialPush`** (`functions/index.js`): pedido nuevo → compras + inventario (+ admins si es «hoy»); cambio de estado
+  → quien pidió y los sumados (nunca al autor del cambio); «lista» también a quien lo lleva; «cancelada» avisa a compras/inventario.
+- **Coordinador**: `recogerDatos` pasa `pedidosMaterialAbiertos` y `REGLAS` le pide alertar urgentes en «pedida» y pedidos > 3 días
+  sin pasar de «vista».
+- **Regla** `solicitudesMaterial`: read `operativo()`, create/update `oficina() || obra()`, delete admin (7 casos en `probar-reglas.py`).
+  Guía: lección `guia-inventario-03`. Regla de la casa: lo que llegue por WhatsApp se contesta «ponlo en el Panel»; nada queda sin
+  «Visto» al final del día. Probado en local con el espejo de Emerson (solo UI: los espejos no escriben y las reglas aún no estaban
+  publicadas al construirlo).
+
 ### Inventario: unidad de conteo + empaques (2026-10-28)
 
 Dylan (captura de la tapita negra 3/8: había puesto «paquetes» como unidad y 2000 como existencia; en realidad tiene 7 fundas de

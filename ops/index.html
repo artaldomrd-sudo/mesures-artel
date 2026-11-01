@@ -97,6 +97,7 @@
         <a class="card-link" data-tile="chofer" href="chofer.html"><span class="tile-badge" id="badge-chofer"></span><div class="emoji">🚚</div><div class="title">Transportes</div><div class="desc">En espera, en ruta y entregados</div></a>
         <a class="card-link" data-tile="instalacion" href="instalacion.html"><span class="tile-badge" id="badge-instalador"></span><div class="emoji">🔧</div><div class="title">Instalación</div><div class="desc">Agenda de instalación y trabajo en obra</div></a>
         <a class="card-link" data-tile="inventario" href="inventario.html"><span class="tile-badge" id="badge-inventario"></span><div class="emoji">📦</div><div class="title">Inventario</div><div class="desc">Perfiles, herrajes y consumibles</div></a>
+        <a class="card-link" data-tile="solicitudes-material" href="solicitudes-material.html"><span class="tile-badge" id="badge-sol-material"></span><div class="emoji">🙋</div><div class="title">Pedidos de material</div><div class="desc">Lo que el equipo pide a la oficina: herramientas, tornillos, consumibles. Estado de cada pedido y lista de compras</div></a>
         <a class="card-link" data-tile="erp" href="erp.html"><span class="tile-badge" id="badge-erp"></span><div class="emoji">🏢</div><div class="title">ERP ARTAL</div><div class="desc">Recursos Humanos y demás módulos internos</div></a>
         <a class="card-link" data-tile="puntos" href="puntos.html"><div class="emoji">⭐</div><div class="title">Puntos del equipo</div><div class="desc">Uso de la plataforma a tiempo y opinión de los clientes; reglas y encuestas</div></a>
         <a class="card-link" data-tile="academia" href="academia.html"><div class="emoji">🎓</div><div class="title">Academia</div><div class="desc">Cursos de inducción y capacitación del equipo</div></a>
@@ -217,7 +218,7 @@
     }
 
     // ---------------- Centro de notificaciones ----------------
-    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [];
+    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [], solMaterialCache = [];   // solMaterialCache = pedidos de material abiertos
     let ultimoCotizaciones = 0, medicionesPorCotizar = 0;
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
@@ -322,6 +323,13 @@
                 N.push({ key: `cm:instalaciones:${id}:${cm.fecha || huella(cm.texto)}`, tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
                     acciones: `<a class="n-ver" href="instalacion.html">Ver conversación</a><button class="n-done" onclick="notifAtenderComentarios('instalaciones','${id}')">Marcar atendido</button>${respuestaHTML('instalaciones', id)}` });
             });
+        });
+        // 3f) Pedidos de material del equipo (solicitudesMaterial, 2026-11-01): a gerencia solo le llegan los URGENTES («hoy») que la
+        //     oficina todavía no marcó «Visto»; el resto se gestiona en el tablero (Sara compras / Roosevelt inventario).
+        solMaterialCache.filter(({ s }) => s.urgencia === 'hoy' && s.estado === 'pedida').forEach(({ id, s }) => {
+            const nombre = s.itemTipo ? s.itemTipo + (s.itemColor ? ' — ' + s.itemColor : '') : (s.texto || 'Sin nombre');
+            N.push({ key: `sm:${id}`, tipo: 'tarea', ic: '🙋', titulo: `URGENTE: ${nombre} × ${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`, sub: 'Pidió ' + ((s.pedidoPor && s.pedidoPor.nombre) || 'el equipo') + (s.obra ? ' · ' + s.obra : ''), txt: s.nota || '',
+                acciones: `<a class="n-ver" href="solicitudes-material.html">Ver pedidos de material</a>` });
         });
         // 4) Solicitudes web nuevas (leads del sitio).
         solicitudesCache.forEach(({ id, s }) => {
@@ -653,6 +661,12 @@
     onSnapshot(query(collection(db, 'inboxConversaciones'), where('asignadoA', '==', null)), (snap) => {
         setBadge('badge-inbox', snap.docs.filter((d) => !['closed', 'resolved'].includes(d.data().estado)).length);
     }, () => {});
+    // Pedidos de material del equipo: badge = pedidos aún sin ver por la oficina («pedida»); tarjeta solo para los urgentes.
+    onSnapshot(query(collection(db, 'solicitudesMaterial'), where('estado', 'in', ['pedida', 'vista', 'comprando', 'lista'])), (snap) => {
+        solMaterialCache = snap.docs.map(d => ({ id: d.id, s: d.data() }));
+        setBadge('badge-sol-material', solMaterialCache.filter(({ s }) => s.estado === 'pedida').length);
+        renderNotifs();
+    }, () => { });
     onSnapshot(query(collection(db, 'solicitudesWeb'), where('estado', '==', 'nueva')), (snap) => {
         setBadge('badge-solicitudes', snap.size);
         solicitudesCache = snap.docs.map(d => ({ id: d.id, s: d.data() }));

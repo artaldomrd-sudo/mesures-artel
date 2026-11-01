@@ -439,6 +439,55 @@ exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     } catch (e) { console.error('mensajePush', event.params.id, e); }
 });
 
+// Pedidos de material del equipo (solicitudesMaterial, 2026-11-01). Quién atiende vive en rrhhConfig/solicitudesMaterial
+// { compras:[emails], inventario:[emails], chofer:[emails] } (provisional: Sara compras, Roosevelt inventario Terrenas, Wilson chofer).
+//   · Pedido NUEVO → push a compras + inventario; si es URGENTE («hoy») también a gerencia (admin).
+//   · Cambio de ESTADO → push a quien pidió (y a los que se sumaron), nunca a quien hizo el cambio; «lista» avisa además a quien lo lleva.
+exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const nombre = after.itemTipo ? after.itemTipo + (after.itemColor ? ' — ' + after.itemColor : '') : (after.texto || 'Sin nombre');
+    const cant = `${Number(after.cantidad) || 0}${after.unidad ? ' ' + after.unidad : ''}`;
+    const quien = (after.pedidoPor && after.pedidoPor.nombre) || 'el equipo';
+    const URG = { hoy: '🔥 para HOY', semana: 'esta semana', cuando: 'cuando se pueda' };
+    const url = 'ops/solicitudes-material.html';
+    const bajo = (e) => String(e || '').trim().toLowerCase();
+    try {
+        const cfgS = await db.collection('rrhhConfig').doc('solicitudesMaterial').get();
+        const cfg = cfgS.exists ? cfgS.data() : {};
+        if (!before) {
+            let dest = [...(cfg.compras || []), ...(cfg.inventario || [])].map(bajo);
+            if (after.urgencia === 'hoy') {
+                const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().cuentaPrueba !== true && d.data().activo !== false; }).map((d) => bajo(d.id));
+                dest.push(...admins);
+            }
+            dest = [...new Set(dest.filter((e) => e && e !== bajo(after.pedidoPor && after.pedidoPor.email)))];
+            const titulo = `🙋 ${quien} pide: ${nombre} × ${cant}`;
+            const cuerpo = [URG[after.urgencia] || '', after.obra ? 'obra ' + after.obra : '', after.nota || ''].filter(Boolean).join(' · ').slice(0, 160) || 'Pedido de material';
+            for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, url); } catch (_) { } }
+            return;
+        }
+        if (after.estado === before.estado) return;
+        const ult = Array.isArray(after.historial) && after.historial.length ? after.historial[after.historial.length - 1] : {};
+        const actor = bajo(ult.email);
+        const porNombre = (after.atiende && after.atiende.nombre) || ult.por || 'La oficina';
+        const TXT = {
+            vista: `👀 ${porNombre} ya lo vio. Te avisamos cuando se compre.`,
+            comprando: `🛒 ${porNombre} lo está comprando.`,
+            lista: `📦 Listo para recoger${after.lugarCompra ? ' · ' + after.lugarCompra : ''}${after.llevaNombre ? ' · lo lleva ' + after.llevaNombre : ''}${after.notaGestor ? ' · ' + after.notaGestor : ''}`,
+            entregada: `✅ Entregado${after.entregadaA ? ' a ' + after.entregadaA : ''}.`,
+            rechazada: `✖ No se compra${after.rechazoMotivo ? ': ' + after.rechazoMotivo : ''}`,
+            cancelada: `↩ ${quien} canceló este pedido.`,
+        };
+        const cuerpo = TXT[after.estado]; if (!cuerpo) return;
+        let dest = [bajo(after.pedidoPor && after.pedidoPor.email), ...((after.sumados || []).map((x) => bajo(x.email)))];
+        if (after.estado === 'lista' && after.llevaEmail) dest.push(bajo(after.llevaEmail));
+        if (after.estado === 'cancelada') dest.push(...[...(cfg.compras || []), ...(cfg.inventario || [])].map(bajo));
+        dest = [...new Set(dest.filter((e) => e && e !== actor))];
+        for (const em of dest) { try { await enviarPushUsuario(em, `${nombre} × ${cant}`, cuerpo.slice(0, 160), url); } catch (_) { } }
+    } catch (e) { console.error('solicitudMaterialPush', event.params.id, e); }
+});
+
 // H3 (revisión 2026-10-09): el portal de ALUCUFEL bajaba `orders` entero (≈1 MB) solo para buscar faltantes del chofer dentro de
 // `itemStatus`. Esta función mantiene la bandera `faltantesSinAtender` (true si algún ítem está en 'problema' sin atender) y el
 // portal consulta solo por esa bandera.
