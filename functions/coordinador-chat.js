@@ -286,11 +286,11 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
         const system = sistemaChat(lecc.texto, equipoTxt);
         const messages = [{ role: 'user', content: [{ type: 'text', text: contexto, cache_control: { type: 'ephemeral' } }, { type: 'text', text: pedido }] }];
         const ctx = { respuestaId, informeId: r.informeId, por: r.por || porEmail, porEmail, equipo, acciones: [] };
-        const uso = { input: 0, output: 0, cacheRead: 0, llamadas: 0 };
+        const uso = { input: 0, output: 0, cacheRead: 0, cacheCreacion: 0, llamadas: 0 };   // input = tokens sin caché; el contexto grande va a cacheCreacion en la 1ª llamada y a cacheRead en las siguientes
         let texto = '', pasos = 0, cortado = false;
         for (let ronda = 0; ronda < MAX_PASOS + 2; ronda++) {
             const j = await llamarClaude(apiKey, system, messages);
-            uso.llamadas++; if (j.usage) { uso.input += j.usage.input_tokens || 0; uso.output += j.usage.output_tokens || 0; uso.cacheRead += j.usage.cache_read_input_tokens || 0; }
+            uso.llamadas++; if (j.usage) { uso.input += j.usage.input_tokens || 0; uso.output += j.usage.output_tokens || 0; uso.cacheRead += j.usage.cache_read_input_tokens || 0; uso.cacheCreacion += j.usage.cache_creation_input_tokens || 0; }
             const bloques = j.content || [];
             messages.push({ role: 'assistant', content: bloques });
             const usos = bloques.filter((b) => b.type === 'tool_use');

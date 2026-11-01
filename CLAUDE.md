@@ -3629,3 +3629,44 @@ No corre domingos ni feriados no trabajados; un informe por día (si existe el a
 `fs-rest.js`; `generarInforme({lector, …})` es agnóstico del SDK). La rutina local `coordinador-obras-matinal` queda DESACTIVADA (solo
 «Run now» a mano); el agente a demanda sigue existiendo y lee el informe del día en `mensajes` para ejecutar «haz A2 / envía M1». Las
 sesiones de la rutina no se pueden agrupar en la barra lateral: la app las cuelga de la rutina (panel de Rutinas).
+**Lecciones en Firestore (01/11/2026)**: el informe repetía alertas ya resueltas (PABLO en pausa, Toni = TESEMATIN…) porque `SISTEMA` era
+fijo. Ahora el guion está partido en `PERSONA` / `REGLAS` / `LECCIONES_BASE` / `FORMATO_INFORME` y `sistemaInforme(lecciones)`;
+`cargarLecciones(lector)` lee `coordinadorConfig/lecciones.texto` (respaldo `LECCIONES_BASE` si no existe; `leccionesOrigen` en el mensaje
+publicado). Las escriben el chat (abajo) y el agente local con `scripts/ops/lecciones.js ver|agregar|reemplazar|pull` (local, fuera del
+repo). `max_tokens` 8000 y pie «⚠️ INFORME CORTADO» si `stop_reason === 'max_tokens'` (el del 31/10 se cortó con 4500). Destinatarios:
+Wilson + `dylan.r.rd@gmail.com` (la cuenta `artaldom.rd` está dada de baja; hasta el 31/10 Dylan no recibía el informe).
+
+### Responder al Coordinador desde Mensajería (2026-11-01)
+
+Dylan: «poder hacer eso mismo desde la plataforma, respondiendo al informe como a un mensaje, sin abrir la app de Claude». Piezas:
+- **`ops/mensajes.html`**: bajo un mensaje `tipo:'informe_coordinador'` va el hilo (`hiloCoordinadorHTML`: respuestas propias en burbujas
+  azules desde `coordinadorRespuestas`, contestaciones del agente en blancas = `mensajes` tipo `respuesta_coordinador` con
+  `enRespuestaA`) y la caja «💬 Responder al Coordinador» (`enviarRespuestaCoordinador`; destinatarios del informe y admin; un espejo solo
+  mira; `coordDraft` conserva el texto entre repintados). Crea `coordinadorRespuestas` {informeId, informeAsunto, texto, por, porEmail,
+  fecha, estado:'pendiente', destinatariosInforme (= destinatarios del informe, lo exige la regla)}. Suscripción: admin → toda la
+  colección; resto → `destinatariosInforme array-contains correo`. Iconos 🗓️ (informe) / 🤖 (respuesta) en la bandeja.
+- **`functions/coordinador-chat.js`** (montado tras `coordinador.js` en `index.js`): trigger **`coordinadorRespuestaProcesar`**
+  (onDocumentCreated `coordinadorRespuestas/{id}`, secreto ANTHROPIC_API_KEY, 540 s, 1 GiB). Comprueba que el autor es admin o
+  destinatario (si no, `estado:'rechazada'`), junta informe + hilo anterior + `recogerDatos` del panel + lecciones + lista `equipo`,
+  y corre el bucle de tool use con `claude-sonnet-4-6` (máx. 12 pasos; el contexto grande va con `cache_control` ephemeral).
+  Herramientas = sección 5 «haces solo»: `consultar_panel`/`obtener_documento` (lista blanca de colecciones), `reprogramar_trabajo`
+  (fecha + `fechaOriginal` + `movimientosInstalaciones`), `anotar_trabajo`, `cambiar_estado_pedido` (SOLO entre
+  pendiente_fabrica/en_fabrica/parcialmente_listo/listo_para_cargar; `estadoManualPor` = «Coordinador de Obras (IA)»),
+  `fijar_salida_pedido` (`fechaSalidaCambios`), `instruccion_fabrica` (`comentarioParaFabrica*`), `crear_recordatorio` (citas,
+  mismos campos que Calendario, `origen:'coordinador_chat'`), `mensaje_interno` (solo correos activos de `equipo`, tipo
+  `aviso_coordinador`), `anotar_leccion` (añade «- (dd/mm/aaaa, Nombre vía Mensajería) …» al doc), `redactar_para_cliente` (NO envía:
+  texto + enlace wa.me con el teléfono de `clientes`). Nada de dinero, borrados, cierres ni usuarios. Cada escritura → fila en
+  **`coordinadorAcciones`** {respuestaId, informeId, herramienta, coleccion, docId, entrada, antes, resumen, por, porEmail, fecha}.
+  Resultado → `mensajes` {tipo:'respuesta_coordinador', asunto «↩️ <asunto del informe>», enRespuestaA, respuestaId, destinatarios =
+  los del informe + autor, acciones, tokens} (push por `mensajePush`) y `coordinadorRespuestas` → `procesada` (resultado, mensajeId,
+  acciones[], tokens, pasos) | `error` (y un mensaje ⚠️ al autor). Prueba real 01/11: respuesta → contestación en 6 s con push,
+  `leccionesOrigen:'firestore'`.
+- **Reglas** (`firestore.rules`, banco local 87/87): `coordinadorRespuestas` create = miembro no espejo, admin o
+  `token.email in destinatariosInforme`, `estado=='pendiente'`, `porEmail == token.email`, texto 1–4000, claves acotadas y
+  `destinatariosInforme == get(mensajes/informeId).destinatarios`; read = admin o correo en `destinatariosInforme`; update/delete
+  false (solo servidor). `coordinadorAcciones` read admin, write false. `coordinadorConfig` read/write admin.
+- **Costo**: la API se paga con los 200 USD/mes de créditos incluidos en el plan Ultra de Dylan (activados el 01/11/2026 con «Comenzar»
+  en console.anthropic.com → Facturación); recarga automática apagada a propósito. Antes solo había 10 USD de créditos comprados el
+  29/07/2026 (0.66 gastados en 3 meses). El informe cuesta ≈ 0.15 USD; una respuesta 0.10–0.20.
+- El agente local lee lo que hizo el chat (`coordinadorRespuestas`, `mensajes tipo=respuesta_coordinador`, `coordinadorAcciones`) antes
+  de actuar a demanda: ver `.claude/agents/coordinador-obras.datos.md`.
