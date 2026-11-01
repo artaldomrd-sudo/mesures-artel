@@ -27,13 +27,15 @@ export const LUGARES = ['Ferretería Las Terrenas', 'Santo Domingo', 'Pedido al 
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ahoraISO = () => new Date().toISOString();
+// Fechas: en la app `fechaISO` es un string ISO; un doc escrito desde fuera puede traer un Timestamp → se tolera.
+const toMs = (v) => v && typeof v.toDate === 'function' ? v.toDate().getTime() : (typeof v === 'string' || typeof v === 'number') ? new Date(v).getTime() : NaN;
 export function hace(iso) {
-    if (!iso) return '';
-    const ms = Date.now() - new Date(iso).getTime(); if (!(ms >= 0)) return '';
+    const t = toMs(iso); if (!(t > 0)) return '';
+    const ms = Date.now() - t; if (!(ms >= 0)) return '';
     const m = Math.floor(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
     return d >= 1 ? `hace ${d} d` : h >= 1 ? `hace ${h} h` : m >= 1 ? `hace ${m} min` : 'ahora mismo';
 }
-const fechaCorta = (iso) => iso ? new Date(iso).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+const fechaCorta = (iso) => { const t = toMs(iso); return t > 0 ? new Date(t).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''; };
 export const nombreDe = (s) => (s.itemTipo ? s.itemTipo + (s.itemColor ? ' — ' + s.itemColor : '') : (s.texto || 'Sin nombre'));
 export const cantidadTxt = (s) => `${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`;
 
