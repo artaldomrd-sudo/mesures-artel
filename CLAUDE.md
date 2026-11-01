@@ -3237,6 +3237,20 @@ tablero («⚙️ Quién atiende», solo admin). Precio opcional desde el inicio
   «Visto» al final del día. Probado en local con el espejo de Emerson (solo UI: los espejos no escriben y las reglas aún no estaban
   publicadas al construirlo).
 
+### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
+
+Dylan: «empiezo algo en una sesión de Claude y lo dejo varios días sin retomar, no es sostenible». `herramientas/sesiones-claude/sync.js`
+(local, no versionado; sin dependencias) lee los transcripts de la app (`~/.claude/projects/*/*.jsonl`, cabeza 256 KB + cola 4–32 MB,
+7 s para 37 sesiones) y sube por sesión: `titulo` (custom-title / agent-name), `area` (`.claude/session-area/<sid>`), `inicio`,
+`ultimaActividad`, `ultimoPedido`, `ultimaRespuesta` (1800 caracteres: por regla termina con lo pendiente), `esperandoRespuesta`,
+`viva`/`vivaEstado` (`~/.claude/sessions/*.json`), `rutina` (informes matinales / recordatorios → `estado: 'archivada'` al nacer).
+`estado` (`abierta|terminada|archivada`), `estadoFecha` y `nota` los pone Dylan en el Panel y el sync NO los pisa; una «terminada» con
+actividad posterior vuelve a «abierta». Se dispara desde los hooks del repo: `area-sesion.sh` (UserPromptSubmit) hace `--solo <sid>` en
+segundo plano + un repaso completo como mucho cada hora; `sesion-sync.sh` (Stop, en `settings.local.json`) sube el recap final del turno.
+Pantalla `ops/sesiones-claude.html` (solo admin, `requireAuth([])`): KPIs, pestañas A medias / Terminadas / Archivadas, filtro por área,
+tarjeta con «Lo último que pediste» y «Dónde quedó Claude», botones Terminada / Archivar / Volver y nota. Panel: mosaico «🧠 Trabajos con
+Claude a medias» con badge y una tarjeta de notificación cuando hay abiertas con 3+ días sin tocar. Regla `sesionesClaude` solo admin.
+
 ### Inventario: unidad de conteo + empaques (2026-10-28)
 
 Dylan (captura de la tapita negra 3/8: había puesto «paquetes» como unidad y 2000 como existencia; en realidad tiene 7 fundas de

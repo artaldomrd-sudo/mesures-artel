@@ -103,6 +103,7 @@
         <a class="card-link" data-tile="academia" href="academia.html"><div class="emoji">🎓</div><div class="title">Academia</div><div class="desc">Cursos de inducción y capacitación del equipo</div></a>
         <a class="card-link" data-tile="mensajes" href="mensajes.html"><span class="tile-badge" id="badge-mensajes"></span><div class="emoji">✉️</div><div class="title">Mensajería ARTAL</div><div class="desc">Comunicados y documentos para firmar del equipo</div></a>
         <a class="card-link" data-tile="notas" href="notas.html"><div class="emoji">🗒️</div><div class="title">Mis Notas</div><div class="desc">Tus notas personales (privadas)</div></a>
+        <a class="card-link" data-tile="sesiones-claude" href="sesiones-claude.html"><span class="tile-badge" id="badge-sesiones-claude"></span><div class="emoji">🧠</div><div class="title">Trabajos con Claude a medias</div><div class="desc">Sesiones que empezaste y no retomaste: qué pediste, dónde quedó y hace cuánto</div></a>
         <a class="card-link" data-tile="usuarios" href="usuarios.html"><div class="emoji">👥</div><div class="title">Usuarios y roles</div><div class="desc">Quién entra a la plataforma y con qué permisos</div></a>
     </div>
     <div id="toasts"></div>
@@ -218,7 +219,8 @@
     }
 
     // ---------------- Centro de notificaciones ----------------
-    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [], solMaterialCache = [];   // solMaterialCache = pedidos de material abiertos
+    let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [], solMaterialCache = [];
+    let sesionesViejas = [];   // sesiones de Claude abiertas con 3+ días sin actividad (solo admin las lee)   // solMaterialCache = pedidos de material abiertos
     let ultimoCotizaciones = 0, medicionesPorCotizar = 0;
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
@@ -331,6 +333,11 @@
             N.push({ key: `sm:${id}`, tipo: 'tarea', ic: '🙋', titulo: `URGENTE: ${nombre} × ${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`, sub: 'Pidió ' + ((s.pedidoPor && s.pedidoPor.nombre) || 'el equipo') + (s.obra ? ' · ' + s.obra : ''), txt: s.nota || '',
                 acciones: `<a class="n-ver" href="solicitudes-material.html">Ver pedidos de material</a>` });
         });
+        // 3g) Trabajos con Claude a medias (sesionesClaude, 2026-11-01): una sola tarjeta cuando hay sesiones abiertas con 3+ días sin tocar.
+        if (sesionesViejas.length) {
+            N.push({ key: `sc:${sesionesViejas.map(x => x.id.slice(0, 6)).sort().join('')}`, tipo: 'tarea', ic: '🧠', titulo: `${sesionesViejas.length} trabajo${sesionesViejas.length > 1 ? 's' : ''} con Claude a medias desde hace 3+ días`, sub: sesionesViejas.slice(0, 3).map(x => x.titulo || '').join(' · '), txt: '',
+                acciones: `<a class="n-ver" href="sesiones-claude.html">Ver y decidir</a>` });
+        }
         // 4) Solicitudes web nuevas (leads del sitio).
         solicitudesCache.forEach(({ id, s }) => {
             N.push({ key: `sw:${id}`, tipo: 'tarea', ic: '📥', titulo: 'Solicitud web: ' + (s.nombre || 'sin nombre'), sub: s.tipo || '', txt: [s.telefono, s.email, s.mensaje].filter(Boolean).join(' · '),
@@ -665,6 +672,13 @@
     onSnapshot(query(collection(db, 'solicitudesMaterial'), where('estado', 'in', ['pedida', 'vista', 'comprando', 'lista'])), (snap) => {
         solMaterialCache = snap.docs.map(d => ({ id: d.id, s: d.data() }));
         setBadge('badge-sol-material', solMaterialCache.filter(({ s }) => s.estado === 'pedida').length);
+        renderNotifs();
+    }, () => { });
+    // Trabajos con Claude a medias: badge = abiertas con 3+ días sin actividad (la colección solo la lee admin; si falla, sin badge).
+    onSnapshot(collection(db, 'sesionesClaude'), (snap) => {
+        const lim = Date.now() - 3 * 86400000;
+        sesionesViejas = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => (x.estado || 'abierta') === 'abierta' && x.ultimaActividad && new Date(x.ultimaActividad).getTime() < lim);
+        setBadge('badge-sesiones-claude', sesionesViejas.length);
         renderNotifs();
     }, () => { });
     onSnapshot(query(collection(db, 'solicitudesWeb'), where('estado', '==', 'nueva')), (snap) => {
