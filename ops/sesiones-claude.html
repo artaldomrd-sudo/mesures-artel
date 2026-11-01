@@ -29,6 +29,12 @@
     .otros { margin-top: 18px; font-size: 13px; color: #667; }
     .otros a { color: var(--artal-blue, #0A3D62); cursor: pointer; font-weight: bold; margin-right: 14px; }
     .empty { color: #889; text-align: center; padding: 30px 10px; }
+    .agendado { font-size: 12px; color: #1e5aa8; background: #e7f1fb; border-radius: 100px; padding: 2px 9px; }
+    .ag-form { display: none; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; background: #f7f9fb; border-radius: 8px; padding: 8px 10px; }
+    .ag-form.abierto { display: flex; }
+    .ag-form input { padding: 7px 9px; border: 1.5px solid #dde3ea; border-radius: 8px; font-family: 'Arimo'; font-size: 13px; }
+    .ag-form button { border: none; border-radius: 8px; padding: 7px 12px; font-weight: bold; font-size: 12.5px; font-family: 'Arimo'; cursor: pointer; background: var(--artal-blue, #0A3D62); color: #fff; }
+    .ag-form .cancel { background: transparent; color: #889; border: 1.5px solid #dde3ea; }
 </style>
 </head>
 <body>
@@ -52,7 +58,7 @@
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { db } from './firebase-config.js';
-    import { collection, doc, onSnapshot, updateDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, doc, onSnapshot, updateDoc, addDoc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth([]);   // solo gerencia: son las sesiones de trabajo de Dylan con Claude
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -74,6 +80,30 @@
     window.verVista = (v) => { vista = v; render(); };
     window.abrir = (el) => el.classList.toggle('abierto');
     window.detalle = (id) => document.getElementById('det-' + id).classList.toggle('abierto');
+    // Agendar: crea un recordatorio de gerencia en `citas` (mismo formato que el Calendario) para quien está conectado, con el
+    // título de la sesión y lo pendiente en la descripción; la Cloud Function manda el push al crearlo y a la hora. La sesión
+    // guarda `agendadoFecha` / `agendadoCitaId` para mostrarlo aquí.
+    const agendadoVigente = (s) => s.agendadoFecha && ms(s.agendadoFecha) > Date.now() - 12 * 3600000;
+    function defaultAgenda() { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+    window.agendarForm = (id) => { const f = document.getElementById('ag-' + id); f.classList.toggle('abierto'); if (f.classList.contains('abierto')) f.querySelector('input').focus(); };
+    window.agendar = async (id) => {
+        const s = sesiones.find(x => x.id === id); const val = document.getElementById('ag-f-' + id).value;
+        if (!s || !val) { alert('Elige fecha y hora.'); return; }
+        const cuando = new Date(val); if (!(cuando.getTime() > Date.now())) { alert('La fecha tiene que ser futura.'); return; }
+        const nombre = (usuario.nombre || '').split(' ')[0] || usuario.nombre;
+        const pend = (s.pendiente || s.ultimaRespuesta || '').slice(0, 700);
+        try {
+            const ref = await addDoc(collection(db, 'citas'), {
+                tipo: 'recordatorio', titulo: 'Retomar con Claude: ' + (s.titulo || id),
+                descripcion: (pend ? 'Dónde quedó:\n' + pend + '\n\n' : '') + 'Abre la sesión «' + (s.titulo || id) + '» en la app de Claude.',
+                fecha: Timestamp.fromDate(cuando), sinFecha: false, duracionMin: 0, orderId: null, cliente: '', obra: '',
+                asignadoA: 'gerente', asignados: [{ nombre, email: usuario.email }], etapas: [], completadoPor: [],
+                creadoPorNombre: usuario.nombre, recordatorios: [0], recordatoriosEnviados: [], recordatoriosPendientes: true,
+                repetir: 'no', repetirGenerado: false, sesionClaudeId: id, fechaCreacion: serverTimestamp()
+            });
+            await updateDoc(doc(db, 'sesionesClaude', id), { agendadoFecha: cuando.toISOString(), agendadoCitaId: ref.id, agendadoPor: usuario.nombre });
+        } catch (e) { alert('No se pudo agendar: ' + (e.message || e)); }
+    };
     window.setEstado = async (id, estado) => {
         try { await updateDoc(doc(db, 'sesionesClaude', id), { estado, estadoFecha: new Date().toISOString(), estadoPor: usuario.nombre }); }
         catch (e) { alert('No se pudo: ' + (e.message || e)); }
@@ -101,9 +131,17 @@
             <div class="detalle" id="det-${s.id}">${s.ultimoPedido ? `<b>Lo último que pediste (${esc(fecha(s.ultimoPedidoFecha))}):</b>\n${esc(s.ultimoPedido)}\n\n` : ''}<b>Última respuesta de Claude (${esc(fecha(s.ultimaRespuestaFecha))}):</b>\n${esc(s.ultimaRespuesta || '')}</div>
             <div class="pie">
                 ${ab ? `<button class="listo" onclick="setEstado('${s.id}','terminada')">✓ Listo</button>` : `<a onclick="setEstado('${s.id}','abierta')">↩ Volver a pendientes</a>`}
+                ${ab ? (agendadoVigente(s) ? `<span class="agendado">📅 retomar el ${esc(fecha(s.agendadoFecha))}</span> <a onclick="agendarForm('${s.id}')" style="font-weight:normal">cambiar</a>` : `<a onclick="agendarForm('${s.id}')">📅 Agendar</a>`) : ''}
                 <a onclick="detalle('${s.id}')">detalle</a>
                 ${ab ? `<a onclick="setEstado('${s.id}','archivada')" style="font-weight:normal;color:#889">no es un trabajo</a>` : ''}
                 <span>${esc(fecha(s.inicio))} → ${esc(fecha(s.ultimaActividad))}</span>
+            </div>
+            <div class="ag-form" id="ag-${s.id}">
+                <span style="font-size:12.5px;color:#334;">Retomar el</span>
+                <input type="datetime-local" id="ag-f-${s.id}" value="${esc(defaultAgenda())}">
+                <button onclick="agendar('${s.id}')">Agendar en el Calendario</button>
+                <button class="cancel" onclick="document.getElementById('ag-${s.id}').classList.remove('abierto')">Cancelar</button>
+                <span style="font-size:11.5px;color:#889;">Te llega un aviso a esa hora (y uno al crearlo). Queda en tu Calendario como recordatorio de gerencia.</span>
             </div>
         </div>`;
     }
