@@ -27,7 +27,7 @@ const sanitKey = (email) => String(email || '').toLowerCase().replace(/[.@]/g, '
 // No mostrar el botón en la propia pantalla de mensajes (sería redundante).
 const enMensajes = /\/mensajes\.html$/.test(location.pathname);
 
-let btn, badge;
+let btn, badge, top;
 function inyectar() {
     if (btn || enMensajes) return;
     if (!document.getElementById('msg-widget-styles')) {
@@ -45,6 +45,17 @@ function inyectar() {
             text-align: center; box-shadow: 0 0 0 2px #fff; display: none; }
         #msg-fab .badge.show { display: block; }
         @media (max-width: 560px) { #msg-fab .lbl { display: none; } #msg-fab { padding: 12px; border-radius: 50%; } }
+        /* Banda roja arriba (Dylan 2026-11-02: «que incite a la persona a meterse a leer»): fija, salta cada 2 s y parpadea; se oculta sin mensajes nuevos. */
+        #msg-top { position: fixed; left: 0; right: 0; top: 0; z-index: 950; display: none; justify-content: center; align-items: center; gap: 10px;
+            background: #e2211c; color: #fff; font-family: 'Arimo', sans-serif; font-weight: bold; font-size: 14.5px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+            text-decoration: none; box-shadow: 0 4px 14px rgba(226,33,28,.35); animation: msgTopFlash 1.6s ease-in-out infinite; }
+        #msg-top.show { display: flex; }
+        #msg-top .ico { display: inline-block; animation: msgTopJump 2s ease-in-out infinite; font-size: 18px; }
+        #msg-top .cta { font-weight: normal; opacity: .92; font-size: 13px; }
+        @keyframes msgTopFlash { 0%, 100% { background: #e2211c; } 50% { background: #ff4d3d; } }
+        @keyframes msgTopJump { 0%, 60%, 100% { transform: translateY(0); } 15% { transform: translateY(-7px) scale(1.15); } 30% { transform: translateY(0); } 45% { transform: translateY(-3px); } }
+        @media (prefers-reduced-motion: reduce) { #msg-top, #msg-top .ico { animation: none; } }
+        body.msg-top-on { padding-top: 44px !important; }
         `;
         document.head.appendChild(st);
     }
@@ -55,12 +66,20 @@ function inyectar() {
     btn.innerHTML = `<span class="ic">✉️</span><span class="lbl">Mensajes</span><span class="badge" id="msg-fab-badge"></span>`;
     document.body.appendChild(btn);
     badge = document.getElementById('msg-fab-badge');
+    top = document.createElement('a');
+    top.id = 'msg-top'; top.href = opsPath('mensajes.html'); top.title = 'Abrir Mensajería';
+    document.body.appendChild(top);
 }
 
 function setBadge(n) {
     if (!badge) return;
     badge.textContent = n > 99 ? '99+' : String(n);
     badge.classList.toggle('show', n > 0);
+    if (top) {
+        top.innerHTML = n > 0 ? `<span class="ico">✉️</span><span>${n} nuevo${n === 1 ? '' : 's'} mensaje${n === 1 ? '' : 's'} en Mensajería</span><span class="cta">· toca para leer</span>` : '';
+        top.classList.toggle('show', n > 0);
+        document.body.classList.toggle('msg-top-on', n > 0);
+    }
 }
 
 onAuthStateChanged(auth, (user) => {
