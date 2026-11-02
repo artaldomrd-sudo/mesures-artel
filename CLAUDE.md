@@ -3206,48 +3206,32 @@ lamas-NN/` con token de descarga (subida por REST con la credencial de firebase-
 `guia-security-lamas` (categoría «Guías · Productos», 5 lecciones) enlaza la ficha como adjunto tipo «pdf» en la lección 1 (así
 `fotosThumbsHTML` pinta una tarjeta 📄 clicable) y el comunicado del 2026-10-21 apunta a la guía.
 
-### Pedidos de material del equipo a la oficina (`solicitudesMaterial`, 2026-11-01)
+### Pedidos de material del equipo a la oficina (`solicitudesMaterial`, 2026-11-01; flujo simplificado 2026-11-02)
 
-Dylan: «el equipo me pide herramientas, tornillos, lo que sea por WhatsApp o de boca, no puedo seguir así». Roles PROVISIONALES:
-**Sara = compras, Roosevelt = encargado de inventario en Las Terrenas, Wilson = chofer** (Wilson dejará de ser chofer pronto; el
-inventario principal estará en Santo Domingo con un «Despachador / gestor de inventario» en la fábrica, módulo aparte pendiente de
-diseñar). Viven en `rrhhConfig/solicitudesMaterial {compras:[emails], inventario:[emails], chofer:[emails]}`, editables desde el
-tablero («⚙️ Quién atiende», solo admin). Precio opcional desde el inicio. Sin obra obligatoria ni costeo por obra (regla 2026-10-27).
-- **Módulo compartido `ops/solicitudes-material.js`**: estados `pedida → vista → comprando → lista → entregada` (+ `rechazada` con
-  motivo obligatorio, `cancelada` por quien pidió), urgencia `hoy|semana|cuando`, `pedidoPor`, `sumados[]` («➕ Yo también lo
-  necesito» suma cantidad), `atiende`, `precio`/`origenDinero`/`lugarCompra`/`notaGestor`, `llevaEmail/Nombre` (quién lo lleva),
-  `entregadaA`, `entradaInventario`, `historial[]`, `fechaISO` (string, para consultar los últimos 14 días). `esGestor(usuario)` =
-  admin, oficina (sin rol de obra: Sara entra por `paginasExtra`) o quien está en compras/inventario. `montarPedir` (modal «🙋 Pedir»
-  con datalist del inventario: texto libre que coincide con un ítem se liga a él), `montarAcciones` (formularios de lista/entregada/
-  rechazada/precio), `solicitudCardHTML`, `listaDeComprasTxt` (agrupada por lugar, para copiar/WhatsApp), `darEntradaInventario`
-  (al marcar entregada un pedido ligado a un ítem: `inventario.cantidad += n` + `movimientosInventario` tipo `restock`).
-- **`ops/inventario.html`**: botón «🙋 Pedir» en cada ítem, «🙋 Pedir algo que no está en la lista» + enlace «📋 Pedidos del equipo»
-  arriba del buscador, y `<details>` «🙋 Mis pedidos» (los míos y a los que me sumé, 14 días).
-- **`ops/solicitudes-material.html`** (tablero; `requireAuth(['chofer','instalador','ayudante'])`, en `paginas.js`): KPIs (urgentes,
-  sin ver, comprando, listas), pestañas Pendientes/Entregadas/No se compran, filtros por urgencia y persona, acciones de gestor,
-  «🛒 Lista de compras», «⚙️ Quién atiende». El equipo ve TODO (para no pedir dos veces) y solo puede pedir/sumarse/cancelar lo suyo.
-- **Panel (`ops/index.html`)**: mosaico «🙋 Pedidos de material» con badge = pedidos en `pedida` (sin ver); tarjeta de notificación
-  SOLO para urgentes («hoy») sin ver (Dylan: «yo solo veo lo urgente o rechazado»).
-- **Push `solicitudMaterialPush`** (`functions/index.js`): pedido nuevo → compras + inventario (+ admins si es «hoy»); cambio de estado
-  → quien pidió y los sumados (nunca al autor del cambio); «lista» también a quien lo lleva; «cancelada» avisa a compras/inventario.
-- **Coordinador**: `recogerDatos` pasa `pedidosMaterialAbiertos` y `REGLAS` le pide alertar urgentes en «pedida» y pedidos > 3 días
-  sin pasar de «vista».
-- **Regla** `solicitudesMaterial`: read `operativo()`, create/update `oficina() || obra()`, delete admin (7 casos en `probar-reglas.py`).
-  Guía: lección `guia-inventario-03`. Regla de la casa: lo que llegue por WhatsApp se contesta «ponlo en el Panel»; nada queda sin
-  «Visto» al final del día. Probado en local con el espejo de Emerson (solo UI: los espejos no escriben y las reglas aún no estaban
-  publicadas al construirlo).
-
-### Coordinador de Obras: pantalla propia con UNA conversación (`ops/coordinador.html`, 2026-11-01)
-
-Dylan: «acceder al Coordinador sin pasar por Mensajería; una sola conversación a la que entro cada día; botón de hacer informe ahora».
-No toca nada de la sesión del Coordinador (`coordinador-chat.js`, `mensajes.html`): solo lee/escribe lo que ya existe. Mosaico
-«🗓️ Coordinador de Obras» en el Panel (badge = informes de las últimas 36 h sin mi acuse). `requireAuth([])` (Wilson por `paginasExtra`
-cuando Dylan quiera; las reglas ya le dejan leer y responder). Hilo cronológico único con separadores por día: informes (`mensajes`
-tipo `informe_coordinador`, el último desplegado y los anteriores plegados), mis respuestas (`coordinadorRespuestas`, con ⏳ mientras
-`pendiente/procesando`) y contestaciones del agente (`mensajes` tipo `respuesta_coordinador`). La caja fija de abajo crea una
-`coordinadorRespuestas` anclada al informe más reciente (mismos campos que Mensajería; Enter envía, Shift+Enter salto). Al abrir, marca
-el acuse de lectura del último informe (`acuses.{key}`). «📝 Hacer informe ahora» (hoy / mañana) → `POST coordinadorInformeAhora`
-con ID token `{fecha, forzar:true}`; el informe aparece por el snapshot.
+Dylan: «el equipo me pide herramientas, tornillos, lo que sea por WhatsApp o de boca, no puedo seguir así»; al día siguiente: «más
+fluidez, está muy complejo». FLUJO ACTUAL: el equipo pide porque sabe que falta (nadie verifica stock; Roosevelt NO es oficina —
+la verificación vendrá cuando haya una persona dedicada al almacén). **pedida → la oficina (Sara y Dylan; Anny fuera a propósito)
+elige 📲 «Pedir al proveedor por WhatsApp» (abre `wa.me` con el pedido; estado `pedido_proveedor`; luego adjunta factura u orden de
+compra con fotos.js y «Enviar al chofer») o 🚚 «Pasar directo al chofer» (compra en persona; estado `chofer`) → el chofer ve el pedido
+con sus adjuntos en el mismo tablero, lo compra/retira en su ruta y marca «Recogido» → «Entregada»** (con entrada al inventario si el
+pedido venía de un ítem; precio opcional). «No se compra» exige motivo. Estados viejos `vista/comprando/lista` solo se muestran.
+Quién atiende: `rrhhConfig/solicitudesMaterial {compras:[oficina], chofer:[…], inventario:[reservado]}`, editable en «⚙️ Quién
+atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.lista` (la de suplidor-wa.js) + «Otro número…».
+- **Módulo compartido `ops/solicitudes-material.js`**: `crearSolicitud`, `sumarse`, `cambiarEstado`, `darEntradaInventario`,
+  `mensajeProveedor` (texto WhatsApp sin precios ni datos de clientes), `escucharConfig/escucharProveedores/escucharSolicitudes`,
+  `esGestor` (admin, oficina sin rol de obra, lista compras), `rolEn` (`chofer` = rol chofer o lista), `montarPedir` (modal con
+  unidad en desplegable `UNIDADES` + empaque del ítem preseleccionado y equivalencia «1 funda = 100 unidades»), `montarAcciones`
+  (formularios proveedor / chofer / recogido / entregada / rechazada), `solicitudCardHTML({usuario, gestor, chofer})` con adjuntos
+  (`fotosThumbsHTML`/`fotoAddBtnHTML`, colección `solicitudesMaterial`, `pdf:true`), `listaChoferTxt` (lo que está «Para el chofer»).
+- **`ops/inventario.html`**: botón «🙋 Pedir» en cada ítem, «Pedir algo que no está en la lista», `<details>` «Mis pedidos».
+- **`ops/solicitudes-material.html`**: KPIs (urgentes, por decidir, con el proveedor, para el chofer), pestañas Pendientes / Entregadas
+  / No se compran, filtros (hoy, 🚚 para el chofer, persona), «🚚 Lista para el chofer», «⚙️ Quién atiende» (Oficina / Chofer).
+- **Panel**: mosaico «🙋 Pedidos de material» (badge = `pedida`) y tarjeta solo para urgentes sin decidir.
+- **Push `solicitudMaterialPush`**: nuevo → oficina; `pedido_proveedor` → solicitante; `chofer` → chofer + solicitante; `recogido`
+  → solicitante + oficina; `entregada`/`rechazada` → solicitante; `cancelada` → oficina. Nunca al autor del cambio.
+- **Coordinador**: `pedidosMaterialAbiertos` + regla (urgentes en pedida, >2 días en pedida, >3 días en chofer).
+- Regla `solicitudesMaterial`: read `operativo()`, create/update `oficina() || obra()`, delete admin. Guía `guia-inventario-03`.
+  Adjuntos en Storage bajo `solicitudesMaterial/{id}/` (las reglas de Storage no están en el repo: si la subida falla, revisarlas).
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
 

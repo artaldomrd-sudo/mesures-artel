@@ -439,10 +439,12 @@ exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     } catch (e) { console.error('mensajePush', event.params.id, e); }
 });
 
-// Pedidos de material del equipo (solicitudesMaterial, 2026-11-01). Quién atiende vive en rrhhConfig/solicitudesMaterial
-// { compras:[emails], inventario:[emails], chofer:[emails] } (provisional: Sara compras, Roosevelt inventario Terrenas, Wilson chofer).
-//   · Pedido NUEVO → push a compras + inventario; si es URGENTE («hoy») también a gerencia (admin).
-//   · Cambio de ESTADO → push a quien pidió (y a los que se sumaron), nunca a quien hizo el cambio; «lista» avisa además a quien lo lleva.
+// Pedidos de material del equipo (solicitudesMaterial, 2026-11-01; flujo simplificado 2026-11-02). Quién atiende vive en
+// rrhhConfig/solicitudesMaterial { compras:[emails de oficina: Sara y Dylan], chofer:[emails] }.
+//   · Pedido NUEVO → push a la oficina (compras). Anny queda fuera a propósito (Dylan 2026-11-02).
+//   · pedido_proveedor → quien pidió («la oficina lo pidió al proveedor X»).
+//   · chofer → al chofer (lo compra o lo retira en su ruta; ve los adjuntos en el tablero) y a quien pidió.
+//   · recogido → quien pidió + oficina. entregada / rechazada → quien pidió. cancelada → oficina. Nunca al autor del cambio.
 exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
     const before = event.data.before.exists ? event.data.before.data() : null;
@@ -455,13 +457,9 @@ exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', as
     try {
         const cfgS = await db.collection('rrhhConfig').doc('solicitudesMaterial').get();
         const cfg = cfgS.exists ? cfgS.data() : {};
+        const oficina = (cfg.compras || []).map(bajo), choferes = (cfg.chofer || []).map(bajo);
         if (!before) {
-            let dest = [...(cfg.compras || []), ...(cfg.inventario || [])].map(bajo);
-            if (after.urgencia === 'hoy') {
-                const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().cuentaPrueba !== true && d.data().activo !== false; }).map((d) => bajo(d.id));
-                dest.push(...admins);
-            }
-            dest = [...new Set(dest.filter((e) => e && e !== bajo(after.pedidoPor && after.pedidoPor.email)))];
+            const dest = [...new Set(oficina.filter((e) => e && e !== bajo(after.pedidoPor && after.pedidoPor.email)))];
             const titulo = `🙋 ${quien} pide: ${nombre} × ${cant}`;
             const cuerpo = [URG[after.urgencia] || '', after.obra ? 'obra ' + after.obra : '', after.nota || ''].filter(Boolean).join(' · ').slice(0, 160) || 'Pedido de material';
             for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, url); } catch (_) { } }
@@ -471,18 +469,23 @@ exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', as
         const ult = Array.isArray(after.historial) && after.historial.length ? after.historial[after.historial.length - 1] : {};
         const actor = bajo(ult.email);
         const porNombre = (after.atiende && after.atiende.nombre) || ult.por || 'La oficina';
+        const prov = after.proveedor && after.proveedor.nombre ? after.proveedor.nombre : 'el proveedor';
         const TXT = {
-            vista: `👀 ${porNombre} ya lo vio. Te avisamos cuando se compre.`,
-            comprando: `🛒 ${porNombre} lo está comprando.`,
-            lista: `📦 Listo para recoger${after.lugarCompra ? ' · ' + after.lugarCompra : ''}${after.llevaNombre ? ' · lo lleva ' + after.llevaNombre : ''}${after.notaGestor ? ' · ' + after.notaGestor : ''}`,
+            pedido_proveedor: `📲 ${porNombre} lo pidió a ${prov}. Te avisamos cuando el chofer lo traiga.`,
+            chofer: `🚚 Para el chofer: ${after.notaChofer || (after.proveedor ? 'retirar en ' + prov : 'comprarlo en la próxima ruta')}${Array.isArray(after.fotos) && after.fotos.length ? ' · factura u orden adjunta' : ''}`,
+            recogido: `📦 Recogido${after.recogidoPor ? ' por ' + after.recogidoPor : ''}. Pronto se entrega.`,
             entregada: `✅ Entregado${after.entregadaA ? ' a ' + after.entregadaA : ''}.`,
             rechazada: `✖ No se compra${after.rechazoMotivo ? ': ' + after.rechazoMotivo : ''}`,
             cancelada: `↩ ${quien} canceló este pedido.`,
+            vista: `👀 ${porNombre} ya lo vio.`, comprando: `🛒 ${porNombre} lo está comprando.`, lista: `📦 Listo para recoger.`,
         };
         const cuerpo = TXT[after.estado]; if (!cuerpo) return;
-        let dest = [bajo(after.pedidoPor && after.pedidoPor.email), ...((after.sumados || []).map((x) => bajo(x.email)))];
-        if (after.estado === 'lista' && after.llevaEmail) dest.push(bajo(after.llevaEmail));
-        if (after.estado === 'cancelada') dest.push(...[...(cfg.compras || []), ...(cfg.inventario || [])].map(bajo));
+        const solicitante = [bajo(after.pedidoPor && after.pedidoPor.email), ...((after.sumados || []).map((x) => bajo(x.email)))];
+        let dest = [];
+        if (after.estado === 'chofer') dest = [...choferes, ...solicitante];
+        else if (after.estado === 'recogido') dest = [...solicitante, ...oficina];
+        else if (after.estado === 'cancelada') dest = oficina;
+        else dest = solicitante;
         dest = [...new Set(dest.filter((e) => e && e !== actor))];
         for (const em of dest) { try { await enviarPushUsuario(em, `${nombre} × ${cant}`, cuerpo.slice(0, 160), url); } catch (_) { } }
     } catch (e) { console.error('solicitudMaterialPush', event.params.id, e); }

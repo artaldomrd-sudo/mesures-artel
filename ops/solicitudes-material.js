@@ -1,31 +1,35 @@
-// Pedidos de material y herramientas del equipo a la oficina (2026-11-01, Dylan: «me envían todo por WhatsApp o me lo
-// dicen de boca, no puedo seguir así»). Colección `solicitudesMaterial`. Lo comparten:
+// Pedidos de material y herramientas del equipo a la oficina (2026-11-01; flujo simplificado 2026-11-02 a pedido de Dylan: «más
+// fluidez, está muy complejo»). Colección `solicitudesMaterial`. Lo comparten:
 //   · inventario.html → botón «🙋 Pedir» en cada ítem + «Pedir algo que no está en la lista» + sección «Mis pedidos».
-//   · solicitudes-material.html → tablero de la oficina (Sara = compras, Roosevelt = inventario Terrenas, Wilson = chofer;
-//     todo provisional, se cambia en `rrhhConfig/solicitudesMaterial` sin tocar código).
-//   · index.html (Panel) → mosaico con badge + tarjeta de notificación solo para lo URGENTE (gerencia).
-// Reglas del flujo: el pedido tiene estado y dueño; la oficina lo marca «Visto» el mismo día aunque no se compre todavía;
-// el que pidió ve en qué va sin preguntar. Nada de obra obligatoria ni costeo por obra (regla de Dylan 2026-10-27).
+//   · solicitudes-material.html → tablero de la oficina (Sara y Dylan) y del chofer (Wilson); quién es quién se configura en
+//     `rrhhConfig/solicitudesMaterial` { compras:[emails oficina], chofer:[emails] } sin tocar código.
+//   · index.html (Panel) → mosaico con badge + tarjeta de notificación solo para lo URGENTE.
+// FLUJO: el equipo pide porque sabe que falta (nadie verifica stock; eso vendrá cuando haya una persona dedicada al almacén).
+//   pedida → la oficina elige: 📲 «Pedir al proveedor por WhatsApp» (abre WhatsApp con el pedido; estado pedido_proveedor; luego
+//   sube la factura u orden de compra y «Enviar al chofer») o 🚚 «Pasar directo al chofer» (compra en persona; estado chofer).
+//   chofer → el chofer ve el pedido con sus adjuntos, lo compra/retira en su ruta y marca «Recogido» → la oficina o él marcan
+//   «Entregada» (con entrada al inventario si el pedido venía de un ítem). «No se compra» exige motivo.
+// Estados viejos (vista, comprando, lista) se siguen mostrando por compatibilidad pero ya no se crean.
 import { db } from './firebase-config.js';
 import {
     collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDoc, increment, serverTimestamp, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
 
 export const COL = 'solicitudesMaterial';
-export const ESTADOS = ['pedida', 'vista', 'comprando', 'lista', 'entregada', 'rechazada', 'cancelada'];
-export const ABIERTOS = ['pedida', 'vista', 'comprando', 'lista'];
+export const ESTADOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'entregada', 'rechazada', 'cancelada', 'vista', 'comprando', 'lista'];
+export const ABIERTOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'vista', 'comprando', 'lista'];
 export const ESTADO_TXT = {
-    pedida: 'Pedida', vista: 'Vista por la oficina', comprando: 'Comprando', lista: 'Lista para recoger',
-    entregada: 'Entregada', rechazada: 'No se compra', cancelada: 'Cancelada por quien la pidió'
+    pedida: 'Pedida', pedido_proveedor: 'Pedida al proveedor', chofer: 'Para el chofer', recogido: 'Recogido',
+    entregada: 'Entregada', rechazada: 'No se compra', cancelada: 'Cancelada por quien la pidió',
+    vista: 'Vista por la oficina', comprando: 'Comprando', lista: 'Lista para recoger'
 };
-export const ESTADO_ICO = { pedida: '🙋', vista: '👀', comprando: '🛒', lista: '📦', entregada: '✅', rechazada: '✖', cancelada: '↩' };
-export const ESTADO_COLOR = { pedida: '#e67e22', vista: '#2980b9', comprando: '#8e44ad', lista: '#16a085', entregada: '#27ae60', rechazada: '#c0392b', cancelada: '#95a5a6' };
+export const ESTADO_ICO = { pedida: '🙋', pedido_proveedor: '📲', chofer: '🚚', recogido: '📦', entregada: '✅', rechazada: '✖', cancelada: '↩', vista: '👀', comprando: '🛒', lista: '📦' };
+export const ESTADO_COLOR = { pedida: '#e67e22', pedido_proveedor: '#2980b9', chofer: '#8e44ad', recogido: '#16a085', entregada: '#27ae60', rechazada: '#c0392b', cancelada: '#95a5a6', vista: '#2980b9', comprando: '#8e44ad', lista: '#16a085' };
 export const URGENCIAS = { hoy: '🔥 Hoy (no puedo seguir sin esto)', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
 export const URGENCIA_CORTA = { hoy: '🔥 Hoy', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
-export const ORIGEN_DINERO = { caja_chica: 'Caja chica', tarjeta: 'Tarjeta', transferencia: 'Transferencia', credito: 'Crédito del proveedor', otro: 'Otro' };
 // Unidades de pedido (lo que se cuenta o el empaque): la lista fija + lo que diga el ítem del inventario (unidad o empaque).
 export const UNIDADES = ['unidades', 'fundas', 'paquetes', 'cajas', 'rollos', 'bultos', 'sacos', 'latas', 'galones', 'tubos', 'barras', 'metros', 'pies', 'pares', 'juegos'];
-export const LUGARES = ['Ferretería Las Terrenas', 'Santo Domingo', 'Pedido al proveedor', 'Ya lo teníamos en inventario', 'Otro'];
 
 const plur = (e) => { e = String(e || '').trim(); return !e || /s$/.test(e) ? e : (/[aeo]$/.test(e) ? e + 's' : e + 'es'); };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -41,9 +45,10 @@ export function hace(iso) {
 const fechaCorta = (iso) => { const t = toMs(iso); return t > 0 ? new Date(t).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''; };
 export const nombreDe = (s) => (s.itemTipo ? s.itemTipo + (s.itemColor ? ' — ' + s.itemColor : '') : (s.texto || 'Sin nombre'));
 export const cantidadTxt = (s) => `${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`;
+const telWa = (t) => { const d = String(t || '').replace(/\D/g, ''); return d.length === 10 ? '1' + d : d; };
 
 // ---------- configuración de quién atiende (provisional; editable en el tablero por gerencia) ----------
-// rrhhConfig/solicitudesMaterial = { compras: [emails], inventario: [emails], chofer: [emails] }
+// rrhhConfig/solicitudesMaterial = { compras: [emails de oficina], chofer: [emails] }  (`inventario` queda reservado para el futuro encargado de almacén)
 let cfgCache = { compras: [], inventario: [], chofer: [] };
 export function escucharConfig(onChange) {
     return onSnapshot(doc(db, 'rrhhConfig', 'solicitudesMaterial'), (s) => {
@@ -53,7 +58,7 @@ export function escucharConfig(onChange) {
     }, () => { onChange && onChange(cfgCache); });
 }
 export const configActual = () => cfgCache;
-// Gestiona = gerencia/oficina (admin o quien entra sin rol de obra, p. ej. Sara) o quien está en las listas de compras/inventario.
+// Oficina (gestiona) = gerencia/oficina (admin o quien entra sin rol de obra, p. ej. Sara) o quien está en la lista de compras.
 export function esGestor(usuario, cfg = cfgCache) {
     const roles = usuario.roles || [];
     if (roles.includes('admin')) return true;
@@ -63,8 +68,18 @@ export function esGestor(usuario, cfg = cfgCache) {
 }
 export function rolEn(usuario, cfg = cfgCache) {
     const em = (usuario.email || '').toLowerCase(), has = (l) => (l || []).map(e => String(e).toLowerCase()).includes(em);
-    return { compras: has(cfg.compras), inventario: has(cfg.inventario), chofer: has(cfg.chofer) };
+    return { compras: has(cfg.compras), inventario: has(cfg.inventario), chofer: has(cfg.chofer) || (usuario.roles || []).includes('chofer') };
 }
+// Proveedores con teléfono: la misma lista de `rrhhConfig/contratistasExternos` que usa Fábrica interna (suplidor-wa.js).
+let provCache = [];
+export function escucharProveedores(onChange) {
+    return onSnapshot(doc(db, 'rrhhConfig', 'contratistasExternos'), (s) => {
+        const l = s.exists() && Array.isArray(s.data().lista) ? s.data().lista : [];
+        provCache = l.filter(p => p && p.activo !== false && p.nombre).map(p => ({ id: p.id || p.nombre, nombre: p.nombre + (p.empresa && p.empresa !== p.nombre ? ' (' + p.empresa + ')' : ''), telefono: p.telefono || '' }));
+        onChange && onChange(provCache);
+    }, () => { onChange && onChange(provCache); });
+}
+export const proveedoresActuales = () => provCache;
 
 // ---------- suscripción ----------
 // Abiertas + cerradas de los últimos 14 días (por `fechaISO`, string ISO → se puede comparar).
@@ -73,10 +88,10 @@ export function escucharSolicitudes(onChange) {
     const todas = { abiertas: [], recientes: [] };
     const emitir = () => {
         const m = new Map(); [...todas.abiertas, ...todas.recientes].forEach(s => m.set(s.id, s));
-        const arr = [...m.values()].sort((a, b) => (b.fechaISO || '').localeCompare(a.fechaISO || ''));
+        const arr = [...m.values()].sort((a, b) => String(b.fechaISO || '').localeCompare(String(a.fechaISO || '')));
         onChange(arr);
     };
-    const u1 = onSnapshot(query(collection(db, COL), where('estado', 'in', ABIERTOS)), (snap) => { todas.abiertas = snap.docs.map(d => ({ id: d.id, ...d.data() })); emitir(); }, (e) => { console.warn('solicitudes abiertas', e && e.code); onChange([]); });
+    const u1 = onSnapshot(query(collection(db, COL), where('estado', 'in', ABIERTOS.slice(0, 10))), (snap) => { todas.abiertas = snap.docs.map(d => ({ id: d.id, ...d.data() })); emitir(); }, (e) => { console.warn('solicitudes abiertas', e && e.code); onChange([]); });
     const u2 = onSnapshot(query(collection(db, COL), where('fechaISO', '>=', desde)), (snap) => { todas.recientes = snap.docs.map(d => ({ id: d.id, ...d.data() })); emitir(); }, () => { });
     return () => { u1(); u2(); };
 }
@@ -91,7 +106,7 @@ export async function crearSolicitud(usuario, datos) {
         cantidad: Number(datos.cantidad) || 1, urgencia: URGENCIAS[datos.urgencia] ? datos.urgencia : 'semana',
         nota: (datos.nota || '').trim(), obra: (datos.obra || '').trim(),
         pedidoPor: { nombre: usuario.nombre || '', email: usuario.email || '' },
-        fecha: serverTimestamp(), fechaISO: ahoraISO(), sumados: [], atiende: null, precio: null, origenDinero: null, lugarCompra: null,
+        fecha: serverTimestamp(), fechaISO: ahoraISO(), sumados: [], atiende: null, precio: null, proveedor: null, notaChofer: null,
         historial: [entradaHistorial('pedida', usuario, '')], fotos: []
     };
     if (!s.texto && !s.itemTipo) throw new Error('Escribe qué necesitas.');
@@ -109,11 +124,8 @@ export async function sumarse(id, usuario, cantidad) {
 export async function cambiarEstado(id, estado, usuario, extra = {}, nota = '') {
     if (!ESTADOS.includes(estado)) throw new Error('Estado inválido');
     const cambios = { estado, [estado + 'Fecha']: ahoraISO(), historial: arrayUnion(entradaHistorial(estado, usuario, nota)), ...extra };
-    if (['vista', 'comprando', 'lista', 'entregada', 'rechazada'].includes(estado) && !extra.atiende) cambios.atiende = { nombre: usuario.nombre || '', email: usuario.email || '' };
+    if (['pedido_proveedor', 'chofer', 'rechazada'].includes(estado) && !extra.atiende) cambios.atiende = { nombre: usuario.nombre || '', email: usuario.email || '' };
     await updateDoc(doc(db, COL, id), cambios);
-}
-export async function guardarGestion(id, usuario, campos) {
-    await updateDoc(doc(db, COL, id), { ...campos, historial: arrayUnion(entradaHistorial('nota', usuario, 'Datos de compra actualizados')) });
 }
 // Entregada + entrada al inventario (si el pedido venía de un ítem del catálogo): suma la cantidad comprada y deja el
 // movimiento `restock` como lo hace «Agregar stock» de inventario.html.
@@ -124,15 +136,21 @@ export async function darEntradaInventario(s, usuario, cantidad, costoU) {
     await updateDoc(doc(db, 'inventario', s.itemId), cambios);
     await addDoc(collection(db, 'movimientosInventario'), {
         itemId: s.itemId, itemTipo: s.itemTipo, itemColor: s.itemColor || null, tipo: 'restock', cantidad: n,
-        nota: 'Compra por pedido del equipo (' + (s.pedidoPor && s.pedidoPor.nombre || '') + ')' + (s.lugarCompra ? ' · ' + s.lugarCompra : ''),
-        costoUnitario: costoU || null, proveedor: s.lugarCompra || null, ncf: null, solicitudId: s.id,
+        nota: 'Compra por pedido del equipo (' + (s.pedidoPor && s.pedidoPor.nombre || '') + ')' + (s.proveedor && s.proveedor.nombre ? ' · ' + s.proveedor.nombre : ''),
+        costoUnitario: costoU || null, proveedor: s.proveedor && s.proveedor.nombre || null, ncf: null, solicitudId: s.id,
         usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
     });
     await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, costoUnitario: costoU || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
 }
+// Texto del pedido para el proveedor (WhatsApp). Nunca precios, teléfonos de clientes ni anticipos.
+export function mensajeProveedor(s, nombreProv) {
+    const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', `Pedido: ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}.`];
+    if (s.urgencia === 'hoy') l.push('Lo necesitamos hoy.'); else if (s.urgencia === 'semana') l.push('Lo necesitamos esta semana.');
+    l.push('', '¿Tiene disponible y a qué precio? Lo retira nuestro chofer; por favor envíenos la factura u orden por aquí.', '', 'Gracias.');
+    return l.join('\n');
+}
 
 // ---------- UI compartida: modal «Pedir» ----------
-// `getItem(id)` devuelve el ítem del inventario (para el nombre/unidad) o null si es texto libre.
 let _usuario = null, _getItem = () => null, _onCreada = null, _matchItem = () => null;
 // `matchItem(texto)` (opcional): en el tablero, si el texto libre coincide con un ítem del inventario, se liga a él.
 export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
@@ -163,7 +181,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
           <button type="button" onclick="solCerrarPedir()" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:10px 14px;font-family:inherit;font-weight:bold;cursor:pointer;">Cancelar</button>
           <button type="button" id="sol-guardar" onclick="solGuardarPedir()" style="background:#e67e22;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-family:inherit;font-weight:bold;cursor:pointer;">Enviar pedido</button>
         </div>
-        <div style="font-size:11.5px;color:#778;margin-top:10px;">La oficina lo ve al instante y lo marca «Visto», «Comprando», «Lista para recoger»… Tú ves el estado en «Mis pedidos».</div>
+        <div style="font-size:11.5px;color:#778;margin-top:10px;">A la oficina le llega al instante; lo pide al proveedor o se lo pasa al chofer, y tú ves el estado en «Mis pedidos».</div>
       </div>
     </div>`);
     let itemSel = null;
@@ -173,7 +191,6 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
         document.getElementById('sol-pedir-libre').style.display = itemSel ? 'none' : 'block';
         document.getElementById('sol-texto').value = ''; document.getElementById('sol-cant').value = 1;
         const selU = document.getElementById('sol-unidad'), otroU = document.getElementById('sol-unidad-otro');
-        // opciones: la lista fija + la unidad y el empaque del ítem si no están
         const extra = itemSel ? [itemSel.unidad, itemSel.empaque ? plur(itemSel.empaque) : ''].filter(u => u && !UNIDADES.includes(u)) : [];
         selU.innerHTML = UNIDADES.concat(extra).map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('') + '<option value="otro">otra…</option>';
         const pref = itemSel ? (itemSel.empaque && Number(itemSel.porCaja) > 0 ? plur(itemSel.empaque) : (itemSel.unidad || 'unidades')) : 'unidades';
@@ -194,7 +211,8 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
                 texto: itemSel ? '' : document.getElementById('sol-texto').value,
                 itemId: itemSel ? itemSel.id : null, itemTipo: itemSel ? itemSel.tipo : null, itemColor: itemSel ? (itemSel.color || null) : null,
                 categoria: itemSel ? (itemSel.categoria || null) : null,
-                unidad: document.getElementById('sol-unidad').value === 'otro' ? (document.getElementById('sol-unidad-otro').value.trim() || 'unidades') : document.getElementById('sol-unidad').value, cantidad: document.getElementById('sol-cant').value, urgencia: urg,
+                unidad: document.getElementById('sol-unidad').value === 'otro' ? (document.getElementById('sol-unidad-otro').value.trim() || 'unidades') : document.getElementById('sol-unidad').value,
+                cantidad: document.getElementById('sol-cant').value, urgencia: urg,
                 nota: document.getElementById('sol-nota').value, obra: document.getElementById('sol-obra').value
             });
             window.solCerrarPedir(); _onCreada && _onCreada(id);
@@ -203,7 +221,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
 }
 
 // ---------- tarjeta de un pedido (la misma en «Mis pedidos» y en el tablero) ----------
-// opts: { usuario, gestor:bool, compacta:bool }
+// opts: { usuario, gestor:bool (oficina), chofer:bool }
 export function solicitudCardHTML(s, opts) {
     const u = opts.usuario, mia = s.pedidoPor && s.pedidoPor.email === u.email;
     const abierta = ABIERTOS.includes(s.estado);
@@ -214,19 +232,24 @@ export function solicitudCardHTML(s, opts) {
     const estadoLinea = `<span style="display:inline-block;background:${color};color:#fff;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:bold;">${ESTADO_ICO[s.estado] || ''} ${esc(ESTADO_TXT[s.estado] || s.estado)}</span>` +
         (s.atiende && s.atiende.nombre && s.estado !== 'pedida' ? ` <span style="font-size:12px;color:#556">· ${esc(s.atiende.nombre)}</span>` : '') +
         (ult && ult.fechaISO ? ` <span style="font-size:12px;color:#889">· ${hace(ult.fechaISO)}</span>` : '');
+    const puedeAdjuntar = (opts.gestor || opts.chofer) && ['pedido_proveedor', 'chofer', 'recogido'].includes(s.estado);
     const detalle = [
         s.nota ? `📝 ${esc(s.nota)}` : '', s.obra ? `🏗️ ${esc(s.obra)}` : '',
-        s.lugarCompra ? `🛒 ${esc(s.lugarCompra)}` : '', s.precio != null && s.precio !== '' ? `💲 RD$ ${Number(s.precio).toLocaleString('es-DO')}${s.origenDinero ? ' · ' + esc(ORIGEN_DINERO[s.origenDinero] || s.origenDinero) : ''}` : '',
-        s.notaGestor ? `🏢 ${esc(s.notaGestor)}` : '', s.estado === 'rechazada' && s.rechazoMotivo ? `✖ Motivo: ${esc(s.rechazoMotivo)}` : '',
-        s.entregadaA ? `📬 Entregado a ${esc(s.entregadaA)}` : '', s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : '',
-        s.llevaNombre ? `🚚 Lo lleva ${esc(s.llevaNombre)}` : ''
+        s.proveedor && s.proveedor.nombre ? `📲 Pedido a ${esc(s.proveedor.nombre)}${s.proveedor.telefono ? ' · ' + esc(s.proveedor.telefono) : ''}` : '',
+        s.notaChofer ? `🚚 Para el chofer: ${esc(s.notaChofer)}` : '',
+        s.precio != null && s.precio !== '' ? `💲 RD$ ${Number(s.precio).toLocaleString('es-DO')}` : '',
+        s.estado === 'rechazada' && s.rechazoMotivo ? `✖ Motivo: ${esc(s.rechazoMotivo)}` : '',
+        s.recogidoPor ? `📦 Recogido por ${esc(s.recogidoPor)}` : '', s.entregadaA ? `📬 Entregado a ${esc(s.entregadaA)}` : '',
+        s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : ''
     ].filter(Boolean).map(t => `<div style="font-size:13px;color:#445;margin-top:3px;">${t}</div>`).join('');
+    const adjuntos = (Array.isArray(s.fotos) && s.fotos.length) || puedeAdjuntar
+        ? `<div style="margin-top:6px;">${fotosThumbsHTML(s.fotos, { coleccion: COL, id: s.id, puedeBorrar: !!opts.gestor })}${puedeAdjuntar ? fotoAddBtnHTML({ coleccion: COL, id: s.id, label: '📎 Factura u orden de compra (foto o PDF)', pdf: true }) : ''}</div>` : '';
     const urgCol = s.urgencia === 'hoy' ? '#c0392b' : s.urgencia === 'semana' ? '#b9770e' : '#7f8c8d';
     let acciones = '';
     if (abierta) {
-        if (!opts.gestor && !mia) acciones += `<button onclick="solSumarse('${s.id}')" style="background:#f0f4f8;color:#0A3D62;border:1.5px solid #cfd8e3;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:13px;font-family:inherit;cursor:pointer;">➕ Yo también lo necesito</button>`;
+        if (!opts.gestor && !opts.chofer && !mia) acciones += `<button onclick="solSumarse('${s.id}')" style="background:#f0f4f8;color:#0A3D62;border:1.5px solid #cfd8e3;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:13px;font-family:inherit;cursor:pointer;">➕ Yo también lo necesito</button>`;
         if (mia && s.estado === 'pedida') acciones += `<button onclick="solCancelar('${s.id}')" style="background:transparent;color:#888;border:1.5px solid #ddd;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">Ya no hace falta</button>`;
-        if (opts.gestor) acciones += gestorAccionesHTML(s);
+        acciones += accionesHTML(s, opts);
     }
     return `<div class="sol-card" id="sol-${s.id}" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:12px 14px;border-left:6px solid ${color};margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;">
@@ -235,30 +258,36 @@ export function solicitudCardHTML(s, opts) {
         </div>
         <div style="font-size:12.5px;color:#667;margin-top:3px;">${mia ? 'Pediste tú' : 'Pidió ' + esc(quien)}${sum} · ${esc(fechaCorta(s.fechaISO))}</div>
         <div style="margin-top:6px;">${estadoLinea}</div>
-        ${detalle}
+        ${detalle}${adjuntos}
         ${acciones ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${acciones}</div>` : ''}
         <div id="sol-form-${s.id}"></div>
     </div>`;
 }
-function gestorAccionesHTML(s) {
-    const b = (txt, fn, bg) => `<button onclick="${fn}" style="background:${bg};color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:13px;font-family:inherit;cursor:pointer;">${txt}</button>`;
+function accionesHTML(s, opts) {
+    const b = (txt, fn, bg, title) => `<button onclick="${fn}" title="${esc(title || '')}" style="background:${bg};color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:13px;font-family:inherit;cursor:pointer;">${txt}</button>`;
     let h = '';
-    if (s.estado === 'pedida') h += b('👀 Visto', `solEstado('${s.id}','vista')`, '#2980b9');
-    if (['pedida', 'vista'].includes(s.estado)) h += b('🛒 Comprando', `solEstado('${s.id}','comprando')`, '#8e44ad');
-    if (['pedida', 'vista', 'comprando'].includes(s.estado)) h += b('📦 Lista para recoger', `solForm('${s.id}','lista')`, '#16a085');
-    if (s.estado !== 'entregada') h += b('✅ Entregada', `solForm('${s.id}','entregada')`, '#27ae60');
-    if (['pedida', 'vista'].includes(s.estado)) h += b('✖ No se compra', `solForm('${s.id}','rechazada')`, '#c0392b');
-    h += `<button onclick="solForm('${s.id}','datos')" style="background:#f0f4f8;color:#0A3D62;border:1.5px solid #cfd8e3;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:13px;font-family:inherit;cursor:pointer;">💲 Precio / dónde</button>`;
+    if (opts.gestor) {
+        if (['pedida', 'vista', 'comprando'].includes(s.estado)) {
+            h += b('📲 Pedir al proveedor', `solForm('${s.id}','proveedor')`, '#2980b9', 'Abre WhatsApp con el pedido al proveedor');
+            h += b('🚚 Pasar al chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'Se compra en persona: el chofer lo trae en su próxima ruta');
+            h += b('✖ No se compra', `solForm('${s.id}','rechazada')`, '#c0392b');
+        }
+        if (s.estado === 'pedido_proveedor') h += b('🚚 Enviar al chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'El chofer lo retira con la factura u orden adjunta');
+        if (['pedido_proveedor', 'lista'].includes(s.estado)) h += b('✅ Entregada', `solForm('${s.id}','entregada')`, '#27ae60', 'Lo trajo el proveedor o lo recogió la oficina');
+    }
+    if ((opts.gestor || opts.chofer) && s.estado === 'chofer') h += b('📦 Recogido / comprado', `solForm('${s.id}','recogido')`, '#16a085');
+    if ((opts.gestor || opts.chofer) && s.estado === 'recogido') h += b('✅ Entregada', `solForm('${s.id}','entregada')`, '#27ae60');
     return h;
 }
 
-// Handlers del tablero y de «Mis pedidos». `getSolicitud(id)` devuelve el doc en caché. `choferes` = [{email,nombre}] para «¿quién lo lleva?».
-export function montarAcciones({ usuario, getSolicitud, getChoferes }) {
+// Handlers del tablero y de «Mis pedidos». `getSolicitud(id)` devuelve el doc en caché.
+export function montarAcciones({ usuario, getSolicitud }) {
     const inp = (id, ph, type = 'text', val = '') => `<input type="${type}" id="${id}" placeholder="${esc(ph)}" value="${esc(val)}" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;">`;
-    const sel = (id, opciones, val) => `<select id="${id}" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;">${opciones.map(([v, t]) => `<option value="${esc(v)}" ${v === val ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+    const sel = (id, opciones, val, onchange = '') => `<select id="${id}" ${onchange ? `onchange="${onchange}"` : ''} style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;">${opciones.map(([v, t]) => `<option value="${esc(v)}" ${v === val ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
     const caja = (id, inner, okTxt, okFn, okBg) => `<div style="background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:10px;display:grid;gap:8px;">${inner}
-        <div style="display:flex;gap:8px;justify-content:flex-end;"><button onclick="document.getElementById('sol-form-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:bold;cursor:pointer;">Cancelar</button>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="document.getElementById('sol-form-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:bold;cursor:pointer;">Cancelar</button>
         <button onclick="${okFn}" style="background:${okBg};color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:bold;cursor:pointer;">${okTxt}</button></div></div>`;
+    const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
     window.solSumarse = async (id) => {
         const n = prompt('¿Cuántos necesitas tú? (se suman al pedido)', '1'); if (n == null) return;
         try { await sumarse(id, usuario, n); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
@@ -267,79 +296,82 @@ export function montarAcciones({ usuario, getSolicitud, getChoferes }) {
         if (!confirm('¿Cancelar este pedido?')) return;
         try { await cambiarEstado(id, 'cancelada', usuario, {}, 'Cancelado por quien lo pidió'); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
-    window.solEstado = async (id, estado) => {
-        try { await cambiarEstado(id, estado, usuario); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
-    };
     window.solForm = (id, tipo) => {
         const s = getSolicitud(id); if (!s) return; const box = document.getElementById('sol-form-' + id); if (!box) return;
-        const lugares = LUGARES.map(l => [l, l]);
-        if (tipo === 'lista') {
-            const chs = (getChoferes ? getChoferes() : []).map(c => [c.email, c.nombre]);
-            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">📦 Lista para recoger</div>
-                <label style="font-size:12px;">¿Dónde está?</label>${sel('sf-lugar-' + id, [['', '— elegir —'], ...lugares], s.lugarCompra || '')}
-                ${chs.length ? `<label style="font-size:12px;">¿Quién lo lleva? (opcional, le avisa)</label>${sel('sf-lleva-' + id, [['', 'Lo recoge quien lo pidió'], ...chs], '')}` : ''}
-                <label style="font-size:12px;">Nota para el equipo (opcional)</label>${inp('sf-nota-' + id, 'Ej: está en la oficina, en la caja azul')}`,
-                'Marcar lista', `solOkLista('${id}')`, '#16a085');
+        if (tipo === 'proveedor') {
+            const provs = proveedoresActuales();
+            const opciones = [['', '— elegir proveedor —'], ...provs.map(p => [p.id, p.nombre + (p.telefono ? ' · ' + p.telefono : ' · sin teléfono')]), ['otro', 'Otro número…']];
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">📲 Pedir al proveedor por WhatsApp</div>
+                <label style="font-size:12px;">Proveedor</label>${sel('sf-prov-' + id, opciones, '', `document.getElementById('sf-provotro-${id}').style.display = this.value === 'otro' ? 'grid' : 'none'`)}
+                <div id="sf-provotro-${id}" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Nombre</label>${inp('sf-provnom-' + id, 'Ferretería X')}</div><div><label style="font-size:12px;">WhatsApp (10 dígitos)</label>${inp('sf-provtel-' + id, '8095551234', 'tel')}</div></div>
+                <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="sf-msg-${id}" rows="6" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;">${esc(mensajeProveedor(s, ''))}</textarea>
+                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú. El pedido queda «Pedida al proveedor». Cuando el proveedor mande la factura u orden, adjúntala aquí y pásala al chofer.</div>`,
+                'Abrir WhatsApp y marcar', `solOkProveedor('${id}')`, '#2980b9');
+        } else if (tipo === 'chofer') {
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">🚚 ${s.estado === 'pedido_proveedor' ? 'Enviar al chofer para retirarlo' : 'Pasar directo al chofer'}</div>
+                <label style="font-size:12px;">${s.estado === 'pedido_proveedor' ? 'Dónde lo retira y qué debe presentar' : 'Dónde comprarlo y qué pedir exactamente'}</label>${inp('sf-nc-' + id, s.estado === 'pedido_proveedor' ? 'Ej: en el proveedor, ya está pagado; mostrar la orden adjunta' : 'Ej: ferretería de la 27, pedir la caja de 100', 'text', s.notaChofer || '')}
+                <div style="font-size:11.5px;color:#778;">Al chofer le llega un aviso. Lo trae en su próxima ruta y marca «Recogido». ${(Array.isArray(s.fotos) && s.fotos.length) ? 'Verá los adjuntos.' : 'Si hay factura u orden de compra, adjúntala en la tarjeta antes o después.'}</div>`,
+                'Pasar al chofer', `solOkChofer('${id}')`, '#8e44ad');
+        } else if (tipo === 'recogido') {
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">📦 Recogido / comprado</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Precio pagado (RD$, opcional)</label>${inp('sf-precio-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div><div><label style="font-size:12px;">Nota (opcional)</label>${inp('sf-nr-' + id, 'Ej: solo había 80')}</div></div>
+                <div style="font-size:11.5px;color:#778;">Avisa a quien lo pidió y a la oficina. Cuando se lo entregues, marca «Entregada».</div>`,
+                'Marcar recogido', `solOkRecogido('${id}')`, '#16a085');
         } else if (tipo === 'entregada') {
             const conInv = !!s.itemId;
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">✅ Entregada</div>
-                <label style="font-size:12px;">¿A quién se le entregó?</label>${inp('sf-a-' + id, 'Nombre', 'text', s.pedidoPor ? s.pedidoPor.nombre : '')}
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">¿A quién se le entregó?</label>${inp('sf-a-' + id, 'Nombre', 'text', s.pedidoPor ? s.pedidoPor.nombre : '')}</div><div><label style="font-size:12px;">Precio pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div></div>
                 ${conInv ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sf-inv-${id}" checked> Dar entrada al inventario (${esc(nombreDe(s))})</label>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Cantidad que entra</label>${inp('sf-invcant-' + id, '', 'number', String(Number(s.cantidad) || 1))}</div><div><label style="font-size:12px;">Costo por ${esc(s.unidad || 'unidad')} (opcional)</label>${inp('sf-invcosto-' + id, '0', 'number', '')}</div></div>
-                <div style="font-size:11.5px;color:#778;">Si lo que compraste va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">Este pedido no está ligado a un ítem del inventario. Si debe quedar en stock, créalo en Inventario y dale entrada ahí.</div>`}`,
+                <div style="font-size:11.5px;color:#778;">Si va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">Este pedido no está ligado a un ítem del inventario. Si debe quedar en stock, créalo en Inventario y dale entrada ahí.</div>`}`,
                 'Confirmar entrega', `solOkEntregada('${id}')`, '#27ae60');
         } else if (tipo === 'rechazada') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#c0392b;">✖ No se compra</div>
                 <label style="font-size:12px;">Motivo (lo ve quien lo pidió)</label>${inp('sf-motivo-' + id, 'Ej: ya hay uno en el bulto del equipo 2 / se compra con el próximo pedido grande')}`,
                 'Confirmar', `solOkRechazada('${id}')`, '#c0392b');
-        } else if (tipo === 'datos') {
-            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">💲 Precio y lugar de compra (opcional)</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Precio pagado (RD$)</label>${inp('sf-precio-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div>
-                <div><label style="font-size:12px;">De dónde salió</label>${sel('sf-origen-' + id, [['', '—'], ...Object.entries(ORIGEN_DINERO)], s.origenDinero || '')}</div></div>
-                <label style="font-size:12px;">Dónde se compró</label>${sel('sf-lugar2-' + id, [['', '— elegir —'], ...lugares], s.lugarCompra || '')}
-                <label style="font-size:12px;">Nota de la oficina (opcional)</label>${inp('sf-ng-' + id, 'Ej: pedido al proveedor, llega el martes', 'text', s.notaGestor || '')}`,
-                'Guardar', `solOkDatos('${id}')`, '#0A3D62');
         }
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
-    const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-    window.solOkLista = async (id) => {
-        const lleva = v('sf-lleva-' + id), ch = (getChoferes ? getChoferes() : []).find(c => c.email === lleva);
-        try { await cambiarEstado(id, 'lista', usuario, { lugarCompra: v('sf-lugar-' + id) || null, notaGestor: v('sf-nota-' + id) || null, llevaEmail: ch ? ch.email : null, llevaNombre: ch ? ch.nombre : null }, v('sf-nota-' + id)); }
-        catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    window.solOkProveedor = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        const pid = v('sf-prov-' + id); let prov = null;
+        if (pid === 'otro') { prov = { id: null, nombre: v('sf-provnom-' + id).trim() || 'Proveedor', telefono: v('sf-provtel-' + id).trim() }; }
+        else { const p = proveedoresActuales().find(x => x.id === pid); if (!p) { alert('Elige el proveedor.'); return; } prov = { id: p.id, nombre: p.nombre, telefono: p.telefono }; }
+        const tel = telWa(prov.telefono); if (!tel) { alert('Ese proveedor no tiene WhatsApp cargado. Elige «Otro número…» y escríbelo.'); return; }
+        const msg = v('sf-msg-' + id) || mensajeProveedor(s, prov.nombre);
+        window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), '_blank');
+        try { await cambiarEstado(id, 'pedido_proveedor', usuario, { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' } }, 'Pedido a ' + prov.nombre + ' por WhatsApp'); }
+        catch (e) { alert('No se pudo marcar: ' + (e.message || e)); }
+    };
+    window.solOkChofer = async (id) => {
+        try { await cambiarEstado(id, 'chofer', usuario, { notaChofer: v('sf-nc-' + id).trim() || null }, v('sf-nc-' + id)); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+    window.solOkRecogido = async (id) => {
+        const p = v('sf-precio-' + id);
+        try { await cambiarEstado(id, 'recogido', usuario, { recogidoPor: usuario.nombre || '', ...(p !== '' ? { precio: Number(p) } : {}) }, v('sf-nr-' + id)); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkEntregada = async (id) => {
         const s = getSolicitud(id); if (!s) return;
-        const chk = document.getElementById('sf-inv-' + id);
+        const chk = document.getElementById('sf-inv-' + id); const p = v('sf-precio2-' + id);
         try {
             if (chk && chk.checked) await darEntradaInventario(s, usuario, v('sf-invcant-' + id), Number(v('sf-invcosto-' + id)) || 0);
-            await cambiarEstado(id, 'entregada', usuario, { entregadaA: v('sf-a-' + id) || null });
+            await cambiarEstado(id, 'entregada', usuario, { entregadaA: v('sf-a-' + id) || null, ...(p !== '' ? { precio: Number(p) } : {}) });
         } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkRechazada = async (id) => {
         const m = (v('sf-motivo-' + id) || '').trim(); if (!m) { alert('Escribe el motivo: quien pidió tiene que entenderlo.'); return; }
         try { await cambiarEstado(id, 'rechazada', usuario, { rechazoMotivo: m }, m); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
-    window.solOkDatos = async (id) => {
-        const p = v('sf-precio-' + id);
-        try { await guardarGestion(id, usuario, { precio: p === '' ? null : Number(p), origenDinero: v('sf-origen-' + id) || null, lugarCompra: v('sf-lugar2-' + id) || null, notaGestor: v('sf-ng-' + id) || null }); document.getElementById('sol-form-' + id).innerHTML = ''; }
-        catch (e) { alert('No se pudo: ' + (e.message || e)); }
-    };
 }
 
-// ---------- lista de compras (texto para copiar / WhatsApp) ----------
-export function listaDeComprasTxt(solicitudes) {
-    const pend = solicitudes.filter(s => ['pedida', 'vista', 'comprando'].includes(s.estado));
-    if (!pend.length) return 'No hay nada pendiente de comprar.';
-    const grupos = {}; pend.forEach(s => { const k = s.lugarCompra || 'Sin lugar definido'; (grupos[k] = grupos[k] || []).push(s); });
+// ---------- lista para el chofer (texto para copiar / WhatsApp): lo que debe comprar o retirar en su ruta ----------
+export function listaChoferTxt(solicitudes) {
+    const pend = solicitudes.filter(s => s.estado === 'chofer');
+    if (!pend.length) return 'El chofer no tiene nada pendiente de comprar o retirar.';
     const orden = { hoy: 0, semana: 1, cuando: 2 };
-    const lineas = ['🛒 LISTA DE COMPRAS ARTAL — ' + new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long' }), ''];
-    Object.entries(grupos).forEach(([lugar, arr]) => {
-        lineas.push('📍 ' + lugar.toUpperCase());
-        arr.sort((a, b) => (orden[a.urgencia] ?? 1) - (orden[b.urgencia] ?? 1)).forEach(s => {
-            lineas.push(`${s.urgencia === 'hoy' ? '🔥' : '•'} ${nombreDe(s)} × ${cantidadTxt(s)}${s.nota ? ' (' + s.nota + ')' : ''} — ${s.pedidoPor ? s.pedidoPor.nombre : ''}${s.obra ? ' · ' + s.obra : ''}`);
-        });
-        lineas.push('');
+    const lineas = ['🚚 PARA EL CHOFER — ' + new Date().toLocaleDateString('es-DO', { day: 'numeric', month: 'long' }), ''];
+    pend.sort((a, b) => (orden[a.urgencia] ?? 1) - (orden[b.urgencia] ?? 1)).forEach(s => {
+        lineas.push(`${s.urgencia === 'hoy' ? '🔥' : '•'} ${nombreDe(s)} × ${cantidadTxt(s)}${s.nota ? ' (' + s.nota + ')' : ''}${s.proveedor && s.proveedor.nombre ? ' — retirar en ' + s.proveedor.nombre : ''}${s.notaChofer ? ' — ' + s.notaChofer : ''} — pidió ${s.pedidoPor ? s.pedidoPor.nombre : ''}`);
     });
     return lineas.join('\n').trim();
 }

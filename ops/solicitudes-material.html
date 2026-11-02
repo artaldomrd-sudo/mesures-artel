@@ -54,7 +54,7 @@
     <div class="top-actions">
         <button class="b-pedir" onclick="solAbrirPedir(null)">🙋 Pedir algo</button>
         <a class="b-inv" href="inventario.html">📦 Inventario</a>
-        <button class="b-lista" id="btn-lista" style="display:none" onclick="abrirListaCompras()">🛒 Lista de compras</button>
+        <button class="b-lista" id="btn-lista" style="display:none" onclick="abrirListaCompras()">🚚 Lista para el chofer</button>
         <button class="b-cfg" id="btn-cfg" style="display:none" onclick="toggleCfg()">⚙️ Quién atiende</button>
         <span id="mi-rol" class="rol-chip" style="display:none"></span>
     </div>
@@ -67,13 +67,13 @@
     </div>
     <div class="filtro" id="filtro"></div>
     <div id="lista"><p class="empty">Cargando…</p></div>
-    <p style="font-size:12px;color:#889;margin-top:16px;">Regla de la casa: todo pedido de material o herramienta va por aquí (no por WhatsApp). La oficina lo marca «Visto» el mismo día aunque todavía no se compre; tú ves el estado en «Mis pedidos» del Inventario.</p>
+    <p style="font-size:12px;color:#889;margin-top:16px;">Regla de la casa: todo pedido de material o herramienta va por aquí (no por WhatsApp). La oficina lo pide al proveedor o se lo pasa al chofer el mismo día; tú ves el estado en «Mis pedidos» del Inventario.</p>
 </main>
 
 <div class="modal-overlay" id="lc-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;align-items:center;justify-content:center;padding:14px;">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;padding:18px;max-height:92vh;overflow-y:auto;">
-        <h2 style="margin:0 0 8px;color:var(--artal-blue,#0A3D62);font-size:17px;">🛒 Lista de compras (pendientes)</h2>
-        <div style="font-size:12.5px;color:#667;margin-bottom:8px;">Agrupada por lugar de compra. Cópiala o mándala por WhatsApp a quien vaya a comprar.</div>
+        <h2 style="margin:0 0 8px;color:var(--artal-blue,#0A3D62);font-size:17px;">🚚 Lista para el chofer</h2>
+        <div style="font-size:12.5px;color:#667;margin-bottom:8px;">Todo lo que está «Para el chofer»: qué comprar o retirar, dónde y quién lo pidió. Cópiala o mándala por WhatsApp.</div>
         <textarea id="lc-txt" readonly></textarea>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;flex-wrap:wrap;">
             <button onclick="document.getElementById('lc-ov').style.display='none'" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Cerrar</button>
@@ -88,10 +88,10 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import { collection, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-    import { montarPedir, montarAcciones, escucharConfig, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, configActual, ABIERTOS, listaDeComprasTxt, URGENCIA_CORTA } from './solicitudes-material.js';
+    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, configActual, ABIERTOS, listaChoferTxt } from './solicitudes-material.js';
 
-    // Equipo de obra (chofer/instalador/ayudante) ve todo y pide; la oficina (Sara entra por permiso de página), gerencia y
-    // quien esté en rrhhConfig/solicitudesMaterial (Roosevelt como encargado de inventario en Terrenas) GESTIONAN los estados.
+    // Equipo de obra (chofer/instalador/ayudante) ve todo y pide; la oficina (Sara entra por permiso de página; Dylan) decide:
+    // pedir al proveedor por WhatsApp o pasar al chofer. El chofer (rol chofer o lista `chofer` de la config) marca Recogido.
     const usuario = await requireAuth(['chofer', 'instalador', 'ayudante']);
     const esAdmin = usuario.roles.includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -100,18 +100,14 @@
     wireBackButton(usuario.roles);
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-    let solicitudes = [], items = [], equipo = [], tab = 'abiertas', filtro = 'todas', gestor = false;
+    let solicitudes = [], items = [], equipo = [], tab = 'abiertas', filtro = 'todas', gestor = false, chofer = false;
     const labelItem = (it) => (it.tipo || '') + (it.color ? ' — ' + it.color : '');
     const matchItem = (txt) => { const t = (txt || '').trim().toLowerCase(); if (!t) return null; return items.find(it => labelItem(it).toLowerCase() === t) || null; };
 
     montarPedir({ usuario, getItem: (id) => items.find(it => it.id === id) || null, matchItem, onCreada: () => setTab('abiertas') });
-    montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id), getChoferes: () => choferes() });
-    function choferes() {
-        const cfg = configActual(); const emails = (cfg.chofer || []).map(e => String(e).toLowerCase());
-        return equipo.filter(p => emails.includes((p.email || '').toLowerCase())).map(p => ({ email: p.email, nombre: p.nombre }));
-    }
-
-    escucharConfig(() => { gestor = esGestor(usuario); pintarRol(); render(); });
+    montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id) });
+    escucharProveedores(() => { });
+    escucharConfig(() => { gestor = esGestor(usuario); chofer = rolEn(usuario).chofer; pintarRol(); render(); });
     escucharSolicitudes((arr) => { solicitudes = arr; render(); });
     onSnapshot(collection(db, 'inventario'), (snap) => {
         items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -124,10 +120,9 @@
 
     function pintarRol() {
         const r = rolEn(usuario); const partes = [];
-        if (r.compras) partes.push('🛒 Compras'); if (r.inventario) partes.push('📦 Inventario'); if (r.chofer) partes.push('🚚 Chofer');
-        if (!partes.length && gestor) partes.push('🏢 Oficina');
+        if (gestor) partes.push('🏢 Oficina: decide proveedor o chofer'); if (r.chofer) partes.push('🚚 Chofer: compra o retira y marca Recogido');
         const el = document.getElementById('mi-rol'); el.textContent = partes.length ? 'Tu papel aquí: ' + partes.join(' · ') : ''; el.style.display = partes.length ? '' : 'none';
-        document.getElementById('btn-lista').style.display = gestor ? '' : 'none';
+        document.getElementById('btn-lista').style.display = (gestor || chofer) ? '' : 'none';
         document.getElementById('btn-cfg').style.display = esAdmin ? '' : 'none';
     }
 
@@ -140,25 +135,26 @@
         const sinVer = abiertas.filter(s => s.estado === 'pedida');
         document.getElementById('kpis').innerHTML =
             `<div class="kpi ${hoyPend.length ? 'hoy' : ''}"><div class="n">${hoyPend.length}</div><div class="l">Urgentes (hoy)</div></div>` +
-            `<div class="kpi"><div class="n">${sinVer.length}</div><div class="l">Sin ver</div></div>` +
-            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'comprando').length}</div><div class="l">Comprando</div></div>` +
-            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'lista').length}</div><div class="l">Listas para recoger</div></div>`;
+            `<div class="kpi"><div class="n">${sinVer.length}</div><div class="l">Por decidir</div></div>` +
+            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'pedido_proveedor').length}</div><div class="l">Con el proveedor</div></div>` +
+            `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'chofer').length}</div><div class="l">Para el chofer</div></div>`;
         document.getElementById('tab-abiertas').textContent = `Pendientes (${abiertas.length})`;
         let lista = tab === 'abiertas' ? abiertas : tab === 'entregadas' ? solicitudes.filter(s => s.estado === 'entregada') : solicitudes.filter(s => ['rechazada', 'cancelada'].includes(s.estado));
         const personas = [...new Set(lista.map(s => s.pedidoPor && s.pedidoPor.nombre).filter(Boolean))];
-        const chips = [['todas', 'Todas'], ['hoy', '🔥 Hoy'], ['mias', 'Las mías'], ...personas.map(p => ['p:' + p, p])];
+        const chips = [['todas', 'Todas'], ['hoy', '🔥 Hoy'], ['chofer', '🚚 Para el chofer'], ['mias', 'Las mías'], ...personas.map(p => ['p:' + p, p])];
         document.getElementById('filtro').innerHTML = chips.map(([k, t]) => `<button class="${filtro === k ? 'on' : ''}" onclick="setFiltro('${esc(k)}')">${esc(t)}</button>`).join('');
         if (filtro === 'hoy') lista = lista.filter(s => s.urgencia === 'hoy');
+        else if (filtro === 'chofer') lista = lista.filter(s => s.estado === 'chofer');
         else if (filtro === 'mias') lista = lista.filter(s => s.pedidoPor && s.pedidoPor.email === usuario.email);
         else if (filtro.startsWith('p:')) lista = lista.filter(s => s.pedidoPor && s.pedidoPor.nombre === filtro.slice(2));
         if (tab === 'abiertas') lista = lista.slice().sort((a, b) => (ordenUrg[a.urgencia] ?? 1) - (ordenUrg[b.urgencia] ?? 1) || (a.fechaISO || '').localeCompare(b.fechaISO || ''));
-        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor })).join('')
+        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor, chofer })).join('')
             : `<p class="empty">${tab === 'abiertas' ? 'Nada pendiente. 🎉' : 'Nada en los últimos 14 días.'}</p>`;
     }
 
     // --- Lista de compras ---
     window.abrirListaCompras = () => {
-        const txt = listaDeComprasTxt(solicitudes);
+        const txt = listaChoferTxt(solicitudes);
         document.getElementById('lc-txt').value = txt;
         document.getElementById('lc-wa').href = 'https://wa.me/?text=' + encodeURIComponent(txt);
         document.getElementById('lc-ov').style.display = 'flex';
@@ -170,14 +166,14 @@
     function renderCfg() {
         const box = document.getElementById('cfg-box'); if (!esAdmin || !equipo.length) return;
         const cfg = configActual(); const en = (l, e) => (l || []).map(x => String(x).toLowerCase()).includes(e.toLowerCase());
-        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Compras recibe el aviso de cada pedido nuevo y lo compra; Inventario también lo recibe (puede tenerlo en stock y entregarlo directo); Chofer aparece en «¿Quién lo lleva?». Es provisional: cámbialo cuando cambie el equipo.</div>
-        <table><tr><th>Persona</th><th>🛒 Compras</th><th>📦 Inventario</th><th>🚚 Chofer</th></tr>
+        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Oficina recibe el aviso de cada pedido nuevo y decide (proveedor por WhatsApp o chofer); Chofer recibe los que se le pasan y marca Recogido. Cámbialo cuando cambie el equipo.</div>
+        <table><tr><th>Persona</th><th>🏢 Oficina</th><th>🚚 Chofer</th></tr>
         ${equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `<tr><td>${esc(p.nombre)}<div style="font-size:11px;color:#889">${esc(p.email)}</div></td>
-            ${['compras', 'inventario', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
+            ${['compras', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
         <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="guardarCfg()" style="background:var(--artal-blue,#0A3D62);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Guardar</button></div>`;
     }
     window.guardarCfg = async () => {
-        const cfg = { compras: [], inventario: [], chofer: [] };
+        const cfg = { compras: [], chofer: [] };   // `inventario` se conserva tal cual (futuro encargado de almacén)
         document.querySelectorAll('#cfg-box input[type=checkbox]:checked').forEach(c => cfg[c.dataset.k].push(c.dataset.e));
         try { await setDoc(doc(db, 'rrhhConfig', 'solicitudesMaterial'), { ...cfg, actualizado: new Date().toISOString(), por: usuario.nombre }, { merge: true }); alert('Guardado.'); document.getElementById('cfg-box').style.display = 'none'; }
         catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
