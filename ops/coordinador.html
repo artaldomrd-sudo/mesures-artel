@@ -151,14 +151,18 @@
         hilo.innerHTML = html || '<p class="empty">Todavía no hay informes. Pide uno con «Hacer informe ahora».</p>';
         document.getElementById('pista').textContent = ult ? `Tu mensaje se responde sobre el informe más reciente (${ult.asunto || ''}). El Coordinador ejecuta lo que puede solo y te cuenta aquí lo que hizo.` : 'Primero hace falta un informe.';
         if (html && (primeraVez || pegadoAbajo)) { requestAnimationFrame(() => { hilo.scrollTop = hilo.scrollHeight; }); primeraVez = false; }
-        if (ult && !usuario.esEspejo) acusar(ult);
+        // Estar en la conversación = leer: se marca el acuse de TODO lo que se ve (informes y contestaciones del agente), así el
+        // badge y la banda roja de Mensajería no avisan de lo que ya tienes delante (Dylan 2026-11-02).
+        if (!usuario.esEspejo && document.visibilityState === 'visible') mensajes.forEach(m => acusar(m));
     }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') render(); });
     window.abrirInforme = (id) => { abiertos.add(id); render(); };
 
-    // Acuse de lectura del informe más reciente (lo mismo que hace Mensajería), para que el badge y los contadores cuadren.
+    // Acuse de lectura (lo mismo que hace Mensajería), para que el badge y los contadores cuadren. Solo lo que es para mí.
     const acusados = new Set();
     async function acusar(m) {
         const k = sanitKey(miEmail); if (acusados.has(m.id) || (m.acuses && m.acuses[k] && m.acuses[k].leido)) { acusados.add(m.id); return; }
+        if (!(m.paraTodos === true || (Array.isArray(m.destinatarios) && m.destinatarios.map(x => String(x).toLowerCase()).includes(miEmail)))) { acusados.add(m.id); return; }
         acusados.add(m.id);
         try { await updateDoc(doc(db, 'mensajes', m.id), { ['acuses.' + k]: { leido: true, fecha: new Date().toISOString(), nombre: usuario.nombre, email: miEmail } }); } catch (_) { }
     }

@@ -431,6 +431,11 @@ exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     if (m.paraTodos === true) dest = (await db.collection('equipo').get()).docs.filter((d) => d.data().activo !== false).map((d) => d.id.toLowerCase());
     else dest = (Array.isArray(m.destinatarios) ? m.destinatarios : []).map((e) => String(e || '').trim().toLowerCase());
     dest = [...new Set(dest.filter((e) => e && e !== rem))];
+    // Contestación del Coordinador a una respuesta: quien la escribió está en la conversación esperándola (Panel o Mensajería),
+    // no necesita push (Dylan 2026-11-02: «si estoy comunicando no debe aparecer el push»). Los demás destinatarios sí lo reciben.
+    if (m.tipo === 'respuesta_coordinador' && m.respuestaId) {
+        try { const r = await db.collection('coordinadorRespuestas').doc(m.respuestaId).get(); const autor = r.exists ? String(r.data().porEmail || '').toLowerCase() : ''; if (autor) dest = dest.filter((e) => e !== autor); } catch (_) { }
+    }
     const titulo = m.remitenteEmail === 'coordinador@artal' ? (m.asunto || 'Coordinador de Obras') : ('✉️ ' + (m.asunto || ('Mensaje de ' + (m.remitenteNombre || 'ARTAL'))));
     const cuerpo = String(m.cuerpo || '').split('\n').filter(Boolean).slice(0, 3).join(' · ').slice(0, 160) || (m.requiereFirma ? 'Documento para firmar' : 'Abre Mensajería para leerlo');
     try {
