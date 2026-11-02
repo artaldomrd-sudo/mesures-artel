@@ -9,7 +9,16 @@
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared.css?v=20260806">
 <style>
-    main { max-width: 820px; padding-bottom: 150px; }
+    /* Layout tipo WhatsApp (Dylan 2026-11-02): la página NO hace scroll; el hilo es su propio contenedor con scroll y la caja de
+       escribir queda siempre a la vista debajo, sin tapar nada. Así se lee arriba y se escribe abajo sin perder el sitio. */
+    html, body { height: 100%; }
+    body { display: flex; flex-direction: column; overflow: hidden; }
+    header { flex: none; }
+    main { max-width: 820px; width: 100%; box-sizing: border-box; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding-bottom: 0; }
+    #hilo { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 2px 12px; overscroll-behavior: contain; }
+    #ir-abajo { display: none; position: absolute; right: 18px; bottom: 12px; background: var(--artal-blue, #0A3D62); color: #fff; border: none; border-radius: 100px; padding: 8px 12px; font-family: 'Arimo'; font-weight: bold; font-size: 12.5px; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+    #ir-abajo.show { display: block; }
+    .hilo-wrap { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
     .barra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
     .barra .b { border: none; border-radius: 10px; padding: 10px 14px; font-weight: bold; font-family: 'Arimo'; font-size: 13.5px; cursor: pointer; min-height: 42px; }
     .b-inf { background: var(--artal-blue, #0A3D62); color: #fff; }
@@ -28,7 +37,7 @@
     .plegado .cuerpo::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: linear-gradient(transparent, #fff); }
     .ver { display: inline-block; margin-top: 6px; font-size: 12px; color: var(--artal-blue, #0A3D62); font-weight: bold; cursor: pointer; white-space: normal; }
     .burb a { color: var(--artal-blue, #0A3D62); }
-    .caja { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,.96); border-top: 1px solid #e3e8ee; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); backdrop-filter: blur(8px); }
+    .caja { flex: none; background: rgba(255,255,255,.96); border-top: 1px solid #e3e8ee; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
     .caja .in { max-width: 820px; margin: 0 auto; display: flex; gap: 8px; align-items: flex-end; }
     .caja textarea { flex: 1; min-height: 46px; max-height: 160px; padding: 10px 12px; border: 1.5px solid #cfd8e3; border-radius: 12px; font-family: 'Arimo'; font-size: 15px; resize: vertical; }
     .caja button { background: var(--artal-blue, #0A3D62); color: #fff; border: none; border-radius: 12px; padding: 0 16px; min-height: 46px; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; }
@@ -55,7 +64,10 @@
         <button class="b b-inf" id="btn-informe" onclick="hacerInforme()">📝 Hacer informe ahora</button>
         <span class="nota" id="inf-nota">El informe matinal llega solo a las 7:50 (lun–sáb). Aquí lo pides cuando quieras; tarda 1–2 minutos.</span>
     </div>
-    <div id="hilo"><p class="empty">Cargando la conversación…</p></div>
+    <div class="hilo-wrap">
+        <div id="hilo"><p class="empty">Cargando la conversación…</p></div>
+        <button id="ir-abajo" type="button" onclick="irAbajo()">↓ Ir al final</button>
+    </div>
 </main>
 <div class="caja">
     <div class="in">
@@ -106,7 +118,10 @@
     const informes = () => mensajes.filter(m => m.tipo === 'informe_coordinador').sort((a, b) => ms(a.fecha) - ms(b.fecha));
     const ultimoInforme = () => informes().slice(-1)[0] || null;
 
-    let primeraVez = true;
+    let primeraVez = true, pegadoAbajo = true;   // si el usuario subió a leer, un mensaje nuevo NO lo arrastra abajo: se le ofrece «↓ Ir al final»
+    const hiloEl = document.getElementById('hilo');
+    hiloEl.addEventListener('scroll', () => { pegadoAbajo = hiloEl.scrollHeight - hiloEl.scrollTop - hiloEl.clientHeight < 80; document.getElementById('ir-abajo').classList.toggle('show', !pegadoAbajo); });
+    window.irAbajo = () => { hiloEl.scrollTop = hiloEl.scrollHeight; };
     function render() {
         const infs = informes(); const ult = ultimoInforme();
         const bots = mensajes.filter(m => m.tipo === 'respuesta_coordinador');
@@ -135,7 +150,7 @@
         const hilo = document.getElementById('hilo');
         hilo.innerHTML = html || '<p class="empty">Todavía no hay informes. Pide uno con «Hacer informe ahora».</p>';
         document.getElementById('pista').textContent = ult ? `Tu mensaje se responde sobre el informe más reciente (${ult.asunto || ''}). El Coordinador ejecuta lo que puede solo y te cuenta aquí lo que hizo.` : 'Primero hace falta un informe.';
-        if (primeraVez && html) { window.scrollTo(0, document.body.scrollHeight); primeraVez = false; }
+        if (html && (primeraVez || pegadoAbajo)) { requestAnimationFrame(() => { hilo.scrollTop = hilo.scrollHeight; }); primeraVez = false; }
         if (ult && !usuario.esEspejo) acusar(ult);
     }
     window.abrirInforme = (id) => { abiertos.add(id); render(); };
@@ -159,9 +174,10 @@
                 informeId: m.id, informeAsunto: m.asunto || '', texto, por: usuario.nombre, porEmail: miEmail,
                 fecha: serverTimestamp(), estado: 'pendiente', destinatariosInforme: Array.isArray(m.destinatarios) ? m.destinatarios : []
             });
-            ta.value = ''; window.draft = ''; setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 300);
+            ta.value = ''; window.draft = ''; pegadoAbajo = true; setTimeout(() => { hiloEl.scrollTop = hiloEl.scrollHeight; }, 300);
         } catch (e) { alert('No se pudo enviar: ' + (e && e.message ? e.message : e)); } finally { btn.disabled = false; }
     };
+    document.getElementById('txt').addEventListener('input', (e) => { e.target.style.height = 'auto'; e.target.style.height = Math.min(160, e.target.scrollHeight) + 'px'; });
     document.getElementById('txt').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); window.enviar(); } });
 
     window.hacerInforme = async () => {
@@ -178,7 +194,7 @@
             const j = await r.json().catch(() => ({}));
             if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
             document.getElementById('inf-nota').textContent = 'Informe publicado. Si no aparece en unos segundos, recarga la página.';
-            setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 1500);
+            pegadoAbajo = true; setTimeout(() => { hiloEl.scrollTop = hiloEl.scrollHeight; }, 1500);
         } catch (e) {
             document.getElementById('inf-nota').textContent = 'No se pudo generar: ' + (e.message || e);
         } finally { btn.disabled = false; btn.textContent = '📝 Hacer informe ahora'; }
