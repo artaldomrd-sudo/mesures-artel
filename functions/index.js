@@ -3216,4 +3216,4 @@ if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')(
 // Coordinador de Obras: informe matinal en el servidor (2026-10-30; antes rutina local de la app de Claude). Ver functions/coordinador.js.
 Object.assign(exports, require('./coordinador')({ db, FieldValue, onSchedule, onRequest, anthropicKey, callerAdmin }));
 // Respuesta conversacional al informe desde Mensajería (2026-10-31): trigger coordinadorRespuestaProcesar. Ver functions/coordinador-chat.js.
-Object.assign(exports, require('./coordinador-chat')({ db, FieldValue, Timestamp, onDocumentCreated, anthropicKey }));
+Object.assign(exports, require('./coordinador-chat')({ db, FieldValue, Timestamp, onDocumentCreated, anthropicKey, mismaObra }));   // mismaObra: para que crear_trabajo no duplique ni pierda el pedido

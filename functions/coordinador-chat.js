@@ -73,6 +73,8 @@ const HERRAMIENTAS = [
         input_schema: { type: 'object', properties: { para: { type: 'array', items: { type: 'string' } }, asunto: { type: 'string' }, cuerpo: { type: 'string' } }, required: ['para', 'asunto', 'cuerpo'] } },
     { name: 'anotar_leccion', description: 'Guarda una lección/regla nueva que el informe matinal y este chat respetarán desde ahora (coordinadorConfig/lecciones). Redáctala completa: obra o caso, regla, hasta cuándo si aplica, quién lo decidió.',
         input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
+    { name: 'crear_trabajo', description: 'Crea un TRABAJO NUEVO en Instalación (instalaciones), como el botón «+ Trabajo» (Dylan 2026-11-02: «es más rápido y más preciso si le explico bien»). Tipos: instalacion (pedido de fábrica: busca el pedido abierto de esa obra y lo enlaza; si no hay, no lo crees y dilo), reparacion_artal, servicio_post, medicion, reemplazo_dano, preparacion_obra (también exige pedido abierto), reparacion_otra, preparacion_taller (preparación de pedido en el taller de Terrenas), servicio_dominique. Si ya hay un trabajo ABIERTO de esa misma obra y tipo, no dupliques: dilo y usa reprogramar_trabajo o anotar_trabajo. Asignados = correos del EQUIPO con rol de obra. Fecha en hora RD; vacía = «sin fecha». Pon en notas todo lo que te dieron (medidas, qué llevar, hora de llegada, contacto).',
+        input_schema: { type: 'object', properties: { cliente: { type: 'string' }, obra: { type: 'string', description: 'nombre de la obra (nunca un GPS ni un enlace)' }, tipoTrabajo: { type: 'string', enum: ['instalacion', 'reparacion_artal', 'servicio_post', 'medicion', 'reemplazo_dano', 'preparacion_obra', 'reparacion_otra', 'preparacion_taller', 'servicio_dominique'] }, fecha: { type: 'string', description: 'AAAA-MM-DD o AAAA-MM-DDTHH:MM (hora RD); vacío = sin fecha' }, asignados: { type: 'array', items: { type: 'string' }, description: 'correos del EQUIPO' }, notas: { type: 'string' }, direccion: { type: 'string' }, gps: { type: 'string', description: 'enlace de Maps o coordenadas, si los dieron' }, orderId: { type: 'string', description: 'id del pedido (orders) si ya lo sabes; si no, se busca por cliente/obra' } }, required: ['cliente', 'obra', 'tipoTrabajo'] } },
     { name: 'redactar_para_cliente', description: 'NO envía nada. Prepara el mensaje para un cliente (en su idioma) y devuelve el texto listo y un enlace wa.me con el teléfono de su ficha (clientes) para que Dylan o Wilson lo manden. Úsala para cualquier «envía M…» dirigido a un cliente.',
         input_schema: { type: 'object', properties: { cliente: { type: 'string', description: 'nombre del cliente como está en el panel' }, texto: { type: 'string' }, idioma: { type: 'string' } }, required: ['cliente', 'texto'] } },
 ];
@@ -94,6 +96,7 @@ LÍMITES (sección 5 del agente; no se saltan aunque te lo pidan «por esta vez�
 - Si la petición es ambigua o el dato no cuadra con el panel, no actúes: pregunta en una línea.
 - «anota que …», «recuerda que …», «a partir de ahora …», «X queda en pausa» = anotar_leccion con una frase completa (obra, regla, hasta cuándo, quién lo decidió). Si además cambia algo en el panel (una fecha, una nota al equipo), hazlo también.
 - «haz A3» ejecuta la Propuesta de A3 en lo que las herramientas permitan; lo que no, queda en PENDIENTE DE TI con quién debe hacerlo.
+- «crea un trabajo…» / «agenda a Wilson y Miki en X el martes 8:00 para…» = crear_trabajo con TODO lo que te dieron en notas (medidas, qué llevar, hora, contacto, condiciones). Si falta el tipo o la obra no existe en el panel, pregunta en una línea antes de crear. Nunca dupliques un trabajo abierto.
 - Máximo ${MAX_PASOS} llamadas a herramientas; agrupa las consultas. Si ya tienes el id en el informe o en el JSON del panel, no vuelvas a buscarlo.
 
 EQUIPO (únicos correos válidos para mensaje_interno y crear_recordatorio):
@@ -106,7 +109,7 @@ PENDIENTE DE TI — lo que necesita a una persona (mensaje al cliente con su enl
 Si no hiciste nada, dilo en una línea y pregunta lo que falte.`;
 }
 
-module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated, anthropicKey }) {
+module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated, anthropicKey, mismaObra }) {
     const lector = coord.lectorAdmin(db);
     const ahora = () => FieldValue.serverTimestamp();
 
@@ -224,6 +227,37 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
                 await ref.set({ texto: base + '\n' + linea, actualizado: ahora(), actualizadoPor: ctx.por, historial: FieldValue.arrayUnion({ fecha: new Date().toISOString(), por: ctx.por, origen: 'chat', respuestaId: ctx.respuestaId, texto: linea }) }, { merge: true });
                 await registrar(ctx, { herramienta: nombre, coleccion: 'coordinadorConfig', docId: 'lecciones', entrada: i, resumen: linea });
                 return { ok: true, leccion: linea, nota: 'el informe matinal de mañana ya la tendrá en cuenta' };
+            }
+            case 'crear_trabajo': {
+                const TIPOS = ['instalacion', 'reparacion_artal', 'servicio_post', 'medicion', 'reemplazo_dano', 'preparacion_obra', 'reparacion_otra', 'preparacion_taller', 'servicio_dominique'];
+                const tipo = String(i.tipoTrabajo || '').trim(); if (!TIPOS.includes(tipo)) return err('tipoTrabajo inválido: ' + tipo);
+                const cliente = rec(i.cliente, 80), obra = rec(i.obra, 120); if (!cliente || !obra) return err('faltan cliente u obra');
+                if (/https?:\/\/|maps\.app|google\.[a-z]+\/maps|waze|^-?\d{1,2}\.\d{3,}\s*,\s*-?\d{1,3}\.\d{3,}/i.test(obra)) return err('«obra» no puede ser un GPS ni un enlace; ponlos en «gps»');
+                const sinFecha = !String(i.fecha || '').trim(); const f = sinFecha ? null : fechaRD(i.fecha);
+                if (!sinFecha && !f) return err('fecha inválida (usa AAAA-MM-DD o AAAA-MM-DDTHH:MM): ' + i.fecha);
+                // asignados: solo correos del equipo con rol de obra; sin ninguno válido, el trabajo nace sin asignar (Instalación lo muestra para que alguien lo tome)
+                const asignados = (Array.isArray(i.asignados) ? i.asignados : []).map(low).filter((e) => ctx.equipo.has(e) && (ctx.equipo.get(e).rol || []).some((r) => ROLES_OBRA.includes(r))).map((e) => ({ email: e, nombre: ctx.equipo.get(e).nombre || e }));
+                // no duplicar: ¿ya hay un trabajo abierto de la misma obra y tipo?
+                const abiertos = (await lector.consultar('instalaciones', [['estado', '!=', 'completado']], 400)).filter((t) => (t.tipoTrabajo || (t.orderId ? 'instalacion' : '')) === tipo && mismaObra && mismaObra(t.cliente, t.obra, cliente, obra));
+                if (abiertos.length) return err(`ya existe un trabajo abierto de ese tipo para ${cliente} — ${obra} (id ${abiertos[0]._id}, estado ${abiertos[0].estado}${abiertos[0].fecha ? ', ' + coord.fechaTxt(abiertos[0].fecha) : ''}): usa reprogramar_trabajo o anotar_trabajo`);
+                // pedido: obligatorio para instalación y preparación de obra (el pedido sigue al trabajo); referencia para los demás
+                let orderId = String(i.orderId || '').trim() || null;
+                if (!orderId) {
+                    const pedidos = (await lector.consultar('orders', [['status', 'in', ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar']]], 300)).filter((o) => o.docType !== 'COMPRA_DIRECTA' && mismaObra && mismaObra(o.cliente, o.obra, cliente, obra));
+                    if (pedidos.length === 1) orderId = pedidos[0]._id;
+                    else if (pedidos.length > 1 && (tipo === 'instalacion' || tipo === 'preparacion_obra')) return err('hay varios pedidos abiertos de esa obra: ' + pedidos.map((o) => o._id + ' (' + (o.docType || '') + ', ' + o.status + ')').join('; ') + ' — indica orderId');
+                }
+                if ((tipo === 'instalacion' || tipo === 'preparacion_obra') && !orderId) return err('para ' + tipo + ' hace falta un pedido de fabricación abierto de esa obra y no encontré ninguno; crea el trabajo con otro tipo o pide a la oficina que mande el pedido a fábrica');
+                const notas = [rec(i.notas, 1500), `Creado por el Coordinador de Obras a pedido de ${ctx.por} (${coord.fechaTxt(new Date())}).`].filter(Boolean).join('\n');
+                const datos = { cliente, obra, direccion: rec(i.direccion, 200), gps: rec(i.gps, 200), modoFecha: sinFecha ? 'sin_fecha' : 'unica', fecha: f ? Timestamp.fromDate(f) : null, fechaFin: null,
+                    asignados, instaladorEmail: asignados.length ? asignados[0].email : '', instaladorNombre: asignados.length ? asignados[0].nombre : '',
+                    estado: 'pendiente', notas, recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false, tipoTrabajo: tipo,
+                    orderId: tipo === 'instalacion' ? orderId : null, ...(tipo === 'instalacion' && orderId ? { orderIds: [orderId] } : {}), ...(tipo !== 'instalacion' && orderId ? { pedidoReferenciaId: orderId } : {}),
+                    fotos: [], comentariosInstalador: [], origen: 'coordinador_chat', respuestaId: ctx.respuestaId, creadoPorNombre: NOMBRE + ' (pedido de ' + ctx.por + ')', fechaCreacion: ahora() };
+                const ref = await db.collection('instalaciones').add(datos);
+                await movimiento(ref.id, datos, 'pendiente', `Trabajo creado por el Coordinador (pedido de ${ctx.por} en Mensajería): ${tipo}${f ? ' el ' + coord.fechaTxt(f) : ' sin fecha'}${asignados.length ? ' · ' + asignados.map((a) => a.nombre).join(', ') : ''}`, ctx);
+                await registrar(ctx, { herramienta: nombre, coleccion: 'instalaciones', docId: ref.id, entrada: i, resumen: `${cliente} — ${obra} · ${tipo}${f ? ' el ' + coord.fechaTxt(f) : ' (sin fecha)'}${asignados.length ? ' · ' + asignados.map((a) => a.nombre).join(', ') : ''}` });
+                return { ok: true, id: ref.id, trabajo: `${cliente} — ${obra}`, tipo, fecha: f ? coord.fechaTxt(f) : 'sin fecha', asignados: asignados.map((a) => a.nombre), pedido: orderId || 'ninguno' };
             }
             case 'redactar_para_cliente': {
                 const nombre = rec(i.cliente, 80); const texto = String(i.texto || '').trim().slice(0, 1500);
