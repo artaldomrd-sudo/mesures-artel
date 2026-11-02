@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Inbox: Configuración</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: 1080px; }
+    .tabs { flex-wrap: wrap; width: auto; }
+    .card { background: rgba(255,255,255,.8); border: 1px solid var(--glass-brd); border-radius: 16px; box-shadow: var(--glass-sh); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+    .card h2 { margin: 0; font-size: 16px; color: var(--azul-noche); } .card h3 { margin: 8px 0 0; font-size: 13.5px; color: var(--azul-hondo); }
+    .btn { border: 1px solid #cfd8e3; background: #fff; color: var(--azul-hondo); border-radius: 100px; padding: 7px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; min-height: 34px; font-family: inherit; }
+    .btn.p { background: linear-gradient(180deg, var(--azul), var(--azul-hondo)); color: #fff; border-color: transparent; } .btn.danger { color: #c0392b; border-color: #f1c4bf; } .btn.s { padding: 4px 9px; min-height: 26px; font-size: 11.5px; } .btn:disabled { opacity: .5; }
+    input, select, textarea { font-family: inherit; }
+    .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .campo label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--gris); font-weight: 700; margin-bottom: 3px; }
+    .campo input, .campo textarea, .campo select { width: 100%; border: 1px solid #cfd8e3; border-radius: 10px; padding: 8px 10px; font-size: 13.5px; background: #fff; } .campo textarea { min-height: 70px; resize: vertical; } .campo.full { grid-column: 1 / -1; }
+    .muted { color: var(--gris); font-size: 12.5px; line-height: 1.5; }
+    .fila { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .item { display: flex; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid #eef1f4; font-size: 13.5px; flex-wrap: wrap; } .item b { color: var(--azul-noche); }
+    .chip { font-size: 10.5px; font-weight: 700; border-radius: 100px; padding: 2px 8px; background: #eef1f4; color: #556; } .chip.ok { background: #eef9f1; color: #1e6b3f; } .chip.bad { background: #fdecea; color: #a4261a; } .chip.warn { background: #fff4e5; color: #7a4b00; }
+    code { background: #eef1f4; border-radius: 6px; padding: 2px 6px; font-size: 12px; word-break: break-all; }
+    .pasos li { margin-bottom: 6px; font-size: 13.5px; }
+    .aviso { background: #fff4e5; border: 1px solid #f5c26b; color: #7a4b00; border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+    .regla-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; margin-bottom: 6px; } .regla-row select, .regla-row input { border: 1px solid #cfd8e3; border-radius: 8px; padding: 6px 8px; font-size: 12.5px; }
+    .miembros { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px; } .miembros label { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 5px; border-radius: 8px; } .miembros label:hover { background: #f3f7fb; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eef1f4; vertical-align: top; } th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--gris); }
+    .ov { position: fixed; inset: 0; background: rgba(18,49,75,.45); display: none; align-items: center; justify-content: center; z-index: 200; padding: 16px; } .ov.on { display: flex; }
+    .modal { background: #fff; border-radius: 18px; width: min(640px, 100%); max-height: 90vh; overflow-y: auto; padding: 18px 20px; } .modal h3 { margin: 0 0 12px; }
+    .acc { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+</style>
+</head>
+<body>
+<header>
+    <div class="header-title"><a class="btn-back" href="inbox.html">← Inbox</a><img class="logo" src="../logo.png" alt="ARTAL"><h1>Inbox · <span class="accent">Configuración</span></h1></div>
+    <div class="who"><span id="user-name"></span><button id="signout-btn">Cerrar sesión</button></div>
+</header>
+<main>
+    <div class="tabs" id="tabs"></div>
+    <div id="cont"></div>
+</main>
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+<script type="module">
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { db } from './firebase-config.js';
+    import * as C from './inbox-core.js';
+    import { collection, doc, query, where, orderBy, onSnapshot, updateDoc, setDoc, addDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    const usuario = await requireAuth(['inbox_admin']);
+    const nivel = C.nivelInbox(usuario.roles); const esOwner = nivel === 'owner';
+    wireBackButton(usuario.roles); document.getElementById('user-name').textContent = usuario.nombre + ' · ' + C.NIVELES[nivel]; document.getElementById('signout-btn').onclick = () => signOut(auth);
+    const { esc, fechaLarga } = C; const yo = { email: usuario.email, nombre: usuario.nombre };
+    const TABS = [['canales', '📡 Canales'], ['equipos', '👥 Equipos'], ['tags', '🏷 Etiquetas'], ['rapidas', '⚡ Respuestas rápidas'], ['plantillas', '📋 Plantillas WhatsApp'], ['reglas', '⚙️ Automatizaciones'], ['sla', '⏱ SLA y estados'], ['ia', '🤖 IA'], ['usuarios', '🔐 Usuarios y roles']];
+    let tab = new URLSearchParams(location.search).get('t') || 'canales';
+    const D = { canales: {}, equipos: [], tags: [], rapidas: [], plantillas: [], reglas: [], sla: null, ia: null, general: null, agentes: [] };
+    const ver = (n, fn) => onSnapshot(collection(db, n), s => { D[fn] = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, e => console.warn(n, e));
+    onSnapshot(collection(db, 'inboxCanales'), s => { D.canales = {}; s.docs.forEach(d => D.canales[d.id] = { id: d.id, ...d.data() }); render(); });
+    ver('inboxEquipos', 'equipos'); ver('inboxTags', 'tags'); ver('inboxRespuestasRapidas', 'rapidas'); ver('inboxPlantillas', 'plantillas'); ver('inboxReglas', 'reglas');
+    onSnapshot(collection(db, 'equipo'), s => { D.agentes = s.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.activo !== false && (Array.isArray(u.rol) ? u.rol : [u.rol]).some(r => ['admin', 'inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector'].includes(r))); render(); });
+    onSnapshot(doc(db, 'inboxConfig', 'sla'), s => { D.sla = s.exists() ? s.data() : {}; render(); }); onSnapshot(doc(db, 'inboxConfig', 'ia'), s => { D.ia = s.exists() ? s.data() : {}; render(); }); onSnapshot(doc(db, 'inboxConfig', 'general'), s => { D.general = s.exists() ? s.data() : {}; render(); });
+    const rolesDe = (u) => Array.isArray(u.rol) ? u.rol : [u.rol];
+    const WEBHOOK = C.FUNCIONES_BASE + 'inboxWebhookMeta';
+    function render() {
+        document.getElementById('tabs').innerHTML = TABS.map(([id, t]) => `<button class="tab-btn ${tab === id ? 'active' : ''}" onclick="setTab('${id}')">${t}</button>`).join('');
+        const R = { canales: rCanales, equipos: rEquipos, tags: rTags, rapidas: rRapidas, plantillas: rPlantillas, reglas: rReglas, sla: rSla, ia: rIa, usuarios: rUsuarios };
+        document.getElementById('cont').innerHTML = (R[tab] || rCanales)();
+    }
+    window.setTab = (t) => { tab = t; history.replaceState(null, '', '?t=' + t); render(); };
+
+    // ---------------- Canales
+    function rCanales() {
+        const w = D.canales.whatsapp || {}, ig = D.canales.instagram || {};
+        return `<div class="card"><h2>💬 WhatsApp Business Platform (Cloud API)</h2>
+            <div class="muted">Un solo número de empresa, todos los agentes trabajando sobre él. El cliente solo ve el número de ARTAL; internamente cada mensaje queda firmado por el agente que lo envió. El token de acceso <b>no se guarda aquí</b>: vive en los secretos de Cloud Functions (<code>WHATSAPP_TOKEN</code>, <code>WHATSAPP_APP_SECRET</code>, <code>WHATSAPP_VERIFY_TOKEN</code>).</div>
+            ${w.activo ? `<div class="fila"><span class="chip ok">Conectado</span><b>${esc(w.displayPhone || '')}</b> · ${esc(w.verifiedName || '')} · calidad <span class="chip ${w.calidad === 'GREEN' ? 'ok' : w.calidad === 'RED' ? 'bad' : 'warn'}">${esc(w.calidad || '—')}</span> · nivel de mensajes ${esc(w.nivelMensajes || '—')} · probado ${esc(fechaLarga(w.ultimoTest))}</div>` : `<div class="fila"><span class="chip warn">Sin conectar</span>${w.errorTest ? `<span class="chip bad">${esc(w.errorTest)}</span>` : ''}</div>`}
+            <div class="campos">
+                <div class="campo"><label>Phone Number ID</label><input id="wa-pn" value="${esc(w.phoneNumberId || '')}" placeholder="Ej. 1234567890123456" ${esOwner ? '' : 'disabled'}></div>
+                <div class="campo"><label>WhatsApp Business Account ID (WABA)</label><input id="wa-waba" value="${esc(w.wabaId || '')}" placeholder="Ej. 9876543210987654" ${esOwner ? '' : 'disabled'}></div>
+                <div class="campo full"><label>URL del webhook (pegar en Meta → App → WhatsApp → Configuration)</label><input value="${esc(WEBHOOK)}" readonly onclick="this.select()"></div>
+                <div class="campo"><label>Campos del webhook a suscribir</label><input value="messages, smb_message_echoes, history, smb_app_state_sync, message_template_status_update, phone_number_quality_update, account_update" readonly></div>
+                <div class="campo"><label>Marcar como leído al abrir (doble check azul al cliente)</label><select id="wa-leido" ${esOwner ? '' : 'disabled'}><option value="si" ${w.marcarLeido !== false ? 'selected' : ''}>Sí</option><option value="no" ${w.marcarLeido === false ? 'selected' : ''}>No</option></select></div>
+            </div>
+            ${esOwner ? `<div class="fila"><button class="btn p" onclick="probarWA(true)">🔌 Probar conexión y guardar</button><button class="btn" onclick="probarWA(false)">Solo probar</button><span class="muted" id="wa-res"></span></div>` : '<div class="muted">Solo el Owner (admin de la plataforma) puede cambiar la conexión del canal.</div>'}
+            <h3>📱 Coexistencia con la app WhatsApp Business del teléfono</h3>
+            <div class="muted">El mismo número sigue funcionando en la app del teléfono y en este inbox a la vez; lo que se responde desde el teléfono aparece aquí como «📱 App del teléfono». Reglas de Meta: abrir la app al menos una vez cada 13 días; los grupos no se sincronizan; desde la app ya no se pueden editar ni borrar mensajes enviados; el historial (hasta 180 días, archivos solo de los últimos 14) y la agenda se importan <b>una sola vez</b> y hay que pedirlo dentro de las 24 h siguientes a vincular el número.</div>
+            ${w.historial ? `<div class="fila"><span class="chip ${w.historial.rechazado ? 'bad' : 'ok'}">Historial ${w.historial.rechazado ? 'no compartido desde la app' : 'fase ' + esc(w.historial.fase ?? '?') + ' · ' + esc(w.historial.progreso ?? '?') + ' %'}</span><span class="muted">${esc(fechaLarga(w.historial.at))}</span></div>` : ''}
+            ${w.agenda ? `<div class="fila"><span class="chip ok">Agenda: último lote de ${esc(w.agenda.ultimoLote)} contactos</span><span class="muted">${esc(fechaLarga(w.agenda.at))}</span></div>` : ''}
+            ${esOwner ? `<div class="fila"><button class="btn p" onclick="sincApp(this, ['smb_app_state_sync','history'])">⬇️ Importar agenda e historial del teléfono</button><button class="btn" onclick="sincApp(this, ['smb_app_state_sync'])">Solo agenda</button><span class="muted" id="app-res"></span></div>` : ''}
+            <h3>Pasos en Meta (una sola vez)</h3>
+            <ol class="pasos">
+                <li><b>Meta Business Manager</b> (business.facebook.com): verificar la empresa (documentos legales de ARTAL). Sin verificación el número queda limitado a 250 conversaciones/día.</li>
+                <li><b>developers.facebook.com</b> → crear una app de tipo <i>Business</i> → agregar el producto <b>WhatsApp</b>. Ahí aparecen el <i>Phone Number ID</i> y el <i>WABA ID</i>.</li>
+                <li>Vincular el número de ARTAL (+1 849 260-6106) en modo <b>coexistencia</b>: en el flujo de registro de Meta (Embedded Signup para usuarios de la app) se elige «usar el número de mi app WhatsApp Business» y se escanea un QR desde el teléfono; la app sigue funcionando. Al terminar, aceptar en el teléfono compartir historial y contactos, y pulsar aquí «Importar agenda e historial» antes de 24 h.</li>
+                <li>Crear un <b>Usuario del sistema</b> (Business Settings → Users → System users) con rol Admin, asignarle la app y el WABA, y generar un <b>token permanente</b> con permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code>. Guardarlo con <code>firebase functions:secrets:set WHATSAPP_TOKEN</code>.</li>
+                <li>Copiar el <b>App Secret</b> (App → Settings → Basic) a <code>WHATSAPP_APP_SECRET</code> e inventar un <code>WHATSAPP_VERIFY_TOKEN</code>. Desplegar las funciones.</li>
+                <li>En WhatsApp → Configuration: pegar la URL del webhook de arriba y el verify token, y suscribir los campos indicados.</li>
+                <li>Pegar aquí el Phone Number ID y el WABA ID y pulsar «Probar conexión y guardar». Luego «Sincronizar» en Plantillas.</li>
+            </ol>
+        </div>
+        <div class="card"><h2>📸 Instagram Direct (Messaging API)</h2>
+            <div class="muted">Misma app de Meta y mismo webhook. Requiere una cuenta profesional de Instagram vinculada a la página de Facebook de ARTAL y el permiso <code>instagram_business_manage_messages</code> (pasa por App Review de Meta). Los DM entran en la misma bandeja como canal «Instagram»; ventana de 24 h igual que WhatsApp. Los comentarios en publicaciones <b>no</b> entran aquí en esta versión (la API los da por otro campo del webhook, <code>comments</code>, y solo permite una respuesta privada por comentario).</div>
+            <div class="campos"><div class="campo"><label>Instagram user ID (ID profesional de la cuenta)</label><input id="ig-id" value="${esc(ig.igUserId || '')}" ${esOwner ? '' : 'disabled'}></div><div class="campo"><label>Activo</label><select id="ig-on" ${esOwner ? '' : 'disabled'}><option value="si" ${ig.activo ? 'selected' : ''}>Sí</option><option value="no" ${!ig.activo ? 'selected' : ''}>No</option></select></div></div>
+            ${esOwner ? `<div><button class="btn p" onclick="guardarIG()">Guardar Instagram</button></div>` : ''}
+        </div>
+        <div class="card"><h2>✉️ Email · 💠 Messenger · 🌐 Web chat · 📱 SMS</h2>
+            <div class="muted">Preparados en el modelo de datos (cada mensaje lleva <code>channel</code>), pendientes de adaptador. Plan: <b>Email</b> con Gmail API (push por Pub/Sub, hilos por <i>Message-ID / In-Reply-To</i>) o IMAP IDLE + SMTP para otros proveedores; <b>Messenger</b> con la misma app de Meta (Send API, campo <code>messages</code> del objeto <code>page</code>); <b>Web chat</b> reutilizando el bot del sitio (ya escribe en Firestore); <b>SMS</b> con Twilio o similar.</div>
+        </div>`;
+    }
+    window.probarWA = async (guardar) => {
+        const res = document.getElementById('wa-res'); res.textContent = 'Probando…';
+        try { const r = await C.llamar('inboxProbarCanal', { phoneNumberId: document.getElementById('wa-pn').value.trim(), wabaId: document.getElementById('wa-waba').value.trim(), guardar }); res.textContent = '✅ ' + (r.displayPhone || '') + ' · ' + (r.verifiedName || '') + ' · calidad ' + (r.calidad || '—'); if (guardar) await setDoc(doc(db, 'inboxCanales', 'whatsapp'), { marcarLeido: document.getElementById('wa-leido').value === 'si' }, { merge: true }); }
+        catch (e) { res.textContent = '❌ ' + e.message; }
+    };
+    window.sincApp = async (btn, tipos) => { btn.disabled = true; const r = document.getElementById('app-res'); r.textContent = 'Pidiendo a Meta…'; try { const j = await C.llamar('inboxSincronizarApp', { tipos }); const errs = Object.entries(j.respuesta || {}).filter(([, v]) => v && v.error); r.textContent = errs.length ? '⚠️ ' + errs.map(([k, v]) => k + ': ' + v.error).join(' · ') : '✅ Pedido enviado. Los datos llegan por webhook en los próximos minutos (el progreso se muestra arriba).'; } catch (e) { r.textContent = '❌ ' + e.message; } finally { btn.disabled = false; } };
+    window.guardarIG = async () => { await setDoc(doc(db, 'inboxCanales', 'instagram'), { tipo: 'instagram', igUserId: document.getElementById('ig-id').value.trim(), activo: document.getElementById('ig-on').value === 'si', actualizadoPor: usuario.email, actualizado: serverTimestamp() }, { merge: true }); await C.auditar(yo, 'canal_configurado', 'canal', 'instagram'); alert('Guardado.'); };
+
+    // ---------------- Equipos
+    function rEquipos() {
+        return `<div class="card"><h2>👥 Equipos / departamentos</h2><div class="muted">Las conversaciones se pueden asignar a un equipo (Ventas, Soporte, Reservaciones…) además de a una persona. Cada equipo aparece como vista en la bandeja y como destino de las reglas automáticas.</div>
+            ${D.equipos.map(e => `<div class="item"><span>${esc(e.icono || '👥')}</span><b>${esc(e.nombre)}</b><span class="muted">${(e.miembros || []).map(m => (D.agentes.find(a => a.email === m) || { nombre: m }).nombre).join(', ') || 'sin miembros'}</span><span style="flex:1"></span><button class="btn s" onclick="editarEquipo('${e.id}')">Editar</button><button class="btn s danger" onclick="borrar('inboxEquipos','${e.id}','equipo')">Borrar</button></div>`).join('') || '<div class="muted">Sin equipos todavía.</div>'}
+            <div><button class="btn p" onclick="editarEquipo('')">＋ Nuevo equipo</button></div></div>`;
+    }
+    window.editarEquipo = (id) => {
+        const e = D.equipos.find(x => x.id === id) || { nombre: '', icono: '👥', miembros: [], descripcion: '' };
+        modal(`<h3>${id ? 'Editar' : 'Nuevo'} equipo</h3><div class="campos"><div class="campo"><label>Nombre</label><input id="eq-n" value="${esc(e.nombre)}"></div><div class="campo"><label>Emoji</label><input id="eq-i" value="${esc(e.icono || '👥')}"></div><div class="campo full"><label>Descripción</label><input id="eq-d" value="${esc(e.descripcion || '')}"></div></div>
+            <h3 style="margin-top:10px">Miembros</h3><div class="miembros">${D.agentes.map(a => `<label><input type="checkbox" class="eq-m" value="${esc(a.email)}" ${(e.miembros || []).includes(a.email) ? 'checked' : ''}> ${esc(a.nombre || a.email)} <span class="muted">${esc(rolesDe(a).filter(r => r.startsWith('inbox') || r === 'admin').join(', '))}</span></label>`).join('') || '<div class="muted">Nadie tiene rol de inbox todavía (Usuarios y roles).</div>'}</div>
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarEquipo('${id}')">Guardar</button></div>`);
+    };
+    window.guardarEquipo = async (id) => {
+        const data = { nombre: document.getElementById('eq-n').value.trim(), icono: document.getElementById('eq-i').value.trim() || '👥', descripcion: document.getElementById('eq-d').value.trim(), miembros: [...document.querySelectorAll('.eq-m:checked')].map(i => i.value), actualizado: serverTimestamp(), actualizadoPor: usuario.email };
+        if (!data.nombre) return alert('Falta el nombre.');
+        if (id) await updateDoc(doc(db, 'inboxEquipos', id), data); else { data.creado = serverTimestamp(); await addDoc(collection(db, 'inboxEquipos'), data); }
+        // Espejo en usuarios/{email}.inboxEquipos (lo lee la Cloud Function para saber los equipos de quien llama).
+        for (const a of D.agentes) { try { await updateDoc(doc(db, 'usuarios', a.email), { inboxEquipos: D.equipos.filter(e => e.id !== id && (e.miembros || []).includes(a.email)).map(e => e.id).concat(data.miembros.includes(a.email) && id ? [id] : []) }); } catch (_) { } }
+        await C.auditar(yo, id ? 'equipo_editado' : 'equipo_creado', 'equipo', id || data.nombre); cerrarModal();
+    };
+    window.borrar = async (col, id, tipo) => { if (!confirm('¿Borrar este ' + tipo + '?')) return; await deleteDoc(doc(db, col, id)); await C.auditar(yo, tipo + '_borrado', tipo, id); };
+
+    // ---------------- Tags
+    function rTags() {
+        return `<div class="card"><h2>🏷 Etiquetas</h2><div class="muted">Se aplican a conversaciones y a contactos; sirven para filtrar la bandeja y como condición de las reglas (ej. «cliente VIP → equipo especial»). Los agentes también pueden crear etiquetas nuevas desde una conversación.</div>
+            <div class="fila">${D.tags.map(t => `<span class="chip" style="background:${esc(t.color || '#fff3c4')};font-size:12.5px;padding:5px 12px">${esc(t.nombre)} <button class="btn s" style="margin-left:4px" onclick="borrar('inboxTags','${t.id}','etiqueta')">×</button></span>`).join('') || '<span class="muted">Sin etiquetas.</span>'}</div>
+            <div class="fila"><input id="tg-n" placeholder="Nombre (ej. VIP, Reclamo, Follow-up)" style="border:1px solid #cfd8e3;border-radius:10px;padding:8px 10px"><input id="tg-c" type="color" value="#fff3c4"><button class="btn p" onclick="crearTag()">＋ Crear</button><button class="btn" onclick="sembrarTags()">Cargar las 8 sugeridas</button></div></div>`;
+    }
+    window.crearTag = async (n, c) => { n = n || document.getElementById('tg-n').value.trim(); c = c || document.getElementById('tg-c').value; if (!n) return; if (D.tags.some(t => t.nombre.toLowerCase() === n.toLowerCase())) return; await addDoc(collection(db, 'inboxTags'), { nombre: n, color: c, creado: serverTimestamp(), creadoPor: usuario.email }); await C.auditar(yo, 'tag_creado', 'tag', n); };
+    window.sembrarTags = async () => { const base = [['VIP', '#ffe0a3'], ['Nuevo cliente', '#d9f3e2'], ['Ventas', '#dbe9ff'], ['Soporte', '#e9e6ff'], ['Reserva', '#d6f0ff'], ['Reclamo', '#ffd9d4'], ['Follow-up', '#fff3c4'], ['Urgente', '#ffc9c2']]; for (const [n, c] of base) await crearTag(n, c); };
+
+    // ---------------- Respuestas rápidas
+    function rRapidas() {
+        const g = D.rapidas.filter(r => r.global), m = D.rapidas.filter(r => !r.global && r.email === usuario.email);
+        const fila = (r) => `<div class="item"><b>/${esc(r.atajo)}</b><span style="flex:1">${esc(r.texto)}</span>${r.global ? '<span class="chip">global</span>' : '<span class="chip">personal</span>'}<button class="btn s" onclick="editarRapida('${r.id}')">Editar</button><button class="btn s danger" onclick="borrar('inboxRespuestasRapidas','${r.id}','respuesta rápida')">Borrar</button></div>`;
+        return `<div class="card"><h2>⚡ Respuestas rápidas globales</h2><div class="muted">Los agentes escriben «/» en el chat y eligen. Variables: <code>{nombre}</code> (primer nombre del cliente) y <code>{agente}</code> (primer nombre del agente).</div>${g.map(fila).join('') || '<div class="muted">Ninguna.</div>'}<div><button class="btn p" onclick="editarRapida('', true)">＋ Nueva global</button><button class="btn" onclick="sembrarRapidas()">Cargar 3 de ejemplo</button></div></div>
+            <div class="card"><h2>Mis respuestas rápidas</h2>${m.map(fila).join('') || '<div class="muted">Ninguna. Cada agente crea las suyas desde aquí (con rol de administrador) o desde su propia pantalla del inbox.</div>'}<div><button class="btn" onclick="editarRapida('', false)">＋ Nueva personal</button></div></div>`;
+    }
+    window.editarRapida = (id, global) => {
+        const r = D.rapidas.find(x => x.id === id) || { atajo: '', texto: '', global };
+        modal(`<h3>${id ? 'Editar' : 'Nueva'} respuesta rápida ${r.global ? '(global)' : '(personal)'}</h3><div class="campos"><div class="campo"><label>Atajo (sin «/»)</label><input id="rp-a" value="${esc(r.atajo)}" placeholder="hola"></div><div class="campo full"><label>Texto</label><textarea id="rp-t">${esc(r.texto)}</textarea></div></div><div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarRapida('${id}', ${!!r.global})">Guardar</button></div>`);
+    };
+    window.guardarRapida = async (id, global) => {
+        const data = { atajo: document.getElementById('rp-a').value.trim().replace(/^\//, '').toLowerCase().replace(/\s+/g, '_'), texto: document.getElementById('rp-t').value.trim(), global, email: usuario.email, actualizado: serverTimestamp() };
+        if (!data.atajo || !data.texto) return alert('Faltan datos.');
+        if (id) await updateDoc(doc(db, 'inboxRespuestasRapidas', id), data); else await addDoc(collection(db, 'inboxRespuestasRapidas'), { ...data, creado: serverTimestamp() });
+        await C.auditar(yo, 'respuesta_rapida', 'respuesta_rapida', data.atajo); cerrarModal();
+    };
+    window.sembrarRapidas = async () => { const base = [['hola', 'Hola {nombre}, gracias por escribir a ARTAL Dominicana. Soy {agente}, ¿en qué te puedo ayudar?'], ['horario', 'Nuestro horario de atención es de lunes a viernes de 8:00 a 17:00 y sábados de 8:00 a 12:00.'], ['ubicacion', 'Estamos en Las Terrenas, Samaná. Ubicación exacta en Google Maps: https://maps.app.goo.gl/hLc4R2RwHrbyAS4R6']]; for (const [a, t] of base) if (!D.rapidas.some(r => r.atajo === a && r.global)) await addDoc(collection(db, 'inboxRespuestasRapidas'), { atajo: a, texto: t, global: true, email: usuario.email, creado: serverTimestamp() }); };
+
+    // ---------------- Plantillas
+    function rPlantillas() {
+        const est = (e) => `<span class="chip ${e === 'APPROVED' ? 'ok' : e === 'REJECTED' || e === 'DISABLED' || e === 'ELIMINADA' ? 'bad' : 'warn'}">${esc(e)}</span>`;
+        return `<div class="card"><h2>📋 Plantillas de WhatsApp</h2><div class="muted">Las plantillas se crean y aprueban en <b>Meta Business Manager → WhatsApp Manager → Message templates</b> (Meta las revisa; suele tardar de minutos a 24 h). Aquí se sincronizan para que los agentes las usen. Reglas de WhatsApp: fuera de la ventana de 24 h solo se puede enviar una plantilla aprobada; las de categoría <i>Marketing</i> y <i>Utility</i> se cobran por mensaje, las de <i>Servicio</i> (respuesta dentro de la ventana) no. Meta no devuelve la fecha de aprobación: se registra la fecha en que la vimos aprobada aquí.</div>
+            <div class="fila"><button class="btn p" onclick="sincPlantillas(this)">🔄 Sincronizar desde Meta</button><a class="btn" href="https://business.facebook.com/wa/manage/message-templates/" target="_blank" rel="noopener">Abrir WhatsApp Manager ↗</a></div>
+            <div style="overflow-x:auto"><table><thead><tr><th>Nombre</th><th>Categoría</th><th>Idioma</th><th>Estado</th><th>Variables</th><th>Cuerpo</th><th>Aprobada</th><th>Calidad</th></tr></thead><tbody>
+            ${D.plantillas.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')).map(p => `<tr><td><b>${esc(p.nombre)}</b></td><td>${esc(p.categoria || '')}</td><td>${esc(p.idioma || '')}</td><td>${est(p.estado)}${p.motivoRechazo && p.motivoRechazo !== 'NONE' ? `<div class="muted">${esc(p.motivoRechazo)}</div>` : ''}</td><td>${p.variables || 0}</td><td style="max-width:320px;white-space:pre-wrap">${esc(p.cuerpo || '')}${p.headerTipo && p.headerTipo !== 'TEXT' ? `<div class="muted">encabezado: ${esc(p.headerTipo)}</div>` : ''}</td><td>${esc(fechaLarga(p.aprobadaAt))}</td><td>${esc(p.calidad || '—')}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Sin plantillas sincronizadas.</td></tr>'}
+            </tbody></table></div></div>`;
+    }
+    window.sincPlantillas = async (btn) => { btn.disabled = true; try { const r = await C.llamar('inboxSincronizarPlantillas', {}); alert('Sincronizadas ' + r.total + ' plantillas.'); } catch (e) { alert(e.message); } finally { btn.disabled = false; } };
+
+    // ---------------- Reglas
+    const CONDS = [['texto_contiene', 'El mensaje contiene (palabras separadas por |)'], ['canal', 'Canal es (whatsapp / instagram / email)'], ['tag_contacto', 'El contacto tiene la etiqueta'], ['sin_asignar', 'La conversación no tiene agente'], ['prioridad', 'Prioridad es (low/normal/high/urgent)'], ['fuera_horario', 'Fuera del horario (ej. 8-18)'], ['tipo_mensaje', 'Tipo de mensaje es (text/image/audio/…)']];
+    const ACCS = [['asignar_equipo', 'Asignar al equipo (id)'], ['asignar_agente', 'Asignar al agente (email)'], ['agregar_tag', 'Agregar etiqueta'], ['prioridad', 'Poner prioridad (low/normal/high/urgent)'], ['estado', 'Cambiar estado (open/pending/…)'], ['notificar_supervisores', 'Notificar a supervisores (push)'], ['notificar_asignado', 'Notificar al agente asignado (solo «sin respuesta»)'], ['respuesta_automatica', 'Responder automáticamente con este texto (WhatsApp, dentro de ventana)']];
+    function rReglas() {
+        return `<div class="card"><h2>⚙️ Automatizaciones (reglas)</h2><div class="muted">SI (disparador) Y (condiciones) ENTONCES (acciones). Se evalúan en orden al llegar cada mensaje entrante; «sin respuesta» corre cada 5 minutos. Ejemplos: mensaje contiene «reserva|reservación» → asignar al equipo Reservaciones · contacto con etiqueta VIP → equipo especial + prioridad alta · sin respuesta 15 min → notificar supervisores.</div>
+            ${D.reglas.sort((a, b) => (a.orden || 0) - (b.orden || 0)).map(r => `<div class="item"><span class="chip ${r.activa ? 'ok' : ''}">${r.activa ? 'activa' : 'pausada'}</span><b>${esc(r.orden || 0)}. ${esc(r.nombre)}</b><span class="muted">SI ${esc({ mensaje_entrante: 'mensaje entrante', conversacion_nueva: 'conversación nueva', sin_respuesta: 'sin respuesta ' + (r.minutos || 30) + ' min' }[r.disparador] || r.disparador)}${(r.condiciones || []).map(c => ' Y ' + c.campo + (c.valor ? ' = ' + c.valor : '')).join('')} → ${(r.acciones || []).map(a => a.tipo + (a.valor ? ' (' + a.valor + ')' : '')).join(', ')}</span><span style="flex:1"></span><button class="btn s" onclick="editarRegla('${r.id}')">Editar</button><button class="btn s danger" onclick="borrar('inboxReglas','${r.id}','regla')">Borrar</button></div>`).join('') || '<div class="muted">Sin reglas.</div>'}
+            <div><button class="btn p" onclick="editarRegla('')">＋ Nueva regla</button></div></div>`;
+    }
+    window.editarRegla = (id) => {
+        const r = D.reglas.find(x => x.id === id) || { nombre: '', activa: true, orden: (D.reglas.length + 1) * 10, disparador: 'mensaje_entrante', minutos: 30, condiciones: [], acciones: [], soloPrimerMensaje: false, detener: false };
+        const opt = (lista, cur) => lista.map(([v, t]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${t}</option>`).join('');
+        const filaC = (c) => `<div class="regla-row rc"><select>${opt(CONDS, c.campo)}</select><input value="${esc(c.valor || '')}" placeholder="valor"><button class="btn s danger" onclick="this.parentElement.remove()">×</button></div>`;
+        const filaA = (a) => `<div class="regla-row ra"><select>${opt(ACCS, a.tipo)}</select><input value="${esc(a.valor || '')}" placeholder="valor"><button class="btn s danger" onclick="this.parentElement.remove()">×</button></div>`;
+        modal(`<h3>${id ? 'Editar' : 'Nueva'} regla</h3><div class="campos"><div class="campo"><label>Nombre</label><input id="rg-n" value="${esc(r.nombre)}"></div><div class="campo"><label>Orden</label><input id="rg-o" type="number" value="${r.orden || 0}"></div>
+            <div class="campo"><label>Disparador</label><select id="rg-d"><option value="mensaje_entrante" ${r.disparador === 'mensaje_entrante' ? 'selected' : ''}>Mensaje entrante</option><option value="conversacion_nueva" ${r.disparador === 'conversacion_nueva' ? 'selected' : ''}>Conversación nueva (primer mensaje)</option><option value="sin_respuesta" ${r.disparador === 'sin_respuesta' ? 'selected' : ''}>Sin respuesta del agente durante X minutos</option></select></div>
+            <div class="campo"><label>Minutos (solo «sin respuesta»)</label><input id="rg-m" type="number" value="${r.minutos || 30}"></div></div>
+            <h3>Condiciones (todas deben cumplirse)</h3><div id="rg-c">${(r.condiciones || []).map(filaC).join('')}</div><button class="btn s" onclick="document.getElementById('rg-c').insertAdjacentHTML('beforeend', window.__filaC)">＋ condición</button>
+            <h3>Acciones</h3><div id="rg-a">${(r.acciones || []).map(filaA).join('')}</div><button class="btn s" onclick="document.getElementById('rg-a').insertAdjacentHTML('beforeend', window.__filaA)">＋ acción</button>
+            <div class="muted" style="margin-top:8px">Equipos: ${D.equipos.map(e => `<code>${esc(e.id)}</code> ${esc(e.nombre)}`).join(' · ') || 'ninguno'} · Agentes: ${D.agentes.map(a => `<code>${esc(a.email)}</code>`).join(' · ')}</div>
+            <div class="fila" style="margin-top:8px"><label><input type="checkbox" id="rg-act" ${r.activa ? 'checked' : ''}> Activa</label><label><input type="checkbox" id="rg-p" ${r.soloPrimerMensaje ? 'checked' : ''}> Solo con el primer mensaje de la conversación</label><label><input type="checkbox" id="rg-s" ${r.detener ? 'checked' : ''}> Detener las siguientes reglas si se cumple</label></div>
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="guardarRegla('${id}')">Guardar</button></div>`);
+        window.__filaC = filaC({ campo: 'texto_contiene' }); window.__filaA = filaA({ tipo: 'asignar_equipo' });
+    };
+    window.guardarRegla = async (id) => {
+        const data = { nombre: document.getElementById('rg-n').value.trim(), orden: Number(document.getElementById('rg-o').value) || 0, disparador: document.getElementById('rg-d').value, minutos: Number(document.getElementById('rg-m').value) || 30, activa: document.getElementById('rg-act').checked, soloPrimerMensaje: document.getElementById('rg-p').checked, detener: document.getElementById('rg-s').checked,
+            condiciones: [...document.querySelectorAll('#rg-c .rc')].map(d => ({ campo: d.querySelector('select').value, valor: d.querySelector('input').value.trim() })), acciones: [...document.querySelectorAll('#rg-a .ra')].map(d => ({ tipo: d.querySelector('select').value, valor: d.querySelector('input').value.trim() })), actualizado: serverTimestamp(), actualizadoPor: usuario.email };
+        if (!data.nombre || !data.acciones.length) return alert('Falta el nombre o al menos una acción.');
+        if (id) await updateDoc(doc(db, 'inboxReglas', id), data); else await addDoc(collection(db, 'inboxReglas'), { ...data, creado: serverTimestamp() });
+        await C.auditar(yo, 'regla_guardada', 'regla', id || data.nombre, data); cerrarModal();
+    };
+
+    // ---------------- SLA y estados
+    function rSla() {
+        const s = D.sla || {}, p = s.primeraRespuestaMin || {}, r = s.resolucionMin || {}, pe = s.porEquipo || {};
+        const def = { urgent: [10, 240], high: [30, 480], normal: [60, 1440], low: [240, 2880] };
+        const ex = (D.general && D.general.estadosExtra) || [];
+        return `<div class="card"><h2>⏱ SLA por prioridad</h2><div class="muted">Minutos objetivo. La primera respuesta se mide desde que se crea la conversación hasta el primer mensaje de un agente; la resolución hasta que se marca resuelta/cerrada. El vigilante (cada 5 min) marca los vencidos, avisa por push al asignado al 80 % del tiempo y a supervisores al vencer.</div>
+            <table><thead><tr><th>Prioridad</th><th>Primera respuesta (min)</th><th>Resolución (min)</th></tr></thead><tbody>${C.PRIORIDADES.map(x => `<tr><td>${x.icono} ${x.nombre}</td><td><input class="sla-p" data-k="${x.id}" type="number" value="${p[x.id] || def[x.id][0]}" style="width:100px"></td><td><input class="sla-r" data-k="${x.id}" type="number" value="${r[x.id] || def[x.id][1]}" style="width:100px"></td></tr>`).join('')}</tbody></table>
+            <h3>SLA por equipo (opcional, manda sobre la prioridad al asignar a ese equipo)</h3>
+            <table><thead><tr><th>Equipo</th><th>Primera respuesta (min)</th><th>Resolución (min)</th></tr></thead><tbody>${D.equipos.map(e => `<tr><td>${esc(e.nombre)}</td><td><input class="sla-ep" data-k="${e.id}" type="number" value="${(pe[e.id] || {}).primera || ''}" placeholder="—" style="width:100px"></td><td><input class="sla-er" data-k="${e.id}" type="number" value="${(pe[e.id] || {}).resolucion || ''}" placeholder="—" style="width:100px"></td></tr>`).join('') || '<tr><td colspan="3" class="muted">Sin equipos.</td></tr>'}</tbody></table>
+            <div><button class="btn p" onclick="guardarSla()">Guardar SLA</button></div></div>
+            <div class="card"><h2>Estados personalizados</h2><div class="muted">Los 6 estados base (Abierta, Pendiente, Esperando al cliente, Esperando al agente, Resuelta, Cerrada) siempre existen. Aquí se agregan estados propios (ej. «En cotización», «Esperando pago»); cuentan como abiertos.</div>
+            <div class="fila">${ex.map((e, i) => `<span class="chip" style="background:${esc(e.color)};color:#fff;font-size:12.5px;padding:5px 12px">${esc(e.nombre)} <button class="btn s" onclick="quitarEstado(${i})">×</button></span>`).join('') || '<span class="muted">Ninguno.</span>'}</div>
+            <div class="fila"><input id="es-n" placeholder="Nombre del estado" style="border:1px solid #cfd8e3;border-radius:10px;padding:8px 10px"><input id="es-c" type="color" value="#8e44ad"><button class="btn p" onclick="agregarEstado()">＋ Agregar</button></div></div>`;
+    }
+    window.guardarSla = async () => {
+        const get = (cls) => Object.fromEntries([...document.querySelectorAll('.' + cls)].map(i => [i.dataset.k, Number(i.value) || 0]));
+        const ep = get('sla-ep'), er = get('sla-er'); const porEquipo = {}; Object.keys(ep).forEach(k => { if (ep[k] || er[k]) porEquipo[k] = { primera: ep[k] || null, resolucion: er[k] || null }; });
+        await setDoc(doc(db, 'inboxConfig', 'sla'), { primeraRespuestaMin: get('sla-p'), resolucionMin: get('sla-r'), porEquipo, actualizado: serverTimestamp(), actualizadoPor: usuario.email }, { merge: true });
+        await C.auditar(yo, 'config_sla', 'config', 'sla'); alert('SLA guardado.');
+    };
+    window.agregarEstado = async () => { const n = document.getElementById('es-n').value.trim(); if (!n) return; const id = 'x_' + C.normalizar(n).replace(/[^a-z0-9]+/g, '_'); const ex = ((D.general && D.general.estadosExtra) || []).filter(e => e.id !== id); ex.push({ id, nombre: n, color: document.getElementById('es-c').value }); await setDoc(doc(db, 'inboxConfig', 'general'), { estadosExtra: ex }, { merge: true }); await C.auditar(yo, 'config_estados', 'config', id); };
+    window.quitarEstado = async (i) => { const ex = [...((D.general && D.general.estadosExtra) || [])]; ex.splice(i, 1); await setDoc(doc(db, 'inboxConfig', 'general'), { estadosExtra: ex }, { merge: true }); };
+
+    // ---------------- IA
+    function rIa() {
+        const ia = D.ia || {};
+        return `<div class="card"><h2>🤖 Inteligencia artificial (Claude)</h2><div class="muted">Con cada mensaje entrante, la IA clasifica la intención y el sentimiento, sugiere equipo, resume la conversación, extrae datos y propone una respuesta. <b>Todo eso son SUGERENCIAS</b> que ve el agente en el panel derecho: nada se envía al cliente. La <b>respuesta automática</b> es una opción aparte, apagada por defecto, y aun activada solo actúa cuando la conversación no tiene agente y ningún agente ha respondido todavía. Usa el secreto <code>ANTHROPIC_API_KEY</code> que ya tienen las funciones (bot del sitio).</div>
+            <div class="campos"><div class="campo"><label>Activar sugerencias de IA</label><select id="ia-on"><option value="si" ${ia.activo ? 'selected' : ''}>Sí</option><option value="no" ${!ia.activo ? 'selected' : ''}>No</option></select></div>
+            <div class="campo"><label>Modelo</label><select id="ia-m"><option value="claude-opus-5" ${(ia.modelo || 'claude-opus-5') === 'claude-opus-5' ? 'selected' : ''}>claude-opus-5 (recomendado)</option><option value="claude-sonnet-5" ${ia.modelo === 'claude-sonnet-5' ? 'selected' : ''}>claude-sonnet-5 (más económico)</option><option value="claude-haiku-4-5" ${ia.modelo === 'claude-haiku-4-5' ? 'selected' : ''}>claude-haiku-4-5 (el más económico)</option></select></div>
+            <div class="campo full"><label>Instrucciones para la IA (contexto del negocio)</label><textarea id="ia-i" style="min-height:110px">${esc(ia.instrucciones || 'Eres el asistente interno del equipo de atención de ARTAL Dominicana (aluminio y vidrio, Las Terrenas, República Dominicana). Nunca inventes precios, medidas ni plazos.')}</textarea></div>
+            <div class="campo full"><label>Respuesta automática (⚠️ la IA le escribe al cliente)</label><select id="ia-auto"><option value="no" ${!ia.respuestaAutomatica ? 'selected' : ''}>NO — solo sugerir (recomendado)</option><option value="si" ${ia.respuestaAutomatica ? 'selected' : ''}>SÍ — responder sola cuando nadie ha atendido la conversación</option></select></div></div>
+            ${ia.respuestaAutomatica ? '<div class="aviso">⚠️ La respuesta automática está ACTIVADA: los mensajes nuevos sin agente asignado reciben una respuesta generada por IA, registrada como «bot» en el hilo y en la auditoría.</div>' : ''}
+            <div><button class="btn p" onclick="guardarIa()">Guardar IA</button></div></div>`;
+    }
+    window.guardarIa = async () => { const auto = document.getElementById('ia-auto').value === 'si'; if (auto && !confirm('¿Seguro? La IA responderá SOLA a clientes cuando nadie haya tomado la conversación.')) return; await setDoc(doc(db, 'inboxConfig', 'ia'), { activo: document.getElementById('ia-on').value === 'si', modelo: document.getElementById('ia-m').value, instrucciones: document.getElementById('ia-i').value.trim(), respuestaAutomatica: auto, actualizado: serverTimestamp(), actualizadoPor: usuario.email }, { merge: true }); await C.auditar(yo, 'config_ia', 'config', 'ia', { auto }); alert('Guardado.'); };
+
+    // ---------------- Usuarios
+    function rUsuarios() {
+        return `<div class="card"><h2>🔐 Usuarios y roles del inbox</h2><div class="muted">Los usuarios se gestionan en <a href="usuarios.html">Usuarios y roles</a> (misma cuenta Google de la plataforma). Roles del inbox:</div>
+            <table><thead><tr><th>Rol de la plataforma</th><th>Nivel en el inbox</th><th>Puede</th></tr></thead><tbody>
+            <tr><td><code>admin</code></td><td><b>Owner</b></td><td>Todo: canales, usuarios, configuración, reglas, estadísticas, auditoría, borrar usuarios.</td></tr>
+            <tr><td><code>inbox_admin</code></td><td><b>Admin</b></td><td>Equipos, etiquetas, respuestas rápidas, plantillas, reglas, SLA, IA, estadísticas, auditoría. No conecta canales ni borra usuarios.</td></tr>
+            <tr><td><code>inbox_supervisor</code></td><td><b>Supervisor</b></td><td>Ver todo el equipo, asignar/reasignar/transferir, cambiar prioridad, estadísticas.</td></tr>
+            <tr><td><code>inbox_agente</code></td><td><b>Agent</b></td><td>Ver sus conversaciones, las de sus equipos y las sin asignar; responder, tomar, notas, etiquetas, cerrar.</td></tr>
+            <tr><td><code>inbox_lector</code> / <code>lector</code></td><td><b>Viewer</b></td><td>Solo lectura.</td></tr></tbody></table>
+            <h3>Personas con acceso al inbox ahora</h3>${D.agentes.map(a => `<div class="item"><b>${esc(a.nombre || a.email)}</b><span class="muted">${esc(a.email)}</span><span class="chip">${esc(C.NIVELES[C.nivelInbox(rolesDe(a))] || '')}</span></div>`).join('') || '<div class="muted">Nadie todavía: asigna roles inbox_* en Usuarios y roles.</div>'}
+            <div><a class="btn p" href="usuarios.html">Ir a Usuarios y roles →</a></div></div>`;
+    }
+
+    function modal(html) { document.getElementById('modal').innerHTML = html; document.getElementById('ov').classList.add('on'); }
+    window.cerrarModal = () => document.getElementById('ov').classList.remove('on');
+    document.getElementById('ov').addEventListener('click', (e) => { if (e.target.id === 'ov') cerrarModal(); });
+    render();
+</script>
+</body>
+</html>

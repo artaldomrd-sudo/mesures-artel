@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARTAL — Inbox omnicanal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css?v=20260806">
+<style>
+    main { max-width: none; padding: 12px 12px 12px; }
+    .app { display: grid; grid-template-columns: 220px 330px minmax(340px, 1fr) 300px; gap: 10px; height: calc(100vh - 92px); min-height: 480px; }
+    .pane { background: rgba(255,255,255,.78); border: 1px solid var(--glass-brd); border-radius: 16px; box-shadow: var(--glass-sh); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .pane-h { padding: 12px 14px; border-bottom: 1px solid #e6ecf2; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pane-h h2 { margin: 0; font-size: 15px; color: var(--azul-noche); }
+    .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+    .muted { color: var(--gris); font-size: 12px; }
+    button, select, input, textarea { font-family: 'Inter','Arimo',sans-serif; }
+    .btn { border: 1px solid #cfd8e3; background: #fff; color: var(--azul-hondo); border-radius: 100px; padding: 7px 13px; font-size: 12.5px; font-weight: 700; cursor: pointer; min-height: 34px; white-space: nowrap; }
+    .btn:hover { background: #f3f7fb; } .btn:disabled { opacity: .5; cursor: default; }
+    .btn.p { background: linear-gradient(180deg, var(--azul), var(--azul-hondo)); color: #fff; border-color: transparent; }
+    .btn.y { background: linear-gradient(180deg, #ffd634, var(--amarillo)); color: var(--azul-noche); border-color: transparent; }
+    .btn.s { padding: 4px 9px; min-height: 26px; font-size: 11.5px; }
+    .btn.danger { color: #c0392b; border-color: #f1c4bf; }
+    select.sel, input.inp, textarea.inp { border: 1px solid #cfd8e3; border-radius: 10px; padding: 7px 10px; font-size: 13px; background: #fff; color: var(--tinta); }
+    /* ---- sidebar ---- */
+    .search { margin: 10px 10px 4px; display: flex; gap: 6px; }
+    .search input { flex: 1; border: 1px solid #cfd8e3; border-radius: 100px; padding: 8px 12px; font-size: 13px; }
+    .vistas { padding: 6px 8px; }
+    .vista { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; cursor: pointer; font-size: 13.5px; color: var(--azul-noche); }
+    .vista:hover { background: #eef4fb; } .vista.on { background: var(--azul-hondo); color: #fff; }
+    .vista .n { margin-left: auto; font-size: 11.5px; font-weight: 700; background: rgba(28,78,122,.12); color: var(--azul-hondo); border-radius: 100px; padding: 1px 8px; min-width: 22px; text-align: center; }
+    .vista.on .n { background: rgba(255,255,255,.25); color: #fff; }
+    .vista .n.rojo { background: #e74c3c; color: #fff; }
+    .sec { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--gris); font-weight: 700; padding: 12px 12px 4px; }
+    .filtros { padding: 4px 10px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .filtros select { width: 100%; font-size: 12px; padding: 6px 8px; }
+    /* ---- lista ---- */
+    .conv { display: flex; gap: 10px; padding: 11px 12px; border-bottom: 1px solid #edf1f5; cursor: pointer; position: relative; }
+    .conv:hover { background: #f5f8fb; } .conv.on { background: #e8f0fa; }
+    .conv.noleida { background: #fffdf3; } .conv.noleida .nom { font-weight: 800; }
+    .av { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; flex: none; position: relative; }
+    .av .ch { position: absolute; right: -4px; bottom: -4px; width: 18px; height: 18px; border-radius: 50%; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 10px; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+    .conv .cuerpo { flex: 1; min-width: 0; }
+    .conv .fila { display: flex; align-items: center; gap: 6px; }
+    .conv .nom { font-size: 14px; color: var(--azul-noche); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+    .conv .hora { font-size: 11px; color: var(--gris); white-space: nowrap; }
+    .conv .prev { font-size: 12.5px; color: #4f5f6f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .conv .prev b { color: var(--azul-hondo); font-weight: 600; }
+    .conv .meta { display: flex; gap: 5px; align-items: center; margin-top: 5px; flex-wrap: wrap; }
+    .chip { font-size: 10.5px; font-weight: 700; border-radius: 100px; padding: 2px 8px; background: #eef1f4; color: #556; white-space: nowrap; }
+    .chip.est { color: #fff; } .chip.ag { background: #e8f0fa; color: var(--azul-hondo); } .chip.tg { background: #fff3c4; color: #7a5a00; }
+    .chip.ojo { background: #e9f8ef; color: #1f7a48; } .chip.esc { background: #ffe8c2; color: #8a4b00; animation: puls 1.2s infinite; }
+    @keyframes puls { 50% { opacity: .55; } }
+    .badge-n { background: #e74c3c; color: #fff; border-radius: 100px; font-size: 11px; font-weight: 700; padding: 1px 7px; min-width: 20px; text-align: center; }
+    /* ---- chat ---- */
+    .chat-h { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .chat-h .quien { flex: 1; min-width: 160px; }
+    .chat-h .quien b { font-size: 15px; color: var(--azul-noche); display: block; }
+    .banner { padding: 7px 14px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #e6ecf2; }
+    .banner.ok { background: #eef9f1; color: #1e6b3f; } .banner.warn { background: #fff4e5; color: #7a4b00; } .banner.pres { background: #eaf3ff; color: #1c4e7a; } .banner.err { background: #fdecea; color: #a4261a; }
+    .msgs { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; background: linear-gradient(180deg,#f6f9fc,#eef3f8); }
+    .dia { align-self: center; font-size: 11px; color: var(--gris); background: #fff; border-radius: 100px; padding: 3px 10px; margin: 6px 0; }
+    .m { max-width: 74%; padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.45; position: relative; word-break: break-word; box-shadow: 0 1px 2px rgba(20,49,75,.12); }
+    .m .txt { white-space: pre-wrap; }
+    .m.in { align-self: flex-start; background: #fff; border-bottom-left-radius: 4px; }
+    .m.out { align-self: flex-end; background: #d9f3e2; border-bottom-right-radius: 4px; }
+    .m.bot { background: #e9e6ff; }
+    .m.tel { background: #e4f0e8; border: 1px dashed #8fbf9f; }
+    .m.nota { align-self: flex-end; background: #fff6c8; border: 1px dashed #e0b400; max-width: 80%; }
+    .m .de { font-size: 11px; font-weight: 700; color: var(--azul-hondo); margin-bottom: 2px; display: flex; gap: 6px; align-items: center; }
+    .m .de .lab { background: #e0b400; color: #3b2d00; border-radius: 100px; padding: 0 7px; font-size: 10px; }
+    .m .pie { font-size: 10.5px; color: #6c7a89; margin-top: 4px; text-align: right; display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+    .m .pie .ok { color: #2c6ba4; } .m .pie .fail { color: #c0392b; font-weight: 700; }
+    .m .quote { border-left: 3px solid #2c6ba4; background: rgba(44,107,164,.08); padding: 4px 8px; border-radius: 6px; font-size: 12px; margin-bottom: 5px; color: #35506a; }
+    .m img, .m video { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 4px; max-height: 320px; }
+    .m audio { width: 240px; max-width: 100%; }
+    .m .doc { display: inline-flex; gap: 8px; align-items: center; background: rgba(0,0,0,.05); border-radius: 10px; padding: 8px 10px; text-decoration: none; color: var(--azul-hondo); font-weight: 700; font-size: 13px; }
+    .m .react { position: absolute; bottom: -10px; right: 8px; background: #fff; border-radius: 100px; padding: 0 6px; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .m .acciones { display: none; position: absolute; top: -12px; right: 6px; gap: 2px; }
+    .m:hover .acciones { display: flex; }
+    .m .acciones button { border: 1px solid #d5dde6; background: #fff; border-radius: 100px; font-size: 11px; padding: 1px 7px; cursor: pointer; }
+    .sistema { align-self: center; font-size: 11.5px; color: #5f6f7f; background: #fff; border: 1px solid #e3e9ef; border-radius: 100px; padding: 3px 12px; }
+    .comp { border-top: 1px solid #e6ecf2; padding: 8px 12px 10px; background: #fff; }
+    .comp .tabs2 { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .comp .tabs2 button { border: none; background: #eef1f4; border-radius: 100px; padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer; color: #556; }
+    .comp .tabs2 button.on { background: var(--azul-hondo); color: #fff; } .comp .tabs2 button.on.nota { background: #e0b400; color: #3b2d00; }
+    .comp textarea { width: 100%; border: 1px solid #cfd8e3; border-radius: 12px; padding: 9px 12px; font-size: 14px; resize: none; min-height: 44px; max-height: 160px; }
+    .comp.nota-on textarea { background: #fffbe6; border-color: #e0b400; }
+    .comp .fila { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+    .comp .fila .esp { flex: 1; }
+    .qr-pop { position: absolute; bottom: 100%; left: 0; right: 0; background: #fff; border: 1px solid #cfd8e3; border-radius: 12px; box-shadow: 0 12px 30px -10px rgba(0,0,0,.3); max-height: 220px; overflow-y: auto; z-index: 5; }
+    .qr-pop div { padding: 7px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f0f3f6; } .qr-pop div:hover, .qr-pop div.on { background: #eef4fb; }
+    .qr-pop b { color: var(--azul-hondo); margin-right: 6px; }
+    .comp-wrap { position: relative; }
+    .citando { font-size: 12px; background: #eef4fb; border-left: 3px solid #2c6ba4; padding: 4px 8px; border-radius: 6px; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+    /* ---- panel derecho ---- */
+    .ptabs { display: flex; border-bottom: 1px solid #e6ecf2; }
+    .ptabs button { flex: 1; border: none; background: transparent; padding: 10px 4px; font-size: 12.5px; font-weight: 700; color: var(--gris); cursor: pointer; border-bottom: 2px solid transparent; }
+    .ptabs button.on { color: var(--azul-hondo); border-bottom-color: var(--azul-hondo); }
+    .pbody { padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+    .campo label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--gris); font-weight: 700; margin-bottom: 3px; }
+    .campo input, .campo select, .campo textarea { width: 100%; border: 1px solid #cfd8e3; border-radius: 10px; padding: 7px 10px; font-size: 13px; background: #fff; }
+    .campo textarea { min-height: 64px; resize: vertical; }
+    .tagsrow { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+    .tagsrow .chip button { border: none; background: transparent; cursor: pointer; margin-left: 3px; color: #a33; font-weight: 700; }
+    .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; font-size: 12.5px; } .kv b { color: var(--azul-noche); font-weight: 600; } .kv span { color: var(--gris); }
+    .ia-box { background: #f3efff; border: 1px solid #d9cffc; border-radius: 12px; padding: 10px 12px; font-size: 12.5px; }
+    .ia-box h4 { margin: 0 0 4px; font-size: 12px; color: #5b3fb3; }
+    .ev { display: flex; gap: 8px; font-size: 12.5px; padding: 6px 0; border-bottom: 1px solid #eef1f4; } .ev .t { color: var(--gris); font-size: 11px; white-space: nowrap; min-width: 84px; }
+    .sla { font-size: 12px; padding: 6px 10px; border-radius: 10px; } .sla.ok { background: #eef9f1; color: #1e6b3f; } .sla.warn { background: #fff4e5; color: #7a4b00; } .sla.bad { background: #fdecea; color: #a4261a; }
+    /* ---- modal ---- */
+    .ov { position: fixed; inset: 0; background: rgba(18,49,75,.45); display: none; align-items: center; justify-content: center; z-index: 200; padding: 16px; }
+    .ov.on { display: flex; }
+    .modal { background: #fff; border-radius: 18px; width: min(560px, 100%); max-height: 90vh; overflow-y: auto; padding: 18px 20px; box-shadow: 0 30px 60px -20px rgba(0,0,0,.4); }
+    .modal h3 { margin: 0 0 12px; color: var(--azul-noche); font-size: 17px; }
+    .modal .acc { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+    .prev-tpl { background: #d9f3e2; border-radius: 12px; padding: 10px 12px; font-size: 13.5px; white-space: pre-wrap; margin-top: 8px; }
+    .lista-modal div.it { padding: 9px 10px; border: 1px solid #e6ecf2; border-radius: 10px; margin-bottom: 6px; cursor: pointer; } .lista-modal div.it:hover { background: #f3f7fb; }
+    .demo-bar { background: #fff4e5; color: #7a4b00; border: 1px solid #f5c26b; border-radius: 12px; padding: 8px 14px; font-size: 13px; margin-bottom: 10px; }
+    .vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--gris); gap: 8px; padding: 30px; text-align: center; }
+    .movil-nav { display: none; }
+    @media (max-width: 1400px) { .app { grid-template-columns: 200px 300px minmax(340px, 1fr); } .pane.panel { display: none; } .app.panel-on .pane.panel { display: flex; position: fixed; right: 12px; top: 80px; bottom: 12px; width: 320px; z-index: 50; box-shadow: 0 30px 60px -20px rgba(0,0,0,.4); } }
+    @media (max-width: 1100px) { .comp .tabs2 .muted { display: none; } }
+    @media (max-width: 800px) {
+        .app { grid-template-columns: 1fr; height: auto; min-height: calc(100vh - 92px); }
+        .pane { display: none; height: calc(100vh - 140px); } .app[data-m="nav"] .pane.nav, .app[data-m="lista"] .pane.lista, .app[data-m="chat"] .pane.chat, .app[data-m="panel"] .pane.panel { display: flex; }
+        .app.panel-on .pane.panel { position: static; width: auto; }
+        .movil-nav { display: flex; gap: 6px; margin-bottom: 8px; } .movil-nav button { flex: 1; }
+        .m { max-width: 88%; }
+    }
+</style>
+</head>
+<body>
+<header>
+    <div class="header-title">
+        <a class="btn-back" href="index.html">← Panel</a>
+        <img class="logo" src="../logo.png" alt="ARTAL">
+        <h1>Inbox <span class="accent">omnicanal</span></h1>
+    </div>
+    <div class="who">
+        <a class="btn-back" href="inbox-contactos.html" title="Contactos (CRM)">👤 Contactos</a>
+        <a class="btn-back" id="lnk-dash" href="inbox-dashboard.html">📊 Dashboard</a>
+        <a class="btn-back" id="lnk-conf" href="inbox-config.html">⚙️ Configuración</a>
+        <span id="user-name"></span>
+        <button id="signout-btn">Cerrar sesión</button>
+    </div>
+</header>
+<main>
+    <div id="demo-bar" class="demo-bar" style="display:none">🧪 <b>Modo demostración</b>: datos de ejemplo en memoria (no se guarda nada, no se envía nada a WhatsApp). Cada tanto llega un mensaje simulado y un «agente» ficticio mira/responde conversaciones para ver la presencia en acción.</div>
+    <div class="movil-nav"><button class="btn" onclick="setMovil('nav')">☰</button><button class="btn" onclick="setMovil('lista')">📥 Bandeja</button><button class="btn" onclick="setMovil('chat')">💬 Chat</button><button class="btn" onclick="setMovil('panel')">ℹ️ Detalle</button></div>
+    <div class="app" id="app" data-m="lista">
+        <section class="pane nav" id="nav"></section>
+        <section class="pane lista"><div class="pane-h"><h2 id="lista-titulo">Todas</h2><span class="muted" id="lista-n"></span><span class="esp" style="flex:1"></span><button class="btn s p" id="btn-nueva" onclick="abrirNueva()">＋ Nueva</button></div><div class="scroll" id="lista"></div></section>
+        <section class="pane chat" id="chat"><div class="vacio">💬<div>Elige una conversación de la bandeja.</div></div></section>
+        <section class="pane panel" id="panel"></section>
+    </div>
+</main>
+<div class="ov" id="ov"><div class="modal" id="modal"></div></div>
+
+<script type="module">
+    import { db, storage } from './firebase-config.js';
+    import * as C from './inbox-core.js';
+    import { collection, doc, query, where, orderBy, limit, onSnapshot, updateDoc, setDoc, addDoc, serverTimestamp, arrayUnion, arrayRemove, getDocs } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { ref as sref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
+
+    const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+    const { esc, fechaCorta, fechaLarga, hace, telefonoBonito, iniciales, colorDe, prioridadDe, canalDe, ESTADOS, PRIORIDADES, CANALES, ms } = C;
+    const estadoDe = (id) => C.porId(ESTADOS, id) || ((S && S.estadosExtra) || []).find(e => e.id === id) || C.estadoDe(id);
+
+    // ---------------------------------------------------------------- sesión
+    let usuario, nivel, presencia = null, signOutFn = null;
+    if (DEMO) {
+        usuario = { email: 'demo@artal.do', nombre: 'Tú (demo)', roles: ['inbox_supervisor'] }; nivel = 'supervisor';
+        document.getElementById('demo-bar').style.display = '';
+        document.getElementById('signout-btn').style.display = 'none';
+    } else {
+        const m = await import('./auth-common.js');
+        usuario = await m.requireAuth(['inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector']);
+        nivel = C.nivelInbox(usuario.roles) || 'lector';
+        m.wireBackButton(usuario.roles);
+        signOutFn = () => m.signOut(m.auth);
+        document.getElementById('signout-btn').onclick = signOutFn;
+        presencia = C.iniciarPresencia(usuario);
+    }
+    document.getElementById('user-name').textContent = usuario.nombre + ' · ' + C.NIVELES[nivel];
+    if (!C.puede(nivel, 'configurar')) document.getElementById('lnk-conf').style.display = 'none';
+    if (!C.puede(nivel, 'estadisticas')) document.getElementById('lnk-dash').style.display = 'none';
+    if (!C.puede(nivel, 'enviar')) document.getElementById('btn-nueva').style.display = 'none';
+    const yo = { email: usuario.email, nombre: usuario.nombre };
+
+    // ---------------------------------------------------------------- estado
+    const S = { convs: [], equipos: [], tags: [], agentes: [], presencias: [], rapidas: [], plantillas: [], sla: null, canalWA: null,
+        vista: 'todas', filtros: { canal: '', estado: '', prioridad: '', agente: '', equipo: '', tag: '', fecha: '', noleido: false }, busca: '',
+        sel: null, mensajes: [], eventos: [], contacto: null, otrasConvs: [], ptab: 'detalle', modoNota: false, citando: null, unsub: [] };
+    const nombreAgente = (email) => { const a = S.agentes.find(x => x.email === email); return a ? a.nombre : (email || ''); };
+    const equipoNombre = (id) => { const e = S.equipos.find(x => x.id === id); return e ? e.nombre : (id || ''); };
+    const misEquipos = () => S.equipos.filter(e => (e.miembros || []).includes(usuario.email)).map(e => e.id);
+    // Agente puede ver: sus conversaciones, las de sus equipos, y las sin asignar (para tomarlas). Supervisor/admin/owner/lector: todo.
+    const puedoVer = (c) => nivel !== 'agente' || !c.asignadoA || c.asignadoA === usuario.email || (c.equipoId && misEquipos().includes(c.equipoId));
+
+    // ---------------------------------------------------------------- fuente de datos (Firestore o demo)
+    let store;
+    if (DEMO) { store = crearDemo(); } else {
+        store = {
+            onConvs(cb) { return onSnapshot(query(collection(db, 'inboxConversaciones'), orderBy('actualizado', 'desc'), limit(600)), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => console.warn(e)); },
+            onCol(nombre, cb, q) { return onSnapshot(q || collection(db, nombre), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => console.warn(nombre, e)); },
+            onDoc(col, id, cb) { return onSnapshot(doc(db, col, id), s => cb(s.exists() ? { id: s.id, ...s.data() } : null), () => cb(null)); },
+            onMensajes(id, cb) { return onSnapshot(query(collection(db, 'inboxConversaciones', id, 'mensajes'), orderBy('created_at', 'asc'), limit(500)), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => console.warn(e)); },
+            onEventos(id, cb) { return onSnapshot(query(collection(db, 'inboxConversaciones', id, 'eventos'), orderBy('at', 'asc'), limit(300)), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))), e => console.warn(e)); },
+            enviar: (body) => C.llamar('inboxEnviar', body),
+            marcarLeido: (id, escribiendo) => C.llamar('inboxMarcarLeido', { conversacionId: id, escribiendo: !!escribiendo }),
+            iniciar: (body) => C.llamar('inboxIniciarConversacion', body),
+            asignar: C.asignar, asignarEquipo: C.asignarEquipo, cambiarEstado: C.cambiarEstado, cambiarPrioridad: (u, c, p) => C.cambiarPrioridad(u, c, p, S.sla), tag: C.tag, nota: C.notaInterna,
+            async guardarContacto(id, campos) { await updateDoc(doc(db, 'inboxContactos', id), { ...campos, actualizado: serverTimestamp(), buscar: arrayUnion(...C.tokensDe(campos.nombre, campos.email, campos.empresa, campos.telefono, ...(campos.tags || []))) }); await C.auditar(yo, 'contacto_editado', 'contacto', id, Object.keys(campos)); },
+            async subir(file, convId) { const r = sref(storage, 'inbox/salientes/' + convId + '/' + Date.now() + '_' + file.name.replace(/[^\w.\-]/g, '_')); await uploadBytes(r, file, { contentType: file.type }); return await getDownloadURL(r); },
+            presencia: (convId, escribiendo) => presencia && presencia.set(convId, escribiendo)
+        };
+    }
+
+    // ---------------------------------------------------------------- suscripciones globales
+    store.onConvs(cs => { S.convs = cs; renderNav(); renderLista(); if (S.sel) { const c = cs.find(x => x.id === S.sel.id); if (c) { S.sel = c; renderChatCabecera(); renderPanel(); } } });
+    store.onCol('inboxEquipos', x => { S.equipos = x; renderNav(); renderPanel(); });
+    store.onCol('inboxTags', x => { S.tags = x; renderNav(); renderPanel(); });
+    store.onCol('equipo', x => { S.agentes = x.filter(u => u.activo !== false && (Array.isArray(u.rol) ? u.rol : [u.rol]).some(r => ['admin', 'inbox_admin', 'inbox_supervisor', 'inbox_agente'].includes(r))).map(u => ({ email: u.id || u.email, nombre: u.nombre || u.id })); renderNav(); renderPanel(); });
+    store.onCol('inboxPresencia', x => { S.presencias = x.filter(p => p.online && p.email !== usuario.email && Date.now() - ms(p.ultimoLatido) < 120000); renderLista(); renderChatBanners(); });
+    store.onCol('inboxRespuestasRapidas', x => { S.rapidas = x.filter(r => r.global || r.email === usuario.email); });
+    store.onCol('inboxPlantillas', x => { S.plantillas = x.filter(p => p.estado === 'APPROVED'); });
+    store.onDoc('inboxConfig', 'sla', x => { S.sla = x ? { primera: x.primeraRespuestaMin || {}, resolucion: x.resolucionMin || {} } : { primera: { urgent: 10, high: 30, normal: 60, low: 240 }, resolucion: {} }; });
+    store.onDoc('inboxCanales', 'whatsapp', x => { S.canalWA = x; renderNav(); });
+    // Estados personalizados (Configuración → SLA y estados): se suman a los 6 base en los selectores.
+    store.onDoc('inboxConfig', 'general', x => { S.estadosExtra = (x && x.estadosExtra) || []; renderChatCabecera(); });
+    // Auditoría de acceso: una vez por sesión de navegador (login) y al cerrar sesión (logout).
+    if (!DEMO && !sessionStorage.getItem('inbox_login_ok')) { sessionStorage.setItem('inbox_login_ok', '1'); C.auditar(yo, 'login', 'sesion', null, { pantalla: 'inbox' }); }
+    if (!DEMO) document.getElementById('signout-btn').onclick = async () => { try { await C.auditar(yo, 'logout', 'sesion', null); sessionStorage.removeItem('inbox_login_ok'); } catch (_) { } signOutFn(); };
+
+    // ---------------------------------------------------------------- vistas y filtros
+    function filtradas() {
+        const f = S.filtros, q = C.normalizar(S.busca.trim());
+        const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        return S.convs.filter(c => {
+            if (!puedoVer(c)) return false;
+            const cerrada = ['closed', 'resolved'].includes(c.estado);
+            if (S.vista === 'todas' && cerrada) return false;
+            if (S.vista === 'noasig' && (c.asignadoA || cerrada)) return false;
+            if (S.vista === 'mias' && (c.asignadoA !== usuario.email || cerrada)) return false;
+            if (S.vista === 'noleidas' && !(c.noLeidos > 0)) return false;
+            if (S.vista === 'cerradas' && !cerrada) return false;
+            if (S.vista.startsWith('eq:') && (c.equipoId !== S.vista.slice(3) || cerrada)) return false;
+            if (f.canal && c.canal !== f.canal) return false;
+            if (f.estado && c.estado !== f.estado) return false;
+            if (f.prioridad && c.prioridad !== f.prioridad) return false;
+            if (f.agente && c.asignadoA !== f.agente) return false;
+            if (f.equipo && c.equipoId !== f.equipo) return false;
+            if (f.tag && !(c.tags || []).includes(f.tag)) return false;
+            if (f.noleido && !(c.noLeidos > 0)) return false;
+            if (f.fecha) { const d = ms(c.actualizado); const lim = f.fecha === 'hoy' ? hoy.getTime() : Date.now() - Number(f.fecha) * 86400000; if (d < lim) return false; }
+            if (q) { const blob = C.normalizar(['#' + c.numero, c.contactoNombre, c.contactoTelefono, c.contactoEmail, c.asignadoNombre, c.equipoNombre, (c.tags || []).join(' '), c.ultimoMensaje && c.ultimoMensaje.texto, c.canal].filter(Boolean).join(' ')); if (!q.split(/\s+/).every(w => blob.includes(w))) return false; }
+            return true;
+        });
+    }
+    function renderNav() {
+        const vis = S.convs.filter(puedoVer), ab = vis.filter(c => !['closed', 'resolved'].includes(c.estado));
+        const n = (fn) => ab.filter(fn).length;
+        const it = (id, ic, t, num, rojo) => `<div class="vista ${S.vista === id ? 'on' : ''}" onclick="setVista('${id}')"><span>${ic}</span><span>${esc(t)}</span><span class="n ${rojo && num ? 'rojo' : ''}">${num}</span></div>`;
+        const opt = (lista, cur, todo) => `<option value="">${todo}</option>` + lista.map(x => `<option value="${esc(x.id)}" ${cur === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('');
+        const f = S.filtros;
+        document.getElementById('nav').innerHTML = `
+            <div class="search"><input type="search" placeholder="Buscar nombre, teléfono, #, tag…" value="${esc(S.busca)}" oninput="setBusca(this.value)"></div>
+            <div class="vistas">
+                ${it('todas', '📥', 'Todas', ab.length)}
+                ${it('noasig', '🆕', 'No asignadas', n(c => !c.asignadoA), true)}
+                ${it('mias', '🙋', 'Mis conversaciones', n(c => c.asignadoA === usuario.email))}
+                ${it('noleidas', '🔴', 'Sin leer', vis.filter(c => c.noLeidos > 0).length, true)}
+                ${S.equipos.length ? `<div class="sec">Equipos</div>` + S.equipos.map(e => it('eq:' + e.id, e.icono || '👥', e.nombre, n(c => c.equipoId === e.id))).join('') : ''}
+                <div class="sec">Archivo</div>
+                ${it('cerradas', '✅', 'Resueltas / cerradas', vis.length - ab.length)}
+            </div>
+            <div class="sec">Filtros</div>
+            <div class="filtros">
+                <select onchange="setFiltro('canal',this.value)">${opt(CANALES, f.canal, 'Canal: todos')}</select>
+                <select onchange="setFiltro('estado',this.value)">${opt(ESTADOS, f.estado, 'Estado: todos')}</select>
+                <select onchange="setFiltro('prioridad',this.value)">${opt(PRIORIDADES, f.prioridad, 'Prioridad: todas')}</select>
+                <select onchange="setFiltro('agente',this.value)">${opt(S.agentes.map(a => ({ id: a.email, nombre: a.nombre })), f.agente, 'Agente: todos')}</select>
+                <select onchange="setFiltro('equipo',this.value)">${opt(S.equipos, f.equipo, 'Equipo: todos')}</select>
+                <select onchange="setFiltro('tag',this.value)">${opt(S.tags.map(t => ({ id: t.nombre, nombre: t.nombre })), f.tag, 'Tag: todos')}</select>
+                <select onchange="setFiltro('fecha',this.value)"><option value="">Actividad: cualquier fecha</option><option value="hoy" ${f.fecha === 'hoy' ? 'selected' : ''}>Hoy</option><option value="7" ${f.fecha === '7' ? 'selected' : ''}>Últimos 7 días</option><option value="30" ${f.fecha === '30' ? 'selected' : ''}>Últimos 30 días</option></select>
+                <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" ${f.noleido ? 'checked' : ''} onchange="setFiltro('noleido',this.checked)"> Solo con mensajes sin leer</label>
+                <button class="btn s" onclick="limpiarFiltros()">Limpiar filtros</button>
+            </div>
+            <div class="sec">Canal</div>
+            <div style="padding:0 12px 12px;font-size:12px;color:var(--gris)">${S.canalWA && S.canalWA.activo ? `💬 <b style="color:#1e6b3f">WhatsApp conectado</b><br>${esc(S.canalWA.displayPhone || '')} · ${esc(S.canalWA.verifiedName || '')}<br>Calidad: ${esc(S.canalWA.calidad || '—')}` : (DEMO ? '💬 WhatsApp (simulado)' : '⚠️ WhatsApp sin conectar.<br><a href="inbox-config.html">Configurar canal →</a>')}</div>`;
+    }
+    window.setVista = (v) => { S.vista = v; renderNav(); renderLista(); setMovil('lista'); };
+    window.setBusca = (v) => { S.busca = v; renderLista(); };
+    window.setFiltro = (k, v) => { S.filtros[k] = v; renderNav(); renderLista(); };
+    window.limpiarFiltros = () => { S.filtros = { canal: '', estado: '', prioridad: '', agente: '', equipo: '', tag: '', fecha: '', noleido: false }; S.busca = ''; renderNav(); renderLista(); };
+    window.setMovil = (m) => { const app = document.getElementById('app'); if (m === 'panel' && innerWidth > 800) { app.classList.toggle('panel-on'); return; } app.dataset.m = m; app.classList.toggle('panel-on', m === 'panel'); };
+    // Alto de la app = lo que queda de ventana debajo de la cabecera/aviso demo (en vez de un calc fijo).
+    const ajustarAlto = () => { const app = document.getElementById('app'); if (innerWidth <= 800) { app.style.height = ''; return; } app.style.height = Math.max(480, innerHeight - app.getBoundingClientRect().top - 12) + 'px'; };
+    addEventListener('resize', ajustarAlto); setTimeout(ajustarAlto, 50); setTimeout(ajustarAlto, 600);
+
+    function presenciaDe(convId) { return S.presencias.filter(p => p.conversacionId === convId || p.escribiendo === convId); }
+    function renderLista() {
+        const lista = filtradas();
+        const titulos = { todas: 'Todas', noasig: 'No asignadas', mias: 'Mis conversaciones', noleidas: 'Sin leer', cerradas: 'Resueltas / cerradas' };
+        document.getElementById('lista-titulo').textContent = S.vista.startsWith('eq:') ? equipoNombre(S.vista.slice(3)) : (titulos[S.vista] || 'Bandeja');
+        document.getElementById('lista-n').textContent = lista.length + (lista.length === 1 ? ' conversación' : ' conversaciones');
+        if (!lista.length) { document.getElementById('lista').innerHTML = `<div class="vacio">📭<div>No hay conversaciones con estos filtros.</div></div>`; return; }
+        document.getElementById('lista').innerHTML = lista.map(c => {
+            const ca = canalDe(c.canal), es = estadoDe(c.estado), pr = prioridadDe(c.prioridad);
+            const pres = presenciaDe(c.id);
+            const um = c.ultimoMensaje || {};
+            const prev = um.texto ? `${um.direccion === 'outbound' ? `<b>${esc((um.de || '').split(' ')[0])}:</b> ` : ''}${esc(um.texto)}` : '<i>sin mensajes</i>';
+            return `<div class="conv ${S.sel && S.sel.id === c.id ? 'on' : ''} ${c.noLeidos > 0 ? 'noleida' : ''}" onclick="abrir('${c.id}')">
+                <div class="av" style="background:${colorDe(c.contactoNombre || c.contactoTelefono)}">${esc(iniciales(c.contactoNombre || c.contactoTelefono))}<span class="ch" title="${esc(ca.nombre)}">${ca.icono}</span></div>
+                <div class="cuerpo">
+                    <div class="fila"><span class="nom">${esc(c.contactoNombre || telefonoBonito(c.contactoTelefono) || c.contactoEmail || 'Sin nombre')}</span><span title="${esc(pr.nombre)}">${pr.id === 'normal' ? '' : pr.icono}</span><span class="hora">${esc(fechaCorta(um.at || c.actualizado))}</span></div>
+                    <div class="prev">${prev}</div>
+                    <div class="meta">
+                        <span class="chip est" style="background:${es.color}">${esc(es.nombre)}</span>
+                        ${c.asignadoA ? `<span class="chip ag">👤 ${esc((c.asignadoNombre || c.asignadoA).split(' ')[0])}</span>` : (c.equipoId ? `<span class="chip ag">👥 ${esc(equipoNombre(c.equipoId))}</span>` : '<span class="chip" style="background:#fdecea;color:#a4261a">Sin asignar</span>')}
+                        ${(c.tags || []).slice(0, 2).map(t => `<span class="chip tg">${esc(t)}</span>`).join('')}
+                        ${pres.map(p => `<span class="chip ${p.escribiendo === c.id ? 'esc' : 'ojo'}" title="${esc(p.nombre)}">${p.escribiendo === c.id ? '✍️' : '👁'} ${esc(p.nombre.split(' ')[0])}</span>`).join('')}
+                        ${c.sla && c.sla.primeraVencida && !c.primeraRespuestaAt ? '<span class="chip" style="background:#fdecea;color:#a4261a">SLA</span>' : ''}
+                        <span style="flex:1"></span>
+                        ${c.noLeidos > 0 ? `<span class="badge-n">${c.noLeidos}</span>` : ''}
+                        <span class="muted" title="Tiempo desde el último mensaje">${esc(hace(um.at || c.actualizado))}</span>
+                    </div>
+                </div></div>`;
+        }).join('');
+    }
+
+    // ---------------------------------------------------------------- abrir conversación
+    let leidoTimer = null, escribiendoTs = 0;
+    window.abrir = function (id) {
+        S.unsub.forEach(u => { try { u(); } catch (_) { } }); S.unsub = [];
+        S.sel = S.convs.find(c => c.id === id) || null; S.mensajes = []; S.eventos = []; S.contacto = null; S.otrasConvs = []; S.citando = null; S.modoNota = false;
+        if (!S.sel) return;
+        renderChatCabecera(); renderLista(); renderPanel(); setMovil('chat');
+        S.unsub.push(store.onMensajes(id, ms2 => { S.mensajes = ms2; renderMensajes(); }));
+        S.unsub.push(store.onEventos(id, ev => { S.eventos = ev; if (S.ptab === 'historial') renderPanel(); }));
+        S.unsub.push(store.onDoc('inboxContactos', S.sel.contactoId, c => { S.contacto = c; S.otrasConvs = S.convs.filter(x => x.contactoId === S.sel.contactoId && x.id !== S.sel.id); if (S.ptab !== 'historial') renderPanel(); }));
+        store.presencia(id, false);
+        if (S.sel.noLeidos > 0 && nivel !== 'lector') { clearTimeout(leidoTimer); leidoTimer = setTimeout(() => store.marcarLeido(id, false).catch(e => console.warn(e)), 700); }
+        if (!DEMO) history.replaceState(null, '', '?c=' + id);
+    };
+
+    function chatShell() {
+        return `<div class="pane-h chat-h" id="chat-cab"></div><div id="chat-banners"></div><div class="scroll msgs" id="msgs"></div><div class="comp" id="comp"></div>`;
+    }
+    function renderChatCabecera() {
+        const c = S.sel; if (!c) return;
+        const chat = document.getElementById('chat');
+        if (!document.getElementById('chat-cab')) { chat.innerHTML = chatShell(); renderComposer(); }
+        const ca = canalDe(c.canal);
+        const optE = [...ESTADOS, ...(S.estadosExtra || []).map(e => ({ ...e, icono: '🔹' }))].map(e => `<option value="${e.id}" ${c.estado === e.id ? 'selected' : ''}>${e.icono} ${e.nombre}</option>`).join('');
+        const optP = PRIORIDADES.map(p => `<option value="${p.id}" ${c.prioridad === p.id ? 'selected' : ''}>${p.icono} ${p.nombre}</option>`).join('');
+        const puedeAsig = C.puede(nivel, 'asignar');
+        document.getElementById('chat-cab').innerHTML = `
+            <div class="av" style="background:${colorDe(c.contactoNombre || c.contactoTelefono)};width:36px;height:36px;font-size:13px">${esc(iniciales(c.contactoNombre || c.contactoTelefono))}<span class="ch">${ca.icono}</span></div>
+            <div class="quien"><b>${esc(c.contactoNombre || 'Sin nombre')} <span class="muted" style="font-weight:400">#${c.numero}</span></b><span class="muted">${esc(telefonoBonito(c.contactoTelefono) || c.contactoEmail || '')} · ${esc(ca.nombre)}${c.contacto && c.contacto.empresa ? ' · ' + esc(c.contacto.empresa) : ''}</span></div>
+            ${puedeAsig ? `<button class="btn s ${c.asignadoA === usuario.email ? '' : 'p'}" onclick="${c.asignadoA === usuario.email ? 'soltar()' : 'tomar()'}">${c.asignadoA === usuario.email ? '↩ Soltar' : (c.asignadoA ? '🙋 Tomar para mí' : '🙋 Tomar')}</button>` : ''}
+            ${C.puede(nivel, 'asignarOtros') ? `<button class="btn s" onclick="abrirAsignar()">👥 Asignar / transferir</button>` : ''}
+            <select class="sel" style="font-size:12px;padding:5px 8px" onchange="setEstado(this.value)" ${C.puede(nivel, 'cerrar') ? '' : 'disabled'}>${optE}</select>
+            <select class="sel" style="font-size:12px;padding:5px 8px" onchange="setPrioridad(this.value)" ${C.puede(nivel, 'asignar') ? '' : 'disabled'}>${optP}</select>
+            <button class="btn s" onclick="setMovil('panel')" title="Detalle">ℹ️</button>`;
+        renderChatBanners();
+    }
+    function renderChatBanners() {
+        const c = S.sel, el = document.getElementById('chat-banners'); if (!c || !el) return;
+        const pres = presenciaDe(c.id);
+        let h = '';
+        if (pres.length) h += `<div class="banner pres">${pres.map(p => p.escribiendo === c.id ? `✍️ <b>${esc(p.nombre)}</b> está respondiendo…` : `👁 <b>${esc(p.nombre)}</b> está viendo esta conversación`).join(' · ')}</div>`;
+        if (c.canal === 'whatsapp' || c.canal === 'instagram') {
+            const abierta = c.ventanaHasta && ms(c.ventanaHasta) > Date.now();
+            h += abierta ? `<div class="banner ok">🟢 Ventana de 24 h abierta hasta las ${esc(fechaCorta(c.ventanaHasta))} (${esc(hace(Date.now() - (ms(c.ventanaHasta) - Date.now())))} restantes). Puedes escribir libremente.</div>`
+                : `<div class="banner warn">🔒 Ventana de 24 h cerrada: el cliente no ha escrito recientemente. ${c.canal === 'whatsapp' ? 'Solo puedes enviar una <b>plantilla aprobada</b> de WhatsApp.' : 'Instagram no permite escribir hasta que el cliente vuelva a escribir.'}${c.canal === 'whatsapp' && C.puede(nivel, 'enviar') ? ' <button class="btn s" onclick="abrirPlantilla()">📋 Enviar plantilla</button>' : ''}</div>`;
+        }
+        if (c.ultimoFallo && c.ultimoFallo.error) h += `<div class="banner err">⚠️ Último envío falló: ${esc(c.ultimoFallo.error)}</div>`;
+        if (c.asignadoA && c.asignadoA !== usuario.email && nivel !== 'lector') h += `<div class="banner warn">👤 Asignada a <b>${esc(c.asignadoNombre || c.asignadoA)}</b>. Si respondes, avisa o tómala para ti.</div>`;
+        el.innerHTML = h;
+    }
+
+    // ---------------------------------------------------------------- mensajes
+    const TICK = { accepted: '🕓', sent: '✓', delivered: '✓✓', read: '<span class="ok">✓✓</span>', failed: '<span class="fail">⚠️ Falló</span>', received: '', internal: '' };
+    function mediaHTML(m) {
+        const md = m.media || {}; const t = m.message_type;
+        if (md.pendiente && !md.url) return `<div class="muted">⏳ Descargando archivo…</div>`;
+        if (t === 'image' || t === 'sticker') return md.url ? `<a href="${esc(md.url)}" target="_blank" rel="noopener"><img src="${esc(md.url)}" alt="" style="${t === 'sticker' ? 'max-width:140px' : ''}"></a>` : '';
+        if (t === 'video') return md.url ? `<video controls src="${esc(md.url)}"></video>` : '';
+        if (t === 'audio') return md.url ? `<audio controls src="${esc(md.url)}"></audio>${md.voice ? '<div class="muted">🎤 nota de voz</div>' : ''}` : '';
+        if (t === 'document') return md.url ? `<a class="doc" href="${esc(md.url)}" target="_blank" rel="noopener">📄 ${esc(md.filename || 'Documento')}</a>` : '';
+        if (t === 'location') return `<a class="doc" href="https://maps.google.com/?q=${md.latitude},${md.longitude}" target="_blank" rel="noopener">📍 ${esc(md.name || 'Ubicación')}${md.address ? '<br><small>' + esc(md.address) + '</small>' : ''}</a>`;
+        if (t === 'contacts') return (md.contacts || []).map(k => `<div class="doc">👤 ${esc((k.name && k.name.formatted_name) || '')} ${(k.phones || []).map(p => esc(p.phone)).join(', ')}</div>`).join('');
+        return '';
+    }
+    function renderMensajes() {
+        const el = document.getElementById('msgs'); if (!el || !S.sel) return;
+        const cercaFondo = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        let dia = '', h = '';
+        const porId = new Map(S.mensajes.map(m => [m.id, m]));
+        S.mensajes.forEach(m => {
+            const d = new Date(ms(m.created_at) || Date.now()).toLocaleDateString('es-DO', { weekday: 'short', day: 'numeric', month: 'short' });
+            if (d !== dia) { dia = d; h += `<div class="dia">${esc(d)}</div>`; }
+            if (m.message_type === 'system') { h += `<div class="sistema">${esc(m.content)}</div>`; return; }
+            const nota = m.is_internal_note, out = m.direction === 'outbound', bot = m.sender_type === 'bot', tel = m.sender_type === 'system' && out;
+            const cls = nota ? 'nota' : (out ? 'out' + (bot ? ' bot' : '') + (tel ? ' tel' : '') : 'in');
+            const citaId = (m.metadata && m.metadata.reply_to_local) || null; const cita = citaId ? porId.get(citaId) : null;
+            const reacts = Object.values(m.reactions || {}).map(r => r.emoji).filter(Boolean).join('');
+            const tipoChip = (['interactive', 'button', 'template', 'unsupported', 'order'].includes(m.message_type) ? `<span class="chip">${m.message_type === 'template' ? '📋 plantilla' : m.message_type === 'unsupported' ? '⚠️ no soportado' : '🔘 ' + m.message_type}</span>` : '') + (m.metadata && m.metadata.historial ? '<span class="chip" title="Importado del teléfono al activar la coexistencia">🕘 historial</span>' : '');
+            const puedeReaccionar = !nota && m.external_message_id && S.sel.canal === 'whatsapp' && C.puede(nivel, 'enviar');
+            h += `<div class="m ${cls}" id="m-${m.id}">
+                ${(out || nota) ? `<div class="de">${nota ? '<span class="lab">NOTA INTERNA</span>' : ''}${esc(bot ? '🤖 ' + (m.sender_name || 'Bot') : (m.sender_name || m.sender_id || ''))}</div>` : ''}
+                ${cita ? `<div class="quote">${esc(cita.is_internal_note ? 'nota' : (cita.content || cita.message_type)).slice(0, 120)}</div>` : (m.reply_to && !cita ? '<div class="quote">↩ respuesta a un mensaje anterior</div>' : '')}
+                ${mediaHTML(m)}${tipoChip}${m.content && !['location', 'contacts'].includes(m.message_type) ? '<span class="txt">' + esc(m.content) + '</span>' : ''}
+                <div class="pie">${esc(fechaCorta(m.created_at))} ${out && !nota ? (TICK[m.status] || '') : ''}${m.error ? `<span class="fail" title="${esc(m.error)}">· ${esc(m.error).slice(0, 90)}</span>` : ''}</div>
+                ${reacts ? `<span class="react">${esc(reacts)}</span>` : ''}
+                ${!nota && C.puede(nivel, 'enviar') ? `<div class="acciones"><button onclick="citar('${m.id}')" title="Responder citando">↩</button>${puedeReaccionar ? `<button onclick="reaccionar('${m.id}','👍')">👍</button><button onclick="reaccionar('${m.id}','❤️')">❤️</button>` : ''}</div>` : ''}
+            </div>`;
+        });
+        el.innerHTML = h || '<div class="sistema">Sin mensajes todavía.</div>';
+        if (cercaFondo || !el.dataset.init) { el.scrollTop = el.scrollHeight; el.dataset.init = '1'; }
+    }
+    window.citar = (id) => { S.citando = S.mensajes.find(m => m.id === id) || null; renderComposer(); document.getElementById('txt') && document.getElementById('txt').focus(); };
+    window.reaccionar = async (id, emoji) => { try { await store.enviar({ conversacionId: S.sel.id, tipo: 'reaction', mensajeId: id, emoji }); } catch (e) { alert(e.message); } };
+
+    // ---------------------------------------------------------------- composer
+    function renderComposer() {
+        const el = document.getElementById('comp'); if (!el || !S.sel) return;
+        if (!C.puede(nivel, 'enviar')) { el.innerHTML = '<div class="muted">Tu rol es de solo lectura.</div>'; return; }
+        const c = S.sel, nota = S.modoNota;
+        const cerrada = c.estado === 'closed';
+        el.className = 'comp' + (nota ? ' nota-on' : '');
+        el.innerHTML = `
+            <div class="tabs2"><button class="${!nota ? 'on' : ''}" onclick="setNota(false)">💬 Responder al cliente</button><button class="${nota ? 'on nota' : ''}" onclick="setNota(true)">📝 Nota interna</button><span class="muted" style="margin-left:auto">${nota ? 'Solo la ve el equipo. Nunca se envía.' : 'Enter envía · Shift+Enter salto de línea · «/» respuestas rápidas'}</span></div>
+            ${S.citando ? `<div class="citando">↩ Citando: <i>${esc((S.citando.content || S.citando.message_type)).slice(0, 80)}</i><button class="btn s" onclick="citar(null)">✕</button></div>` : ''}
+            <div class="comp-wrap"><div class="qr-pop" id="qr-pop" style="display:none"></div>
+            <textarea id="txt" rows="2" placeholder="${nota ? 'Escribe una nota para el equipo… (@nombre para mencionar)' : (cerrada ? 'Conversación cerrada: reábrela para escribir.' : 'Escribe un mensaje…')}" ${cerrada && !nota ? 'disabled' : ''} oninput="alEscribir(this)" onkeydown="teclas(event)"></textarea></div>
+            <div class="fila">
+                ${!nota ? `<label class="btn s" title="Adjuntar imagen, video, audio o documento">📎<input type="file" style="display:none" onchange="adjuntar(this)"></label>
+                <button class="btn s" onclick="abrirPlantilla()" title="Plantilla de WhatsApp">📋 Plantilla</button>
+                <button class="btn s" onclick="abrirBotones()" title="Mensaje con botones">🔘 Botones</button>
+                <button class="btn s" onclick="abrirRapidas()" title="Respuestas rápidas">⚡</button>` : ''}
+                <span class="esp"></span>
+                <button class="btn ${nota ? 'y' : 'p'}" id="btn-enviar" onclick="enviar()">${nota ? '📝 Guardar nota' : '➤ Enviar'}</button>
+            </div>`;
+    }
+    window.setNota = (v) => { S.modoNota = v; renderComposer(); document.getElementById('txt').focus(); };
+    window.teclas = (ev) => {
+        const pop = document.getElementById('qr-pop');
+        if (pop && pop.style.display !== 'none') {
+            const items = [...pop.querySelectorAll('div')]; let i = items.findIndex(x => x.classList.contains('on'));
+            if (ev.key === 'ArrowDown') { ev.preventDefault(); items[i]?.classList.remove('on'); items[Math.min(items.length - 1, i + 1)]?.classList.add('on'); return; }
+            if (ev.key === 'ArrowUp') { ev.preventDefault(); items[i]?.classList.remove('on'); items[Math.max(0, i - 1)]?.classList.add('on'); return; }
+            if (ev.key === 'Enter' || ev.key === 'Tab') { ev.preventDefault(); (items[i] || items[0])?.click(); return; }
+            if (ev.key === 'Escape') { pop.style.display = 'none'; return; }
+        }
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); enviar(); }
+    };
+    window.alEscribir = (ta) => {
+        ta.style.height = 'auto'; ta.style.height = Math.min(160, ta.scrollHeight) + 'px';
+        const v = ta.value;
+        const pop = document.getElementById('qr-pop');
+        if (!S.modoNota && v.startsWith('/')) { const q = C.normalizar(v.slice(1)); const its = S.rapidas.filter(r => C.normalizar(r.atajo).includes(q) || C.normalizar(r.texto).includes(q)).slice(0, 8); pop.innerHTML = its.length ? its.map((r, i) => `<div class="${i === 0 ? 'on' : ''}" onclick="usarRapida('${esc(r.id)}')"><b>/${esc(r.atajo)}</b>${esc(r.texto).slice(0, 90)}</div>`).join('') : '<div class="muted">Sin respuestas rápidas que coincidan.</div>'; pop.style.display = ''; } else pop.style.display = 'none';
+        if (!S.modoNota && v.trim() && Date.now() - escribiendoTs > 20000) { escribiendoTs = Date.now(); store.presencia(S.sel.id, true); if (!DEMO && S.sel.canal === 'whatsapp') store.marcarLeido(S.sel.id, true).catch(() => { }); }
+        if (!v.trim()) store.presencia(S.sel.id, false);
+    };
+    const plantillaTexto = (t) => String(t || '').replace(/\{nombre\}/gi, (S.sel.contactoNombre || '').split(' ')[0] || '').replace(/\{agente\}/gi, usuario.nombre.split(' ')[0]);
+    window.usarRapida = (id) => { const r = S.rapidas.find(x => x.id === id); if (!r) return; const ta = document.getElementById('txt'); ta.value = plantillaTexto(r.texto); document.getElementById('qr-pop').style.display = 'none'; ta.focus(); alEscribir(ta); };
+    window.abrirRapidas = () => { if (!S.rapidas.length) { alert('No hay respuestas rápidas. Un administrador las crea en Configuración → Respuestas rápidas, y cada agente puede crear las suyas.'); return; } modal(`<h3>⚡ Respuestas rápidas</h3><div class="lista-modal">${S.rapidas.map(r => `<div class="it" onclick="usarRapida('${esc(r.id)}');cerrarModal()"><b>/${esc(r.atajo)}</b> ${r.global ? '<span class="chip">global</span>' : '<span class="chip">mía</span>'}<div class="muted">${esc(r.texto)}</div></div>`).join('')}</div><div class="acc"><button class="btn" onclick="cerrarModal()">Cerrar</button></div>`); };
+
+    // Guardas anti-duplicado: otro agente escribiendo en esta conversación o respondió hace < 30 s.
+    function conflicto() {
+        const c = S.sel; const otro = S.presencias.find(p => p.escribiendo === c.id);
+        if (otro) return `${otro.nombre} está respondiendo esta conversación ahora mismo. ¿Enviar de todas formas?`;
+        const ult = [...S.mensajes].reverse().find(m => m.direction === 'outbound' && !m.is_internal_note);
+        if (ult && ult.sender_id !== usuario.email && ult.sender_type === 'agent' && Date.now() - ms(ult.created_at) < 30000) return `${ult.sender_name} acaba de responder hace unos segundos. ¿Enviar de todas formas?`;
+        return null;
+    }
+    window.enviar = async function () {
+        const ta = document.getElementById('txt'); const texto = (ta.value || '').trim(); if (!texto || !S.sel) return;
+        const btn = document.getElementById('btn-enviar'); btn.disabled = true;
+        try {
+            if (S.modoNota) { const menciones = [...texto.matchAll(/@([\wáéíóúñ.]+)/gi)].map(x => x[1]); await store.nota(yo, S.sel, texto, menciones); }
+            else { const conf = conflicto(); if (conf && !confirm(conf)) { btn.disabled = false; return; } await store.enviar({ conversacionId: S.sel.id, tipo: 'text', texto, responderA: S.citando ? S.citando.id : null }); }
+            ta.value = ''; ta.style.height = 'auto'; S.citando = null; store.presencia(S.sel.id, false); renderComposer(); document.getElementById('txt').focus();
+        } catch (e) { alert('No se pudo enviar: ' + e.message + (e.codigo === 'ventana' ? '\n\nUsa el botón 📋 Plantilla.' : '')); }
+        finally { btn.disabled = false; }
+    };
+    window.adjuntar = async function (inp) {
+        const f = inp.files && inp.files[0]; if (!f || !S.sel) return;
+        const tipo = f.type.startsWith('image/') ? 'image' : f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'audio' : 'document';
+        const max = { image: 5, video: 16, audio: 16, document: 100 }[tipo];
+        if (f.size > max * 1024 * 1024) { alert('WhatsApp limita ' + tipo + ' a ' + max + ' MB.'); inp.value = ''; return; }
+        if (tipo === 'image' && !/jpeg|png/.test(f.type)) { alert('WhatsApp solo acepta imágenes JPEG o PNG.'); inp.value = ''; return; }
+        const caption = document.getElementById('txt').value.trim();
+        try { const url = await store.subir(f, S.sel.id); await store.enviar({ conversacionId: S.sel.id, tipo, media: { url, caption, filename: f.name, mime_type: f.type } }); document.getElementById('txt').value = ''; }
+        catch (e) { alert('No se pudo enviar el archivo: ' + e.message); } finally { inp.value = ''; }
+    };
+
+    // ---------------------------------------------------------------- acciones de cabecera
+    window.tomar = async () => { try { await store.asignar(yo, S.sel, yo); } catch (e) { alert(e.message); } };
+    window.soltar = async () => { try { await store.asignar(yo, S.sel, null); } catch (e) { alert(e.message); } };
+    window.setEstado = async (v) => { let nota = ''; if (v === 'closed' || v === 'resolved') { nota = prompt('Motivo / nota de cierre (opcional):') || ''; } try { await store.cambiarEstado(yo, S.sel, v, nota); } catch (e) { alert(e.message); } };
+    window.setPrioridad = async (v) => { try { await store.cambiarPrioridad(yo, S.sel, v); } catch (e) { alert(e.message); } };
+    window.abrirAsignar = () => {
+        const c = S.sel;
+        modal(`<h3>👥 Asignar / transferir #${c.numero}</h3>
+            <div class="campo"><label>Agente</label><select id="as-ag" class="sel" style="width:100%"><option value="">— Sin agente —</option>${S.agentes.map(a => `<option value="${esc(a.email)}" ${c.asignadoA === a.email ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></div>
+            <div class="campo" style="margin-top:10px"><label>Equipo</label><select id="as-eq" class="sel" style="width:100%"><option value="">— Sin equipo —</option>${S.equipos.map(e => `<option value="${esc(e.id)}" ${c.equipoId === e.id ? 'selected' : ''}>${esc(e.nombre)}</option>`).join('')}</select></div>
+            <div class="campo" style="margin-top:10px"><label>Nota para quien la recibe (opcional, queda como nota interna)</label><input id="as-nota" type="text" placeholder="Ej. cliente VIP, ya le cotizamos en marzo"></div>
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="confirmarAsignar()">Guardar</button></div>`);
+    };
+    window.confirmarAsignar = async () => {
+        const c = S.sel, ag = document.getElementById('as-ag').value, eq = document.getElementById('as-eq').value, nota = document.getElementById('as-nota').value.trim();
+        try {
+            if (ag !== (c.asignadoA || '')) await store.asignar(yo, c, ag ? { email: ag, nombre: nombreAgente(ag) } : null);
+            if (eq !== (c.equipoId || '')) await store.asignarEquipo(yo, c, eq ? { id: eq, nombre: equipoNombre(eq) } : null);
+            if (nota) await store.nota(yo, c, '📌 Al transferir: ' + nota, ag ? [ag] : []);
+            cerrarModal();
+        } catch (e) { alert(e.message); }
+    };
+
+    // ---------------------------------------------------------------- plantillas / botones / nueva
+    function renderTpl(t, params) { let i = 0; return String(t.cuerpo || '').replace(/\{\{(\d+)\}\}/g, (_, n) => params[Number(n) - 1] || `{{${n}}}`); }
+    window.abrirPlantilla = (convId) => {
+        if (!S.plantillas.length) { alert(DEMO ? 'En el modo demo no hay plantillas cargadas.' : 'No hay plantillas aprobadas. En Configuración → Plantillas pulsa «Sincronizar desde Meta».'); return; }
+        modal(`<h3>📋 Enviar plantilla de WhatsApp</h3><p class="muted">Las plantillas las aprueba Meta. Fuera de la ventana de 24 h son la única forma de escribirle al cliente; las de categoría Marketing/Utility tienen costo por mensaje.</p>
+            <div class="campo"><label>Plantilla</label><select id="tp-sel" class="sel" style="width:100%" onchange="tplCambio()">${S.plantillas.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)} · ${esc(p.idioma)} · ${esc(p.categoria)}</option>`).join('')}</select></div>
+            <div id="tp-vars"></div><div class="prev-tpl" id="tp-prev"></div>
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="enviarPlantilla('${convId || ''}')">➤ Enviar plantilla</button></div>`);
+        tplCambio();
+    };
+    window.tplCambio = () => {
+        const t = S.plantillas.find(p => p.id === document.getElementById('tp-sel').value); if (!t) return;
+        const nombre = (S.sel && S.sel.contactoNombre || '').split(' ')[0];
+        document.getElementById('tp-vars').innerHTML = (t.headerTipo && t.headerTipo !== 'TEXT' ? `<div class="campo"><label>URL del ${esc(t.headerTipo.toLowerCase())} del encabezado</label><input id="tp-h" type="url" placeholder="https://…"></div>` : '') + Array.from({ length: t.variables || 0 }, (_, i) => `<div class="campo" style="margin-top:8px"><label>Variable {{${i + 1}}}</label><input class="tp-v" type="text" value="${i === 0 && /\{\{1\}\}/.test(t.cuerpo || '') && /hola|estimad/i.test(t.cuerpo || '') ? esc(nombre) : ''}" oninput="tplPrev()"></div>`).join('');
+        tplPrev();
+    };
+    window.tplPrev = () => { const t = S.plantillas.find(p => p.id === document.getElementById('tp-sel').value); const params = [...document.querySelectorAll('.tp-v')].map(i => i.value); document.getElementById('tp-prev').textContent = renderTpl(t, params); };
+    window.enviarPlantilla = async (convId) => {
+        const t = S.plantillas.find(p => p.id === document.getElementById('tp-sel').value); const params = [...document.querySelectorAll('.tp-v')].map(i => i.value.trim());
+        if (params.some(p => !p)) { alert('Completa todas las variables.'); return; }
+        const h = document.getElementById('tp-h');
+        try { await store.enviar({ conversacionId: convId || S.sel.id, tipo: 'template', plantilla: { nombre: t.nombre, idioma: t.idioma, parametros: params, textoRenderizado: renderTpl(t, params), header: h && h.value ? { tipo: t.headerTipo.toLowerCase(), url: h.value } : null } }); cerrarModal(); if (convId && convId !== (S.sel && S.sel.id)) abrir(convId); }
+        catch (e) { alert('No se pudo enviar: ' + e.message); }
+    };
+    window.abrirBotones = () => {
+        modal(`<h3>🔘 Mensaje con botones</h3><p class="muted">Hasta 3 botones de respuesta (máx. 20 caracteres cada uno). El cliente toca uno y su respuesta llega como texto. Solo dentro de la ventana de 24 h.</p>
+            <div class="campo"><label>Texto del mensaje</label><textarea id="bt-body" placeholder="¿Qué deseas hacer?"></textarea></div>
+            ${[1, 2, 3].map(i => `<div class="campo" style="margin-top:8px"><label>Botón ${i}${i > 1 ? ' (opcional)' : ''}</label><input class="bt-b" maxlength="20" type="text" placeholder="${['Cotizar', 'Agendar visita', 'Hablar con alguien'][i - 1]}"></div>`).join('')}
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="enviarBotones()">➤ Enviar</button></div>`);
+    };
+    window.enviarBotones = async () => {
+        const body = document.getElementById('bt-body').value.trim(); const bs = [...document.querySelectorAll('.bt-b')].map(i => i.value.trim()).filter(Boolean);
+        if (!body || !bs.length) { alert('Escribe el texto y al menos un botón.'); return; }
+        try { await store.enviar({ conversacionId: S.sel.id, tipo: 'interactive', interactive: { tipo: 'button', body, botones: bs.map((t, i) => ({ id: 'btn_' + (i + 1), title: t })) } }); cerrarModal(); } catch (e) { alert(e.message); }
+    };
+    window.abrirNueva = () => {
+        modal(`<h3>＋ Nueva conversación por WhatsApp</h3><p class="muted">Para escribirle primero a un cliente, WhatsApp exige empezar con una <b>plantilla aprobada</b>. Se crea el contacto y la conversación (asignada a ti) y luego eliges la plantilla.</p>
+            <div class="campo"><label>Teléfono (con código de país)</label><input id="nv-tel" type="tel" placeholder="18092345678"></div>
+            <div class="campo" style="margin-top:8px"><label>Nombre (opcional)</label><input id="nv-nom" type="text"></div>
+            <div class="acc"><button class="btn" onclick="cerrarModal()">Cancelar</button><button class="btn p" onclick="crearNueva()">Continuar →</button></div>`);
+    };
+    window.crearNueva = async () => {
+        const tel = document.getElementById('nv-tel').value, nom = document.getElementById('nv-nom').value.trim();
+        try { const r = await store.iniciar({ telefono: tel, nombre: nom }); cerrarModal(); abrir(r.conversacionId); setTimeout(() => abrirPlantilla(r.conversacionId), 300); } catch (e) { alert(e.message); }
+    };
+
+    // ---------------------------------------------------------------- panel derecho
+    function slaHTML(c) {
+        const s = c.sla || {}; if (!s.objetivoPrimeraMin) return '';
+        if (c.primeraRespuestaAt) { const ok = (c.primeraRespuestaSeg || 0) <= s.objetivoPrimeraMin * 60; return `<div class="sla ${ok ? 'ok' : 'bad'}">${ok ? '✅' : '⛔'} Primera respuesta en ${C.duracion(c.primeraRespuestaSeg)} (objetivo ${s.objetivoPrimeraMin} min)</div>`; }
+        const rest = ms(s.vencePrimeraAt) - Date.now();
+        return `<div class="sla ${rest < 0 ? 'bad' : rest < s.objetivoPrimeraMin * 60000 * 0.25 ? 'warn' : 'ok'}">${rest < 0 ? '⛔ SLA de primera respuesta vencido hace ' + C.duracion(-rest / 1000) : '⏳ Primera respuesta: quedan ' + C.duracion(rest / 1000)} (objetivo ${s.objetivoPrimeraMin} min)</div>`;
+    }
+    function renderPanel() {
+        const el = document.getElementById('panel'); const c = S.sel;
+        if (!c) { el.innerHTML = '<div class="vacio">ℹ️<div>Detalle del contacto y la conversación.</div></div>'; return; }
+        const tabs = `<div class="ptabs"><button class="${S.ptab === 'detalle' ? 'on' : ''}" onclick="setPtab('detalle')">Conversación</button><button class="${S.ptab === 'contacto' ? 'on' : ''}" onclick="setPtab('contacto')">Contacto</button><button class="${S.ptab === 'historial' ? 'on' : ''}" onclick="setPtab('historial')">Historial</button></div>`;
+        let body = '';
+        if (S.ptab === 'detalle') {
+            const ia = c.ia;
+            body = `${slaHTML(c)}
+                <div class="kv"><span>Número</span><b>#${c.numero}</b><span>Canal</span><b>${canalDe(c.canal).icono} ${esc(canalDe(c.canal).nombre)}</b><span>Estado</span><b>${esc(estadoDe(c.estado).nombre)}</b><span>Prioridad</span><b>${prioridadDe(c.prioridad).icono} ${esc(prioridadDe(c.prioridad).nombre)}</b>
+                <span>Asignada a</span><b>${esc(c.asignadoNombre || '— sin asignar')}</b><span>Equipo</span><b>${esc(c.equipoNombre || equipoNombre(c.equipoId) || '—')}</b>
+                <span>Creada</span><b>${esc(fechaLarga(c.creado))}</b><span>Última respuesta</span><b>${esc(c.ultimoRespondioNombre || '—')}</b>
+                <span>Mensajes</span><b>${c.contadorEntrantes || 0} recibidos · ${c.contadorSalientes || 0} enviados</b><span>Agentes</span><b>${esc((c.historialAgentes || []).map(e => nombreAgente(e).split(' ')[0]).join(' → ') || '—')}</b></div>
+                <div><div class="campo"><label>Etiquetas de la conversación</label></div><div class="tagsrow">${(c.tags || []).map(t => `<span class="chip tg">${esc(t)}${C.puede(nivel, 'asignar') ? `<button onclick="quitarTag('${esc(t)}')">×</button>` : ''}</span>`).join('')}${C.puede(nivel, 'asignar') ? `<select class="sel" style="font-size:12px;padding:3px 6px" onchange="if(this.value){agregarTag(this.value);this.value=''}"><option value="">+ tag</option>${S.tags.filter(t => !(c.tags || []).includes(t.nombre)).map(t => `<option value="${esc(t.nombre)}">${esc(t.nombre)}</option>`).join('')}<option value="__nueva">✎ Nueva…</option></select>` : ''}</div></div>
+                ${ia ? `<div class="ia-box"><h4>🤖 IA · ${esc(ia.intencion || '')} · ${esc(ia.sentimiento || '')}${ia.urgencia ? ' · urgencia ' + esc(ia.urgencia) : ''}</h4><div>${esc(ia.resumen || '')}</div>${ia.equipoSugeridoId ? `<div class="muted" style="margin-top:4px">Equipo sugerido: ${esc(equipoNombre(ia.equipoSugeridoId))}</div>` : ''}${ia.respuestaSugerida && C.puede(nivel, 'enviar') ? `<div style="margin-top:6px;font-style:italic">“${esc(ia.respuestaSugerida)}”</div><button class="btn s" style="margin-top:6px" onclick="usarIA()">Usar como borrador</button>` : ''}<div class="muted" style="margin-top:4px">Sugerencia: nada se envía sin que un agente lo confirme.</div></div>` : '<div class="muted">Sin resumen de IA (se activa en Configuración → IA).</div>'}
+                ${S.otrasConvs.length ? `<div><div class="campo"><label>Otras conversaciones del contacto</label></div>${S.otrasConvs.slice(0, 6).map(o => `<div class="ev" style="cursor:pointer" onclick="abrir('${o.id}')"><span class="t">${esc(fechaCorta(o.actualizado))}</span><span>${canalDe(o.canal).icono} #${o.numero} · ${esc(estadoDe(o.estado).nombre)} · ${esc((o.ultimoMensaje && o.ultimoMensaje.texto) || '')}</span></div>`).join('')}</div>` : ''}`;
+        } else if (S.ptab === 'contacto') {
+            const k = S.contacto || {}; const ed = C.puede(nivel, 'asignar');
+            body = `<div class="av" style="background:${colorDe(k.nombre || c.contactoTelefono)};width:56px;height:56px;font-size:20px;align-self:center">${esc(iniciales(k.nombre || c.contactoTelefono))}</div>
+                <div class="muted" style="text-align:center">WhatsApp no entrega la foto de perfil del cliente por API; se muestran iniciales.</div>
+                <div class="campo"><label>Nombre</label><input id="k-nombre" value="${esc(k.nombre || '')}" ${ed ? '' : 'disabled'}></div>
+                <div class="campo"><label>Teléfono</label><input id="k-tel" value="${esc(k.telefono || '')}" ${ed && c.canal !== 'whatsapp' ? '' : 'disabled'}></div>
+                <div class="campo"><label>Email</label><input id="k-email" type="email" value="${esc(k.email || '')}" ${ed ? '' : 'disabled'}></div>
+                <div class="campo"><label>Empresa</label><input id="k-emp" value="${esc(k.empresa || '')}" ${ed ? '' : 'disabled'}></div>
+                <div class="campo"><label>Etiquetas del contacto (coma)</label><input id="k-tags" value="${esc((k.tags || []).join(', '))}" ${ed ? '' : 'disabled'}></div>
+                <div class="campo"><label>Notas del contacto</label><textarea id="k-notas" ${ed ? '' : 'disabled'}>${esc(k.notas || '')}</textarea></div>
+                ${ed ? `<button class="btn p" onclick="guardarContacto()">Guardar contacto</button>` : ''}
+                <div class="kv"><span>Identidades</span><b>${esc((k.identidades || []).map(i => canalDe(i.canal).icono + ' ' + i.valor).join(' · ') || '—')}</b><span>Cliente desde</span><b>${esc(fechaLarga(k.creado))}</b></div>
+                ${(k.posiblesDuplicados || []).length ? `<div class="sla warn">⚠️ Posible duplicado con otro contacto. <a href="inbox-contactos.html?id=${esc(c.contactoId)}">Revisar y fusionar →</a></div>` : ''}
+                <a class="btn" href="inbox-contactos.html?id=${esc(c.contactoId)}" style="text-align:center">Abrir ficha completa →</a>`;
+        } else {
+            const evs = [...S.eventos, ...S.mensajes.filter(m => !m.is_internal_note).map(m => ({ at: m.created_at, tipo: m.direction === 'inbound' ? 'msg_in' : 'msg_out', actorNombre: m.sender_name, detalle: (m.direction === 'inbound' ? 'Cliente escribió' : (m.sender_type === 'bot' ? 'Bot respondió' : (m.sender_name || 'Agente') + ' respondió')) + (m.message_type !== 'text' ? ' (' + m.message_type + ')' : '') }))].sort((a, b) => ms(a.at) - ms(b.at));
+            const ic = { nueva: '🆕', asignada: '👤', tomada: '🙋', transferida: '🔁', desasignada: '↩', asignada_equipo: '👥', estado: '🔄', cerrada: '⬛', resuelta: '✅', reabierta: '🔓', prioridad: '⚑', tag: '🏷', tag_quitado: '🏷', nota: '📝', msg_in: '📩', msg_out: '📤', sla_vencido: '⛔', sla_resolucion_vencido: '⛔', regla: '⚙️', respuesta_automatica: '🤖' };
+            body = `<div>${evs.map(e => `<div class="ev"><span class="t">${esc(fechaCorta(e.at))}</span><span>${ic[e.tipo] || '•'} ${esc(e.detalle || e.tipo)}${e.actorNombre && !['msg_in', 'msg_out'].includes(e.tipo) ? ` <span class="muted">· ${esc(e.actorNombre)}</span>` : ''}</span></div>`).join('') || '<div class="muted">Sin eventos.</div>'}</div>`;
+        }
+        el.innerHTML = tabs + `<div class="scroll"><div class="pbody">${body}</div></div>`;
+    }
+    window.setPtab = (t) => { S.ptab = t; renderPanel(); };
+    window.agregarTag = async (t) => { if (t === '__nueva') { t = (prompt('Nombre de la etiqueta nueva:') || '').trim(); if (!t) return; if (!DEMO && !S.tags.some(x => x.nombre === t)) await addDoc(collection(db, 'inboxTags'), { nombre: t, color: '#fff3c4', creadoPor: usuario.email, creado: serverTimestamp() }); } try { await store.tag(yo, S.sel, t, true); } catch (e) { alert(e.message); } };
+    window.quitarTag = async (t) => { try { await store.tag(yo, S.sel, t, false); } catch (e) { alert(e.message); } };
+    window.usarIA = () => { S.modoNota = false; renderComposer(); const ta = document.getElementById('txt'); ta.value = S.sel.ia.respuestaSugerida; ta.focus(); alEscribir(ta); };
+    window.guardarContacto = async () => {
+        const g = (id) => document.getElementById(id).value.trim();
+        const campos = { nombre: g('k-nombre'), email: g('k-email'), empresa: g('k-emp'), notas: g('k-notas'), tags: g('k-tags').split(',').map(s => s.trim()).filter(Boolean) };
+        if (S.sel.canal !== 'whatsapp') campos.telefono = g('k-tel');
+        try { await store.guardarContacto(S.sel.contactoId, campos); if (campos.nombre !== S.sel.contactoNombre) await store.renombrarConv(S.sel.id, campos.nombre); alert('Contacto guardado.'); } catch (e) { alert(e.message); }
+    };
+    if (!DEMO) store.renombrarConv = (id, nombre) => updateDoc(doc(db, 'inboxConversaciones', id), { contactoNombre: nombre, buscar: arrayUnion(...C.tokensDe(nombre)) });
+
+    // ---------------------------------------------------------------- modal
+    function modal(html) { document.getElementById('modal').innerHTML = html; document.getElementById('ov').classList.add('on'); }
+    window.cerrarModal = () => document.getElementById('ov').classList.remove('on');
+    document.getElementById('ov').addEventListener('click', (e) => { if (e.target.id === 'ov') cerrarModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarModal(); });
+
+    // Abrir la conversación que viene en la URL (?c=…) cuando lleguen los datos.
+    const cParam = new URLSearchParams(location.search).get('c');
+    if (cParam) { const iv = setInterval(() => { if (S.convs.some(c => c.id === cParam)) { clearInterval(iv); abrir(cParam); } }, 300); setTimeout(() => clearInterval(iv), 15000); }
+    setInterval(() => { renderLista(); renderChatBanners(); }, 60000);   // refresca "hace X min" y presencias
+
+    // ---------------------------------------------------------------- MODO DEMO (datos en memoria)
+    function crearDemo() {
+        const T = (msAgo) => new Date(Date.now() - msAgo);
+        const ag = [{ email: 'maria@artal.do', nombre: 'María Atención' }, { email: 'juan@artal.do', nombre: 'Juan Ventas' }, { email: 'pedro@artal.do', nombre: 'Pedro Reservas' }, { email: 'demo@artal.do', nombre: 'Tú (demo)' }];
+        const eq = [{ id: 'ventas', nombre: 'Ventas', icono: '🛒', miembros: ['juan@artal.do', 'demo@artal.do'] }, { id: 'soporte', nombre: 'Soporte', icono: '🛠️', miembros: ['maria@artal.do'] }, { id: 'reservas', nombre: 'Reservaciones', icono: '📅', miembros: ['pedro@artal.do'] }];
+        const tags = ['VIP', 'Nuevo cliente', 'Ventas', 'Soporte', 'Reserva', 'Reclamo', 'Follow-up', 'Urgente'].map(n => ({ id: n, nombre: n }));
+        const contactos = { wa_18095550101: { id: 'wa_18095550101', nombre: 'Carlos Pérez', telefono: '+18095550101', email: 'carlos@email.com', empresa: 'ABC Company', tags: ['VIP', 'Cliente'], notas: 'Prefiere que lo llamen en la tarde.', identidades: [{ canal: 'whatsapp', valor: '18095550101' }, { canal: 'email', valor: 'carlos@email.com' }], creado: T(90 * 86400000) }, wa_18295550202: { id: 'wa_18295550202', nombre: 'Laura Gómez', telefono: '+18295550202', tags: ['Nuevo cliente'], identidades: [{ canal: 'whatsapp', valor: '18295550202' }], creado: T(2 * 86400000) }, ig_1771: { id: 'ig_1771', nombre: 'Steve Martin', instagramId: '1771', tags: [], identidades: [{ canal: 'instagram', valor: '1771' }], posiblesDuplicados: ['wa_18495550303'], creado: T(5 * 86400000) }, wa_18495550303: { id: 'wa_18495550303', nombre: 'Steve Martin', telefono: '+18495550303', tags: ['Reserva'], identidades: [{ canal: 'whatsapp', valor: '18495550303' }], posiblesDuplicados: ['ig_1771'], creado: T(9 * 86400000) }, wa_18095550404: { id: 'wa_18095550404', nombre: '', telefono: '+18095550404', tags: [], identidades: [{ canal: 'whatsapp', valor: '18095550404' }], creado: T(600000) } };
+        const mk = (id, k, canal, estado, pr, asig, eqId, tgs, minAgo, msgs, extra) => ({ id, numero: Number(id.slice(1)), contactoId: k.id, contactoNombre: k.nombre, contactoTelefono: k.telefono || '', contactoEmail: k.email || '', canal, estado, prioridad: pr, asignadoA: asig, asignadoNombre: asig ? ag.find(a => a.email === asig).nombre : null, equipoId: eqId, equipoNombre: eqId ? eq.find(e => e.id === eqId).nombre : null, tags: tgs, creado: T(minAgo * 60000), actualizado: T((msgs[msgs.length - 1].m) * 60000), ultimoMensaje: { texto: msgs[msgs.length - 1].t, direccion: msgs[msgs.length - 1].d, at: T(msgs[msgs.length - 1].m * 60000), de: msgs[msgs.length - 1].de }, ultimoEntranteAt: T([...msgs].reverse().find(x => x.d === 'inbound').m * 60000), ventanaHasta: T([...msgs].reverse().find(x => x.d === 'inbound').m * 60000 - 86400000), noLeidos: msgs.filter(x => x.d === 'inbound' && x.nl).length, contadorEntrantes: msgs.filter(x => x.d === 'inbound').length, contadorSalientes: msgs.filter(x => x.d === 'outbound').length, historialAgentes: [...new Set(msgs.filter(x => x.d === 'outbound').map(x => x.e))], sla: { objetivoPrimeraMin: { urgent: 10, high: 30, normal: 60, low: 240 }[pr], vencePrimeraAt: T(minAgo * 60000 - { urgent: 10, high: 30, normal: 60, low: 240 }[pr] * 60000), primeraVencida: false }, primeraRespuestaAt: msgs.find(x => x.d === 'outbound') ? T(msgs.find(x => x.d === 'outbound').m * 60000) : null, primeraRespuestaSeg: msgs.find(x => x.d === 'outbound') ? (minAgo - msgs.find(x => x.d === 'outbound').m) * 60 : null, ultimoRespondioNombre: ([...msgs].reverse().find(x => x.d === 'outbound') || {}).de || null, ...(extra || {}), _msgs: msgs });
+        const convs = [
+            mk('c1041', contactos.wa_18095550101, 'whatsapp', 'waiting_agent', 'high', 'maria@artal.do', 'soporte', ['VIP', 'Reclamo'], 95, [{ d: 'inbound', t: 'Hola, quisiera saber el precio de una corredera de 3 hojas.', m: 95 }, { d: 'outbound', t: 'Hola Carlos, soy María del equipo de atención. Claro, te ayudo: ¿tienes las medidas del hueco?', m: 88, de: 'María Atención', e: 'maria@artal.do' }, { d: 'inbound', t: '3.20 m de ancho por 2.40 de alto.', m: 80 }, { d: 'nota', t: 'Revisar política de descuento VIP antes de confirmar precio.', m: 79, de: 'Juan Ventas', e: 'juan@artal.do' }, { d: 'inbound', t: 'Quiero cancelar mi reserva de visita del jueves y reprogramar.', m: 6, nl: true }, { d: 'inbound', t: '¿Me confirman?', m: 3, nl: true }], { ia: { intencion: 'reserva', sentimiento: 'neutral', urgencia: 'high', resumen: 'Cliente VIP pidió precio de corredera 3 hojas (3.20 × 2.40 m) y ahora quiere reprogramar su visita del jueves. Espera confirmación.', equipoSugeridoId: 'reservas', respuestaSugerida: 'Claro Carlos, sin problema. ¿Qué día y hora te vendría mejor esta semana para la visita?' } }),
+            mk('c1042', contactos.wa_18295550202, 'whatsapp', 'open', 'normal', null, 'ventas', ['Nuevo cliente', 'Ventas'], 25, [{ d: 'inbound', t: 'Buenas, vi sus ventanas en Instagram. ¿Trabajan en Las Terrenas?', m: 25, nl: true }, { d: 'inbound', t: 'Es para una villa nueva, 12 ventanas.', m: 24, nl: true }], { ia: { intencion: 'ventas', sentimiento: 'positivo', urgencia: 'normal', resumen: 'Cliente nueva con proyecto de villa (12 ventanas) en Las Terrenas; pregunta si trabajan en la zona.', equipoSugeridoId: 'ventas', respuestaSugerida: '¡Hola! Sí, trabajamos en Las Terrenas: nuestro showroom está justo ahí. Cuéntame un poco del proyecto y coordinamos una visita para tomar medidas.' } }),
+            mk('c1039', contactos.ig_1771, 'instagram', 'waiting_customer', 'normal', 'juan@artal.do', 'ventas', ['Reserva'], 300, [{ d: 'inbound', t: 'Hi! Do you install glass railings?', m: 300 }, { d: 'outbound', t: 'Hi Steve! Yes we do — tempered glass railings for balconies and stairs. Where is the property?', m: 290, de: 'Juan Ventas', e: 'juan@artal.do' }]),
+            mk('c1035', contactos.wa_18495550303, 'whatsapp', 'resolved', 'low', 'pedro@artal.do', 'reservas', ['Reserva'], 3000, [{ d: 'inbound', t: 'Confirmo la visita del martes 10 am.', m: 3000 }, { d: 'outbound', t: 'Perfecto Steve, quedamos el martes a las 10. ¡Gracias!', m: 2990, de: 'Pedro Reservas', e: 'pedro@artal.do' }], { resueltaAt: T(2980 * 60000), resolucionSeg: 1200 }),
+            mk('c1043', contactos.wa_18095550404, 'whatsapp', 'open', 'urgent', null, null, ['Urgente'], 9, [{ d: 'inbound', t: 'URGENTE se rompió un vidrio de la ducha y hay un niño en casa', m: 9, nl: true }, { d: 'inbound', t: '[image]', m: 8, nl: true, tipo: 'image' }], { sla: { objetivoPrimeraMin: 10, vencePrimeraAt: T(-60000), primeraVencida: false } })
+        ];
+        const mensajes = {}; convs.forEach(c => { mensajes[c.id] = c._msgs.map((x, i) => ({ id: c.id + '_' + i, conversation_id: c.id, direction: x.d === 'nota' ? 'outbound' : x.d, is_internal_note: x.d === 'nota', sender_type: x.d === 'inbound' ? 'contact' : 'agent', sender_id: x.e || c.contactoId, sender_name: x.d === 'inbound' ? c.contactoNombre : x.de, content: x.tipo === 'image' ? '' : x.t, message_type: x.tipo || (x.d === 'nota' ? 'note' : 'text'), media: x.tipo === 'image' ? { url: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="#cfe3f3"/><text x="160" y="105" text-anchor="middle" font-family="Arial" font-size="16" fill="#1c4e7a">📷 foto del cliente (demo)</text></svg>') } : null, status: x.d === 'inbound' ? 'received' : (x.d === 'nota' ? 'internal' : 'read'), created_at: T(x.m * 60000), reactions: {}, metadata: {}, external_message_id: x.d === 'nota' ? null : 'wamid.demo' + i })); delete c._msgs; });
+        const eventos = {}; convs.forEach(c => { eventos[c.id] = [{ tipo: 'nueva', at: c.creado, actorNombre: 'Sistema', detalle: 'Nueva conversación por ' + c.canal }, ...(c.equipoId ? [{ tipo: 'asignada_equipo', at: T(ms(c.creado) ? (Date.now() - ms(c.creado)) - 30000 : 0), actorNombre: 'Sistema', detalle: 'Regla «Palabras clave»: asignada al equipo ' + c.equipoNombre }] : []), ...(c.asignadoA ? [{ tipo: 'asignada', at: T((Date.now() - ms(c.creado)) - 60000), actorNombre: 'Sistema', detalle: 'Asignada a ' + c.asignadoNombre }] : [])]; });
+        const rapidas = [{ id: 'r1', atajo: 'hola', texto: 'Hola {nombre}, gracias por escribirnos a ARTAL. Soy {agente}, ¿en qué te puedo ayudar?', global: true }, { id: 'r2', atajo: 'horario', texto: 'Nuestro horario de atención es de lunes a viernes de 8:00 a 17:00 y sábados de 8:00 a 12:00.', global: true }, { id: 'r3', atajo: 'ubicacion', texto: 'Estamos en Las Terrenas, Samaná. Ubicación exacta: https://maps.app.goo.gl/hLc4R2RwHrbyAS4R6', global: true }];
+        const presencias = [{ email: 'maria@artal.do', nombre: 'María Atención', online: true, conversacionId: 'c1041', escribiendo: null, ultimoLatido: new Date() }];
+        const subs = { convs: [], col: {}, doc: {}, msgs: {}, evs: {} };
+        const emit = () => { convs.sort((a, b) => ms(b.actualizado) - ms(a.actualizado)); subs.convs.forEach(cb => cb(convs.map(c => ({ ...c })))); };
+        const emitCol = (n, data) => (subs.col[n] || []).forEach(cb => cb(data));
+        const emitMsgs = (id) => (subs.msgs[id] || []).forEach(cb => cb([...mensajes[id]]));
+        const emitEvs = (id) => (subs.evs[id] || []).forEach(cb => cb([...eventos[id]]));
+        const ev = (id, tipo, detalle) => { eventos[id].push({ tipo, at: new Date(), actorNombre: usuario.nombre, detalle }); emitEvs(id); };
+        const touch = (c) => { c.actualizado = new Date(); emit(); };
+        // Simulación: cada 40 s un cliente escribe; cada 25 s María empieza/termina de escribir en c1041.
+        setInterval(() => { const c = convs.find(x => x.id === 'c1042'); const t = ['¿Me pueden dar un precio aproximado?', 'Adjunto plano en un rato', '¿Cuándo pueden pasar a medir?'][Math.floor(Math.random() * 3)]; mensajes[c.id].push({ id: 'd' + Date.now(), direction: 'inbound', sender_type: 'contact', sender_name: c.contactoNombre, content: t, message_type: 'text', status: 'received', created_at: new Date(), reactions: {}, metadata: {}, external_message_id: 'wamid.d' + Date.now() }); c.ultimoMensaje = { texto: t, direccion: 'inbound', at: new Date(), de: c.contactoNombre }; c.noLeidos = (S.sel && S.sel.id === c.id) ? 0 : (c.noLeidos || 0) + 1; c.ultimoEntranteAt = new Date(); c.ventanaHasta = new Date(Date.now() + 86400000); c.contadorEntrantes++; touch(c); emitMsgs(c.id); }, 40000);
+        setInterval(() => { presencias[0].escribiendo = presencias[0].escribiendo ? null : 'c1041'; presencias[0].ultimoLatido = new Date(); emitCol('inboxPresencia', presencias.map(p => ({ ...p }))); }, 25000);
+        return {
+            onConvs(cb) { subs.convs.push(cb); setTimeout(emit, 0); return () => { }; },
+            onCol(n, cb) { (subs.col[n] = subs.col[n] || []).push(cb); const data = { inboxEquipos: eq, inboxTags: tags, equipo: ag.map(a => ({ id: a.email, nombre: a.nombre, rol: 'inbox_agente', activo: true })), inboxPresencia: presencias, inboxRespuestasRapidas: rapidas, inboxPlantillas: [{ id: 't1', nombre: 'confirmacion_visita', idioma: 'es', categoria: 'UTILITY', estado: 'APPROVED', cuerpo: 'Hola {{1}}, tu visita para {{2}} está confirmada. ¡Te esperamos!', variables: 2 }] }[n] || []; setTimeout(() => cb(data), 0); return () => { }; },
+            onDoc(col, id, cb) { setTimeout(() => cb(col === 'inboxContactos' ? contactos[id] || null : col === 'inboxCanales' ? { activo: true, displayPhone: '+1 849-260-6106', verifiedName: 'ARTAL Dominicana', calidad: 'GREEN' } : null), 0); return () => { }; },
+            onMensajes(id, cb) { (subs.msgs[id] = subs.msgs[id] || []).push(cb); setTimeout(() => emitMsgs(id), 0); return () => { subs.msgs[id] = subs.msgs[id].filter(x => x !== cb); }; },
+            onEventos(id, cb) { (subs.evs[id] = subs.evs[id] || []).push(cb); setTimeout(() => emitEvs(id), 0); return () => { subs.evs[id] = subs.evs[id].filter(x => x !== cb); }; },
+            async enviar(b) {
+                const c = convs.find(x => x.id === b.conversacionId);
+                if (b.tipo === 'reaction') { const m = mensajes[c.id].find(x => x.id === b.mensajeId); m.reactions.empresa = { emoji: b.emoji }; emitMsgs(c.id); return; }
+                if (c.canal === 'whatsapp' && ms(c.ventanaHasta) < Date.now() && b.tipo !== 'template') { const e = new Error('Fuera de la ventana de 24 h (demo): envía una plantilla.'); e.codigo = 'ventana'; throw e; }
+                const texto = b.tipo === 'text' ? b.texto : b.tipo === 'template' ? b.plantilla.textoRenderizado : b.tipo === 'interactive' ? b.interactive.body + ' [' + b.interactive.botones.map(x => x.title).join(' | ') + ']' : (b.media && b.media.caption) || '';
+                const m = { id: 'o' + Date.now(), direction: 'outbound', sender_type: 'agent', sender_id: usuario.email, sender_name: usuario.nombre, content: texto, message_type: b.tipo === 'interactive' ? 'interactive' : b.tipo, media: b.media || null, status: 'accepted', created_at: new Date(), reactions: {}, metadata: b.responderA ? { reply_to_local: b.responderA } : {}, external_message_id: 'wamid.o' + Date.now() };
+                mensajes[c.id].push(m); c.ultimoMensaje = { texto: texto.slice(0, 120), direccion: 'outbound', at: new Date(), de: usuario.nombre }; c.contadorSalientes++; c.ultimoRespondioNombre = usuario.nombre; if (!c.primeraRespuestaAt) { c.primeraRespuestaAt = new Date(); c.primeraRespuestaSeg = Math.round((Date.now() - ms(c.creado)) / 1000); } if (!c.asignadoA) { c.asignadoA = usuario.email; c.asignadoNombre = usuario.nombre; ev(c.id, 'asignada', 'Se asignó a sí mismo al responder'); } if (['open', 'waiting_agent', 'pending'].includes(c.estado)) c.estado = 'waiting_customer'; c.historialAgentes = [...new Set([...(c.historialAgentes || []), usuario.email])];
+                touch(c); emitMsgs(c.id);
+                [['sent', 1200], ['delivered', 2500], ['read', 6000]].forEach(([st, t]) => setTimeout(() => { m.status = st; emitMsgs(c.id); }, t));
+            },
+            async marcarLeido(id) { const c = convs.find(x => x.id === id); c.noLeidos = 0; emit(); },
+            async iniciar(b) { const id = 'c' + (1043 + convs.length); const k = { id: 'wa_' + b.telefono.replace(/\D/g, ''), nombre: b.nombre || '', telefono: '+' + b.telefono.replace(/\D/g, ''), tags: [], identidades: [] }; contactos[k.id] = k; convs.push({ id, numero: Number(id.slice(1)), contactoId: k.id, contactoNombre: k.nombre, contactoTelefono: k.telefono, canal: 'whatsapp', estado: 'open', prioridad: 'normal', asignadoA: usuario.email, asignadoNombre: usuario.nombre, tags: [], creado: new Date(), actualizado: new Date(), noLeidos: 0, contadorEntrantes: 0, contadorSalientes: 0, historialAgentes: [usuario.email], ventanaHasta: null, sla: {} }); mensajes[id] = []; eventos[id] = [{ tipo: 'nueva', at: new Date(), actorNombre: usuario.nombre, detalle: 'Conversación iniciada por la empresa' }]; emit(); return { conversacionId: id }; },
+            async asignar(u, conv, a) { const c = convs.find(x => x.id === conv.id); const antes = c.asignadoNombre; c.asignadoA = a ? a.email : null; c.asignadoNombre = a ? a.nombre : null; if (a) c.historialAgentes = [...new Set([...(c.historialAgentes || []), a.email])]; ev(c.id, a ? 'asignada' : 'desasignada', a ? (antes ? 'Transferida de ' + antes + ' a ' + a.nombre : 'Asignada a ' + a.nombre) : 'Quitó la asignación'); touch(c); },
+            async asignarEquipo(u, conv, e) { const c = convs.find(x => x.id === conv.id); c.equipoId = e ? e.id : null; c.equipoNombre = e ? e.nombre : null; ev(c.id, 'asignada_equipo', e ? 'Asignada al equipo ' + e.nombre : 'Quitada del equipo'); touch(c); },
+            async cambiarEstado(u, conv, est, nota) { const c = convs.find(x => x.id === conv.id); ev(c.id, 'estado', 'Estado: ' + estadoDe(c.estado).nombre + ' → ' + estadoDe(est).nombre + (nota ? ' · ' + nota : '')); c.estado = est; if (est === 'resolved' || est === 'closed') { c.resueltaAt = new Date(); c.resolucionSeg = Math.round((Date.now() - ms(c.creado)) / 1000); } touch(c); },
+            async cambiarPrioridad(u, conv, p) { const c = convs.find(x => x.id === conv.id); ev(c.id, 'prioridad', 'Prioridad: ' + prioridadDe(c.prioridad).nombre + ' → ' + prioridadDe(p).nombre); c.prioridad = p; touch(c); },
+            async tag(u, conv, t, add) { const c = convs.find(x => x.id === conv.id); c.tags = add ? [...new Set([...(c.tags || []), t])] : (c.tags || []).filter(x => x !== t); if (add && !tags.some(x => x.nombre === t)) { tags.push({ id: t, nombre: t }); emitCol('inboxTags', [...tags]); } ev(c.id, 'tag', (add ? 'Etiqueta agregada: ' : 'Etiqueta quitada: ') + t); touch(c); },
+            async nota(u, conv, texto) { const c = convs.find(x => x.id === conv.id); mensajes[c.id].push({ id: 'n' + Date.now(), direction: 'outbound', is_internal_note: true, sender_type: 'agent', sender_id: u.email, sender_name: u.nombre, content: texto, message_type: 'note', status: 'internal', created_at: new Date(), reactions: {}, metadata: {} }); ev(c.id, 'nota', 'Agregó una nota interna'); touch(c); emitMsgs(c.id); },
+            async guardarContacto(id, campos) { Object.assign(contactos[id], campos); },
+            async renombrarConv(id, nombre) { const c = convs.find(x => x.id === id); c.contactoNombre = nombre; emit(); },
+            async subir(file) { return URL.createObjectURL(file); },
+            presencia() { }
+        };
+    }
+</script>
+</body>
+</html>
