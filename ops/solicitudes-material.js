@@ -23,8 +23,11 @@ export const ESTADO_COLOR = { pedida: '#e67e22', vista: '#2980b9', comprando: '#
 export const URGENCIAS = { hoy: '🔥 Hoy (no puedo seguir sin esto)', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
 export const URGENCIA_CORTA = { hoy: '🔥 Hoy', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
 export const ORIGEN_DINERO = { caja_chica: 'Caja chica', tarjeta: 'Tarjeta', transferencia: 'Transferencia', credito: 'Crédito del proveedor', otro: 'Otro' };
+// Unidades de pedido (lo que se cuenta o el empaque): la lista fija + lo que diga el ítem del inventario (unidad o empaque).
+export const UNIDADES = ['unidades', 'fundas', 'paquetes', 'cajas', 'rollos', 'bultos', 'sacos', 'latas', 'galones', 'tubos', 'barras', 'metros', 'pies', 'pares', 'juegos'];
 export const LUGARES = ['Ferretería Las Terrenas', 'Santo Domingo', 'Pedido al proveedor', 'Ya lo teníamos en inventario', 'Otro'];
 
+const plur = (e) => { e = String(e || '').trim(); return !e || /s$/.test(e) ? e : (/[aeo]$/.test(e) ? e + 's' : e + 'es'); };
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ahoraISO = () => new Date().toISOString();
 // Fechas: en la app `fechaISO` es un string ISO; un doc escrito desde fuera puede traer un Timestamp → se tolera.
@@ -147,7 +150,8 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
           <div><label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">Cantidad</label>
             <input type="number" id="sol-cant" min="1" value="1" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:16px;font-family:inherit;"></div>
           <div><label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">Unidad</label>
-            <input type="text" id="sol-unidad" placeholder="unidades, cajas, latas…" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;"></div>
+            <select id="sol-unidad" onchange="document.getElementById('sol-unidad-otro').style.display = this.value === 'otro' ? 'block' : 'none'" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;background:#fff;">${UNIDADES.map(u => `<option value="${u}">${u}</option>`).join('')}<option value="otro">otra…</option></select>
+            <input type="text" id="sol-unidad-otro" placeholder="escribe la unidad" style="display:none;width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;"></div>
         </div>
         <label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">¿Para cuándo?</label>
         <div id="sol-urg" style="display:flex;flex-direction:column;gap:6px;">${Object.entries(URGENCIAS).map(([k, v], i) => `<label style="display:flex;gap:10px;align-items:center;justify-content:flex-start;font-size:14px;font-weight:normal;margin:0;padding:8px 10px;border:1.5px solid #e3e8ee;border-radius:8px;cursor:pointer;"><input type="radio" name="sol-urg" value="${k}" ${i === 1 ? 'checked' : ''} style="width:18px;height:18px;min-height:0;margin:0;flex:none;"> <span>${v}</span></label>`).join('')}</div>
@@ -168,7 +172,14 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
         document.getElementById('sol-pedir-item').innerHTML = itemSel ? `<b>${esc(itemSel.tipo)}${itemSel.color ? ' — ' + esc(itemSel.color) : ''}</b> <span style="color:#889">· hay ${Number(itemSel.cantidad) || 0} ${esc(itemSel.unidad || '')} en inventario</span>` : '';
         document.getElementById('sol-pedir-libre').style.display = itemSel ? 'none' : 'block';
         document.getElementById('sol-texto').value = ''; document.getElementById('sol-cant').value = 1;
-        document.getElementById('sol-unidad').value = itemSel ? (itemSel.unidad || '') : '';
+        const selU = document.getElementById('sol-unidad'), otroU = document.getElementById('sol-unidad-otro');
+        // opciones: la lista fija + la unidad y el empaque del ítem si no están
+        const extra = itemSel ? [itemSel.unidad, itemSel.empaque ? plur(itemSel.empaque) : ''].filter(u => u && !UNIDADES.includes(u)) : [];
+        selU.innerHTML = UNIDADES.concat(extra).map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('') + '<option value="otro">otra…</option>';
+        const pref = itemSel ? (itemSel.empaque && Number(itemSel.porCaja) > 0 ? plur(itemSel.empaque) : (itemSel.unidad || 'unidades')) : 'unidades';
+        selU.value = [...selU.options].some(o => o.value === pref) ? pref : 'unidades'; otroU.style.display = 'none'; otroU.value = '';
+        const eq = itemSel && itemSel.empaque && Number(itemSel.porCaja) > 0 ? ` · 1 ${esc(itemSel.empaque)} = ${Number(itemSel.porCaja)} ${esc(itemSel.unidad || 'unidades')}` : '';
+        if (eq) document.getElementById('sol-pedir-item').innerHTML += `<span style="color:#889">${eq}</span>`;
         document.getElementById('sol-nota').value = ''; document.getElementById('sol-obra').value = '';
         const ov = document.getElementById('sol-pedir-ov'); ov.style.display = 'flex';
         setTimeout(() => (itemSel ? document.getElementById('sol-cant') : document.getElementById('sol-texto')).focus(), 50);
@@ -183,7 +194,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
                 texto: itemSel ? '' : document.getElementById('sol-texto').value,
                 itemId: itemSel ? itemSel.id : null, itemTipo: itemSel ? itemSel.tipo : null, itemColor: itemSel ? (itemSel.color || null) : null,
                 categoria: itemSel ? (itemSel.categoria || null) : null,
-                unidad: document.getElementById('sol-unidad').value, cantidad: document.getElementById('sol-cant').value, urgencia: urg,
+                unidad: document.getElementById('sol-unidad').value === 'otro' ? (document.getElementById('sol-unidad-otro').value.trim() || 'unidades') : document.getElementById('sol-unidad').value, cantidad: document.getElementById('sol-cant').value, urgencia: urg,
                 nota: document.getElementById('sol-nota').value, obra: document.getElementById('sol-obra').value
             });
             window.solCerrarPedir(); _onCreada && _onCreada(id);
