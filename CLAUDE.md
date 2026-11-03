@@ -3268,6 +3268,13 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   → solicitante + oficina; `entregada`/`rechazada` → solicitante; `cancelada` → oficina. Nunca al autor del cambio.
 - **Coordinador**: `pedidosMaterialAbiertos` + regla (urgentes en pedida, >2 días en pedida, >3 días en chofer).
 - Regla `solicitudesMaterial`: read `operativo()`, create/update `oficina() || obra()`, delete admin. Guía `guia-inventario-03`.
+- **Unidades al entregar (2026-11-03, Dylan: «2 fundas» sumaba 2 unidades al stock)**: el pedido guarda la unidad elegida y una
+  foto del ítem (`itemUnidad/itemEmpaque/itemPorCaja`); `factorInventario(s, item)` da 1 (misma unidad), `porCaja` (el pedido viene en
+  el empaque del ítem) o null. Al marcar «Entregada», `prepararEntrada` lee el ítem actual y rellena «Entran al inventario (en
+  unidades)» = cantidad × factor con la línea «2 fundas × 100 = 200 unidades»; si es null, campo vacío y aviso rojo (hay que
+  escribirlo). El movimiento `restock` y `entradaInventario.detalle` guardan esa equivalencia. «📤 Tomar» de `inventario.html` tiene
+  el mismo selector unidades / fundas×N que «Agregar stock» y convierte antes de restar. Comunicados del 03/11 con el
+  funcionamiento completo a Sara, Dylan (copia de sistema) y Roosevelt (cómo tomar y pedir).
   Adjuntos en Storage bajo `solicitudesMaterial/{id}/` (las reglas de Storage no están en el repo: si la subida falla, revisarlas).
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
