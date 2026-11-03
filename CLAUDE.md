@@ -3275,6 +3275,20 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   escribirlo). El movimiento `restock` y `entradaInventario.detalle` guardan esa equivalencia. «📤 Tomar» de `inventario.html` tiene
   el mismo selector unidades / fundas×N que «Agregar stock» y convierte antes de restar. Comunicados del 03/11 con el
   funcionamiento completo a Sara, Dylan (copia de sistema) y Roosevelt (cómo tomar y pedir).
+- **Ruta simplificada (2026-11-03, Dylan: «mente de empresario, eficiencia y rapidez»)**. Diagnóstico con datos reales: 7 pedidos,
+  6 sin decidir (todos reposición de tornillos de Roosevelt para el mismo proveedor), uno pedido dos veces; 5 estados con un toque de
+  persona distinta cada uno. Cambios: (1) **decidir varios juntos** — casillas `.sol-sel` en los pedidos por decidir (`POR_DECIDIR`) del
+  tablero, «☑ Seleccionarlos todos», barra fija «📲 Pedir al proveedor / 🚚 Al chofer» → `mensajeProveedorVarios` (un WhatsApp con la
+  lista) + `pedirVariosAlProveedor` / `pasarVariosAlChofer` (`loteN/loteIndice`: el chofer recibe UN aviso por lote); (2) **chofer en un
+  toque**: en estado `chofer` el botón es «✅ Lo traje» = entregada directa con la entrada al inventario convertida (sin pasar por
+  `recogido`, que queda solo para pedidos viejos); el proveedor: «🚚 Lo retira el chofer» / «✅ Ya llegó»; (3) **formulario de llegada
+  corto**: casilla «Entra al almacén» + cantidad convertida + «Precio total pagado» (el costo unitario se deriva = precio ÷ cantidad;
+  `entregadaA` = quien pidió y los sumados, sin preguntar); (4) **sin duplicados**: `montarPedir({getAbierta})` — si la pieza tiene un
+  pedido abierto, el botón de Inventario dice «🙋 Ya pedido» (`marcarPedidos`, tras cada render y cada cambio de pedidos) y el modal
+  suma a ese pedido (`sumarse`) con la unidad fija; nota y obra plegadas en «＋ Nota u obra»; (5) **menos avisos**
+  (`solicitudMaterialPush`): quien pidió solo en `entregada`/`rechazada`; oficina en nuevo, `entregada` y `cancelada`; chofer en
+  `chofer` (uno por lote); `pedido_proveedor` sin aviso. Guía `guia-inventario-03` reescrita. Reposición automática por mínimo
+  descartada por ahora: 66 de 90 ítems con mínimo están por debajo (mínimos sin ajustar).
   Adjuntos en Storage bajo `solicitudesMaterial/{id}/` (las reglas de Storage no están en el repo: si la subida falla, revisarlas).
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)

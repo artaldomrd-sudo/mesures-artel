@@ -395,10 +395,15 @@
 
     // ---------- Pedidos de material a la oficina (solicitudesMaterial) ----------
     let solicitudes = [];
-    montarPedir({ usuario, getItem: (id) => allItems.find(it => it.id === id) || null, onCreada: () => { const d = document.getElementById('mis-pedidos'); if (d) d.open = true; } });
+    // Pedido abierto de una pieza → «Pedir» se convierte en «Ya pedido» y suma a ese pedido (no se duplica).
+    const abiertaDe = (itemId) => solicitudes.find(s => s.itemId === itemId && ABIERTOS.includes(s.estado)) || null;
+    function marcarPedidos() {
+        document.querySelectorAll('.btn-pedir[data-item]').forEach(b => { const a = abiertaDe(b.dataset.item); b.textContent = a ? '🙋 Ya pedido' : '🙋 Pedir'; b.title = a ? 'Ya está pedido: si necesitas más, se suma a ese pedido' : 'Pedir a la oficina que compre o reponga'; b.style.opacity = a ? '.75' : ''; });
+    }
+    montarPedir({ usuario, getItem: (id) => allItems.find(it => it.id === id) || null, getAbierta: abiertaDe, onCreada: () => { const d = document.getElementById('mis-pedidos'); if (d) d.open = true; } });
     montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id) });
     escucharConfig(() => renderMisPedidos()); escucharProveedores(() => { });
-    escucharSolicitudes((arr) => { solicitudes = arr; renderMisPedidos(); });
+    escucharSolicitudes((arr) => { solicitudes = arr; renderMisPedidos(); marcarPedidos(); });
     function renderMisPedidos() {
         const gestor = esGestor(usuario);
         const abiertas = solicitudes.filter(s => ABIERTOS.includes(s.estado));
@@ -621,7 +626,7 @@
             ${fotoAddBtnHTML({ coleccion: 'inventario', id: item.id, label: '📷 Foto del ítem' })}
             <div class="item-actions">
                 <button class="btn-tomar" onclick="abrirTomar('${item.id}')">📤 Tomar</button>
-                <button class="btn-pedir" onclick="solAbrirPedir('${item.id}')" title="Pedir a la oficina que compre o reponga">🙋 Pedir</button>
+                <button class="btn-pedir" data-item="${item.id}" onclick="solAbrirPedir('${item.id}')" title="Pedir a la oficina que compre o reponga">🙋 Pedir</button>
                 ${esAdmin ? `<button class="btn-hist" onclick="abrirHistorial('${item.id}')">🕘 Historial</button>` : ''}
                 ${esAdmin ? `<button class="btn-agregar" onclick="abrirAgregar('${item.id}')">📥 Agregar stock</button>` : ''}
                 ${esAdmin ? `<button class="btn-precio" onclick="abrirPrecio('${item.id}')">💲 Precio</button>` : ''}
@@ -827,7 +832,8 @@
         const seedBtn = document.getElementById('seed-btn'); if (seedBtn) seedBtn.style.display = perfiles.length ? 'none' : 'block';
     }
 
-    function render() {
+    function render() { renderBase(); try { marcarPedidos(); } catch (_) { } }
+    function renderBase() {
         const term = document.getElementById('search-input').value.trim().toLowerCase();
         const filtered = allItems.filter(it => !term || ((it.tipo || '') + ' ' + (it.color || '') + ' ' + (it.referencia || '')).toLowerCase().includes(term));
 

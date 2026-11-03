@@ -498,20 +498,28 @@ exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', as
             pedido_proveedor: `📲 ${porNombre} lo pidió a ${prov}. Te avisamos cuando el chofer lo traiga.`,
             chofer: `🚚 Para el chofer: ${after.notaChofer || (after.proveedor ? 'retirar en ' + prov : 'comprarlo en la próxima ruta')}${Array.isArray(after.fotos) && after.fotos.length ? ' · factura u orden adjunta' : ''}`,
             recogido: `📦 Recogido${after.recogidoPor ? ' por ' + after.recogidoPor : ''}. Pronto se entrega.`,
-            entregada: `✅ Entregado${after.entregadaA ? ' a ' + after.entregadaA : ''}.`,
+            entregada: `✅ Llegó${after.entradaInventario ? ': entró al inventario (' + after.entradaInventario.cantidad + ')' : ''}${after.recogidoPor ? ' · lo trajo ' + after.recogidoPor : ''}.`,
             rechazada: `✖ No se compra${after.rechazoMotivo ? ': ' + after.rechazoMotivo : ''}`,
             cancelada: `↩ ${quien} canceló este pedido.`,
             vista: `👀 ${porNombre} ya lo vio.`, comprando: `🛒 ${porNombre} lo está comprando.`, lista: `📦 Listo para recoger.`,
         };
         const cuerpo = TXT[after.estado]; if (!cuerpo) return;
         const solicitante = [bajo(after.pedidoPor && after.pedidoPor.email), ...((after.sumados || []).map((x) => bajo(x.email)))];
+        // Menos avisos (2026-11-03, «eficiencia»): quien pidió solo se entera cuando llega o si no se compra (los pasos
+        // intermedios los ve en «Mis pedidos»); el chofer, cuando le pasan algo (UN aviso por lote); la oficina, cuando llega.
         let dest = [];
-        if (after.estado === 'chofer') dest = [...choferes, ...solicitante];
-        else if (after.estado === 'recogido') dest = [...solicitante, ...oficina];
+        let titulo = `${nombre} × ${cant}`;
+        if (after.estado === 'chofer') {
+            if (Number(after.loteN) > 1 && Number(after.loteIndice) > 0) return;
+            dest = choferes;
+            if (Number(after.loteN) > 1) titulo = `🚚 ${after.loteN} pedidos para buscar`;
+        } else if (after.estado === 'entregada') dest = [...solicitante, ...oficina];
         else if (after.estado === 'cancelada') dest = oficina;
-        else dest = solicitante;
+        else if (['rechazada', 'recogido', 'lista'].includes(after.estado)) dest = solicitante;
+        else return;   // pedido_proveedor, vista, comprando: sin aviso
         dest = [...new Set(dest.filter((e) => e && e !== actor))];
-        for (const em of dest) { try { await enviarPushUsuario(em, `${nombre} × ${cant}`, cuerpo.slice(0, 160), url); } catch (_) { } }
+        const cuerpoF = after.estado === 'chofer' && Number(after.loteN) > 1 ? `Mira «🚚 Lista para el chofer» en Pedidos de material.${after.notaChofer ? ' ' + after.notaChofer : ''}` : cuerpo;
+        for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpoF.slice(0, 160), url); } catch (_) { } }
     } catch (e) { console.error('solicitudMaterialPush', event.params.id, e); }
 });
 

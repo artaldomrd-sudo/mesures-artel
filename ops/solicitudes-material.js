@@ -18,6 +18,7 @@ import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
 
 export const COL = 'solicitudesMaterial';
 export const ESTADOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'entregada', 'rechazada', 'cancelada', 'vista', 'comprando', 'lista'];
+export const POR_DECIDIR = ['pedida', 'vista', 'comprando'];
 export const ABIERTOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'vista', 'comprando', 'lista'];
 export const ESTADO_TXT = {
     pedida: 'Pedida', pedido_proveedor: 'Pedida al proveedor', chofer: 'Para el chofer', recogido: 'Recogido',
@@ -162,10 +163,12 @@ export function mensajeProveedor(s, nombreProv) {
 }
 
 // ---------- UI compartida: modal «Pedir» ----------
-let _usuario = null, _getItem = () => null, _onCreada = null, _matchItem = () => null;
+let _usuario = null, _getItem = () => null, _onCreada = null, _matchItem = () => null, _getAbierta = () => null;
 // `matchItem(texto)` (opcional): en el tablero, si el texto libre coincide con un ítem del inventario, se liga a él.
-export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
-    _usuario = usuario; _getItem = getItem || (() => null); _onCreada = onCreada || null; _matchItem = matchItem || (() => null);
+// `getAbierta(itemId)` (opcional): pedido abierto de ese ítem → el modal no crea otro, suma la cantidad a ese (2026-11-03: Roosevelt
+// pidió dos veces las mismas puntas PH2).
+export function montarPedir({ usuario, getItem, onCreada, matchItem, getAbierta }) {
+    _usuario = usuario; _getItem = getItem || (() => null); _onCreada = onCreada || null; _matchItem = matchItem || (() => null); _getAbierta = getAbierta || (() => null);
     if (document.getElementById('sol-pedir-ov')) return;
     document.body.insertAdjacentHTML('beforeend', `
     <div class="modal-overlay" id="sol-pedir-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1200;align-items:center;justify-content:center;padding:14px;">
@@ -184,20 +187,23 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
         </div>
         <label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">¿Para cuándo?</label>
         <div id="sol-urg" style="display:flex;flex-direction:column;gap:6px;">${Object.entries(URGENCIAS).map(([k, v], i) => `<label style="display:flex;gap:10px;align-items:center;justify-content:flex-start;font-size:14px;font-weight:normal;margin:0;padding:8px 10px;border:1.5px solid #e3e8ee;border-radius:8px;cursor:pointer;"><input type="radio" name="sol-urg" value="${k}" ${i === 1 ? 'checked' : ''} style="width:18px;height:18px;min-height:0;margin:0;flex:none;"> <span>${v}</span></label>`).join('')}</div>
+        <details id="sol-mas" style="margin-top:8px;"><summary style="cursor:pointer;font-size:13px;color:#0A3D62;font-weight:bold;">＋ Nota u obra (opcional)</summary>
         <label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">Nota <span style="font-weight:normal;color:#888">(opcional: medida, marca, para qué)</span></label>
         <input type="text" id="sol-nota" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;">
         <label style="display:block;font-size:12.5px;font-weight:bold;margin:8px 0 3px;color:#334;">Obra <span style="font-weight:normal;color:#888">(opcional)</span></label>
         <input type="text" id="sol-obra" placeholder="Solo si es para una obra en concreto" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit;">
+        </details>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
           <button type="button" onclick="solCerrarPedir()" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:10px 14px;font-family:inherit;font-weight:bold;cursor:pointer;">Cancelar</button>
-          <button type="button" id="sol-guardar" onclick="solGuardarPedir()" style="background:#e67e22;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-family:inherit;font-weight:bold;cursor:pointer;">Enviar pedido</button>
+          <button type="button" id="sol-guardar" data-txt="Enviar pedido" onclick="solGuardarPedir()" style="background:#e67e22;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-family:inherit;font-weight:bold;cursor:pointer;">Enviar pedido</button>
         </div>
         <div style="font-size:11.5px;color:#778;margin-top:10px;">A la oficina le llega al instante; lo pide al proveedor o se lo pasa al chofer, y tú ves el estado en «Mis pedidos».</div>
       </div>
     </div>`);
-    let itemSel = null;
+    let itemSel = null, abiertaSel = null;
     window.solAbrirPedir = (itemId) => {
         itemSel = itemId ? _getItem(itemId) : null;
+        abiertaSel = itemId ? _getAbierta(itemId) : null;
         document.getElementById('sol-pedir-item').innerHTML = itemSel ? `<b>${esc(itemSel.tipo)}${itemSel.color ? ' — ' + esc(itemSel.color) : ''}</b> <span style="color:#889">· hay ${Number(itemSel.cantidad) || 0} ${esc(itemSel.unidad || '')} en inventario</span>` : '';
         document.getElementById('sol-pedir-libre').style.display = itemSel ? 'none' : 'block';
         document.getElementById('sol-texto').value = ''; document.getElementById('sol-cant').value = 1;
@@ -209,6 +215,17 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
         const eq = itemSel && itemSel.empaque && Number(itemSel.porCaja) > 0 ? ` · 1 ${esc(itemSel.empaque)} = ${Number(itemSel.porCaja)} ${esc(itemSel.unidad || 'unidades')}` : '';
         if (eq) document.getElementById('sol-pedir-item').innerHTML += `<span style="color:#889">${eq}</span>`;
         document.getElementById('sol-nota').value = ''; document.getElementById('sol-obra').value = '';
+        const mas = document.getElementById('sol-mas'); if (mas) mas.open = false;
+        const urgBox = document.getElementById('sol-urg'), btnG = document.getElementById('sol-guardar');
+        if (abiertaSel) {   // ya hay un pedido abierto de esta pieza: lo que se escriba se suma a ese
+            document.getElementById('sol-pedir-item').innerHTML += `<div style="margin-top:8px;background:#fff8e1;border:1.5px solid #f0c36d;border-radius:8px;padding:8px 10px;font-size:13px;color:#7a5200;">Ya está pedido: <b>${esc(cantidadTxt(abiertaSel))}</b> · pidió ${esc(abiertaSel.pedidoPor ? abiertaSel.pedidoPor.nombre : '')} · ${esc(ESTADO_TXT[abiertaSel.estado] || abiertaSel.estado)}. Si necesitas más, pon cuánto y se suma a ese pedido.</div>`;
+            selU.value = abiertaSel.unidad && [...selU.options].some(o => o.value === abiertaSel.unidad) ? abiertaSel.unidad : selU.value; selU.disabled = true;
+            urgBox.style.display = 'none'; urgBox.previousElementSibling.style.display = 'none'; if (mas) mas.style.display = 'none';
+            btnG.textContent = '➕ Sumar a ese pedido';
+        } else {
+            selU.disabled = false; urgBox.style.display = ''; urgBox.previousElementSibling.style.display = ''; if (mas) mas.style.display = '';
+            btnG.textContent = btnG.dataset.txt || btnG.textContent;
+        }
         const ov = document.getElementById('sol-pedir-ov'); ov.style.display = 'flex';
         setTimeout(() => (itemSel ? document.getElementById('sol-cant') : document.getElementById('sol-texto')).focus(), 50);
     };
@@ -216,6 +233,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
     window.solGuardarPedir = async () => {
         const btn = document.getElementById('sol-guardar'); btn.disabled = true;
         try {
+            if (abiertaSel) { await sumarse(abiertaSel.id, _usuario, document.getElementById('sol-cant').value); window.solCerrarPedir(); _onCreada && _onCreada(abiertaSel.id); return; }
             const urg = (document.querySelector('input[name="sol-urg"]:checked') || {}).value || 'semana';
             if (!itemSel) { const m = _matchItem(document.getElementById('sol-texto').value); if (m) itemSel = m; }
             const id = await crearSolicitud(_usuario, {
@@ -263,9 +281,11 @@ export function solicitudCardHTML(s, opts) {
         if (mia && s.estado === 'pedida') acciones += `<button onclick="solCancelar('${s.id}')" style="background:transparent;color:#888;border:1.5px solid #ddd;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">Ya no hace falta</button>`;
         acciones += accionesHTML(s, opts);
     }
+    const selec = opts.seleccionable && opts.gestor && POR_DECIDIR.includes(s.estado)
+        ? `<input type="checkbox" class="sol-sel" data-id="${s.id}" onchange="solSelCambio && solSelCambio()" style="width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;" title="Seleccionar para decidir varios juntos">` : '';
     return `<div class="sol-card" id="sol-${s.id}" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:12px 14px;border-left:6px solid ${color};margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;">
-            <div><b style="color:#0A3D62;font-size:15px;">${esc(nombreDe(s))}</b> <span style="font-size:14px;color:#223;">× ${esc(cantidadTxt(s))}</span>${s.itemId ? '' : ' <span style="font-size:11px;color:#889;border:1px solid #dde;border-radius:6px;padding:1px 5px;">no está en inventario</span>'}</div>
+            <div>${selec}<b style="color:#0A3D62;font-size:15px;">${esc(nombreDe(s))}</b> <span style="font-size:14px;color:#223;">× ${esc(cantidadTxt(s))}</span>${s.itemId ? '' : ' <span style="font-size:11px;color:#889;border:1px solid #dde;border-radius:6px;padding:1px 5px;">no está en inventario</span>'}</div>
             <span style="font-size:12px;font-weight:bold;color:${urgCol};white-space:nowrap;">${esc(URGENCIA_CORTA[s.urgencia] || '')}</span>
         </div>
         <div style="font-size:12.5px;color:#667;margin-top:3px;">${mia ? 'Pediste tú' : 'Pidió ' + esc(quien)}${sum} · ${esc(fechaCorta(s.fechaISO))}</div>
@@ -284,11 +304,12 @@ function accionesHTML(s, opts) {
             h += b('🚚 Pasar al chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'Se compra en persona: el chofer lo trae en su próxima ruta');
             h += b('✖ No se compra', `solForm('${s.id}','rechazada')`, '#c0392b');
         }
-        if (s.estado === 'pedido_proveedor') h += b('🚚 Enviar al chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'El chofer lo retira con la factura u orden adjunta');
-        if (['pedido_proveedor', 'lista'].includes(s.estado)) h += b('✅ Entregada', `solForm('${s.id}','entregada')`, '#27ae60', 'Lo trajo el proveedor o lo recogió la oficina');
+        if (s.estado === 'pedido_proveedor') h += b('🚚 Lo retira el chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'El chofer lo retira con la factura u orden adjunta');
+        if (['pedido_proveedor', 'lista'].includes(s.estado)) h += b('✅ Ya llegó', `solForm('${s.id}','entregada')`, '#27ae60', 'Lo trajo el proveedor o lo recogió la oficina');
     }
-    if ((opts.gestor || opts.chofer) && s.estado === 'chofer') h += b('📦 Recogido / comprado', `solForm('${s.id}','recogido')`, '#16a085');
-    if ((opts.gestor || opts.chofer) && s.estado === 'recogido') h += b('✅ Entregada', `solForm('${s.id}','entregada')`, '#27ae60');
+    // Un solo paso para el chofer (2026-11-03): «Lo traje» = recogido + entregado + entrada al inventario.
+    if ((opts.gestor || opts.chofer) && s.estado === 'chofer') h += b('✅ Lo traje', `solForm('${s.id}','entregada')`, '#27ae60', 'Ya está en Las Terrenas: entra al inventario y avisa a quien lo pidió');
+    if ((opts.gestor || opts.chofer) && s.estado === 'recogido') h += b('✅ Ya llegó', `solForm('${s.id}','entregada')`, '#27ae60');
     return h;
 }
 
@@ -331,14 +352,14 @@ export function montarAcciones({ usuario, getSolicitud }) {
                 'Marcar recogido', `solOkRecogido('${id}')`, '#16a085');
         } else if (tipo === 'entregada') {
             const conInv = !!s.itemId;
-            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">✅ Entregada</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">¿A quién se le entregó?</label>${inp('sf-a-' + id, 'Nombre', 'text', s.pedidoPor ? s.pedidoPor.nombre : '')}</div><div><label style="font-size:12px;">Precio pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div></div>
-                ${conInv ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sf-inv-${id}" checked> Dar entrada al inventario (${esc(nombreDe(s))})</label>
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">✅ ${s.estado === 'chofer' ? 'Lo traje' : 'Ya llegó'}: ${esc(nombreDe(s))}</div>
                 <div style="font-size:12.5px;color:#334;">Se pidió: <b>${esc(cantidadTxt(s))}</b></div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;" id="sf-invcant-lbl-${id}">Entran al inventario</label>${inp('sf-invcant-' + id, '', 'number', '')}</div><div><label style="font-size:12px;" id="sf-invcosto-lbl-${id}">Costo por unidad (opcional)</label>${inp('sf-invcosto-' + id, '0', 'number', '')}</div></div>
-                <div id="sf-invconv-${id}" style="font-size:12px;color:#778;">Calculando la equivalencia…</div>
-                <div style="font-size:11.5px;color:#778;">Si va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">Este pedido no está ligado a un ítem del inventario. Si debe quedar en stock, créalo en Inventario y dale entrada ahí.</div>`}`,
-                'Confirmar entrega', `solOkEntregada('${id}')`, '#27ae60');
+                ${conInv ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sf-inv-${id}" checked onchange="document.getElementById('sf-invrow-${id}').style.display = this.checked ? '' : 'none'"> Entra al almacén (inventario)</label>
+                <div id="sf-invrow-${id}" style="display:grid;gap:6px;"><div><label style="font-size:12px;" id="sf-invcant-lbl-${id}">Entran al inventario</label>${inp('sf-invcant-' + id, '', 'number', '')}</div>
+                <div id="sf-invconv-${id}" style="font-size:12px;color:#778;">Calculando la equivalencia…</div></div>
+                <div style="font-size:11.5px;color:#778;">Si va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">No está en la lista del inventario: no entra al almacén. Si debe quedar ahí, la oficina lo crea en Inventario.</div>`}
+                <div><label style="font-size:12px;">Precio total pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div>`,
+                'Confirmar', `solOkEntregada('${id}')`, '#27ae60');
             if (conInv) prepararEntrada(s, id);
         } else if (tipo === 'rechazada') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#c0392b;">✖ No se compra</div>
@@ -374,7 +395,6 @@ export function montarAcciones({ usuario, getSolicitud }) {
         const el = (k) => document.getElementById(k + id);
         if (!el('sf-invcant-')) return;
         el('sf-invcant-lbl-').textContent = `Entran al inventario (en ${invU})`;
-        el('sf-invcosto-lbl-').textContent = `Costo por ${plur(invU).replace(/([dlrn])es$/, '$1').replace(/s$/, '') || 'unidad'} (opcional)`;
         if (f != null) {
             el('sf-invcant-').value = String(n * f);
             conv[id] = f === 1 ? '' : `${n} ${s.unidad} × ${f} = ${n * f} ${invU}`;
@@ -387,10 +407,15 @@ export function montarAcciones({ usuario, getSolicitud }) {
     window.solOkEntregada = async (id) => {
         const s = getSolicitud(id); if (!s) return;
         const chk = document.getElementById('sf-inv-' + id); const p = v('sf-precio2-' + id);
-        if (chk && chk.checked && !(Number(v('sf-invcant-' + id)) > 0)) { alert('Escribe cuánto entra al inventario (o desmarca la casilla si va directo a la obra).'); return; }
+        const cantInv = Number(v('sf-invcant-' + id)) || 0, precio = p !== '' ? Number(p) : null;
+        if (chk && chk.checked && !(cantInv > 0)) { alert('Escribe cuánto entra al inventario (o desmarca la casilla si va directo a la obra).'); return; }
+        const quienes = [s.pedidoPor && s.pedidoPor.nombre, ...((s.sumados || []).map(x => x.nombre))].filter(Boolean);
         try {
-            if (chk && chk.checked) await darEntradaInventario(s, usuario, v('sf-invcant-' + id), Number(v('sf-invcosto-' + id)) || 0, conv[id] || '');
-            await cambiarEstado(id, 'entregada', usuario, { entregadaA: v('sf-a-' + id) || null, ...(p !== '' ? { precio: Number(p) } : {}) });
+            if (chk && chk.checked) await darEntradaInventario(s, usuario, cantInv, precio > 0 ? Math.round(precio / cantInv * 100) / 100 : 0, conv[id] || '');
+            await cambiarEstado(id, 'entregada', usuario, {
+                entregadaA: [...new Set(quienes)].join(', ') || null, ...(precio != null ? { precio } : {}),
+                ...(['chofer', 'recogido'].includes(s.estado) && !s.recogidoPor ? { recogidoPor: usuario.nombre || '' } : {})
+            });
         } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkRechazada = async (id) => {
@@ -398,6 +423,25 @@ export function montarAcciones({ usuario, getSolicitud }) {
         try { await cambiarEstado(id, 'rechazada', usuario, { rechazoMotivo: m }, m); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
 }
+
+// ---------- decidir VARIOS a la vez (2026-11-03, Dylan: «eficiencia y rapidez»): un solo WhatsApp al proveedor con todo,
+// o pasar todo al chofer de una vez. Los pedidos pendientes casi siempre son reposiciones del mismo proveedor.
+export function mensajeProveedorVarios(lista, nombreProv) {
+    const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', 'Pedido:'];
+    lista.forEach(s => l.push(`• ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}`));
+    if (lista.some(s => s.urgencia === 'hoy')) l.push('', 'Algunas piezas las necesitamos hoy.');
+    l.push('', '¿Tiene disponible y a qué precio? Lo retira nuestro chofer; por favor envíenos la factura u orden por aquí.', '', 'Gracias.');
+    return l.join('\n');
+}
+export async function pedirVariosAlProveedor(ids, prov, usuario) {
+    const extra = { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' } };
+    for (const id of ids) await cambiarEstado(id, 'pedido_proveedor', usuario, extra, 'Pedido a ' + prov.nombre + ' por WhatsApp' + (ids.length > 1 ? ` (junto con ${ids.length - 1} más)` : ''));
+}
+export async function pasarVariosAlChofer(ids, nota, usuario) {
+    // `loteN/loteIndice`: el aviso al chofer sale una sola vez por lote (functions → solicitudMaterialPush).
+    for (const [i, id] of ids.entries()) await cambiarEstado(id, 'chofer', usuario, { notaChofer: (nota || '').trim() || null, loteN: ids.length, loteIndice: i }, nota || '');
+}
+export { telWa };
 
 // ---------- lista para el chofer (texto para copiar / WhatsApp): lo que debe comprar o retirar en su ruta ----------
 export function listaChoferTxt(solicitudes) {

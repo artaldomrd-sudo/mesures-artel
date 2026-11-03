@@ -66,9 +66,30 @@
         <button class="tab-btn" id="tab-cerradas" onclick="setTab('cerradas')">No se compran</button>
     </div>
     <div class="filtro" id="filtro"></div>
+    <div id="sel-todos"></div>
     <div id="lista"><p class="empty">Cargando…</p></div>
+    <div id="sel-bar" style="display:none;position:sticky;bottom:10px;z-index:50;background:#0A3D62;color:#fff;border-radius:12px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.25);margin-top:10px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <b id="sel-n" style="flex:1;min-width:140px;"></b>
+            <button onclick="abrirLote('proveedor')" style="background:#2980b9;color:#fff;border:none;border-radius:8px;padding:9px 12px;font-family:'Arimo';font-weight:bold;cursor:pointer;">📲 Pedir al proveedor</button>
+            <button onclick="abrirLote('chofer')" style="background:#8e44ad;color:#fff;border:none;border-radius:8px;padding:9px 12px;font-family:'Arimo';font-weight:bold;cursor:pointer;">🚚 Al chofer</button>
+            <button onclick="selLimpiar()" style="background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:8px;padding:9px 12px;font-family:'Arimo';cursor:pointer;">Quitar</button>
+        </div>
+    </div>
     <p style="font-size:12px;color:#889;margin-top:16px;">Regla de la casa: todo pedido de material o herramienta va por aquí (no por WhatsApp). La oficina lo pide al proveedor o se lo pasa al chofer el mismo día; tú ves el estado en «Mis pedidos» del Inventario.</p>
 </main>
+
+<div class="modal-overlay" id="lote-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;align-items:center;justify-content:center;padding:14px;">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;padding:18px;max-height:92vh;overflow-y:auto;font-family:'Arimo';">
+        <h2 id="lote-tit" style="margin:0 0 8px;color:var(--artal-blue,#0A3D62);font-size:17px;"></h2>
+        <div id="lote-lista" style="font-size:13px;color:#334;margin-bottom:8px;"></div>
+        <div id="lote-cuerpo" style="display:grid;gap:8px;"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap;">
+            <button onclick="document.getElementById('lote-ov').style.display='none'" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Cancelar</button>
+            <button id="lote-ok" style="color:#fff;border:none;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;"></button>
+        </div>
+    </div>
+</div>
 
 <div class="modal-overlay" id="lc-ov" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1100;align-items:center;justify-content:center;padding:14px;">
     <div style="background:#fff;border-radius:14px;width:100%;max-width:520px;padding:18px;max-height:92vh;overflow-y:auto;">
@@ -89,10 +110,10 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import { collection, doc, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, configActual, ABIERTOS, listaChoferTxt } from './solicitudes-material.js';
+    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, configActual, ABIERTOS, POR_DECIDIR, listaChoferTxt, proveedoresActuales, mensajeProveedorVarios, pedirVariosAlProveedor, pasarVariosAlChofer, telWa, nombreDe, cantidadTxt } from './solicitudes-material.js';
 
     // Equipo de obra (chofer/instalador/ayudante) ve todo y pide; la oficina (Sara entra por permiso de página; Dylan) decide:
-    // pedir al proveedor por WhatsApp o pasar al chofer. El chofer (rol chofer o lista `chofer` de la config) marca Recogido.
+    // pedir al proveedor por WhatsApp o pasar al chofer. El chofer (rol chofer o lista `chofer` de la config) marca «Lo traje».
     const usuario = await requireAuth(['chofer', 'instalador', 'ayudante']);
     const esAdmin = usuario.roles.includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -102,6 +123,7 @@
     const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
     let solicitudes = [], items = [], equipo = [], tab = 'abiertas', filtro = 'todas', gestor = false, chofer = false;
+    const sel = new Set();   // pedidos marcados para decidir juntos
     const labelItem = (it) => (it.tipo || '') + (it.color ? ' — ' + it.color : '');
     const matchItem = (txt) => { const t = (txt || '').trim().toLowerCase(); if (!t) return null; return items.find(it => labelItem(it).toLowerCase() === t) || null; };
 
@@ -121,7 +143,7 @@
 
     function pintarRol() {
         const r = rolEn(usuario); const partes = [];
-        if (gestor) partes.push('🏢 Oficina: decide proveedor o chofer'); if (r.chofer) partes.push('🚚 Chofer: compra o retira y marca Recogido');
+        if (gestor) partes.push('🏢 Oficina: decide proveedor o chofer'); if (r.chofer) partes.push('🚚 Chofer: compra o retira y marca «Lo traje»');
         const el = document.getElementById('mi-rol'); el.textContent = partes.length ? 'Tu papel aquí: ' + partes.join(' · ') : ''; el.style.display = partes.length ? '' : 'none';
         document.getElementById('btn-lista').style.display = (gestor || chofer) ? '' : 'none';
         document.getElementById('btn-cfg').style.display = esAdmin ? '' : 'none';
@@ -149,9 +171,64 @@
         else if (filtro === 'mias') lista = lista.filter(s => s.pedidoPor && s.pedidoPor.email === usuario.email);
         else if (filtro.startsWith('p:')) lista = lista.filter(s => s.pedidoPor && s.pedidoPor.nombre === filtro.slice(2));
         if (tab === 'abiertas') lista = lista.slice().sort((a, b) => (ordenUrg[a.urgencia] ?? 1) - (ordenUrg[b.urgencia] ?? 1) || (a.fechaISO || '').localeCompare(b.fechaISO || ''));
-        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor, chofer })).join('')
+        const seleccionable = gestor && tab === 'abiertas';
+        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor, chofer, seleccionable })).join('')
             : `<p class="empty">${tab === 'abiertas' ? 'Nada pendiente. 🎉' : 'Nada en los últimos 14 días.'}</p>`;
+        const porDecidir = lista.filter(s => POR_DECIDIR.includes(s.estado));
+        document.getElementById('sel-todos').innerHTML = seleccionable && porDecidir.length > 1
+            ? `<div style="font-size:13px;color:#445;margin:4px 0 8px;">Tienes ${porDecidir.length} por decidir. <a href="#" onclick="selTodos();return false;" style="font-weight:bold;">☑ Seleccionarlos todos</a> y pídelos juntos en un solo WhatsApp, o márcalos uno a uno.</div>` : '';
+        [...sel].forEach(id => { const c = document.querySelector(`.sol-sel[data-id="${id}"]`); if (c) c.checked = true; else sel.delete(id); });
+        pintarSel();
     }
+
+    // --- Decidir varios juntos (2026-11-03) ---
+    function pintarSel() {
+        const bar = document.getElementById('sel-bar'); bar.style.display = sel.size ? '' : 'none';
+        document.getElementById('sel-n').textContent = `☑ ${sel.size} seleccionado${sel.size === 1 ? '' : 's'}`;
+    }
+    window.solSelCambio = () => { sel.clear(); document.querySelectorAll('.sol-sel:checked').forEach(c => sel.add(c.dataset.id)); pintarSel(); };
+    window.selTodos = () => { document.querySelectorAll('.sol-sel').forEach(c => { c.checked = true; }); window.solSelCambio(); };
+    window.selLimpiar = () => { document.querySelectorAll('.sol-sel').forEach(c => { c.checked = false; }); sel.clear(); pintarSel(); };
+    const elegidos = () => [...sel].map(id => solicitudes.find(s => s.id === id)).filter(s => s && POR_DECIDIR.includes(s.estado));
+    const inpL = 'width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;';
+    window.abrirLote = (modo) => {
+        const lista = elegidos(); if (!lista.length) { alert('Marca al menos un pedido por decidir.'); return; }
+        document.getElementById('lote-lista').innerHTML = lista.map(s => `• ${esc(nombreDe(s))} × ${esc(cantidadTxt(s))} <span style="color:#889">(${esc(s.pedidoPor ? s.pedidoPor.nombre : '')})</span>`).join('<br>');
+        const ok = document.getElementById('lote-ok');
+        if (modo === 'proveedor') {
+            const provs = proveedoresActuales();
+            document.getElementById('lote-tit').textContent = `📲 Pedir ${lista.length} al proveedor en un solo WhatsApp`;
+            document.getElementById('lote-cuerpo').innerHTML = `<label style="font-size:12px;">Proveedor</label>
+                <select id="lote-prov" style="${inpL}background:#fff;" onchange="document.getElementById('lote-otro').style.display = this.value === 'otro' ? 'grid' : 'none'; loteMsg()"><option value="">— elegir proveedor —</option>${provs.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.telefono ? ' · ' + esc(p.telefono) : ' · sin teléfono'}</option>`).join('')}<option value="otro">Otro número…</option></select>
+                <div id="lote-otro" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><input id="lote-pnom" placeholder="Nombre" style="${inpL}" oninput="loteMsg()"><input id="lote-ptel" placeholder="WhatsApp (10 dígitos)" type="tel" style="${inpL}"></div>
+                <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="lote-msg" rows="8" style="${inpL}font-size:13px;"></textarea>
+                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el pedido; lo envías tú. Todos quedan «Pedida al proveedor». Cuando llegue la factura, adjúntala en uno de ellos y pásalos al chofer.</div>`;
+            window.loteMsg = () => { const pid = document.getElementById('lote-prov').value; const p = provs.find(x => x.id === pid); const nom = pid === 'otro' ? document.getElementById('lote-pnom').value : (p ? p.nombre.replace(/\s*\(.*\)$/, '') : ''); document.getElementById('lote-msg').value = mensajeProveedorVarios(lista, nom); };
+            window.loteMsg();
+            ok.textContent = 'Abrir WhatsApp y marcar'; ok.style.background = '#2980b9';
+            ok.onclick = async () => {
+                const pid = document.getElementById('lote-prov').value; let prov = null;
+                if (pid === 'otro') prov = { id: null, nombre: document.getElementById('lote-pnom').value.trim() || 'Proveedor', telefono: document.getElementById('lote-ptel').value.trim() };
+                else { const p = provs.find(x => x.id === pid); if (!p) { alert('Elige el proveedor.'); return; } prov = { id: p.id, nombre: p.nombre, telefono: p.telefono }; }
+                const tel = telWa(prov.telefono); if (!tel) { alert('Ese proveedor no tiene WhatsApp cargado. Elige «Otro número…» y escríbelo.'); return; }
+                window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(document.getElementById('lote-msg').value), '_blank');
+                ok.disabled = true;
+                try { await pedirVariosAlProveedor(lista.map(s => s.id), prov, usuario); document.getElementById('lote-ov').style.display = 'none'; window.selLimpiar(); }
+                catch (e) { alert('No se pudo marcar: ' + (e.message || e)); } finally { ok.disabled = false; }
+            };
+        } else {
+            document.getElementById('lote-tit').textContent = `🚚 Pasar ${lista.length} al chofer`;
+            document.getElementById('lote-cuerpo').innerHTML = `<label style="font-size:12px;">Dónde comprarlo y qué pedir exactamente (vale para todos)</label><input id="lote-nota" placeholder="Ej: ferretería de la 27, pedir por la referencia" style="${inpL}">
+                <div style="font-size:11.5px;color:#778;">El chofer los ve juntos en «🚚 Lista para el chofer». Cuando los tenga, marca «Lo traje».</div>`;
+            ok.textContent = 'Pasar al chofer'; ok.style.background = '#8e44ad';
+            ok.onclick = async () => {
+                ok.disabled = true;
+                try { await pasarVariosAlChofer(lista.map(s => s.id), document.getElementById('lote-nota').value, usuario); document.getElementById('lote-ov').style.display = 'none'; window.selLimpiar(); }
+                catch (e) { alert('No se pudo: ' + (e.message || e)); } finally { ok.disabled = false; }
+            };
+        }
+        document.getElementById('lote-ov').style.display = 'flex';
+    };
 
     // --- Lista de compras ---
     window.abrirListaCompras = () => {
@@ -167,7 +244,7 @@
     function renderCfg() {
         const box = document.getElementById('cfg-box'); if (!esAdmin || !equipo.length) return;
         const cfg = configActual(); const en = (l, e) => (l || []).map(x => String(x).toLowerCase()).includes(e.toLowerCase());
-        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Oficina recibe el aviso de cada pedido nuevo y decide (proveedor por WhatsApp o chofer); Chofer recibe los que se le pasan y marca Recogido. Cámbialo cuando cambie el equipo.</div>
+        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Oficina recibe el aviso de cada pedido nuevo y decide (proveedor por WhatsApp o chofer); Chofer recibe los que se le pasan y marca «Lo traje». Cámbialo cuando cambie el equipo.</div>
         <table><tr><th>Persona</th><th>🏢 Oficina</th><th>🚚 Chofer</th></tr>
         ${equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `<tr><td>${esc(p.nombre)}<div style="font-size:11px;color:#889">${esc(p.email)}</div></td>
             ${['compras', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
