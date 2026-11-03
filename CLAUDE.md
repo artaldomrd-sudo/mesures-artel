@@ -2812,6 +2812,20 @@ da el correo real para leer reuniones/valoraciones «propias». Banco de pruebas
 espejos de admins (piden 2FA). Herramientas locales (no versionadas): `herramientas/servidor.js` (servidor estático
 `http://127.0.0.1:8787`, `.claude/launch.json` «ops-local») y `herramientas/.espejos.json` (credenciales generadas por script).
 
+### «👁 Ver como…»: entrar a la pantalla de cualquiera con un toque (2026-11-03)
+
+Dylan: «necesito simplificar significativamente la entrada a cuentas espejo; ver la pantalla de Wilson o quien sea en cualquier momento,
+rápido y fácil» (había escrito el usuario espejo en el selector de Google). Botón **«👁 Ver como…»** en la cabecera del Panel: lista del
+equipo (usuarios activos con rol, sin admin) → `ops/ver-como.js` → `POST espejoCrear {email, accion:'acceso'}` (devuelve la clave guardada
+en `espejosClaves/{espejo}` sin rotarla; si no existe el espejo o la clave, lo crea/rota y la guarda; `crear`/`clave` también la guardan;
+regla `espejosClaves` false para todos) → deja `{email, password, t}` en localStorage `artal_vercomo_<n>` y abre en otra pestaña la
+pantalla de inicio de esa persona (`paginaInicio`: obra → instalacion.html, fábrica/contratista → alucufel/, oficina → index.html si lo
+tiene en paginasExtra o erp.html) con `?vercomo=<n>`. **`ops/firebase-config.js`**: si la pestaña trae `?vercomo` (o `sessionStorage
+artal_vercomo`), usa una SEGUNDA app de Firebase (`'vercomo'`) con `browserSessionPersistence` y Firestore en memoria, entra sola con
+esas credenciales (las borra al leerlas, caducan a los 10 min), limpia la dirección y exporta `verComoActivo` / `salirVerComo()`. La
+sesión real de Dylan en las demás pestañas no se toca. La franja morada del espejo (`auth-common.js`) lleva «✕ Salir de la vista».
+Probado en local con el espejo de Emerson. Requiere desplegar `espejoCrear` y pegar las reglas.
+
 ### Correcciones ALTO de la auditoría (2026-09-30)
 
 - Los push del sistema ya apuntan a `ops/instalacion.html`; `instalador.html`, `instalaciones.html` y `ayudante.html` quedaron

@@ -3,7 +3,7 @@
 //   import { requireAuth } from './auth-common.js';
 //   const usuario = await requireAuth(['fabrica']); // admin siempre pasa
 //   // usuario = { email, nombre, rol }
-import { auth, googleProvider, db } from './firebase-config.js';
+import { auth, googleProvider, db, verComoActivo, salirVerComo } from './firebase-config.js';
 import { rootPath } from './paths.js';
 import { signInWithPopup, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -237,6 +237,11 @@ export function requireAuth(rolesPermitidos) {
         const bn = document.createElement('div'); bn.id = 'espejo-banner';
         bn.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9990;background:#6c3fb5;color:#fff;font:600 12.5px Arimo,Arial,sans-serif;text-align:center;padding:6px 10px;box-shadow:0 -2px 8px rgba(0,0,0,.2);';
         bn.textContent = '🪞 Vista espejo de ' + usuarioObj.nombre + ' — solo para mirar: cualquier cambio será rechazado.';
+        if (verComoActivo) {   // pestaña abierta con «👁 Ver como…»: un toque para cerrarla
+          const x = document.createElement('button'); x.textContent = '✕ Salir de la vista';
+          x.style.cssText = 'margin-left:10px;background:#fff;color:#6c3fb5;border:none;border-radius:100px;padding:3px 10px;font:700 12px Arimo,Arial,sans-serif;cursor:pointer;';
+          x.onclick = () => salirVerComo(); bn.appendChild(x);
+        }
         (document.body || document.documentElement).appendChild(bn);
       }
       // Esconde mosaicos/enlaces a páginas que no puede ver (hubs). Se repite un momento después por

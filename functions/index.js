@@ -1179,11 +1179,23 @@ exports.espejoCrear = onRequest({ cors: true }, async (req, res) => {
             await db.collection('equipo').doc(espejo).delete().catch(() => { });
             res.status(200).json({ ok: true, espejo, borrado: true }); return;
         }
+        // «👁 Ver como…» (2026-11-03): 'acceso' devuelve la clave guardada en `espejosClaves/{espejo}` (nadie la lee desde el navegador:
+        // regla false) sin rotarla; si no hay espejo o no hay clave guardada, sigue como 'clave' (la crea/rota y la guarda).
+        if (accion === 'acceso') {
+            const k = await db.collection('espejosClaves').doc(espejo).get();
+            let existe = true; try { await getAuth().getUserByEmail(espejo); } catch (_) { existe = false; }
+            const espDoc = await db.collection('usuarios').doc(espejo).get();
+            if (k.exists && k.data().password && existe && espDoc.exists) {
+                await db.collection('usuarios').doc(espejo).set({ ...camposEspejo(real), espejoDe: emailReal }, { merge: true });   // roles al día
+                res.status(200).json({ ok: true, espejo, password: k.data().password, nombre: real.nombre || '' }); return;
+            }
+        }
         const ABC = 'abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKMNPQRSTUVWXYZ';
         const password = [...crypto.randomBytes(12)].map((b) => ABC[b % ABC.length]).join('');
         let u; try { u = await getAuth().getUserByEmail(espejo); await getAuth().updateUser(u.uid, { password, disabled: false, displayName: (real.nombre || '') + ' (espejo)' }); }
         catch (_) { u = await getAuth().createUser({ email: espejo, password, displayName: (real.nombre || '') + ' (espejo)', emailVerified: true }); }
         await db.collection('usuarios').doc(espejo).set({ ...camposEspejo(real), espejoDe: emailReal, creadoPor: admin, creado: FieldValue.serverTimestamp() }, { merge: true });
+        await db.collection('espejosClaves').doc(espejo).set({ password, espejoDe: emailReal, actualizado: FieldValue.serverTimestamp(), por: admin });
         console.log('espejo', accion, espejo, 'por', admin);
         res.status(200).json({ ok: true, espejo, password, nombre: real.nombre || '' });
     } catch (e) { console.error('espejoCrear', emailReal, e); res.status(500).json({ error: String((e && e.message) || e) }); }

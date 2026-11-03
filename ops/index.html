@@ -73,6 +73,10 @@
     </div>
     <div class="who">
         <span id="user-name"></span>
+        <span style="position:relative;display:inline-block;">
+            <button id="vercomo-btn" type="button" title="Ver la pantalla de alguien del equipo tal como la ve (solo lectura)">👁 Ver como…</button>
+            <div id="vercomo-menu" style="display:none;position:absolute;right:0;top:110%;z-index:1000;background:#fff;border:1px solid #dde3ea;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);min-width:220px;max-height:60vh;overflow:auto;padding:6px;"></div>
+        </span>
         <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
         <button id="signout-btn">Cerrar sesión</button>
     </div>
@@ -116,6 +120,7 @@
 </main>
 
 <script type="module">
+    import { verComo } from './ver-como.js';
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { suscribirMensajes, esParaMi } from './mensajes-lectura.js';
     import { requirePin } from './pin-gate.js';
@@ -251,6 +256,28 @@
         const miNombre = nombreNorm(usuario.nombre);
         return asigns.some(a => a && ((a.email && a.email === usuario.email) || nombreNorm(a.nombre) === miNombre));
     }
+
+    // «👁 Ver como…» (2026-11-03): lista del equipo (usuarios activos sin admin) → abre su pantalla en otra pestaña, solo lectura.
+    (async () => {
+        const btn = document.getElementById('vercomo-btn'), menu = document.getElementById('vercomo-menu');
+        if (!btn) return;
+        try {
+            const { getDocs: gd } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js');
+            const snap = await gd(collection(db, 'usuarios'));
+            const gente = snap.docs.map(d => ({ email: d.id, ...d.data() })).filter(u => u.cuentaPrueba !== true && u.activo !== false && u.nombre)
+                .map(u => ({ ...u, roles: Array.isArray(u.rol) ? u.rol : [u.rol].filter(Boolean) })).filter(u => !u.roles.includes('admin') && u.roles.length)
+                .sort((a, b) => a.nombre.localeCompare(b.nombre));
+            if (!gente.length) { btn.style.display = 'none'; return; }
+            const ROLTXT = { instalador: 'instalador', ayudante: 'ayudante', chofer: 'chofer', fabrica: 'fábrica', contratista: 'ALUCUFEL', cotizaciones: 'oficina', contable: 'contabilidad', comunicaciones: 'oficina', capacitador: 'academia' };
+            menu.innerHTML = '<div style="font-size:11.5px;color:#889;padding:4px 8px 6px;">Abre su pantalla en otra pestaña, solo para mirar</div>' + gente.map((u, k) => `<button type="button" data-k="${k}" style="display:block;width:100%;text-align:left;background:none;border:none;border-radius:8px;padding:8px 10px;font:inherit;font-size:14px;cursor:pointer;color:#17212b;">${u.nombre.replace(/[<>&]/g, '')} <span style="color:#889;font-size:12px;">· ${[...new Set(u.roles.map(r => ROLTXT[r] || r))].join(', ')}</span></button>`).join('');
+            menu.querySelectorAll('button[data-k]').forEach(b => {
+                b.onmouseenter = () => { b.style.background = '#eef4fb'; }; b.onmouseleave = () => { b.style.background = 'none'; };
+                b.onclick = () => { const u = gente[Number(b.dataset.k)]; menu.style.display = 'none'; verComo(u.email, { roles: u.roles, paginasExtra: u.paginasExtra || [] }); };
+            });
+            btn.onclick = (e) => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; };
+            document.addEventListener('click', (e) => { if (!menu.contains(e.target) && e.target !== btn) menu.style.display = 'none'; });
+        } catch (e) { btn.style.display = 'none'; console.warn('ver como', e); }
+    })();
 
     // Clave estable por tarjeta (para poder ocultarla con la ✕): tipo + documento + huella del texto,
     // así una tarjeta oculta NO vuelve a salir por un refresco, pero SÍ reaparece si llega un
