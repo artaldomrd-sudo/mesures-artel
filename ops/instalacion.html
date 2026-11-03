@@ -230,6 +230,7 @@
 
 <main>
     <div id="aviso-parte"></div>
+    <a id="banda-chofer" href="chofer.html" style="display:none;text-decoration:none;margin:0 0 12px;background:#fff4e5;border:2px solid #f0a35a;border-radius:12px;padding:12px 14px;color:#5a2d0c;"></a>
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
         <button class="tab" id="tabbtn-inst" onclick="setTab('inst')">📋 Por agendar <span class="tab-badge" id="badge-inst" style="display:none"></span></button>
@@ -496,6 +497,34 @@
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['instalador', 'ayudante']);
+
+    // Banda «Para buscar» (Dylan 2026-11-03, caso compras de Suplax que Wilson no vio): quien tiene rol de chofer ve aquí, en su
+    // pantalla principal, cuántas compras, restos de fábrica y pedidos listos esperan en Transportes, más los pedidos de material
+    // que la oficina le pasó. Un toque abre Transportes. Misma regla que Transportes (chofer-pendientes.js).
+    if (usuario.roles.includes('chofer')) {
+        const { pendientesChofer } = await import('./chofer-pendientes.js');
+        const { collection: col_, query: q_, where: w_, onSnapshot: on_ } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js');
+        const { db: db_ } = await import('./firebase-config.js');
+        let ordsBanda = [], matBanda = [];
+        const pintarBanda = () => {
+            const p = pendientesChofer(ordsBanda); const el = document.getElementById('banda-chofer'); if (!el) return;
+            const n = p.compras.length + p.restos.length + p.pedidos.length + matBanda.length;
+            if (!n) { el.style.display = 'none'; return; }
+            const prov = [...new Set(p.compras.map(o => o.proveedor).filter(Boolean))].slice(0, 3).join(', ');
+            const linea = [
+                p.compras.length ? `🛒 <b>${p.compras.length} compra${p.compras.length > 1 ? 's' : ''}</b> para buscar${prov ? ' (' + prov + ')' : ''}` : '',
+                p.restos.length ? `📦 <b>${p.restos.length} resto${p.restos.length > 1 ? 's' : ''}</b> listo${p.restos.length > 1 ? 's' : ''} en fábrica` : '',
+                p.pedidos.length ? `🚚 <b>${p.pedidos.length} pedido${p.pedidos.length > 1 ? 's' : ''}</b> listo${p.pedidos.length > 1 ? 's' : ''} para cargar` : '',
+                matBanda.length ? `🙋 <b>${matBanda.length}</b> pedido${matBanda.length > 1 ? 's' : ''} de material para comprar o retirar` : ''
+            ].filter(Boolean).join(' · ');
+            el.innerHTML = `<div style="font-size:15px;font-weight:bold;">🚚 Tienes cosas para buscar</div><div style="font-size:13.5px;margin-top:4px;line-height:1.5;">${linea}</div><div style="font-size:12.5px;margin-top:6px;font-weight:bold;color:#a0521c;">Abrir Transportes →</div>`;
+            el.style.display = 'block';
+        };
+        on_(q_(col_(db_, 'orders'), w_('status', 'in', ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado', 'pendiente_fabrica', 'en_fabrica'])), (snap) => { ordsBanda = snap.docs.map(d => ({ id: d.id, ...d.data() })); pintarBanda(); }, () => { });
+        on_(q_(col_(db_, 'solicitudesMaterial'), w_('estado', '==', 'chofer')), (snap) => { matBanda = snap.docs.map(d => d.data()); pintarBanda(); }, () => { });
+        const bandaEl = document.getElementById('banda-chofer');
+        if (bandaEl) bandaEl.addEventListener('click', (e) => { if (matBanda.length && !pendientesChofer(ordsBanda).compras.length && !pendientesChofer(ordsBanda).restos.length && !pendientesChofer(ordsBanda).pedidos.length) { e.preventDefault(); location.href = 'solicitudes-material.html'; } });
+    }
     const esAdmin = usuario.roles.includes('admin');
     // "Oficina" = gestiona la agenda sin ser del equipo de obra: admin, o quien entra por permiso de página sin rol
     // instalador/ayudante/chofer (usuario 2026-09-28: Sara Inés agenda, edita y borra trabajos con su propio usuario).

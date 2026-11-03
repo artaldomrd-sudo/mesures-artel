@@ -515,6 +515,25 @@ exports.faltantesChofer = onDocumentWritten('orders/{id}', async (event) => {
     try { await event.data.after.ref.update({ faltantesSinAtender: tiene }); } catch (e) { console.error('faltantesChofer', event.params.id, e); }
 });
 
+// Resto por recoger (espejo de ops/chofer-pendientes.js → restoPendiente). `entregaPartes` = foto de lo entregado { itemId: [partes] }.
+function partesListasSrv(o, iid) {
+    const pf = (o.partesFabrica || {})[iid];
+    if (pf && typeof pf === 'object') { const l = Object.keys(pf).filter((k) => pf[k] === true); if (l.length) return l; }
+    return (o.itemsListosFabrica || {})[iid] === true ? ['todo'] : [];
+}
+function restoPendienteSrv(o) {
+    if (!o || o.docType === 'COMPRA_DIRECTA' || o.entregado !== true || !['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'].includes(o.status)) return [];
+    const foto = o.entregaPartes; if (!foto || typeof foto !== 'object') return [];
+    const out = [];
+    (o.items || []).forEach((it) => {
+        const iid = String(it.id), ya = foto[iid] || []; if (ya.includes('todo')) return;
+        const listas = partesListasSrv(o, iid);
+        const faltan = listas.includes('todo') ? (ya.length ? ['resto del ítem'] : ['todo']) : listas.filter((p) => !ya.includes(p));
+        if (faltan.length) out.push({ iid, partes: faltan });
+    });
+    return out;
+}
+
 exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return; // borrado
@@ -537,10 +556,23 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
             const yaSalio = after.entregado === true || after.enRuta === true || after.instalado === true;
             const reapertura = (after.reaperturaFecha && after.reaperturaFecha !== before.reaperturaFecha) || before.status === 'completado';
             if (!automatico && !yaSalio && !reapertura) {
+                // Compra directa (Dylan 2026-11-03, caso Suplax): el aviso dice DÓNDE comprar o retirar y QUÉ, no un genérico «listo para cargar».
+                if (after.docType === 'COMPRA_DIRECTA') {
+                    const que = String(after.descripcion || '').replace(/\s+/g, ' ').trim().slice(0, 110);
+                    await pushATokens(await tokensPorRol('chofer'), '🛒 Comprar o retirar en ' + (after.proveedor || 'proveedor'), [que, 'para ' + lugar].filter(Boolean).join(' · '), 'ops/chofer.html');
+                } else
                 await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
                 if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
             } else console.log('enviarNotificacionPedido: sin push de listo para', event.params.id, { automatico: !!automatico, yaSalio, reapertura });
         }
+    }
+
+    // 1b) «Resto por recoger» (2026-11-03, caso Villa Cocoloba): pedido ya entregado en parte al que fábrica le marca más piezas listas.
+    //     Misma regla que ops/chofer-pendientes.js (restoPendiente): si cambia una, cambiar la otra.
+    const restoNuevo = restoPendienteSrv(after).filter((r) => !restoPendienteSrv(before).some((b) => b.iid === r.iid && b.partes.join() === r.partes.join()));
+    if (restoNuevo.length) {
+        const txt = restoNuevo.map((r) => 'ítem ' + r.iid + ' (' + r.partes.join(', ') + ')').join(' · ');
+        await pushATokens(await tokensPorRol('chofer'), '📦 Resto listo para recoger en fábrica', (lugar + ': ' + txt).slice(0, 160), 'ops/chofer.html');
     }
 
     // 2) Instrucción de la oficina para fábrica (recién puesta o reabierta, sin atender).

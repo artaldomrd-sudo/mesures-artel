@@ -119,7 +119,8 @@
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
-    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { restoPendiente, restoTxt, fotoPartes, pestanaDe } from './chofer-pendientes.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
@@ -144,18 +145,29 @@
     }
 
     function orderCardHTML(id, o) {
-        const resuelto = checklistResuelto(o);
+        const resuelto = checklistResuelto(o) || (o.entregado === true);   // el resto de un pedido ya entregado no repite el checklist
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcial = o.status === 'parcialmente_listo';
         const enRuta = o.enRuta === true;
         const entregado = o.entregado === true;
+        // Compra directa (Dylan 2026-11-03): lo primero que se lee es DÓNDE comprar o retirar y QUÉ; «Ver orden de compra» solo si hay PDF.
+        const compraTop = esCompra ? `<div style="background:#fff4e5;border:1.5px solid #f0a35a;border-radius:10px;padding:10px 12px;margin:6px 0 4px;">
+                <div style="font-size:15px;font-weight:bold;color:#a0521c;">🛒 Comprar o retirar en: ${esc(o.proveedor || 'proveedor sin indicar')}</div>
+                ${o.descripcion ? `<div style="font-size:14px;color:#333;margin-top:4px;white-space:pre-wrap;">${esc(o.descripcion)}</div>` : ''}
+                <div style="font-size:12.5px;color:#666;margin-top:4px;">Para: ${esc(o.cliente || '')}${o.obra ? ' — ' + esc(o.obra) : ''} · ${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 Ver orden de compra</a>` : ' · sin orden de compra adjunta'}</div></div>` : '';
         const metaLine = esCompra
-            ? `Compra directa · Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s) · <a href="${esc(o.compraPdfUrl)}" target="_blank">Ver orden de compra</a>${o.descripcion ? `<br><b style="color:#333">${esc(o.descripcion)}</b>` : ''}`
+            ? `Compra directa`
             : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>`;   // la descripción de la compra (lo que escribe la oficina, p. ej. «Mosquiteras amovibles») se ve también aquí (usuario 2026-09-29)
+        // Resto por recoger: pedido ya entregado en parte al que fábrica le marcó más piezas listas.
+        const resto = restoPendiente(o);
+        const restoBox = resto.length ? `<div style="background:#fff0d9;border:1.5px solid #e67e22;border-radius:10px;padding:10px 12px;margin:6px 0 4px;">
+                <div style="font-size:15px;font-weight:bold;color:#a0521c;">📦 Resto listo en fábrica para recoger</div>
+                <div style="font-size:13.5px;color:#333;margin-top:4px;">${resto.map(r => `• Ítem ${esc(r.iid)} ${esc(r.nombre)}: <b>${esc(r.partes.map(x => x === 'todo' ? 'completo' : x).join(', '))}</b>`).join('<br>')}</div>
+                <div style="font-size:12.5px;color:#666;margin-top:4px;">Ya se entregó una parte${o.fechaEntregado && o.fechaEntregado.toDate ? ' el ' + esc(o.fechaEntregado.toDate().toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })) : ''}. Al entregar esto, marca «Entregado» otra vez.</div></div>` : '';
         const borderColor = entregado ? '#999' : (esParcial ? '#e67e22' : (enRuta ? '#3498db' : ''));
 
-        // Pestaña "Entregado": solo lectura, sin formulario de recepción ni acciones de estado.
-        if (entregado) {
+        // Pestaña "Entregado": solo lectura, sin formulario de recepción ni acciones de estado (salvo que haya resto por recoger).
+        if (entregado && !resto.length) {
             const rec = o.recepcionInstalador || {};
             const fecha = o.fechaEntregado && o.fechaEntregado.toDate ? o.fechaEntregado.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
             return `
@@ -180,14 +192,15 @@
                 ${metaLine}
                 ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
             </div>
+            ${compraTop}${restoBox}
             ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 Fábrica interna — la oficina todavía no lo marcó listo. Si el material ya está hecho puedes recogerlo: al marcar «En ruta» pasa solo a Listo para cargar.</div>` : ''}
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
-            ${enRuta ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
+            ${(enRuta && (!entregado || o.restoEnRuta === true)) ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
             <div class="actions">
-                ${enRuta ? '' : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
+                ${(entregado ? o.restoEnRuta === true : enRuta) ? '' : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
                 <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
-                ${esCompra ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
+                ${(esCompra || entregado) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
             </div>
             <div class="recepcion-form" id="recepcion-${id}">
                 <label>Nombre de quien recibe (instalador)</label>
@@ -276,14 +289,12 @@
         allDocs = docs;   // el aviso de «en ruta sin entregar» y los botones trabajan sobre la MISMA lista que se muestra
         // La asignación (ver historial.html) es solo informativa: cualquier chofer ve todos los
         // pedidos, así uno puede cubrir al otro si falta.
-        let filtrados;
-        if (currentTab === 'entregado') {
-            filtrados = docs.filter(d => d.data().entregado === true);
-        } else if (currentTab === 'ruta') {
-            filtrados = docs.filter(d => !d.data().entregado && d.data().enRuta === true);
-        } else {
-            filtrados = docs.filter(d => !d.data().entregado && d.data().enRuta !== true);
-        }
+        // Pestaña de cada pedido (chofer-pendientes.js): un pedido entregado con «resto por recoger» vuelve a En espera / En ruta.
+        const tabDe = (d) => pestanaDe(d.data());
+        const cuenta = { espera: 0, ruta: 0, entregado: 0 }; docs.forEach(d => { const t = tabDe(d); if (t) cuenta[t]++; });
+        document.getElementById('tab-espera').textContent = `En espera (${cuenta.espera})`;
+        document.getElementById('tab-ruta').textContent = `En ruta (${cuenta.ruta})`;
+        let filtrados = docs.filter(d => tabDe(d) === currentTab);
         signaturePads = {};
         if (currentTab === 'entregado') {
             const desde = inicioPeriodo(periodo);
@@ -308,7 +319,14 @@
                 : '<p class="empty">No hay pedidos en espera.</p>';
             return;
         }
-        list.innerHTML = filtrados.map(d => orderCardHTML(d.id, d.data())).join('');
+        if (currentTab === 'espera') {
+            // Secciones claras (Dylan 2026-11-03): primero lo que hay que COMPRAR, después el resto de pedidos ya entregados en parte, al final los pedidos listos.
+            const sec = (titulo, arr) => arr.length ? `<div class="dia-sep" style="font-size:14px;">${titulo} (${arr.length})</div>` + arr.map(d => orderCardHTML(d.id, d.data())).join('') : '';
+            const compras = filtrados.filter(d => d.data().docType === 'COMPRA_DIRECTA');
+            const restos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado === true);
+            const pedidos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true);
+            list.innerHTML = sec('🛒 Compras para buscar', compras) + sec('📦 Resto por recoger en fábrica', restos) + sec('🚚 Pedidos listos para cargar', pedidos);
+        } else list.innerHTML = filtrados.map(d => orderCardHTML(d.id, d.data())).join('');
         if (currentTab !== 'entregado') {
             filtrados.forEach(d => {
                 const canvas = document.getElementById('firma-' + d.id);
@@ -370,7 +388,7 @@
         rsel.value = ultimo.rutaId && CALC_RUTAS.some(r => r.id === ultimo.rutaId) ? ultimo.rutaId : 'local-terrenas';
         viajeRuta();
         // Otros pedidos en espera (no en ruta, no entregados) que pueden ir en el mismo camión.
-        const otros = allDocs.filter(x => x.id !== id && !x.data().entregado && x.data().enRuta !== true && x.data().directoInstalacion !== true);
+        const otros = allDocs.filter(x => x.id !== id && pestanaDe(x.data()) === 'espera');
         document.getElementById('vj-otros').innerHTML = otros.length ? otros.map(x => `<label class="vj-chk"><input type="checkbox" data-oid="${x.id}" onchange="viajeRecalc()"> ${esc(x.data().cliente || 'Sin cliente')} — ${esc(x.data().obra || '')}</label>`).join('')
             : '<p class="vj-info">No hay otros pedidos en espera. Este viaje va solo con esta obra.</p>';
         document.getElementById('vj-ok').disabled = false;
@@ -434,7 +452,8 @@
             });
             for (const p of v.pedidos) {
                 const ob = v.obras.find(o => o.obraKey === p.obraKey) || {};
-                await updateDoc(doc(db, 'orders', p.id), { enRuta: true, fechaEnRuta: serverTimestamp(), viajeId: ref.id, viajeVehiculo: v.veh.id, viajeRuta: v.ruta ? v.ruta.nombre : 'Otro recorrido', viajeCosto: ob.costo || 0, viajeObras: v.obras.length });
+                const yaEntregado = (allDocs.find(x => x.id === p.id) || { data: () => ({}) }).data().entregado === true;
+                await updateDoc(doc(db, 'orders', p.id), { ...(yaEntregado ? { restoEnRuta: true, fechaRestoEnRuta: serverTimestamp() } : {}), enRuta: true, fechaEnRuta: serverTimestamp(), viajeId: ref.id, viajeVehiculo: v.veh.id, viajeRuta: v.ruta ? v.ruta.nombre : 'Otro recorrido', viajeCosto: ob.costo || 0, viajeObras: v.obras.length });
             }
             try { localStorage.setItem('artal_viaje_ultimo', JSON.stringify({ vehiculoId: v.veh.id, rutaId: v.rutaId })); } catch (_) { }
             viajeCerrar();
@@ -465,10 +484,14 @@
         // quedaba mostrando "Listo para cargar/instalar" para siempre (bug real reportado).
         const noNecesitaInstalador = d.docType === 'COMPRA_DIRECTA' || d.sinInstalacion === true;
         const yaInstalado = d.instalado === true || noNecesitaInstalador;
+        const resto = restoPendiente(d);
         await updateDoc(doc(db, 'orders', id), {
             entregado: true,
             fechaEntregado: serverTimestamp(),
             recepcionInstalador: { nombre, firma: pad.toDataUrl(), fecha: serverTimestamp() },
+            // Foto de lo que se llevó en esta entrega: si fábrica marca más piezas después, el pedido vuelve como «resto por recoger».
+            entregaPartes: fotoPartes(d), restoEnRuta: false,
+            entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: nombre, chofer: usuario.nombre || '', resto: resto.length ? restoTxt(resto) : '' }),
             ...(yaInstalado ? { status: 'completado' } : {})
         });
     };
