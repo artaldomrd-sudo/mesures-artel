@@ -1761,6 +1761,13 @@ suyo). `siguienteIdProveedor()` = máximo entre `PRY_RESERVADOS[año]` (números
 `idProveedor` de los proyectos guardados, + 1; `idProveedorUsadoPorOtro` avisa si el número ya lo tiene otro proyecto. Al copiar o
 descargar valida el formato y lo guarda. PDF «Pedido <Proveedor> <ID>.pdf» con membrete (logo `.brand-logo` + filete azul).
 **El registro ID → cliente NO va en el repo (es público)**: vive en la memoria local `artal-registro-ids-proyecto`.
+**ID visible en todo el sistema interno (mismo día, Dylan: «en Historial y las rutas internas se mantienen cliente y proyecto, pero
+con el ID visible para hacer siempre la relación»)**: línea `#header-idproy` bajo las fechas del encabezado («Nº proyecto:
+PRY-2026-003 · cambiar», `editarIdProyecto` con `prompt` + formato + aviso de duplicado; también sale en la hoja impresa, sin el
+«cambiar»), número junto al nombre en las listas de proyectos (`idProyDe`: «Abrir proyecto», «Abrir otro proyecto de este cliente» y
+las del duplicado), ficha `?orderId=` («Nº proyecto: …» en `#ro-header`) y **`orders.idProyecto`** en cada pedido nuevo y en
+«Actualizar el original». Asignación automática con `asegurarIdProyecto()` al GUARDAR (`finalizarGuardadoProyecto`) y al ENVIAR
+(`enviarOrden`); un proyecto nunca guardado no consume número. Mostrarlo en Historial, Instalación, Fábrica, etc. es del área sistema.
 
 ## PDF / Impresión
 

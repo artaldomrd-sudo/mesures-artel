@@ -133,6 +133,9 @@
         .card-sel input { width: 15px; height: 15px; margin: 0; cursor: pointer; accent-color: var(--artal-blue); }
         .item-card.seleccionada { outline: 3px solid var(--artal-yellow); outline-offset: 2px; }
         body.hay-seleccion .item-card:not(.seleccionada) { opacity: 0.55; }
+        .header-idproy { margin-top: 3px; font-size: 11px; font-weight: bold; color: #0A3D62; cursor: pointer; }
+        .header-idproy .idp-ed { font-weight: normal; color: #8a98a6; text-decoration: underline; margin-left: 4px; }
+        body.printing-sheets .header-idproy .idp-ed, body.readonly-view .header-idproy .idp-ed { display: none; }
         .sel-bar { display: none; margin-top: 8px; background: var(--artal-yellow); color: #1b2a38; border-radius: 8px; padding: 8px 10px; font-size: 12px; font-weight: bold; text-align: center; line-height: 1.4; }
         .sel-bar.on { display: block; }
         .sel-bar button { border: none; background: #1b2a38; color: #fff; border-radius: 5px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin: 4px 2px 0; font-family: 'Arimo'; }
@@ -602,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:07</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:11</div>
         </div>
     </div>
     
@@ -639,6 +642,7 @@
             <div class="header-field hf-fecha">
                 <label>FECHAS (AUTO)</label>
                 <div id="header-fecha" class="header-date-display" data-created="">Nuevo Proyecto</div>
+                <div id="header-idproy" class="header-idproy" onclick="editarIdProyecto()" title="Nº de proyecto: lo que ve el proveedor en vez del nombre del cliente. Toca para cambiarlo.">Nº proyecto: — <span class="idp-ed">asignar</span></div>
             </div>
             <div class="header-field hf-material">
                 <label>TIPO DE MATERIAL</label>
@@ -1358,6 +1362,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (!confirm(`Ya existe un proyecto "${obraKey}" del cliente "${cliKey}" guardado.\n\n¿Seguro que quieres reemplazarlo? Se perderá lo que tenía guardado.`)) return;
         }
 
+        asegurarIdProyecto();   // todo proyecto guardado lleva su Nº de proyecto
         const jsonData = getAppJSON();
         projects[cliKey][obraKey] = jsonData;
         // Corregir el nombre de un proyecto parecido (typo): borra el viejo (local + nube).
@@ -1608,7 +1613,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const projects = getProjects();
         const obras = (cli && projects[cli]) ? Object.keys(projects[cli]).sort((a, b) => a.localeCompare(b)) : [];
         const el = document.getElementById('dd-mov-proj');
-        if (el) el.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        if (el) el.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => { const n = idProyDe(cli, o); return `<option value="${escAttr(o)}">${escHtml(o)}${n ? ' · ' + escHtml(n) : ''}</option>`; }).join('');
     };
     window.dedupMoverProyecto = function () {
         const cli = document.getElementById('dd-mov-cli').value;
@@ -1627,7 +1632,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const cli = document.getElementById('dd-proj-cli').value;
         const projects = getProjects();
         const obras = (cli && projects[cli]) ? Object.keys(projects[cli]).sort((a, b) => a.localeCompare(b)) : [];
-        const opts = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        const opts = '<option value="">-- Proyecto --</option>' + obras.map(o => { const n = idProyDe(cli, o); return `<option value="${escAttr(o)}">${escHtml(o)}${n ? ' · ' + escHtml(n) : ''}</option>`; }).join('');
         ['dd-proj-a', 'dd-proj-b'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = opts; });
     };
     window.dedupMergeClientesManual = function () {
@@ -1767,7 +1772,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             });
         });
         obras.sort((a, b) => a.o.localeCompare(b.o));
-        sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(x => `<option value="${escAttr(x.cli + OBRA_SEL_SEP + x.o)}">${escHtml(x.o)}</option>`).join('');
+        sel.innerHTML = '<option value="">▾ Abrir otro proyecto de este cliente…</option>' + obras.map(x => { const n = idProyDe(x.cli, x.o); return `<option value="${escAttr(x.cli + OBRA_SEL_SEP + x.o)}">${escHtml(x.o)}${n ? ' · ' + escHtml(n) : ''}</option>`; }).join('');
     }
 
     function updateClientList() {
@@ -1797,7 +1802,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const projects = getProjects();
         const cliente = selC ? selC.value : '';
         const obras = (cliente && projects[cliente]) ? Object.keys(projects[cliente]).sort((a, b) => a.localeCompare(b)) : [];
-        selO.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => `<option value="${escAttr(o)}">${escHtml(o)}</option>`).join('');
+        selO.innerHTML = '<option value="">-- Proyecto --</option>' + obras.map(o => { const n = idProyDe(cliente, o); return `<option value="${escAttr(o)}">${escHtml(o)}${n ? ' · ' + escHtml(n) : ''}</option>`; }).join('');
     }
 
     // Llamado por el listener de Firestore (script módulo, ver startFsProjectsListener) cuando
@@ -2249,6 +2254,30 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         return otro ? `${otro.cli} · ${otro.obra}` : '';
     }
     window.siguienteIdProveedor = siguienteIdProveedor;
+    // Nº de proyecto VISIBLE en el sistema interno (usuario 2026-11-03: «en las rutas internas se mantienen cliente y
+    // proyecto, pero con el ID visible para hacer siempre la relación»): línea bajo las fechas del encabezado, listas de
+    // proyectos, ficha de solo lectura y cada pedido enviado (`orders.idProyecto`). Se asigna solo al guardar o enviar.
+    function refreshIdProyUI() {
+        const el = document.getElementById('header-idproy'); if (!el) return;
+        el.innerHTML = idProyectoProveedor ? `Nº proyecto: ${escHtml(idProyectoProveedor)} <span class="idp-ed">cambiar</span>` : 'Nº proyecto: — <span class="idp-ed">asignar</span>';
+    }
+    function asegurarIdProyecto() {
+        if (!idProyectoProveedor) { idProyectoProveedor = siguienteIdProveedor(); refreshIdProyUI(); }
+        return idProyectoProveedor;
+    }
+    function editarIdProyecto() {
+        if (document.body.classList.contains('readonly-view')) return;
+        const v = prompt('Nº de proyecto (formato PRY-AAAA-NNN).\nEs lo que ve el proveedor en lugar del cliente. Cada villa o pedido lleva el suyo.', idProyectoProveedor || siguienteIdProveedor());
+        if (v === null) return;
+        const id = v.trim().toUpperCase();
+        if (!id) { idProyectoProveedor = ''; refreshIdProyUI(); saveProgress(); return; }
+        if (!PRY_RE.test(id)) { alert('Formato no válido. Ejemplo: ' + siguienteIdProveedor()); return; }
+        const otro = idProveedorUsadoPorOtro(id);
+        if (otro && !confirm(`El ${id} ya lo tiene otro proyecto guardado (${otro}). ¿Usarlo igual?`)) return;
+        idProyectoProveedor = id; refreshIdProyUI(); saveProgress();
+    }
+    function idProyDe(cli, obra) { try { const p = getProjects(); return (((p[cli] || {})[obra] || {}).header || {}).idProveedor || ''; } catch (e) { return ''; } }
+    window.editarIdProyecto = editarIdProyecto; window.asegurarIdProyecto = asegurarIdProyecto; window.refreshIdProyUI = refreshIdProyUI;
 
     // opts = { id, proveedor, ocultar }: versión PARA EL PROVEEDOR (sin cliente; obra y ubicación solo si ocultar=false).
     // Sin opts: versión interna de siempre.
@@ -2346,7 +2375,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (!PRY_RE.test(o.id)) { alert('El Nº de proyecto debe tener el formato PRY-AAAA-NNN (ej. ' + siguienteIdProveedor() + ').'); return null; }
             const otro = idProveedorUsadoPorOtro(o.id);
             if (otro && !confirm(`El ${o.id} ya está asignado a otro proyecto guardado (${otro}).\n\nCada villa o pedido lleva su propio número. ¿Usarlo igual?`)) return null;
-            if (idProyectoProveedor !== o.id) { idProyectoProveedor = o.id; try { saveProgress(); } catch (e) { } }
+            if (idProyectoProveedor !== o.id) { idProyectoProveedor = o.id; refreshIdProyUI(); try { saveProgress(); } catch (e) { } }
             try { if (o.proveedor) localStorage.setItem('artal_perf_proveedor', o.proveedor); } catch (e) { }
             ov.querySelector('#perf-id-aviso').textContent = `✓ ${o.id} guardado con este proyecto. El cliente nunca sale en el pedido.`;
             return o;
@@ -3757,7 +3786,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             document.getElementById('header-material').value = data.header.material || '';
             if (document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = data.header.vidrio || '';
             if (document.getElementById('notas-proyecto')) document.getElementById('notas-proyecto').value = data.header.notas || '';
-            idProyectoProveedor = data.header.idProveedor || '';
+            idProyectoProveedor = data.header.idProveedor || ''; refreshIdProyUI();
             document.getElementById('header-color').value = data.header.color || '';
             
             let displayDate = document.getElementById('header-fecha');
@@ -4157,7 +4186,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function clearNotebookToBlank() {
         selIds.clear(); document.body.classList.remove('hay-seleccion'); const _sb = document.getElementById('sel-bar'); if (_sb) _sb.classList.remove('on'); const _sh = document.getElementById('sel-hint'); if (_sh) _sh.style.display = 'none';
         openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
-        idProyectoProveedor = '';   // cada villa / pedido lleva su propio Nº de proyecto
+        idProyectoProveedor = ''; refreshIdProyUI();   // cada villa / pedido lleva su propio Nº de proyecto
         updateSavedStatusBadge();
         document.getElementById('header-cliente').value = '';
         document.getElementById('header-obra').value = '';
@@ -11036,6 +11065,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const originalHtml = btn ? btn.innerHTML : '';
         try {
             if (!validateAllCards(window.idsOperacion())) return;
+            if (window.asegurarIdProyecto) window.asegurarIdProyecto();   // todo pedido lleva su Nº de proyecto (orders.idProyecto)
             const appJSON = window.appJSONSoloSeleccion(getAppJSON());
             if (appJSON._seleccion) {
                 const s = appJSON._seleccion;
@@ -11131,7 +11161,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     nota = ` Ítems agregados: ${agregados} · corregidos: ${reemplazados} · el pedido queda con ${order.length} ítems.`;
                 }
                 await updateDoc(doc(db, 'orders', pedidoAActualizar.id), {
-                    items: itemsFinal, totalItems: itemsFinal.length, appJSON: appJSONFinal,
+                    items: itemsFinal, totalItems: itemsFinal.length, appJSON: appJSONFinal, idProyecto: (appJSON.header || {}).idProveedor || '',
                     material: appJSON.header.material, color: appJSON.header.color,
                     fichaActualizada: serverTimestamp(), fichaActualizadaPor: quien, fichaVersion: (Number(pedidoAActualizar.fichaVersion) || 1) + 1,
                     // Fábrica ve el aviso en rojo hasta marcarlo atendido (mismo mecanismo que "Instrucción de la oficina").
@@ -11154,6 +11184,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             await addDoc(collection(db, 'orders'), {
                 cliente: clienteEnviado,
                 obra: obraEnviada,
+                idProyecto: (appJSON.header || {}).idProveedor || '',   // Nº de proyecto PRY-AAAA-NNN (relación interna nombre ↔ ID)
                 // Enganche con la ficha del cliente y con Citrus (2026-10-06): teléfono/RNC del encabezado + ficha ya reconocida.
                 clienteTelefono: appJSON.header.telefono || '',
                 ...(appJSON.header.clienteId ? { clienteId: appJSON.header.clienteId, clienteFacturacion: (fichaPorId(appJSON.header.clienteId) || {}).nombreFacturacion || (fichaPorId(appJSON.header.clienteId) || {}).nombre || '' } : {}),
@@ -11530,6 +11561,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const cli = val('header-cliente'), obra = val('header-obra'), ubi = val('header-ubicacion'), mat = val('header-material'), col = val('header-color'), vidH = val('header-vidrio');
             const logo = document.querySelector('.brand-logo');
             const partes = [];
+            const idp = ((orderData && (orderData.idProyecto || ((orderData.appJSON || {}).header || {}).idProveedor)) || '');
+            if (idp) partes.push(`Nº proyecto: <b>${esc(idp)}</b>`);
             if (ubi) partes.push(`📍 <b>${esc(ubi)}</b>`);
             if (mat) partes.push(`Material: <b>${esc(mat)}</b>`);
             if (vidH) partes.push(`Vidrio: <b>${esc(vidH)}</b>`);
