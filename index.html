@@ -602,7 +602,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-01 12:30</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:07</div>
         </div>
     </div>
     
@@ -2223,11 +2223,45 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const accList = Object.values(accesorios).map(a => ({ ...a, qty: Math.round(a.qty * 100) / 100 })).sort((a, b) => a.nombre.localeCompare(b.nombre));
         return { items, perfiles: perfList, series, vidrios, accesorios: accList };
     }
-    function perfileriaTexto(res) {
+    // ---------- Nº de proyecto para proveedores (usuario 2026-11-03) ----------
+    // Los proveedores (Euroamerica…) nunca ven el cliente: el pedido lleva "Nº DE PROYECTO: PRY-AAAA-NNN". El número
+    // no contiene pistas del cliente ni de la obra, se guarda con el proyecto (`header.idProveedor`) y cada villa/pedido
+    // tiene el suyo (Hoja en blanco y "Nuevo proyecto de este cliente" lo vacían). El registro ID → cliente vive fuera
+    // del repo (es público): aquí solo se reservan los números ya asignados a mano para no repetirlos.
+    var idProyectoProveedor = '';
+    const PRY_RESERVADOS = { 2026: 2 };   // PRY-2026-001 y -002 asignados el 2026-11-03 (registro interno)
+    const PRY_RE = /^PRY-(\d{4})-(\d{3})$/;
+    function pryIdsGuardados() {
+        const out = [];
+        try { const pr = getProjects(); Object.keys(pr || {}).forEach(c => Object.keys(pr[c] || {}).forEach(o => { const id = ((pr[c][o] || {}).header || {}).idProveedor; if (id) out.push({ id, cli: c, obra: o }); })); } catch (e) { }
+        return out;
+    }
+    function siguienteIdProveedor() {
+        const anio = new Date().getFullYear();
+        let max = PRY_RESERVADOS[anio] || 0;
+        pryIdsGuardados().map(x => x.id).concat(idProyectoProveedor || []).forEach(id => { const m = PRY_RE.exec(id || ''); if (m && +m[1] === anio) max = Math.max(max, +m[2]); });
+        return `PRY-${anio}-${String(max + 1).padStart(3, '0')}`;
+    }
+    function idProveedorUsadoPorOtro(id) {
+        const k = v => (typeof normNombreKey === 'function' ? normNombreKey(v) : String(v || '').trim().toLowerCase());
+        const cli = k(document.getElementById('header-cliente').value), obra = k(document.getElementById('header-obra').value);
+        const otro = pryIdsGuardados().find(x => x.id === id && !(k(x.cli) === cli && k(x.obra) === obra));
+        return otro ? `${otro.cli} · ${otro.obra}` : '';
+    }
+    window.siguienteIdProveedor = siguienteIdProveedor;
+
+    // opts = { id, proveedor, ocultar }: versión PARA EL PROVEEDOR (sin cliente; obra y ubicación solo si ocultar=false).
+    // Sin opts: versión interna de siempre.
+    function perfileriaTexto(res, opts) {
         const h = document.getElementById('header-cliente') ? document.getElementById('header-cliente').value : '', o = document.getElementById('header-obra') ? document.getElementById('header-obra').value : '';
         const col = document.getElementById('header-color') ? document.getElementById('header-color').value : '', vid = document.getElementById('header-vidrio') ? document.getElementById('header-vidrio').value : '';
+        const ubic = document.getElementById('header-ubicacion') ? document.getElementById('header-ubicacion').value : '';
         const L = [];
-        L.push(`PERFILERÍA Y ACCESORIOS — ${[h, o].filter(Boolean).join(' · ') || 'sin cliente/obra'}`);
+        if (opts && opts.id) {
+            L.push(`PEDIDO DE PERFILERÍA Y ACCESORIOS${opts.proveedor ? ' — ' + opts.proveedor : ''}`);
+            L.push(`Nº DE PROYECTO: ${opts.id}`);
+            if (!opts.ocultar && (o || ubic)) L.push([o ? 'Proyecto: ' + o : '', ubic ? 'Ubicación: ' + ubic : ''].filter(Boolean).join(' · '));
+        } else L.push(`PERFILERÍA Y ACCESORIOS — ${[h, o].filter(Boolean).join(' · ') || 'sin cliente/obra'}`);
         L.push(`Fecha: ${new Date().toLocaleDateString('es-DO')} · Ítems: ${res.items.length}${col ? ' · Acabado: ' + col : ''}${vid ? ' · Vidrio: ' + vid : ''}`);
         L.push('');
         L.push('1) PERFILES POR SERIE (metros lineales y barras de 6.40 m estimadas)');
@@ -2262,9 +2296,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function perfileriaPDF(texto, nombre) {
         const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
         const margen = 14, anchoUtil = 210 - 2 * margen, lineH = 4.6; let y = margen;
+        // Membrete: el logo real de ARTAL (incrustado en la página como data: URI) arriba a la derecha + filete azul.
+        const logo = document.querySelector('.brand-logo');
+        if (logo && /^data:image\/png/.test(logo.src || '')) {
+            try { const w = 30, hh = w * (logo.naturalHeight || 621) / (logo.naturalWidth || 746); pdf.addImage(logo.src, 'PNG', 210 - margen - w, 8, w, hh); y = Math.max(y, 8 + hh + 4); } catch (e) { }
+        }
+        pdf.setDrawColor(10, 61, 98); pdf.setLineWidth(0.6); pdf.line(margen, y - 2, 210 - margen, y - 2); y += 3;
         // Las fuentes estándar de jsPDF no tienen la flecha "→" (salía "!'" y la línea con letras espaciadas).
         texto.replace(/→/g, '->').split('\n').forEach(linea => {
-            const titulo = /^(\d\)|PERFILER|SUPUESTOS)/.test(linea);
+            const titulo = /^(\d\)|PERFILER|PEDIDO DE|Nº DE PROYECTO|SUPUESTOS)/.test(linea);
             pdf.setFont('helvetica', titulo ? 'bold' : 'normal'); pdf.setFontSize(titulo ? 11 : 9);
             const partes = pdf.splitTextToSize(linea || ' ', anchoUtil);
             partes.forEach(p => { if (y > 297 - margen) { pdf.addPage(); y = margen; } pdf.text(p, margen, y); y += lineH; });
@@ -2274,12 +2314,20 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function abrirPerfileria() {
         if (!validateAllCards(idsOperacion())) return;
         const res = calcPerfileria(idsOperacion());
-        const texto = perfileriaTexto(res);
+        let provDef = 'Euroamerica'; try { provDef = localStorage.getItem('artal_perf_proveedor') || provDef; } catch (e) { }
+        const idIni = idProyectoProveedor || siguienteIdProveedor();
+        let texto = '';
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,61,98,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arimo,sans-serif;';
         ov.innerHTML = `<div style="background:#fff;border-radius:14px;max-width:760px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3)">
             <div style="padding:14px 16px 8px;border-bottom:1px solid #e3e8ee"><h2 style="margin:0;font-size:17px;color:#0A3D62">🧱 Perfilería y accesorios — resumen para cotizar al proveedor</h2>
             <div style="font-size:12px;color:#667;margin-top:4px">${selActiva() ? `Solo los ${selIds.size} ítems marcados ☑.` : 'Toda la hoja.'} Largos geométricos de referencia; los descuentos por serie y las referencias de accesorios están por definir (ver Supuestos al final).</div></div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:10px 16px;border-bottom:1px solid #e3e8ee;font-size:12px;color:#334">
+                <label>Proveedor<br><input id="perf-prov" value="${provDef.replace(/"/g, '&quot;')}" style="padding:6px 8px;border:1px solid #c9d3dd;border-radius:7px;width:150px;font-family:Arimo"></label>
+                <label>Nº de proyecto<br><input id="perf-id" value="${idIni}" style="padding:6px 8px;border:1px solid #c9d3dd;border-radius:7px;width:130px;font-family:Arimo;font-weight:bold"></label>
+                <label style="display:flex;gap:6px;align-items:center;padding-bottom:6px"><input type="checkbox" id="perf-ocultar" checked> Ocultar nombre del proyecto y ubicación</label>
+                <div id="perf-id-aviso" style="flex-basis:100%;color:#667">El cliente nunca sale en el pedido. ${idProyectoProveedor ? 'Este proyecto ya tiene su número.' : 'Número nuevo: se guarda con este proyecto al descargar o copiar.'}</div>
+            </div>
             <pre id="perf-pre" style="flex:1;overflow:auto;margin:0;padding:12px 16px;font:12px/1.45 Menlo,Consolas,monospace;white-space:pre-wrap;color:#1c2833;background:#f7f9fb"></pre>
             <div style="display:flex;gap:8px;padding:10px 16px;border-top:1px solid #e3e8ee;flex-wrap:wrap">
                 <button id="perf-pdf" style="background:#0A3D62;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;cursor:pointer;font-family:Arimo">⬇ Descargar PDF</button>
@@ -2287,10 +2335,25 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <button id="perf-cerrar" style="margin-left:auto;background:#eef1f4;color:#556;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;cursor:pointer;font-family:Arimo">Cerrar</button>
             </div></div>`;
         document.body.appendChild(ov);
-        ov.querySelector('#perf-pre').textContent = texto;
+        const leer = () => ({ id: ov.querySelector('#perf-id').value.trim().toUpperCase(), proveedor: ov.querySelector('#perf-prov').value.trim(), ocultar: ov.querySelector('#perf-ocultar').checked });
+        const pintar = () => { texto = perfileriaTexto(res, leer()); ov.querySelector('#perf-pre').textContent = texto; };
+        ['#perf-id', '#perf-prov', '#perf-ocultar'].forEach(q => ov.querySelector(q).addEventListener('input', pintar));
+        ov.querySelector('#perf-ocultar').addEventListener('change', pintar);
+        pintar();
+        // Antes de copiar o descargar: número válido, no usado por otro proyecto, y queda guardado con este proyecto.
+        const confirmarId = () => {
+            const o = leer();
+            if (!PRY_RE.test(o.id)) { alert('El Nº de proyecto debe tener el formato PRY-AAAA-NNN (ej. ' + siguienteIdProveedor() + ').'); return null; }
+            const otro = idProveedorUsadoPorOtro(o.id);
+            if (otro && !confirm(`El ${o.id} ya está asignado a otro proyecto guardado (${otro}).\n\nCada villa o pedido lleva su propio número. ¿Usarlo igual?`)) return null;
+            if (idProyectoProveedor !== o.id) { idProyectoProveedor = o.id; try { saveProgress(); } catch (e) { } }
+            try { if (o.proveedor) localStorage.setItem('artal_perf_proveedor', o.proveedor); } catch (e) { }
+            ov.querySelector('#perf-id-aviso').textContent = `✓ ${o.id} guardado con este proyecto. El cliente nunca sale en el pedido.`;
+            return o;
+        };
         ov.querySelector('#perf-cerrar').onclick = () => ov.remove();
-        ov.querySelector('#perf-copiar').onclick = () => { const b = ov.querySelector('#perf-copiar'); (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => { b.textContent = '✓ Copiado'; }, () => { const ta = document.createElement('textarea'); ta.value = texto; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); b.textContent = '✓ Copiado'; } catch (e) { alert('No se pudo copiar'); } ta.remove(); }); };
-        ov.querySelector('#perf-pdf').onclick = () => { try { perfileriaPDF(texto, buildPdfTitle().replace(/ (fabricacion|presupuesto)/, ' perfileria') + '.pdf'); } catch (e) { alert('No se pudo generar el PDF: ' + (e && e.message || e)); } };
+        ov.querySelector('#perf-copiar').onclick = () => { if (!confirmarId()) return; const b = ov.querySelector('#perf-copiar'); (navigator.clipboard ? navigator.clipboard.writeText(texto) : Promise.reject()).then(() => { b.textContent = '✓ Copiado'; }, () => { const ta = document.createElement('textarea'); ta.value = texto; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); b.textContent = '✓ Copiado'; } catch (e) { alert('No se pudo copiar'); } ta.remove(); }); };
+        ov.querySelector('#perf-pdf').onclick = () => { const o = confirmarId(); if (!o) return; try { perfileriaPDF(texto, `Pedido ${o.proveedor || 'proveedor'} ${o.id}.pdf`.replace(/[\\/:*?"<>|]/g, '-')); } catch (e) { alert('No se pudo generar el PDF: ' + (e && e.message || e)); } };
     }
     window.abrirPerfileria = abrirPerfileria; window.calcPerfileria = calcPerfileria; window.perfileriaTexto = perfileriaTexto;
 
@@ -3635,7 +3698,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 material: document.getElementById('header-material').value,
                 color: document.getElementById('header-color').value,
                 vidrio: (document.getElementById('header-vidrio') || {}).value || '',
-                notas: (document.getElementById('notas-proyecto') || {}).value || ''
+                notas: (document.getElementById('notas-proyecto') || {}).value || '',
+                idProveedor: idProyectoProveedor || ''   // Nº de proyecto para pedidos a proveedores (PRY-AAAA-NNN)
             },
             cardsState: {},
             itemId: itemId,
@@ -3693,6 +3757,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             document.getElementById('header-material').value = data.header.material || '';
             if (document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = data.header.vidrio || '';
             if (document.getElementById('notas-proyecto')) document.getElementById('notas-proyecto').value = data.header.notas || '';
+            idProyectoProveedor = data.header.idProveedor || '';
             document.getElementById('header-color').value = data.header.color || '';
             
             let displayDate = document.getElementById('header-fecha');
@@ -4092,6 +4157,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function clearNotebookToBlank() {
         selIds.clear(); document.body.classList.remove('hay-seleccion'); const _sb = document.getElementById('sel-bar'); if (_sb) _sb.classList.remove('on'); const _sh = document.getElementById('sel-hint'); if (_sh) _sh.style.display = 'none';
         openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
+        idProyectoProveedor = '';   // cada villa / pedido lleva su propio Nº de proyecto
         updateSavedStatusBadge();
         document.getElementById('header-cliente').value = '';
         document.getElementById('header-obra').value = '';

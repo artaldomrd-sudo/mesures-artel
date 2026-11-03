@@ -1751,6 +1751,16 @@ es supuesto está en `PERF_SUPUESTOS` y se imprime al final. **Pendiente (pregun
 referencias reales de perfil por rol, largo de barra y desperdicio, descuentos de vidrio por serie/tipo, solapes de hojas,
 referencias de accesorios por serie, formato que pide el proveedor, y el diseño del módulo de producción (hoja de corte).
 `verify.mjs`: `perfElemento` para los 30 tipos + una fachada compuesta (`PERFILERIA OK: 31`).
+**Nº de proyecto para proveedores (2026-11-03, regla de Dylan: los proveedores nunca ven el cliente)**: el modal tiene
+«Proveedor» (default Euroamerica, recordado en `localStorage.artal_perf_proveedor`), «Nº de proyecto» y «Ocultar nombre del
+proyecto y ubicación» (marcado por defecto). `perfileriaTexto(res, {id, proveedor, ocultar})` arma la versión PARA EL PROVEEDOR:
+«PEDIDO DE PERFILERÍA Y ACCESORIOS — Euroamerica / Nº DE PROYECTO: PRY-2026-003», nunca cliente ni teléfono (sin opts sigue la
+versión interna). El número (formato `PRY_RE` = PRY-AAAA-NNN) se guarda con el proyecto en `header.idProveedor`
+(`idProyectoProveedor`, getAppJSON/restoreData; Hoja en blanco y "Nuevo proyecto de este cliente" lo vacían: cada villa lleva el
+suyo). `siguienteIdProveedor()` = máximo entre `PRY_RESERVADOS[año]` (números asignados fuera del cuaderno; 2026 → 2) y los
+`idProveedor` de los proyectos guardados, + 1; `idProveedorUsadoPorOtro` avisa si el número ya lo tiene otro proyecto. Al copiar o
+descargar valida el formato y lo guarda. PDF «Pedido <Proveedor> <ID>.pdf» con membrete (logo `.brand-logo` + filete azul).
+**El registro ID → cliente NO va en el repo (es público)**: vive en la memoria local `artal-registro-ids-proyecto`.
 
 ## PDF / Impresión
 
