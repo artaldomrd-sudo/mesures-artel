@@ -3021,6 +3021,12 @@ const fmtMiles = (n) => Math.round(Number(n) || 0).toLocaleString('es-DO');
 const fmtRD = (n) => 'RD$ ' + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtF = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
 
+// Nº de proyecto PRY-AAAA-NNN de un pedido (espejo de idProyectoDe en ops/proyecto-id.js; 2026-11-03).
+function idProyectoSrv(o) {
+    const a = String((o && o.idProyecto) || '').trim().toUpperCase();
+    if (a) return a;
+    return String((((o && o.appJSON) || {}).header || {}).idProveedor || '').trim().toUpperCase();
+}
 async function generarInformeObra(instId, inst, opts) {
     opts = opts || {};
     const cliente = String(inst.cliente || '').trim(), obra = String(inst.obra || '').trim();
@@ -3098,7 +3104,7 @@ async function generarInformeObra(instId, inst, opts) {
     const listaPersonas = Object.values(personas).sort((a, b) => b.horas - a.horas).map((p) => ({ nombre: p.nombre, horas: Math.round(p.horas * 10) / 10, costo: Math.round(p.costo * 100) / 100, dias: p.dias.size }));
     const listaDias = Object.keys(dias).sort().map((f) => ({ fecha: f, horas: dias[f] }));
     // Pedidos de la obra (para el enlace y para saber qué se entregó).
-    const pedidos = (await db.collection('orders').get()).docs.filter((d) => esMia(d.data().cliente, d.data().obra)).map((d) => ({ id: d.id, obra: d.data().obra || '', docType: d.data().docType || '', status: d.data().status || '' }));
+    const pedidos = (await db.collection('orders').get()).docs.filter((d) => esMia(d.data().cliente, d.data().obra)).map((d) => ({ id: d.id, obra: d.data().obra || '', docType: d.data().docType || '', status: d.data().status || '', idProyecto: idProyectoSrv(d.data()) }));
 
     const informe = {
         instalacionId: instId, cliente, obra, obraKey, obraLabel: [cliente, obra].filter(Boolean).join(' — '),
@@ -3108,7 +3114,7 @@ async function generarInformeObra(instId, inst, opts) {
         total: Math.round(total * 100) / 100, acumuladoObra: Math.round((acumPrevio + total) * 100) / 100,
         obrasIncluidas: Object.entries(obrasIncluidas).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
         otrasObrasCliente: Object.entries(otrasObrasCliente).map(([nombre, h]) => ({ nombre, horas: Math.round(h * 10) / 10 })),
-        pedidos, generado: FieldValue.serverTimestamp(),
+        pedidos, idProyecto: [...new Set(pedidos.map((p) => p.idProyecto).filter(Boolean))], generado: FieldValue.serverTimestamp(),
         instalacionIds: (existente && Array.isArray(existente.instalacionIds)) ? existente.instalacionIds.filter((x) => x && x !== instId) : []   // D2: otros trabajos cerrados el mismo día en esta obra
     };
     // Qué se mandó a hacer (Dylan 2026-10-09: «no me aparece descripción de qué es que se mandó a hacer»): tipo de trabajo, notas del

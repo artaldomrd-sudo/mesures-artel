@@ -91,12 +91,13 @@
         <button class="tab-btn active" id="tab-pedidos" onclick="setVista('pedidos')">Pedidos</button>
         <button class="tab-btn" id="tab-carpetas" onclick="setVista('carpetas')">Carpetas por obra</button>
         <button class="tab-btn" id="tab-auditoria" onclick="setVista('auditoria')">Auditoría</button>
+        <button class="tab-btn" id="tab-registro" onclick="setVista('registro')">Nº de proyecto</button>
     </div>
 
     <div id="pedidos-view">
         <h2 class="section-title" id="alerts-title" style="display:none;">⚠ Alertas pendientes</h2>
         <div id="alerts-section"></div>
-        <input type="text" id="search-input" list="clientes-datalist" placeholder="🔎 Buscar por cliente u obra…" autocomplete="off">
+        <input type="text" id="search-input" list="clientes-datalist" placeholder="🔎 Buscar por cliente, obra o Nº de proyecto (PRY-…)" autocomplete="off">
         <datalist id="clientes-datalist"></datalist>
         <div id="cat-grid"></div>
         <div id="orders-list"><p class="empty">Cargando…</p></div>
@@ -105,6 +106,17 @@
     <div id="carpetas-view" style="display:none;">
         <input type="text" id="carpeta-search" placeholder="🔎 Buscar obra o cliente…" autocomplete="off">
         <div id="carpetas-list"><p class="empty">Cargando…</p></div>
+    </div>
+
+    <div id="registro-view" style="display:none;">
+        <p class="empty" style="margin:0 0 10px;font-size:12.5px;text-align:left;">Registro de Nº de proyecto: es lo que ve el proveedor en lugar del cliente. Lo asigna el cuaderno al guardar o enviar; aquí solo se consulta. Sale de los pedidos y de los proyectos guardados del cuaderno.</p>
+        <div id="registro-avisos"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
+            <input type="text" id="registro-search" placeholder="🔎 Buscar Nº, cliente, proyecto, ubicación o proveedor…" autocomplete="off" style="flex:1;min-width:220px;margin:0;">
+            <button class="mini-btn" onclick="registroCSV()">⬇ Exportar CSV</button>
+            <button class="mini-btn" onclick="cargarRegistroProyectos(true)">↻ Recargar proyectos</button>
+        </div>
+        <div id="registro-list" style="overflow-x:auto;"><p class="empty">Cargando…</p></div>
     </div>
 
     <div id="auditoria-view" style="display:none;">
@@ -130,6 +142,8 @@
     import { openOrderPreview } from './order-preview.js';
     import { escucharSuplidores, suplidorBotonHTML, enviadoChipHTML, montarSuplidorWA } from './suplidor-wa.js';
     import { buildClientMap, clientList } from './clients.js';
+    import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
+    import { getDocs } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     window.openOrderPreview = openOrderPreview;
 
     // Solo admin: es un archivo histórico completo de todos los pedidos, no una pantalla
@@ -312,6 +326,16 @@
     };
 
     let allOrders = [];
+    // Nº de proyecto de un pedido: el suyo; una compra directa no tiene número propio → el del pedido vinculado
+    // (o los de sus repartos, o la misma obra). Devuelve lista (normalmente 0 o 1).
+    function pryDeOrden(id, o) {
+        const propio = idProyectoDe(o);
+        if (propio) return [propio];
+        if (o.docType !== 'COMPRA_DIRECTA') return [];
+        const ids = [o.pedidoVinculadoId, ...((o.repartos || []).map(r => r.pedidoVinculadoId))].filter(Boolean);
+        return idsProyectoObra(allOrders, { cliente: o.cliente, obra: o.obra, ids });
+    }
+    const pryDeDocs = (docs) => [...new Set(docs.flatMap(d => pryDeOrden(d.id, d.o)))];
     montarSuplidorWA({ getOrder: (id) => { const d = allOrders.find(x => x.id === id); return d ? d.data : null; }, usuario });
     let choferesCache = [];
     let instaladoresCache = [];
@@ -395,7 +419,7 @@
         return `
         <div class="order-card">
             <div class="order-head">
-                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryChipHTML(pryDeOrden(id, o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' })}</b>
                 <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
             </div>
             <div class="order-meta">
@@ -443,7 +467,7 @@
         const filtered = allOrders.filter(({ data: o }) => {
             if (!matchesCategory(cat, o)) return false;
             if (!term) return true;
-            const haystack = ((o.cliente || '') + ' ' + (o.obra || '')).toLowerCase();
+            const haystack = ((o.cliente || '') + ' ' + (o.obra || '') + ' ' + pryDeOrden(null, o).join(' ')).toLowerCase();
             return haystack.includes(term);
         });
         const list = document.getElementById('orders-list');
@@ -558,6 +582,7 @@
         renderAlerts();
         render();
         renderCarpetas();
+        if (document.getElementById('registro-view').style.display === 'block') renderRegistro();
     }, (err) => {
         document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando historial: ' + err.message + '</p>';
     });
@@ -648,7 +673,8 @@
     };
 
     window.setVista = function (v) {
-        ['pedidos', 'carpetas', 'auditoria'].forEach(k => {
+        if (v === 'registro') cargarRegistroProyectos();
+        ['pedidos', 'carpetas', 'auditoria', 'registro'].forEach(k => {
             document.getElementById('tab-' + k).classList.toggle('active', v === k);
             document.getElementById(k + '-view').style.display = v === k ? 'block' : 'none';
         });
@@ -873,9 +899,9 @@
         if (carpetaNivel === 'docs') { search.style.display = 'none'; renderCarpetasDocs(list); return; }
         search.style.display = '';
 
-        if (carpetaNivel === 'obras') { search.placeholder = '🔎 Buscar obra…'; renderCarpetasObras(list); return; }
+        if (carpetaNivel === 'obras') { search.placeholder = '🔎 Buscar obra o Nº de proyecto…'; renderCarpetasObras(list); return; }
 
-        search.placeholder = '🔎 Buscar cliente…';
+        search.placeholder = '🔎 Buscar cliente o Nº de proyecto…';
         renderCarpetasClientes(list);
     }
 
@@ -931,7 +957,7 @@
             residenciales = residenciales.filter(r => normTexto(r.residencial).includes(term) ||
                 clientes.some(c => normTexto(c.residencial) === r.rkey && normTexto(c.cliente).includes(term)));
             sueltos = sueltos.filter(c => normTexto(c.cliente).includes(term) ||
-                carpetasArr.some(g => normTexto(g.cliente) === c.ckey && normTexto(g.titulo).includes(term)));
+                carpetasArr.some(g => normTexto(g.cliente) === c.ckey && (normTexto(g.titulo).includes(term) || pryDeDocs(g.docs).some(x => normTexto(x).includes(term)))));
         }
         const entradas = residenciales.map(r => ({ t: 'res', ultima: r.ultima, r })).concat(sueltos.map(c => ({ t: 'cli', ultima: c.ultima, c })));
         entradas.sort((a, b) => b.ultima - a.ultima);
@@ -1112,7 +1138,7 @@
         let obrasCliente = carpetasArr.filter(g => normTexto(g.cliente) === carpetaClienteSel);
         const clienteTexto = obrasCliente.length ? obrasCliente[0].cliente : carpetaClienteSel;
         let proyectos = agruparPorProyecto(obrasCliente);
-        if (term) proyectos = proyectos.filter(p => p.obras.some(g => normTexto(g.titulo).includes(term)));
+        if (term) proyectos = proyectos.filter(p => p.obras.some(g => normTexto(g.titulo).includes(term) || pryDeDocs(g.docs).some(x => normTexto(x).includes(term))));
         proyectos.sort((a, b) =>
             Math.max(...b.obras.flatMap(g => g.docs.map(d => orderDate(d.o)))) -
             Math.max(...a.obras.flatMap(g => g.docs.map(d => orderDate(d.o)))));
@@ -1136,7 +1162,7 @@
                 ${btnSep}
                 <div class="emoji">📁</div>
                 <div class="title">${esc(p.rootTitulo)}</div>
-                <div class="desc">${docs.length} doc${docs.length === 1 ? '' : 's'}${esMulti ? ' · ' + nObras + ' obras' : ''} · <span class="doc-tag ${t.cls}">${t.label}</span></div>
+                <div class="desc">${pryChipHTML(pryDeDocs(docs)).replace('margin-left:6px', 'margin:0 0 4px')}<br>${docs.length} doc${docs.length === 1 ? '' : 's'}${esMulti ? ' · ' + nObras + ' obras' : ''} · <span class="doc-tag ${t.cls}">${t.label}</span></div>
             </a>`;
             }).join('') + `</div>`;
     }
@@ -1159,7 +1185,7 @@
             <div class="carpeta abierta">
                 <div class="carpeta-top" style="cursor:default;">
                     <div class="carpeta-info">
-                        <h3>${esc(proyecto.rootTitulo)}</h3>
+                        <h3>${esc(proyecto.rootTitulo)}${pryChipHTML(pryDeDocs(docsOrdenados))}</h3>
                         ${cliente && cliente.toLowerCase() !== proyecto.rootTitulo.toLowerCase() ? `<div class="cliente">${esc(cliente)}</div>` : ''}
                     </div>
                 </div>
@@ -1180,6 +1206,7 @@
                             <span class="doc-tag ${t.cls}">${t.label}</span>
                             ${normTexto(obraTexto) !== normTexto(proyecto.rootTitulo) ? `<span class="carpeta-doc-obra">${esc(obraTexto)}</span>` : ''}
                             <span style="font-size:12.5px;color:#555;">${esc(STATUS_LABEL[o.status] || o.status)}${progresoExtra(o)}</span>
+                            ${pryChipHTML(pryDeOrden(id, o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' })}
                         </div>
                         ${(o.descripcion || o.proveedor) ? `<div style="font-size:12.5px;color:#556;margin-top:3px;">${o.descripcion ? '📝 ' + esc(o.descripcion) : ''}${o.proveedor ? (o.descripcion ? '  ·  ' : '') + '🏭 ' + esc(o.proveedor) : ''}</div>` : ''}
                         ${Array.isArray(o.repartos) && o.repartos.length ? `<div style="font-size:12px;color:#8a6d00;margin-top:3px;">📦 Compra repartida entre ${o.repartos.length} obras: ${o.repartos.map(r => `${esc(r.cliente)} — ${esc(r.obra)}${r.cantidad != null ? ' ×' + esc(String(r.cantidad)) : ''}`).join(' · ')}</div>` : ''}
@@ -1188,6 +1215,115 @@
                 }).join('')}
             </div>`;
     }
+
+
+    // ============ Registro de Nº de proyecto (2026-11-03, solo admin: Historial ya es solo admin) ============
+    // Una fila por número y obra, desde los pedidos (orders.idProyecto / appJSON.header.idProveedor) y los proyectos
+    // guardados del cuaderno (proyectosGuardados.jsonData.header.idProveedor). Aviso rojo si un número aparece en dos
+    // obras distintas (regla `mismaObra`). Los proyectos guardados se leen una vez al abrir la pestaña (no en vivo).
+    let proyGuardados = null, registroFilas = [];
+    window.cargarRegistroProyectos = async function (forzar) {
+        if (proyGuardados && !forzar) { renderRegistro(); return; }
+        document.getElementById('registro-list').innerHTML = '<p class="empty">Cargando proyectos guardados…</p>';
+        try {
+            const snap = await getDocs(collection(db, 'proyectosGuardados'));
+            proyGuardados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (e) { proyGuardados = []; console.warn('proyectosGuardados', e); }
+        renderRegistro();
+    };
+    const DEST_TXT = (o) => o.docType === 'COMPRA_DIRECTA' ? (o.proveedor || 'Compra directa') : (o.destino === 'interno' ? 'Fábrica interna' : (o.directoInstalacion ? 'Directo a instalación' : 'ALUCUFEL'));
+    function construirRegistro() {
+        const filas = new Map();   // clave: Nº + obra normalizada
+        const fila = (pry, cliente, obra) => {
+            const k = pry + '|' + normTexto(cliente) + '|' + normTexto(obra);
+            if (!filas.has(k)) filas.set(k, { pry, cliente: cliente || '', obra: obra || '', ubicacion: '', proveedores: new Set(), fecha: 0, estado: '', estadoFecha: -1, docs: 0, guardado: false });
+            return filas.get(k);
+        };
+        allOrders.forEach(({ id, data: o }) => {
+            pryDeOrden(id, o).forEach(pry => {
+                const f = fila(pry, o.cliente, o.obra);
+                const h = (o.appJSON && o.appJSON.header) || {};
+                if (!f.ubicacion && h.ubicacion) f.ubicacion = h.ubicacion;
+                f.proveedores.add(DEST_TXT(o));
+                (o.enviadoASuplidor || []).forEach(x => x && x.nombre && f.proveedores.add(x.nombre));
+                const t = orderDate(o); f.docs++;
+                if (t > f.estadoFecha) { f.estadoFecha = t; f.estado = (o.docType === 'COMPRA_DIRECTA' ? 'Compra · ' : ((o.docType || '').indexOf('FAB') === 0 ? 'Fabricación · ' : 'Cotización · ')) + (STATUS_LABEL[o.status] || o.status || ''); }
+                f.fecha = f.fecha ? Math.min(f.fecha, t || f.fecha) : t;
+            });
+        });
+        (proyGuardados || []).forEach(p => {
+            const h = (p.jsonData && p.jsonData.header) || {};
+            const pry = idProyectoDe(p); if (!pry) return;
+            // Si la misma obra ya está por los pedidos, se suma a esa fila; si no, fila propia «guardado, sin enviar».
+            const ya = [...filas.values()].find(f => f.pry === pry && mismaObra(f.cliente, f.obra, p.cliente || h.cliente, p.obra || h.obra));
+            const f = ya || fila(pry, p.cliente || h.cliente, p.obra || h.obra);
+            f.guardado = true;
+            if (!f.ubicacion && h.ubicacion) f.ubicacion = h.ubicacion;
+            const t = Number(h._syncUpdatedAt) || 0;
+            if (!f.fecha && t) f.fecha = t;
+            if (!f.estado) f.estado = 'Guardado en el cuaderno (sin enviar)';
+        });
+        registroFilas = [...filas.values()].map(f => ({ ...f, proveedor: [...f.proveedores].join(', ') }))
+            .sort((a, b) => b.pry.localeCompare(a.pry, 'es', { numeric: true }));
+        return registroFilas;
+    }
+    function avisosRegistro(filas) {
+        const porId = new Map();
+        filas.forEach(f => { if (!porId.has(f.pry)) porId.set(f.pry, []); porId.get(f.pry).push(f); });
+        const malos = [];
+        porId.forEach((arr, pry) => {
+            const distintas = arr.filter((f, i) => !arr.slice(0, i).some(g => mismaObra(g.cliente, g.obra, f.cliente, f.obra)));
+            if (distintas.length > 1) malos.push({ pry, obras: distintas.map(f => `${f.cliente || 'Sin cliente'} — ${f.obra || 'sin obra'}`) });
+        });
+        return malos;
+    }
+    function renderRegistro() {
+        const filas = construirRegistro();
+        const malos = avisosRegistro(filas);
+        document.getElementById('registro-avisos').innerHTML = malos.length ? `<div style="background:#fdecea;border:1.5px solid #e74c3c;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:13px;color:#922;">
+            <b>⚠ Nº de proyecto repetido en obras distintas</b> — corrígelo en el cuaderno (encabezado → «Nº proyecto: cambiar») para que cada obra tenga el suyo:
+            <ul style="margin:6px 0 0;padding-left:18px;">${malos.map(m => `<li><b>${esc(m.pry)}</b>: ${m.obras.map(esc).join(' · ')}</li>`).join('')}</ul></div>` : '';
+        const term = normTexto(document.getElementById('registro-search').value);
+        const vis = term ? filas.filter(f => normTexto([f.pry, f.cliente, f.obra, f.ubicacion, f.proveedor, f.estado].join(' ')).includes(term)) : filas;
+        const sinN = allOrders.filter(({ id, data: o }) => o.docType !== 'COMPRA_DIRECTA' && !pryDeOrden(id, o).length).length;
+        const fF = (t) => t ? new Date(t).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+        const th = 'text-align:left;padding:7px 8px;border-bottom:2px solid #d6e0ea;font-size:12px;color:#0A3D62;white-space:nowrap;';
+        const td = 'padding:7px 8px;border-bottom:1px solid #eef1f4;font-size:13px;vertical-align:top;';
+        const repetidos = new Set(malos.map(m => m.pry));
+        document.getElementById('registro-list').innerHTML = (vis.length ? `<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:10px;">
+            <thead><tr><th style="${th}">Nº</th><th style="${th}">Cliente</th><th style="${th}">Proyecto</th><th style="${th}">Ubicación</th><th style="${th}">Proveedor</th><th style="${th}">Fecha</th><th style="${th}">Estado</th></tr></thead>
+            <tbody>${vis.map(f => `<tr${repetidos.has(f.pry) ? ' style="background:#fff5f4"' : ''}>
+                <td style="${td}white-space:nowrap;">${pryChipHTML(f.pry).replace('margin-left:6px', 'margin:0')}</td>
+                <td style="${td}">${esc(f.cliente)}</td>
+                <td style="${td}"><a href="#" onclick="abrirCarpetaRegistro(${JSON.stringify(f.cliente).replace(/"/g, '&quot;')}, ${JSON.stringify(f.obra).replace(/"/g, '&quot;')});return false;">${esc(f.obra)}</a></td>
+                <td style="${td}">${esc(f.ubicacion)}</td>
+                <td style="${td}">${esc(f.proveedor) || '<span style="color:#99a">—</span>'}</td>
+                <td style="${td}white-space:nowrap;">${fF(f.fecha)}</td>
+                <td style="${td}">${esc(f.estado)}${f.docs ? ` <span style="color:#99a;font-size:11.5px">(${f.docs} doc${f.docs === 1 ? '' : 's'})</span>` : ''}</td>
+            </tr>`).join('')}</tbody></table>` : `<p class="empty">${filas.length ? 'Nada coincide con la búsqueda.' : 'Todavía no hay ningún Nº de proyecto asignado.'}</p>`)
+            + `<p class="empty" style="font-size:12px;margin-top:8px;">${filas.length} número${filas.length === 1 ? '' : 's'} en el registro · ${sinN} pedido${sinN === 1 ? '' : 's'} sin Nº (anteriores al 3/11/2026: se muestran «sin Nº», no se inventa).</p>`;
+    }
+    document.getElementById('registro-search').addEventListener('input', renderRegistro);
+    window.abrirCarpetaRegistro = function (cliente, obra) {
+        setVista('carpetas');
+        const g = carpetasArr.find(x => normTexto(x.cliente) === normTexto(cliente) && normTexto(x.titulo) === normTexto(obra))
+            || carpetasArr.find(x => mismaObra(x.cliente, x.titulo, cliente, obra));
+        if (!g) return;
+        carpetaClienteSel = normTexto(g.cliente);
+        const proy = agruparPorProyecto(carpetasArr.filter(x => normTexto(x.cliente) === carpetaClienteSel)).find(p => p.obras.includes(g));
+        if (proy) { carpetaObraSel = proy.rootKey; carpetaNivel = 'docs'; } else carpetaNivel = 'obras';
+        renderCarpetas();
+    };
+    window.registroCSV = function () {
+        const filas = registroFilas.length ? registroFilas : construirRegistro();
+        const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+        const csv = '﻿' + ['Nº de proyecto;Cliente;Proyecto;Ubicación;Proveedor;Fecha;Estado']
+            .concat(filas.map(f => [f.pry, f.cliente, f.obra, f.ubicacion, f.proveedor, f.fecha ? new Date(f.fecha).toISOString().slice(0, 10) : '', f.estado].map(q).join(';'))).join('\r\n');
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        a.download = 'registro-numeros-de-proyecto-' + new Date().toISOString().slice(0, 10) + '.csv';
+        document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    };
 
     document.getElementById('carpeta-search').addEventListener('input', renderCarpetas);
 

@@ -59,7 +59,8 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
-    import { doc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { doc, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { idProyectoDe, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
 
     const usuario = await requireAuth(['contable']);   // gerencia (admin) siempre entra
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -77,6 +78,18 @@
     if (!id) cont.innerHTML = '<p class="empty">Falta el informe (abre este enlace desde Mensajería, Historial o Costo de obras).</p>';
     else onSnapshot(doc(db, 'informesObra', id), (s) => { if (!s.exists()) { cont.innerHTML = '<p class="empty">Este informe no existe (o todavía se está generando).</p>'; return; } pintar({ id: s.id, ...s.data() }); }, (e) => { cont.innerHTML = '<p class="empty">Error: ' + esc(e.message) + '</p>'; });
 
+    // Nº de proyecto: el que guardó el informe (desde 2026-11-03) o, en informes anteriores, el de sus pedidos (se leen una vez).
+    const pryLeidos = new Map();
+    function pryDeInforme(i) {
+        const guardado = [].concat(i.idProyecto || [], (i.pedidos || []).map(p => p.idProyecto)).filter(Boolean);
+        if (guardado.length) return [...new Set(guardado)];
+        if (pryLeidos.has(i.id)) return pryLeidos.get(i.id);
+        pryLeidos.set(i.id, []);
+        Promise.all((i.pedidos || []).map(p => p.id ? getDoc(doc(db, 'orders', p.id)).then(d => d.exists() ? idProyectoDe(d.data()) : '').catch(() => '') : ''))
+            .then(l => { const u = [...new Set(l.filter(Boolean))]; if (u.length) { pryLeidos.set(i.id, u); pintar(i); } });
+        return [];
+    }
+
     function pintar(i) {
         const mo = i.manoObra || {}, tr = i.transporte || {};
         const sinMO = !n2(mo.horas), sinTr = !n2(tr.viajes);
@@ -87,7 +100,7 @@
         const incl = (i.obrasIncluidas || []);
         cont.innerHTML = `
             <div class="cab">
-                <h2>🏠 ${esc(i.obraLabel || [i.cliente, i.obra].filter(Boolean).join(' — '))}</h2>
+                <h2>🏠 ${esc(i.obraLabel || [i.cliente, i.obra].filter(Boolean).join(' — '))}${pryChipHTML(pryDeInforme(i))}</h2>
                 <div class="sub">✅ Instalación completada el <b>${fD(i.fechaCierre)}</b>${i.cerradoPor ? ' por <b>' + esc(i.cerradoPor) + '</b>' : ''} · informe nº ${i.numero || 1} de esta obra${i.desde ? ' · cubre desde el ' + fD(i.desde) + ' (después del informe anterior)' : ' · cubre desde el inicio de la obra'}</div>
                 ${i.descripcionTrabajo ? `<div class="sub" style="margin-top:6px;background:#f6f8fb;border-radius:9px;padding:8px 11px;">${[i.descripcionTrabajo.tipoTexto ? '🧾 <b>' + esc(i.descripcionTrabajo.tipoTexto) + '</b>' : '', i.descripcionTrabajo.notas ? '📝 ' + esc(i.descripcionTrabajo.notas) : '', i.descripcionTrabajo.pedido ? '📦 Pedido: ' + esc(i.descripcionTrabajo.pedido) : '', i.descripcionTrabajo.fotos ? '📷 ' + i.descripcionTrabajo.fotos + ' foto(s)' : ''].filter(Boolean).join('<br>') || '🧾 Sin descripción del trabajo (sin tipo, notas ni pedido enlazado)'}</div>` : ''}
             </div>
@@ -114,7 +127,7 @@
                 <tr class="tot"><td colspan="5">Total transporte de esta obra</td><td class="n">${fmtRD(tr.costo)}</td></tr></tbody></table></div>` : '<p class="empty">Ningún viaje registrado.</p>'}
 
             ${(i.pedidos || []).length ? `<h3 class="sec">📦 Pedidos de esta obra</h3><div class="tabla-wrap"><table class="rep"><thead><tr><th>Obra (nombre en el pedido)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
-                ${i.pedidos.map(p => `<tr><td>${esc(p.obra || '')}</td><td>${esc(p.docType)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+                ${i.pedidos.map(p => `<tr><td>${esc(p.obra || '')}${p.idProyecto ? pryChipHTML(p.idProyecto) : ''}</td><td>${esc(p.docType)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
             <p class="hint" style="margin-top:12px">Mano de obra = horas de los partes diarios × costo por hora de RRHH (costo por día ÷ 9 h de jornada; horas por encima de 9 al día al 135 %). Transporte = costo del viaje del camión (combustible, desgaste, peajes y fijos del vehículo) repartido a partes iguales entre las obras que iban a bordo. Compara el total con lo cotizado de transporte e instalación en la factura.</p>
             <div class="acts">

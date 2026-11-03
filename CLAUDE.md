@@ -3701,3 +3701,25 @@ Dylan: «poder hacer eso mismo desde la plataforma, respondiendo al informe como
   29/07/2026 (0.66 gastados en 3 meses). El informe cuesta ≈ 0.15 USD; una respuesta 0.10–0.20.
 - El agente local lee lo que hizo el chat (`coordinadorRespuestas`, `mensajes tipo=respuesta_coordinador`, `coordinadorAcciones`) antes
   de actuar a demanda: ver `.claude/agents/coordinador-obras.datos.md`.
+
+### Nº de proyecto PRY-AAAA-NNN visible en el Panel (2026-11-03)
+
+Dylan: «los proveedores nunca ven el cliente; los pedidos a proveedores llevan un Nº de proyecto. En el sistema interno se mantienen
+cliente y proyecto, pero con el número VISIBLE al lado para hacer siempre la relación nombre ↔ ID». El cuaderno lo asigna
+(`appJSON.header.idProveedor`, commit 91cc275) y cada pedido lo copia en `orders.idProyecto`. Módulo común **`ops/proyecto-id.js`**:
+`idProyectoDe(o)` = `orders.idProyecto` → `appJSON.header.idProveedor` (o `jsonData.header` de un proyecto guardado) → `''`;
+`idsProyectoObra(orders, {cliente, obra, ids})` = números de los pedidos enlazados por id y, si no hay enlace, de la misma obra
+(`mismaObra`); `pryChipHTML(id | [ids], {ocultarSin})` = recuadro azul monoespaciado o «sin Nº» gris punteado (nunca se inventa).
+Dónde: Historial (tarjeta, carpetas Obra/Documentos, buscador de Pedidos y de Carpetas encuentra «PRY-…»), Instalación (fila y
+tarjeta del trabajo vía `pryDeJob`: orderId/orderIds/pedidoReferenciaId → misma obra; tarjeta del pedido; recuadro «Llega a Las
+Terrenas»), Fábrica interna, ALUCUFEL fábrica (también «🛒 Compra para…») y cotizaciones, Transportes, Cotizaciones, Compras (la
+compra toma el del pedido vinculado o de sus repartos; el selector de pedido muestra el número), Informe de obra (cabecera y tabla de
+pedidos; informes anteriores leen sus pedidos una vez) y Costo de obras (consulta liviana `orders where idProyecto > ''`). Las
+compras directas sin número propio no muestran «sin Nº» (`ocultarSin`). **Registro**: pestaña «Nº de proyecto» de Historial (solo
+admin, como toda la página): una fila por número y obra desde `orders` + `proyectosGuardados` (leídos una vez al abrir la pestaña,
+«↻ Recargar proyectos»), columnas Nº | cliente | proyecto | ubicación | proveedor (destino + `enviadoASuplidor`) | fecha | estado,
+buscador, «⬇ Exportar CSV» (`;`, BOM) y aviso rojo si un número aparece en dos obras distintas (`mismaObra`); tocar el proyecto
+abre su carpeta. Functions: `idProyectoSrv(o)` (espejo) → `generarInformeObra` guarda `pedidos[].idProyecto` e `idProyecto[]`;
+el Coordinador (`functions/coordinador.js`, `idProy`) recibe `idProyecto` en cada pedido («sin Nº» si falta) y en cada trabajo, y la
+regla de REGLAS (compartida con el chat): a un proveedor SOLO el número, nunca cliente ni dirección; si dice «sin Nº», avisar a la
+oficina en vez de inventarlo. Sin colecciones nuevas (no cambian las reglas). Guía Academia `guia-historial-06`.

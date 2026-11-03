@@ -103,6 +103,7 @@
 <script type="module">
     import './mensajeria-widget.js';   // botón ✉️ Mensajes + banda roja de mensajes nuevos (2026-11-02)
     import { requireAuth, auth, signOut } from './auth-common.js';
+    import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto (2026-11-03)
     import { borrarConRegistro } from './papelera.js';
     import { db, storage } from './firebase-config.js';
     import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -112,6 +113,8 @@
 
     // Solo admin/oficina: es una herramienta de registro, no una pantalla de rol operativo.
     const usuario = await requireAuth([]);
+    // Nº de proyecto PRY-AAAA-NNN (2026-11-03): la compra no tiene número propio → el del pedido vinculado (o los de sus repartos).
+    const pryO = (o) => pryChipHTML(idProyectoDe(o) || idsProyectoObra(ordersCache, { cliente: o.cliente, obra: o.obra, ids: [o.pedidoVinculadoId, ...((o.repartos || []).map(r => r.pedidoVinculadoId))] }), { ocultarSin: true });
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -175,7 +178,7 @@
         // VINCULADA a ese pedido (`pedidoVinculadoId`) y no solo al texto de la obra. Abiertos arriba, cerrados después.
         const pedidos = pedidosDelCliente(clienteActual());
         const cubiertas = new Set(pedidos.map(o => normObra(o.obra)));
-        const optPed = (o) => `<option value="order:${esc(o._id)}">${esc(o.obra || '')} · ${esc(tipoPedido(o))} · ${esc(ORDER_STATUS_LABEL[o.status] || o.status || '')}</option>`;
+        const optPed = (o) => `<option value="order:${esc(o._id)}">${esc(o.obra || '')}${idProyectoDe(o) ? ' · ' + esc(idProyectoDe(o)) : ''} · ${esc(tipoPedido(o))} · ${esc(ORDER_STATUS_LABEL[o.status] || o.status || '')}</option>`;
         const abiertos = pedidos.filter(o => o.status !== 'completado'), cerrados = pedidos.filter(o => o.status === 'completado');
         const otras = obras.filter(o => !cubiertas.has(normObra(o)));
         // Por defecto solo las obras EN CURSO (pedidos abiertos); el historial completo (pedidos completados + otras obras
@@ -560,7 +563,7 @@
         return `
         <div class="order-card">
             <div class="order-head">
-                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b>
                 <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
             </div>
             <div class="order-meta">

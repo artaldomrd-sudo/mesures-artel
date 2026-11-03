@@ -56,6 +56,7 @@
 <script type="module">
     import '../mensajeria-widget.js';   // botón ✉️ Mensajes + banda roja de mensajes nuevos (2026-11-03)
     import { requireAuth, auth, signOut } from '../auth-common.js';
+    import { idProyectoDe, idsProyectoObra, pryChipHTML } from '../proyecto-id.js';   // Nº de proyecto (2026-11-03)
     import { enableNotifications } from '../notifications.js';
     import { db } from '../firebase-config.js';
     import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -65,6 +66,8 @@
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['fabrica']);
+    // Nº de proyecto PRY-AAAA-NNN junto al cliente (2026-11-03). Una compra directa sin número propio no muestra nada.
+    const pryO = (o) => pryChipHTML(idProyectoDe(o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' });
     const esGerencia = usuario.roles.includes('admin');
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
@@ -141,7 +144,7 @@
         actionsHtml += `<div id="envio-box-${id}"></div>`;
         if (esCompra) return `
         <div class="order-card status-${o.status === 'pendiente_proveedor' ? 'en_fabrica' : o.status}">
-            <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : (STATUS_LABEL[o.status] || esc(o.status))}</span></div>
+            <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : (STATUS_LABEL[o.status] || esc(o.status))}</span></div>
             <div class="order-meta" style="font-size:14px;color:#333;white-space:pre-wrap;">${esc(o.descripcion || '')}</div>
             <div class="order-meta">${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 Ver orden de compra</a>` : ''}${o.creadoPorNombre ? ' · pedida por ' + esc(o.creadoPorNombre) : ''}</div>
             ${rioAbajoHTML(id, o)}
@@ -150,7 +153,7 @@
         return `
         <div class="order-card status-${o.status}">
             <div class="order-head">
-                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b>
+                <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b>
                 <span class="badge">${STATUS_LABEL[o.status] || esc(o.status)}</span>
             </div>
             <div class="order-meta">

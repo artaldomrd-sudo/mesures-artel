@@ -492,6 +492,7 @@
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import { borrarConRegistro } from './papelera.js';
     import { mismaObra } from './obras-util.js';
+    import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
     import {
         collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, Timestamp, serverTimestamp, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -515,7 +516,7 @@
             el.innerHTML = `<div style="background:#eaf6ff;border:2px solid #7fb8e6;border-radius:12px;padding:12px 14px;color:#174a7a;">
                 <div style="font-size:15px;font-weight:bold;">📦 Llega a Las Terrenas (${mias.length})</div>
                 ${mias.map(o => `<div style="background:#fff;border-radius:10px;padding:9px 11px;margin-top:8px;">
-                    <div style="font-weight:bold;color:#0A3D62;">${escL(o.cliente || '')} — ${escL(o.obra || '')}</div>
+                    <div style="font-weight:bold;color:#0A3D62;">${escL(o.cliente || '')} — ${escL(o.obra || '')}${pryChipHTML(idProyectoDe(o), { ocultarSin: true })}</div>
                     <div style="font-size:13px;margin-top:2px;">${escL(env_.envioTxt(o))}${o.envio && o.envio.nota ? ' · ' + escL(o.envio.nota) : ''}${o.docType === 'COMPRA_DIRECTA' ? ' · 🛒 ' + escL(o.proveedor || '') + (o.descripcion ? ': ' + escL(String(o.descripcion).slice(0, 80)) : '') : ' · ' + (o.totalItems || 0) + ' ítems' + (o.status === 'parcialmente_listo' ? ' (parcial)' : '')}</div>
                     <div style="font-size:12px;color:#557;margin-top:2px;">${env_.viaDe(o) === 'guagua' ? 'Cualquiera del equipo puede ir a la parada a recogerlo.' : 'Llega directo a la obra: recíbelo allí.'}</div>
                     <button onclick="marcarRecibidoLlegada('${o.id}')" style="margin-top:8px;background:#27ae60;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:bold;font-family:inherit;cursor:pointer;">✅ Recibido</button>
@@ -845,7 +846,7 @@
         return `
         <div class="job-card estado-${estado}">
             <div class="job-head">
-                <b>${esc(lugar) || 'Sin cliente'}</b>
+                <b>${esc(lugar) || 'Sin cliente'}</b>${pryChipHTML(pryDeJob(j))}
                 <span class="hora">${hora}</span>
             </div>
             <div class="job-meta">
@@ -973,7 +974,7 @@
         else if (esParcialFab) borde = 'style="border-left-color:#f39c12;"';
         return `
         <div class="order-card" ${borde}>
-            <div class="order-head"><b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b></div>
+            <div class="order-head"><b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryChipHTML(esCompra ? idsProyectoObra(ordersCache, { cliente: o.cliente, obra: o.obra, ids: [o.pedidoVinculadoId] }) : idProyectoDe(o))}</b></div>
             <div class="order-meta">
                 ${metaLine}${vincATxt}${comprasVincHtml}
                 · ${asignadoTxt({ asignados: o.asignadosInstalador, instaladorNombre: o.asignadoInstaladorNombre, instaladorEmail: o.asignadoInstaladorEmail })}
@@ -1026,6 +1027,8 @@
     let agendadosOrderIds = new Set();
     // Un trabajo puede cubrir VARIOS pedidos de la misma obra (`orderIds[]`, p. ej. Altea 11 ventanas + completivo).
     const jobsDeOrden = (oid) => allJobs.filter(j => j.orderId === oid || (Array.isArray(j.orderIds) && j.orderIds.includes(oid)));
+    // Nº de proyecto de un trabajo: el de su pedido (orderId/orderIds/pedidoReferenciaId); sin enlace, el de la misma obra.
+    const pryDeJob = (j) => idsProyectoObra(ordersCache, { cliente: j.cliente, obra: j.obra, ids: [j.orderId, j.pedidoReferenciaId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])] });
     const ordenesDeJob = (j) => [...new Set([j.orderId, ...(Array.isArray(j.orderIds) ? j.orderIds : [])].filter(Boolean))];
     function renderTodo() {
         // Solo cuentan como "agendados" los trabajos CON fecha (y no completados): un pedido agendado
@@ -1087,7 +1090,7 @@
         const asig = (Array.isArray(j.asignados) && j.asignados.length ? j.asignados.map(a => a.nombre || a.email) : (j.instaladorNombre ? [j.instaladorNombre] : [])).join(', ');
         const t = tipoDeJob(j);
         return `<div class="job-row estado-${estado}" onclick="abrirJob('${j.id}')">
-            <div class="r1">${alerta ? '<span class="punto" title="Mensaje nuevo o medición por entregar"></span>' : ''}${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}</div>
+            <div class="r1">${alerta ? '<span class="punto" title="Mensaje nuevo o medición por entregar"></span>' : ''}${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}${pryChipHTML(pryDeJob(j))}</div>
             <div class="fecha">${fechaTxtJob(j).replace(/^🔧 /, '')}</div>
             <div class="r2"><span class="estado-badge ${estado}" style="font-size:10.5px;padding:2px 8px">${esc(ESTADO_LABEL[estado] || estado)}</span>${t ? `<span class="chip">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : '<span class="chip" style="background:#fff8e1;color:#c07a12">tipo sin definir</span>'}${asig ? `<span>🔧 ${esc(asig)}</span>` : '<span style="color:#c07a12">sin asignar</span>'}${nuevos ? `<span style="color:#e74c3c;font-weight:bold">💬 ${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}${j.medicionPendienteOficina === true ? '<span style="color:#e67e22;font-weight:bold">📏 oficina pendiente</span>' : ''}${j.notas ? `<span style="color:#667">· ${esc(String(j.notas).slice(0, 70))}${String(j.notas).length > 70 ? '…' : ''}</span>` : ''}</div>
         </div>`;

@@ -48,6 +48,8 @@ function fechaTxt(v) {
     return d.slice(11, 16) === '00:00' ? d.slice(0, 10) : d.slice(0, 16).replace('T', ' ');
 }
 const rec = (s, n) => (s == null ? '' : String(s).replace(/\s+/g, ' ').trim().slice(0, n));
+// Nº de proyecto PRY-AAAA-NNN (2026-11-03; espejo de ops/proyecto-id.js): lo que ve un proveedor en lugar del cliente.
+const idProy = (o) => String((o && o.idProyecto) || (((o && o.appJSON) || {}).header || {}).idProveedor || '').trim().toUpperCase();
 const nombres = (arr) => (Array.isArray(arr) ? arr.map((a) => (a && (a.nombre || a.email)) || a).filter(Boolean).join(', ') : '');
 
 // ---------- datos del panel ----------
@@ -70,17 +72,19 @@ async function recogerDatos(lector, hoy) {
         lector.consultar('solicitudesMaterial', [['estado', 'in', ['pedida', 'vista', 'comprando', 'lista']]], 100),
     ]);
     const hace3 = sumarDias(hoy, -3), mas3 = sumarDias(hoy, 3);
+    const pryPorPedido = new Map([...pedidos, ...cotiz].map((o) => [o._id, idProy(o)]));
     const trabajo = (t) => ({
         id: t._id, cliente: t.cliente, obra: t.obra, estado: t.estado, tipo: t.tipoTrabajo || (t.orderId || (t.orderIds || []).length ? 'instalacion' : ''),
         fecha: fechaTxt(t.fecha), fechaFin: fechaTxt(t.fechaFin), inicioReal: fechaTxt(t.inicioReal), fechaOriginal: fechaTxt(t.fechaOriginal),
         asignados: nombres(t.asignados), pedidos: [t.orderId, ...(t.orderIds || [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i),
+        idProyecto: [...new Set([t.orderId, t.pedidoReferenciaId, ...(t.orderIds || [])].filter(Boolean).map((id) => pryPorPedido.get(id)).filter(Boolean))].join(', '),
         notas: rec(t.notas, 220), direccion: rec(t.direccion, 80), gps: rec(t.gps, 40), origen: t.origen || '',
         retoma: Array.isArray(t.retomas) && t.retomas.length ? fechaTxt(t.retomas[t.retomas.length - 1]) : '',
         medicion: t.medicionEstado || '', validadoPor: t.validadoPor || '', validadoFecha: fechaTxt(t.validadoFecha), creado: fechaTxt(t.fechaCreacion),
         ultimoComentario: t.ultimoComentario ? rec((t.ultimoComentario.nombre ? t.ultimoComentario.nombre + ': ' : '') + (t.ultimoComentario.texto || ''), 160) : '',
     });
     const pedido = (o) => ({
-        id: o._id, cliente: o.cliente, obra: o.obra, tipo: o.docType, status: o.status, destino: o.destino || '', items: o.totalItems || (o.items || []).length,
+        id: o._id, idProyecto: idProy(o) || 'sin Nº', cliente: o.cliente, obra: o.obra, tipo: o.docType, status: o.status, destino: o.destino || '', items: o.totalItems || (o.items || []).length,
         fichaParcial: o.fichaParcial ? `${o.fichaParcial.enviados} de ${o.fichaParcial.total} ítems` : '',
         fechaSolicitud: fechaTxt(o.fechaCotizado || o.fechaSolicitada || o.fechaCreacion || o.fecha), enFabricaDesde: fechaTxt(o.fechaEnFabrica),
         salidaEstimada: o.fechaSalidaEstimada || '', listoDesde: fechaTxt(o.fechaListoParaCargar),
@@ -153,6 +157,7 @@ async function textoClima(datos) {
 // Partido en piezas para que el chat (coordinador-chat.js) comparta persona, reglas y lecciones con el informe.
 const PERSONA = `Eres el Coordinador de Obras de ARTAL Dominicana, SRL (aluminio, vidrio, shutters y cortinas; sede en Las Terrenas, Samaná). Trabajas como un empleado más de operaciones: planificas, haces seguimiento, detectas riesgos y propones. Tu interlocutor es Wilson (gerente de operaciones y chofer; puente con clientes, equipo y fábrica). Dylan (gerente general) define reglas y valida decisiones de dirección. Miki es supervisor y jefe de equipo. Instaladores: Wilson, Miki, Roosevelt, Emerson; la composición de equipos se decide cada día según las obras (4 juntos, 2+2 u otra). Fabricación: ALUCUFEL (contratista en Santo Domingo, destino 'alucufel') y la fábrica interna de ARTAL (destino 'interno'). Transporte: camión de la empresa, trayecto habitual Santo Domingo ↔ Las Terrenas; un viaje directo no ocupa el día (saliendo temprano se instala esa misma mañana).`;
 const REGLAS = `REGLAS DE PLANIFICACIÓN: la fecha comprometida con el cliente manda; agrupa obras por zona; obras pequeñas rellenan huecos; buffer 15–20 % en obras nuevas; agrupa entregas por viaje; preparación de obra se verifica 2–5 días antes; fábrica fija fechaSalidaEstimada al tomar el pedido (si un pedido lleva más de 48 h en fábrica sin fecha, alerta; si la fecha venció y no está listo, alerta). Nunca propongas a alguien de vacaciones.
+- Nº DE PROYECTO (idProyecto, formato PRY-AAAA-NNN): los PROVEEDORES (vidrio, perfilería, accesorios, Euroamerica, Suplax…) nunca ven el nombre del cliente ni de la obra. En todo mensaje, pedido o texto dirigido a un proveedor usa SOLO el Nº de proyecto (y la ubicación genérica si hace falta, nunca la dirección del cliente). Si el pedido dice «sin Nº», no lo inventes: avisa a la oficina de que hay que asignarlo en el cuaderno antes de escribir al proveedor. Dentro de ARTAL (Wilson, Dylan, equipo) nombra la obra como siempre y añade el Nº entre paréntesis cuando lo haya.
 - PEDIDOS DE MATERIAL (pedidosMaterialAbiertos): el equipo pide herramientas/consumibles a la oficina por el Panel; la oficina (Sara, Dylan) lo pide al proveedor por WhatsApp (estado pedido_proveedor) o se lo pasa al chofer (estado chofer), que lo marca recogido. Señala como alerta un pedido URGENTE («hoy») todavía en «pedida», cualquier pedido con más de 2 días en «pedida», y los «chofer» con más de 3 días sin recoger (van en la ruta del camión). No propongas comprarlo tú: la acción es recordárselo a quien atiende.`;
 // Respaldo si `coordinadorConfig/lecciones` no existe todavía (las lecciones vigentes viven en Firestore).
 const LECCIONES_BASE = `- Un trabajo origen 'auto_fabrica' sin asignados es normal: propón equipo, no alertes.
