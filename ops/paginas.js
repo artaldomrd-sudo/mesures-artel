@@ -81,6 +81,7 @@ export const PAGINAS = [
     { id: "rrhh-asistencia.html", titulo: "Asistencia y Permisos", grupo: "rrhh", roles: [], desc: "Asistencia diaria (presente, tarde, ausente, permiso), solicitudes de permiso, turnos y feriados." },
     { id: "rrhh-catalogos.html", titulo: "Catálogos RRHH", grupo: "rrhh", roles: [], desc: "Departamentos, cargos y sucursales para las fichas de empleados." },
     { id: "rrhh-ciclo.html", titulo: "Ciclo del empleado", grupo: "rrhh", roles: [], desc: "Ciclo del empleado: promociones, amonestaciones, salidas y su historial." },
+    { id: "rrhh-dotacion.html", titulo: "Dotación del equipo", grupo: "rrhh", roles: ["dotacion", "contable"], desc: "Uniformes y equipo de protección entregados a cada persona: entregas, lo que tiene cada uno con su reposición, catálogo de artículos. Sin datos de sueldo (lee empleadosPublico)." },
     { id: "rrhh-empleados.html", titulo: "Empleados", grupo: "rrhh", roles: ["contable"], desc: "Fichas de empleados: datos, sueldo, correo de login y costo laboral real por día." },
     { id: "rrhh-nomina.html", titulo: "Nómina", grupo: "rrhh", roles: ["contable"], desc: "Nómina quincenal RD: AFP, SFS, ISR, extras, préstamos, volantes de pago y envío por Mensajería." },
     { id: "rrhh-reclutamiento.html", titulo: "Reclutamiento", grupo: "rrhh", roles: [], desc: "Reclutamiento: vacantes, candidatos y entrevistas." },

@@ -157,6 +157,10 @@
             <label style="margin-top:14px;display:flex;align-items:center;gap:8px;">Ciclo del empleado <span class="lbl-opt">— ingreso, promociones, vacaciones, amonestaciones…</span></label>
             <div id="emp-ciclo-list"></div>
             <a id="emp-ciclo-link" href="#" style="display:inline-block;margin-top:6px;font-size:12.5px;font-weight:bold;color:#1c4e7a;text-decoration:none;">＋ Registrar evento en el Ciclo del empleado ↗</a>
+
+            <label style="margin-top:14px;display:flex;align-items:center;gap:8px;">Dotación <span class="lbl-opt">— uniformes y EPP en su poder (los registra Dotación del equipo)</span></label>
+            <div id="emp-dotacion-list"></div>
+            <a href="rrhh-dotacion.html" style="display:inline-block;margin-top:6px;font-size:12.5px;font-weight:bold;color:#1c4e7a;text-decoration:none;">👕 Abrir Dotación del equipo ↗</a>
         </div>
 
         <div class="modal-actions">
@@ -249,16 +253,21 @@
     let editingId = null;
 
     let eventosCiclo = [];
+    let dotacion = [];   // rrhhDotacion: lo que registra la página Dotación del equipo (solo lectura aquí)
 
     onSnapshot(collection(db, 'rrhhEmpleados'), (snap) => {
         empleados = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         render();
         backfillCostos();
-        if (editingId && document.getElementById('modal').classList.contains('show')) { renderDocsEmpleado(); renderCicloEmpleado(); }
+        if (editingId && document.getElementById('modal').classList.contains('show')) { renderDocsEmpleado(); renderCicloEmpleado(); renderDotacionEmpleado(); }
     }, (err) => { document.getElementById('lista').innerHTML = '<p class="empty">Error: ' + err.message + '</p>'; });
 
     // Eventos del ciclo del empleado (rrhh-ciclo.html los crea). Aquí se muestran de solo lectura
     // en la ficha, junto al ingreso derivado de la fecha de ingreso del empleado.
+    onSnapshot(collection(db, 'rrhhDotacion'), (snap) => {
+        dotacion = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (editingId && document.getElementById('modal').classList.contains('show')) renderDotacionEmpleado();
+    }, () => {});
     onSnapshot(collection(db, 'rrhhEventos'), (snap) => {
         eventosCiclo = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         if (editingId && document.getElementById('modal').classList.contains('show')) renderCicloEmpleado();
@@ -357,6 +366,23 @@
         nota: { label: 'Nota', icon: '📝' },
         salida: { label: 'Salida / Desvinculación', icon: '🚪' }
     };
+    // Dotación del empleado (2026-11-03): lo que tiene en su poder, con reposición, y el historial de devueltos/perdidos/dañados.
+    const DOT_ESTADO = { entregado: 'En su poder', devuelto: 'Devuelto', perdido: 'Perdido', danado: 'Dañado' };
+    const addMesesD = (iso, m) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + Number(m)); return d.toISOString().slice(0, 10); };
+    function dotacionDe(empId) { return dotacion.filter(x => x.empleadoId === empId); }
+    function renderDotacionEmpleado() {
+        const cont = document.getElementById('emp-dotacion-list'); if (!cont || !editingId) return;
+        const mias = dotacionDe(editingId).slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        if (!mias.length) { cont.innerHTML = '<p class="hint">Sin dotación registrada.</p>'; return; }
+        const hoy = new Date().toISOString().slice(0, 10);
+        cont.innerHTML = mias.map(x => {
+            let rep = '';
+            if (x.estado === 'entregado' && Number(x.vidaUtilMeses) > 0 && x.fecha) { const f = addMesesD(x.fecha, x.vidaUtilMeses); rep = ` · reposición <span style="color:${f < hoy ? '#c0392b' : '#1f9d61'};font-weight:bold">${esc(fmtFecha(f))}</span>`; }
+            const firma = x.estado === 'entregado' ? (x.firmaEmpleado ? ' · ✍️ firmada' : ' · <span style="color:#e67e22;font-weight:bold">por firmar</span>') : '';
+            const rev = x.revisarRRHH ? ' · <b style="color:#c0392b">revisar con RRHH</b>' : '';
+            return `<div style="padding:6px 0;border-bottom:1px solid #eef1f4;font-size:13px;line-height:1.4;">👕 <b>${esc(DOT_ESTADO[x.estado] || x.estado)}</b> · ${esc(x.articulo || '')}${x.talla ? ' talla ' + esc(x.talla) : ''} × ${Number(x.cantidad) || 1} <span style="color:#8a93a0;">${esc(fmtFecha(x.fecha))}</span>${rep}${firma}${rev}${x.estadoNota ? ' · ' + esc(x.estadoNota) : ''}</div>`;
+        }).join('');
+    }
     function renderCicloEmpleado() {
         const cont = document.getElementById('emp-ciclo-list'); if (!cont || !editingId) return;
         const e = empleados.find(x => x.id === editingId) || {};
@@ -605,6 +631,7 @@
         document.getElementById('emp-docs-section').style.display = 'block';
         renderDocsEmpleado();
         renderCicloEmpleado();
+        renderDotacionEmpleado();
         document.getElementById('modal').classList.add('show');
     };
 
@@ -657,6 +684,11 @@
     window.toggle = async function (id) {
         const e = empleados.find(x => x.id === id); if (!e) return;
         const nuevo = (e.estado || 'activo') === 'activo' ? 'inactivo' : 'activo';
+        if (nuevo === 'inactivo') {   // al dar de baja: qué dotación tiene en su poder y debe devolver
+            const pend = dotacionDe(id).filter(x => x.estado === 'entregado');
+            const msg = pend.length ? `\n\n👕 Tiene en su poder ${pend.length} artículo(s) de dotación que debe devolver:\n` + pend.map(x => `• ${x.articulo}${x.talla ? ' talla ' + x.talla : ''} × ${Number(x.cantidad) || 1}`).join('\n') + '\n\nMárcalos como devueltos en Dotación del equipo cuando los entregue.' : '';
+            if (!confirm(`¿Desactivar a "${e.nombre || ''}"?${msg}`)) return;
+        }
         try { await updateDoc(doc(db, 'rrhhEmpleados', id), { estado: nuevo }); } catch (err) { alert('No se pudo: ' + err.message); }
     };
     window.borrar = async function (id) {

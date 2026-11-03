@@ -265,6 +265,7 @@ export function homePorRol(roles) {
   if (roles.includes('chofer')) return 'chofer.html';
   if (roles.includes('contratista') || roles.includes('fabrica')) return 'alucufel/index.html';
   if (roles.includes('cotizaciones')) return 'cotizaciones.html';
+  if (roles.includes('dotacion')) return 'rrhh-dotacion.html';   // solo dotación (uniformes/EPP): su página es su inicio
   // Roles del inbox omnicanal (WhatsApp): su inicio es la bandeja compartida.
   if (roles.some((r) => ['inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector'].includes(r))) return 'inbox.html';
   return 'index.html';

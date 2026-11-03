@@ -65,6 +65,7 @@ service cloud.firestore {
     function esAdmin()  { return alguno(['admin']); }
     function finanzas() { return alguno(['admin', 'contable']); }
     function rrhh()     { return alguno(['admin', 'contable']); }
+    function dotacion() { return rrhh() || alguno(['dotacion']); }   // Dotación del equipo (uniformes/EPP): Sara, sin ver sueldos
     function ventas()   { return alguno(['admin', 'cotizaciones', 'contable']); }
     function oficina()  { return alguno(['admin', 'contable', 'cotizaciones', 'comunicaciones']); }
     function obra()     { return alguno(['admin', 'instalador', 'ayudante', 'chofer']); }
@@ -271,7 +272,20 @@ service cloud.firestore {
     match /rrhhTurnos/{id}        { allow write: if rrhh(); }
     match /rrhhFeriados/{id}      { allow write: if rrhh(); }
     match /rrhhFeriadosTrabajados/{fecha} { allow write: if alguno(['admin', 'comunicaciones']); }   // feriado que SÍ se trabaja (comunicado)
-    match /rrhhEventos/{id}       { allow read, write: if rrhh(); }
+    // Dotación del equipo (2026-11-03): rol `dotacion` registra entregas sin ver `rrhhEmpleados`. El empleado lee las suyas y
+    // solo puede FIRMAR (campo firmaEmpleado) desde Instalación. Pérdidas/daños quedan como marca; nunca descuento.
+    match /rrhhDotacion/{id} {
+      allow read: if dotacion() || (miembro() && resource.data.empleadoCorreo == correoEfectivo());
+      allow create, delete: if dotacion();
+      allow update: if dotacion()
+        || (obra() && resource.data.empleadoCorreo == correoEfectivo()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firmaEmpleado']));
+    }
+    match /rrhhDotacionCatalogo/{id} { allow read, write: if dotacion(); }
+    match /rrhhEventos/{id} {
+      allow read, update, delete: if rrhh();
+      allow create: if rrhh() || (dotacion() && request.resource.data.tipo == 'dotacion');   // el expediente recibe la dotación
+    }
     match /rrhhVacaciones/{id}    { allow read, write: if rrhh(); }
     match /rrhhVacantes/{id}      { allow read, write: if rrhh(); }
     match /rrhhCandidatos/{id}    { allow read, write: if rrhh(); }

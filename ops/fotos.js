@@ -147,6 +147,18 @@ export async function agregarFotos(coleccion, id, fileList, campo = 'fotos', opt
     return nuevas;
 }
 
+// Imagen por dirección web (Academia, Dylan 2026-11-03): NO se copia a Storage, se guarda la URL tal cual con `externa: true`
+// (si la página de origen la quita, desaparece: la Academia lo marca y recomienda subir el archivo).
+export async function agregarFotoPorUrl(coleccion, id, url, campo = 'fotos', nombre = '') {
+    url = String(url || '').trim();
+    if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('Pega una dirección completa que empiece por http:// o https://');
+    const snap = await getDoc(doc(db, coleccion, id));
+    const prev = (snap.exists() && Array.isArray(snap.data()[campo])) ? snap.data()[campo] : [];
+    const f = { url, nombre: (nombre || '').trim() || decodeURIComponent((url.split('/').pop() || '').split('?')[0] || '') || 'imagen externa', tipo: 'img', externa: true };
+    await setDoc(doc(db, coleccion, id), { [campo]: prev.concat([f]) }, { merge: true });
+    return { ...f, n: prev.length + 1 };
+}
+
 // Quita una foto del array por su URL (no borra el blob de Storage — queda huérfano, aceptable).
 export async function quitarFotoPorUrl(coleccion, id, url, campo = 'fotos') {
     const snap = await getDoc(doc(db, coleccion, id));

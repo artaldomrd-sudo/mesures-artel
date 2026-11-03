@@ -231,6 +231,7 @@
 <main>
     <div id="aviso-parte"></div>
     <div id="llegadas" style="display:none;margin:0 0 12px;"></div>
+    <div id="dotacion-firmar" style="display:none;margin:0 0 12px;"></div>
     <a id="banda-chofer" href="chofer.html" style="display:none;text-decoration:none;margin:0 0 12px;background:#fff4e5;border:2px solid #f0a35a;border-radius:12px;padding:12px 14px;color:#5a2d0c;"></a>
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
@@ -539,6 +540,43 @@
                     ...((compra || o.sinInstalacion === true || o.instalado === true) ? { status: 'completado' } : {})
                 });
             } catch (e) { alert('No se pudo marcar: ' + (e.message || e)); }
+        };
+    }
+
+    // «👕 Dotación por confirmar» (2026-11-03): uniformes/EPP que la oficina registró a nombre de esta persona y todavía no firmó.
+    // La firma es con su PIN (pin-gate) o, si la tiene registrada, con huella/Face ID. Solo escribe `firmaEmpleado` (regla de Firestore).
+    {
+        const fsD = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js');
+        const { db: dbD } = await import('./firebase-config.js');
+        const escD = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const fmtD = (f) => { if (!f) return ''; const d = new Date(String(f).slice(0, 10) + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }); };
+        let pendDot = [];
+        const pintarDot = () => {
+            const el = document.getElementById('dotacion-firmar'); if (!el) return;
+            if (!pendDot.length) { el.style.display = 'none'; return; }
+            el.innerHTML = `<div style="background:#fff8e1;border:2px solid #f0c36d;border-radius:12px;padding:12px 14px;color:#5a4200;">
+                <div style="font-size:15px;font-weight:bold;">👕 Dotación por confirmar (${pendDot.length})</div>
+                <div style="font-size:12.5px;margin-top:2px;">La oficina registró que te entregó esto. Confirma que lo recibiste con tu PIN o tu huella.</div>
+                ${pendDot.map(d => `<div style="background:#fff;border-radius:10px;padding:9px 11px;margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <div><b style="color:#0A3D62">${escD(d.articulo || '')}</b>${d.talla ? ' · talla ' + escD(d.talla) : ''} × ${Number(d.cantidad) || 1}<div style="font-size:12px;color:#667">${escD(fmtD(d.fecha))}${d.entregadoPor ? ' · entregó ' + escD(d.entregadoPor) : ''}${d.nota ? ' · ' + escD(d.nota) : ''}</div></div>
+                    <button onclick="firmarDotacion('${d.id}')" style="background:#27ae60;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-weight:bold;font-family:inherit;cursor:pointer;">✍️ Lo recibí</button>
+                </div>`).join('')}</div>`;
+            el.style.display = 'block';
+        };
+        fsD.onSnapshot(fsD.query(fsD.collection(dbD, 'rrhhDotacion'), fsD.where('empleadoCorreo', '==', String(usuario.email || '').toLowerCase())), (snap) => {
+            pendDot = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.estado === 'entregado' && !d.firmaEmpleado).sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+            pintarDot();
+        }, () => { });
+        window.firmarDotacion = async (id) => {
+            const d = pendDot.find(x => x.id === id); if (!d) return;
+            if (usuario.esEspejo) { alert('Una cuenta espejo solo mira: la firma la hace la persona.'); return; }
+            let metodo = 'pin';
+            try {
+                if (await biometriaRegistrada(usuario)) { await confirmarBiometria(usuario); metodo = 'biometria'; }
+                else { const { requirePin } = await import('./pin-gate.js'); await requirePin(usuario, { siempre: true }); }
+            } catch (e) { if (e && e.message !== 'SIN_REGISTRO') { alert('No se pudo confirmar tu identidad: ' + (e.message || e)); return; } const { requirePin } = await import('./pin-gate.js'); await requirePin(usuario, { siempre: true }); }
+            try { await fsD.updateDoc(fsD.doc(dbD, 'rrhhDotacion', id), { firmaEmpleado: { fechaISO: new Date().toISOString(), metodo, nombre: usuario.nombre || '' } }); }
+            catch (e) { alert('No se pudo guardar la firma: ' + (e.message || e)); }
         };
     }
 

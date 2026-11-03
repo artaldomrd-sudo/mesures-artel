@@ -3760,3 +3760,61 @@ abre su carpeta. Functions: `idProyectoSrv(o)` (espejo) → `generarInformeObra`
 el Coordinador (`functions/coordinador.js`, `idProy`) recibe `idProyecto` en cada pedido («sin Nº» si falta) y en cada trabajo, y la
 regla de REGLAS (compartida con el chat): a un proveedor SOLO el número, nunca cliente ni dirección; si dice «sin Nº», avisar a la
 oficina en vez de inventarlo. Sin colecciones nuevas (no cambian las reglas). Guía Academia `guia-historial-06`.
+
+### Dotación del equipo (`ops/rrhh-dotacion.html`, rol `dotacion`, 2026-11-03)
+
+Dylan (2026-11-02): Sara gestiona los uniformes y el equipo de protección entregados a cada persona, pero «no debe poder ver salarios ni
+ninguna información de otro empleado»; lo registrado «se envía a RRHH». Las herramientas del bulto siguen en Inventario; esto es lo
+personal (camisetas, pantalones, botas, lentes, guantes, casco, arnés, chaleco, mochila).
+- **Acceso**: `requireAuth(['dotacion', 'contable'])` + `requirePin`. Rol nuevo **`dotacion`** (en `usuarios.html` ROLES, `paginas.js`
+  con roles `["dotacion","contable"]`, `homePorRol` → `rrhh-dotacion.html` si es su único rol). Sara y su espejo lo tienen además de los
+  suyos. Mosaicos: `erp.html` (`tile-dotacion`, visible por `puedeVer`; Sara entra por ahí porque `rrhh.html` es solo admin) y `rrhh.html`.
+  La página lee los nombres de **`empleadosPublico`** (activos) y NUNCA `rrhhEmpleados`.
+- **Datos**: `rrhhDotacionCatalogo/{id}` {nombre, categoria 'Uniforme'|'EPP (protección)'|'Equipo', tallas[], vidaUtilMeses (0 = al
+  romperse), costoRef, activo} — sembrado con ids `camiseta` (6 m), `pantalon` (12), `botas` (12), `lentes` (0), `guantes` (3), `casco`
+  (36), `arnes` (36), `chaleco` (12), `mochila` (24). `rrhhDotacion/{id}` {empleadoId, empleadoNombre, **empleadoCorreo** (la regla de
+  firma), articuloId, articulo, categoria, talla, cantidad, vidaUtilMeses y costoRef copiados, fecha, estado
+  `entregado|devuelto|perdido|danado`, estadoFecha/estadoNota/estadoPor, revisarRRHH (true en perdido/dañado), entregadoPor,
+  **firmaEmpleado** null | {fechaISO, metodo 'pin'|'biometria', nombre}, nota, loteId}. Cada entrega y cada cambio de estado crea un
+  `rrhhEventos` **tipo `'dotacion'`** (`dotacionId`) con `writeBatch`.
+- **Pestañas**: Entregas (filtros persona/artículo/estado incl. «por firmar»; botones ↩ Devuelto / ⚠ Perdido / 💔 Dañado con fecha y
+  nota obligatoria salvo devuelto), Por persona (en poder agrupado por artículo+talla, última entrega, reposición = última +
+  vidaUtil: `rep-ok` > 30 d, `rep-pronto` ≤ 30 d, `rep-vencida`; «+ Entregar» prellenado), Artículos (catálogo, desactivar sin
+  borrar). KPIs: en poder, por firmar, reposición vencida, por revisar (solo RRHH).
+- **Firma del empleado** (`instalacion.html`, bloque autocontenido «👕 Dotación por confirmar» bajo `#llegadas`): consulta
+  `rrhhDotacion where empleadoCorreo == usuario.email`, lista las `entregado` sin firma; «✍️ Lo recibí» → `confirmarBiometria` si la
+  tiene registrada, si no `requirePin(usuario, {siempre:true})` → escribe solo `firmaEmpleado`. Un espejo no firma.
+- **Expediente** (`rrhh-empleados.html`): sección «Dotación» en la ficha (en poder con reposición, firma, devueltos/perdidos con su
+  nota y «revisar con RRHH») y, al **Desactivar**, `confirm` con la lista de lo que tiene en su poder y debe devolver.
+- **Reglas** (`firestore.rules`): `dotacion() = rrhh() || alguno(['dotacion'])`; `rrhhDotacion` read `dotacion()` o el propio
+  (`empleadoCorreo == correoEfectivo()`), create/delete `dotacion()`, update `dotacion()` o el propio con `obra()` y
+  `affectedKeys().hasOnly(['firmaEmpleado'])`; `rrhhDotacionCatalogo` read/write `dotacion()`; `rrhhEventos` create también para
+  `dotacion()` si `tipo == 'dotacion'` (read/update/delete siguen `rrhh()`). Banco `herramientas/probar-reglas.py`: +20 casos,
+  117/117. Guía Academia `guia-dotacion` (4 lecciones, roles admin/contable/dotacion). Pérdidas: solo marca para RRHH, nunca
+  descuento en nómina (no se tocó nómina).
+
+### Academia: edición por BLOQUE e imágenes en cualquier punto (2026-11-03)
+
+Dylan (video de Anny, análisis del 01/11): «editar cada párrafo por separado y poner fotos en cualquier parte del texto». El contenido
+sigue siendo texto plano con marcas; nada que migrar. En `ops/academia.html`:
+- **Render por bloques** (`contenidoHTML(l, editor)`): una línea = un bloque (`.blk` con `data-i` = índice de línea): párrafo (`.txt`),
+  apartado (`h4.sec.blk`, línea en MAYÚSCULAS), línea de imagen (`.fig-row`), línea en blanco (`.blk-blank`). Sin saltos de línea entre
+  elementos (`.cont` es `white-space: pre-wrap`; también `fig-tools` se genera sin `\n`). Para el editor (admin/capacitador): lápiz
+  `.blk-pen` al pasar el ratón (siempre visible al 55 % en táctil), doble clic en el bloque, y un `.blk-gap` «＋» después de cada
+  línea (y uno con `data-after="-1"` al principio).
+- **Marca de imagen ampliada** `[img:N|pie|al|tam]` (`IMG_RE_SRC`, `parseImg`, `imgTok`): `al` = izq|centro|der (izq/der = `float` con
+  el texto al lado, 45 % por defecto), `tam` = 40|65|100 (% del ancho). `[img:N]` y `[img:N|pie]` viejas siguen iguales; `imgTok` omite
+  los valores por defecto. La presentación (`presPintar`) usa el mismo parser. Botones bajo la figura (`.fig-tools`): ◧ ▣ ◨ · S M L ·
+  ↑ ↓ (`moverBloque`, salta líneas en blanco) · ✕ quitar; pie editable con doble clic (`editarPie` → `inlineTexto`; se quitan `|` y `]`).
+- **Editar un bloque** (`editarBloque` → `bloqueEditor`): textarea auto-crecible en el sitio del bloque; Enter guarda, Shift+Enter =
+  salto (crea otro bloque al guardar: `splice` de varias líneas), Esc cancela, 🗑 Quitar. Un apartado se guarda en MAYÚSCULAS. Usa el
+  mismo `inlineEditando` para que `render()` no pise la edición. `guardarLineas` colapsa 3+ líneas en blanco.
+- **«＋» entre bloques** (`abrirGap` → `.gap-menu`): 📝 Texto / 🔠 Apartado (`nuevoBloque`, inserta tras la línea `i`; un apartado
+  lleva una línea en blanco antes si hace falta) / 🖼️ Imagen (`gapImagen`: picker de las adjuntas, «📎 Subir foto nueva» =
+  `fotoAddBtnHTML` + `gapPend` → `colocarFotosPendientes()` al inicio de `render()` coloca sola cada foto nueva en ese punto, y
+  «🔗 Pegar dirección web» → `agregarFotoPorUrl` de `fotos.js` guarda `{url, nombre, tipo:'img', externa:true}` SIN copiar a Storage; el
+  editor la marca «🔗 externa» con el aviso). «📝 Editar todo el texto» (botón) conserva el editor de la lección entera
+  (`editarContenidoInline`); el doble clic sobre el contenedor ya no abre ese editor. `imagenParaSeccion` se quitó (lo cubre el «＋»).
+- **Sin tablas**: las lecciones no las usan y Dylan no las pidió; sería un formato aparte. Probado en
+  `herramientas/prueba-academia-bloques.html` (copia de las funciones con Firebase simulado: editar, apartado nuevo, imagen por ＋,
+  izq/40 %, mover, pie, URL externa, borrar; 9 guardados) — no en producción (la clave del espejo estaba vencida).
