@@ -1772,6 +1772,8 @@ las del duplicado), ficha `?orderId=` («Nº proyecto: …» en `#ro-header`) y 
 `normNombreKey(cliente)|normNombreKey(obra)` → ID; `idPreasignado` se consulta al restaurar, al guardar/enviar (`asegurarIdProyecto`),
 en el modal de perfilería y en las listas. Hoy: Sienna Villa C-3 → PRY-2026-001 y D-2 → PRY-2026-002 (nombres solo en la memoria
 local). Para preasignar otro: calcular la huella en el navegador con `pryHuella('cliente','obra')`, agregarla y subir `PRY_RESERVADOS`.
+Varias huellas pueden llevar el MISMO número (la misma villa guardada con otro nombre; 2026-11-03 una segunda huella
+apunta al 001); `idProveedorUsadoPorOtro` no avisa de repetido cuando el número viene de la huella.
 
 ## PDF / Impresión
 
