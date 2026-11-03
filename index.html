@@ -605,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:11</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:14</div>
         </div>
     </div>
     
@@ -2236,6 +2236,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     var idProyectoProveedor = '';
     const PRY_RESERVADOS = { 2026: 2 };   // PRY-2026-001 y -002 asignados el 2026-11-03 (registro interno)
     const PRY_RE = /^PRY-(\d{4})-(\d{3})$/;
+    // Números asignados a mano ANTES de que el cuaderno los pusiera solo: se reconocen por una huella (FNV-1a de
+    // normNombreKey(cliente)|normNombreKey(obra)), nunca por el nombre, porque el repo es público. Al abrir, guardar o
+    // enviar uno de esos proyectos sin número, recibe el suyo. Registro completo: memoria local artal-registro-ids-proyecto.
+    const PRY_PREASIGNADOS = { c04567cf: 'PRY-2026-001', '2962b8b1': 'PRY-2026-002' };
+    function pryHuella(cli, obra) { const t = normNombreKey(cli) + '|' + normNombreKey(obra); let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); }
+    function idPreasignado(cli, obra) { try { return PRY_PREASIGNADOS[pryHuella(cli || '', obra || '')] || ''; } catch (e) { return ''; } }
     function pryIdsGuardados() {
         const out = [];
         try { const pr = getProjects(); Object.keys(pr || {}).forEach(c => Object.keys(pr[c] || {}).forEach(o => { const id = ((pr[c][o] || {}).header || {}).idProveedor; if (id) out.push({ id, cli: c, obra: o }); })); } catch (e) { }
@@ -2262,7 +2268,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         el.innerHTML = idProyectoProveedor ? `Nº proyecto: ${escHtml(idProyectoProveedor)} <span class="idp-ed">cambiar</span>` : 'Nº proyecto: — <span class="idp-ed">asignar</span>';
     }
     function asegurarIdProyecto() {
-        if (!idProyectoProveedor) { idProyectoProveedor = siguienteIdProveedor(); refreshIdProyUI(); }
+        if (!idProyectoProveedor) { idProyectoProveedor = idPreasignado(document.getElementById('header-cliente').value, document.getElementById('header-obra').value) || siguienteIdProveedor(); refreshIdProyUI(); }
         return idProyectoProveedor;
     }
     function editarIdProyecto() {
@@ -2276,7 +2282,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (otro && !confirm(`El ${id} ya lo tiene otro proyecto guardado (${otro}). ¿Usarlo igual?`)) return;
         idProyectoProveedor = id; refreshIdProyUI(); saveProgress();
     }
-    function idProyDe(cli, obra) { try { const p = getProjects(); return (((p[cli] || {})[obra] || {}).header || {}).idProveedor || ''; } catch (e) { return ''; } }
+    function idProyDe(cli, obra) { try { const p = getProjects(); return (((p[cli] || {})[obra] || {}).header || {}).idProveedor || idPreasignado(cli, obra); } catch (e) { return ''; } }
     window.editarIdProyecto = editarIdProyecto; window.asegurarIdProyecto = asegurarIdProyecto; window.refreshIdProyUI = refreshIdProyUI;
 
     // opts = { id, proveedor, ocultar }: versión PARA EL PROVEEDOR (sin cliente; obra y ubicación solo si ocultar=false).
@@ -2344,7 +2350,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (!validateAllCards(idsOperacion())) return;
         const res = calcPerfileria(idsOperacion());
         let provDef = 'Euroamerica'; try { provDef = localStorage.getItem('artal_perf_proveedor') || provDef; } catch (e) { }
-        const idIni = idProyectoProveedor || siguienteIdProveedor();
+        const idIni = idProyectoProveedor || idPreasignado(document.getElementById('header-cliente').value, document.getElementById('header-obra').value) || siguienteIdProveedor();
         let texto = '';
         const ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,61,98,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Arimo,sans-serif;';
@@ -3786,7 +3792,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             document.getElementById('header-material').value = data.header.material || '';
             if (document.getElementById('header-vidrio')) document.getElementById('header-vidrio').value = data.header.vidrio || '';
             if (document.getElementById('notas-proyecto')) document.getElementById('notas-proyecto').value = data.header.notas || '';
-            idProyectoProveedor = data.header.idProveedor || ''; refreshIdProyUI();
+            idProyectoProveedor = data.header.idProveedor || idPreasignado(data.header.cliente, data.header.obra); refreshIdProyUI();
             document.getElementById('header-color').value = data.header.color || '';
             
             let displayDate = document.getElementById('header-fecha');

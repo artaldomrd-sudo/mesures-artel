@@ -1768,6 +1768,10 @@ PRY-2026-003 · cambiar», `editarIdProyecto` con `prompt` + formato + aviso de 
 las del duplicado), ficha `?orderId=` («Nº proyecto: …» en `#ro-header`) y **`orders.idProyecto`** en cada pedido nuevo y en
 «Actualizar el original». Asignación automática con `asegurarIdProyecto()` al GUARDAR (`finalizarGuardadoProyecto`) y al ENVIAR
 (`enviarOrden`); un proyecto nunca guardado no consume número. Mostrarlo en Historial, Instalación, Fábrica, etc. es del área sistema.
+**Preasignados sin nombres en el código** (repo público): `PRY_PREASIGNADOS` = huella FNV-1a (`pryHuella`) de
+`normNombreKey(cliente)|normNombreKey(obra)` → ID; `idPreasignado` se consulta al restaurar, al guardar/enviar (`asegurarIdProyecto`),
+en el modal de perfilería y en las listas. Hoy: Sienna Villa C-3 → PRY-2026-001 y D-2 → PRY-2026-002 (nombres solo en la memoria
+local). Para preasignar otro: calcular la huella en el navegador con `pryHuella('cliente','obra')`, agregarla y subir `PRY_RESERVADOS`.
 
 ## PDF / Impresión
 
