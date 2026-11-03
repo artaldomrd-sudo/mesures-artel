@@ -3289,6 +3289,20 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   (`solicitudMaterialPush`): quien pidió solo en `entregada`/`rechazada`; oficina en nuevo, `entregada` y `cancelada`; chofer en
   `chofer` (uno por lote); `pedido_proveedor` sin aviso. Guía `guia-inventario-03` reescrita. Reposición automática por mínimo
   descartada por ahora: 66 de 90 ítems con mínimo están por debajo (mínimos sin ajustar).
+- **Pago anticipado al proveedor (2026-11-03, caso Jaraba Import)**: estados nuevos `por_pagar` y `pagado` (en `ABIERTOS`; la consulta
+  `in` admite 10 valores, van 9). **Lo que se SUBE con fotos.js mueve el pedido** (trigger `solicitudMaterialPush`, antes del «mismo
+  estado → return»): en `pedido_proveedor` el archivo es la cotización → todo el lote (`loteProveedor`, lo pone `pedirVariosAlProveedor`)
+  pasa a `por_pagar` con `cotizacion` y se crea UNA cita para la lista `rrhhConfig/solicitudesMaterial.pagos` (Anny): recordatorio sin
+  fecha, `fijada:true`, `origen:'pedido_material'`, `solicitudIds`, `pushTitulo/pushCuerpo/pushUrl` (`enviarNotificacionCita` los usa:
+  push «💳 Pagar pedido pendiente — proveedor» que abre Pedidos de material); `pagoCitaId` en cada pedido. En `por_pagar` el archivo es el
+  comprobante → lote a `pagado` (`comprobantePago`), cita `completada:true, fijada:false`, push a la oficina (sin la lista pagos) «valida
+  listo para recoger». La oficina toca **«✅ Validar: listo para recoger»** (`solValidar`, todo el lote → `chofer` con `pagoValidado`,
+  nota «Pagado: retirar en …», un aviso al chofer por lote). En `chofer` el archivo es la factura de compra (`facturaCompra`); sin pago
+  validado, «Lo traje» pide la foto de la factura (confirm para seguir sin ella). La tarjeta enlaza Cotización / Pago / Factura y la
+  etiqueta del 📎 cambia por estado (`LBL_SUBIR`). «🚚 Sin pago anticipado: lo compra el chofer» = el camino viejo. KPI y filtro «💳 Por
+  pagar / validar», columna «💳 Pagos» en ⚙️ Quién atiende, `rolEn().pagos`. Proveedor `jaraba-import` = Edwin Jaraba (Jaraba Import,
+  `instala:false`, `pagoAnticipado:true`) en `rrhhConfig/contratistasExternos`. **Informe de costo de obra**: sus destinatarios
+  excluyen `rrhhConfig/avisos.sinCostoObras` (Anny y Sara).
   Adjuntos en Storage bajo `solicitudesMaterial/{id}/` (las reglas de Storage no están en el repo: si la subida falla, revisarlas).
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)

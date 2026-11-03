@@ -167,7 +167,8 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
     const urlDestino = cita.asignadoA === 'instalador' ? 'ops/instalacion.html' : 'ops/calendario.html';
 
     for (const email of emails) {
-        await enviarPushUsuario(email, 'Nueva cita: ' + (cita.titulo || 'Sin título'), [fechaTexto, lugar].filter(Boolean).join(' · '), urlDestino);
+        // Una cita creada por el sistema puede traer su propio título/enlace (ej. «💳 Pagar pedido pendiente», 2026-11-03).
+        await enviarPushUsuario(email, cita.pushTitulo || ('Nueva cita: ' + (cita.titulo || 'Sin título')), cita.pushCuerpo || [fechaTexto, lugar].filter(Boolean).join(' · '), cita.pushUrl || urlDestino);
     }
 });
 
@@ -488,6 +489,57 @@ exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', as
             const cuerpo = [URG[after.urgencia] || '', after.obra ? 'obra ' + after.obra : '', after.nota || ''].filter(Boolean).join(' · ').slice(0, 160) || 'Pedido de material';
             for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, url); } catch (_) { } }
             return;
+        }
+        // --- Pago anticipado al proveedor (Dylan 2026-11-03, caso Jaraba Import): lo que se SUBE en cada estado mueve el pedido.
+        //   pedido_proveedor + archivo = la cotización → «por_pagar», recordatorio fijado sin fecha a quien paga (cfg.pagos, Anny)
+        //   por_pagar + archivo = comprobante / pedido pagado → «pagado», aviso a la oficina para validar «listo para recoger»
+        //   chofer + archivo = factura de compra del chofer (solo se guarda)
+        // Un lote pedido junto al mismo proveedor (`loteProveedor`) se mueve entero con un solo archivo y un solo recordatorio.
+        const nAntes = before && Array.isArray(before.fotos) ? before.fotos.length : 0, nDesp = Array.isArray(after.fotos) ? after.fotos.length : 0;
+        if (before && nDesp > nAntes && after.estado === before.estado && ['pedido_proveedor', 'por_pagar', 'chofer'].includes(after.estado)) {
+            const nuevas = after.fotos.slice(nAntes);
+            const ahoraIso = new Date().toISOString();
+            const hermanos = async (estado) => {
+                if (!after.loteProveedor) return [event.data.after.ref];
+                const q = await db.collection('solicitudesMaterial').where('loteProveedor', '==', after.loteProveedor).get();
+                return q.docs.filter((d) => d.data().estado === estado).map((d) => d.ref);
+            };
+            const provNom = (after.proveedor && after.proveedor.nombre) || 'el proveedor';
+            if (after.estado === 'pedido_proveedor') {
+                const refs = await hermanos('pedido_proveedor');
+                const docs = await Promise.all(refs.map((r) => r.get()));
+                const lineas = docs.map((d) => { const x = d.data(); return `• ${Number(x.cantidad) || 0}${x.unidad ? ' ' + x.unidad : ''} de ${x.itemTipo ? x.itemTipo + (x.itemColor ? ' — ' + x.itemColor : '') : (x.texto || '')}`; });
+                const pagos = (cfg.pagos || []).map(bajo).filter(Boolean);
+                const eqDocs = await Promise.all(pagos.map((e) => db.doc('equipo/' + e).get()));
+                const asignados = pagos.map((e, i) => ({ email: e, nombre: (eqDocs[i].exists && eqDocs[i].data().nombre) || e }));
+                let citaId = null;
+                if (asignados.length) {
+                    const titulo = `💳 Pagar pedido pendiente — ${provNom}`;
+                    const cref = await db.collection('citas').add({
+                        tipo: 'recordatorio', titulo, descripcion: `Cotización recibida de ${provNom}. Paga y sube el comprobante o el pedido pagado en Pedidos de material (📎 en la tarjeta).\n${lineas.join('\n')}\nCotización: ${nuevas.map((f) => f.url).join(' ')}`,
+                        fecha: null, sinFecha: true, duracionMin: 0, orderId: null, cliente: '', obra: '', asignadoA: 'gerente', asignados, etapas: [],
+                        completada: false, completadoPor: [], fijada: true, fijadaPor: 'Sistema ARTAL', fijadaFecha: FieldValue.serverTimestamp(),
+                        creadoPorNombre: 'Sistema ARTAL (pedidos de material)', recordatorios: [], recordatoriosEnviados: [], recordatoriosPendientes: false,
+                        repetir: 'no', repetirGenerado: false, origen: 'pedido_material', solicitudIds: refs.map((r) => r.id),
+                        pushTitulo: titulo, pushCuerpo: `${lineas.length} pieza(s) · cotización adjunta`, pushUrl: 'ops/solicitudes-material.html', fechaCreacion: FieldValue.serverTimestamp(),
+                    });
+                    citaId = cref.id;
+                }
+                for (const r of refs) await r.update({ estado: 'por_pagar', cotizacion: nuevas, pagoCitaId: citaId, historial: FieldValue.arrayUnion({ estado: 'por_pagar', por: 'Sistema ARTAL', email: '', fechaISO: ahoraIso, nota: 'Cotización subida: pendiente de pago' }) });
+                return;
+            }
+            if (after.estado === 'por_pagar') {
+                const refs = await hermanos('por_pagar');
+                for (const r of refs) await r.update({ estado: 'pagado', comprobantePago: nuevas, historial: FieldValue.arrayUnion({ estado: 'pagado', por: 'Sistema ARTAL', email: '', fechaISO: ahoraIso, nota: 'Comprobante de pago subido: falta validar' }) });
+                if (after.pagoCitaId) { try { await db.doc('citas/' + after.pagoCitaId).update({ completada: true, fijada: false, completadaPor: 'Sistema ARTAL (pago subido)', fechaCompletada: FieldValue.serverTimestamp() }); } catch (_) { } }
+                const pagos = new Set((cfg.pagos || []).map(bajo));
+                for (const em of [...new Set(oficina)].filter((e) => e && !pagos.has(e))) { try { await enviarPushUsuario(em, `🧾 Pedido pagado — ${provNom}`, `${refs.length} pieza(s): valida «listo para recoger» en Pedidos de material`, url); } catch (_) { } }
+                return;
+            }
+            if (after.estado === 'chofer' && !after.facturaCompra) { await event.data.after.ref.update({ facturaCompra: nuevas }); return; }
+        }
+        if (before && before.estado === 'por_pagar' && after.estado !== 'por_pagar' && after.estado !== 'pagado' && after.pagoCitaId) {
+            try { await db.doc('citas/' + after.pagoCitaId).update({ completada: true, fijada: false, completadaPor: 'Sistema ARTAL', fechaCompletada: FieldValue.serverTimestamp() }); } catch (_) { }
         }
         if (after.estado === before.estado) return;
         const ult = Array.isArray(after.historial) && after.historial.length ? after.historial[after.historial.length - 1] : {};
@@ -3146,7 +3198,10 @@ async function generarInformeObra(instId, inst, opts) {
     await db.doc('informesObra/' + instId).set(informe);
 
     // Mensaje interno a gerencia (admins activos).
-    const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);
+    // Sin el informe de costo: rrhhConfig/avisos.sinCostoObras (Dylan 2026-11-03: Anny y Sara no lo reciben).
+    const avisosCfg = await db.doc('rrhhConfig/avisos').get();
+    const sinInformeCosto = new Set(((avisosCfg.exists && avisosCfg.data().sinCostoObras) || []).map((e) => String(e).toLowerCase()));
+    const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const r = d.data().rol; return (Array.isArray(r) ? r : [r]).includes('admin') && d.data().activo !== false && !sinInformeCosto.has(d.id.toLowerCase()); }).map((d) => d.id);
     const lugar = informe.obraLabel || 'Obra';
     const urlInforme = BASE_URL + 'ops/informe-obra.html?id=' + encodeURIComponent(instId);
     const L = [];

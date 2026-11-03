@@ -17,16 +17,16 @@ import {
 import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
 
 export const COL = 'solicitudesMaterial';
-export const ESTADOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'entregada', 'rechazada', 'cancelada', 'vista', 'comprando', 'lista'];
+export const ESTADOS = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'recogido', 'entregada', 'rechazada', 'cancelada', 'vista', 'comprando', 'lista'];
 export const POR_DECIDIR = ['pedida', 'vista', 'comprando'];
-export const ABIERTOS = ['pedida', 'pedido_proveedor', 'chofer', 'recogido', 'vista', 'comprando', 'lista'];
+export const ABIERTOS = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'recogido', 'vista', 'comprando', 'lista'];
 export const ESTADO_TXT = {
-    pedida: 'Pedida', pedido_proveedor: 'Pedida al proveedor', chofer: 'Para el chofer', recogido: 'Recogido',
+    pedida: 'Pedida', pedido_proveedor: 'Cotización pedida al proveedor', por_pagar: 'Por pagar', pagado: 'Pagado: falta validar', chofer: 'Para el chofer', recogido: 'Recogido',
     entregada: 'Entregada', rechazada: 'No se compra', cancelada: 'Cancelada por quien la pidió',
     vista: 'Vista por la oficina', comprando: 'Comprando', lista: 'Lista para recoger'
 };
-export const ESTADO_ICO = { pedida: '🙋', pedido_proveedor: '📲', chofer: '🚚', recogido: '📦', entregada: '✅', rechazada: '✖', cancelada: '↩', vista: '👀', comprando: '🛒', lista: '📦' };
-export const ESTADO_COLOR = { pedida: '#e67e22', pedido_proveedor: '#2980b9', chofer: '#8e44ad', recogido: '#16a085', entregada: '#27ae60', rechazada: '#c0392b', cancelada: '#95a5a6', vista: '#2980b9', comprando: '#8e44ad', lista: '#16a085' };
+export const ESTADO_ICO = { pedida: '🙋', pedido_proveedor: '📲', por_pagar: '💳', pagado: '🧾', chofer: '🚚', recogido: '📦', entregada: '✅', rechazada: '✖', cancelada: '↩', vista: '👀', comprando: '🛒', lista: '📦' };
+export const ESTADO_COLOR = { pedida: '#e67e22', pedido_proveedor: '#2980b9', por_pagar: '#c0392b', pagado: '#d35400', chofer: '#8e44ad', recogido: '#16a085', entregada: '#27ae60', rechazada: '#c0392b', cancelada: '#95a5a6', vista: '#2980b9', comprando: '#8e44ad', lista: '#16a085' };
 export const URGENCIAS = { hoy: '🔥 Hoy (no puedo seguir sin esto)', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
 export const URGENCIA_CORTA = { hoy: '🔥 Hoy', semana: '📅 Esta semana', cuando: '🕓 Cuando se pueda' };
 // Unidades de pedido (lo que se cuenta o el empaque): la lista fija + lo que diga el ítem del inventario (unidad o empaque).
@@ -79,7 +79,7 @@ export function esGestor(usuario, cfg = cfgCache) {
 }
 export function rolEn(usuario, cfg = cfgCache) {
     const em = (usuario.email || '').toLowerCase(), has = (l) => (l || []).map(e => String(e).toLowerCase()).includes(em);
-    return { compras: has(cfg.compras), inventario: has(cfg.inventario), chofer: has(cfg.chofer) || (usuario.roles || []).includes('chofer') };
+    return { compras: has(cfg.compras), inventario: has(cfg.inventario), pagos: has(cfg.pagos), chofer: has(cfg.chofer) || (usuario.roles || []).includes('chofer') };
 }
 // Proveedores con teléfono: la misma lista de `rrhhConfig/contratistasExternos` que usa Fábrica interna (suplidor-wa.js).
 let provCache = [];
@@ -158,7 +158,7 @@ export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle
 export function mensajeProveedor(s, nombreProv) {
     const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', `Pedido: ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}.`];
     if (s.urgencia === 'hoy') l.push('Lo necesitamos hoy.'); else if (s.urgencia === 'semana') l.push('Lo necesitamos esta semana.');
-    l.push('', '¿Tiene disponible y a qué precio? Lo retira nuestro chofer; por favor envíenos la factura u orden por aquí.', '', 'Gracias.');
+    l.push('', '¿Tiene disponible? Por favor envíenos la cotización por aquí para hacer el pago; lo retira nuestro chofer.', '', 'Gracias.');
     return l.join('\n');
 }
 
@@ -262,7 +262,10 @@ export function solicitudCardHTML(s, opts) {
     const estadoLinea = `<span style="display:inline-block;background:${color};color:#fff;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:bold;">${ESTADO_ICO[s.estado] || ''} ${esc(ESTADO_TXT[s.estado] || s.estado)}</span>` +
         (s.atiende && s.atiende.nombre && s.estado !== 'pedida' ? ` <span style="font-size:12px;color:#556">· ${esc(s.atiende.nombre)}</span>` : '') +
         (ult && ult.fechaISO ? ` <span style="font-size:12px;color:#889">· ${hace(ult.fechaISO)}</span>` : '');
-    const puedeAdjuntar = (opts.gestor || opts.chofer) && ['pedido_proveedor', 'chofer', 'recogido'].includes(s.estado);
+    const puedeAdjuntar = ((opts.gestor || opts.chofer) && ['pedido_proveedor', 'chofer', 'recogido'].includes(s.estado)) || ((opts.gestor || opts.pagos) && s.estado === 'por_pagar');
+    // Lo que se sube depende del estado y MUEVE el pedido (functions): cotización → por pagar; comprobante → pagado.
+    const LBL_SUBIR = { pedido_proveedor: '📎 Subir la cotización del proveedor (se manda a pagar)', por_pagar: '📎 Subir comprobante de pago o pedido pagado', chofer: '📎 Factura de compra (foto)', recogido: '📎 Factura de compra (foto)' };
+    const docsLinks = (arr, t) => Array.isArray(arr) && arr.length ? `${t}: ${arr.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.nombre || 'ver')}</a>`).join(' · ')}` : '';
     const detalle = [
         s.nota ? `📝 ${esc(s.nota)}` : '', s.obra ? `🏗️ ${esc(s.obra)}` : '',
         s.proveedor && s.proveedor.nombre ? `📲 Pedido a ${esc(s.proveedor.nombre)}${s.proveedor.telefono ? ' · ' + esc(s.proveedor.telefono) : ''}` : '',
@@ -270,10 +273,13 @@ export function solicitudCardHTML(s, opts) {
         s.precio != null && s.precio !== '' ? `💲 RD$ ${Number(s.precio).toLocaleString('es-DO')}` : '',
         s.estado === 'rechazada' && s.rechazoMotivo ? `✖ Motivo: ${esc(s.rechazoMotivo)}` : '',
         s.recogidoPor ? `📦 Recogido por ${esc(s.recogidoPor)}` : '', s.entregadaA ? `📬 Entregado a ${esc(s.entregadaA)}` : '',
-        s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : ''
+        s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : '',
+        docsLinks(s.cotizacion, '🧾 Cotización'), docsLinks(s.comprobantePago, '💳 Pago'), docsLinks(s.facturaCompra, '🧾 Factura de compra'),
+        s.estado === 'por_pagar' ? `<b style="color:#c0392b">💳 Falta pagar: sube el comprobante o el pedido pagado con 📎.</b>` : '',
+        s.estado === 'pagado' ? `<b style="color:#d35400">🧾 Pagado: la oficina valida «listo para recoger».</b>` : ''
     ].filter(Boolean).map(t => `<div style="font-size:13px;color:#445;margin-top:3px;">${t}</div>`).join('');
     const adjuntos = (Array.isArray(s.fotos) && s.fotos.length) || puedeAdjuntar
-        ? `<div style="margin-top:6px;">${fotosThumbsHTML(s.fotos, { coleccion: COL, id: s.id, puedeBorrar: !!opts.gestor })}${puedeAdjuntar ? fotoAddBtnHTML({ coleccion: COL, id: s.id, label: '📎 Factura u orden de compra (foto o PDF)', pdf: true }) : ''}</div>` : '';
+        ? `<div style="margin-top:6px;">${fotosThumbsHTML(s.fotos, { coleccion: COL, id: s.id, puedeBorrar: !!opts.gestor })}${puedeAdjuntar ? fotoAddBtnHTML({ coleccion: COL, id: s.id, label: LBL_SUBIR[s.estado] || '📎 Adjuntar (foto o PDF)', pdf: true }) : ''}</div>` : '';
     const urgCol = s.urgencia === 'hoy' ? '#c0392b' : s.urgencia === 'semana' ? '#b9770e' : '#7f8c8d';
     let acciones = '';
     if (abierta) {
@@ -304,7 +310,8 @@ function accionesHTML(s, opts) {
             h += b('🚚 Pasar al chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'Se compra en persona: el chofer lo trae en su próxima ruta');
             h += b('✖ No se compra', `solForm('${s.id}','rechazada')`, '#c0392b');
         }
-        if (s.estado === 'pedido_proveedor') h += b('🚚 Lo retira el chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'El chofer lo retira con la factura u orden adjunta');
+        if (s.estado === 'pedido_proveedor') h += b('🚚 Sin pago anticipado: lo compra el chofer', `solForm('${s.id}','chofer')`, '#8e44ad', 'Se paga al retirarlo: el chofer sube la factura');
+        if (s.estado === 'pagado') h += b('✅ Validar: listo para recoger', `solValidar('${s.id}')`, '#27ae60', 'El pago y su comprobante validan el pedido: pasa al chofer');
         if (['pedido_proveedor', 'lista'].includes(s.estado)) h += b('✅ Ya llegó', `solForm('${s.id}','entregada')`, '#27ae60', 'Lo trajo el proveedor o lo recogió la oficina');
     }
     // Un solo paso para el chofer (2026-11-03): «Lo traje» = recogido + entregado + entrada al inventario.
@@ -314,7 +321,8 @@ function accionesHTML(s, opts) {
 }
 
 // Handlers del tablero y de «Mis pedidos». `getSolicitud(id)` devuelve el doc en caché.
-export function montarAcciones({ usuario, getSolicitud }) {
+export function montarAcciones({ usuario, getSolicitud, getTodas }) {
+    const todas = () => (typeof getTodas === 'function' ? getTodas() : []) || [];
     const inp = (id, ph, type = 'text', val = '') => `<input type="${type}" id="${id}" placeholder="${esc(ph)}" value="${esc(val)}" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;">`;
     const sel = (id, opciones, val, onchange = '') => `<select id="${id}" ${onchange ? `onchange="${onchange}"` : ''} style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;background:#fff;">${opciones.map(([v, t]) => `<option value="${esc(v)}" ${v === val ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
     const caja = (id, inner, okTxt, okFn, okBg) => `<div style="background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:10px;display:grid;gap:8px;">${inner}
@@ -338,7 +346,7 @@ export function montarAcciones({ usuario, getSolicitud }) {
                 <label style="font-size:12px;">Proveedor</label>${sel('sf-prov-' + id, opciones, '', `document.getElementById('sf-provotro-${id}').style.display = this.value === 'otro' ? 'grid' : 'none'`)}
                 <div id="sf-provotro-${id}" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Nombre</label>${inp('sf-provnom-' + id, 'Ferretería X')}</div><div><label style="font-size:12px;">WhatsApp (10 dígitos)</label>${inp('sf-provtel-' + id, '8095551234', 'tel')}</div></div>
                 <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="sf-msg-${id}" rows="6" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;">${esc(mensajeProveedor(s, ''))}</textarea>
-                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú. El pedido queda «Pedida al proveedor». Cuando el proveedor mande la factura u orden, adjúntala aquí y pásala al chofer.</div>`,
+                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú. Cuando el proveedor mande la cotización, súbela con 📎 en la tarjeta: se manda a pagar sola. Si en ese sitio no se paga por adelantado, usa «Sin pago anticipado: lo compra el chofer».</div>`,
                 'Abrir WhatsApp y marcar', `solOkProveedor('${id}')`, '#2980b9');
         } else if (tipo === 'chofer') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">🚚 ${s.estado === 'pedido_proveedor' ? 'Enviar al chofer para retirarlo' : 'Pasar directo al chofer'}</div>
@@ -409,6 +417,9 @@ export function montarAcciones({ usuario, getSolicitud }) {
         const chk = document.getElementById('sf-inv-' + id); const p = v('sf-precio2-' + id);
         const cantInv = Number(v('sf-invcant-' + id)) || 0, precio = p !== '' ? Number(p) : null;
         if (chk && chk.checked && !(cantInv > 0)) { alert('Escribe cuánto entra al inventario (o desmarca la casilla si va directo a la obra).'); return; }
+        // Sin pago anticipado, el chofer sube la factura de compra al ir al sitio (Dylan 2026-11-03).
+        if (['chofer', 'recogido'].includes(s.estado) && !s.pagoValidado && !(Array.isArray(s.facturaCompra) && s.facturaCompra.length) && !(Array.isArray(s.fotos) && s.fotos.length)
+            && !confirm('Falta la foto de la factura de compra. Súbela con «📎 Factura de compra» antes de confirmar.\n\n¿Confirmar de todos modos sin factura?')) return;
         const quienes = [s.pedidoPor && s.pedidoPor.nombre, ...((s.sumados || []).map(x => x.nombre))].filter(Boolean);
         try {
             if (chk && chk.checked) await darEntradaInventario(s, usuario, cantInv, precio > 0 ? Math.round(precio / cantInv * 100) / 100 : 0, conv[id] || '');
@@ -416,6 +427,17 @@ export function montarAcciones({ usuario, getSolicitud }) {
                 entregadaA: [...new Set(quienes)].join(', ') || null, ...(precio != null ? { precio } : {}),
                 ...(['chofer', 'recogido'].includes(s.estado) && !s.recogidoPor ? { recogidoPor: usuario.nombre || '' } : {})
             });
+        } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+    // Validar el pago (Sara/Dylan): el comprobante valida el pedido → pasa al chofer como «listo para recoger» (todo el lote).
+    window.solValidar = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        const lote = s.loteProveedor ? todas().filter(x => x.loteProveedor === s.loteProveedor && x.estado === 'pagado') : [];
+        const lista = lote.length ? lote : [s];
+        const prov = (s.proveedor && s.proveedor.nombre) || 'el proveedor';
+        if (!confirm(`¿Validar el pago y pasar ${lista.length > 1 ? 'los ' + lista.length + ' pedidos' : 'el pedido'} al chofer para recoger en ${prov}?`)) return;
+        try {
+            for (const [i, x] of lista.entries()) await cambiarEstado(x.id, 'chofer', usuario, { notaChofer: `Pagado: retirar en ${prov}`, loteN: lista.length, loteIndice: i, pagoValidado: { por: usuario.nombre || '', fechaISO: ahoraISO() } }, 'Pago validado: listo para recoger');
         } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkRechazada = async (id) => {
@@ -430,11 +452,12 @@ export function mensajeProveedorVarios(lista, nombreProv) {
     const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', 'Pedido:'];
     lista.forEach(s => l.push(`• ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}`));
     if (lista.some(s => s.urgencia === 'hoy')) l.push('', 'Algunas piezas las necesitamos hoy.');
-    l.push('', '¿Tiene disponible y a qué precio? Lo retira nuestro chofer; por favor envíenos la factura u orden por aquí.', '', 'Gracias.');
+    l.push('', '¿Tiene disponible? Por favor envíenos la cotización por aquí para hacer el pago; lo retira nuestro chofer.', '', 'Gracias.');
     return l.join('\n');
 }
 export async function pedirVariosAlProveedor(ids, prov, usuario) {
-    const extra = { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' } };
+    // `loteProveedor`: la cotización y el pago se suben UNA vez y mueven todo el lote (functions → solicitudMaterialPush).
+    const extra = { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' }, loteProveedor: 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) };
     for (const id of ids) await cambiarEstado(id, 'pedido_proveedor', usuario, extra, 'Pedido a ' + prov.nombre + ' por WhatsApp' + (ids.length > 1 ? ` (junto con ${ids.length - 1} más)` : ''));
 }
 export async function pasarVariosAlChofer(ids, nota, usuario) {

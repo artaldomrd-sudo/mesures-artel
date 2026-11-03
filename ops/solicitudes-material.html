@@ -128,7 +128,7 @@
     const matchItem = (txt) => { const t = (txt || '').trim().toLowerCase(); if (!t) return null; return items.find(it => labelItem(it).toLowerCase() === t) || null; };
 
     montarPedir({ usuario, getItem: (id) => items.find(it => it.id === id) || null, matchItem, onCreada: () => setTab('abiertas') });
-    montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id) });
+    montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id), getTodas: () => solicitudes });
     escucharProveedores(() => { });
     escucharConfig(() => { gestor = esGestor(usuario); chofer = rolEn(usuario).chofer; pintarRol(); render(); });
     escucharSolicitudes((arr) => { solicitudes = arr; render(); });
@@ -143,7 +143,7 @@
 
     function pintarRol() {
         const r = rolEn(usuario); const partes = [];
-        if (gestor) partes.push('🏢 Oficina: decide proveedor o chofer'); if (r.chofer) partes.push('🚚 Chofer: compra o retira y marca «Lo traje»');
+        if (gestor) partes.push('🏢 Oficina: decide proveedor o chofer'); if (r.pagos) partes.push('💳 Pagos: paga lo cotizado y sube el comprobante'); if (r.chofer) partes.push('🚚 Chofer: compra o retira y marca «Lo traje»');
         const el = document.getElementById('mi-rol'); el.textContent = partes.length ? 'Tu papel aquí: ' + partes.join(' · ') : ''; el.style.display = partes.length ? '' : 'none';
         document.getElementById('btn-lista').style.display = (gestor || chofer) ? '' : 'none';
         document.getElementById('btn-cfg').style.display = esAdmin ? '' : 'none';
@@ -160,19 +160,21 @@
             `<div class="kpi ${hoyPend.length ? 'hoy' : ''}"><div class="n">${hoyPend.length}</div><div class="l">Urgentes (hoy)</div></div>` +
             `<div class="kpi"><div class="n">${sinVer.length}</div><div class="l">Por decidir</div></div>` +
             `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'pedido_proveedor').length}</div><div class="l">Con el proveedor</div></div>` +
+            `<div class="kpi ${abiertas.some(s => ['por_pagar', 'pagado'].includes(s.estado)) ? 'hoy' : ''}"><div class="n">${abiertas.filter(s => ['por_pagar', 'pagado'].includes(s.estado)).length}</div><div class="l">Por pagar / validar</div></div>` +
             `<div class="kpi"><div class="n">${abiertas.filter(s => s.estado === 'chofer').length}</div><div class="l">Para el chofer</div></div>`;
         document.getElementById('tab-abiertas').textContent = `Pendientes (${abiertas.length})`;
         let lista = tab === 'abiertas' ? abiertas : tab === 'entregadas' ? solicitudes.filter(s => s.estado === 'entregada') : solicitudes.filter(s => ['rechazada', 'cancelada'].includes(s.estado));
         const personas = [...new Set(lista.map(s => s.pedidoPor && s.pedidoPor.nombre).filter(Boolean))];
-        const chips = [['todas', 'Todas'], ['hoy', '🔥 Hoy'], ['chofer', '🚚 Para el chofer'], ['mias', 'Las mías'], ...personas.map(p => ['p:' + p, p])];
+        const chips = [['todas', 'Todas'], ['hoy', '🔥 Hoy'], ['pago', '💳 Por pagar / validar'], ['chofer', '🚚 Para el chofer'], ['mias', 'Las mías'], ...personas.map(p => ['p:' + p, p])];
         document.getElementById('filtro').innerHTML = chips.map(([k, t]) => `<button class="${filtro === k ? 'on' : ''}" onclick="setFiltro('${esc(k)}')">${esc(t)}</button>`).join('');
         if (filtro === 'hoy') lista = lista.filter(s => s.urgencia === 'hoy');
         else if (filtro === 'chofer') lista = lista.filter(s => s.estado === 'chofer');
+        else if (filtro === 'pago') lista = lista.filter(s => ['por_pagar', 'pagado'].includes(s.estado));
         else if (filtro === 'mias') lista = lista.filter(s => s.pedidoPor && s.pedidoPor.email === usuario.email);
         else if (filtro.startsWith('p:')) lista = lista.filter(s => s.pedidoPor && s.pedidoPor.nombre === filtro.slice(2));
         if (tab === 'abiertas') lista = lista.slice().sort((a, b) => (ordenUrg[a.urgencia] ?? 1) - (ordenUrg[b.urgencia] ?? 1) || (a.fechaISO || '').localeCompare(b.fechaISO || ''));
         const seleccionable = gestor && tab === 'abiertas';
-        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor, chofer, seleccionable })).join('')
+        document.getElementById('lista').innerHTML = lista.length ? lista.map(s => solicitudCardHTML(s, { usuario, gestor, chofer, pagos: rolEn(usuario).pagos, seleccionable })).join('')
             : `<p class="empty">${tab === 'abiertas' ? 'Nada pendiente. 🎉' : 'Nada en los últimos 14 días.'}</p>`;
         const porDecidir = lista.filter(s => POR_DECIDIR.includes(s.estado));
         document.getElementById('sel-todos').innerHTML = seleccionable && porDecidir.length > 1
@@ -202,7 +204,7 @@
                 <select id="lote-prov" style="${inpL}background:#fff;" onchange="document.getElementById('lote-otro').style.display = this.value === 'otro' ? 'grid' : 'none'; loteMsg()"><option value="">— elegir proveedor —</option>${provs.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}${p.telefono ? ' · ' + esc(p.telefono) : ' · sin teléfono'}</option>`).join('')}<option value="otro">Otro número…</option></select>
                 <div id="lote-otro" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><input id="lote-pnom" placeholder="Nombre" style="${inpL}" oninput="loteMsg()"><input id="lote-ptel" placeholder="WhatsApp (10 dígitos)" type="tel" style="${inpL}"></div>
                 <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="lote-msg" rows="8" style="${inpL}font-size:13px;"></textarea>
-                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el pedido; lo envías tú. Todos quedan «Pedida al proveedor». Cuando llegue la factura, adjúntala en uno de ellos y pásalos al chofer.</div>`;
+                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el pedido; lo envías tú. Cuando el proveedor mande la cotización, súbela con 📎 en UNO de ellos: todo el grupo pasa a «Por pagar» y a quien paga le llega el aviso con un recordatorio fijado.</div>`;
             window.loteMsg = () => { const pid = document.getElementById('lote-prov').value; const p = provs.find(x => x.id === pid); const nom = pid === 'otro' ? document.getElementById('lote-pnom').value : (p ? p.nombre.replace(/\s*\(.*\)$/, '') : ''); document.getElementById('lote-msg').value = mensajeProveedorVarios(lista, nom); };
             window.loteMsg();
             ok.textContent = 'Abrir WhatsApp y marcar'; ok.style.background = '#2980b9';
@@ -244,14 +246,14 @@
     function renderCfg() {
         const box = document.getElementById('cfg-box'); if (!esAdmin || !equipo.length) return;
         const cfg = configActual(); const en = (l, e) => (l || []).map(x => String(x).toLowerCase()).includes(e.toLowerCase());
-        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Oficina recibe el aviso de cada pedido nuevo y decide (proveedor por WhatsApp o chofer); Chofer recibe los que se le pasan y marca «Lo traje». Cámbialo cuando cambie el equipo.</div>
-        <table><tr><th>Persona</th><th>🏢 Oficina</th><th>🚚 Chofer</th></tr>
+        box.innerHTML = `<div style="font-size:13px;color:#445;margin-bottom:8px;"><b>¿Quién atiende los pedidos?</b> Oficina recibe el aviso de cada pedido nuevo y decide (proveedor por WhatsApp o chofer); Pagos recibe el recordatorio fijado «💳 Pagar pedido pendiente» cuando se sube una cotización. Chofer recibe los que se le pasan y marca «Lo traje». Cámbialo cuando cambie el equipo.</div>
+        <table><tr><th>Persona</th><th>🏢 Oficina</th><th>💳 Pagos</th><th>🚚 Chofer</th></tr>
         ${equipo.slice().sort((a, b) => a.nombre.localeCompare(b.nombre)).map(p => `<tr><td>${esc(p.nombre)}<div style="font-size:11px;color:#889">${esc(p.email)}</div></td>
-            ${['compras', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
+            ${['compras', 'pagos', 'chofer'].map(k => `<td><input type="checkbox" data-k="${k}" data-e="${esc(p.email)}" ${en(cfg[k], p.email) ? 'checked' : ''}></td>`).join('')}</tr>`).join('')}</table>
         <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onclick="guardarCfg()" style="background:var(--artal-blue,#0A3D62);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-family:'Arimo';font-weight:bold;cursor:pointer;">Guardar</button></div>`;
     }
     window.guardarCfg = async () => {
-        const cfg = { compras: [], chofer: [] };   // `inventario` se conserva tal cual (futuro encargado de almacén)
+        const cfg = { compras: [], pagos: [], chofer: [] };   // `inventario` se conserva tal cual (futuro encargado de almacén)
         document.querySelectorAll('#cfg-box input[type=checkbox]:checked').forEach(c => cfg[c.dataset.k].push(c.dataset.e));
         try { await setDoc(doc(db, 'rrhhConfig', 'solicitudesMaterial'), { ...cfg, actualizado: new Date().toISOString(), por: usuario.nombre }, { merge: true }); alert('Guardado.'); document.getElementById('cfg-box').style.display = 'none'; }
         catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
