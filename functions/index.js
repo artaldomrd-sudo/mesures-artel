@@ -439,7 +439,15 @@ exports.mensajePush = onDocumentWritten('mensajes/{id}', async (event) => {
     const titulo = m.remitenteEmail === 'coordinador@artal' ? (m.asunto || 'Coordinador de Obras') : ('✉️ ' + (m.asunto || ('Mensaje de ' + (m.remitenteNombre || 'ARTAL'))));
     const cuerpo = String(m.cuerpo || '').split('\n').filter(Boolean).slice(0, 3).join(' · ').slice(0, 160) || (m.requiereFirma ? 'Documento para firmar' : 'Abre Mensajería para leerlo');
     try {
-        for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, 'ops/mensajes.html'); } catch (_) { } }
+        // Informe matinal y contestaciones del Coordinador: el push abre la CONVERSACIÓN (ops/coordinador.html, caja de escribir siempre a la
+        // vista) para quien puede entrar ahí (admin o permiso de página); el resto sigue yendo a Mensajería (Dylan 2026-11-03).
+        const esCoord = ['informe_coordinador', 'respuesta_coordinador'].includes(m.tipo);
+        const urlDe = async (em) => {
+            if (!esCoord) return 'ops/mensajes.html';
+            try { const u = await db.collection('usuarios').doc(em).get(); const d = u.exists ? u.data() : {}; const r = Array.isArray(d.rol) ? d.rol : [d.rol];
+                return (r.includes('admin') || (Array.isArray(d.paginasExtra) && d.paginasExtra.includes('coordinador.html'))) ? 'ops/coordinador.html' : 'ops/mensajes.html'; } catch (_) { return 'ops/mensajes.html'; }
+        };
+        for (const em of dest) { try { await enviarPushUsuario(em, titulo, cuerpo, await urlDe(em)); } catch (_) { } }
         await event.data.after.ref.update({ pushEnviado: true, pushDestinatarios: dest.length });
     } catch (e) { console.error('mensajePush', event.params.id, e); }
 });
