@@ -121,6 +121,7 @@
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { restoPendiente, restoTxt, fotoPartes, pestanaDe } from './chofer-pendientes.js';
+    import { viaDe, envioTxt, VIAS } from './envios.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
@@ -192,6 +193,7 @@
                 ${metaLine}
                 ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
             </div>
+            ${viaDe(o) === 'guagua' ? `<div style="background:#eaf6ff;border:1.5px solid #7fb8e6;border-radius:10px;padding:8px 12px;margin:6px 0 4px;font-size:14px;color:#174a7a;font-weight:bold;">🚌 Llega por guagua SDQ–LT${o.envio && o.envio.nota ? ' · ' + esc(o.envio.nota) : ''}<div style="font-weight:normal;font-size:12.5px;color:#456;margin-top:2px;">Lo recoge en la parada quien pueda (cualquiera del equipo de obra lo ve). Al tenerlo, marca «Entregado».</div></div>` : ''}
             ${compraTop}${restoBox}
             ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 Fábrica interna — la oficina todavía no lo marcó listo. Si el material ya está hecho puedes recogerlo: al marcar «En ruta» pasa solo a Listo para cargar.</div>` : ''}
             ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
@@ -324,8 +326,11 @@
             const sec = (titulo, arr) => arr.length ? `<div class="dia-sep" style="font-size:14px;">${titulo} (${arr.length})</div>` + arr.map(d => orderCardHTML(d.id, d.data())).join('') : '';
             const compras = filtrados.filter(d => d.data().docType === 'COMPRA_DIRECTA');
             const restos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado === true);
-            const pedidos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true);
-            list.innerHTML = sec('🛒 Compras para buscar', compras) + sec('📦 Resto por recoger en fábrica', restos) + sec('🚚 Pedidos listos para cargar', pedidos);
+            const sinListo = (d) => ['pendiente_fabrica', 'en_fabrica'].includes(d.data().status);
+            const pedidos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true && !sinListo(d));
+            const internos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true && sinListo(d));
+            list.innerHTML = sec('🛒 Compras para buscar', compras) + sec('📦 Resto por recoger en fábrica', restos) + sec('🚚 Pedidos listos para cargar', pedidos)
+                + sec('🏭 Fábrica interna · todavía no marcado listo (solo si te lo piden)', internos);
         } else list.innerHTML = filtrados.map(d => orderCardHTML(d.id, d.data())).join('');
         if (currentTab !== 'entregado') {
             filtrados.forEach(d => {

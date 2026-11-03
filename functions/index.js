@@ -515,6 +515,35 @@ exports.faltantesChofer = onDocumentWritten('orders/{id}', async (event) => {
     try { await event.data.after.ref.update({ faltantesSinAtender: tiene }); } catch (e) { console.error('faltantesChofer', event.params.id, e); }
 });
 
+// Cómo llega el material (espejo de ops/envios.js → viaDe): camion | guagua | externo | hilux | contratista.
+function viaEnvioSrv(o) {
+    const v = o && o.envio && o.envio.via; if (['camion', 'guagua', 'externo', 'hilux', 'contratista'].includes(v)) return v;
+    const asig = Array.isArray(o && o.asignadosInstalador) ? o.asignadosInstalador : [];
+    return asig.some((a) => a && (a.externo === true || String(a.email || '').startsWith('contratista:'))) ? 'contratista' : 'camion';
+}
+// Push de «está listo / va en camino» según la vía (2026-11-03): camión → chofer; guagua → obra + gerencia; externo → equipo de esa obra
+// (o todo el equipo de obra si no hay asignados); Hilux → quien conduce (rrhhConfig/envios.hilux); contratista → nadie (lo trae él).
+async function avisarEnvio(o, lugar, cambio) {
+    const via = viaEnvioSrv(o), quien = (o.envio && o.envio.quien) || '', nota = (o.envio && o.envio.nota) || '';
+    const compra = o.docType === 'COMPRA_DIRECTA';
+    const que = compra ? String(o.descripcion || '').replace(/\s+/g, ' ').trim().slice(0, 90) : '';
+    const pre = cambio ? '🔁 Cambió el envío · ' : '';
+    if (via === 'camion') {
+        if (compra) await pushATokens(await tokensPorRol('chofer'), pre + '🛒 Comprar o retirar en ' + (o.proveedor || 'proveedor'), [que, 'para ' + lugar].filter(Boolean).join(' · '), 'ops/chofer.html');
+        else await pushATokens(await tokensPorRol('chofer'), pre + 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+    } else if (via === 'guagua') {
+        await pushATokens(await tokensPorRol('chofer', 'instalador', 'ayudante', 'admin'), pre + '🚌 Llega por guagua SDQ–LT', [lugar, que, nota].filter(Boolean).join(' · ').slice(0, 160), 'ops/instalacion.html');
+    } else if (via === 'externo') {
+        const asig = (Array.isArray(o.asignadosInstalador) ? o.asignadosInstalador : []).map((a) => String(a && a.email || '').toLowerCase()).filter((e) => e.includes('@'));
+        const cuerpo = [lugar, que, nota].filter(Boolean).join(' · ').slice(0, 160), titulo = pre + '🚛 Llega con ' + (quien || 'transporte externo') + ' a la obra';
+        if (asig.length) { for (const em of asig) { try { await enviarPushUsuario(em, titulo, cuerpo, 'ops/instalacion.html'); } catch (_) { } } }
+        else await pushATokens(await tokensPorRol('instalador', 'ayudante'), titulo, cuerpo, 'ops/instalacion.html');
+    } else if (via === 'hilux') {
+        let hx = ['dylan.r.rd@gmail.com']; try { const c = await db.collection('rrhhConfig').doc('envios').get(); if (c.exists && Array.isArray(c.data().hilux) && c.data().hilux.length) hx = c.data().hilux; } catch (_) { }
+        for (const em of hx) { try { await enviarPushUsuario(String(em).toLowerCase(), pre + '🛻 Para llevar en la Hilux', [lugar, que, nota].filter(Boolean).join(' · ').slice(0, 160), 'ops/index.html'); } catch (_) { } }
+    }
+}
+
 // Resto por recoger (espejo de ops/chofer-pendientes.js → restoPendiente). `entregaPartes` = foto de lo entregado { itemId: [partes] }.
 function partesListasSrv(o, iid) {
     const pf = (o.partesFabrica || {})[iid];
@@ -556,21 +585,23 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
             const yaSalio = after.entregado === true || after.enRuta === true || after.instalado === true;
             const reapertura = (after.reaperturaFecha && after.reaperturaFecha !== before.reaperturaFecha) || before.status === 'completado';
             if (!automatico && !yaSalio && !reapertura) {
-                // Compra directa (Dylan 2026-11-03, caso Suplax): el aviso dice DÓNDE comprar o retirar y QUÉ, no un genérico «listo para cargar».
-                if (after.docType === 'COMPRA_DIRECTA') {
-                    const que = String(after.descripcion || '').replace(/\s+/g, ' ').trim().slice(0, 110);
-                    await pushATokens(await tokensPorRol('chofer'), '🛒 Comprar o retirar en ' + (after.proveedor || 'proveedor'), [que, 'para ' + lugar].filter(Boolean).join(' · '), 'ops/chofer.html');
-                } else
-                await pushATokens(await tokensPorRol('chofer'), 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+                await avisarEnvio(after, lugar);
                 if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
             } else console.log('enviarNotificacionPedido: sin push de listo para', event.params.id, { automatico: !!automatico, yaSalio, reapertura });
         }
     }
 
+    // 1a) Cambió CÓMO llega un pedido ya listo y no entregado (ALUCUFEL u oficina corrigen la vía) → avisa a quien le toca ahora.
+    if (after.status === before.status && ['listo_para_cargar', 'parcialmente_listo'].includes(after.status) && after.entregado !== true
+        && viaEnvioSrv(after) !== viaEnvioSrv(before)) await avisarEnvio(after, lugar, true);
+    // 1a') Compra directa a ALUCUFEL recién registrada → a ALUCUFEL para prepararla (la marcan enviada con la vía).
+    if (!event.data.before.exists && after.docType === 'COMPRA_DIRECTA' && after.status === 'pendiente_proveedor' && /alucufel/i.test(after.proveedor || ''))
+        await pushATokens(await tokensPorRol('fabrica'), '🛒 Compra para preparar', (lugar + (after.descripcion ? ': ' + String(after.descripcion).replace(/\s+/g, ' ').slice(0, 100) : '')).slice(0, 160), 'ops/alucufel/fabrica.html');
+
     // 1b) «Resto por recoger» (2026-11-03, caso Villa Cocoloba): pedido ya entregado en parte al que fábrica le marca más piezas listas.
     //     Misma regla que ops/chofer-pendientes.js (restoPendiente): si cambia una, cambiar la otra.
     const restoNuevo = restoPendienteSrv(after).filter((r) => !restoPendienteSrv(before).some((b) => b.iid === r.iid && b.partes.join() === r.partes.join()));
-    if (restoNuevo.length) {
+    if (restoNuevo.length && ['camion', 'guagua'].includes(viaEnvioSrv(after))) {
         const txt = restoNuevo.map((r) => 'ítem ' + r.iid + ' (' + r.partes.join(', ') + ')').join(' · ');
         await pushATokens(await tokensPorRol('chofer'), '📦 Resto listo para recoger en fábrica', (lugar + ': ' + txt).slice(0, 160), 'ops/chofer.html');
     }

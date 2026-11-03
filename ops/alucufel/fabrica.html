@@ -60,6 +60,7 @@
     import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from '../order-preview.js';
     import { mismaObra } from '../obras-util.js';
+    import { selectorEnvioHTML, leerSelectorEnvio, VIAS_ALUCUFEL, envioTxt } from '../envios.js';
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['fabrica']);
@@ -75,7 +76,7 @@
         listo_para_cargar: 'Listo para cargar',
         completado: 'Completado'
     };
-    const PENDIENTES = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'];
+    const PENDIENTES = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'pendiente_proveedor'];   // pendiente_proveedor = compra directa a ALUCUFEL por preparar
     const ENVIADOS = ['listo_para_cargar', 'completado'];
 
     function esc(s) {
@@ -118,13 +119,27 @@
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
             actionsHtml = `<div class="actions">
                 <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>
-                <button class="btn-parcial" onclick="parcialmenteListo('${id}')">Parcialmente listo para cargar</button>
-                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
+                <button class="btn-parcial" onclick="abrirEnvio('${id}', 'parcial')">Parcialmente listo para cargar</button>
+                <button class="btn-listo" onclick="abrirEnvio('${id}', 'listo')">Listo para cargar (completo)</button>
                 ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
             </div>`;
         } else {
             actionsHtml = '';
         }
+        // Compra directa hecha a ALUCUFEL (2026-11-03): ellos la preparan y la marcan ENVIADA diciendo cómo se envía.
+        const esCompra = o.docType === 'COMPRA_DIRECTA';
+        if (esCompra && o.status === 'pendiente_proveedor') actionsHtml = `<div class="actions"><button class="btn-listo" onclick="abrirEnvio('${id}', 'compra')">📦 Marcar enviado</button></div>`;
+        // Ya enviado y todavía no entregado: se puede corregir cómo se envía.
+        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true) actionsHtml += `<div style="margin-top:6px;font-size:13px;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">cambiar</a></div>`;
+        actionsHtml += `<div id="envio-box-${id}"></div>`;
+        if (esCompra) return `
+        <div class="order-card status-${o.status === 'pendiente_proveedor' ? 'en_fabrica' : o.status}">
+            <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : (STATUS_LABEL[o.status] || esc(o.status))}</span></div>
+            <div class="order-meta" style="font-size:14px;color:#333;white-space:pre-wrap;">${esc(o.descripcion || '')}</div>
+            <div class="order-meta">${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 Ver orden de compra</a>` : ''}${o.creadoPorNombre ? ' · pedida por ' + esc(o.creadoPorNombre) : ''}</div>
+            ${rioAbajoHTML(id, o)}
+            ${actionsHtml}
+        </div>`;
         return `
         <div class="order-card status-${o.status}">
             <div class="order-head">
@@ -257,7 +272,9 @@
         // Los envíos directos a Instalaciones (directoInstalacion) no pasan por fábrica: se
         // ocultan. Igual los de destino "interno" (los fabrica ARTAL, no ALUCUFEL) — ver
         // ops/fabrica-interna.html.
-        const docs = allOrders.filter(d => statuses.includes(d.data().status) && !d.data().directoInstalacion && d.data().destino !== 'interno');
+        const esCompraAlu = (o) => o.docType === 'COMPRA_DIRECTA' && /alucufel/i.test(o.proveedor || '');
+        const docs = allOrders.filter(d => statuses.includes(d.data().status) && !d.data().directoInstalacion && d.data().destino !== 'interno'
+            && (d.data().docType !== 'COMPRA_DIRECTA' || esCompraAlu(d.data())) && (d.data().status !== 'pendiente_proveedor' || esCompraAlu(d.data())));
         const list = document.getElementById('orders-list');
         if (!docs.length) {
             list.innerHTML = currentTab === 'pendientes'
@@ -309,6 +326,41 @@
         const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
+    };
+    // ¿Cómo se envía? (2026-11-03): ALUCUFEL elige la vía al marcar listo / parcialmente listo / compra enviada; así llega a quien
+    // corresponde (camión → Wilson; guagua → equipo de obra; transporte externo → equipo de esa obra; Hilux → Dylan).
+    window.abrirEnvio = function (id, modo) {
+        const box = document.getElementById('envio-box-' + id); if (!box) return;
+        if (box.innerHTML) { box.innerHTML = ''; return; }
+        const o = (allOrders.find(d => d.id === id) || { data: () => ({}) }).data();
+        const titulo = { listo: '✅ Listo para cargar (completo)', parcial: '⚠ Parcialmente listo', compra: '📦 Compra enviada', cambiar: '🔁 Cambiar cómo se envía' }[modo];
+        box.innerHTML = `<div style="margin-top:10px;background:#f6f8fa;border-radius:10px;padding:10px 12px;display:grid;gap:8px;">
+            <div style="font-weight:bold;color:#0A3D62;">${titulo} · ¿Cómo se envía?</div>
+            ${selectorEnvioHTML('env-' + id, o.envio ? o : {}, VIAS_ALUCUFEL)}
+            <input type="text" id="env-${id}-nota" placeholder="Nota (opcional: hora de la guagua, nº de bultos…)" style="padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:'Arimo';">
+            <div style="display:flex;gap:8px;justify-content:flex-end;"><button onclick="document.getElementById('envio-box-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';cursor:pointer;">Cancelar</button>
+            <button onclick="confirmarEnvio('${id}', '${modo}')" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:bold;font-family:'Arimo';cursor:pointer;">Confirmar</button></div></div>`;
+    };
+    window.confirmarEnvio = async function (id, modo) {
+        const envio = leerSelectorEnvio('env-' + id, usuario);
+        if (!envio) { alert('Elige cómo se envía.'); return; }
+        if (envio.via === 'externo' && !envio.quien) { alert('Escribe quién lo lleva (transportista).'); return; }
+        const nota = (document.getElementById('env-' + id + '-nota') || {}).value || ''; if (nota.trim()) envio.nota = nota.trim();
+        envio.marcadoPor = 'alucufel';
+        const docSnap = allOrders.find(d => d.id === id); const o = docSnap ? docSnap.data() : {};
+        try {
+            if (modo === 'listo') {
+                const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp(), envio };
+                (o.items || []).forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
+                await updateDoc(doc(db, 'orders', id), cambios);
+            } else if (modo === 'parcial') {
+                await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp(), envio });
+            } else if (modo === 'compra') {
+                await updateDoc(doc(db, 'orders', id), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp(), envio, enviadoPorAlucufel: true });
+            } else {
+                await updateDoc(doc(db, 'orders', id), { envio });
+            }
+        } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.listoParaCargar = async function (id) {
         if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nPasará a chofer e instalador.')) return;

@@ -121,6 +121,7 @@
 
 <script type="module">
     import { verComo } from './ver-como.js';
+    import { viaDe, envioTxt } from './envios.js';
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { suscribirMensajes, esParaMi } from './mensajes-lectura.js';
     import { requirePin } from './pin-gate.js';
@@ -226,7 +227,8 @@
 
     // ---------------- Centro de notificaciones ----------------
     let ordersCache = [], solicitudesCache = [], citasCache = [], instCache = [], anticiposPend = [], solMaterialCache = [];
-    let sesionesViejas = [];   // sesiones de Claude abiertas con 3+ días sin actividad (solo admin las lee)   // solMaterialCache = pedidos de material abiertos
+    let sesionesViejas = [];
+    let hiluxEmails = ['dylan.r.rd@gmail.com'];   // quién conduce la Hilux (rrhhConfig/envios.hilux lo cambia sin tocar código)   // sesiones de Claude abiertas con 3+ días sin actividad (solo admin las lee)   // solMaterialCache = pedidos de material abiertos
     let ultimoCotizaciones = 0, medicionesPorCotizar = 0;
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
@@ -361,6 +363,14 @@
             N.push({ key: `sm:${id}`, tipo: 'tarea', ic: '🙋', titulo: `URGENTE: ${nombre} × ${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`, sub: 'Pidió ' + ((s.pedidoPor && s.pedidoPor.nombre) || 'el equipo') + (s.obra ? ' · ' + s.obra : ''), txt: s.nota || '',
                 acciones: `<a class="n-ver" href="solicitudes-material.html">Ver pedidos de material</a>` });
         });
+        // 3h) 🛻 Para llevar en la Hilux (2026-11-03): pedidos y compras cuyo envío es «Dylan en la Hilux» → solo a quien conduce la Hilux
+        //     (rrhhConfig/envios.hilux; por defecto Dylan). Un toque lo marca entregado.
+        if (hiluxEmails.includes(String(auth.currentUser && auth.currentUser.email || '').toLowerCase())) {
+            ordersCache.filter(({ o }) => viaDe(o) === 'hilux' && o.entregado !== true && ['listo_para_cargar', 'parcialmente_listo'].includes(o.status)).forEach(({ id, o }) => {
+                N.push({ key: `hx:${id}`, tipo: 'tarea', ic: '🛻', titulo: 'Para llevar en la Hilux: ' + (o.cliente || '') + (o.obra ? ' — ' + o.obra : ''), sub: o.docType === 'COMPRA_DIRECTA' ? '🛒 ' + (o.proveedor || '') : (o.totalItems || 0) + ' ítems', txt: o.docType === 'COMPRA_DIRECTA' ? (o.descripcion || '') : (o.envio && o.envio.nota) || '',
+                    acciones: `<button class="n-done" onclick="hiluxEntregado('${id}')">✅ Entregado</button>` });
+            });
+        }
         // 3g) Trabajos con Claude a medias (sesionesClaude, 2026-11-01): una sola tarjeta cuando hay sesiones abiertas con 3+ días sin tocar.
         if (sesionesViejas.length) {
             N.push({ key: `sc:${sesionesViejas.map(x => x.id.slice(0, 6)).sort().join('')}`, tipo: 'tarea', ic: '🧠', titulo: `${sesionesViejas.length} trabajo${sesionesViejas.length > 1 ? 's' : ''} con Claude a medias desde hace 3+ días`, sub: sesionesViejas.slice(0, 3).map(x => x.titulo || '').join(' · '), txt: '',
@@ -708,6 +718,13 @@
         const n = snap.docs.filter(d => { const m = d.data(); const t = m.fecha && m.fecha.toDate ? m.fecha.toDate().getTime() : 0; return t > lim && !(m.acuses && m.acuses[k] && m.acuses[k].leido); }).length;
         setBadge('badge-coordinador', n);
     }, () => { });
+    onSnapshot(doc(db, 'rrhhConfig', 'envios'), (s) => { const l = s.exists() && Array.isArray(s.data().hilux) ? s.data().hilux : null; if (l && l.length) { hiluxEmails = l.map(e => String(e).toLowerCase()); renderNotifs(); } }, () => { });
+    window.hiluxEntregado = async (id) => {
+        if (!confirm('¿Marcar como ENTREGADO lo que llevaste en la Hilux?')) return;
+        const it = ordersCache.find(x => x.id === id); const o = it ? it.o : {};
+        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), recepcionInstalador: { nombre: (auth.currentUser && auth.currentUser.displayName) || 'Dylan', firma: null, fecha: serverTimestamp(), via: 'hilux' }, entregas: arrayUnion({ fechaISO: new Date().toISOString(), via: 'hilux' }), ...((o.docType === 'COMPRA_DIRECTA' || o.instalado === true) ? { status: 'completado' } : {}) }); }
+        catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
     // Trabajos con Claude a medias: badge = abiertas con 3+ días sin actividad (la colección solo la lee admin; si falla, sin badge).
     onSnapshot(collection(db, 'sesionesClaude'), (snap) => {
         const lim = Date.now() - 3 * 86400000;

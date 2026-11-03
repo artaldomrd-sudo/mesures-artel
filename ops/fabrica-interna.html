@@ -63,6 +63,7 @@
     import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { mismaObra } from './obras-util.js';
+    import { selectorEnvioHTML, leerSelectorEnvio, envioTxt } from './envios.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { escucharSuplidores, suplidorBotonHTML, enviadoChipHTML, montarSuplidorWA, montarSuplidoresAdmin } from './suplidor-wa.js';
     window.openOrderPreview = openOrderPreview;
@@ -147,6 +148,7 @@
                 · <a href="etiquetas.html?orderId=${id}" target="_blank">🏷 Etiquetas</a>
             </div>
             ${rioAbajoHTML(id, o)}
+            ${o.status !== 'completado' && o.entregado !== true ? `<div style="margin-top:8px;font-size:13.5px;">Cómo llega: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvioInt('${id}'); return false;">cambiar</a><div id="envio-int-${id}"></div></div>` : ''}
             ${String(o.docType || '').indexOf('FAB') === 0 && o.status !== 'completado' ? anticipoHTML(id, o) : (anticipoChip(o) ? `<div style="margin-top:8px;">${anticipoChip(o)}</div>` : '')}
             ${salidaHTML(id, o)}
             ${PENDIENTES.includes(o.status) ? suplidorBotonHTML(id, o) : (enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : '')}
@@ -326,6 +328,19 @@
         const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
+    };
+    // Cómo llega (2026-11-03): camión (Wilson), guagua, transporte externo, Hilux o el contratista que lo instala (Delvis).
+    window.abrirEnvioInt = function (id) {
+        const box = document.getElementById('envio-int-' + id); if (!box) return; if (box.innerHTML) { box.innerHTML = ''; return; }
+        const o = (allOrders.find(d => d.id === id) || { data: () => ({}) }).data();
+        box.innerHTML = `<div style="margin-top:8px;background:#f6f8fa;border-radius:10px;padding:10px 12px;display:grid;gap:8px;">${selectorEnvioHTML('ei-' + id, o)}
+            <div style="display:flex;gap:8px;justify-content:flex-end;"><button onclick="document.getElementById('envio-int-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';cursor:pointer;">Cancelar</button>
+            <button onclick="guardarEnvioInt('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:bold;font-family:'Arimo';cursor:pointer;">Guardar</button></div></div>`;
+    };
+    window.guardarEnvioInt = async function (id) {
+        const envio = leerSelectorEnvio('ei-' + id, usuario); if (!envio) { alert('Elige cómo llega.'); return; }
+        envio.marcadoPor = 'oficina';
+        try { await updateDoc(doc(db, 'orders', id), { envio }); } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.listoParaCargar = async function (id) {
         if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nPasará a chofer e instalador.')) return;

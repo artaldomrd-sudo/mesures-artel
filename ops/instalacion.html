@@ -230,6 +230,7 @@
 
 <main>
     <div id="aviso-parte"></div>
+    <div id="llegadas" style="display:none;margin:0 0 12px;"></div>
     <a id="banda-chofer" href="chofer.html" style="display:none;text-decoration:none;margin:0 0 12px;background:#fff4e5;border:2px solid #f0a35a;border-radius:12px;padding:12px 14px;color:#5a2d0c;"></a>
     <div class="tabs">
         <button class="tab active" id="tabbtn-dia" onclick="setTab('dia')">🗓️ Calendario día a día <span class="tab-badge" id="badge-dia" style="display:none"></span></button>
@@ -497,6 +498,48 @@
     window.openOrderPreview = openOrderPreview;
 
     const usuario = await requireAuth(['instalador', 'ayudante']);
+
+    // «Llega a Las Terrenas» (2026-11-03): lo que viene por GUAGUA (todo el equipo de obra lo ve y cualquiera lo recibe) o con
+    // TRANSPORTE EXTERNO (lo recibe en la obra el equipo asignado). Un toque en «Recibido» lo marca entregado (envios.js).
+    if (usuario.roles.some(r => ['instalador', 'ayudante', 'chofer'].includes(r)) || usuario.roles.includes('admin')) {
+        const env_ = await import('./envios.js');
+        const { fotoPartes: foto_ } = await import('./chofer-pendientes.js');
+        const fs_ = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js');
+        const { db: dbL } = await import('./firebase-config.js');
+        let llegan = [];
+        const escL = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const pintarLlegadas = () => {
+            const el = document.getElementById('llegadas'); if (!el) return;
+            const mias = llegan.filter(o => o.entregado !== true && env_.seRecibeEnInstalacion(o, usuario.email));
+            if (!mias.length) { el.style.display = 'none'; return; }
+            el.innerHTML = `<div style="background:#eaf6ff;border:2px solid #7fb8e6;border-radius:12px;padding:12px 14px;color:#174a7a;">
+                <div style="font-size:15px;font-weight:bold;">📦 Llega a Las Terrenas (${mias.length})</div>
+                ${mias.map(o => `<div style="background:#fff;border-radius:10px;padding:9px 11px;margin-top:8px;">
+                    <div style="font-weight:bold;color:#0A3D62;">${escL(o.cliente || '')} — ${escL(o.obra || '')}</div>
+                    <div style="font-size:13px;margin-top:2px;">${escL(env_.envioTxt(o))}${o.envio && o.envio.nota ? ' · ' + escL(o.envio.nota) : ''}${o.docType === 'COMPRA_DIRECTA' ? ' · 🛒 ' + escL(o.proveedor || '') + (o.descripcion ? ': ' + escL(String(o.descripcion).slice(0, 80)) : '') : ' · ' + (o.totalItems || 0) + ' ítems' + (o.status === 'parcialmente_listo' ? ' (parcial)' : '')}</div>
+                    <div style="font-size:12px;color:#557;margin-top:2px;">${env_.viaDe(o) === 'guagua' ? 'Cualquiera del equipo puede ir a la parada a recogerlo.' : 'Llega directo a la obra: recíbelo allí.'}</div>
+                    <button onclick="marcarRecibidoLlegada('${o.id}')" style="margin-top:8px;background:#27ae60;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-weight:bold;font-family:inherit;cursor:pointer;">✅ Recibido</button>
+                </div>`).join('')}</div>`;
+            el.style.display = 'block';
+        };
+        fs_.onSnapshot(fs_.query(fs_.collection(dbL, 'orders'), fs_.where('status', 'in', ['listo_para_cargar', 'parcialmente_listo'])), (snap) => {
+            llegan = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => ['guagua', 'externo'].includes(env_.viaDe(o))); pintarLlegadas();
+        }, () => { });
+        window.marcarRecibidoLlegada = async (id) => {
+            const o = llegan.find(x => x.id === id); if (!o) return;
+            if (!confirm('¿Marcar como RECIBIDO?\n' + (o.cliente || '') + ' — ' + (o.obra || ''))) return;
+            const compra = o.docType === 'COMPRA_DIRECTA';
+            try {
+                await fs_.updateDoc(fs_.doc(dbL, 'orders', id), {
+                    entregado: true, fechaEntregado: fs_.serverTimestamp(),
+                    recepcionInstalador: { nombre: usuario.nombre || '', firma: null, fecha: fs_.serverTimestamp(), via: env_.viaDe(o) },
+                    entregaPartes: foto_(o), restoEnRuta: false,
+                    entregas: fs_.arrayUnion({ fechaISO: new Date().toISOString(), recibio: usuario.nombre || '', via: env_.viaDe(o), quien: env_.quienDe(o) || '' }),
+                    ...((compra || o.sinInstalacion === true || o.instalado === true) ? { status: 'completado' } : {})
+                });
+            } catch (e) { alert('No se pudo marcar: ' + (e.message || e)); }
+        };
+    }
 
     // Banda «Para buscar» (Dylan 2026-11-03, caso compras de Suplax que Wilson no vio): quien tiene rol de chofer ve aquí, en su
     // pantalla principal, cuántas compras, restos de fábrica y pedidos listos esperan en Transportes, más los pedidos de material

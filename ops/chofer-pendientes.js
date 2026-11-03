@@ -7,6 +7,8 @@
 // qué piezas se llevó (`entregaPartes` = { itemId: ['marco', 'hojas', …] }, 'todo' = el ítem completo) y el pedido vuelve a
 // «En espera» cuando fábrica marca piezas que no estaban en esa foto. `restoEnRuta` = el chofer ya salió a buscar el resto.
 
+import { vaEnTransportes } from './envios.js';
+
 export const PARTE_TXT = { marco: 'marco', hojas: 'hojas', vidrios: 'vidrios', accesorios: 'accesorios', herrajes: 'herrajes', perfiles: 'perfiles', estructura: 'estructura', tela: 'tela', mecanismo: 'mecanismo', todo: 'completo' };
 const ESTADOS_RESTO = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'];
 
@@ -42,6 +44,9 @@ export const restoTxt = (resto) => resto.map(r => `ítem ${r.iid} ${r.nombre} ($
 // Lo que Transportes muestra en cada pestaña (misma regla que su render).
 export function visibleEnTransportes(o) {
     if (o.directoInstalacion === true) return false;
+    // Cómo llega (envios.js): a Transportes solo lo que lleva el camión de ARTAL o llega por guagua. Lo que va con transporte externo,
+    // en la Hilux o lo trae el contratista no es tarea de Wilson (las entregas viejas siguen visibles en «Entregado»).
+    if (o.entregado !== true && !vaEnTransportes(o)) return false;
     if (['pendiente_fabrica', 'en_fabrica'].includes(o.status) && !((o.destino === 'interno' && o.docType !== 'COMPRA_DIRECTA') || o.enRuta === true)) return false;
     return o.entregado === true || (o.status !== 'completado' && o.instalado !== true);
 }
@@ -56,6 +61,7 @@ export function pendientesChofer(orders) {
     orders.forEach(o => {
         if (pestanaDe(o) !== 'espera') return;
         if (o.docType === 'COMPRA_DIRECTA') r.compras.push(o);
+        else if (['pendiente_fabrica', 'en_fabrica'].includes(o.status)) return;   // fábrica interna aún sin marcar listo: se ve en Transportes, no cuenta como tarea
         else if (o.entregado === true) r.restos.push(o);
         else r.pedidos.push(o);
     });
