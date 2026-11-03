@@ -337,6 +337,17 @@ exports.pedidoEntregadoInterno = onDocumentWritten('orders/{id}', async (event) 
     const entregadoAhora = after.entregado === true && before.entregado !== true;
     const enRutaAhora = after.enRuta === true && before.enRuta !== true && after.destino === 'interno';
     if (!(entregadoAhora || enRutaAhora) || !['pendiente_fabrica', 'en_fabrica'].includes(after.status)) return;
+    // 2026-11-03 (caso Aloha parte 1): si fábrica no terminó todos los ítems, la entrega es PARCIAL → «parcialmente listo», así el
+    // pedido sigue en los pendientes de fábrica y pueden marcar el resto (antes se iba a «Enviados» sin botones).
+    const terminado = (iid) => { const p = (after.partesFabrica || {})[iid]; if (p && typeof p === 'object' && Object.keys(p).length) return Object.values(p).every((v) => v === true); return (after.itemsListosFabrica || {})[iid] === true; };
+    const incompleto = after.destino !== 'interno' && (after.items || []).some((it) => !terminado(String(it.id)));
+    if (incompleto) {
+        try {
+            await db.doc('orders/' + event.params.id).update({ status: 'parcialmente_listo', fechaParcialListo: FieldValue.serverTimestamp(), listoAutomatico: 'entregado_parcial' });
+            console.log('pedidoEntregadoInterno:', event.params.id, '→ parcialmente listo (entrega parcial)');
+        } catch (e) { console.error('pedidoEntregadoInterno', event.params.id, e); }
+        return;
+    }
     try {
         await db.doc('orders/' + event.params.id).update({ status: 'listo_para_cargar', fechaListoParaCargar: FieldValue.serverTimestamp(), listoAutomatico: after.entregado === true ? 'entregado' : 'en_ruta', listoAutomaticoFecha: FieldValue.serverTimestamp() });
         console.log('pedidoEntregadoInterno:', event.params.id, '→ listo por', after.entregado === true ? 'entrega' : 'en ruta');
