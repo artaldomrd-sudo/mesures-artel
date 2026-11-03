@@ -629,8 +629,8 @@
                 ${esAdmin ? `<button class="btn-eliminar" onclick="abrirEliminar('${item.id}')">🗑 Eliminar</button>` : ''}
             </div>
             <div class="inline-form" id="tomar-${item.id}">
-                <label>Cantidad a tomar</label>
-                <input type="number" id="tomar-cant-${item.id}" min="1" value="1">
+                <label>Cantidad a tomar${Number(item.porCaja) > 0 ? '' : ` <span style="font-weight:normal;color:#999">(en ${esc(item.unidad || 'unidades')})</span>`}</label>
+                <div style="display:flex;gap:6px">${Number(item.porCaja) > 0 ? `<select id="tomar-modo-${item.id}" style="flex:0 0 auto;min-width:96px"><option value="unidades">${esc(item.unidad || 'unidades')}</option><option value="cajas">${esc(plural(empaqueDe(item), 2))} ×${Number(item.porCaja)}</option></select>` : ''}<input type="number" id="tomar-cant-${item.id}" min="1" value="1" style="flex:1"></div>
                 <label>¿Para qué obra/motivo?</label>
                 <input type="text" id="tomar-nota-${item.id}" placeholder="Ej: Obra Gisell - Spirit de las Terrenas">
                 <div class="row-actions">
@@ -1273,10 +1273,15 @@
 
     window.confirmarTomar = async function (id) {
         const item = allItems.find(it => it.id === id);
-        const cantidad = Number(document.getElementById('tomar-cant-' + id).value);
-        const nota = document.getElementById('tomar-nota-' + id).value.trim();
-        if (!cantidad || cantidad <= 0) { alert('Escribe una cantidad válida.'); return; }
-        if (!nota) { alert('Escribe para qué obra o motivo estás tomando este material.'); return; }
+        const cantIngresada = Number(document.getElementById('tomar-cant-' + id).value);
+        const nota0 = document.getElementById('tomar-nota-' + id).value.trim();
+        if (!cantIngresada || cantIngresada <= 0) { alert('Escribe una cantidad válida.'); return; }
+        // Fundas/cajas completas → unidades del inventario (2026-11-03: el inventario cuenta unidades sueltas).
+        const porCaja = Number(item.porCaja) || 0, modoEl = document.getElementById('tomar-modo-' + id);
+        const enCajas = porCaja > 0 && modoEl && modoEl.value === 'cajas';
+        const cantidad = enCajas ? cantIngresada * porCaja : cantIngresada;
+        const nota = nota0 + (enCajas ? ' · ' + cantIngresada + ' ' + plural(empaqueDe(item), cantIngresada) + ' × ' + porCaja + ' = ' + cantidad + ' ' + (item.unidad || 'u') : '');
+        if (!nota0) { alert('Escribe para qué obra o motivo estás tomando este material.'); return; }
         if (cantidad > item.cantidad) {
             if (!confirm(`Solo quedan ${item.cantidad} ${item.unidad}. ¿Tomar de todos modos (quedará en negativo)?`)) return;
         }

@@ -43,6 +43,16 @@ export function hace(iso) {
     return d >= 1 ? `hace ${d} d` : h >= 1 ? `hace ${h} h` : m >= 1 ? `hace ${m} min` : 'ahora mismo';
 }
 const fechaCorta = (iso) => { const t = toMs(iso); return t > 0 ? new Date(t).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''; };
+// Conversión de la unidad del PEDIDO a la unidad que cuenta el INVENTARIO (2026-11-03, Dylan: «2 fundas» sumaba 2 unidades).
+// Devuelve el factor (1 = misma unidad; porCaja = el pedido viene en el empaque del ítem) o null si no se puede saber.
+const mismaU = (a, b) => plur(String(a || '').trim().toLowerCase()) === plur(String(b || '').trim().toLowerCase());
+export function factorInventario(s, item) {
+    const it = item || {};
+    const invU = it.unidad || 'unidades', emp = it.empaque || (Number(it.porCaja) > 0 ? 'caja' : ''), pc = Number(it.porCaja) || 0;
+    if (!s.unidad || mismaU(s.unidad, invU)) return 1;
+    if (emp && pc > 0 && mismaU(s.unidad, emp)) return pc;
+    return null;
+}
 export const nombreDe = (s) => (s.itemTipo ? s.itemTipo + (s.itemColor ? ' — ' + s.itemColor : '') : (s.texto || 'Sin nombre'));
 export const cantidadTxt = (s) => `${Number(s.cantidad) || 0}${s.unidad ? ' ' + s.unidad : ''}`;
 const telWa = (t) => { const d = String(t || '').replace(/\D/g, ''); return d.length === 10 ? '1' + d : d; };
@@ -103,6 +113,7 @@ export async function crearSolicitud(usuario, datos) {
         sede: 'terrenas', estado: 'pedida',
         texto: (datos.texto || '').trim(), itemId: datos.itemId || null, itemTipo: datos.itemTipo || null, itemColor: datos.itemColor || null,
         unidad: datos.unidad || '', categoria: datos.categoria || null,
+        itemUnidad: datos.itemUnidad || null, itemEmpaque: datos.itemEmpaque || null, itemPorCaja: Number(datos.itemPorCaja) || null,
         cantidad: Number(datos.cantidad) || 1, urgencia: URGENCIAS[datos.urgencia] ? datos.urgencia : 'semana',
         nota: (datos.nota || '').trim(), obra: (datos.obra || '').trim(),
         pedidoPor: { nombre: usuario.nombre || '', email: usuario.email || '' },
@@ -129,18 +140,18 @@ export async function cambiarEstado(id, estado, usuario, extra = {}, nota = '') 
 }
 // Entregada + entrada al inventario (si el pedido venía de un ítem del catálogo): suma la cantidad comprada y deja el
 // movimiento `restock` como lo hace «Agregar stock» de inventario.html.
-export async function darEntradaInventario(s, usuario, cantidad, costoU) {
+export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle) {
     if (!s.itemId) throw new Error('Este pedido no está ligado a un ítem del inventario.');
     const n = Number(cantidad) || 0; if (n <= 0) throw new Error('Cantidad inválida');
     const cambios = { cantidad: increment(n) }; if (costoU > 0) cambios.costo = costoU;
     await updateDoc(doc(db, 'inventario', s.itemId), cambios);
     await addDoc(collection(db, 'movimientosInventario'), {
         itemId: s.itemId, itemTipo: s.itemTipo, itemColor: s.itemColor || null, tipo: 'restock', cantidad: n,
-        nota: 'Compra por pedido del equipo (' + (s.pedidoPor && s.pedidoPor.nombre || '') + ')' + (s.proveedor && s.proveedor.nombre ? ' · ' + s.proveedor.nombre : ''),
+        nota: 'Compra por pedido del equipo (' + (s.pedidoPor && s.pedidoPor.nombre || '') + ')' + (detalle ? ' · ' + detalle : '') + (s.proveedor && s.proveedor.nombre ? ' · ' + s.proveedor.nombre : ''),
         costoUnitario: costoU || null, proveedor: s.proveedor && s.proveedor.nombre || null, ncf: null, solicitudId: s.id,
         usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
     });
-    await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, costoUnitario: costoU || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
+    await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, detalle: detalle || null, costoUnitario: costoU || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
 }
 // Texto del pedido para el proveedor (WhatsApp). Nunca precios, teléfonos de clientes ni anticipos.
 export function mensajeProveedor(s, nombreProv) {
@@ -211,6 +222,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem }) {
                 texto: itemSel ? '' : document.getElementById('sol-texto').value,
                 itemId: itemSel ? itemSel.id : null, itemTipo: itemSel ? itemSel.tipo : null, itemColor: itemSel ? (itemSel.color || null) : null,
                 categoria: itemSel ? (itemSel.categoria || null) : null,
+                itemUnidad: itemSel ? (itemSel.unidad || 'unidades') : null, itemEmpaque: itemSel ? (itemSel.empaque || null) : null, itemPorCaja: itemSel ? (Number(itemSel.porCaja) || null) : null,
                 unidad: document.getElementById('sol-unidad').value === 'otro' ? (document.getElementById('sol-unidad-otro').value.trim() || 'unidades') : document.getElementById('sol-unidad').value,
                 cantidad: document.getElementById('sol-cant').value, urgencia: urg,
                 nota: document.getElementById('sol-nota').value, obra: document.getElementById('sol-obra').value
@@ -322,9 +334,12 @@ export function montarAcciones({ usuario, getSolicitud }) {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">✅ Entregada</div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">¿A quién se le entregó?</label>${inp('sf-a-' + id, 'Nombre', 'text', s.pedidoPor ? s.pedidoPor.nombre : '')}</div><div><label style="font-size:12px;">Precio pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div></div>
                 ${conInv ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sf-inv-${id}" checked> Dar entrada al inventario (${esc(nombreDe(s))})</label>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Cantidad que entra</label>${inp('sf-invcant-' + id, '', 'number', String(Number(s.cantidad) || 1))}</div><div><label style="font-size:12px;">Costo por ${esc(s.unidad || 'unidad')} (opcional)</label>${inp('sf-invcosto-' + id, '0', 'number', '')}</div></div>
+                <div style="font-size:12.5px;color:#334;">Se pidió: <b>${esc(cantidadTxt(s))}</b></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;" id="sf-invcant-lbl-${id}">Entran al inventario</label>${inp('sf-invcant-' + id, '', 'number', '')}</div><div><label style="font-size:12px;" id="sf-invcosto-lbl-${id}">Costo por unidad (opcional)</label>${inp('sf-invcosto-' + id, '0', 'number', '')}</div></div>
+                <div id="sf-invconv-${id}" style="font-size:12px;color:#778;">Calculando la equivalencia…</div>
                 <div style="font-size:11.5px;color:#778;">Si va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">Este pedido no está ligado a un ítem del inventario. Si debe quedar en stock, créalo en Inventario y dale entrada ahí.</div>`}`,
                 'Confirmar entrega', `solOkEntregada('${id}')`, '#27ae60');
+            if (conInv) prepararEntrada(s, id);
         } else if (tipo === 'rechazada') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#c0392b;">✖ No se compra</div>
                 <label style="font-size:12px;">Motivo (lo ve quien lo pidió)</label>${inp('sf-motivo-' + id, 'Ej: ya hay uno en el bulto del equipo 2 / se compra con el próximo pedido grande')}`,
@@ -350,11 +365,31 @@ export function montarAcciones({ usuario, getSolicitud }) {
         const p = v('sf-precio-' + id);
         try { await cambiarEstado(id, 'recogido', usuario, { recogidoPor: usuario.nombre || '', ...(p !== '' ? { precio: Number(p) } : {}) }, v('sf-nr-' + id)); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
+    // Rellena «Entran al inventario» en la unidad que cuenta el inventario (lee el ítem actual: su empaque pudo cambiar).
+    const conv = {};
+    async function prepararEntrada(s, id) {
+        let item = { unidad: s.itemUnidad, empaque: s.itemEmpaque, porCaja: s.itemPorCaja };
+        try { const d = await getDoc(doc(db, 'inventario', s.itemId)); if (d.exists()) item = d.data(); } catch (_) { }
+        const invU = item.unidad || 'unidades', f = factorInventario(s, item), n = Number(s.cantidad) || 0;
+        const el = (k) => document.getElementById(k + id);
+        if (!el('sf-invcant-')) return;
+        el('sf-invcant-lbl-').textContent = `Entran al inventario (en ${invU})`;
+        el('sf-invcosto-lbl-').textContent = `Costo por ${plur(invU).replace(/([dlrn])es$/, '$1').replace(/s$/, '') || 'unidad'} (opcional)`;
+        if (f != null) {
+            el('sf-invcant-').value = String(n * f);
+            conv[id] = f === 1 ? '' : `${n} ${s.unidad} × ${f} = ${n * f} ${invU}`;
+            el('sf-invconv-').innerHTML = f === 1 ? `El inventario cuenta en ${esc(invU)}: entran ${n}.` : `<b style="color:#1e7d4f">${esc(conv[id])}</b> entran al inventario.`;
+        } else {
+            el('sf-invcant-').value = ''; conv[id] = '';
+            el('sf-invconv-').innerHTML = `<b style="color:#c0392b">El pedido dice «${esc(cantidadTxt(s))}» y el inventario cuenta en ${esc(invU)}: escribe cuántas ${esc(invU)} entran.</b>`;
+        }
+    }
     window.solOkEntregada = async (id) => {
         const s = getSolicitud(id); if (!s) return;
         const chk = document.getElementById('sf-inv-' + id); const p = v('sf-precio2-' + id);
+        if (chk && chk.checked && !(Number(v('sf-invcant-' + id)) > 0)) { alert('Escribe cuánto entra al inventario (o desmarca la casilla si va directo a la obra).'); return; }
         try {
-            if (chk && chk.checked) await darEntradaInventario(s, usuario, v('sf-invcant-' + id), Number(v('sf-invcosto-' + id)) || 0);
+            if (chk && chk.checked) await darEntradaInventario(s, usuario, v('sf-invcant-' + id), Number(v('sf-invcosto-' + id)) || 0, conv[id] || '');
             await cambiarEstado(id, 'entregada', usuario, { entregadaA: v('sf-a-' + id) || null, ...(p !== '' ? { precio: Number(p) } : {}) });
         } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
