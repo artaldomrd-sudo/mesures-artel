@@ -3331,6 +3331,20 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   proveedor («· el del inventario para esta pieza»; si el texto no casa con ninguno, aviso ámbar «el inventario dice X, no está en la
   lista»). Trampa propia: `fs.consultar(col, {filtros:[…]})` recibe un OBJETO; pasarle un array devuelve la colección entera (hoy
   revirtió 3 pedidos de más, restaurados a mano).
+- **Correcciones: nada es irreversible (2026-11-04, caso puntas PH2 ×2 «unidades» metidas en el lote de Jaraba y cotización subida:
+  «todo está automatizado y no permite revertir errores; que el programa esté preparado»)**. En `solicitudes-material.js`:
+  `editarPedido(id, usuario, s, {cantidad, unidad, nota, urgencia})` (botón «✏️ Corregir»: oficina siempre, quien pidió en `pedida`;
+  guarda `corregido` + historial «Corregido: cantidad 2 → 2 · unidad unidades → cajas»), `sacarDelLote(id, usuario, s, motivo)`
+  (botón «↩ Sacar de este pedido al proveedor» en pedido_proveedor/por_pagar/pagado → `pedida`, limpia proveedor/lote/cotización/
+  pagoCitaId, `sacadoDeLote`, y `citaQuitarPedido` quita el id de `citas.solicitudIds`; cita cerrada si queda vacía),
+  `deshacerLote(lista, usuario, motivo)` (botones «↩ Cotización equivocada» por_pagar→pedido_proveedor con `cotizacionAnulada` y cita
+  cerrada; «↩ Comprobante equivocado» pagado→por_pagar con `comprobanteAnulado` y cita reabierta; «↩ Validado por error» chofer→pagado;
+  siempre TODO el lote en ese estado; campo `deshecho`), `revertirEntradaInventario(s, usuario, motivo)` (casilla en «⚙️ Cambiar
+  estado» cuando hay `entradaInventario`: `increment(-n)` + movimiento `ajuste` negativo + `entradaInventarioRevertida`). «⚙️ Cambiar
+  estado» admite «aplicar a los otros N del lote» y cierra/reabre la cita según salga de / vuelva a `por_pagar`. La tarjeta muestra
+  «📦 Va junto con …» (`opts.todas`) para que se vea qué arrastra una cotización. Datos del 04/11: lote de Jaraba devuelto a
+  `pedido_proveedor` (cotización anulada, cita `daliVu…` cerrada), puntas PH2 → `pedida` con 2 cajas (inventario: empaque caja × 10).
+  Guía `guia-inventario-03`, apartado «CORREGIR UN ERROR». Sin cambios en functions.
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
 

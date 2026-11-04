@@ -140,6 +140,75 @@ export async function cambiarEstado(id, estado, usuario, extra = {}, nota = '') 
     if (['pedido_proveedor', 'chofer', 'rechazada'].includes(estado) && !extra.atiende) cambios.atiende = { nombre: usuario.nombre || '', email: usuario.email || '' };
     await updateDoc(doc(db, COL, id), cambios);
 }
+// ---- CORRECCIONES (Dylan 2026-11-04, caso puntas PH2 dentro del lote de Jaraba con 2 unidades en vez de 2 cajas: «todo está
+// automatizado y no permite revertir errores; que el programa esté preparado para estos casos»). Cuatro vías, todas con rastro
+// en el historial y sin tocar funciones del servidor:
+//   editarPedido       → cantidad / unidad / nota / urgencia (la oficina siempre; quien pidió mientras está en Pedida).
+//   sacarDelLote       → un pedido vuelve a Pedida y sale del pedido al proveedor (lote): se quita de la cita de pago.
+//   deshacerLote       → todo el lote retrocede un paso: cotización equivocada (por_pagar → pedido_proveedor, cita cerrada),
+//                        comprobante equivocado (pagado → por_pagar, cita reabierta), validación por error (chofer → pagado).
+//   revertirEntradaInventario → resta del stock lo que entró por un «Lo traje» equivocado (movimiento de ajuste).
+export async function editarPedido(id, usuario, s, cambios) {
+    const c = {}; const partes = [];
+    const cant = Number(cambios.cantidad); if (cant > 0 && cant !== Number(s.cantidad)) { c.cantidad = cant; partes.push(`cantidad ${s.cantidad} → ${cant}`); }
+    if (cambios.unidad && cambios.unidad !== s.unidad) { c.unidad = cambios.unidad; partes.push(`unidad ${s.unidad || '—'} → ${cambios.unidad}`); }
+    if (cambios.nota !== undefined && (cambios.nota || '').trim() !== (s.nota || '')) { c.nota = (cambios.nota || '').trim(); partes.push('nota'); }
+    if (cambios.urgencia && URGENCIAS[cambios.urgencia] && cambios.urgencia !== s.urgencia) { c.urgencia = cambios.urgencia; partes.push(`urgencia → ${URGENCIA_CORTA[cambios.urgencia]}`); }
+    if (!partes.length) throw new Error('No cambiaste nada.');
+    c.corregido = { por: usuario.nombre || '', email: usuario.email || '', fechaISO: ahoraISO(), que: partes.join(' · ') };
+    c.historial = arrayUnion(entradaHistorial(s.estado, usuario, 'Corregido: ' + partes.join(' · ')));
+    await updateDoc(doc(db, COL, id), c);
+}
+async function citaQuitarPedido(citaId, id) {
+    if (!citaId) return;
+    try {
+        const ref = doc(db, 'citas', citaId); const snap = await getDoc(ref); if (!snap.exists()) return;
+        const ids = (snap.data().solicitudIds || []).filter(x => x !== id);
+        const c = { solicitudIds: ids };
+        if (!ids.length) Object.assign(c, { completada: true, fijada: false, completadaPor: 'Sistema ARTAL (el lote quedó vacío)', fechaCompletada: serverTimestamp() });
+        await updateDoc(ref, c);
+    } catch (_) { }
+}
+async function citaEstado(citaId, abierta, quien) {
+    if (!citaId) return;
+    try { await updateDoc(doc(db, 'citas', citaId), abierta ? { completada: false, fijada: true, completadaPor: null, fechaCompletada: null } : { completada: true, fijada: false, completadaPor: quien || 'Sistema ARTAL', fechaCompletada: serverTimestamp() }); } catch (_) { }
+}
+export async function sacarDelLote(id, usuario, s, motivo) {
+    const nota = `Sacado del pedido a ${(s.proveedor && s.proveedor.nombre) || 'proveedor'}: vuelve a Pedida · ${motivo}`;
+    await updateDoc(doc(db, COL, id), {
+        estado: 'pedida', proveedor: null, loteProveedor: null, cotizacion: null, comprobantePago: null, pagoCitaId: null, pagoValidado: null,
+        pedido_proveedorFecha: null, por_pagarFecha: null, pagadoFecha: null, atiende: null, loteN: null, loteIndice: null,
+        sacadoDeLote: { lote: s.loteProveedor || null, proveedor: s.proveedor || null, estadoAnterior: s.estado, por: usuario.nombre || '', fechaISO: ahoraISO(), motivo },
+        historial: arrayUnion(entradaHistorial('pedida', usuario, nota))
+    });
+    await citaQuitarPedido(s.pagoCitaId, id);
+}
+// `lista` = los pedidos del mismo lote que están en el estado que se deshace (los pasa el llamador).
+export async function deshacerLote(lista, usuario, motivo) {
+    if (!lista.length) return;
+    const de = lista[0].estado;
+    const plan = {
+        por_pagar: { a: 'pedido_proveedor', cambios: (x) => ({ cotizacion: null, cotizacionAnulada: x.cotizacion || null, pagoCitaId: null }), nota: 'Cotización deshecha: vuelve a pedido al proveedor', cita: 'cerrar' },
+        pagado: { a: 'por_pagar', cambios: (x) => ({ comprobantePago: null, comprobanteAnulado: x.comprobantePago || null }), nota: 'Comprobante deshecho: vuelve a Por pagar', cita: 'abrir' },
+        chofer: { a: 'pagado', cambios: () => ({ pagoValidado: null, notaChofer: null, loteN: null, loteIndice: null }), nota: 'Validación deshecha: vuelve a Pagado', cita: null }
+    }[de];
+    if (!plan) throw new Error('Ese estado no se puede deshacer en lote.');
+    for (const x of lista) await updateDoc(doc(db, COL, x.id), { estado: plan.a, [plan.a + 'Fecha']: ahoraISO(), ...plan.cambios(x), deshecho: { de, a: plan.a, por: usuario.nombre || '', fechaISO: ahoraISO(), motivo }, historial: arrayUnion(entradaHistorial(plan.a, usuario, plan.nota + ' · ' + motivo)) });
+    const citaId = lista.find(x => x.pagoCitaId) && lista.find(x => x.pagoCitaId).pagoCitaId;
+    if (plan.cita === 'cerrar') await citaEstado(citaId, false, 'Anulada: cotización deshecha por ' + (usuario.nombre || ''));
+    if (plan.cita === 'abrir') await citaEstado(citaId, true);
+}
+export async function revertirEntradaInventario(s, usuario, motivo) {
+    const e = s.entradaInventario; if (!e || !s.itemId || !(Number(e.cantidad) > 0)) return;
+    const n = Number(e.cantidad);
+    await updateDoc(doc(db, 'inventario', s.itemId), { cantidad: increment(-n) });
+    await addDoc(collection(db, 'movimientosInventario'), {
+        itemId: s.itemId, itemTipo: s.itemTipo, itemColor: s.itemColor || null, tipo: 'ajuste', cantidad: -n,
+        nota: `Se deshace la entrada del pedido del equipo (${s.pedidoPor && s.pedidoPor.nombre || ''}) · ${motivo}`,
+        costoUnitario: null, proveedor: null, ncf: null, solicitudId: s.id, usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
+    });
+    await updateDoc(doc(db, COL, s.id), { entradaInventario: null, entradaInventarioRevertida: { ...e, revertidaPor: usuario.nombre || '', revertidaFechaISO: ahoraISO(), motivo } });
+}
 // Entregada + entrada al inventario (si el pedido venía de un ítem del catálogo): suma la cantidad comprada y deja el
 // movimiento `restock` como lo hace «Agregar stock» de inventario.html.
 export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle) {
@@ -290,6 +359,8 @@ export function solicitudCardHTML(s, opts) {
         s.precio != null && s.precio !== '' ? `💲 RD$ ${Number(s.precio).toLocaleString('es-DO')}` : '',
         s.estado === 'rechazada' && s.rechazoMotivo ? `✖ Motivo: ${esc(s.rechazoMotivo)}` : '',
         s.estadoManual && s.estadoManual.a === s.estado ? `⚙️ Estado corregido a mano por ${esc(s.estadoManual.por || '')}${s.estadoManual.nota ? ': ' + esc(s.estadoManual.nota) : ''}` : '',
+        s.corregido ? `✏️ Corregido por ${esc(s.corregido.por || '')}: ${esc(s.corregido.que || '')}` : '',
+        s.loteProveedor && Array.isArray(opts.todas) && opts.todas.filter(x => x.loteProveedor === s.loteProveedor).length > 1 ? `📦 Va junto con ${opts.todas.filter(x => x.loteProveedor === s.loteProveedor && x.id !== s.id).map(x => esc(nombreDe(x))).join(', ')} <span style="color:#889">(la cotización, el pago y la validación mueven a todos juntos)</span>` : '',
         s.recogidoPor ? `📦 Recogido por ${esc(s.recogidoPor)}` : '', s.entregadaA ? `📬 Entregado a ${esc(s.entregadaA)}` : '',
         s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : '',
         docsLinks(s.cotizacion, '🧾 Cotización'), docsLinks(s.comprobantePago, '💳 Pago'), docsLinks(s.facturaCompra, '🧾 Factura de compra'),
@@ -307,7 +378,15 @@ export function solicitudCardHTML(s, opts) {
     }
     // Corrección manual (Dylan 2026-11-04: «cambiar el estado directamente de la plataforma»): la oficina puede poner
     // cualquier estado, también reabrir una entregada/cancelada por error. No mueve inventario ni abre WhatsApp.
-    if (opts.gestor) acciones += `<button onclick="solForm('${s.id}','estado')" title="Corregir el estado a mano (no mueve inventario)" style="background:transparent;color:#667;border:1.5px dashed #c5ccd6;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">⚙️ Cambiar estado</button>`;
+    const bGris = (txt, fn, title) => `<button onclick="${fn}" title="${esc(title || '')}" style="background:transparent;color:#667;border:1.5px dashed #c5ccd6;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">${txt}</button>`;
+    // Correcciones (2026-11-04): corregir datos (oficina siempre; quien pidió mientras está en Pedida), sacar del lote, deshacer el
+    // último paso del lote y cambiar el estado a mano.
+    if (opts.gestor || (mia && s.estado === 'pedida')) acciones += bGris('✏️ Corregir', `solForm('${s.id}','editar')`, 'Cantidad, unidad, nota o urgencia');
+    if (opts.gestor && ['pedido_proveedor', 'por_pagar', 'pagado'].includes(s.estado)) acciones += bGris('↩ Sacar de este pedido al proveedor', `solForm('${s.id}','sacar')`, 'Este pedido vuelve a Pedida; el resto del lote sigue igual');
+    if (opts.gestor && s.estado === 'por_pagar') acciones += bGris('↩ Cotización equivocada', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «pedido al proveedor» y se cierra el recordatorio de pago');
+    if (opts.gestor && s.estado === 'pagado') acciones += bGris('↩ Comprobante equivocado', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Por pagar» y se reabre el recordatorio');
+    if (opts.gestor && s.estado === 'chofer' && s.pagoValidado) acciones += bGris('↩ Validado por error', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Pagado»');
+    if (opts.gestor) acciones += bGris('⚙️ Cambiar estado', `solForm('${s.id}','estado')`, 'Corregir el estado a mano');
     const selec = opts.seleccionable && opts.gestor && POR_DECIDIR.includes(s.estado)
         ? `<input type="checkbox" class="sol-sel" data-id="${s.id}" onchange="solSelCambio && solSelCambio()" style="width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;" title="Seleccionar para decidir varios juntos">` : '';
     return `<div class="sol-card" id="sol-${s.id}" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:12px 14px;border-left:6px solid ${color};margin-bottom:10px;">
@@ -392,13 +471,39 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
                 <div><label style="font-size:12px;">Precio total pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div>`,
                 'Confirmar', `solOkEntregada('${id}')`, '#27ae60');
             if (conInv) prepararEntrada(s, id);
+        } else if (tipo === 'editar') {
+            const avisoProv = ['pedido_proveedor', 'por_pagar', 'pagado', 'chofer'].includes(s.estado) ? `<div style="font-size:12px;color:#b9770e;">⚠️ Este pedido ya salió al proveedor o al chofer: si cambias cantidad o unidad, avísales por WhatsApp; el sistema no reenvía nada.</div>` : '';
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">✏️ Corregir el pedido</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Cantidad</label>${inp('sf-ed-cant-' + id, '', 'number', String(s.cantidad || ''))}</div>
+                <div><label style="font-size:12px;">Unidad</label>${sel('sf-ed-uni-' + id, UNIDADES.map(u => [u, u]).concat(s.unidad && !UNIDADES.includes(s.unidad) ? [[s.unidad, s.unidad]] : []), s.unidad || 'unidades')}</div></div>
+                ${s.itemPorCaja ? `<div style="font-size:12px;color:#556;">Esta pieza viene en ${esc(s.itemEmpaque || 'cajas')} de ${esc(String(s.itemPorCaja))} ${esc(s.itemUnidad || 'unidades')}: si pides por ${esc(s.itemEmpaque || 'caja')}, elige esa unidad.</div>` : ''}
+                <label style="font-size:12px;">Urgencia</label>${sel('sf-ed-urg-' + id, Object.entries(URGENCIAS), s.urgencia || 'semana')}
+                <label style="font-size:12px;">Nota interna (no va al proveedor)</label>${inp('sf-ed-nota-' + id, 'Ej: 2 cajas de 10 unidades', 'text', s.nota || '')}${avisoProv}`,
+                'Guardar corrección', `solOkEditar('${id}')`, '#0A3D62');
+        } else if (tipo === 'sacar') {
+            const prov = (s.proveedor && s.proveedor.nombre) || 'el proveedor';
+            const resto = todas().filter(x => x.loteProveedor && x.loteProveedor === s.loteProveedor && x.id !== s.id);
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">↩ Sacar este pedido del pedido a ${esc(prov)}</div>
+                <div style="font-size:12px;color:#667;">Vuelve a <b>Pedida</b> para decidirlo de nuevo (otro proveedor, el chofer o no se compra). ${resto.length ? `Los otros ${resto.length} del lote siguen como están` : 'Era el único del lote'}${s.pagoCitaId ? '; el recordatorio de pago se actualiza solo' : ''}. Si ya pediste cotización, avisa a ${esc(prov)} que esta pieza no va.</div>
+                <label style="font-size:12px;">Motivo</label>${inp('sf-sacar-' + id, 'Ej: esta pieza no se compra en ' + prov)}`,
+                'Sacar del lote', `solOkSacar('${id}')`, '#b9770e');
+        } else if (tipo === 'deshacer') {
+            const lote = s.loteProveedor ? todas().filter(x => x.loteProveedor === s.loteProveedor && x.estado === s.estado) : [s];
+            const T = { por_pagar: ['↩ La cotización no es correcta', `${lote.length > 1 ? 'Los ' + lote.length + ' pedidos del lote vuelven' : 'El pedido vuelve'} a «📲 Cotización pedida al proveedor»; se cierra el recordatorio de pago y la cotización subida queda guardada como anulada. Cuando llegue la cotización buena, súbela otra vez con 📎.`],
+                        pagado: ['↩ El comprobante no corresponde', `${lote.length > 1 ? 'Los ' + lote.length + ' pedidos vuelven' : 'El pedido vuelve'} a «💳 Por pagar» y se reabre el recordatorio de pago.`],
+                        chofer: ['↩ Se validó por error', `${lote.length > 1 ? 'Los ' + lote.length + ' pedidos vuelven' : 'El pedido vuelve'} a «🧾 Pagado: falta validar». El chofer ya recibió el aviso: dile que espere.`] }[s.estado] || ['↩ Deshacer', ''];
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">${T[0]}</div><div style="font-size:12px;color:#667;">${T[1]}</div>
+                <label style="font-size:12px;">Motivo</label>${inp('sf-desh-' + id, 'Ej: la cotización incluía una pieza que no va')}`,
+                'Deshacer', `solOkDeshacer('${id}')`, '#b9770e');
         } else if (tipo === 'estado') {
             const opciones = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'entregada', 'rechazada', 'cancelada'].map(e => [e, `${ESTADO_ICO[e] || ''} ${ESTADO_TXT[e] || e}`]);
-            const avisoInv = s.entradaInventario ? `<div style="font-size:12px;color:#b9770e;">⚠️ Este pedido ya dio entrada al inventario (${esc(String(s.entradaInventario.cantidad))}). Cambiar el estado NO la deshace: corrígela en Inventario si hace falta.</div>` : '';
+            const lote = s.loteProveedor ? todas().filter(x => x.loteProveedor === s.loteProveedor && x.id !== s.id && x.estado === s.estado) : [];
+            const avisoInv = s.entradaInventario ? `<label style="font-size:12px;color:#b9770e;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="sf-estinv-${id}" style="width:18px;height:18px;"> Deshacer también la entrada al inventario (restar ${esc(String(s.entradaInventario.cantidad))} del stock)</label>` : '';
+            const avisoLote = lote.length ? `<label style="font-size:12px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="sf-estlote-${id}" style="width:18px;height:18px;"> Aplicar también a los otros ${lote.length} del mismo lote</label>` : '';
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">⚙️ Cambiar el estado a mano</div>
-                <div style="font-size:12px;color:#667;">Ahora: <b>${esc(ESTADO_TXT[s.estado] || s.estado)}</b>. Solo cambia la etiqueta y queda en el historial con tu nombre; no abre WhatsApp, no mueve inventario ni manda el pedido a pagar.</div>
+                <div style="font-size:12px;color:#667;">Ahora: <b>${esc(ESTADO_TXT[s.estado] || s.estado)}</b>. Solo cambia la etiqueta y queda en el historial con tu nombre; no abre WhatsApp ni manda el pedido a pagar. Para retroceder un paso del lote usa los botones «↩».</div>
                 <label style="font-size:12px;">Nuevo estado</label>${sel('sf-est-' + id, opciones, s.estado)}
-                <label style="font-size:12px;">Motivo (obligatorio, lo ve el equipo en el historial)</label>${inp('sf-estnota-' + id, 'Ej: se marcó por error, nunca se pidió al proveedor')}${avisoInv}`,
+                <label style="font-size:12px;">Motivo (obligatorio, lo ve el equipo en el historial)</label>${inp('sf-estnota-' + id, 'Ej: se marcó por error, nunca se pidió al proveedor')}${avisoLote}${avisoInv}`,
                 'Guardar estado', `solOkEstado('${id}')`, '#0A3D62');
         } else if (tipo === 'rechazada') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#c0392b;">✖ No se compra</div>
@@ -412,10 +517,35 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         const estado = v('sf-est-' + id), nota = v('sf-estnota-' + id).trim();
         if (!estado || estado === s.estado) { alert('Elige un estado distinto al actual.'); return; }
         if (!nota) { alert('Escribe el motivo del cambio.'); return; }
-        const extra = { estadoManual: { de: s.estado, a: estado, por: usuario.nombre || '', email: usuario.email || '', fechaISO: ahoraISO(), nota } };
-        if (estado === 'rechazada') extra.rechazoMotivo = nota;
-        try { await cambiarEstado(id, estado, usuario, extra, `Cambio manual: ${ESTADO_TXT[s.estado] || s.estado} → ${ESTADO_TXT[estado] || estado} · ${nota}`); }
+        const chk = (k) => { const el = document.getElementById(k); return !!(el && el.checked); };
+        const lista = chk('sf-estlote-' + id) ? todas().filter(x => x.loteProveedor === s.loteProveedor && x.estado === s.estado) : [s];
+        try {
+            for (const x of lista) {
+                const extra = { estadoManual: { de: x.estado, a: estado, por: usuario.nombre || '', email: usuario.email || '', fechaISO: ahoraISO(), nota } };
+                if (estado === 'rechazada') extra.rechazoMotivo = nota;
+                if (x.id === s.id && chk('sf-estinv-' + id) && x.entradaInventario) await revertirEntradaInventario(x, usuario, nota);
+                await cambiarEstado(x.id, estado, usuario, extra, `Cambio manual: ${ESTADO_TXT[x.estado] || x.estado} → ${ESTADO_TXT[estado] || estado} · ${nota}`);
+            }
+            // El recordatorio de pago sigue al estado: abierto solo mientras el lote está «Por pagar».
+            const citaId = (lista.find(x => x.pagoCitaId) || {}).pagoCitaId;
+            if (citaId) { if (estado === 'por_pagar') await citaEstado(citaId, true); else if (!['pagado'].includes(estado) && ['por_pagar'].includes(s.estado)) await citaEstado(citaId, false, 'Cambio manual de estado por ' + (usuario.nombre || '')); }
+        } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+    window.solOkEditar = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        try { await editarPedido(id, usuario, s, { cantidad: v('sf-ed-cant-' + id), unidad: v('sf-ed-uni-' + id), nota: v('sf-ed-nota-' + id), urgencia: v('sf-ed-urg-' + id) }); }
         catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+    window.solOkSacar = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        const motivo = v('sf-sacar-' + id).trim(); if (!motivo) { alert('Escribe el motivo.'); return; }
+        try { await sacarDelLote(id, usuario, s, motivo); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
+    };
+    window.solOkDeshacer = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        const motivo = v('sf-desh-' + id).trim(); if (!motivo) { alert('Escribe el motivo.'); return; }
+        const lista = s.loteProveedor ? todas().filter(x => x.loteProveedor === s.loteProveedor && x.estado === s.estado) : [s];
+        try { await deshacerLote(lista, usuario, motivo); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkProveedor = async (id) => {
         const s = getSolicitud(id); if (!s) return;
