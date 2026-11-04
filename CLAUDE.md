@@ -1358,8 +1358,9 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   puntos y piezas (redondo/cuadrado = 2 por punto; doble = 1 pletina por punto) en resumen, consumibles y banner. **Ajuste
   manual por tramo** (prensa y conectores): fila «Vidrios / Prensas o Puntos por vidrio» bajo cada tramo del constructor
   (`t.vidrios`, `t.puntos`; vacío = automático, placeholder = el automático) con «→ 3 × 1640 mm (a mano)» y aviso rojo si un
-  vidrio pasa del máximo; el resumen marca «(ajustado a mano)». Cambiar la fijación reconstruye el constructor. Tornillos de
-  los conectores siguen «por definir».
+  vidrio pasa del máximo; el resumen marca «(ajustado a mano)». Cambiar la fijación reconstruye el constructor. **Anclaje
+  (usuario 2026-11-04)**: 1 barra roscada 1/4" × 15 cm con tuerca y arandela por conector (como la prensa); el doble = pletina con
+  2 pernos → también 2 por punto (supuesto). `tornillosSugeridos` = puntos × 2, `tornillosLabel` «Barras roscadas…».
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón

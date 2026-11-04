@@ -605,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:42</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 16:20</div>
         </div>
     </div>
     
@@ -2637,7 +2637,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 let cons = llevaResina(state) ? `Resina: <strong>${galTxt(rg)}</strong>` + (manualR ? '' : ` <span style="color:#777;">(sugerido · ${barandaMl(state).toFixed(1)} ml)</span>`) + ' · ' : '';
                 const tor = tornillosBaranda(state), pr = prensasBaranda(state);
                 cons += `${tornillosLabel(state)}: <strong>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</strong>`;
-                if (pr && tor != null) cons += ` (+ ${tor} arandelas y ${tor} tuercas)`;
+                if ((pr || esConectorLateral(state.fijacion)) && tor != null) cons += ` (+ ${tor} arandelas y ${tor} tuercas)`;
                 const cn = conectoresBaranda(state);
                 if (cn) {
                     const det = cn.tramos.map((x, i) => `Tramo ${i + 1}: ${x.n} vidrio(s) de ${x.ancho} × ${state.alto || 0} mm · ${x.porVidrio} puntos c/u${x.excede ? ` <span style="color:#c0392b;">⚠ pasa de ${x.max} mm</span>` : ''}${x.manual ? ' <span style="color:#888;">(ajustado a mano)</span>' : ''}`).join('<br>');
@@ -3927,6 +3927,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (!state) return null;
         const fij = state.fijacion || 'base_u';
         if (fij === 'prensa_suelo') { const pr = prensasBaranda(state); return pr ? pr.barras : null; }
+        // Conectores laterales (usuario 2026-11-04): 1 barra roscada de 15 cm con tuerca y arandela por conector.
+        // El conector doble es una pletina con 2 pernos por punto → 2 barras por punto, igual que dos sueltos.
+        if (esConectorLateral(fij)) { const cn = conectoresBaranda(state); return cn ? cn.puntos * 2 : null; }
         if (fij !== 'base_u') return null;
         const tramos = state.tramos || [];
         let n = 0;
@@ -3936,7 +3939,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     }
     // Etiqueta del anclaje según fijación (para resumen, bloque de consumibles y banner).
     function tornillosLabel(state) {
-        return (state && state.fijacion === 'prensa_suelo') ? 'Barras roscadas 1/4" × 15 cm' : 'Tornillos';
+        return (state && (state.fijacion === 'prensa_suelo' || esConectorLateral(state.fijacion))) ? 'Barras roscadas 1/4" × 15 cm' : 'Tornillos';
     }
     // Tornillos efectivos: manual (admin) si existe, si no la regla; null = por definir.
     function tornillosBaranda(state) {
@@ -4038,7 +4041,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const tor = tornillosBaranda(st), pr = prensasBaranda(st);
                 const cn = conectoresBaranda(st);
                 if (cn) { conPiezas += cn.piezas; conVidrios += cn.vidrios; }
-                if (pr) { prensasTot += pr.prensas; vidriosPr += pr.vidrios; if (tor != null) barrasTot += tor; else tornPend++; }
+                if (pr || cn) { if (pr) { prensasTot += pr.prensas; vidriosPr += pr.vidrios; } if (tor != null) barrasTot += tor; else tornPend++; }
                 else if (tor != null) tornTot += tor; else tornPend++;
             }
             const r = perfilUDeBaranda(st);
@@ -4064,8 +4067,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Consumibles de instalación de TODAS las barandas del proyecto (para preparar la obra).
         html += `<div style="${hayBaseU ? 'margin-top:4px;' : ''}">` + (hayResina ? `🧴 <b>Resina para este trabajo: ${galTxt(resinaTot)}</b>` : '') +
             (tornTot || (!prensasTot && !conPiezas) ? ` <span style="color:#555;">${hayResina ? '· ' : ''}🔩 Tornillos: <b>${tornTot}</b></span>` : '') +
-            (prensasTot ? ` <span style="color:#555;">${hayResina || tornTot ? '· ' : ''}🪟 Vidrios (prensa): <b>${vidriosPr}</b> · 🗜️ Prensas de suelo: <b>${prensasTot}</b> · 🔩 Barras roscadas 1/4" × 15 cm: <b>${barrasTot}</b> (+ arandelas y tuercas)</span>` : '') +
+            (prensasTot ? ` <span style="color:#555;">${hayResina || tornTot ? '· ' : ''}🪟 Vidrios (prensa): <b>${vidriosPr}</b> · 🗜️ Prensas de suelo: <b>${prensasTot}</b></span>` : '') +
             (conPiezas ? ` <span style="color:#555;">${hayResina || tornTot || prensasTot ? '· ' : ''}🪟 Vidrios (conectores): <b>${conVidrios}</b> · 🔘 Conectores laterales: <b>${conPiezas}</b></span>` : '') +
+            (barrasTot ? ` <span style="color:#555;">· 🔩 Barras roscadas 1/4" × 15 cm: <b>${barrasTot}</b> (+ arandelas y tuercas)</span>` : '') +
             (tornPend ? ` <span style="color:#c0392b;">(${tornPend} baranda(s) sin cantidad de tornillos definida)</span>` : '') + `</div>`;
         el.innerHTML = html;
     }
@@ -8946,7 +8950,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             <div class="bar-row adm-only" style="margin:6px 0 0;${llevaResina(st) ? '' : ' display:none;'}"><b style="min-width:60px;">Resina:</b>
                 <input type="number" step="0.25" min="0" value="${manual ? st.resinaGal : ''}" placeholder="auto: ${galTxt(sug)}" oninput="barandaSetConsumible(${id}, 'resinaGal', this.value)">
                 <span style="font-size:11px; color:#555; white-space:nowrap;">gal (vacío = auto)</span></div>
-            <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">${st.fijacion === 'prensa_suelo' ? 'Barras:' : 'Tornillos:'}</b>
+            <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">${(st.fijacion === 'prensa_suelo' || esConectorLateral(st.fijacion)) ? 'Barras:' : 'Tornillos:'}</b>
                 <input type="number" min="0" step="1" value="${torManual ? st.tornillos : ''}" placeholder="${tornillosSugeridos(st) != null ? 'auto: ' + tornillosSugeridos(st) : 'cantidad'}" title="Base U: 1 tornillo cada 30 cm por tramo (22 por barra de 6.40 m)" oninput="barandaSetConsumible(${id}, 'tornillos', this.value)">
                 <span style="font-size:11px; color:#555; white-space:nowrap;">und (vacío = auto)</span></div>
         </div>`;
@@ -8992,7 +8996,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (cn) t += `Vidrios: <b>${cn.vidrios}</b> (${cn.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${cn.cant > 1 ? ` × ${cn.cant}` : ''}) · Puntos: <b>${cn.puntos}</b> · ${cn.nombre}: <b>${cn.piezas}</b> · `;
         if (pr) t += `Vidrios: <b>${pr.vidrios}</b> (${pr.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${pr.cant > 1 ? ` × ${pr.cant}` : ''}) · Prensas: <b>${pr.prensas}</b>`;
         t += `${pr ? ' · ' : ''}${tornillosLabel(st)}: <b>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</b>${(st.tornillos != null && st.tornillos !== '') ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
-        if (pr && tor != null) t += ` <span style="color:#555;">(+ ${tor} arandelas y ${tor} tuercas)</span>`;
+        if ((pr || cn) && tor != null) t += ` <span style="color:#555;">(+ ${tor} arandelas y ${tor} tuercas)</span>`;
         return t;
     }
     function refreshBarandaConsumiblesTxt(id) {
