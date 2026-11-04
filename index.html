@@ -605,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:37</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:42</div>
         </div>
     </div>
     
@@ -2638,10 +2638,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 const tor = tornillosBaranda(state), pr = prensasBaranda(state);
                 cons += `${tornillosLabel(state)}: <strong>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</strong>`;
                 if (pr && tor != null) cons += ` (+ ${tor} arandelas y ${tor} tuercas)`;
+                const cn = conectoresBaranda(state);
+                if (cn) {
+                    const det = cn.tramos.map((x, i) => `Tramo ${i + 1}: ${x.n} vidrio(s) de ${x.ancho} × ${state.alto || 0} mm · ${x.porVidrio} puntos c/u${x.excede ? ` <span style="color:#c0392b;">⚠ pasa de ${x.max} mm</span>` : ''}${x.manual ? ' <span style="color:#888;">(ajustado a mano)</span>' : ''}`).join('<br>');
+                    body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Vidrios (conectores laterales):</strong> ${cn.vidrios} vidrio(s) · <strong>Puntos de fijación:</strong> ${cn.puntos} · <strong>${cn.nombre}:</strong> ${cn.piezas}${cn.doble ? '' : ' (2 por punto, uno encima del otro)'}${cn.cant > 1 ? ` (× ${cn.cant} barandas)` : ''}</div><div style="color:#555; font-size:12px;">${det}<br><span style="color:#888;">Espacios de ${PRENSA_ESPACIO_MM} mm pared/vidrio y vidrio/vidrio ya descontados.</span></div>`;
+                }
                 if (pr) {
                     // Despiece de vidrios y prensas por tramo (prensa de suelo): lo que corta el taller y
                     // lo que fija instalación. Alto del vidrio = H de la baranda.
-                    const det = pr.tramos.map((x, i) => `Tramo ${i + 1}: ${x.n} vidrio(s) de ${x.ancho} × ${state.alto || 0} mm · ${x.porVidrio} prensas c/u`).join('<br>');
+                    const det = pr.tramos.map((x, i) => `Tramo ${i + 1}: ${x.n} vidrio(s) de ${x.ancho} × ${state.alto || 0} mm · ${x.porVidrio} prensas c/u${x.excede ? ` <span style="color:#c0392b;">⚠ pasa de ${x.max} mm</span>` : ''}${x.manual ? ' <span style="color:#888;">(ajustado a mano)</span>' : ''}`).join('<br>');
                     body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Vidrios (prensa de suelo):</strong> ${pr.vidrios} vidrio(s) · <strong>Prensas de suelo:</strong> ${pr.prensas}${pr.cant > 1 ? ` (× ${pr.cant} barandas)` : ''}</div><div style="color:#555; font-size:12px;">${det}<br><span style="color:#888;">Espacios de ${PRENSA_ESPACIO_MM} mm pared/vidrio y vidrio/vidrio ya descontados.</span></div>`;
                 }
                 body += `<div style="margin-top:4px; color:var(--artal-blue);"><strong>Instalación:</strong> ${cons}</div>`;
@@ -3868,20 +3873,49 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Prensas: 2 por vidrio hasta 1300 mm de ancho, 3 por encima. Cada prensa: 4 hoyos → en
     // concreto 4 barras roscadas de 1/4" × 15 cm con arandela y tuerca.
     const PRENSA_ESPACIO_MM = 20, PRENSA_VIDRIO_MAX_MM = 1700, PRENSA_VIDRIO_2_MAX_MM = 1300, PRENSA_BARRAS = 4;
-    function prensaTramo(Lmm) {
-        const L = parseInt(Lmm) || 0;
+    // ---- Conectores laterales (usuario 2026-11-04) ----
+    // Un vidrio con conectores laterales llega por lo usual hasta ≈ 2500 mm de ancho; uno así lleva
+    // 3 puntos de fijación. Cada punto = 2 conectores uno encima del otro (redondo / cuadrado) o 1
+    // pletina doble. Supuesto propio a confirmar: 2 puntos hasta 1300 mm (mismo corte que la prensa).
+    const CONECTOR_VIDRIO_MAX_MM = 2500, CONECTOR_VIDRIO_2_MAX_MM = 1300;
+    function esConectorLateral(fij) { return fij === 'conector_redondo' || fij === 'conector_cuadrado' || fij === 'conector_doble'; }
+    // Despiece de UN tramo según la fijación: vidrios (menor N con cada vidrio ≤ máximo, descontando
+    // los espacios de 20 mm) y puntos por vidrio. t.vidrios / t.puntos = ajuste manual en el cuaderno.
+    function despieceTramo(t, fij) {
+        const L = parseInt(t && t.L) || 0;
         if (L <= 0) return null;
-        let n = 1, w = L - 2 * PRENSA_ESPACIO_MM;
-        while (n < 200) { w = (L - (n + 1) * PRENSA_ESPACIO_MM) / n; if (w <= PRENSA_VIDRIO_MAX_MM) break; n++; }
-        const ancho = Math.floor(w);
-        const porVidrio = ancho <= PRENSA_VIDRIO_2_MAX_MM ? 2 : 3;
-        return { L, n, ancho, porVidrio, prensas: n * porVidrio };
+        const con = esConectorLateral(fij);
+        const max = con ? CONECTOR_VIDRIO_MAX_MM : PRENSA_VIDRIO_MAX_MM;
+        const max2 = con ? CONECTOR_VIDRIO_2_MAX_MM : PRENSA_VIDRIO_2_MAX_MM;
+        let nAuto = 1;
+        while (nAuto < 200 && (L - (nAuto + 1) * PRENSA_ESPACIO_MM) / nAuto > max) nAuto++;
+        const nMan = parseInt(t && t.vidrios) || 0;
+        const n = nMan > 0 ? nMan : nAuto;
+        const ancho = Math.floor((L - (n + 1) * PRENSA_ESPACIO_MM) / n);
+        const pAuto = ancho <= max2 ? 2 : 3;
+        const pMan = parseInt(t && t.puntos) || 0;
+        const porVidrio = pMan > 0 ? pMan : pAuto;
+        return { L, n, nAuto, ancho, porVidrio, pAuto, manual: nMan > 0 || pMan > 0, excede: ancho > max, max,
+                 puntos: n * porVidrio, prensas: n * porVidrio };
+    }
+    function prensaTramo(Lmm) { return despieceTramo({ L: Lmm }, 'prensa_suelo'); }
+    // Conectores laterales de una baranda (null si no aplica): vidrios, puntos y piezas.
+    function conectoresBaranda(state) {
+        if (!state || state.categoria !== 'baranda' || !esConectorLateral(state.fijacion)) return null;
+        const cant = parseInt(state.cantidad) || 1;
+        const tramos = (state.tramos || []).map(t => despieceTramo(t, state.fijacion)).filter(Boolean);
+        if (!tramos.length) return null;
+        const vidrios = tramos.reduce((a, t) => a + t.n, 0) * cant;
+        const puntos = tramos.reduce((a, t) => a + t.puntos, 0) * cant;
+        const doble = state.fijacion === 'conector_doble';
+        const nombre = { conector_redondo: 'Conectores redondos', conector_cuadrado: 'Conectores cuadrados', conector_doble: 'Conectores dobles (pletina)' }[state.fijacion];
+        return { tramos, vidrios, puntos, piezas: doble ? puntos : puntos * 2, doble, nombre, cant };
     }
     // Desglose completo de una baranda con prensa de suelo (null si no aplica).
     function prensasBaranda(state) {
         if (!state || state.categoria !== 'baranda' || state.fijacion !== 'prensa_suelo') return null;
         const cant = parseInt(state.cantidad) || 1;
-        const tramos = (state.tramos || []).map(t => prensaTramo(t.L)).filter(Boolean);
+        const tramos = (state.tramos || []).map(t => despieceTramo(t, 'prensa_suelo')).filter(Boolean);
         if (!tramos.length) return null;
         const vidrios = tramos.reduce((a, t) => a + t.n, 0) * cant;
         const prensas = tramos.reduce((a, t) => a + t.prensas, 0) * cant;
@@ -3993,7 +4027,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function actualizarPerfilUTotal() {
         const el = document.getElementById('perfil-u-banner');
         if (!el) return;
-        let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, hayResina = false, tornTot = 0, tornPend = 0, barrasTot = 0, prensasTot = 0, vidriosPr = 0;
+        let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, hayResina = false, conPiezas = 0, conVidrios = 0, conPend = 0, tornTot = 0, tornPend = 0, barrasTot = 0, prensasTot = 0, vidriosPr = 0;
         let rieles = [];   // riel ALC00186 de todas las deslizantes de prensas del proyecto
         Object.values(cardsState).forEach(st => {
             rieles = rieles.concat(rielesDeDucha(st));
@@ -4002,6 +4036,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 resinaTot += resinaBarandaGal(st);
                 if (llevaResina(st)) hayResina = true;
                 const tor = tornillosBaranda(st), pr = prensasBaranda(st);
+                const cn = conectoresBaranda(st);
+                if (cn) { conPiezas += cn.piezas; conVidrios += cn.vidrios; }
                 if (pr) { prensasTot += pr.prensas; vidriosPr += pr.vidrios; if (tor != null) barrasTot += tor; else tornPend++; }
                 else if (tor != null) tornTot += tor; else tornPend++;
             }
@@ -4027,9 +4063,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         // Consumibles de instalación de TODAS las barandas del proyecto (para preparar la obra).
         html += `<div style="${hayBaseU ? 'margin-top:4px;' : ''}">` + (hayResina ? `🧴 <b>Resina para este trabajo: ${galTxt(resinaTot)}</b>` : '') +
-            (tornTot || !prensasTot ? ` <span style="color:#555;">${hayResina ? '· ' : ''}🔩 Tornillos: <b>${tornTot}</b></span>` : '') +
+            (tornTot || (!prensasTot && !conPiezas) ? ` <span style="color:#555;">${hayResina ? '· ' : ''}🔩 Tornillos: <b>${tornTot}</b></span>` : '') +
             (prensasTot ? ` <span style="color:#555;">${hayResina || tornTot ? '· ' : ''}🪟 Vidrios (prensa): <b>${vidriosPr}</b> · 🗜️ Prensas de suelo: <b>${prensasTot}</b> · 🔩 Barras roscadas 1/4" × 15 cm: <b>${barrasTot}</b> (+ arandelas y tuercas)</span>` : '') +
-            (tornPend ? ` <span style="color:#c0392b;">(${tornPend} baranda(s) sin cantidad definida)</span>` : '') + `</div>`;
+            (conPiezas ? ` <span style="color:#555;">${hayResina || tornTot || prensasTot ? '· ' : ''}🪟 Vidrios (conectores): <b>${conVidrios}</b> · 🔘 Conectores laterales: <b>${conPiezas}</b></span>` : '') +
+            (tornPend ? ` <span style="color:#c0392b;">(${tornPend} baranda(s) sin cantidad de tornillos definida)</span>` : '') + `</div>`;
         el.innerHTML = html;
     }
 
@@ -5351,7 +5388,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (b) b.innerHTML = renderBarandaBuilder(id);
             }
             // la cantidad multiplica los metros lineales → resina/tornillos y banner total
-            if ((key === 'cantidad' || key === 'fijacion') && cardsState[id].categoria === 'baranda') { refreshBarandaConsumiblesTxt(id); actualizarPerfilUTotal(); }
+            if ((key === 'cantidad' || key === 'fijacion') && cardsState[id].categoria === 'baranda') {
+                if (key === 'fijacion') { const bb = document.getElementById('baranda-builder-' + id); if (bb) bb.innerHTML = renderBarandaBuilder(id); }
+                refreshBarandaConsumiblesTxt(id); actualizarPerfilUTotal();
+            }
             const sc = document.getElementById('schematic-' + id);
             if (sc) sc.innerHTML = renderSVG(id);
             adaptDrawingToContent(id);
@@ -7353,7 +7393,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const w = (parseInt(t.L) || 0) * scale;
             const dRise = (esc && !t.plataforma) ? (parseInt(t.L) || 0) * slope * scale : 0;
             const fy0 = floorY, fy1 = floorY - dRise;
-            panels.push({ x0: x, x1: x + w, fy0, fy1, giro: t.giro, ang: t.angulo || 90, first: ti === 0 });
+            panels.push({ x0: x, x1: x + w, fy0, fy1, giro: t.giro, ang: t.angulo || 90, first: ti === 0, t });
             x += w; floorY = fy1;
         });
         const gap = tramos.length > 1 ? 0.5 : 0;   // separación visible entre paños
@@ -7372,7 +7412,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (fij === 'prensa_suelo') {
                 // Vidrios reales del tramo (ver prensaTramo: espacios de 20 mm + ≤1700 mm por vidrio) con
                 // 2 o 3 prensas cada uno — el dibujo coincide con el despiece del resumen.
-                const pt = prensaTramo(Math.round((p.x1 - p.x0) / scale)) || { n: 1, porVidrio: 2 };
+                const pt = despieceTramo(p.t, 'prensa_suelo') || { n: 1, porVidrio: 2 };
                 const fyAt = f => p.fy0 + (p.fy1 - p.fy0) * f, tyAt = f => (t0 + (t1 - t0) * f);
                 for (let v = 0; v < pt.n; v++) {
                     const f0 = v / pt.n, f1 = (v + 1) / pt.n;
@@ -7395,14 +7435,20 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             } else if (fij === 'conector_redondo' || fij === 'conector_cuadrado' || fij === 'conector_doble') {
                 // Conectores laterales: en cada punto de fijación van DOS, uno encima del otro (usuario
                 // 2026-11-04; así los dibujaba la versión 3D original y se perdió al pasar a 2D el 2026-09-03).
-                // Puntos por tramo = máx(2, tramo ÷ 1100 mm) repartidos parejo, como la versión 3D.
-                const Lmm = Math.round((p.x1 - p.x0) / scale);
-                const m = Math.max(2, Math.round(Lmm / 1100));
+                // Vidrios del tramo (≤ 2500 mm) y puntos por vidrio (despieceTramo: 2 hasta 1300, 3 por encima,
+                // o lo ajustado a mano en el tramo), igual que el despiece del resumen.
+                const dt = despieceTramo(p.t, fij) || { n: 1, porVidrio: 2 };
                 const st = herrajeCol === '#111111' ? '#000' : '#5f6b75';
                 const r = Math.max(1.2, Math.min(Hs * 0.05, 30 * scale + 0.6));
-                const bAt = f => b0 + (b1 - b0) * f;
-                for (let k = 0; k < m; k++) {
-                    const f = (k + 0.5) / m, px = ax + (bx - ax) * f;
+                const bAt = f => b0 + (b1 - b0) * f, fyAtC = f => p.fy0 + (p.fy1 - p.fy0) * f, tyAtC = f => (t0 + (t1 - t0) * f);
+                const fs = [];
+                for (let v = 0; v < dt.n; v++) {
+                    const f0 = v / dt.n, f1 = (v + 1) / dt.n;
+                    if (v > 0) { const gx = ax + (bx - ax) * f0; marks += `<line x1="${gx.toFixed(1)}" y1="${(tyAtC(f0) + 0.6).toFixed(1)}" x2="${gx.toFixed(1)}" y2="${(fyAtC(f0) - bottomOff - 0.6).toFixed(1)}" stroke="#ffffff" stroke-width="0.9" stroke-opacity="0.95"/>`; }
+                    for (let k = 0; k < dt.porVidrio; k++) fs.push(f0 + (f1 - f0) * (k + 0.5) / dt.porVidrio);
+                }
+                for (const f of fs) {
+                    const px = ax + (bx - ax) * f;
                     const yLo = bAt(f) - Hs * 0.12, yHi = bAt(f) - Hs * 0.30;
                     if (fij === 'conector_doble') {
                         // pletina doble: una pieza que une los dos puntos, con sus dos pernos
@@ -8862,7 +8908,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         tramos.forEach((t, i) => {
             const g = t.giro || 'recto';
             h += `<div class="bar-row"><b>Tramo ${i + 1}:</b>
-                <input type="number" value="${t.L != null ? t.L : ''}" placeholder="L (mm)" oninput="barandaUpdateTramo(${id}, ${i}, 'L', this.value)">
+                <input type="number" value="${t.L != null ? t.L : ''}" placeholder="L (mm)" oninput="barandaUpdateTramo(${id}, ${i}, 'L', this.value)" onchange="refreshBaranda(${id}, true)">
                 <button class="bar-x" title="Borrar este tramo" onclick="barandaRemoveTramo(${id}, ${i})">X</button></div>`;
             h += `<div class="bar-giro">
                     <select onchange="barandaUpdateTramo(${id}, ${i}, 'giro', this.value)">
@@ -8873,6 +8919,20 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     <input type="number" value="${t.angulo || 90}" title="Ángulo" oninput="barandaUpdateTramo(${id}, ${i}, 'angulo', this.value)"><span style="font-weight:bold;">&deg;</span>
                     <label class="bar-plat" title="Tramo plano (descansillo / balcón)"><input type="checkbox" ${t.plataforma ? 'checked' : ''} onchange="barandaUpdateTramo(${id}, ${i}, 'plataforma', this.checked)"> Plat.</label>
                 </div>`;
+            // Vidrios y puntos de fijación del tramo (prensa de suelo / conectores laterales): automático,
+            // ajustable a mano (vacío = automático). Usuario 2026-11-04.
+            const fijB = st.fijacion || 'base_u';
+            if (fijB === 'prensa_suelo' || esConectorLateral(fijB)) {
+                const dt = despieceTramo(t, fijB);
+                if (dt) {
+                    const pLbl = fijB === 'prensa_suelo' ? 'Prensas/vidrio' : 'Puntos/vidrio';
+                    h += `<div class="bar-row" style="font-size:11px; gap:4px; flex-wrap:wrap;">
+                        <span style="color:#555;">Vidrios:</span><input type="number" min="1" step="1" style="width:52px;" value="${parseInt(t.vidrios) > 0 ? t.vidrios : ''}" placeholder="${dt.nAuto}" title="Vacío = automático (${dt.nAuto})" oninput="barandaUpdateTramo(${id}, ${i}, 'vidrios', this.value)" onchange="refreshBaranda(${id}, true)">
+                        <span style="color:#555;">${pLbl}:</span><input type="number" min="1" max="6" step="1" style="width:52px;" value="${parseInt(t.puntos) > 0 ? t.puntos : ''}" placeholder="${dt.pAuto}" title="Vacío = automático (${dt.pAuto})" oninput="barandaUpdateTramo(${id}, ${i}, 'puntos', this.value)" onchange="refreshBaranda(${id}, true)">
+                        <span style="color:${dt.excede ? '#c0392b' : '#777'};">→ ${dt.n} × ${dt.ancho} mm${dt.excede ? ` ⚠ pasa de ${dt.max}` : ''}${dt.manual ? ' (a mano)' : ''}</span>
+                    </div>`;
+                }
+            }
         });
         h += `<button class="bar-add" onclick="barandaAddTramo(${id})">+ Añadir Tramo</button></div>`;
         // Consumibles de instalación (resina/tornillos) — salen en el resumen/PDF/ficha para que el
@@ -8928,6 +8988,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function barandaConsumiblesTxt(st) {
         const tor = tornillosBaranda(st), pr = prensasBaranda(st);
         let t = llevaResina(st) ? `Resina: <b>${galTxt(resinaBarandaGal(st))}</b>${(st.resinaGal !== '' && st.resinaGal != null) ? ' <span style="color:#c0392b;">(corregido)</span>' : ''} · ` : '';
+        const cn = conectoresBaranda(st);
+        if (cn) t += `Vidrios: <b>${cn.vidrios}</b> (${cn.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${cn.cant > 1 ? ` × ${cn.cant}` : ''}) · Puntos: <b>${cn.puntos}</b> · ${cn.nombre}: <b>${cn.piezas}</b> · `;
         if (pr) t += `Vidrios: <b>${pr.vidrios}</b> (${pr.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${pr.cant > 1 ? ` × ${pr.cant}` : ''}) · Prensas: <b>${pr.prensas}</b>`;
         t += `${pr ? ' · ' : ''}${tornillosLabel(st)}: <b>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</b>${(st.tornillos != null && st.tornillos !== '') ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
         if (pr && tor != null) t += ` <span style="color:#555;">(+ ${tor} arandelas y ${tor} tuercas)</span>`;
@@ -8955,6 +9017,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (!t[idx]) return;
         if (key === 'giro') t[idx].giro = value;
         else if (key === 'plataforma') t[idx].plataforma = !!value;
+        else if (key === 'vidrios' || key === 'puntos') { const v = parseInt(value) || 0; if (v > 0) t[idx][key] = v; else delete t[idx][key]; }
         else t[idx][key] = (value === '' ? '' : parseInt(value) || 0);
         refreshBaranda(id, false);
     }

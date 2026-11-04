@@ -1351,8 +1351,15 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   vez de los palitos de antes bajo el vidrio; la cota de alto mide el vidrio y el rótulo ELEVACIÓN sube con él.
 - **Conectores laterales (redondo / cuadrado / doble), usuario 2026-11-04**: en cada punto de fijación van DOS conectores, uno
   encima del otro (a 12 % y 30 % del alto sobre el borde inferior del vidrio; el doble es una pletina que une los dos pernos).
-  Así los dibujaba la baranda 3D original y se perdió al pasar a la elevación 2D el 2026-09-03. Puntos por tramo = máx(2,
-  tramo ÷ 1100 mm), como la versión 3D (supuesto, a confirmar). La cantidad de conectores y tornillos sigue «por definir».
+  Así los dibujaba la baranda 3D original y se perdió al pasar a la elevación 2D el 2026-09-03. **Vidrios y puntos** (usuario
+  2026-11-04: «el máximo de un vidrio es ≈ 2,50 m y un vidrio así lleva 3 puntos»): `despieceTramo(t, fij)` (común con la prensa)
+  = menor N de vidrios por tramo con cada vidrio ≤ `CONECTOR_VIDRIO_MAX_MM` 2500 tras los espacios de 20 mm; 2 puntos hasta
+  `CONECTOR_VIDRIO_2_MAX_MM` 1300 (supuesto: mismo corte que la prensa) y 3 por encima. `conectoresBaranda(state)` → vidrios,
+  puntos y piezas (redondo/cuadrado = 2 por punto; doble = 1 pletina por punto) en resumen, consumibles y banner. **Ajuste
+  manual por tramo** (prensa y conectores): fila «Vidrios / Prensas o Puntos por vidrio» bajo cada tramo del constructor
+  (`t.vidrios`, `t.puntos`; vacío = automático, placeholder = el automático) con «→ 3 × 1640 mm (a mano)» y aviso rojo si un
+  vidrio pasa del máximo; el resumen marca «(ajustado a mano)». Cambiar la fijación reconstruye el constructor. Tornillos de
+  los conectores siguen «por definir».
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón
