@@ -3312,6 +3312,20 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   `entradaInventario` avisa que no se deshace. La tarjeta muestra «⚙️ Estado corregido a mano por X: motivo». El push de
   `solicitudMaterialPush` reacciona igual que a cualquier cambio de estado (p. ej. `chofer` avisa al chofer). `ESTADO_TXT.cancelada`
   pasó a «Cancelada» (ya no solo la cancela quien pidió). Guía `guia-inventario-03` actualizada.
+- **Abrir WhatsApp NO marca el pedido (2026-11-04, Dylan: «por entrar a WhatsApp el pedido se marca hecho automáticamente, no debe ser
+  automático»; los 5 pedidos marcados así el 03–04/11 se devolvieron a `pedida`)**: en la tarjeta suelta `solOkProveedor` abre WhatsApp,
+  guarda el proveedor elegido en `pendProv[id]` y pinta la caja amarilla «¿Enviaste el mensaje?» → `solConfirmarProveedor(id)` es el
+  único que llama a `cambiarEstado('pedido_proveedor')` (historial «envío confirmado»); «No, todavía no» cierra sin tocar nada. En el
+  lote (`abrirLote('proveedor')` del tablero) el botón pasa a «Abrir WhatsApp» y, tras abrirlo, el cuerpo del modal se vuelve la
+  confirmación y el mismo botón «✅ Sí, lo envié: marcar los N» ejecuta `pedirVariosAlProveedor`; Cancelar deja todo en «Pedida».
+  **El mensaje al proveedor ya no lleva la nota de quien pidió** (`mensajeProveedor`/`mensajeProveedorVarios` sin `s.nota`).
+  **Proveedor por defecto desde el inventario**: `crearSolicitud` guarda `itemProveedor` (texto libre `inventario.proveedor`, confidencial
+  del ítem; `montarPedir` lo pasa desde `itemSel`; los 8 pedidos existentes se rellenaron a mano); `proveedorDe(texto, provs)` casa por
+  palabra ≥ 4 letras (sin «import/ferretería/almacén…») contra nombre+empresa de la lista `rrhhConfig/contratistasExternos`, y
+  `proveedorPorDefecto(lista, provs)` devuelve el id solo si TODOS los pedidos apuntan al mismo. Los dos formularios preseleccionan ese
+  proveedor («· el del inventario para esta pieza»; si el texto no casa con ninguno, aviso ámbar «el inventario dice X, no está en la
+  lista»). Trampa propia: `fs.consultar(col, {filtros:[…]})` recibe un OBJETO; pasarle un array devuelve la colección entera (hoy
+  revirtió 3 pedidos de más, restaurados a mano).
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
 

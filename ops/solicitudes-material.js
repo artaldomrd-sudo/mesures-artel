@@ -115,6 +115,7 @@ export async function crearSolicitud(usuario, datos) {
         texto: (datos.texto || '').trim(), itemId: datos.itemId || null, itemTipo: datos.itemTipo || null, itemColor: datos.itemColor || null,
         unidad: datos.unidad || '', categoria: datos.categoria || null,
         itemUnidad: datos.itemUnidad || null, itemEmpaque: datos.itemEmpaque || null, itemPorCaja: Number(datos.itemPorCaja) || null,
+        itemProveedor: (datos.itemProveedor || '').trim() || null,
         cantidad: Number(datos.cantidad) || 1, urgencia: URGENCIAS[datos.urgencia] ? datos.urgencia : 'semana',
         nota: (datos.nota || '').trim(), obra: (datos.obra || '').trim(),
         pedidoPor: { nombre: usuario.nombre || '', email: usuario.email || '' },
@@ -155,8 +156,23 @@ export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle
     await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, detalle: detalle || null, costoUnitario: costoU || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
 }
 // Texto del pedido para el proveedor (WhatsApp). Nunca precios, teléfonos de clientes ni anticipos.
+// Proveedor por defecto (Dylan 2026-11-04): si el ítem del inventario dice «Proveedor: Jaraba import», el formulario arranca con
+// ese proveedor elegido; solo se cambia si esa vez se compra en otro sitio. Casa por palabra significativa (≥ 4 letras) entre el
+// texto libre del inventario y el nombre/empresa de la lista de proveedores. Con varios pedidos, solo si todos apuntan al mismo.
+const normP = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export function proveedorDe(itemProveedor, provs) {
+    const txt = normP(itemProveedor); if (!txt) return null;
+    const palabras = txt.split(/[^a-z0-9]+/).filter(w => w.length >= 4 && !['import', 'imports', 'ferreteria', 'almacen', 'almacenes', 'centro'].includes(w));
+    if (!palabras.length) return null;
+    return (provs || []).find(p => { const n = normP((p.nombre || '') + ' ' + (p.empresa || '')); return palabras.some(w => n.includes(w)); }) || null;
+}
+export function proveedorPorDefecto(lista, provs) {
+    const ids = new Set(); let sinDato = 0;
+    for (const s of lista) { const p = proveedorDe(s.itemProveedor, provs); if (p) ids.add(p.id); else sinDato++; }
+    return ids.size === 1 && sinDato === 0 ? [...ids][0] : '';
+}
 export function mensajeProveedor(s, nombreProv) {
-    const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', `Pedido: ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}.`];
+    const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', `Pedido: ${cantidadTxt(s)} de ${nombreDe(s)}.`];
     if (s.urgencia === 'hoy') l.push('Lo necesitamos hoy.'); else if (s.urgencia === 'semana') l.push('Lo necesitamos esta semana.');
     l.push('', '¿Tiene disponible? Por favor envíenos la cotización por aquí para hacer el pago; lo retira nuestro chofer.', '', 'Gracias.');
     return l.join('\n');
@@ -241,6 +257,7 @@ export function montarPedir({ usuario, getItem, onCreada, matchItem, getAbierta 
                 itemId: itemSel ? itemSel.id : null, itemTipo: itemSel ? itemSel.tipo : null, itemColor: itemSel ? (itemSel.color || null) : null,
                 categoria: itemSel ? (itemSel.categoria || null) : null,
                 itemUnidad: itemSel ? (itemSel.unidad || 'unidades') : null, itemEmpaque: itemSel ? (itemSel.empaque || null) : null, itemPorCaja: itemSel ? (Number(itemSel.porCaja) || null) : null,
+                itemProveedor: itemSel ? (itemSel.proveedor || null) : null,
                 unidad: document.getElementById('sol-unidad').value === 'otro' ? (document.getElementById('sol-unidad-otro').value.trim() || 'unidades') : document.getElementById('sol-unidad').value,
                 cantidad: document.getElementById('sol-cant').value, urgencia: urg,
                 nota: document.getElementById('sol-nota').value, obra: document.getElementById('sol-obra').value
@@ -333,6 +350,7 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="document.getElementById('sol-form-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:bold;cursor:pointer;">Cancelar</button>
         <button onclick="${okFn}" style="background:${okBg};color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:bold;cursor:pointer;">${okTxt}</button></div></div>`;
     const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+    const pendProv = {}; // proveedor elegido por pedido, a la espera de que la oficina confirme que el WhatsApp salió
     window.solSumarse = async (id) => {
         const n = prompt('¿Cuántos necesitas tú? (se suman al pedido)', '1'); if (n == null) return;
         try { await sumarse(id, usuario, n); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
@@ -346,12 +364,13 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         if (tipo === 'proveedor') {
             const provs = proveedoresActuales();
             const opciones = [['', '— elegir proveedor —'], ...provs.map(p => [p.id, p.nombre + (p.telefono ? ' · ' + p.telefono : ' · sin teléfono')]), ['otro', 'Otro número…']];
+            const defecto = proveedorPorDefecto([s], provs);
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">📲 Pedir al proveedor por WhatsApp</div>
-                <label style="font-size:12px;">Proveedor</label>${sel('sf-prov-' + id, opciones, '', `document.getElementById('sf-provotro-${id}').style.display = this.value === 'otro' ? 'grid' : 'none'`)}
+                <label style="font-size:12px;">Proveedor${defecto ? ' <span style="font-weight:normal;color:#27ae60">· el del inventario para esta pieza</span>' : (s.itemProveedor ? ` <span style="font-weight:normal;color:#b9770e">· el inventario dice «${esc(s.itemProveedor)}», no está en la lista</span>` : '')}</label>${sel('sf-prov-' + id, opciones, defecto, `document.getElementById('sf-provotro-${id}').style.display = this.value === 'otro' ? 'grid' : 'none'`)}
                 <div id="sf-provotro-${id}" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Nombre</label>${inp('sf-provnom-' + id, 'Ferretería X')}</div><div><label style="font-size:12px;">WhatsApp (10 dígitos)</label>${inp('sf-provtel-' + id, '8095551234', 'tel')}</div></div>
                 <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="sf-msg-${id}" rows="6" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;">${esc(mensajeProveedor(s, ''))}</textarea>
-                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú. Cuando el proveedor mande la cotización, súbela con 📎 en la tarjeta: se manda a pagar sola. Si en ese sitio no se paga por adelantado, usa «Sin pago anticipado: lo compra el chofer».</div>`,
-                'Abrir WhatsApp y marcar', `solOkProveedor('${id}')`, '#2980b9');
+                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú y al volver confirmas «Sí, lo envié»: hasta entonces el pedido NO se marca. Cuando el proveedor mande la cotización, súbela con 📎 en la tarjeta: se manda a pagar sola. Si en ese sitio no se paga por adelantado, usa «Sin pago anticipado: lo compra el chofer».</div>`,
+                'Abrir WhatsApp', `solOkProveedor('${id}')`, '#2980b9');
         } else if (tipo === 'chofer') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">🚚 ${s.estado === 'pedido_proveedor' ? 'Enviar al chofer para retirarlo' : 'Pasar directo al chofer'}</div>
                 <label style="font-size:12px;">${s.estado === 'pedido_proveedor' ? 'Dónde lo retira y qué debe presentar' : 'Dónde comprarlo y qué pedir exactamente'}</label>${inp('sf-nc-' + id, s.estado === 'pedido_proveedor' ? 'Ej: en el proveedor, ya está pagado; mostrar la orden adjunta' : 'Ej: ferretería de la 27, pedir la caja de 100', 'text', s.notaChofer || '')}
@@ -406,7 +425,19 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         const tel = telWa(prov.telefono); if (!tel) { alert('Ese proveedor no tiene WhatsApp cargado. Elige «Otro número…» y escríbelo.'); return; }
         const msg = v('sf-msg-' + id) || mensajeProveedor(s, prov.nombre);
         window.open('https://wa.me/' + tel + '?text=' + encodeURIComponent(msg), '_blank');
-        try { await cambiarEstado(id, 'pedido_proveedor', usuario, { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' } }, 'Pedido a ' + prov.nombre + ' por WhatsApp'); }
+        // Abrir WhatsApp NO marca nada (Dylan 2026-11-04): hay que validar que el mensaje salió.
+        pendProv[id] = prov;
+        const box = document.getElementById('sol-form-' + id); if (!box) return;
+        box.innerHTML = `<div style="background:#fff8e1;border:1.5px solid #f1c40f;border-radius:10px;padding:10px 12px;margin-top:10px;display:grid;gap:8px;">
+            <div style="font-size:13px;font-weight:bold;color:#7d6608;">¿Enviaste el mensaje a ${esc(prov.nombre)} en WhatsApp?</div>
+            <div style="font-size:12px;color:#667;">Si WhatsApp no se abrió o no lo enviaste, el pedido sigue como «Pedida».</div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;"><button onclick="document.getElementById('sol-form-${id}').innerHTML=''" style="background:transparent;border:1.5px solid #ddd;color:#888;border-radius:8px;padding:8px 12px;font-family:inherit;font-weight:bold;cursor:pointer;">No, todavía no</button>
+            <button onclick="solConfirmarProveedor('${id}')" style="background:#27ae60;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:inherit;font-weight:bold;cursor:pointer;">✅ Sí, lo envié: marcar como pedido</button></div></div>`;
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    window.solConfirmarProveedor = async (id) => {
+        const prov = pendProv[id]; if (!prov) return;
+        try { await cambiarEstado(id, 'pedido_proveedor', usuario, { proveedor: { ...prov, fechaISO: ahoraISO(), por: usuario.nombre || '' } }, 'Pedido a ' + prov.nombre + ' por WhatsApp (envío confirmado)'); delete pendProv[id]; }
         catch (e) { alert('No se pudo marcar: ' + (e.message || e)); }
     };
     window.solOkChofer = async (id) => {
@@ -472,7 +503,7 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
 // o pasar todo al chofer de una vez. Los pedidos pendientes casi siempre son reposiciones del mismo proveedor.
 export function mensajeProveedorVarios(lista, nombreProv) {
     const l = [`Hola${nombreProv ? ' ' + nombreProv : ''}, le escribe ARTAL Dominicana.`, '', 'Pedido:'];
-    lista.forEach(s => l.push(`• ${cantidadTxt(s)} de ${nombreDe(s)}${s.nota ? ' (' + s.nota + ')' : ''}`));
+    lista.forEach(s => l.push(`• ${cantidadTxt(s)} de ${nombreDe(s)}`));
     if (lista.some(s => s.urgencia === 'hoy')) l.push('', 'Algunas piezas las necesitamos hoy.');
     l.push('', '¿Tiene disponible? Por favor envíenos la cotización por aquí para hacer el pago; lo retira nuestro chofer.', '', 'Gracias.');
     return l.join('\n');
