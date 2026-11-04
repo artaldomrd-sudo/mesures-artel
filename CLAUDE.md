@@ -3792,6 +3792,15 @@ personal (camisetas, pantalones, botas, lentes, guantes, casco, arnés, chaleco,
   `dotacion()` si `tipo == 'dotacion'` (read/update/delete siguen `rrhh()`). Banco `herramientas/probar-reglas.py`: +20 casos,
   117/117. Guía Academia `guia-dotacion` (4 lecciones, roles admin/contable/dotacion). Pérdidas: solo marca para RRHH, nunca
   descuento en nómina (no se tocó nómina).
+- **Tarjetas de combustible y de banco (mismo día, Dylan: «tarjetas de combustible y de crédito banco: número sin el CVV, vencimiento,
+  motivo, el vehículo del que son responsables»)**: categoría `Tarjeta` en el catálogo con `tipoTarjeta` 'combustible'|'banco' y
+  `emisor` (sin tallas ni vida útil); ids sembrados `tarjeta-total` (Total Energies) y `tarjeta-banco`. La fila de entrega muestra número,
+  `vencimiento` (input month → 'AAAA-MM'), vehículo (`VEHICULOS` F-01/F-02/F-03 fijos, mismos que Transportes/calculador) y uso;
+  `tarjetaDeFila` guarda `entrega.tarjeta = {tipo, emisor, numero, vencimiento, vehiculoId, vehiculoNombre, uso}`. **Banco: solo
+  «•••• 1234»** (últimos 4; el número completo nunca se guarda); combustible: el número completo agrupado de 4. `reposicion()` de una
+  tarjeta = último día del mes de vencimiento. En «Por persona» cada tarjeta es su propia fila (clave con el id). Perdida/dañada: el
+  aviso y el evento dicen «BLOQUEAR LA TARJETA con el emisor». La ficha del empleado y el bloque de firma de Instalación muestran el
+  número enmascarado, vencimiento y vehículo.
 
 ### Academia: edición por BLOQUE e imágenes en cualquier punto (2026-11-03)
 

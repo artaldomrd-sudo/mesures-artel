@@ -102,11 +102,19 @@
         <h2 id="art-title">Artículo</h2>
         <label>Nombre</label><input type="text" id="art-nombre" placeholder="Ej: Botas de seguridad">
         <label>Categoría</label>
-        <select id="art-cat"><option>Uniforme</option><option>EPP (protección)</option><option>Equipo</option></select>
+        <select id="art-cat" onchange="artCatCambio()"><option>Uniforme</option><option>EPP (protección)</option><option>Equipo</option><option value="Tarjeta">Tarjeta (combustible / banco)</option></select>
+        <div id="art-tarjeta" style="display:none;background:#fff8e1;border:1px solid #f0c36d;border-radius:10px;padding:10px 12px;margin-top:8px;">
+            <label style="margin-top:0">Tipo de tarjeta</label>
+            <select id="art-tipotar"><option value="combustible">Combustible (estación de servicio)</option><option value="banco">Banco (crédito / débito)</option></select>
+            <label>Emisor <span class="hint">(Total Energies, Banco Popular…)</span></label><input type="text" id="art-emisor" placeholder="Total Energies">
+            <div class="hint" style="margin-top:6px;color:#7a5200;">Cada tarjeta se entrega con su número, vencimiento, vehículo y uso. De una tarjeta de BANCO solo se guardan los últimos 4 dígitos: el número completo nunca queda en el sistema.</div>
+        </div>
+        <div id="art-fisico">
         <label>Tallas <span class="hint">(separadas por coma; vacío = sin talla)</span></label>
         <input type="text" id="art-tallas" placeholder="S, M, L, XL">
         <label>Vida útil en meses <span class="hint">(vacío = se repone al romperse)</span></label>
         <input type="number" id="art-vida" min="0" step="1" placeholder="12">
+        </div>
         <label>Costo de referencia RD$ <span class="hint">(opcional)</span></label>
         <input type="number" id="art-costo" min="0" step="1">
         <div class="modal-actions">
@@ -153,6 +161,10 @@
     const hoyISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
     const fmtF = (s) => { if (!s) return ''; const d = new Date(String(s).slice(0, 10) + 'T00:00:00'); return isNaN(d) ? '' : d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: 'numeric' }); };
     const addMeses = (iso, m) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + Number(m)); return d.toISOString().slice(0, 10); };
+    // Tarjetas (Dylan 2026-11-03): combustible (Total Energies…) y de banco, con número, vencimiento, vehículo y uso.
+    const VEHICULOS = [{ id: 'F-01', nombre: 'Camión Kia K2700' }, { id: 'F-02', nombre: 'Minivan KYC V3' }, { id: 'F-03', nombre: 'Camioneta Hilux' }];
+    const esTarjeta = (a) => !!a && a.categoria === 'Tarjeta';
+    const tarjetaTxt = (e) => { const t = e && e.tarjeta; if (!t) return ''; const v = t.vencimiento ? ' · vence ' + t.vencimiento.slice(5, 7) + '/' + t.vencimiento.slice(0, 4) : ''; const veh = t.vehiculoNombre ? ' · 🚚 ' + t.vehiculoNombre : ''; return `💳 ${t.emisor ? t.emisor + ' ' : ''}${t.numero || ''}${v}${veh}${t.uso ? ' · uso: ' + t.uso : ''}`; };
     const ESTADO = { entregado: ['En su poder', '#1f9d61'], devuelto: ['Devuelto', '#7f8c8d'], perdido: ['Perdido', '#c0392b'], danado: ['Dañado', '#d35400'] };
 
     let personas = [], catalogo = [], entregas = [], tab = 'entregas';
@@ -168,6 +180,11 @@
     const activas = () => personas.filter(p => (p.estado || 'activo') === 'activo');
     // Reposición: fecha de la última entrega + vida útil del artículo. null = «al romperse».
     function reposicion(ent) {
+        if (ent.tarjeta && ent.tarjeta.vencimiento) {   // tarjeta: vence el último día del mes impreso
+            const [y, m] = ent.tarjeta.vencimiento.split('-').map(Number); const f = new Date(y, m, 0); const fi = f.toISOString().slice(0, 10);
+            const dias = Math.round((new Date(fi + 'T00:00:00') - new Date(hoyISO() + 'T00:00:00')) / 86400000);
+            return { fecha: fi, dias, clase: dias < 0 ? 'rep-vencida' : dias <= 30 ? 'rep-pronto' : 'rep-ok', txt: dias < 0 ? `tarjeta vencida hace ${-dias} d` : dias === 0 ? 'vence hoy' : `vence en ${dias} d` };
+        }
         const a = articuloDe(ent.articuloId); const vida = a && Number(a.vidaUtilMeses) > 0 ? Number(a.vidaUtilMeses) : (Number(ent.vidaUtilMeses) > 0 ? Number(ent.vidaUtilMeses) : 0);
         if (!vida || !ent.fecha) return null;
         const f = addMeses(ent.fecha, vida); const dias = Math.round((new Date(f + 'T00:00:00') - new Date(hoyISO() + 'T00:00:00')) / 86400000);
@@ -212,6 +229,7 @@
                 <button style="background:#d35400" onclick="abrirEstado('${e.id}','danado')">💔 Dañado</button></div>` : '';
             return `<div class="order-card">
                 <div class="row"><div><b>${esc(e.empleadoNombre || '')}</b> · ${esc(e.articulo || '')}${e.talla ? ' · talla ' + esc(e.talla) : ''} × ${Number(e.cantidad) || 1}</div><span class="chip" style="background:${col}">${txt}</span></div>
+                ${e.tarjeta ? `<div class="meta" style="color:#7a5200">${esc(tarjetaTxt(e))}</div>` : ''}
                 <div class="meta">Entregado el ${esc(fmtF(e.fecha))} por ${esc(e.entregadoPor || '')}${e.nota ? ' · 📝 ' + esc(e.nota) : ''}${r ? ` · reposición <span class="${r.clase}">${esc(fmtF(r.fecha))} (${esc(r.txt)})</span>` : (e.estado === 'entregado' ? ' · reposición al romperse' : '')}</div>
                 ${e.estado !== 'entregado' && e.estadoFecha ? `<div class="meta">${txt} el ${esc(fmtF(e.estadoFecha))}${e.estadoNota ? ' · ' + esc(e.estadoNota) : ''}${e.revisarRRHH && esRRHH ? ' · <b style="color:#c0392b">revisar con RRHH</b>' : ''}</div>` : ''}
                 <div style="margin-top:6px">${firma}</div>${acts}
@@ -229,7 +247,7 @@
             const mias = entregas.filter(e => e.empleadoId === p.id && e.estado === 'entregado');
             // Agrupado por artículo + talla: cantidad en poder, última entrega y reposición de la más reciente.
             const grupos = new Map();
-            mias.forEach(e => { const k = (e.articuloId || e.articulo) + '|' + (e.talla || ''); const g = grupos.get(k) || { art: e.articulo, talla: e.talla, cant: 0, ult: null, firmar: 0 }; g.cant += Number(e.cantidad) || 1; if (!g.ult || e.fecha > g.ult.fecha) g.ult = e; if (!e.firmaEmpleado) g.firmar++; grupos.set(k, g); });
+            mias.forEach(e => { const k = (e.articuloId || e.articulo) + '|' + (e.talla || '') + (e.tarjeta ? '|' + e.id : ''); const g = grupos.get(k) || { art: e.articulo + (e.tarjeta ? ' ' + (e.tarjeta.numero || '') + (e.tarjeta.vehiculoNombre ? ' · ' + e.tarjeta.vehiculoNombre : '') : ''), talla: e.talla, cant: 0, ult: null, firmar: 0 }; g.cant += Number(e.cantidad) || 1; if (!g.ult || e.fecha > g.ult.fecha) g.ult = e; if (!e.firmaEmpleado) g.firmar++; grupos.set(k, g); });
             const filas = [...grupos.values()].sort((a, b) => String(a.art).localeCompare(String(b.art), 'es'));
             const ultima = mias.length ? mias.map(e => e.fecha).sort().pop() : '';
             return `<div class="per-card">
@@ -251,7 +269,7 @@
             return `<div class="order-card">
                 <div class="row"><div><b>${esc(a.nombre)}</b> <span class="badge">${esc(a.categoria || '')}</span>${a.activo === false ? ' <span class="chip" style="background:#999">inactivo</span>' : ''}</div>
                 <div class="acts" style="margin:0"><button style="background:var(--artal-blue)" onclick="abrirArticulo('${a.id}')">✏ Editar</button><button style="background:${a.activo === false ? '#1f9d61' : '#7f8c8d'}" onclick="toggleArticulo('${a.id}')">${a.activo === false ? 'Activar' : 'Desactivar'}</button></div></div>
-                <div class="meta">Vida útil: ${Number(a.vidaUtilMeses) > 0 ? a.vidaUtilMeses + ' meses' : 'al romperse'} · Tallas: ${Array.isArray(a.tallas) && a.tallas.length ? esc(a.tallas.join(', ')) : 'sin talla'}${Number(a.costoRef) > 0 ? ' · Ref. RD$ ' + Number(a.costoRef).toLocaleString('es-DO') : ''} · ${enPoder} en poder del equipo</div>
+                <div class="meta">${esTarjeta(a) ? `Tarjeta de ${a.tipoTarjeta === 'banco' ? 'banco' : 'combustible'}${a.emisor ? ' · ' + esc(a.emisor) : ''} · vence según cada tarjeta` : `Vida útil: ${Number(a.vidaUtilMeses) > 0 ? a.vidaUtilMeses + ' meses' : 'al romperse'}`} · Tallas: ${Array.isArray(a.tallas) && a.tallas.length ? esc(a.tallas.join(', ')) : 'sin talla'}${Number(a.costoRef) > 0 ? ' · Ref. RD$ ' + Number(a.costoRef).toLocaleString('es-DO') : ''} · ${enPoder} en poder del equipo</div>
             </div>`;
         }).join('');
     }
@@ -271,20 +289,43 @@
         div.innerHTML = `<select class="fa-art" onchange="tallasDe(this)"><option value="">— artículo —</option>${acts.map(a => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('')}</select>
             <select class="fa-talla"><option value="">talla</option></select>
             <input type="number" class="fa-cant" min="1" value="1" title="Cantidad">
-            <button type="button" title="Quitar" onclick="this.parentElement.remove()">✕</button>`;
+            <button type="button" title="Quitar" onclick="this.parentElement.remove()">✕</button>
+            <div class="fa-tar" style="display:none;grid-column:1 / -1;background:#fff8e1;border:1px solid #f0c36d;border-radius:8px;padding:8px 10px;margin-top:4px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div><label style="margin-top:0;font-size:12px">Número <span class="fa-tar-hint hint"></span></label><input type="text" class="fa-num" inputmode="numeric" placeholder="1234 5678 9012 3456"></div>
+                    <div><label style="margin-top:0;font-size:12px">Vencimiento</label><input type="month" class="fa-venc"></div>
+                    <div><label style="margin-top:0;font-size:12px">Vehículo del que responde</label><select class="fa-veh"><option value="">— ninguno / no aplica —</option>${VEHICULOS.map(v => `<option value="${v.id}">${esc(v.id + ' · ' + v.nombre)}</option>`).join('')}<option value="otro">Otro (escribir en uso)</option></select></div>
+                    <div><label style="margin-top:0;font-size:12px">Uso / motivo</label><input type="text" class="fa-uso" placeholder="Ej: combustible del camión, viajes a SD"></div>
+                </div>
+            </div>`;
         document.getElementById('en-filas').appendChild(div);
     };
     window.tallasDe = (sel) => {
-        const a = articuloDe(sel.value); const t = sel.parentElement.querySelector('.fa-talla');
+        const a = articuloDe(sel.value); const fila = sel.parentElement, t = fila.querySelector('.fa-talla');
         const tallas = a && Array.isArray(a.tallas) ? a.tallas : [];
         t.innerHTML = tallas.length ? tallas.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('') : '<option value="">sin talla</option>';
+        const tar = fila.querySelector('.fa-tar'); const es = esTarjeta(a);
+        tar.style.display = es ? 'block' : 'none'; t.style.display = es ? 'none' : ''; fila.querySelector('.fa-cant').style.display = es ? 'none' : '';
+        if (es) { fila.querySelector('.fa-cant').value = 1; fila.querySelector('.fa-tar-hint').textContent = a.tipoTarjeta === 'banco' ? '(solo se guardan los últimos 4 dígitos)' : '(sin el código de seguridad)'; }
     };
+    // Datos de una tarjeta desde su fila. Banco: SOLO los últimos 4 dígitos (el número completo nunca se guarda).
+    function tarjetaDeFila(f, a) {
+        if (!esTarjeta(a)) return null;
+        const dig = (f.querySelector('.fa-num').value || '').replace(/\D/g, '');
+        if (!dig) throw new Error('Escribe el número de la tarjeta «' + a.nombre + '».');
+        const numero = a.tipoTarjeta === 'banco' ? '•••• ' + dig.slice(-4) : dig.replace(/(\d{4})(?=\d)/g, '$1 ');
+        const venc = f.querySelector('.fa-venc').value || ''; if (!venc) throw new Error('Pon el vencimiento de la tarjeta «' + a.nombre + '».');
+        const vehId = f.querySelector('.fa-veh').value, veh = VEHICULOS.find(v => v.id === vehId);
+        return { tipo: a.tipoTarjeta || 'combustible', emisor: a.emisor || '', numero, vencimiento: venc, vehiculoId: veh ? veh.id : (vehId === 'otro' ? 'otro' : ''), vehiculoNombre: veh ? veh.nombre : '', uso: (f.querySelector('.fa-uso').value || '').trim() };
+    }
     window.cerrar = (id) => document.getElementById(id).classList.remove('show');
     window.guardarEntrega = async () => {
         const pid = document.getElementById('en-persona').value, p = personaDe(pid);
         const fecha = document.getElementById('en-fecha').value || hoyISO(), nota = document.getElementById('en-nota').value.trim();
         if (!p) { alert('Elige la persona.'); return; }
-        const filas = [...document.querySelectorAll('#en-filas .fila-art')].map(f => ({ a: articuloDe(f.querySelector('.fa-art').value), talla: f.querySelector('.fa-talla').value, cant: Number(f.querySelector('.fa-cant').value) || 1 })).filter(x => x.a);
+        let filas;
+        try { filas = [...document.querySelectorAll('#en-filas .fila-art')].map(f => { const a = articuloDe(f.querySelector('.fa-art').value); return a ? { a, talla: esTarjeta(a) ? '' : f.querySelector('.fa-talla').value, cant: esTarjeta(a) ? 1 : (Number(f.querySelector('.fa-cant').value) || 1), tarjeta: tarjetaDeFila(f, a) } : null; }).filter(Boolean); }
+        catch (err) { alert(err.message); return; }
         if (!filas.length) { alert('Agrega al menos un artículo.'); return; }
         const btn = document.getElementById('en-guardar'); btn.disabled = true;
         const loteId = 'D' + Date.now().toString(36);
@@ -294,9 +335,9 @@
                 const ref = doc(collection(db, 'rrhhDotacion'));
                 b.set(ref, { empleadoId: p.id, empleadoNombre: p.nombre || '', empleadoCorreo: String(p.correo || '').toLowerCase(), articuloId: x.a.id, articulo: x.a.nombre, categoria: x.a.categoria || '', talla: x.talla || '', cantidad: x.cant,
                     vidaUtilMeses: Number(x.a.vidaUtilMeses) || 0, costoRef: Number(x.a.costoRef) || 0, fecha, estado: 'entregado', estadoFecha: null, estadoNota: '', revisarRRHH: false,
-                    entregadoPor: usuario.nombre || '', entregadoPorEmail: usuario.email || '', firmaEmpleado: null, nota, loteId, fechaCreacion: new Date().toISOString(), creado: serverTimestamp() });
+                    entregadoPor: usuario.nombre || '', entregadoPorEmail: usuario.email || '', firmaEmpleado: null, nota, loteId, fechaCreacion: new Date().toISOString(), creado: serverTimestamp(), ...(x.tarjeta ? { tarjeta: x.tarjeta } : {}) });
                 // Expediente: evento del Ciclo del empleado (tipo dotacion). Quien gestiona la dotación solo puede CREAR este tipo.
-                b.set(doc(collection(db, 'rrhhEventos')), { empleadoId: p.id, empleadoNombre: p.nombre || '', tipo: 'dotacion', fecha, titulo: `Dotación entregada: ${x.a.nombre}${x.talla ? ' talla ' + x.talla : ''} × ${x.cant}`, detalle: nota, dotacionId: ref.id, creadoPor: usuario.nombre || '', fechaCreacion: serverTimestamp() });
+                b.set(doc(collection(db, 'rrhhEventos')), { empleadoId: p.id, empleadoNombre: p.nombre || '', tipo: 'dotacion', fecha, titulo: `Dotación entregada: ${x.a.nombre}${x.talla ? ' talla ' + x.talla : ''} × ${x.cant}`, detalle: [x.tarjeta ? tarjetaTxt({ tarjeta: x.tarjeta }) : '', nota].filter(Boolean).join(' · '), dotacionId: ref.id, creadoPor: usuario.nombre || '', fechaCreacion: serverTimestamp() });
             });
             await b.commit();
             cerrar('modal-ent');
@@ -312,7 +353,8 @@
         document.getElementById('est-desc').textContent = `${e.empleadoNombre} · ${e.articulo}${e.talla ? ' talla ' + e.talla : ''} × ${e.cantidad}`;
         document.getElementById('est-fecha').value = hoyISO(); document.getElementById('est-nota').value = '';
         document.getElementById('est-nota-hint').textContent = nuevo === 'devuelto' ? '(opcional)' : '(obligatoria: qué pasó)';
-        document.getElementById('est-aviso').textContent = nuevo === 'devuelto' ? 'El artículo deja de estar en su poder.' : `Queda como «${txt}» con una marca «revisar con RRHH». Nunca se descuenta nada automáticamente: lo decide RRHH.`;
+        document.getElementById('est-aviso').textContent = (nuevo === 'devuelto' ? 'El artículo deja de estar en su poder.' : `Queda como «${txt}» con una marca «revisar con RRHH». Nunca se descuenta nada automáticamente: lo decide RRHH.`)
+            + (e.tarjeta && nuevo !== 'devuelto' ? ` ⚠ ES UNA TARJETA: bloquéala ya con ${e.tarjeta.emisor || 'el emisor'} (${e.tarjeta.numero || ''}).` : '');
         document.getElementById('modal-est').classList.add('show');
     };
     window.guardarEstado = async () => {
@@ -323,7 +365,7 @@
         try {
             const b = writeBatch(db);
             b.update(doc(db, 'rrhhDotacion', estId), { estado: estNuevo, estadoFecha: fecha, estadoNota: nota, estadoPor: usuario.nombre || '', revisarRRHH: estNuevo !== 'devuelto' });
-            b.set(doc(collection(db, 'rrhhEventos')), { empleadoId: e.empleadoId, empleadoNombre: e.empleadoNombre || '', tipo: 'dotacion', fecha, titulo: `Dotación ${txt.toLowerCase()}: ${e.articulo}${e.talla ? ' talla ' + e.talla : ''} × ${e.cantidad}`, detalle: nota + (estNuevo !== 'devuelto' ? ' · revisar con RRHH' : ''), dotacionId: estId, creadoPor: usuario.nombre || '', fechaCreacion: serverTimestamp() });
+            b.set(doc(collection(db, 'rrhhEventos')), { empleadoId: e.empleadoId, empleadoNombre: e.empleadoNombre || '', tipo: 'dotacion', fecha, titulo: `Dotación ${txt.toLowerCase()}: ${e.articulo}${e.talla ? ' talla ' + e.talla : ''} × ${e.cantidad}`, detalle: [tarjetaTxt(e), nota, estNuevo !== 'devuelto' ? 'revisar con RRHH' : '', e.tarjeta && estNuevo !== 'devuelto' ? 'BLOQUEAR LA TARJETA con el emisor' : ''].filter(Boolean).join(' · '), dotacionId: estId, creadoPor: usuario.nombre || '', fechaCreacion: serverTimestamp() });
             await b.commit();
             cerrar('modal-est');
         } catch (err) { alert('No se pudo: ' + (err.message || err)); }
@@ -339,18 +381,22 @@
         document.getElementById('art-tallas').value = a && Array.isArray(a.tallas) ? a.tallas.join(', ') : '';
         document.getElementById('art-vida').value = a && Number(a.vidaUtilMeses) > 0 ? a.vidaUtilMeses : '';
         document.getElementById('art-costo').value = a && Number(a.costoRef) > 0 ? a.costoRef : '';
+        document.getElementById('art-tipotar').value = a && a.tipoTarjeta ? a.tipoTarjeta : 'combustible'; document.getElementById('art-emisor').value = a && a.emisor ? a.emisor : '';
+        artCatCambio();
         document.getElementById('modal-art').classList.add('show');
     };
     window.guardarArticulo = async () => {
         const nombre = document.getElementById('art-nombre').value.trim(); if (!nombre) { alert('Escribe el nombre.'); return; }
         const datos = { nombre, categoria: document.getElementById('art-cat').value, tallas: document.getElementById('art-tallas').value.split(',').map(s => s.trim()).filter(Boolean),
             vidaUtilMeses: Number(document.getElementById('art-vida').value) || 0, costoRef: Number(document.getElementById('art-costo').value) || 0, actualizado: new Date().toISOString(), por: usuario.nombre || '' };
+        if (datos.categoria === 'Tarjeta') { datos.tallas = []; datos.vidaUtilMeses = 0; datos.tipoTarjeta = document.getElementById('art-tipotar').value; datos.emisor = document.getElementById('art-emisor').value.trim(); if (!datos.emisor) { alert('Escribe el emisor de la tarjeta.'); return; } }
         try {
             if (artId) await updateDoc(doc(db, 'rrhhDotacionCatalogo', artId), datos);
             else await addDoc(collection(db, 'rrhhDotacionCatalogo'), { ...datos, activo: true, creado: serverTimestamp() });
             cerrar('modal-art');
         } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); }
     };
+    window.artCatCambio = () => { const es = document.getElementById('art-cat').value === 'Tarjeta'; document.getElementById('art-tarjeta').style.display = es ? 'block' : 'none'; document.getElementById('art-fisico').style.display = es ? 'none' : 'block'; };
     window.toggleArticulo = async (id) => { const a = articuloDe(id); if (!a) return; try { await updateDoc(doc(db, 'rrhhDotacionCatalogo', id), { activo: a.activo === false }); } catch (e) { alert('No se pudo: ' + (e.message || e)); } };
 </script>
 </body>
