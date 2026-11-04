@@ -1327,8 +1327,7 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
 - **Regla de resina** (`RESINA_GAL_POR_ML = 1.5/20 ≈ 0.075 gal/ml`): sale de dos consumos REALES
   medidos en obra por el usuario ese día — 20 m → 1½ galón, 6 m → ½ galón (ambos cuadran con esa
   tasa). `barandaMl(state)` = suma de tramos × cantidad; `resinaSugeridaGal` redondea HACIA ARRIBA
-  al ¼ de galón. Se aplica a cualquier fijación (base U, prensa, conectores) — supuesto propio,
-  el usuario no distinguió por fijación.
+  al ¼ de galón. SOLO base U (usuario 2026-11-04; antes se aplicaba a toda fijación).
 - **Regla de tornillos** (usuario, mismo día): en la base U va **un tornillo cada 30 cm**
   (`TORNILLOS_PASO_MM = 300`): por tramo `floor(L/300)+1` (extremos + intermedios; una barra de
   6.40 m → 22), sumado por tramo × cantidad (`tornillosSugeridos`). Solo `fijacion === 'base_u'`.
@@ -1345,8 +1344,8 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   o 3 prensas por vidrio, en vez de los spigots esquemáticos de antes. Supuesto propio: en una L el
   espacio de esquina cuenta como pared/vidrio (20 mm) en cada tramo. Conectores laterales siguen
   "por definir".
-- **Prensa de suelo: sin resina y dibujada a escala (usuario 2026-11-04)**: `llevaResina(state)` es falso con
-  `prensa_suelo` (se fija con barras roscadas, arandela y tuerca) → resina 0 y sin línea "Resina" en el resumen, el bloque
+- **Prensa de suelo: sin resina y dibujada a escala (usuario 2026-11-04)**: SOLO la base U lleva resina — `llevaResina(state)`
+  es falso con `prensa_suelo` y con los conectores laterales → resina 0 y sin línea "Resina" en el resumen, el bloque
   de consumibles ni el banner. En `renderBaranda2D` cada prensa es una PINZA (`PR`: vidrio a 40 mm del suelo, cuerpo de
   100 mm que agarra 90 mm del borde inferior del vidrio, pletina 130 × 8 mm, 2 tornillos de apriete; color de herrajes) en
   vez de los palitos de antes bajo el vidrio; la cota de alto mide el vidrio y el rótulo ELEVACIÓN sube con él.
