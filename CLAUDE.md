@@ -1349,6 +1349,10 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   de consumibles ni el banner. En `renderBaranda2D` cada prensa es una PINZA (`PR`: vidrio a 40 mm del suelo, cuerpo de
   100 mm que agarra 90 mm del borde inferior del vidrio, pletina 130 × 8 mm, 2 tornillos de apriete; color de herrajes) en
   vez de los palitos de antes bajo el vidrio; la cota de alto mide el vidrio y el rótulo ELEVACIÓN sube con él.
+- **Conectores laterales (redondo / cuadrado / doble), usuario 2026-11-04**: en cada punto de fijación van DOS conectores, uno
+  encima del otro (a 12 % y 30 % del alto sobre el borde inferior del vidrio; el doble es una pletina que une los dos pernos).
+  Así los dibujaba la baranda 3D original y se perdió al pasar a la elevación 2D el 2026-09-03. Puntos por tramo = máx(2,
+  tramo ÷ 1100 mm), como la versión 3D (supuesto, a confirmar). La cantidad de conectores y tornillos sigue «por definir».
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón

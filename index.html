@@ -605,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:36</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:37</div>
         </div>
     </div>
     
@@ -7393,13 +7393,30 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     }
                 }
             } else if (fij === 'conector_redondo' || fij === 'conector_cuadrado' || fij === 'conector_doble') {
-                const ys = b0 - Hs * 0.14, yInterp = f => (b0 + (b1 - b0) * f) - Hs * 0.14;
-                [0.18, 0.82].forEach(f => {
-                    const px = ax + (bx - ax) * f, py = yInterp(f), r = Math.max(1.4, Hs * 0.05);
-                    if (fij === 'conector_cuadrado') herr += `<rect x="${(px - r).toFixed(1)}" y="${(py - r).toFixed(1)}" width="${(r * 2).toFixed(1)}" height="${(r * 2).toFixed(1)}" rx="0.4" fill="${herrajeCol}"/>`;
-                    else if (fij === 'conector_doble') herr += `<rect x="${(px - r * 0.7).toFixed(1)}" y="${(py - r * 1.4).toFixed(1)}" width="${(r * 1.4).toFixed(1)}" height="${(r * 2.8).toFixed(1)}" rx="${(r * 0.4).toFixed(1)}" fill="${herrajeCol}"/>`;
-                    else herr += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r.toFixed(1)}" fill="${herrajeCol}"/>`;
-                });
+                // Conectores laterales: en cada punto de fijación van DOS, uno encima del otro (usuario
+                // 2026-11-04; así los dibujaba la versión 3D original y se perdió al pasar a 2D el 2026-09-03).
+                // Puntos por tramo = máx(2, tramo ÷ 1100 mm) repartidos parejo, como la versión 3D.
+                const Lmm = Math.round((p.x1 - p.x0) / scale);
+                const m = Math.max(2, Math.round(Lmm / 1100));
+                const st = herrajeCol === '#111111' ? '#000' : '#5f6b75';
+                const r = Math.max(1.2, Math.min(Hs * 0.05, 30 * scale + 0.6));
+                const bAt = f => b0 + (b1 - b0) * f;
+                for (let k = 0; k < m; k++) {
+                    const f = (k + 0.5) / m, px = ax + (bx - ax) * f;
+                    const yLo = bAt(f) - Hs * 0.12, yHi = bAt(f) - Hs * 0.30;
+                    if (fij === 'conector_doble') {
+                        // pletina doble: una pieza que une los dos puntos, con sus dos pernos
+                        const pw = r * 1.5;
+                        herr += `<rect x="${(px - pw / 2).toFixed(2)}" y="${(yHi - r).toFixed(2)}" width="${pw.toFixed(2)}" height="${(yLo - yHi + 2 * r).toFixed(2)}" rx="${(pw * 0.3).toFixed(2)}" fill="${herrajeCol}" stroke="${st}" stroke-width="0.3"/>`;
+                        [yHi, yLo].forEach(y => { herr += `<circle cx="${px.toFixed(2)}" cy="${y.toFixed(2)}" r="${(r * 0.35).toFixed(2)}" fill="${st}"/>`; });
+                    } else {
+                        [yHi, yLo].forEach(y => {
+                            if (fij === 'conector_cuadrado') herr += `<rect x="${(px - r).toFixed(2)}" y="${(y - r).toFixed(2)}" width="${(r * 2).toFixed(2)}" height="${(r * 2).toFixed(2)}" rx="0.3" fill="${herrajeCol}" stroke="${st}" stroke-width="0.3"/>`;
+                            else herr += `<circle cx="${px.toFixed(2)}" cy="${y.toFixed(2)}" r="${r.toFixed(2)}" fill="${herrajeCol}" stroke="${st}" stroke-width="0.3"/>`;
+                            herr += `<circle cx="${px.toFixed(2)}" cy="${y.toFixed(2)}" r="${(r * 0.35).toFixed(2)}" fill="${st}"/>`;
+                        });
+                    }
+                }
             }
             // marca de giro (elevación desarrollada): línea vertical + ángulo
             if (!p.first && p.giro && p.giro !== 'recto') {
