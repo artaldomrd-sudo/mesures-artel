@@ -1345,6 +1345,11 @@ calcular nada. "Automático en todos los módulos, menos admin para que yo pueda
   o 3 prensas por vidrio, en vez de los spigots esquemáticos de antes. Supuesto propio: en una L el
   espacio de esquina cuenta como pared/vidrio (20 mm) en cada tramo. Conectores laterales siguen
   "por definir".
+- **Prensa de suelo: sin resina y dibujada a escala (usuario 2026-11-04)**: `llevaResina(state)` es falso con
+  `prensa_suelo` (se fija con barras roscadas, arandela y tuerca) → resina 0 y sin línea "Resina" en el resumen, el bloque
+  de consumibles ni el banner. En `renderBaranda2D` cada prensa es una PINZA (`PR`: vidrio a 40 mm del suelo, cuerpo de
+  100 mm que agarra 90 mm del borde inferior del vidrio, pletina 130 × 8 mm, 2 tornillos de apriete; color de herrajes) en
+  vez de los palitos de antes bajo el vidrio; la cota de alto mide el vidrio y el rótulo ELEVACIÓN sube con él.
 - **Corrección manual solo admin**: `state.resinaGal` / `state.tornillos` (null = automático).
   Los inputs llevan clase `.adm-only` (CSS `display:none`, visible con `body.admin-cuaderno`, que
   `aplicarVisibilidadAdminCuaderno()` pone según `window.esAdminCuaderno` — mismo flag del botón

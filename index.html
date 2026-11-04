@@ -605,7 +605,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-03 11:21</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-04 15:28</div>
         </div>
     </div>
     
@@ -2634,9 +2634,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 // Consumibles para el equipo de instalación (ver resinaSugeridaGal): siempre en el
                 // resumen/PDF/ficha. Resina = manual o sugerida; tornillos solo si se cargaron.
                 const rg = resinaBarandaGal(state), manualR = (state.resinaGal !== '' && state.resinaGal != null);
-                let cons = `Resina: <strong>${galTxt(rg)}</strong>` + (manualR ? '' : ` <span style="color:#777;">(sugerido · ${barandaMl(state).toFixed(1)} ml)</span>`);
+                let cons = llevaResina(state) ? `Resina: <strong>${galTxt(rg)}</strong>` + (manualR ? '' : ` <span style="color:#777;">(sugerido · ${barandaMl(state).toFixed(1)} ml)</span>`) + ' · ' : '';
                 const tor = tornillosBaranda(state), pr = prensasBaranda(state);
-                cons += ` · ${tornillosLabel(state)}: <strong>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</strong>`;
+                cons += `${tornillosLabel(state)}: <strong>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</strong>`;
                 if (pr && tor != null) cons += ` (+ ${tor} arandelas y ${tor} tuercas)`;
                 if (pr) {
                     // Despiece de vidrios y prensas por tramo (prensa de suelo): lo que corta el taller y
@@ -3841,14 +3841,17 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const mm = tramos.reduce((a, t) => a + (parseInt(t.L) || 0), 0);
         return mm / 1000 * (parseInt(state.cantidad) || 1);
     }
+    // La prensa de suelo NO lleva resina (usuario 2026-11-04): se fija con barras roscadas, arandela y tuerca.
+    function llevaResina(state) { return !!state && state.fijacion !== 'prensa_suelo'; }
     function resinaSugeridaGal(state) {
+        if (!llevaResina(state)) return 0;
         const ml = barandaMl(state);
         if (ml <= 0) return 0;
         return Math.ceil(ml * RESINA_GAL_POR_ML * 4 - 1e-9) / 4;
     }
     // Resina efectiva de una baranda: la escrita a mano si existe, si no la sugerida.
     function resinaBarandaGal(state) {
-        if (!state || state.categoria !== 'baranda') return 0;
+        if (!state || state.categoria !== 'baranda' || !llevaResina(state)) return 0;
         const m = parseFloat(state.resinaGal);
         return (state.resinaGal !== '' && state.resinaGal != null && !isNaN(m)) ? m : resinaSugeridaGal(state);
     }
@@ -3990,13 +3993,14 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function actualizarPerfilUTotal() {
         const el = document.getElementById('perfil-u-banner');
         if (!el) return;
-        let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, tornTot = 0, tornPend = 0, barrasTot = 0, prensasTot = 0, vidriosPr = 0;
+        let piezas = [], hayBaranda = false, totalMm = 0, hayBaseU = false, resinaTot = 0, hayResina = false, tornTot = 0, tornPend = 0, barrasTot = 0, prensasTot = 0, vidriosPr = 0;
         let rieles = [];   // riel ALC00186 de todas las deslizantes de prensas del proyecto
         Object.values(cardsState).forEach(st => {
             rieles = rieles.concat(rielesDeDucha(st));
             if (st.categoria === 'baranda') {
                 hayBaranda = true;
                 resinaTot += resinaBarandaGal(st);
+                if (llevaResina(st)) hayResina = true;
                 const tor = tornillosBaranda(st), pr = prensasBaranda(st);
                 if (pr) { prensasTot += pr.prensas; vidriosPr += pr.vidrios; if (tor != null) barrasTot += tor; else tornPend++; }
                 else if (tor != null) tornTot += tor; else tornPend++;
@@ -4022,9 +4026,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 `<span style="color:#555;">(optimizado, reusa recortes · ${(totalMm / 1000).toFixed(2)} m lineales)</span>`;
         }
         // Consumibles de instalación de TODAS las barandas del proyecto (para preparar la obra).
-        html += `<div style="${hayBaseU ? 'margin-top:4px;' : ''}">🧴 <b>Resina para este trabajo: ${galTxt(resinaTot)}</b>` +
-            (tornTot || !prensasTot ? ` <span style="color:#555;">· 🔩 Tornillos: <b>${tornTot}</b></span>` : '') +
-            (prensasTot ? ` <span style="color:#555;">· 🪟 Vidrios (prensa): <b>${vidriosPr}</b> · 🗜️ Prensas de suelo: <b>${prensasTot}</b> · 🔩 Barras roscadas 1/4" × 15 cm: <b>${barrasTot}</b> (+ arandelas y tuercas)</span>` : '') +
+        html += `<div style="${hayBaseU ? 'margin-top:4px;' : ''}">` + (hayResina ? `🧴 <b>Resina para este trabajo: ${galTxt(resinaTot)}</b>` : '') +
+            (tornTot || !prensasTot ? ` <span style="color:#555;">${hayResina ? '· ' : ''}🔩 Tornillos: <b>${tornTot}</b></span>` : '') +
+            (prensasTot ? ` <span style="color:#555;">${hayResina || tornTot ? '· ' : ''}🪟 Vidrios (prensa): <b>${vidriosPr}</b> · 🗜️ Prensas de suelo: <b>${prensasTot}</b> · 🔩 Barras roscadas 1/4" × 15 cm: <b>${barrasTot}</b> (+ arandelas y tuercas)</span>` : '') +
             (tornPend ? ` <span style="color:#c0392b;">(${tornPend} baranda(s) sin cantidad definida)</span>` : '') + `</div>`;
         el.innerHTML = html;
     }
@@ -7334,7 +7338,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const DW = 100, scale = DW / totalL, slope = 0.5;
         const Hs = H * scale;                                   // alto del panel en unidades de viewBox
         const baseHU = fij === 'base_u' ? Math.max(2.4, Hs * 0.05) : 0;   // canal U inferior
-        const liftU = fij === 'prensa_suelo' ? Math.max(3, Hs * 0.09) : 0; // vidrio elevado (spigots)
+        // Prensa de suelo A ESCALA (usuario 2026-11-04: los palitos bajo el vidrio no se entendían): el vidrio
+        // queda 40 mm sobre el suelo y cada prensa es una pinza de 100 mm que sube del suelo y AGARRA el borde
+        // inferior del vidrio (90 mm de mordida), con su pletina de anclaje de 130 mm × 8 mm.
+        const PR = { lift: 40, ancho: 100, mordida: 90, pletina: 130, pletinaH: 8 };
+        const liftU = fij === 'prensa_suelo' ? Math.max(1.4, PR.lift * scale) : 0;
         const bottomOff = baseHU + liftU;
         // rise total (escalera) para dimensionar el viewBox
         let totalRise = 0; if (esc) tramos.forEach(t => { if (!t.plataforma) totalRise += (parseInt(t.L) || 0) * slope; });
@@ -7372,7 +7380,16 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     for (let k = 0; k < pt.porVidrio; k++) {
                         const f = f0 + (f1 - f0) * (k + 0.5) / pt.porVidrio;
                         const px = ax + (bx - ax) * f, fy = fyAt(f);
-                        herr += `<rect x="${(px - 1.1).toFixed(1)}" y="${(fy - liftU).toFixed(1)}" width="2.2" height="${liftU.toFixed(1)}" fill="${herrajeCol}"/>`;
+                        const cw = Math.max(1.3, PR.ancho * scale), bite = Math.max(1.8, PR.mordida * scale);
+                        const pw = Math.max(cw * 1.3, PR.pletina * scale), ph = Math.max(0.6, PR.pletinaH * scale);
+                        const ch = liftU + bite;                      // del suelo hasta el final de la mordida
+                        const st = herrajeCol === '#111111' ? '#000' : '#5f6b75';
+                        herr += `<rect x="${(px - pw / 2).toFixed(2)}" y="${(fy - ph).toFixed(2)}" width="${pw.toFixed(2)}" height="${ph.toFixed(2)}" rx="0.2" fill="${herrajeCol}" stroke="${st}" stroke-width="0.3"/>`;
+                        herr += `<rect x="${(px - cw / 2).toFixed(2)}" y="${(fy - ch).toFixed(2)}" width="${cw.toFixed(2)}" height="${(ch - ph * 0.5).toFixed(2)}" rx="${(cw * 0.12).toFixed(2)}" fill="${herrajeCol}" stroke="${st}" stroke-width="0.35"/>`;
+                        // línea donde entra el vidrio + 2 tornillos de apriete en la cara
+                        herr += `<line x1="${(px - cw / 2).toFixed(2)}" y1="${(fy - liftU).toFixed(2)}" x2="${(px + cw / 2).toFixed(2)}" y2="${(fy - liftU).toFixed(2)}" stroke="${st}" stroke-width="0.3" stroke-opacity="0.8"/>`;
+                        const sr = Math.max(0.35, cw * 0.09), sy = fy - liftU - bite * 0.55;
+                        herr += `<circle cx="${(px - cw * 0.25).toFixed(2)}" cy="${sy.toFixed(2)}" r="${sr.toFixed(2)}" fill="${st}"/><circle cx="${(px + cw * 0.25).toFixed(2)}" cy="${sy.toFixed(2)}" r="${sr.toFixed(2)}" fill="${st}"/>`;
                     }
                 }
             } else if (fij === 'conector_redondo' || fij === 'conector_cuadrado' || fij === 'conector_doble') {
@@ -7395,10 +7412,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const yBottom = riseU + Hs;                 // línea de suelo del extremo más bajo
         let cotas = dimLineH(0, DW, yBottom + 12, yBottom, `${totalL} mm`, 5.5);
         if (panels.length > 1) panels.forEach(p => { cotas += `<text x="${((p.x0 + p.x1) / 2).toFixed(1)}" y="${(yBottom + 6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3.4" fill="#7a828a" text-anchor="middle" stroke="none">${Math.round((p.x1 - p.x0) / scale)}</text>`; });
-        cotas += dimLineV(0, Hs, DW + 6, DW, `${H} mm`, 5.5);
-        cotas += `<text x="0" y="-4" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">${esc ? 'ELEVACIÓN (escalera)' : 'ELEVACIÓN'}</text>`;
-        const vbY = -10, vbH = (yBottom + 26) - vbY;
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 ${vbY} ${DW + 42} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
+        cotas += dimLineV(-liftU, Hs - liftU, DW + 6, DW, `${H} mm`, 5.5);
+        cotas += `<text x="0" y="${(-4 - liftU).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">${esc ? 'ELEVACIÓN (escalera)' : 'ELEVACIÓN'}</text>`;
+        const vbY = -10 - liftU, vbH = (yBottom + 26) - vbY;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 ${vbY} ${DW + 50} ${vbH.toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%">`;
         svg += glassDefs(uid, state.color_vidrio || 'natural');
         svg += body + herr + marks + cotas + '</svg>';
         return svg;   // renderSVG envuelve renderBaranda con applyFinish (color de carpintería)
@@ -8849,7 +8866,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         h += `<div class="bar-box" style="margin-top:8px;">
             <div style="font-size:11px; font-weight:bold; color:var(--artal-blue); margin-bottom:4px;">CONSUMIBLES DE INSTALACIÓN <span class="bar-consumibles-ml" style="font-weight:normal; color:#777;">(${barandaMl(st).toFixed(1)} ml)</span></div>
             <div class="bar-consumibles-txt" style="font-size:12px; color:#333;">${barandaConsumiblesTxt(st)}</div>
-            <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">Resina:</b>
+            <div class="bar-row adm-only" style="margin:6px 0 0;${llevaResina(st) ? '' : ' display:none;'}"><b style="min-width:60px;">Resina:</b>
                 <input type="number" step="0.25" min="0" value="${manual ? st.resinaGal : ''}" placeholder="auto: ${galTxt(sug)}" oninput="barandaSetConsumible(${id}, 'resinaGal', this.value)">
                 <span style="font-size:11px; color:#555; white-space:nowrap;">gal (vacío = auto)</span></div>
             <div class="bar-row adm-only" style="margin:6px 0 0;"><b style="min-width:60px;">${st.fijacion === 'prensa_suelo' ? 'Barras:' : 'Tornillos:'}</b>
@@ -8893,9 +8910,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Línea de lectura "Resina: … · Tornillos: …" del bloque de consumibles (para todos).
     function barandaConsumiblesTxt(st) {
         const tor = tornillosBaranda(st), pr = prensasBaranda(st);
-        let t = `Resina: <b>${galTxt(resinaBarandaGal(st))}</b>${(st.resinaGal !== '' && st.resinaGal != null) ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
-        if (pr) t += ` · Vidrios: <b>${pr.vidrios}</b> (${pr.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${pr.cant > 1 ? ` × ${pr.cant}` : ''}) · Prensas: <b>${pr.prensas}</b>`;
-        t += ` · ${tornillosLabel(st)}: <b>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</b>${(st.tornillos != null && st.tornillos !== '') ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
+        let t = llevaResina(st) ? `Resina: <b>${galTxt(resinaBarandaGal(st))}</b>${(st.resinaGal !== '' && st.resinaGal != null) ? ' <span style="color:#c0392b;">(corregido)</span>' : ''} · ` : '';
+        if (pr) t += `Vidrios: <b>${pr.vidrios}</b> (${pr.tramos.map(x => `${x.n} × ${x.ancho} mm`).join(' + ')}${pr.cant > 1 ? ` × ${pr.cant}` : ''}) · Prensas: <b>${pr.prensas}</b>`;
+        t += `${pr ? ' · ' : ''}${tornillosLabel(st)}: <b>${tor != null ? tor + ' und' : '<span style="color:#c0392b;">por definir</span>'}</b>${(st.tornillos != null && st.tornillos !== '') ? ' <span style="color:#c0392b;">(corregido)</span>' : ''}`;
         if (pr && tor != null) t += ` <span style="color:#555;">(+ ${tor} arandelas y ${tor} tuercas)</span>`;
         return t;
     }
