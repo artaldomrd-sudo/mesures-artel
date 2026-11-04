@@ -173,7 +173,7 @@
 
     // Valores iniciales (usuario 2026-09-26): rollo de 48" × 100 pies = 1.22 × 30.48 m, RD$ 6,500.
     // Precio de venta propuesto RD$ 450/m² y mínimo RD$ 500 por pieza — se ajustan aquí mismo.
-    const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500, margenMin: 50, maxCorto: 1220,
+    const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500, margenMin: 50, maxCorto: 1200,
         // Transporte + instalación en Las Terrenas por cantidad de telas (usuario 2026-09-26); más allá de la tabla, +extraPor3 por cada 3 telas.
         tramos: [{ hasta: 3, precio: 2500 }, { hasta: 6, precio: 3000 }, { hasta: 10, precio: 3500 }, { hasta: 13, precio: 4500 }, { hasta: 16, precio: 5500 }], extraPor3: 1000 };
     let cfg = { ...DEF };
@@ -230,9 +230,9 @@
         const a = n2(f.ancho) / 1000, h = n2(f.alto) / 1000, q = Math.max(0, Math.round(n2(f.cant)));
         const corto = Math.min(a, h), largo = Math.max(a, h), marg = cfg.margenCm / 100;
         const m2 = a * h;
-        // Regla del usuario (2026-09-26, ajustada 2026-11-04: «1220 × 2500 se puede hacer»): si el lado largo pasa el
-        // ancho del rollo, el lado corto tiene que caber en el rollo (`maxCorto` = 1220 mm, el ancho del rollo; antes 1200).
-        // Si no cabe, no se puede fabricar con este rollo: se bloquea y no se da precio.
+        // Regla del usuario (2026-09-26; confirmada 2026-11-04 «déjalo en 1200 el ancho útil»): si el lado largo pasa el
+        // ancho del rollo, el lado corto tiene que caber en el ANCHO ÚTIL del rollo (`maxCorto` = 1200 mm; el rollo mide
+        // 1220 pero los bordes no sirven). Si no cabe, no se puede fabricar con este rollo: se bloquea y no se da precio.
         const bloqueada = m2 > 0 && largo * 1000 > cfg.ancho * 1000 + 0.5 && corto * 1000 > cfg.maxCorto + 0.5;
         let largoCorte = largo + marg;
         if (largo + marg <= cfg.ancho) largoCorte = corto + marg;   // cabe entera en el ancho: se corta solo el lado corto
@@ -251,13 +251,13 @@
             <div class="kpi"><div class="v">${RD(C.costoM2)}</div><div class="l">costo por m² de tela</div></div>
             <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal de rollo (tira de ${f2(cfg.ancho)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2Real)}</div><div class="l">costo real por m² con ${cfg.desperdicio} % de desperdicio</div></div>
-            <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen ${Math.round(margenPct)} % sobre el costo real · nunca menos del ${cfg.margenMin} % por pieza · bloqueo: lado corto > ${cfg.maxCorto} mm (no cabe en el rollo) cuando el largo pasa el rollo</div></div>`;
+            <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen ${Math.round(margenPct)} % sobre el costo real · nunca menos del ${cfg.margenMin} % por pieza · bloqueo: lado corto > ${cfg.maxCorto} mm (ancho útil del rollo) cuando el largo pasa el rollo</div></div>`;
         const R = filas.map(f => calcFila(f, C));
         $('p-precio-m2').textContent = esAdmin ? `${RD0(cfg.precioM2)} por m² · mínimo ${RD0(cfg.minimo)} por pieza` : '';
         // La celda de precio se pinta aparte: al escribir, calcular() solo cambia esa celda y NO reconstruye la fila
         // (Dylan 2026-11-04: reconstruir el input en cada tecla le quitaba el foco y solo dejaba escribir un número).
         const celda = (i, r) => `<div class="precio" id="fp-${i}" ${r.bloqueada ? 'style="background:#fdeaea;border-color:#d9483b"' : ''}><div class="v" ${r.bloqueada ? 'style="color:#d9483b;font-size:15px"' : ''}>${r.bloqueada ? '🚫 No se puede fabricar' : r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
-                <div class="d">${r.bloqueada ? `Con el rollo de ${f2(cfg.ancho)} m no se puede: si un lado pasa ${Math.round(cfg.ancho * 1000)} mm, el otro tiene que caber en el rollo (máx. ${cfg.maxCorto} mm). No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m² · corte ${f2(r.largoCorte)} m de rollo${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : ''}` : 'escribe ancho y alto'}</div></div>`;
+                <div class="d">${r.bloqueada ? `Con el rollo de ${f2(cfg.ancho)} m no se puede: si un lado pasa ${Math.round(cfg.ancho * 1000)} mm, el otro tiene que caber en el ancho útil del rollo (máx. ${cfg.maxCorto} mm). No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m² · corte ${f2(r.largoCorte)} m de rollo${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : ''}` : 'escribe ancho y alto'}</div></div>`;
         const cont = $('filas');
         if (cont.children.length === filas.length && filas.every((_, i) => $('fp-' + i))) {
             filas.forEach((_, i) => { $('fp-' + i).outerHTML = celda(i, R[i]); });
