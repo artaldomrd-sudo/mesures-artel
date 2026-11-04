@@ -3304,6 +3304,14 @@ atiende» (admin). Proveedores con WhatsApp = `rrhhConfig/contratistasExternos.l
   `instala:false`, `pagoAnticipado:true`) en `rrhhConfig/contratistasExternos`. **Informe de costo de obra**: sus destinatarios
   excluyen `rrhhConfig/avisos.sinCostoObras` (Anny y Sara).
   Adjuntos en Storage bajo `solicitudesMaterial/{id}/` (las reglas de Storage no están en el repo: si la subida falla, revisarlas).
+- **«⚙️ Cambiar estado» a mano (2026-11-04, Dylan: «una posibilidad de cambiar el estado directamente de la plataforma», tras dos
+  pedidos marcados como hechos sin serlo)**: botón punteado en cada tarjeta para gestores (`opts.gestor`), también en pedidos cerrados
+  (reabrir una entregada/cancelada por error). `solForm(id,'estado')` → select de los 8 estados vivos + motivo obligatorio →
+  `solOkEstado`: `cambiarEstado(id, estado, usuario, {estadoManual:{de,a,por,email,fechaISO,nota}, rechazoMotivo?}, 'Cambio manual:
+  X → Y · motivo')`. Solo cambia la etiqueta (no abre WhatsApp, no mueve inventario, no crea cita de pago); si el pedido ya tenía
+  `entradaInventario` avisa que no se deshace. La tarjeta muestra «⚙️ Estado corregido a mano por X: motivo». El push de
+  `solicitudMaterialPush` reacciona igual que a cualquier cambio de estado (p. ej. `chofer` avisa al chofer). `ESTADO_TXT.cancelada`
+  pasó a «Cancelada» (ya no solo la cancela quien pidió). Guía `guia-inventario-03` actualizada.
 
 ### Trabajos con Claude a medias (`sesionesClaude`, 2026-11-01)
 

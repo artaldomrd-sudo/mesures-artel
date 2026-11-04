@@ -22,7 +22,7 @@ export const POR_DECIDIR = ['pedida', 'vista', 'comprando'];
 export const ABIERTOS = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'recogido', 'vista', 'comprando', 'lista'];
 export const ESTADO_TXT = {
     pedida: 'Pedida', pedido_proveedor: 'Cotización pedida al proveedor', por_pagar: 'Por pagar', pagado: 'Pagado: falta validar', chofer: 'Para el chofer', recogido: 'Recogido',
-    entregada: 'Entregada', rechazada: 'No se compra', cancelada: 'Cancelada por quien la pidió',
+    entregada: 'Entregada', rechazada: 'No se compra', cancelada: 'Cancelada',
     vista: 'Vista por la oficina', comprando: 'Comprando', lista: 'Lista para recoger'
 };
 export const ESTADO_ICO = { pedida: '🙋', pedido_proveedor: '📲', por_pagar: '💳', pagado: '🧾', chofer: '🚚', recogido: '📦', entregada: '✅', rechazada: '✖', cancelada: '↩', vista: '👀', comprando: '🛒', lista: '📦' };
@@ -272,6 +272,7 @@ export function solicitudCardHTML(s, opts) {
         s.notaChofer ? `🚚 Para el chofer: ${esc(s.notaChofer)}` : '',
         s.precio != null && s.precio !== '' ? `💲 RD$ ${Number(s.precio).toLocaleString('es-DO')}` : '',
         s.estado === 'rechazada' && s.rechazoMotivo ? `✖ Motivo: ${esc(s.rechazoMotivo)}` : '',
+        s.estadoManual && s.estadoManual.a === s.estado ? `⚙️ Estado corregido a mano por ${esc(s.estadoManual.por || '')}${s.estadoManual.nota ? ': ' + esc(s.estadoManual.nota) : ''}` : '',
         s.recogidoPor ? `📦 Recogido por ${esc(s.recogidoPor)}` : '', s.entregadaA ? `📬 Entregado a ${esc(s.entregadaA)}` : '',
         s.entradaInventario ? `📥 Entró al inventario: ${s.entradaInventario.cantidad}` : '',
         docsLinks(s.cotizacion, '🧾 Cotización'), docsLinks(s.comprobantePago, '💳 Pago'), docsLinks(s.facturaCompra, '🧾 Factura de compra'),
@@ -287,6 +288,9 @@ export function solicitudCardHTML(s, opts) {
         if (mia && s.estado === 'pedida') acciones += `<button onclick="solCancelar('${s.id}')" style="background:transparent;color:#888;border:1.5px solid #ddd;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">Ya no hace falta</button>`;
         acciones += accionesHTML(s, opts);
     }
+    // Corrección manual (Dylan 2026-11-04: «cambiar el estado directamente de la plataforma»): la oficina puede poner
+    // cualquier estado, también reabrir una entregada/cancelada por error. No mueve inventario ni abre WhatsApp.
+    if (opts.gestor) acciones += `<button onclick="solForm('${s.id}','estado')" title="Corregir el estado a mano (no mueve inventario)" style="background:transparent;color:#667;border:1.5px dashed #c5ccd6;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">⚙️ Cambiar estado</button>`;
     const selec = opts.seleccionable && opts.gestor && POR_DECIDIR.includes(s.estado)
         ? `<input type="checkbox" class="sol-sel" data-id="${s.id}" onchange="solSelCambio && solSelCambio()" style="width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;" title="Seleccionar para decidir varios juntos">` : '';
     return `<div class="sol-card" id="sol-${s.id}" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:12px 14px;border-left:6px solid ${color};margin-bottom:10px;">
@@ -369,12 +373,30 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
                 <div><label style="font-size:12px;">Precio total pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div>`,
                 'Confirmar', `solOkEntregada('${id}')`, '#27ae60');
             if (conInv) prepararEntrada(s, id);
+        } else if (tipo === 'estado') {
+            const opciones = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'entregada', 'rechazada', 'cancelada'].map(e => [e, `${ESTADO_ICO[e] || ''} ${ESTADO_TXT[e] || e}`]);
+            const avisoInv = s.entradaInventario ? `<div style="font-size:12px;color:#b9770e;">⚠️ Este pedido ya dio entrada al inventario (${esc(String(s.entradaInventario.cantidad))}). Cambiar el estado NO la deshace: corrígela en Inventario si hace falta.</div>` : '';
+            box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">⚙️ Cambiar el estado a mano</div>
+                <div style="font-size:12px;color:#667;">Ahora: <b>${esc(ESTADO_TXT[s.estado] || s.estado)}</b>. Solo cambia la etiqueta y queda en el historial con tu nombre; no abre WhatsApp, no mueve inventario ni manda el pedido a pagar.</div>
+                <label style="font-size:12px;">Nuevo estado</label>${sel('sf-est-' + id, opciones, s.estado)}
+                <label style="font-size:12px;">Motivo (obligatorio, lo ve el equipo en el historial)</label>${inp('sf-estnota-' + id, 'Ej: se marcó por error, nunca se pidió al proveedor')}${avisoInv}`,
+                'Guardar estado', `solOkEstado('${id}')`, '#0A3D62');
         } else if (tipo === 'rechazada') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#c0392b;">✖ No se compra</div>
                 <label style="font-size:12px;">Motivo (lo ve quien lo pidió)</label>${inp('sf-motivo-' + id, 'Ej: ya hay uno en el bulto del equipo 2 / se compra con el próximo pedido grande')}`,
                 'Confirmar', `solOkRechazada('${id}')`, '#c0392b');
         }
         box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+    window.solOkEstado = async (id) => {
+        const s = getSolicitud(id); if (!s) return;
+        const estado = v('sf-est-' + id), nota = v('sf-estnota-' + id).trim();
+        if (!estado || estado === s.estado) { alert('Elige un estado distinto al actual.'); return; }
+        if (!nota) { alert('Escribe el motivo del cambio.'); return; }
+        const extra = { estadoManual: { de: s.estado, a: estado, por: usuario.nombre || '', email: usuario.email || '', fechaISO: ahoraISO(), nota } };
+        if (estado === 'rechazada') extra.rechazoMotivo = nota;
+        try { await cambiarEstado(id, estado, usuario, extra, `Cambio manual: ${ESTADO_TXT[s.estado] || s.estado} → ${ESTADO_TXT[estado] || estado} · ${nota}`); }
+        catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     window.solOkProveedor = async (id) => {
         const s = getSolicitud(id); if (!s) return;
