@@ -122,6 +122,7 @@
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { restoPendiente, restoTxt, fotoPartes, pestanaDe } from './chofer-pendientes.js';
+    import { borrarConRegistro } from './papelera.js';
     import { viaDe, envioTxt, VIAS } from './envios.js';
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
@@ -203,7 +204,7 @@
             ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
             ${(enRuta && (!entregado || o.restoEnRuta === true)) ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
             <div class="actions">
-                ${(entregado ? o.restoEnRuta === true : enRuta) ? '' : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
+                ${(entregado ? o.restoEnRuta === true : enRuta) ? `<button class="btn-deshacer" onclick="quitarDeRuta('${id}')" title="Se marcó En ruta por error: vuelve a En espera y sale del viaje">↩ No va en ruta</button>` : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
                 <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
                 ${(esCompra || entregado) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
             </div>
@@ -502,6 +503,41 @@
             entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: nombre, chofer: usuario.nombre || '', resto: resto.length ? restoTxt(resto) : '' }),
             ...(yaInstalado ? { status: 'completado' } : {})
         });
+    };
+    // «↩ No va en ruta» (Dylan 2026-11-05, caso Daria — Casa naranjitos marcado por inadvertencia): deshace «En ruta» de UN
+    // pedido sin tocar los demás del mismo viaje: el pedido vuelve a «En espera» (o a «resto por recoger» si ya estaba
+    // entregado) y sale del viaje; si su obra ya no tiene ningún otro pedido a bordo, el costo del viaje se reparte de
+    // nuevo entre las obras que quedan (y se actualiza en sus pedidos); si el viaje queda vacío se borra con registro
+    // en la papelera. Deja `enRutaDeshecho` en el pedido y `quitados[]` en el viaje para poder auditar.
+    window.quitarDeRuta = async function (id) {
+        const d = allDocs.find(x => x.id === id); const o = d ? d.data() : {};
+        if (!confirm(`¿Quitar «${(o.cliente || '') + ' — ' + (o.obra || '')}» de la ruta?\n\nVuelve a «En espera» y sale del viaje; los demás pedidos del viaje no cambian.`)) return;
+        const btns = document.querySelectorAll(`button[onclick="quitarDeRuta('${id}')"]`); btns.forEach(b => { b.disabled = true; });
+        try {
+            const viajeId = o.viajeId || null;
+            if (viajeId) {
+                const vs = await getDoc(doc(db, 'viajes', viajeId));
+                if (vs.exists()) {
+                    const v = vs.data();
+                    const pedidos = (v.pedidos || []).filter(p => p.id !== id);
+                    const obras = (v.obras || []).map(ob => ({ ...ob, pedidos: (ob.pedidos || []).filter(pid => pid !== id) })).filter(ob => ob.pedidos.length);
+                    const quitado = { pedidoId: id, cliente: o.cliente || '', obra: o.obra || '', por: usuario.nombre || '', porEmail: usuario.email || '', fechaISO: new Date().toISOString() };
+                    if (!pedidos.length) {
+                        await borrarConRegistro({ coleccion: 'viajes', id: viajeId, datos: { ...v, quitados: [...(v.quitados || []), quitado] }, resumen: 'Viaje ' + (v.vehiculoNombre || '') + ' · ' + (v.rutaNombre || '') + ' · ' + (v.fecha || ''), usuario, pantalla: 'chofer.html', motivo: 'Se quitó de la ruta el único pedido del viaje (marcado por inadvertencia)' });
+                    } else {
+                        const n = obras.length || 1, costoObra = Math.round(((v.costoTotal || 0) / n) * 100) / 100;
+                        const repartoCambio = obras.length !== (v.obras || []).length;
+                        if (repartoCambio) obras.forEach(ob => { ob.costo = costoObra; });
+                        await updateDoc(doc(db, 'viajes', viajeId), { pedidos, pedidosIds: pedidos.map(p => p.id), obras, obrasKeys: obras.map(ob => ob.obraKey), quitados: arrayUnion(quitado) });
+                        if (repartoCambio) for (const p of pedidos) await updateDoc(doc(db, 'orders', p.id), { viajeCosto: costoObra, viajeObras: obras.length });
+                    }
+                }
+            }
+            const deshecho = { por: usuario.nombre || '', porEmail: usuario.email || '', fechaISO: new Date().toISOString(), viajeId: viajeId || '', eraResto: o.entregado === true };
+            await updateDoc(doc(db, 'orders', id), o.entregado === true
+                ? { restoEnRuta: false, fechaRestoEnRuta: null, viajeId: null, viajeVehiculo: null, viajeRuta: null, viajeCosto: null, viajeObras: null, enRutaDeshecho: deshecho }
+                : { enRuta: false, fechaEnRuta: null, viajeId: null, viajeVehiculo: null, viajeRuta: null, viajeCosto: null, viajeObras: null, enRutaDeshecho: deshecho });
+        } catch (e) { alert('No se pudo quitar de la ruta: ' + (e && e.message ? e.message : e)); btns.forEach(b => { b.disabled = false; }); }
     };
     window.regresarAFabrica = async function (id) {
         if (!confirm('¿Regresar este pedido a fábrica? Saldrá de tu lista de entregas.')) return;

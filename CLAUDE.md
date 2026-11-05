@@ -2406,6 +2406,12 @@ Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).
 - **Botón "En ruta"** (`marcarEnRuta`): el chofer lo marca apenas recoge el pedido — solo
   informativo (badge azul + borde de tarjeta azul), no bloquea ni exige nada para después
   marcar "Entregado".
+  **«↩ No va en ruta» (Dylan 2026-11-05, caso Daria — Casa naranjitos marcado por inadvertencia)**: en la pestaña En ruta
+  (y en un entregado con «resto en ruta») el botón `quitarDeRuta(id)` deshace la marca de UN pedido: vuelve a En espera
+  (`enRuta:false`, campos `viaje*` a null, `enRutaDeshecho {por, fechaISO, viajeId, eraResto}`) y lo saca del viaje
+  (`viajes.pedidos/pedidosIds/obras/obrasKeys`, `quitados[]`); si su obra queda sin pedidos a bordo el costo se reparte de
+  nuevo entre las obras restantes y se actualiza `viajeCosto/viajeObras` en sus pedidos; si el viaje queda vacío se borra
+  con `borrarConRegistro` (papelera). Los demás pedidos del viaje no cambian.
 - **Bug real corregido: una Compra Directa entregada quedaba mostrando "Listo para
   cargar/instalar" para siempre.** Causa: `confirmarEntrega()` solo ponía `status:'completado'`
   si `instalado === true` — pero `ops/instalador.html` **excluye explícitamente**
