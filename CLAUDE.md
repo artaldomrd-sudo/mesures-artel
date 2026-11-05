@@ -3076,7 +3076,7 @@ Dylan (capturas de encuestas enviadas a dos tomas de medidas): «ahora es muy ge
 `instalaciones.tipoTrabajo` obligatorio al crear: `instalacion` (pedido de fábrica interna/ALUCUFEL) · `reparacion_artal` ·
 `servicio_post` · `medicion` · `reemplazo_dano` · `preparacion_obra` · `reparacion_otra` · `preparacion_taller` («Preparación de
 pedido en taller Terrenas», 2026-11-01; armado/corte en el taller antes de ir a obra: no mueve pedidos ni lleva encuesta; también en
-`TIPOS_TXT` del informe de cierre) (`TIPOS_TRABAJO`/`TIPO_ICONO`,
+`TIPOS_TXT` del informe de cierre) · `levantamiento` («Levantamiento (visita técnica de obra)», 2026-11-04: ir a ver la obra antes de cotizar o planificar; sin encuesta, no mueve pedidos; también en `TIPOS_TXT` y en `crear_trabajo` del Coordinador) (`TIPOS_TRABAJO`/`TIPO_ICONO`,
 `tipoDeJob(j)`: sin campo pero con pedido enlazado = instalación). «+ Trabajo» (equipo) tiene el select + «Obra existente»
 (pedidos abiertos de `ordersCache`; rellena cliente/obra/dirección/GPS y engancha `orderId`/`orderIds`; obligatorio para
 instalación y preparación de obra); el modal de gerencia tiene `#job-tipo`; Calendario y el trigger `instalacionAlListo` ponen
