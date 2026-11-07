@@ -3377,6 +3377,18 @@ Pantalla `ops/sesiones-claude.html` (solo admin, `requireAuth([])`): KPIs, pesta
 tarjeta con «Lo último que pediste» y «Dónde quedó Claude», botones Terminada / Archivar / Volver y nota. Panel: mosaico «🧠 Trabajos con
 Claude a medias» con badge y una tarjeta de notificación cuando hay abiertas con 3+ días sin tocar. Regla `sesionesClaude` solo admin.
 
+### Inventario: encargado de almacén por lista (2026-11-07)
+
+Dylan: «Roosevelt va a trabajar en el inventario: agregar ítems, modificar, ajustar cantidades y todo lo que le permita hacer el
+inventario correctamente». Las reglas ya dejaban escribir a `obra()` en `inventario`, `categoriasInventario`, `subgruposInventario`,
+`bultosHerramientas` y `movimientosInventario`; lo que faltaba era la pantalla. `rrhhConfig/solicitudesMaterial.inventario` (la lista
+«reservada») es ahora la lista de encargados de almacén: `esEncargadoInventario(usuario, cfg)` en `solicitudes-material.js` (admin, oficina
+sin rol de obra, o quien está en la lista) → en `inventario.html` `esAdmin` pasa a `let` y `aplicarEncargado()` lo recalcula al llegar la
+configuración (muestra `#admin-tools` y repinta): crear/editar/eliminar ítems, agregar stock, precio, historial, categorías y secciones.
+**NO lo convierte en gestor de pedidos de material**: `esGestor` ya solo mira `compras` (antes sumaba `inventario`). La casilla «Registrar
+la compra como gasto» solo está activa para admin/contable (`puedeGasto`; la regla de `contaMovimientos` es `finanzas()`). Columna
+«📦 Inventario» en «⚙️ Quién atiende» (se guarda con las demás). Roosevelt agregado a la lista el 2026-11-07.
+
 ### Inventario: unidad de conteo + empaques (2026-10-28)
 
 Dylan (captura de la tapita negra 3/8: había puesto «paquetes» como unidad y 2000 como existencia; en realidad tiene 7 fundas de

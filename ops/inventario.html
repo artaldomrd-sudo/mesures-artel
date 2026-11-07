@@ -220,7 +220,7 @@
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
-    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, rolEn, ABIERTOS } from './solicitudes-material.js?v=20261104c';
+    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, esEncargadoInventario, rolEn, ABIERTOS } from './solicitudes-material.js?v=20261107';
     import { db } from './firebase-config.js';
     import {
         collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp
@@ -386,11 +386,21 @@
     // Gestión del inventario (Dylan 2026-10-13, caso Sara Inés): admin, o quien entra por permiso de página SIN rol de obra
     // (oficina) — mismo criterio `esOficina` de Instalación. El equipo de obra (chofer/instalador/ayudante) solo «Toma».
     // `esAdmin` (gestión) manda en toda la pantalla; la siembra de datos y las migraciones siguen con `esAdminReal`.
-    const esAdmin = esAdminReal || !usuario.roles.some(r => ['chofer', 'instalador', 'ayudante'].includes(r));
+    // Encargado de almacén (Dylan 2026-11-07, Roosevelt): quien está en `rrhhConfig/solicitudesMaterial.inventario` (casilla
+    // «📦 Inventario» de «⚙️ Quién atiende» en Pedidos de material) gestiona igual que oficina: crear/editar/eliminar ítems,
+    // agregar stock, ajustar cantidades, precio, categorías y secciones. `esAdmin` se recalcula cuando llega la configuración.
+    let esAdmin = esAdminReal || !usuario.roles.some(r => ['chofer', 'instalador', 'ayudante'].includes(r));
+    const puedeGasto = usuario.roles.some(r => ['admin', 'contable'].includes(r));   // solo finanzas puede crear el gasto en Contabilidad
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
     if (esAdmin) document.getElementById('admin-tools').style.display = 'flex';
+    function aplicarEncargado() {
+        const antes = esAdmin;
+        esAdmin = esAdminReal || esEncargadoInventario(usuario);
+        document.getElementById('admin-tools').style.display = esAdmin ? 'flex' : 'none';
+        if (antes !== esAdmin) { try { render(); } catch (_) { } }
+    }
     wireBackButton(usuario.roles);
 
     // ---------- Pedidos de material a la oficina (solicitudesMaterial) ----------
@@ -402,7 +412,7 @@
     }
     montarPedir({ usuario, getItem: (id) => allItems.find(it => it.id === id) || null, getAbierta: abiertaDe, onCreada: () => { const d = document.getElementById('mis-pedidos'); if (d) d.open = true; } });
     montarAcciones({ usuario, getSolicitud: (id) => solicitudes.find(s => s.id === id), getTodas: () => solicitudes });
-    escucharConfig(() => renderMisPedidos()); escucharProveedores(() => { });
+    escucharConfig(() => { aplicarEncargado(); renderMisPedidos(); }); escucharProveedores(() => { });
     escucharSolicitudes((arr) => { solicitudes = arr; renderMisPedidos(); marcarPedidos(); });
     function renderMisPedidos() {
         const gestor = esGestor(usuario);
@@ -653,7 +663,7 @@
                     <div><label>Proveedor <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-prov-${item.id}" placeholder="Nombre"></div>
                     <div><label>NCF <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-ncf-${item.id}" placeholder="B01…"></div>
                 </div>
-                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:normal;font-size:13px;"><input type="checkbox" id="agregar-gasto-${item.id}" style="width:auto"> Registrar la compra como <b>gasto</b> en Contabilidad</label>
+                <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:normal;font-size:13px;"><input type="checkbox" id="agregar-gasto-${item.id}" style="width:auto"${puedeGasto ? '' : ' disabled'}> Registrar la compra como <b>gasto</b> en Contabilidad${puedeGasto ? '' : ' <span style="color:#889">(solo oficina)</span>'}</label>
                 <div class="row-actions">
                     <button style="background:transparent;border:1.5px solid #ddd;color:#888;" onclick="cerrarForm('agregar-${item.id}')">Cancelar</button>
                     <button class="btn-agregar" onclick="confirmarAgregar('${item.id}')">Confirmar</button>
@@ -1317,7 +1327,7 @@
         const costoU = Number(document.getElementById('agregar-costo-' + id).value) || 0;
         const proveedor = (document.getElementById('agregar-prov-' + id).value || '').trim();
         const ncf = (document.getElementById('agregar-ncf-' + id).value || '').trim().toUpperCase();
-        const crearGasto = document.getElementById('agregar-gasto-' + id).checked;
+        const crearGasto = puedeGasto && document.getElementById('agregar-gasto-' + id).checked;
         try {
             const cambios = { cantidad: increment(cantidad) };
             if (costoU > 0) cambios.costo = costoU;   // el costo del ítem se actualiza con el de esta última compra

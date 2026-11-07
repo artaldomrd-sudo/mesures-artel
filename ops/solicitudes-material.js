@@ -59,12 +59,14 @@ export const cantidadTxt = (s) => `${Number(s.cantidad) || 0}${s.unidad ? ' ' + 
 const telWa = (t) => { const d = String(t || '').replace(/\D/g, ''); return d.length === 10 ? '1' + d : d; };
 
 // ---------- configuración de quién atiende (provisional; editable en el tablero por gerencia) ----------
-// rrhhConfig/solicitudesMaterial = { compras: [emails de oficina], chofer: [emails] }  (`inventario` queda reservado para el futuro encargado de almacén)
-let cfgCache = { compras: [], inventario: [], chofer: [] };
+// rrhhConfig/solicitudesMaterial = { compras: [oficina], pagos: [emails], chofer: [emails], inventario: [encargados de almacén] }.
+// `inventario` (Dylan 2026-11-07, Roosevelt): quien está en esa lista GESTIONA el inventario (crear/editar ítems, ajustar
+// cantidades, agregar stock, categorías) en inventario.html, pero NO decide pedidos de material (eso sigue siendo `compras`).
+let cfgCache = { compras: [], inventario: [], pagos: [], chofer: [] };
 export function escucharConfig(onChange) {
     return onSnapshot(doc(db, 'rrhhConfig', 'solicitudesMaterial'), (s) => {
         const d = s.exists() ? s.data() : {};
-        cfgCache = { compras: d.compras || [], inventario: d.inventario || [], chofer: d.chofer || [] };
+        cfgCache = { compras: d.compras || [], inventario: d.inventario || [], pagos: d.pagos || [], chofer: d.chofer || [] };
         onChange && onChange(cfgCache);
     }, () => { onChange && onChange(cfgCache); });
 }
@@ -75,7 +77,15 @@ export function esGestor(usuario, cfg = cfgCache) {
     if (roles.includes('admin')) return true;
     if (!roles.some(r => ['chofer', 'instalador', 'ayudante'].includes(r))) return true;
     const em = (usuario.email || '').toLowerCase();
-    return (cfg.compras || []).concat(cfg.inventario || []).map(e => String(e).toLowerCase()).includes(em);
+    return (cfg.compras || []).map(e => String(e).toLowerCase()).includes(em);
+}
+// Encargado de inventario/almacén: admin, oficina (sin rol de obra) o quien está en la lista `inventario`.
+export function esEncargadoInventario(usuario, cfg = cfgCache) {
+    const roles = usuario.roles || [];
+    if (roles.includes('admin')) return true;
+    if (!roles.some(r => ['chofer', 'instalador', 'ayudante'].includes(r))) return true;
+    const em = (usuario.email || '').toLowerCase();
+    return (cfg.inventario || []).map(e => String(e).toLowerCase()).includes(em);
 }
 export function rolEn(usuario, cfg = cfgCache) {
     const em = (usuario.email || '').toLowerCase(), has = (l) => (l || []).map(e => String(e).toLowerCase()).includes(em);
