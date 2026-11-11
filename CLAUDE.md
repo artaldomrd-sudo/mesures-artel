@@ -3819,6 +3819,21 @@ Dylan: «poder hacer eso mismo desde la plataforma, respondiendo al informe como
 - El agente local lee lo que hizo el chat (`coordinadorRespuestas`, `mensajes tipo=respuesta_coordinador`, `coordinadorAcciones`) antes
   de actuar a demanda: ver `.claude/agents/coordinador-obras.datos.md`.
 
+### Coordinador (chat): asigna equipo, marca entregas externas y escribe sin códigos (2026-11-11)
+
+Dylan: «necesito que el coordinador pueda asignar instaladores a un trabajo, me está pidiendo que lo haga yo; además me pone códigos
+que no conozco, su forma de expresarse debe ser clara». En `functions/coordinador-chat.js`: (1) herramienta **`asignar_equipo`**
+(`instalaciones.asignados` + `instaladorEmail/Nombre`, como «Lo tomo yo»; solo correos de `equipo` con rol de obra; modo `reemplazar`
+| `sumar`; movimiento en `movimientosInstalaciones` y fila en `coordinadorAcciones`); (2) **`marcar_entrega_externa`**: pedido listo
+para cargar que llegó SIN el camión (Delvis, transportista, el cliente) → `entregado:true, transporteExterno:true, recepcionInstalador
+{nombre, firma:null}, notaEntrega, entregas[]`, sin completar el pedido; (3) bloque «CÓMO ESCRIBIR LA RESPUESTA» en `sistemaChat`
+(nunca ids ni nombres de campos, frases cortas, «quién / en qué pantalla / con qué botón») y la red de seguridad `sinIds(texto)` que
+borra cualquier id de Firestore (20 caracteres con ≥ 2 mayúsculas y ≥ 2 minúsculas) que se cuele en el texto que lee una persona (los
+ids siguen en `coordinadorAcciones`); el pie del mensaje ya no repite el pedido entero. `FORMATO_INFORME` del informe matinal lleva la
+misma regla. **Fábrica interna**: botón «📦 Llegó sin el camión (entregado)» (`entregaExterna`, pestaña Enviados, pedidos listos no
+entregados) con los mismos campos; caso real: shutters de Niza (Marie Hélène) traídos por Delvis el 11/11, marcado a mano ese día.
+Deploy de functions pendiente de Dylan.
+
 ### Nº de proyecto PRY-AAAA-NNN visible en el Panel (2026-11-03)
 
 Dylan: «los proveedores nunca ven el cliente; los pedidos a proveedores llevan un Nº de proyecto. En el sistema interno se mantienen

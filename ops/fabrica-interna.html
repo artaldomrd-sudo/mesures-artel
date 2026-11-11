@@ -61,7 +61,7 @@
     import { montarAnticipoUI, anticipoChipHTML } from './anticipo-ui.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { mismaObra } from './obras-util.js';
     import { selectorEnvioHTML, leerSelectorEnvio, envioTxt } from './envios.js';
@@ -136,6 +136,9 @@
                 <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
                 ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
             </div>`;
+        } else if (o.status === 'listo_para_cargar' && o.entregado !== true) {
+            // Dylan 2026-11-11 (shutters de Niza traídos por Delvis): el material llegó sin el camión y la oficina no tenía dónde marcarlo.
+            actionsHtml = `<div class="actions"><button class="btn-deshacer" onclick="entregaExterna('${id}')" title="El material llegó sin el camión de ARTAL (contratista, transportista o el cliente): queda como entregado y Transportes deja de esperarlo">📦 Llegó sin el camión (entregado)</button></div>`;
         } else {
             actionsHtml = '';
         }
@@ -354,6 +357,20 @@
         const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() };
         items.forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
         await updateDoc(doc(db, 'orders', id), cambios);
+    };
+    // Entrega sin el camión (mismos campos que el chofer en Transportes, sin firma; el pedido NO se completa: la instalación sigue).
+    window.entregaExterna = async function (id) {
+        const d = (allOrders.find(x => x.id === id) || { data: () => ({}) }).data();
+        const quien = prompt(`¿Quién trajo el material de "${d.cliente || ''} — ${d.obra || ''}"?\n(p. ej. Delvis, contratista · transportista · el cliente)`);
+        if (quien == null) return; const q = quien.trim() || 'transporte externo';
+        const donde = (prompt('¿Dónde quedó? (obra / local de Las Terrenas / taller)') || '').trim();
+        const nota = `Material entregado sin el camión de ARTAL: lo trajo ${q}${donde ? ' hasta ' + donde : ''}. Marcado por ${usuario.nombre} en Fábrica interna.`;
+        try {
+            await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), transporteExterno: true, enRuta: false, restoEnRuta: false,
+                recepcionInstalador: { nombre: q, firma: null, fecha: serverTimestamp() }, notaEntrega: nota,
+                entregadoPorOficina: { por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() },
+                entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: q, chofer: 'transporte externo', resto: '' }) });
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };
     window.parcialmenteListo = async function (id) {
         if (!confirm('¿Marcar como PARCIALMENTE LISTO?\n\nSe enviará a chofer/instalador lo que ya esté marcado como listo.')) return;

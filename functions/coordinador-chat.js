@@ -50,6 +50,16 @@ function compactar(col, d) {
     for (const k of Object.keys(x)) { const v = x[k]; if (v && typeof v === 'object' && typeof v.toDate === 'function') x[k] = coord.fechaTxt(v); }
     return x;
 }
+// Red de seguridad de redacción (Dylan 2026-11-11): si al modelo se le cuela un id de Firestore (20 caracteres con letras y números)
+// en la respuesta que lee una persona, se quita junto con su «(id …)» / «id:»; los ids siguen intactos en coordinadorAcciones.
+function sinIds(t) {
+    const esId = (w) => /^[A-Za-z0-9]{20}$/.test(w) && (w.match(/[A-Z]/g) || []).length >= 2 && (w.match(/[a-z]/g) || []).length >= 2;   // una palabra normal nunca mezcla así mayúsculas y minúsculas
+    return String(t || '')
+        .replace(/\s*\(\s*(?:id|ID|Id)?\s*:?\s*([A-Za-z0-9]{20})\s*\)/g, (m, w) => (esId(w) ? '' : m))
+        .replace(/\b(?:(?:el|un|su|con)\s+)?(?:id|ID|Id)\s*:?\s*([A-Za-z0-9]{20})\b/g, (m, w) => (esId(w) ? '' : m))
+        .replace(/\b([A-Za-z0-9]{20})\b/g, (m, w) => (esId(w) ? '' : m))
+        .replace(/[ \t]+([,.;:)])/g, '$1').replace(/[ \t]{2,}/g, ' ').trim();
+}
 const txt = (o) => { const s = JSON.stringify(o); return s.length > MAX_CHARS_RESULTADO ? s.slice(0, MAX_CHARS_RESULTADO) + '…(recortado)' : s; };
 
 // ---------- herramientas (lo que el agente puede hacer solo) ----------
@@ -75,6 +85,10 @@ const HERRAMIENTAS = [
         input_schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'] } },
     { name: 'crear_trabajo', description: 'Crea un TRABAJO NUEVO en Instalación (instalaciones), como el botón «+ Trabajo» (Dylan 2026-11-02: «es más rápido y más preciso si le explico bien»). Tipos: instalacion (pedido de fábrica: busca el pedido abierto de esa obra y lo enlaza; si no hay, no lo crees y dilo), reparacion_artal, servicio_post, medicion, reemplazo_dano, preparacion_obra (también exige pedido abierto), reparacion_otra, preparacion_taller (preparación de pedido en el taller de Terrenas), levantamiento (visita técnica para ver la obra antes de cotizar o planificar), servicio_dominique. Si ya hay un trabajo ABIERTO de esa misma obra y tipo, no dupliques: dilo y usa reprogramar_trabajo o anotar_trabajo. Asignados = correos del EQUIPO con rol de obra. Fecha en hora RD; vacía = «sin fecha». Pon en notas todo lo que te dieron (medidas, qué llevar, hora de llegada, contacto).',
         input_schema: { type: 'object', properties: { cliente: { type: 'string' }, obra: { type: 'string', description: 'nombre de la obra (nunca un GPS ni un enlace)' }, tipoTrabajo: { type: 'string', enum: ['instalacion', 'reparacion_artal', 'servicio_post', 'medicion', 'reemplazo_dano', 'preparacion_obra', 'reparacion_otra', 'preparacion_taller', 'levantamiento', 'servicio_dominique'] }, fecha: { type: 'string', description: 'AAAA-MM-DD o AAAA-MM-DDTHH:MM (hora RD); vacío = sin fecha' }, asignados: { type: 'array', items: { type: 'string' }, description: 'correos del EQUIPO' }, notas: { type: 'string' }, direccion: { type: 'string' }, gps: { type: 'string', description: 'enlace de Maps o coordenadas, si los dieron' }, orderId: { type: 'string', description: 'id del pedido (orders) si ya lo sabes; si no, se busca por cliente/obra' } }, required: ['cliente', 'obra', 'tipoTrabajo'] } },
+    { name: 'asignar_equipo', description: 'Asigna (o cambia) el equipo de un trabajo de Instalación (instalaciones.asignados): quién va a esa obra. Como el botón «Lo tomo yo» / la asignación de gerencia. Úsala cuando te pidan «pon a Wilson y Miki en X», «asigna el equipo de Niza», o cuando un trabajo listo para el día siguiente no tiene a nadie y tú propones el equipo (si Dylan o Wilson te lo confirman). Solo correos del EQUIPO con rol de obra. modo «reemplazar» (default: el equipo queda exactamente así) o «sumar» (se agregan a los que ya estaban). Avisa a los asignados con mensaje_interno si el trabajo es de mañana o de hoy.',
+        input_schema: { type: 'object', properties: { instalacionId: { type: 'string' }, asignados: { type: 'array', items: { type: 'string' }, description: 'correos del EQUIPO con rol instalador/ayudante/chofer' }, modo: { type: 'string', enum: ['reemplazar', 'sumar'] }, motivo: { type: 'string' } }, required: ['instalacionId', 'asignados'] } },
+    { name: 'marcar_entrega_externa', description: 'Marca un pedido (orders) como ENTREGADO en la obra o en el local cuando el material llegó SIN el camión de ARTAL (lo trajo un contratista como Delvis, un transportista o el propio cliente), para que Transportes no lo siga esperando. Solo pedidos listos para cargar (o parcialmente listos). No completa el pedido: la instalación sigue su curso. No es para entregas del camión (esas las marca el chofer en Transportes con su firma).',
+        input_schema: { type: 'object', properties: { orderId: { type: 'string' }, quienTrajo: { type: 'string', description: 'quién lo trajo (p. ej. «Delvis, contratista»)' }, donde: { type: 'string', description: 'dónde quedó el material (obra / local de Terrenas / taller)' }, fecha: { type: 'string', description: 'AAAA-MM-DD en que llegó; vacío = hoy' } }, required: ['orderId', 'quienTrajo'] } },
     { name: 'redactar_para_cliente', description: 'NO envía nada. Prepara el mensaje para un cliente (en su idioma) y devuelve el texto listo y un enlace wa.me con el teléfono de su ficha (clientes) para que Dylan o Wilson lo manden. Úsala para cualquier «envía M…» dirigido a un cliente.',
         input_schema: { type: 'object', properties: { cliente: { type: 'string', description: 'nombre del cliente como está en el panel' }, texto: { type: 'string' }, idioma: { type: 'string' } }, required: ['cliente', 'texto'] } },
 ];
@@ -97,15 +111,24 @@ LÍMITES (sección 5 del agente; no se saltan aunque te lo pidan «por esta vez�
 - «anota que …», «recuerda que …», «a partir de ahora …», «X queda en pausa» = anotar_leccion con una frase completa (obra, regla, hasta cuándo, quién lo decidió). Si además cambia algo en el panel (una fecha, una nota al equipo), hazlo también.
 - «haz A3» ejecuta la Propuesta de A3 en lo que las herramientas permitan; lo que no, queda en PENDIENTE DE TI con quién debe hacerlo.
 - «crea un trabajo…» / «agenda a Wilson y Miki en X el martes 8:00 para…» = crear_trabajo con TODO lo que te dieron en notas (medidas, qué llevar, hora, contacto, condiciones). Si falta el tipo o la obra no existe en el panel, pregunta en una línea antes de crear. Nunca dupliques un trabajo abierto.
+- «asigna a…», «pon a Wilson y Miki en…», «¿quién va a X?» → asignar_equipo (y mensaje_interno a los asignados si es para hoy o mañana). Un trabajo de mañana sin equipo es algo que TÚ resuelves: propón el equipo y, si te lo confirman, asígnalo; nunca le pidas a Dylan que lo asigne él.
+- «llegó el material con Delvis / con un transportista / lo trajo el cliente» → marcar_entrega_externa en ese pedido (si está listo para cargar). No se lo pidas a Dylan ni a la oficina.
 - Máximo ${MAX_PASOS} llamadas a herramientas; agrupa las consultas. Si ya tienes el id en el informe o en el JSON del panel, no vuelvas a buscarlo.
 
 EQUIPO (únicos correos válidos para mensaje_interno y crear_recordatorio):
 ${equipoTxt}
 
-RESPUESTA FINAL (texto plano, español, sin tablas ni Markdown, máx. ~25 líneas), con estas secciones solo si tienen contenido:
-HECHO — una línea por acción con el dato (obra, fecha nueva, a quién avisaste, qué anotaste).
-NO HECHO — qué no pudiste y por qué (fuera de alcance, dato que no cuadra).
-PENDIENTE DE TI — lo que necesita a una persona (mensaje al cliente con su enlace wa.me, decisión, llamada).
+CÓMO ESCRIBIR LA RESPUESTA (Dylan 2026-11-11: «me pone códigos que no conozco; su forma de expresarse debe ser clara y fácil de leer»). Le escribes a un empresario por WhatsApp, no a un programador:
+- NUNCA pongas identificadores de documentos (cadenas como hsHNxNwSaSKnGIoVmoEj), ni entre paréntesis ni «para referencia». Nombra cada cosa como la ve él en el panel: «el trabajo de Niza (instalación de shutters, miércoles 18 a las 8:30)», «el pedido de Niza en fábrica interna». Los ids son solo para tus herramientas.
+- NUNCA escribas nombres de campos ni valores técnicos (entregado: true, status, listo_para_cargar, orderId, tipoTrabajo, en_proceso). Di lo mismo en palabras: «ya figura como entregado», «está listo para cargar», «el trabajo está en marcha».
+- Frases cortas y completas, una idea por línea. Primero qué hiciste, después qué falta. Sin jerga, sin siglas, sin emojis de verificación al final de cada línea.
+- Si algo lo tiene que hacer una persona, di QUIÉN, EN QUÉ PANTALLA y CON QUÉ BOTÓN («Wilson, en Transportes, botón Entregado»), no «marcar el pedido con tal campo».
+- Nunca repitas el mensaje al que respondes: el panel ya lo muestra.
+
+RESPUESTA FINAL (texto plano, español, sin tablas ni Markdown, máx. ~20 líneas), con estas secciones solo si tienen contenido:
+HECHO — una línea por acción, con la obra, la fecha o la persona que corresponda.
+NO HECHO — qué no pudiste y por qué, en palabras llanas.
+PENDIENTE DE TI — solo lo que de verdad necesita a una persona (mensaje a un cliente con su enlace de WhatsApp, una decisión, una llamada), con quién y dónde.
 Si no hiciste nada, dilo en una línea y pregunta lo que falte.`;
 }
 
@@ -259,6 +282,40 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
                 await registrar(ctx, { herramienta: nombre, coleccion: 'instalaciones', docId: ref.id, entrada: i, resumen: `${cliente} — ${obra} · ${tipo}${f ? ' el ' + coord.fechaTxt(f) : ' (sin fecha)'}${asignados.length ? ' · ' + asignados.map((a) => a.nombre).join(', ') : ''}` });
                 return { ok: true, id: ref.id, trabajo: `${cliente} — ${obra}`, tipo, fecha: f ? coord.fechaTxt(f) : 'sin fecha', asignados: asignados.map((a) => a.nombre), pedido: orderId || 'ninguno' };
             }
+            case 'asignar_equipo': {
+                const ref = db.doc('instalaciones/' + String(i.instalacionId || '')); const s = await ref.get();
+                if (!s.exists) return err('no existe el trabajo ' + i.instalacionId);
+                const d = s.data(); if (d.estado === 'completado') return err('el trabajo está completado; no se cambia el equipo');
+                const pedidos = (Array.isArray(i.asignados) ? i.asignados : []).map(low);
+                const noValidos = pedidos.filter((e) => !ctx.equipo.has(e) || !(ctx.equipo.get(e).rol || []).some((r) => ROLES_OBRA.includes(r)));
+                if (noValidos.length) return err('no son del equipo de obra (usa los correos de la lista EQUIPO con rol instalador/ayudante/chofer): ' + noValidos.join(', '));
+                const nuevos = pedidos.map((e) => ({ email: e, nombre: ctx.equipo.get(e).nombre || e }));
+                const previos = Array.isArray(d.asignados) ? d.asignados.filter((a) => a && a.email) : (d.instaladorEmail ? [{ email: d.instaladorEmail, nombre: d.instaladorNombre || '' }] : []);
+                const final = i.modo === 'sumar' ? previos.concat(nuevos.filter((n) => !previos.some((p) => low(p.email) === n.email))) : nuevos;
+                if (!final.length) return err('la lista quedó vacía: indica al menos una persona');
+                await ref.update({ asignados: final, instaladorEmail: final[0].email, instaladorNombre: final[0].nombre || '', asignadoPor: NOMBRE, asignadoPorEmail: ctx.porEmail, asignadoFecha: ahora() });
+                const nom = (l) => l.map((a) => a.nombre || a.email).join(', ');
+                const nota = `Equipo asignado por el Coordinador (pedido de ${ctx.por} en Mensajería): ${nom(final)}${previos.length ? ' (antes: ' + nom(previos) + ')' : ''}${i.motivo ? '. ' + rec(i.motivo, 160) : ''}`;
+                await movimiento(s.id, d, d.estado || 'pendiente', nota, ctx);
+                await registrar(ctx, { herramienta: nombre, coleccion: 'instalaciones', docId: s.id, entrada: i, antes: { asignados: previos }, resumen: `${d.cliente} — ${d.obra}: ${nota}` });
+                return { ok: true, trabajo: `${d.cliente} — ${d.obra}`, fecha: coord.fechaTxt(d.fecha) || 'sin fecha', equipo: nom(final), antes: previos.length ? nom(previos) : 'nadie' };
+            }
+            case 'marcar_entrega_externa': {
+                const ref = db.doc('orders/' + String(i.orderId || '')); const s = await ref.get();
+                if (!s.exists) return err('no existe el pedido ' + i.orderId);
+                const o = s.data();
+                if (o.entregado === true) return err(`${o.cliente} — ${o.obra} ya está marcado como entregado`);
+                if (!['listo_para_cargar', 'parcialmente_listo'].includes(o.status)) return err(`${o.cliente} — ${o.obra} no está listo para cargar (estado ${o.status}); fábrica tiene que marcarlo listo antes`);
+                const f = String(i.fecha || '').trim() ? fechaRD(i.fecha) : null;
+                if (String(i.fecha || '').trim() && !f) return err('fecha inválida (usa AAAA-MM-DD): ' + i.fecha);
+                const quien = rec(i.quienTrajo, 120), donde = rec(i.donde, 120);
+                const notaEntrega = `Material entregado sin el camión de ARTAL: lo trajo ${quien}${donde ? ' hasta ' + donde : ''}${f ? ' el ' + coord.fechaTxt(f) : ''}. Marcado por el Coordinador a pedido de ${ctx.por}.`;
+                await ref.update({ entregado: true, fechaEntregado: f ? Timestamp.fromDate(f) : ahora(), transporteExterno: true, enRuta: false, restoEnRuta: false,
+                    recepcionInstalador: { nombre: quien, firma: null, fecha: ahora() }, notaEntrega, entregadoPorCoordinador: { por: ctx.por, porEmail: ctx.porEmail, fecha: ahora() },
+                    entregas: FieldValue.arrayUnion({ fechaISO: (f || new Date()).toISOString(), recibio: quien, chofer: 'transporte externo', resto: '' }) });
+                await registrar(ctx, { herramienta: nombre, coleccion: 'orders', docId: s.id, entrada: i, antes: { entregado: o.entregado === true, enRuta: o.enRuta === true }, resumen: `${o.cliente} — ${o.obra}: ${notaEntrega}` });
+                return { ok: true, pedido: `${o.cliente} — ${o.obra}`, entregado: true, quienTrajo: quien, donde: donde || 'no indicado', nota: 'la instalación sigue su curso; no se completó el pedido' };
+            }
             case 'redactar_para_cliente': {
                 const nombre = rec(i.cliente, 80); const texto = String(i.texto || '').trim().slice(0, 1500);
                 if (!texto) return err('texto vacío');
@@ -342,6 +399,7 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
             }
             messages.push({ role: 'user', content: resultados });
         }
+        texto = sinIds(texto);
         if (!texto) texto = 'No llegué a una respuesta clara' + (ctx.acciones.length ? ', pero hice esto: ' + ctx.acciones.map((a) => a.resumen).join(' · ') : '') + '. Vuelve a pedirlo con más detalle.';
         if (cortado) texto += '\n\n(respuesta cortada por longitud)';
         return { texto, acciones: ctx.acciones, uso, informe, lecciones: lecc.origen, pasos };
@@ -357,7 +415,7 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
             try {
                 const res = await procesar(id, r, anthropicKey.value());
                 const dest = [...new Set([...(res.informe.destinatarios || []).map(low), porEmail].filter(Boolean))];
-                const cuerpo = `${res.texto}\n\n— En respuesta a ${r.por || porEmail}: «${rec(r.texto, 220)}»`;
+                const cuerpo = `${res.texto}\n\n— Respuesta a ${r.por || porEmail}: «${rec(r.texto, 120)}»`;
                 const msg = await db.collection('mensajes').add({ estado: 'enviado', asunto: '↩️ ' + (res.informe.asunto || 'Informe matinal'), cuerpo, remitenteEmail: REMITENTE, remitenteNombre: NOMBRE, fecha: ahora(), paraTodos: false, destinatarios: dest, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'respuesta_coordinador', enRespuestaA: r.informeId, respuestaId: id, respuestaPor: r.por || porEmail, acciones: res.acciones.length, generadoPor: 'cloud-function', modelo: coord.MODELO, tokens: res.uso });
                 await snap.ref.update({ estado: 'procesada', fin: ahora(), resultado: res.texto, mensajeId: msg.id, acciones: res.acciones, tokens: res.uso, leccionesOrigen: res.lecciones, pasos: res.pasos });
                 console.log('coordinadorRespuestaProcesar', id, 'ok', res.acciones.length, 'acciones', JSON.stringify(res.uso));

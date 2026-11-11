@@ -171,7 +171,7 @@ const LECCIONES_BASE = `- Un trabajo origen 'auto_fabrica' sin asignados es norm
 - Un pedido puede llegar a la obra sin «Entregado» en Transportes (transportista externo); no alertes como perdido, pregunta.
 - El status del pedido manda sobre sus fechas (un «listo» devuelto a fábrica es «en fábrica»).
 - Un pedido con fichaParcial es una parte de la hoja; el resto va aparte.`;
-const FORMATO_INFORME = `FORMATO (texto plano, guiones y líneas en blanco, sin tablas ni Markdown pesado, en español, conciso; cada línea con dato real):
+const FORMATO_INFORME = `FORMATO (texto plano, guiones y líneas en blanco, sin tablas ni Markdown pesado, en español, conciso; cada línea con dato real; NUNCA identificadores de documentos ni nombres de campos — nombra las cosas como las ve Dylan en el panel: cliente, obra, fecha, persona):
 INFORME MATINAL — <día> <dd/mm/aaaa> (generado a las <hora>)
 
 HOY EN OBRA (propuesta; Wilson confirma o cambia)
