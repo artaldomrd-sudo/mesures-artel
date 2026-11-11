@@ -223,7 +223,7 @@
     // --- Detalle de una reunión (lectura) ---
     function renderDetalle(modoEmpleado) {
         const r = reunionesCache.find(x => x.id === reuSel);
-        const volverA = modoEmpleado ? `<a onclick="irInicio()">← Mis reuniones</a>` : `<a onclick="abrirEmpleado('${r ? r.empleadoId : ''}')">← ${esc(r ? r.empleadoNombre : '')}</a>`;
+        const volverA = modoEmpleado ? `<a onclick="irInicio()">← Mis reuniones</a>` : `<a onclick="abrirEmpleado('${empSel || (r ? (r.empleadoId || 'ext:' + norm(r.empleadoNombre || '')) : '')}')">← ${esc(r ? r.empleadoNombre : '')}</a>`;
         if (!r) return `<div class="crumbs">${volverA}</div><div class="empty">Reunión no encontrada.</div>`;
         const secHtml = (r.secciones || []).map(s => `<div class="sec"><h3>${esc(s.titulo || '')}</h3>
             ${s.guia && !modoEmpleado ? `<div class="guia">${esc(s.guia)}</div>` : ''}
@@ -240,13 +240,14 @@
                     : `<span class="est-pill ${a.estado === 'cumplido' ? 'cumplido' : 'pendiente'}">${a.estado === 'cumplido' ? '✓ Cumplido' : '⏳ Pendiente'}</span>`}</td></tr>`).join('')}
                 </tbody></table>` : '<div class="empty">Sin acuerdos escritos.</div>'}</div>`;
         const notas = r.notas ? `<div class="sec"><h3>Notas libres</h3><div class="qa"><div class="a">${esc(r.notas)}</div></div></div>` : '';
+        const editArriba = (esAdmin && !modoEmpleado) ? `<div class="bar" style="margin:0 0 14px"><button class="btn-blue" onclick="editarReunion('${r.id}')">✏️ Editar reunión</button><span style="font-size:12px;color:#8a93a0">Las notas en gris 🔒 solo las ve gerencia.</span></div>` : '';
         const admBtns = (esAdmin && !modoEmpleado) ? `<div class="bar" style="margin-top:16px"><button class="btn-ghost" onclick="editarReunion('${r.id}')">✏️ Editar</button><button class="btn-ghost" onclick="borrarReunion('${r.id}')" style="color:#c0392b;border-color:#e6b8b3">🗑️ Eliminar</button></div>` : '';
         return `<div class="crumbs">${volverA}</div>
             <div class="detalle">
                 <h2>${esc(r.empleadoNombre || '')}</h2>
                 <div class="sub">${esc(r.puestoTexto || '')}</div>
                 <div class="hdr-meta">Reunión del <b>${esc(fFecha(r.fecha))}</b>${r.horaInicio ? ` · ${esc(r.horaInicio)}–${esc(r.horaFin || '')}` : ''}${r.lugar ? ` · ${esc(r.lugar)}` : ''}${r.proximaFecha ? ` · Próxima: <b>${esc(fFecha(r.proximaFecha))}</b>` : ''}</div>
-                ${secHtml}${reconoce}${nec}${plan}${meta}${acu}${notas}${admBtns}
+                ${editArriba}${secHtml}${reconoce}${nec}${plan}${meta}${acu}${notas}${admBtns}
             </div>`;
     }
 
@@ -401,8 +402,10 @@
             </div>` : '';
         const secHtml = e.secciones.map((s, si) => `<div class="sec sec-block" data-si="${si}">
             <div class="field"><label>Título de la sección</label><input class="sec-titulo" value="${esc(s.titulo || '')}"></div>
+            ${s.guia ? `<div class="guia">🔒 ${esc(s.guia)}</div>` : ''}
             <div class="preguntas">${(s.preguntas || []).map((p, pi) => `<div class="preg-row" data-pi="${pi}" style="margin-bottom:10px;padding-left:10px;border-left:2px solid #eef1f4">
                 <div class="field"><label>Pregunta</label><input class="preg-q" value="${esc(p.q || '')}"></div>
+                ${p.guia ? `<div class="guia">🔒 ${esc(p.guia)}</div>` : ''}
                 <div class="field"><label>Respuesta</label><textarea class="preg-a">${esc(p.a || '')}</textarea></div>
                 <button class="mini" onclick="delPreg(${si},${pi})">− quitar pregunta</button>
             </div>`).join('')}</div>
@@ -425,7 +428,8 @@
 
         return `<div class="crumbs"><a onclick="cancelarEdit()">← Cancelar</a></div>
             <h2 style="color:var(--artal-blue);margin:0 0 4px">${e._id ? 'Editar' : 'Nueva'} reunión — ${esc(e.empleadoNombre)}</h2>
-            <div class="sub" style="color:#8a93a0;font-size:13px;margin-bottom:16px">${esc(e.puestoTexto || '')}</div>
+            <div class="sub" style="color:#8a93a0;font-size:13px;margin-bottom:10px">${esc(e.puestoTexto || '')}</div>
+            <div class="bar"><button class="btn-blue btn-guardar-reu" onclick="guardarReunion()">💾 Guardar reunión</button><button class="btn-ghost" onclick="cancelarEdit()">Cancelar</button><span style="font-size:12px;color:#8a93a0">Las notas en gris 🔒 son la guía de gerencia; no se guardan como respuesta.</span></div>
             <div class="sec">
                 <div class="field"><label>Puesto / antigüedad (encabezado)</label><input id="e-puesto" value="${esc(e.puestoTexto || '')}"></div>
                 <div class="row3">
@@ -455,7 +459,7 @@
                 <div class="field"><label>Próxima reunión de seguimiento</label><input id="e-proxima" type="date" value="${esc(e.proximaFecha || '')}"></div>
                 <label style="font-size:12.5px;color:#556"><input type="checkbox" id="e-recordar" checked> Crear recordatorio para gerencia en esa fecha</label>
             </div>
-            <div class="bar"><button class="btn-blue" id="btn-guardar" onclick="guardarReunion()">💾 Guardar reunión</button><button class="btn-ghost" onclick="cancelarEdit()">Cancelar</button></div>`;
+            <div class="bar"><button class="btn-blue btn-guardar-reu" id="btn-guardar" onclick="guardarReunion()">💾 Guardar reunión</button><button class="btn-ghost" onclick="cancelarEdit()">Cancelar</button></div>`;
     }
 
     // Lee todos los campos del DOM al objeto `edit` (antes de agregar/quitar o guardar).
@@ -488,7 +492,7 @@
     window.guardarReunion = async () => {
         leerEdit();
         const crearRecordatorio = (document.getElementById('e-recordar') || {}).checked;
-        const btn = document.getElementById('btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
+        const btns = Array.from(document.querySelectorAll('.btn-guardar-reu')); btns.forEach(b => { b.disabled = true; b.textContent = 'Guardando…'; });
         const data = { ...edit };
         delete data._id;
         data.actualizada = Date.now();
@@ -498,7 +502,7 @@
             else { data.creadoPor = usuario.nombre; data.fechaCreacion = serverTimestamp(); const ref = await addDoc(collection(db, 'rrhhReuniones'), data); rid = ref.id; }
             if (crearRecordatorio && data.proximaFecha) await crearReminder(data, rid);
             reuSel = rid; vista = 'detalle'; edit = null; render(); window.scrollTo(0, 0);
-        } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); btn.disabled = false; btn.textContent = '💾 Guardar reunión'; }
+        } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); btns.forEach(b => { b.disabled = false; b.textContent = '💾 Guardar reunión'; }); }
     };
 
     async function crearReminder(data, rid) {

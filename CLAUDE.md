@@ -39,6 +39,11 @@ un **PDF de Cotización o Fabricación** para el cliente.
   `externos()` arma, desde `rrhhReuniones`, una tarjeta por nombre sin ficha (id virtual `ext:<nombre>`, etiqueta
   «externo», borde morado) y `personaPorId` reemplaza a `empleadosCache.find` en timeline/plantillas; `baseHeader` deja
   `empleadoId` vacío para un externo (nunca se crea ficha desde aquí). La reunión de Yunairy vive solo en Firestore.
+  **Guías visibles al editar + botones arriba (2026-11-11, Dylan: «al editar ya no se ve el texto de introducción; el
+  botón Editar está abajo del todo»)**: `renderEditar` muestra las `guia` de sección y de pregunta como texto gris 🔒
+  (solo lectura, no se guardan como respuesta; `leerEdit` ya las conservaba), `renderDetalle` lleva «✏️ Editar reunión»
+  arriba bajo la cabecera (Eliminar sigue abajo) y el editor tiene Guardar/Cancelar arriba y abajo (`.btn-guardar-reu`,
+  los dos se bloquean juntos). El «← Volver» del detalle usa `empSel` (una reunión externa no tiene `empleadoId`).
 - **Git: las dos sesiones comparten el MISMO checkout → commitear SIEMPRE directo en `main`, nunca
   `git checkout` a otra rama** (2026-09-07 un commit del cuaderno cayó en `sistema-operativo` porque
   la otra sesión cambió de rama entre dos comandos). Antes de commitear: `git branch --show-current`
