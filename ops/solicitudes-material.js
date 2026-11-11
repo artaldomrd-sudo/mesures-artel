@@ -47,6 +47,36 @@ const fechaCorta = (iso) => { const t = toMs(iso); return t > 0 ? new Date(t).to
 // Conversión de la unidad del PEDIDO a la unidad que cuenta el INVENTARIO (2026-11-03, Dylan: «2 fundas» sumaba 2 unidades).
 // Devuelve el factor (1 = misma unidad; porCaja = el pedido viene en el empaque del ítem) o null si no se puede saber.
 const mismaU = (a, b) => plur(String(a || '').trim().toLowerCase()) === plur(String(b || '').trim().toLowerCase());
+// Productos con fecha de vencimiento (Dylan 2026-11-11: «silicona, uretano, masilla u otros del tipo»). El ítem puede marcarlo a
+// mano (`caduca` true/false); sin marca, se deduce del nombre o de la sección (selladores, pintura). Cada entrada de stock de un
+// ítem así pide la fecha del lote → `inventario.lotes[] {vencimiento:'AAAA-MM-DD', cantidad, fechaISO}` y `movimientosInventario.vencimiento`;
+// al tomar material se descuenta del lote más viejo (FIFO).
+const CADUCA_RE = /silic|uretan|poliuret|masill|sellad|adhesiv|pegamen|\bcola\b|resin|pintur|spray|espuma|lubric|thinner|diluy|cataliz|barniz|primer|imprim|cement|esmalte|anticorr/i;
+export function caducaDe(item) {
+    if (!item) return false;
+    if (item.caduca === true) return true;
+    if (item.caduca === false) return false;
+    return ['selladores', 'pintura'].includes(String(item.subgrupo || '')) || CADUCA_RE.test(String(item.tipo || '') + ' ' + String(item.nombre || ''));
+}
+export const lotesDe = (item) => (Array.isArray(item && item.lotes) ? item.lotes : []).filter(l => l && l.vencimiento && Number(l.cantidad) > 0).sort((a, b) => a.vencimiento < b.vencimiento ? -1 : 1);
+// Descuenta `n` unidades de los lotes empezando por el que vence primero; devuelve el array nuevo (sin los agotados).
+export function lotesMenos(item, n) {
+    let resto = Number(n) || 0; const out = [];
+    for (const l of lotesDe(item)) { const c = Number(l.cantidad) || 0; const q = Math.min(c, resto); resto -= q; if (c - q > 0) out.push({ ...l, cantidad: c - q }); }
+    return out;
+}
+export const fechaCortaISO = (iso) => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '';
+// Estado de vencimiento del ítem: {clase:'vencido'|'pronto'|'ok'|null, txt, dias, lotes}. Umbral «por vencer» = 60 días.
+export function vencimientoDe(item, diasAviso = 60) {
+    const lotes = lotesDe(item); if (!lotes.length) return { clase: null, txt: '', lotes };
+    const hoy = new Date().toISOString().slice(0, 10);
+    const dias = (v) => Math.round((new Date(v + 'T00:00:00') - new Date(hoy + 'T00:00:00')) / 86400000);
+    const vencidos = lotes.filter(l => dias(l.vencimiento) < 0); const nV = vencidos.reduce((a, l) => a + Number(l.cantidad), 0);
+    if (nV > 0) return { clase: 'vencido', dias: dias(vencidos[0].vencimiento), txt: `⛔ Vencido: ${nV} ${item.unidad || 'u'} (lote del ${fechaCortaISO(vencidos[0].vencimiento)})`, lotes };
+    const d = dias(lotes[0].vencimiento);
+    if (d <= diasAviso) return { clase: 'pronto', dias: d, txt: d === 0 ? `⏳ Vence hoy: ${lotes[0].cantidad} ${item.unidad || 'u'}` : `⏳ Vence en ${d} d: ${lotes[0].cantidad} ${item.unidad || 'u'} (${fechaCortaISO(lotes[0].vencimiento)})`, lotes };
+    return { clase: 'ok', dias: d, txt: `⏳ Próximo vencimiento ${fechaCortaISO(lotes[0].vencimiento)}`, lotes };
+}
 export function factorInventario(s, item) {
     const it = item || {};
     const invU = it.unidad || 'unidades', emp = it.empaque || (Number(it.porCaja) > 0 ? 'caja' : ''), pc = Number(it.porCaja) || 0;
@@ -221,18 +251,19 @@ export async function revertirEntradaInventario(s, usuario, motivo) {
 }
 // Entregada + entrada al inventario (si el pedido venía de un ítem del catálogo): suma la cantidad comprada y deja el
 // movimiento `restock` como lo hace «Agregar stock» de inventario.html.
-export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle) {
+export async function darEntradaInventario(s, usuario, cantidad, costoU, detalle, vencimiento) {
     if (!s.itemId) throw new Error('Este pedido no está ligado a un ítem del inventario.');
     const n = Number(cantidad) || 0; if (n <= 0) throw new Error('Cantidad inválida');
     const cambios = { cantidad: increment(n) }; if (costoU > 0) cambios.costo = costoU;
+    if (vencimiento) cambios.lotes = arrayUnion({ vencimiento, cantidad: n, fechaISO: ahoraISO() });
     await updateDoc(doc(db, 'inventario', s.itemId), cambios);
     await addDoc(collection(db, 'movimientosInventario'), {
         itemId: s.itemId, itemTipo: s.itemTipo, itemColor: s.itemColor || null, tipo: 'restock', cantidad: n,
         nota: 'Compra por pedido del equipo (' + (s.pedidoPor && s.pedidoPor.nombre || '') + ')' + (detalle ? ' · ' + detalle : '') + (s.proveedor && s.proveedor.nombre ? ' · ' + s.proveedor.nombre : ''),
-        costoUnitario: costoU || null, proveedor: s.proveedor && s.proveedor.nombre || null, ncf: null, solicitudId: s.id,
+        costoUnitario: costoU || null, proveedor: s.proveedor && s.proveedor.nombre || null, ncf: null, solicitudId: s.id, vencimiento: vencimiento || null,
         usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
     });
-    await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, detalle: detalle || null, costoUnitario: costoU || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
+    await updateDoc(doc(db, COL, s.id), { entradaInventario: { cantidad: n, detalle: detalle || null, costoUnitario: costoU || null, vencimiento: vencimiento || null, fechaISO: ahoraISO(), por: usuario.nombre || '' } });
 }
 // Texto del pedido para el proveedor (WhatsApp). Nunca precios, teléfonos de clientes ni anticipos.
 // Proveedor por defecto (Dylan 2026-11-04): si el ítem del inventario dice «Proveedor: Jaraba import», el formulario arranca con
@@ -476,7 +507,8 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
                 <div style="font-size:12.5px;color:#334;">Se pidió: <b>${esc(cantidadTxt(s))}</b></div>
                 ${conInv ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="sf-inv-${id}" checked onchange="document.getElementById('sf-invrow-${id}').style.display = this.checked ? '' : 'none'"> Entra al almacén (inventario)</label>
                 <div id="sf-invrow-${id}" style="display:grid;gap:6px;"><div><label style="font-size:12px;" id="sf-invcant-lbl-${id}">Entran al inventario</label>${inp('sf-invcant-' + id, '', 'number', '')}</div>
-                <div id="sf-invconv-${id}" style="font-size:12px;color:#778;">Calculando la equivalencia…</div></div>
+                <div id="sf-invconv-${id}" style="font-size:12px;color:#778;">Calculando la equivalencia…</div>
+                <div id="sf-invvenc-row-${id}" style="display:none;"><label style="font-size:12px;">⏳ Fecha de vencimiento del lote <span style="font-weight:normal;color:#889">(la que trae el envase)</span></label>${inp('sf-invvenc-' + id, '', 'date', '')}</div></div>
                 <div style="font-size:11.5px;color:#778;">Si va directo a la obra y no al almacén, desmarca la casilla.</div>` : `<div style="font-size:11.5px;color:#778;">No está en la lista del inventario: no entra al almacén. Si debe quedar ahí, la oficina lo crea en Inventario.</div>`}
                 <div><label style="font-size:12px;">Precio total pagado (RD$, opcional)</label>${inp('sf-precio2-' + id, '0', 'number', s.precio != null ? String(s.precio) : '')}</div>`,
                 'Confirmar', `solOkEntregada('${id}')`, '#27ae60');
@@ -588,7 +620,7 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         try { await cambiarEstado(id, 'recogido', usuario, { recogidoPor: usuario.nombre || '', ...(p !== '' ? { precio: Number(p) } : {}) }, v('sf-nr-' + id)); } catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     // Rellena «Entran al inventario» en la unidad que cuenta el inventario (lee el ítem actual: su empaque pudo cambiar).
-    const conv = {};
+    const conv = {}, caduca = {};
     async function prepararEntrada(s, id) {
         let item = { unidad: s.itemUnidad, empaque: s.itemEmpaque, porCaja: s.itemPorCaja };
         try { const d = await getDoc(doc(db, 'inventario', s.itemId)); if (d.exists()) item = d.data(); } catch (_) { }
@@ -596,6 +628,7 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         const el = (k) => document.getElementById(k + id);
         if (!el('sf-invcant-')) return;
         el('sf-invcant-lbl-').textContent = `Entran al inventario (en ${invU})`;
+        caduca[id] = caducaDe(item); const vr = el('sf-invvenc-row-'); if (vr) vr.style.display = caduca[id] ? '' : 'none';
         if (f != null) {
             el('sf-invcant-').value = String(n * f);
             conv[id] = f === 1 ? '' : `${n} ${s.unidad} × ${f} = ${n * f} ${invU}`;
@@ -610,12 +643,14 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
         const chk = document.getElementById('sf-inv-' + id); const p = v('sf-precio2-' + id);
         const cantInv = Number(v('sf-invcant-' + id)) || 0, precio = p !== '' ? Number(p) : null;
         if (chk && chk.checked && !(cantInv > 0)) { alert('Escribe cuánto entra al inventario (o desmarca la casilla si va directo a la obra).'); return; }
+        const venc = v('sf-invvenc-' + id) || '';
+        if (chk && chk.checked && caduca[id] && !venc) { alert('Este producto lleva fecha de vencimiento: escribe la del lote que entra (la que trae el envase).'); return; }
         // Sin pago anticipado, el chofer sube la factura de compra al ir al sitio (Dylan 2026-11-03).
         if (['chofer', 'recogido'].includes(s.estado) && !s.pagoValidado && !(Array.isArray(s.facturaCompra) && s.facturaCompra.length) && !(Array.isArray(s.fotos) && s.fotos.length)
             && !confirm('Falta la foto de la factura de compra. Súbela con «📎 Factura de compra» antes de confirmar.\n\n¿Confirmar de todos modos sin factura?')) return;
         const quienes = [s.pedidoPor && s.pedidoPor.nombre, ...((s.sumados || []).map(x => x.nombre))].filter(Boolean);
         try {
-            if (chk && chk.checked) await darEntradaInventario(s, usuario, cantInv, precio > 0 ? Math.round(precio / cantInv * 100) / 100 : 0, conv[id] || '');
+            if (chk && chk.checked) await darEntradaInventario(s, usuario, cantInv, precio > 0 ? Math.round(precio / cantInv * 100) / 100 : 0, conv[id] || '', caduca[id] ? venc : '');
             await cambiarEstado(id, 'entregada', usuario, {
                 entregadaA: [...new Set(quienes)].join(', ') || null, ...(precio != null ? { precio } : {}),
                 ...(['chofer', 'recogido'].includes(s.estado) && !s.recogidoPor ? { recogidoPor: usuario.nombre || '' } : {})

@@ -62,6 +62,9 @@
     .stock-warn { font-size: 12px; font-weight: bold; border-radius: 7px; padding: 4px 9px; margin-top: 6px; display: inline-block; }
     .stock-warn.low { background: #fff3e0; color: #b9770e; }
     .stock-warn.out { background: #fdecea; color: #c0392b; }
+    .stock-warn.venc { background: #fdecea; color: #c0392b; }
+    .stock-warn.pronto { background: #fff3e0; color: #b9770e; }
+    .item-lotes { font-size: 12px; color: #667; margin-top: 4px; }
     /* Resumen superior */
     .inv-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
     .inv-kpi { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 16px; flex: 1; min-width: 130px; }
@@ -193,6 +196,7 @@
             </div>
             <div style="margin-top:8px;font-size:13.5px;color:var(--artal-blue)">Existencia total: <b id="nuevo-total">0</b> <span id="nuevo-total-u"></span> <span style="color:#999;font-size:12px">(se calcula sola)</span></div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-caduca" style="width:auto"> ⏳ Producto con <b>fecha de vencimiento</b> (silicona, uretano, masilla, pintura…): cada entrada pide la fecha del lote</label>
         <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:13px;color:#333;margin-top:12px;"><input type="checkbox" id="nuevo-esset" onchange="toggleSetNuevo()" style="width:auto"> 🧩 Es un <b>juego/set</b> (varias piezas: brocas, llaves Allen, puntas…)</label>
         <div id="nuevo-set-hint" style="display:none;font-size:12px;color:#b9770e;background:#fff8ec;border-radius:8px;padding:7px 10px;margin-top:6px;">El costo y el precio son <b>del juego completo</b>, no de una pieza suelta.</div>
         <div id="nuevo-set-box" style="display:none;background:#f6f8fa;border-radius:10px;padding:10px 12px;margin-top:6px;">
@@ -220,10 +224,10 @@
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
     import { enableNotifications } from './notifications.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
-    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, esEncargadoInventario, rolEn, ABIERTOS } from './solicitudes-material.js?v=20261107';
+    import { montarPedir, montarAcciones, escucharConfig, escucharProveedores, escucharSolicitudes, solicitudCardHTML, esGestor, esEncargadoInventario, rolEn, ABIERTOS, caducaDe, lotesDe, lotesMenos, vencimientoDe, fechaCortaISO } from './solicitudes-material.js?v=20261111';
     import { db } from './firebase-config.js';
     import {
-        collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp
+        collection, addDoc, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment, serverTimestamp, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     // Categorías base fijas + las que se vayan creando desde "+ Nueva categoría"
@@ -601,6 +605,15 @@
         }
         sel.value = nombre;
     };
+    // Vencimiento (Dylan 2026-11-11): aviso rojo si hay un lote vencido, ámbar si vence en ≤ 60 días; debajo, los lotes.
+    function vencHTML(item) {
+        if (!caducaDe(item) && !lotesDe(item).length) return '';
+        const v = vencimientoDe(item);
+        if (!v.lotes.length) return (Number(item.cantidad) || 0) > 0 ? `<div class="item-lotes">⏳ Sin fecha de vencimiento registrada (se pide en la próxima entrada)</div>` : '';
+        const aviso = v.clase === 'vencido' ? `<div class="stock-warn venc">${esc(v.txt)}</div>` : v.clase === 'pronto' ? `<div class="stock-warn pronto">${esc(v.txt)}</div>` : '';
+        const lotes = v.lotes.map(l => `${fechaCortaISO(l.vencimiento)} (${l.cantidad})`).join(' · ');
+        return `${aviso}<div class="item-lotes">⏳ Vence: ${esc(lotes)}</div>`;
+    }
     function itemCardHTML(item) {
         const sinStock = sinStockDe(item), bajo = bajoMinimoDe(item), low = sinStock || bajo, min = minimoDe(item);
         const subsEdit = subgruposDeKey(item.categoria);
@@ -626,6 +639,7 @@
             ${esAdmin && item.proveedor ? `<div class="item-ref">🏭 Proveedor: ${esc(item.proveedor)}</div>` : ''}
             ${min ? `<div class="item-min">Mínimo: ${min} ${esc(item.unidad || '')}${porCaja > 0 ? ` (≈ ${Math.ceil(min / porCaja)} ${esc(plural(empaqueDe(item), Math.ceil(min / porCaja)))})` : ''}</div>` : ''}
             ${sinStock ? `<div class="stock-warn out">⛔ Sin stock</div>` : (bajo ? `<div class="stock-warn low">⚠ Stock bajo</div>` : '')}
+            ${vencHTML(item)}
             ${esAdmin ? `
             <div class="item-precios">
                 <span class="costo">Costo: ${money(costo)}</span>
@@ -659,6 +673,7 @@
                     <div><label>Cantidad a agregar</label><div style="display:flex;gap:6px">${Number(item.porCaja) > 0 ? `<select id="agregar-modo-${item.id}" style="flex:0 0 auto;min-width:96px"><option value="cajas">${esc(plural(empaqueDe(item), 2))} ×${Number(item.porCaja)}</option><option value="unidades">unidad(es)</option></select>` : ''}<input type="number" id="agregar-cant-${item.id}" min="1" value="1" style="flex:1"></div></div>
                     <div><label>Costo por ${esc(item.unidad)} <span style="font-weight:normal;color:#999">(de esta compra)</span></label><input type="number" id="agregar-costo-${item.id}" min="0" step="0.01" value="${costo || ''}" placeholder="RD$"></div>
                 </div>
+                ${caducaDe(item) ? `<div style="margin-top:6px;"><label>⏳ Fecha de vencimiento del lote que entra <span style="font-weight:normal;color:#999">(la que trae el envase)</span></label><input type="date" id="agregar-venc-${item.id}" min="${new Date().toISOString().slice(0, 10)}"></div>` : ''}
                 <div class="grid2-inv" style="margin-top:6px">
                     <div><label>Proveedor <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-prov-${item.id}" placeholder="Nombre"></div>
                     <div><label>NCF <span style="font-weight:normal;color:#999">(opcional)</span></label><input type="text" id="agregar-ncf-${item.id}" placeholder="B01…"></div>
@@ -689,6 +704,7 @@
                     <div id="editar-sg-row-${item.id}" style="${subsEdit ? '' : 'display:none'}"><label>Sección / grupo</label><select id="editar-sg-${item.id}" onchange="onEditarSubChange('${item.id}')">${subsEdit ? sgOptionsHTML(subsEdit, item.subgrupo || defectoDeKey(item.categoria)) : ''}</select></div>
                 </div>
                 <div id="editar-sg2-row-${item.id}" style="margin-top:8px;${hijosEdit ? '' : 'display:none'}"><label>Sub-sección / tipo</label><select id="editar-sg2-${item.id}">${hijosEdit ? sg2OptionsHTML(hijosEdit, item.subgrupo2 || '') : ''}</select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:12.5px;color:#333;margin-top:10px;"><input type="checkbox" id="editar-caduca-${item.id}" ${caducaDe(item) ? 'checked' : ''} style="width:auto"> ⏳ Producto con fecha de vencimiento (cada entrada pide la fecha del lote)${item.caduca == null && caducaDe(item) ? ' <span style="color:#889">· deducido del nombre/sección</span>' : ''}</label>
                 <label style="display:flex;align-items:center;gap:8px;font-weight:normal;font-size:12.5px;color:#333;margin-top:10px;"><input type="checkbox" id="editar-esset-${item.id}" onchange="toggleSetEditar('${item.id}')" ${item.esSet ? 'checked' : ''} style="width:auto"> 🧩 Es un juego/set (varias piezas)</label>
                 <div id="editar-set-box-${item.id}" style="${item.esSet ? '' : 'display:none;'}background:#f6f8fa;border-radius:8px;padding:8px 10px;margin-top:4px;">
                     <div id="editar-piezas-${item.id}">${(Array.isArray(item.piezas) ? item.piezas : []).map(p => piezaRowHTML(p.nombre, p.cantidad)).join('')}</div>
@@ -1003,7 +1019,7 @@
         const TIPO = { consumo: '📤 Tomado', restock: '📥 Reabastecido', ajuste: '📋 Ajuste de conteo' };
         cont.innerHTML = lista.map(m => {
             const signo = (Number(m.cantidad) || 0) >= 0 ? '+' : '';
-            const extra = [m.proveedor ? 'Prov: ' + esc(m.proveedor) : '', m.ncf ? 'NCF: ' + esc(m.ncf) : '', m.costoUnitario ? money(m.costoUnitario) + '/u' : ''].filter(Boolean).join(' · ');
+            const extra = [m.proveedor ? 'Prov: ' + esc(m.proveedor) : '', m.ncf ? 'NCF: ' + esc(m.ncf) : '', m.costoUnitario ? money(m.costoUnitario) + '/u' : '', m.vencimiento ? '⏳ vence ' + esc(fechaCortaISO(m.vencimiento)) : ''].filter(Boolean).join(' · ');
             return `<div class="hist-row">
                 <div><b>${TIPO[m.tipo] || esc(m.tipo || '')}</b> <span class="hist-cant ${(Number(m.cantidad) || 0) >= 0 ? 'pos' : 'neg'}">${signo}${m.cantidad} ${esc(item.unidad || '')}</span>
                     ${m.nota ? `<div class="l">${esc(m.nota)}</div>` : ''}${extra ? `<div class="l">${extra}</div>` : ''}</div>
@@ -1172,12 +1188,14 @@
         const subgrupo2 = hijosNuevo ? (document.getElementById('nuevo-subgrupo2').value || null) : null;
         const esSet = document.getElementById('nuevo-esset').checked;
         const piezas = esSet ? leerPiezas('nuevo-piezas') : [];
+        const caduca = document.getElementById('nuevo-caduca').checked;
         try {
             await addDoc(collection(db, 'inventario'), {
                 tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null,
                 categoria, subgrupo, subgrupo2, unidad, empaque, porCaja, cantidad, minimo, costo, venta,
-                esSet, piezas, creadoFecha: serverTimestamp()
+                esSet, piezas, caduca, creadoFecha: serverTimestamp()
             });
+            document.getElementById('nuevo-caduca').checked = false;
             cerrarNuevoItem();
             document.getElementById('nuevo-tipo').value = '';
             document.getElementById('nuevo-referencia').value = '';
@@ -1258,8 +1276,9 @@
         const subgrupo2 = hijosEd ? ((sg2El && sg2El.value) || null) : null;
         const esSet = (document.getElementById('editar-esset-' + id) || {}).checked || false;
         const piezas = esSet ? leerPiezas('editar-piezas-' + id) : [];
+        const caduca = (document.getElementById('editar-caduca-' + id) || {}).checked || false;
         try {
-            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, empaque, porCaja, cantidad: nuevaCant, categoria, subgrupo, subgrupo2, minimo, esSet, piezas });
+            await updateDoc(doc(db, 'inventario', id), { tipo, referencia: referencia || null, proveedor: proveedor || null, color: color || null, unidad, empaque, porCaja, cantidad: nuevaCant, categoria, subgrupo, subgrupo2, minimo, esSet, piezas, caduca });
             // Si cambió la existencia a mano, lo dejamos registrado como ajuste (queda en el Historial).
             if (nuevaCant !== cantAnterior) {
                 try {
@@ -1302,7 +1321,9 @@
             if (!confirm(`Solo quedan ${item.cantidad} ${item.unidad}. ¿Tomar de todos modos (quedará en negativo)?`)) return;
         }
         try {
-            await updateDoc(doc(db, 'inventario', id), { cantidad: increment(-cantidad) });
+            const cambiosTomar = { cantidad: increment(-cantidad) };
+            if (lotesDe(item).length) cambiosTomar.lotes = lotesMenos(item, cantidad);   // sale primero el lote que vence antes
+            await updateDoc(doc(db, 'inventario', id), cambiosTomar);
             await addDoc(collection(db, 'movimientosInventario'), {
                 itemId: id, itemTipo: item.tipo, itemColor: item.color || null,
                 tipo: 'consumo', cantidad: -cantidad, nota,
@@ -1328,14 +1349,17 @@
         const proveedor = (document.getElementById('agregar-prov-' + id).value || '').trim();
         const ncf = (document.getElementById('agregar-ncf-' + id).value || '').trim().toUpperCase();
         const crearGasto = puedeGasto && document.getElementById('agregar-gasto-' + id).checked;
+        const vencEl = document.getElementById('agregar-venc-' + id); const vencimiento = vencEl ? (vencEl.value || '') : '';
+        if (vencEl && !vencimiento) { alert('Este producto lleva fecha de vencimiento: escribe la del lote que entra (la que trae el envase). Si de verdad no la tiene, desmarca «Producto con fecha de vencimiento» en ✏ Editar.'); return; }
         try {
             const cambios = { cantidad: increment(cantidad) };
             if (costoU > 0) cambios.costo = costoU;   // el costo del ítem se actualiza con el de esta última compra
+            if (vencimiento) cambios.lotes = arrayUnion({ vencimiento, cantidad, fechaISO: new Date().toISOString() });
             await updateDoc(doc(db, 'inventario', id), cambios);
             await addDoc(collection(db, 'movimientosInventario'), {
                 itemId: id, itemTipo: item.tipo, itemColor: item.color || null,
-                tipo: 'restock', cantidad, nota: 'Reabastecimiento' + (notaCajas ? ' · ' + notaCajas : '') + (proveedor ? ' · ' + proveedor : ''),
-                costoUnitario: costoU || null, proveedor: proveedor || null, ncf: ncf || null,
+                tipo: 'restock', cantidad, nota: 'Reabastecimiento' + (notaCajas ? ' · ' + notaCajas : '') + (proveedor ? ' · ' + proveedor : '') + (vencimiento ? ' · vence ' + fechaCortaISO(vencimiento) : ''),
+                costoUnitario: costoU || null, proveedor: proveedor || null, ncf: ncf || null, vencimiento: vencimiento || null,
                 usuarioNombre: usuario.nombre, usuarioEmail: usuario.email, fecha: serverTimestamp()
             });
             // Crear el gasto en Contabilidad (best-effort): aparece en Gastos y desde ahí puede ir a Citrus.

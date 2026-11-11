@@ -3399,6 +3399,22 @@ configuración (muestra `#admin-tools` y repinta): crear/editar/eliminar ítems,
 la compra como gasto» solo está activa para admin/contable (`puedeGasto`; la regla de `contaMovimientos` es `finanzas()`). Columna
 «📦 Inventario» en «⚙️ Quién atiende» (se guarda con las demás). Roosevelt agregado a la lista el 2026-11-07.
 
+### Inventario: fecha de vencimiento por lote (2026-11-11)
+
+Dylan: «agrega campo de colocar fecha de vencimiento cuando registramos entrada de silicón, uretano, masilla u otros productos del
+tipo». En `ops/solicitudes-material.js` (helpers exportados, los usa `inventario.html`): `caducaDe(item)` = `item.caduca` true/false
+manual o, sin marca, sección `selladores`/`pintura` o nombre que casa `CADUCA_RE` (silic|uretan|masill|sellad|adhesiv|pintur|spray|
+espuma|…); `lotesDe`, `lotesMenos(item, n)` (FIFO: descuenta del lote que vence antes), `vencimientoDe(item, 60)` (`clase`
+vencido | pronto ≤ 60 d | ok, `txt`), `fechaCortaISO`. Datos: `inventario.lotes[] {vencimiento:'AAAA-MM-DD', cantidad, fechaISO}`
+(arrayUnion al entrar; reescrito al tomar), `inventario.caduca` (casilla «⏳ Producto con fecha de vencimiento» en Nuevo y Editar;
+en Editar aparece marcada si se dedujo, con nota «deducido del nombre/sección»), `movimientosInventario.vencimiento`. «📥 Agregar
+stock» muestra «Fecha de vencimiento del lote que entra» solo si `caducaDe` y la EXIGE (para saltarla hay que desmarcar la casilla en
+Editar); «Lo traje / Ya llegó» de un pedido de material (`prepararEntrada` lee el ítem → fila `sf-invvenc-row`, `darEntradaInventario(…,
+vencimiento)`) igual. Tarjeta: `vencHTML` → `.stock-warn.venc` «⛔ Vencido: N u (lote del dd/mm/aaaa)», `.stock-warn.pronto` «⏳ Vence
+en N d», línea «⏳ Vence: dd/mm/aaaa (N) · …», o «Sin fecha de vencimiento registrada» si caduca y hay stock sin lotes (los ítems que
+ya existían arrancan así hasta la próxima entrada). Un ajuste de conteo en Editar NO toca los lotes. Historial muestra «⏳ vence …».
+Guía `guia-inventario-01` actualizada. Versión del módulo `?v=20261111` en inventario.html y solicitudes-material.html.
+
 ### Inventario: unidad de conteo + empaques (2026-10-28)
 
 Dylan (captura de la tapita negra 3/8: había puesto «paquetes» como unidad y 2000 como existencia; en realidad tiene 7 fundas de
