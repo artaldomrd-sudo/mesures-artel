@@ -24,6 +24,8 @@
     .emp-card .n { font-weight: bold; color: var(--artal-blue); font-size: 16px; }
     .emp-card .p { font-size: 12.5px; color: #667; margin-top: 3px; }
     .emp-card .m { font-size: 12px; color: #8a93a0; margin-top: 10px; }
+    .emp-card.ext { border-top-color: #9b59b6; }
+    .emp-card .ext-tag { display: inline-block; font-size: 10.5px; background: #f3e8fb; color: #7d3c98; border-radius: 10px; padding: 1px 8px; margin-left: 6px; vertical-align: middle; }
     .emp-card .pend { display: inline-block; background: #fef0e6; color: #c76a1c; font-weight: bold; border-radius: 20px; padding: 2px 9px; font-size: 11px; margin-top: 8px; }
 
     .r-list { display: flex; flex-direction: column; gap: 10px; }
@@ -138,6 +140,19 @@
         (r.empleadoId && r.empleadoId === e.id) ||
         (e.correo && (r.empleadoCorreo || '').toLowerCase() === String(e.correo).toLowerCase()) ||
         mismoNombre(e.nombre, r.empleadoNombre));
+    // Personas EXTERNAS: con reunión registrada pero sin ficha en RRHH (p. ej. la contable contratada,
+    // 2026-11-10). Se agrupan por nombre y reciben un id virtual «ext:<nombre>» para usar la misma
+    // pantalla; nunca se les crea ficha de empleado desde aquí.
+    const externos = () => {
+        const vistos = {};
+        reunionesCache.forEach(r => {
+            if (empleadosCache.some(e => reunionesDeEmp(e).includes(r))) return;
+            const k = norm(r.empleadoNombre || ''); if (!k) return;
+            if (!vistos[k]) vistos[k] = { id: 'ext:' + k, nombre: r.empleadoNombre || '', correo: r.empleadoCorreo || '', cargoNombre: r.puestoTexto || 'Externo', estado: 'activo', externo: true };
+        });
+        return Object.values(vistos).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    };
+    const personaPorId = (id) => empleadosCache.find(x => x.id === id) || externos().find(x => x.id === id);
     // Reuniones del usuario que entró (empleado): por su correo o por su nombre.
     const misReuniones = () => reunionesCache.filter(r =>
         (usuario.email && (r.empleadoCorreo || '').toLowerCase() === usuario.email.toLowerCase()) ||
@@ -176,25 +191,25 @@
     function renderInicio() {
         const conReunion = empleadosCache.slice().filter(e => (e.estado || 'activo') === 'activo')
             .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
-        const cards = conReunion.map(e => {
+        const cards = conReunion.concat(externos()).map(e => {
             const rs = reunionesDeEmp(e);
             const ult = rs[0];
             const pend = rs.reduce((n, r) => n + acuerdosPendientes(r), 0);
-            return `<div class="emp-card" onclick="abrirEmpleado('${e.id}')">
-                <div class="n">${esc(e.nombre || 'Sin nombre')}</div>
+            return `<div class="emp-card${e.externo ? ' ext' : ''}" onclick="abrirEmpleado('${e.id}')">
+                <div class="n">${esc(e.nombre || 'Sin nombre')}${e.externo ? '<span class="ext-tag">externo</span>' : ''}</div>
                 <div class="p">${esc(puestoDe(e) || '—')}</div>
                 <div class="m">${rs.length ? `${rs.length} reunión(es) · última ${esc(fFecha(ult.fecha))}` : 'Sin reuniones aún'}</div>
                 ${pend ? `<span class="pend">${pend} objetivo(s) en curso</span>` : ''}
             </div>`;
         }).join('');
-        return `<p class="intro">Reunión individual de seguimiento (cada 90 días). Elige un empleado para ver su historial, crear una nueva reunión y dar seguimiento a los objetivos.</p>
+        return `<p class="intro">Reunión individual de seguimiento (cada 90 días). Elige una persona para ver su historial, crear una nueva reunión y dar seguimiento a los objetivos. Las personas externas (contratadas, sin ficha en RRHH) aparecen con la etiqueta «externo».</p>
             <div class="bar"><button class="btn-ghost" onclick="abrirImportar()">⬆️ Importar reuniones</button></div>
             <div class="grid">${cards || '<div class="empty">No hay empleados activos. Agrégalos en RRHH → Empleados.</div>'}</div>`;
     }
 
     // --- Admin: timeline de un empleado ---
     function renderTimeline() {
-        const e = empleadosCache.find(x => x.id === empSel); if (!e) { vista = 'inicio'; return renderInicio(); }
+        const e = personaPorId(empSel); if (!e) { vista = 'inicio'; return renderInicio(); }
         const rs = reunionesDeEmp(e);
         return `<div class="crumbs"><a onclick="irInicio()">← Empleados</a></div>
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
@@ -253,7 +268,7 @@
 
     // ---------------- Editor (crear / editar) ----------------
     const baseHeader = (e) => ({
-        empleadoId: e ? e.id : '', empleadoNombre: e ? (e.nombre || '') : '', empleadoCorreo: e ? (e.correo || '') : '',
+        empleadoId: e && !e.externo ? e.id : '', empleadoNombre: e ? (e.nombre || '') : '', empleadoCorreo: e ? (e.correo || '') : '',
         puestoTexto: e ? puestoDe(e) : '', fecha: hoyISO(), horaInicio: '', horaFin: '', lugar: 'OFICINA', gerente: usuario.nombre
     });
     const plantillaVacia = (e) => ({
@@ -327,7 +342,7 @@
 
     // Selector de "cómo empezar" al crear una reunión nueva.
     window.elegirPlantilla = (empId) => {
-        const e = empleadosCache.find(x => x.id === empId);
+        const e = personaPorId(empId);
         const prev = reunionesDeEmp(e)[0];
         document.getElementById('pl-opciones').innerHTML =
             (prev ? `<button class="btn-blue" style="width:100%;margin-bottom:8px" onclick="crearReunionDesde('${empId}','anterior')">🔁 Igual que la anterior<br><small style="font-weight:normal;opacity:.85">Misma estructura + objetivos pendientes de ${esc(e ? e.nombre : '')}</small></button>` : '') +
@@ -339,7 +354,7 @@
     window.cerrarPlantilla = () => document.getElementById('pl-modal').classList.remove('show');
     window.crearReunionDesde = (empId, tipo) => {
         cerrarPlantilla();
-        const e = empleadosCache.find(x => x.id === empId);
+        const e = personaPorId(empId);
         if (tipo === 'blanco') { edit = plantillaVacia(e); }
         else if (tipo === 'anterior') { edit = desdeAnterior(e); }
         else { edit = desdePlantilla(e, tipo); }

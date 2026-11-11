@@ -34,6 +34,11 @@ un **PDF de Cotización o Fabricación** para el cliente.
   siempre a la vista»)**: las reuniones de seguimiento del equipo (`ops/rrhh-reuniones.html`, colección `rrhhReuniones`,
   vista «Mis objetivos») se llevan en la sesión «🤝 Reuniones de seguimiento (equipo)»; traspaso en `HANDOFF-reuniones.md`
   (no versionado). La sesión de sistema no toca ese archivo; la de reuniones no toca el resto de `ops/` sin avisar.
+  **Personas externas en Reuniones (2026-11-10, caso Yunairy, contable contratada sin ficha)**: la portada de
+  `ops/rrhh-reuniones.html` agrupaba solo por `rrhhEmpleados`, así que una reunión sin empleado no se veía. Ahora
+  `externos()` arma, desde `rrhhReuniones`, una tarjeta por nombre sin ficha (id virtual `ext:<nombre>`, etiqueta
+  «externo», borde morado) y `personaPorId` reemplaza a `empleadosCache.find` en timeline/plantillas; `baseHeader` deja
+  `empleadoId` vacío para un externo (nunca se crea ficha desde aquí). La reunión de Yunairy vive solo en Firestore.
 - **Git: las dos sesiones comparten el MISMO checkout → commitear SIEMPRE directo en `main`, nunca
   `git checkout` a otra rama** (2026-09-07 un commit del cuaderno cayó en `sistema-operativo` porque
   la otra sesión cambió de rama entre dos comandos). Antes de commitear: `git branch --show-current`
