@@ -3839,8 +3839,7 @@ Deploy de functions pendiente de Dylan.
 Dylan (caso Franyer — Casa triángulo): «creé el trabajo en el cuaderno, debemos hacer que se vincule automáticamente para que haya un
 seguimiento». El enlace automático (`medicionAlCotizar`) fallaba porque `mismaObra` compara el cliente EXACTO («Franyer» del cuaderno vs
 «FRANYER PEÑA CRUZ» del trabajo). Ahora, en `functions/index.js`: (0) si el pedido trae `medicionInstalacionId` (cuaderno abierto desde
-«Abrir el cuaderno para cotizar», que ahora pasa `?medicion=<id>&cliente=&obra=&telefono=&direccion=` — la lectura de esos parámetros en
-`index.html` es del área cuaderno, prompt entregado a Dylan) enlaza por id; (1) coincidencia exacta → `cotizada` como antes y el pedido recibe
+«Abrir el cuaderno para cotizar», que ahora pasa `?medicion=<id>&cliente=&obra=&telefono=&direccion=`) enlaza por id; (1) coincidencia exacta → `cotizada` como antes y el pedido recibe
 `medicionInstalacionId/Ids, medicionFotos[], medicionNotas, medicionPor, medicionFecha`; (2) sin exacta, `mismoClienteAprox` (nombres
 iguales, prefijo palabra a palabra o misma primera palabra ≥ 4 letras) + `mismaObraNombre` (la parte de obra de `mismaObra`, refactorizada)
 → `medicionPosible {orderId, docType, cliente, obra, destino, status, idProyecto, fechaISO}` en el trabajo y la tarjeta «por cotizar» de
@@ -3852,6 +3851,19 @@ de su cotización. **Seguimiento**: trigger `medicionSeguirPedido` (orders, camb
 avanzar» (7 solicitada / 15 enviada al cliente); Cotizaciones (`medidasHTML`) e Historial (`progresoExtra`) muestran «📏 Medidas de Wilson
 del 7 nov · ver foto»; el Coordinador recibe `medidasTomadas` en cada cotización y una regla de alerta con los mismos plazos. Deploy de
 functions pendiente de Dylan.
+
+**Lado CUADERNO (`index.html`, 2026-11-11)**: `arrancarDesdeMedicion()` (bloque junto al Nº de proyecto; se llama al final de
+`loadProgress`, nunca con `?orderId=`): lee `?medicion=&cliente=&obra=&telefono=&direccion=`, limpia esos parámetros con
+`history.replaceState` ANTES de nada (un refresco no vuelve a vaciar la hoja), si hay tarjetas pregunta «¿Guardar y dejar la hoja en
+blanco para cotizar las medidas de X?» (cancelar = no toca nada; aceptar = `saveProgress()` + `clearNotebookToBlank()`; sin tarjetas
+vacía sin preguntar para soltar el proyecto abierto), rellena CLIENTE (`clienteGuardadoComo`: si calza por `normNombreKey` con un
+cliente de `artal_projects` usa la grafía guardada → «Abrir otro proyecto de este cliente» lo lista), NOMBRE DEL PROYECTO, TELÉFONO
+(`formatearTelefono`) y UBICACIÓN, y guarda `medicionIdActual` → `header.medicionId` (getAppJSON/restoreData; Hoja en blanco y «Nuevo
+proyecto de este cliente» lo vacían, igual que `idProveedor`). Chip `#medicion-chip` bajo el encabezado («📏 Cotizando las medidas tomadas
+en obra · cliente — obra», ✕ = `quitarMedicion()` con confirm; oculto en `printing-sheets` y `readonly-view`). `enviarOrden` manda
+`medicionInstalacionId` + `medicionInstalacionIds:[id]` en el pedido nuevo y en «Actualizar el original». Probado en navegador
+(`?medicion=PRUEBA&cliente=Franyer%20Pe%C3%B1a&obra=Casa%20triangulo&telefono=8498168472`): encabezado, chip, URL limpia, refresco sin
+re-disparo, confirm con tarjetas, grafía guardada «FRANYER PEÑA», ✕; sin enviar nada.
 
 ### Nº de proyecto PRY-AAAA-NNN visible en el Panel (2026-11-03)
 
