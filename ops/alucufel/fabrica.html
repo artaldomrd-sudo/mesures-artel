@@ -125,8 +125,8 @@
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
             actionsHtml = `<div class="actions">
                 <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>
-                <button class="btn-parcial" onclick="abrirEnvio('${id}', 'parcial')">Parcialmente listo para cargar</button>
-                <button class="btn-listo" onclick="abrirEnvio('${id}', 'listo')">Listo para cargar (completo)</button>
+                <button class="btn-parcial" onclick="parcialmenteListo('${id}')">Parcialmente listo para cargar</button>
+                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
                 ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
             </div>`;
         } else if (o.status === 'listo_para_cargar' && o.docType !== 'COMPRA_DIRECTA' && itemsSinTerminar(o).length) {
@@ -140,7 +140,11 @@
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         if (esCompra && o.status === 'pendiente_proveedor') actionsHtml = `<div class="actions"><button class="btn-listo" onclick="abrirEnvio('${id}', 'compra')">📦 Marcar enviado</button></div>`;
         // Ya enviado y todavía no entregado: se puede corregir cómo se envía.
-        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true) actionsHtml += `<div style="margin-top:6px;font-size:13px;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">cambiar</a></div>`;
+        // Mabelin (ALUCUFEL, 2026-11-11): marcar listo no obliga a nada más. Cómo se envía y el chofer son pasos OPCIONALES al
+        // final; sin elegir, el pedido va por camión de ARTAL (Wilson) y la oficina lo ajusta si hace falta.
+        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true) actionsHtml += o.envio
+            ? `<div style="margin-top:6px;font-size:13px;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">cambiar</a></div>`
+            : `<div style="margin-top:6px;font-size:13px;color:#556;">Cómo se envía: <b>${esc(envioTxt(o))}</b> <span style="color:#889">(por defecto; la oficina lo organiza)</span> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">elegir otra forma (opcional)</a></div>`;
         actionsHtml += `<div id="envio-box-${id}"></div>`;
         if (esCompra) return `
         <div class="order-card status-${o.status === 'pendiente_proveedor' ? 'en_fabrica' : o.status}">
@@ -171,11 +175,11 @@
                 <button onclick="atenderInstruccion('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">Marcar atendido</button>
             </div>` : ''}
             ${actionsHtml}
-            <div class="assign-row">
-                <label>Chofer:</label>
+            ${['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true ? `<div class="assign-row">
+                <label>Chofer <span style="font-weight:normal;color:#889">(opcional, último paso — normalmente lo pone la oficina)</span>:</label>
                 ${choferControlHTML(id, o)}
                 <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
-            </div>
+            </div>` : ''}
             <div class="comment-box">
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
@@ -337,8 +341,9 @@
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
         await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
     };
-    // ¿Cómo se envía? (2026-11-03): ALUCUFEL elige la vía al marcar listo / parcialmente listo / compra enviada; así llega a quien
-    // corresponde (camión → Wilson; guagua → equipo de obra; transporte externo → equipo de esa obra; Hilux → Dylan).
+    // ¿Cómo se envía? (2026-11-03): la vía decide a quién le llega (camión → Wilson; guagua → equipo de obra; transporte externo →
+    // equipo de esa obra; Hilux → Dylan). Desde 2026-11-11 (pedido de Mabelin) ALUCUFEL ya NO la elige al marcar listo: queda como
+    // paso opcional («elegir otra forma») en pedidos listos; sigue siendo obligatoria solo al marcar enviada una compra directa.
     window.abrirEnvio = function (id, modo) {
         const box = document.getElementById('envio-box-' + id); if (!box) return;
         if (box.innerHTML) { box.innerHTML = ''; return; }
@@ -373,18 +378,18 @@
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.listoParaCargar = async function (id) {
-        if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nPasará a chofer e instalador.')) return;
+        if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nLa oficina organiza el transporte. Si ya sabes cómo se envía o qué chofer lo lleva, lo puedes indicar después (opcional).')) return;
         // Al marcar todo el pedido como listo, se marcan también todos los ítems como listos
         // individualmente (por si venía de "parcialmente listo" y quedaban ítems sin marcar).
         const docSnap = allOrders.find(d => d.id === id);
         const items = docSnap ? (docSnap.data().items || []) : [];
         const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() };
         items.forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
-        await updateDoc(doc(db, 'orders', id), cambios);
+        try { await updateDoc(doc(db, 'orders', id), cambios); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.parcialmenteListo = async function (id) {
-        if (!confirm('¿Marcar como PARCIALMENTE LISTO?\n\nSe enviará a chofer/instalador lo que ya esté marcado como listo.')) return;
-        await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() });
+        if (!confirm('¿Marcar como PARCIALMENTE LISTO?\n\nLo que ya esté marcado como listo pasa a la oficina para organizar el transporte. Cómo se envía y el chofer se pueden indicar después (opcional).')) return;
+        try { await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.deshacerTomarPedido = async function (id) {
         if (yaSalio(id)) { alert('No se puede devolver a Pendiente: el pedido ya salió de fábrica (en ruta, entregado o en instalación).'); return; }

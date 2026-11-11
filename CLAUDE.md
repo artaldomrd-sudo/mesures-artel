@@ -3739,6 +3739,18 @@ en `#sup-admin-box` de `fabrica-interna.html`; `setDoc merge` de `lista`, solo a
 el botón en FAB `destino:'interno'` no completados. No se puede probar en navegador con el espejo (páginas admin): checker +
 mensaje generado con el pedido real de Niza. Guía `guia-fabrica-04` en la Academia.
 
+### ALUCUFEL: «Listo completo» sin envío ni chofer obligatorios (2026-11-11)
+
+Mabelin (ALUCUFEL, vía Dylan): «al marcar un pedido como listo completo, que no sea obligatorio asignarle el chofer en ese
+momento; pónganmela como último paso», y Dylan: «que pueda elegir el modo de envío pero sin que sea una obligación». En
+`ops/alucufel/fabrica.html`: «Listo para cargar (completo)» y «Parcialmente listo» vuelven a llamar directo a
+`listoParaCargar`/`parcialmenteListo` (solo `confirm`, sin la pantalla «¿Cómo se envía?» que abría `abrirEnvio` desde el
+2026-11-03); el pedido queda sin `envio` → `viaDe` lo trata como camión (Wilson en Transportes, como antes). En los pedidos
+listos/parcialmente listos no entregados la tarjeta dice «Cómo se envía: 🚚 Camión ARTAL (por defecto; la oficina lo organiza) ·
+elegir otra forma (opcional)» (`abrirEnvio(id,'cambiar')`, el mismo selector de siempre) y la fila «Chofer (opcional, último paso
+— normalmente lo pone la oficina)» solo aparece en esos estados, al final de la tarjeta. La compra directa («📦 Marcar enviado»)
+sigue pidiendo la vía (ALUCUFEL es quien la manda). Guía `guia-fabrica-02` actualizada.
+
 ### Academia: apartados e ilustraciones en las 24 guías (2026-10-29)
 
 Dylan: «convierte los títulos de sección a mayúsculas» → las 86 lecciones viejas no tenían títulos; se les ESCRIBIERON (opción 1,
