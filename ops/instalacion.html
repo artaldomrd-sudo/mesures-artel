@@ -1424,11 +1424,24 @@
         const por = (n, f) => `${esc(n || '—')}${fmtFechaHora(f) ? ' · ' + fmtFechaHora(f) : ''}`;
         const e = j.medicionEstado || (j.medicionPendienteOficina === true ? 'pendiente_oficina' : (j.medicionAtendidaPor ? 'por_cotizar' : ''));
         if (e === 'pendiente_oficina') return '<br><span style="color:#e67e22;font-weight:bold;">📏 Medidas entregadas · ⏳ la oficina aún no las recibió</span>';
-        if (e === 'por_cotizar') { const d = dias(j.medicionRecibidaFecha || j.medicionAtendidaFecha); return `<br><span style="color:#b8860b;font-weight:bold;">📏 Recibidas por ${por(j.medicionRecibidaPor || j.medicionAtendidaPor, j.medicionRecibidaFecha || j.medicionAtendidaFecha)} · en Cotizaciones, por cotizar${d != null ? ' (' + d + ' día' + (d === 1 ? '' : 's') + ')' : ''}</span>`; }
+        if (e === 'por_cotizar') { const d = dias(j.medicionRecibidaFecha || j.medicionAtendidaFecha); const p = j.medicionPosible; return `<br><span style="color:#b8860b;font-weight:bold;">📏 Recibidas por ${por(j.medicionRecibidaPor || j.medicionAtendidaPor, j.medicionRecibidaFecha || j.medicionAtendidaFecha)} · en Cotizaciones, por cotizar${d != null ? ' (' + d + ' día' + (d === 1 ? '' : 's') + ')' : ''}</span>${p && p.orderId ? `<br><span style="color:#7a5c00;font-weight:bold;">❓ Hay una cotización parecida («${esc(p.cliente)} — ${esc(p.obra)}»): la oficina confirma en Cotizaciones si es de estas medidas</span>` : ''}`; }
         if (e === 'para_pedido') return `<br><span style="color:#0A3D62;font-weight:bold;">📏 Medidas enlazadas a un pedido existente por ${por(j.medicionRecibidaPor, j.medicionRecibidaFecha)} · fábrica avisada</span>`;
-        if (e === 'cotizada') return `<br><span style="color:#1e8449;font-weight:bold;">📏 Cotizada ✓${j.medicionCotizadaPor ? ' · ' + esc(j.medicionCotizadaPor) : ''}${fmtFechaHora(j.medicionCotizadaFecha) ? ' · ' + fmtFechaHora(j.medicionCotizadaFecha) : ''}${j.medicionCotizacionId ? ` · <a href="#" onclick="openOrderPreview('${j.medicionCotizacionId}', 'instalador'); return false;">ver documento</a>` : ''}</span>`;
+        if (e === 'cotizada') return `<br><span style="color:#1e8449;font-weight:bold;">📏 Cotizada ✓${j.medicionCotizadaPor ? ' · ' + esc(j.medicionCotizadaPor) : ''}${fmtFechaHora(j.medicionCotizadaFecha) ? ' · ' + fmtFechaHora(j.medicionCotizadaFecha) : ''}${j.medicionCotizacionId ? ` · <a href="#" onclick="openOrderPreview('${j.medicionCotizacionId}', 'instalador'); return false;">ver documento</a>` : ''}</span>${medicionCadenaHTML(j)}`;
         if (e === 'descartada') return `<br><span style="color:#8a93a0;font-weight:bold;">📏 No se cotiza${j.medicionDescartadaMotivo ? ': ' + esc(j.medicionDescartadaMotivo) : ''}</span>`;
         return '';
+    }
+    // Cadena de seguimiento después de cotizar (Dylan 2026-11-11): Medidas → Cotización → ALUCUFEL costea → Cliente → Fábrica → Instalada,
+    // alimentada por la función medicionSeguirPedido (medicionPasos[] / medicionCotizacionEstado en el trabajo de medición).
+    const PASO_TXT = { solicitada: 'Cotización enviada', costeada: 'Costeada por ALUCUFEL', enviada_cliente: 'Enviada al cliente', aprobada: 'Aprobada por el cliente', pendiente_fabrica: 'En fábrica (pendiente)', en_fabrica: 'En fábrica', parcialmente_listo: 'Parcialmente lista', listo_para_cargar: 'Lista para cargar', parcialmente_instalado: 'Parcialmente instalada', completado: 'Instalada / cerrada', rechazada: 'Rechazada', cancelada: 'Cancelada' };
+    function medicionCadenaHTML(j) {
+        const pasos = Array.isArray(j.medicionPasos) ? j.medicionPasos.slice() : [];
+        if (!pasos.length) return '';
+        const vistos = new Set();
+        const items = pasos.filter(p => { const k = p.estado + '|' + p.orderId; if (vistos.has(k)) return false; vistos.add(k); return true; })
+            .map(p => { const d = p.fechaISO ? new Date(p.fechaISO) : null; const f = d && !isNaN(d) ? d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' }) : ''; const dest = p.estado === 'solicitada' ? (p.destino === 'interno' ? ' a la oficina' : ' a ALUCUFEL') : ''; return `${esc(PASO_TXT[p.estado] || p.estado)}${dest}${f ? ' (' + f + ')' : ''}`; });
+        const ult = pasos[pasos.length - 1]; const dUlt = ult && ult.fechaISO ? Math.floor((Date.now() - new Date(ult.fechaISO).getTime()) / 86400000) : null;
+        const espera = ult && dUlt != null && ((ult.estado === 'solicitada' && dUlt >= 7) || (ult.estado === 'enviada_cliente' && dUlt >= 15)) ? ` <span style="color:#c0392b;">· ⚠ ${dUlt} días sin avanzar</span>` : '';
+        return `<br><span style="color:#556;font-weight:normal;font-size:12.5px;">🔗 Medidas → ${items.join(' → ')}${espera}</span>`;
     }
     function tipoDeJob(j) { return j.tipoTrabajo || ((j.orderId || (Array.isArray(j.orderIds) && j.orderIds.length)) ? 'instalacion' : ''); }
     function encuestaAplica(j) { const t = tipoDeJob(j); return t === 'reparacion_artal' || t === 'reparacion_otra' || t === 'instalacion'; }

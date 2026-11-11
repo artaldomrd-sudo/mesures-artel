@@ -97,7 +97,7 @@
     import { enableNotifications } from './notifications.js';
     import { db, storage } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
-    import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, serverTimestamp, arrayUnion, deleteField } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { mismaObra } from './obras-util.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { openOrderPreview } from './order-preview.js';
@@ -142,6 +142,7 @@
                 <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha técnica</a>
                 ${contratistaLink}
             </div>
+            ${medidasHTML(o)}
             ${notaBtnHTML(id, o)}
             <div class="upload-row">
                 <input type="file" accept="application/pdf" id="file-${id}" multiple>
@@ -165,6 +166,7 @@
                 <a href="#" onclick="openOrderPreview('${id}'); return false;">Ver ficha técnica</a>
                 ${finalLinks}
             </div>
+            ${medidasHTML(o)}
             <div class="upload-row" style="margin-top:8px;">
                 <input type="file" accept="application/pdf" id="addfile-${id}" multiple>
                 <button id="addbtn-${id}" onclick="agregarCotizPdf('${id}')">＋ Agregar otro PDF</button>
@@ -189,7 +191,7 @@
     // cuaderno envía la cotización/pedido de esa obra (trigger medicionAlCotizar); aquí se puede cerrar a mano o descartar.
     let medsPorCotizar = [];
     const diasDesde = (ts) => { const d = ts && ts.toDate ? ts.toDate() : null; return d ? Math.floor((Date.now() - d.getTime()) / 86400000) : null; };
-    const fFH = (ts) => (ts && ts.toDate) ? ts.toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+    const fFH = (ts) => { const d = ts && ts.toDate ? ts.toDate() : (typeof ts === 'string' && ts ? new Date(ts) : null); return d && !isNaN(d) ? d.toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : ''; };
     function renderPorCotizar() {
         const el = document.getElementById('porcotizar-list'); if (!el) return;
         if (!medsPorCotizar.length) { el.innerHTML = '<p class="empty">No hay medidas esperando cotización.</p>'; return; }
@@ -207,8 +209,9 @@
                 ${j.notas ? `<div style="font-size:13px;color:#333;background:#f6f8fb;border-radius:8px;padding:7px 10px;margin-bottom:8px;white-space:pre-wrap;">${esc(j.notas)}</div>` : ''}
                 ${fotos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">${thumbs}</div>` : '<div style="font-size:12.5px;color:#c0392b;font-weight:bold;margin-bottom:8px;">⚠ Sin fotos ni archivos: pide las medidas al equipo.</div>'}
                 ${ult ? `<div style="font-size:12.5px;color:#556;margin-bottom:8px;">💬 Último mensaje de la obra: ${esc(ult)}</div>` : ''}
+                ${posibleHTML(j)}
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                    <a href="../index.html" class="btn-aprobar" style="text-decoration:none;display:inline-block;">📐 Abrir el cuaderno para cotizar</a>
+                    <a href="${cuadernoUrl(j)}" class="btn-aprobar" style="text-decoration:none;display:inline-block;">📐 Abrir el cuaderno para cotizar</a>
                     <button onclick="medicionYaCotizada('${j.id}')" style="background:#fff;color:#1e8449;border:1.5px solid #1e8449;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">✓ Ya está cotizada</button>
                     <button onclick="medicionNoCotizar('${j.id}')" style="background:#fff;color:#8a93a0;border:1.5px solid #cfd6de;border-radius:8px;padding:8px 12px;font-family:'Arimo';font-size:13px;cursor:pointer;">✖ No se cotiza</button>
                     <a href="instalacion.html" style="font-size:12.5px;color:#0A3D62;">Ver en Instalación</a>
@@ -216,6 +219,48 @@
         }).join('');
     }
     onSnapshot(query(collection(db, 'instalaciones'), where('medicionEstado', '==', 'por_cotizar')), (snap) => { medsPorCotizar = snap.docs.map(d => ({ id: d.id, ...d.data() })); renderPorCotizar(); }, () => { medsPorCotizar = []; renderPorCotizar(); });
+    // El cuaderno se abre con los datos de la medición (cliente, obra, teléfono, dirección y el id) para que el enlace sea por
+    // identidad y no por nombre (Dylan 2026-11-11, caso Franyer: «Franyer» en el cuaderno vs «FRANYER PEÑA CRUZ» en el trabajo).
+    function cuadernoUrl(j) {
+        const q = new URLSearchParams({ medicion: j.id, cliente: j.cliente || '', obra: j.obra || '' });
+        if (j.direccion) q.set('direccion', j.direccion);
+        if (j.clienteTelefono || j.telefono) q.set('telefono', j.clienteTelefono || j.telefono);
+        return '../index.html?' + q.toString();
+    }
+    // Cotización parecida pero no segura (cliente aproximado + obra): el sistema la propone y una persona confirma.
+    function posibleHTML(j) {
+        const p = j.medicionPosible; if (!p || !p.orderId) return '';
+        const que = String(p.docType || '').indexOf('FAB') === 0 ? 'el pedido de fábrica' : 'la cotización';
+        return `<div style="background:#fff8e1;border:1.5px solid #f1c40f;border-radius:10px;padding:10px 12px;margin-bottom:10px;">
+            <div style="font-weight:bold;color:#7a5c00;margin-bottom:6px;">❓ ¿Es ${que} de estas medidas? «${esc(p.cliente)} — ${esc(p.obra)}»${p.idProyecto ? ' · ' + esc(p.idProyecto) : ''}${p.destino ? ' · ' + (p.destino === 'interno' ? 'oficina' : 'ALUCUFEL') : ''}${fFH(p.fechaISO) ? ' · enviada ' + esc(fFH(p.fechaISO)) : ''}</div>
+            <div style="font-size:12.5px;color:#556;margin-bottom:8px;">El nombre del cliente no coincide exactamente con el del trabajo de medición, por eso no se enlazó solo.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button onclick="medicionConfirmarPosible('${j.id}')" style="background:#1e8449;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">✓ Sí, es esta</button>
+                <button onclick="medicionRechazarPosible('${j.id}')" style="background:#fff;color:#8a93a0;border:1.5px solid #cfd6de;border-radius:8px;padding:8px 12px;font-family:'Arimo';font-size:13px;cursor:pointer;">No, es otra obra</button>
+            </div></div>`;
+    }
+    window.medicionConfirmarPosible = async (id) => {
+        const j = medsPorCotizar.find(x => x.id === id) || {}; const p = j.medicionPosible; if (!p) return;
+        const fotos = (Array.isArray(j.fotos) ? j.fotos : []).filter(f => f && f.url).map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '' }));
+        try {
+            await medicionCerrar(id, { medicionEstado: 'cotizada', medicionCotizacionId: p.orderId, medicionCotizadaPor: usuario.nombre, medicionCotizadaFecha: serverTimestamp(), medicionCotizadaDoc: p.docType || '', medicionPosible: deleteField(), medicionEnlaceConfirmado: true,
+                medicionCotizacionEstado: p.status || '', medicionCotizacionEstadoFecha: serverTimestamp(), medicionPasos: arrayUnion({ estado: p.status || '', doc: p.docType || '', orderId: p.orderId, destino: p.destino || '', fechaISO: p.fechaISO || new Date().toISOString() }) },
+                `Medidas cotizadas: ${usuario.nombre} confirmó que «${p.cliente} — ${p.obra}» es la cotización de estas medidas`);
+            await updateDoc(doc(db, 'orders', p.orderId), { medicionInstalacionId: id, medicionInstalacionIds: arrayUnion(id), medicionFotos: fotos, medicionNotas: String(j.notas || ''), medicionPor: j.validadoPor || '', medicionFecha: j.validadoFecha || j.fecha || null });
+        } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.medicionRechazarPosible = async (id) => {
+        const j = medsPorCotizar.find(x => x.id === id) || {}; const p = j.medicionPosible; if (!p) return;
+        try { await updateDoc(doc(db, 'instalaciones', id), { medicionPosible: deleteField(), medicionPosibleRechazadas: arrayUnion(p.orderId) }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    // «📏 Medidas de Wilson del 7/11 · ver foto» en la tarjeta de la cotización/pedido que nació de una toma de medidas.
+    function medidasHTML(o) {
+        if (!o.medicionInstalacionId) return '';
+        const fotos = (Array.isArray(o.medicionFotos) ? o.medicionFotos : []).filter(f => f && f.url);
+        const links = fotos.map((f, i) => `<a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:#0A3D62;">${(f.tipo === 'pdf' || f.tipo === 'archivo') ? '📎 ' + esc(f.nombre || 'archivo') : 'ver foto' + (fotos.length > 1 ? ' ' + (i + 1) : '')}</a>`).join(' · ');
+        return `<div style="font-size:12.5px;color:#556;margin:4px 0 6px;">📏 Medidas tomadas en obra por <b>${esc(o.medicionPor || 'el equipo')}</b>${fFH(o.medicionFecha) ? ' · ' + esc(fFH(o.medicionFecha)) : ''}${links ? ' · ' + links : ''}${o.medicionNotas ? `<div style="white-space:pre-wrap;color:#333;background:#f6f8fb;border-radius:8px;padding:6px 9px;margin-top:4px;">${esc(String(o.medicionNotas).slice(0, 400))}</div>` : ''}</div>`;
+    }
     async function medicionCerrar(id, cambios, nota) {
         const j = medsPorCotizar.find(x => x.id === id) || {};
         await updateDoc(doc(db, 'instalaciones', id), cambios);

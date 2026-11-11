@@ -415,15 +415,57 @@ exports.medicionAOficina = onDocumentWritten('instalaciones/{id}', async (event)
 exports.medicionAlCotizar = onDocumentCreated('orders/{id}', async (event) => {
     const o = event.data ? event.data.data() : null; if (!o) return;
     if (o.docType === 'COMPRA_DIRECTA') return;
+    const id = event.params.id;
+    const esFab = String(o.docType || '').indexOf('FAB') === 0;
+    const fichaMedicion = (d) => ({ medicionInstalacionId: d.id, medicionInstalacionIds: FieldValue.arrayUnion(d.id), medicionFotos: Array.isArray(d.data().fotos) ? d.data().fotos.filter((f) => f && f.url).slice(0, 12) : [], medicionNotas: String(d.data().notas || '').slice(0, 1500), medicionPor: d.data().validadoPor || '', medicionFecha: d.data().validadoFecha || d.data().fecha || null });
     try {
-        const pend = (await db.collection('instalaciones').where('medicionEstado', '==', 'por_cotizar').get()).docs.filter((d) => mismaObra(o.cliente, o.obra, d.data().cliente, d.data().obra));
-        for (const d of pend) {
-            await d.ref.update({ medicionEstado: 'cotizada', medicionCotizacionId: event.params.id, medicionCotizadaPor: 'Sistema ARTAL', medicionCotizadaFecha: FieldValue.serverTimestamp(), medicionCotizadaDoc: o.docType || '' });
-            await db.collection('movimientosInstalaciones').add({ instalacionId: d.id, cliente: d.data().cliente || '', obra: d.data().obra || '', estado: 'completado', nota: 'Medidas cotizadas: se envió ' + (String(o.docType || '').indexOf('FAB') === 0 ? 'el pedido de fábrica' : 'la cotización') + ' de esta obra desde el cuaderno', por: 'Sistema ARTAL', porEmail: '', fecha: FieldValue.serverTimestamp() });
-            console.log('medicionAlCotizar:', d.id, '→ cotizada por', event.params.id);
+        // (a) Pedido de fábrica creado al aprobar una cotización con medidas: hereda la medición y sigue la cadena (Dylan 2026-11-11, seguimiento).
+        if (esFab && o.cotizacionOrigenId && !o.medicionInstalacionId) {
+            const cot = await db.doc('orders/' + o.cotizacionOrigenId).get();
+            const ids = cot.exists ? (cot.data().medicionInstalacionIds || (cot.data().medicionInstalacionId ? [cot.data().medicionInstalacionId] : [])) : [];
+            if (ids.length) {
+                await event.data.ref.update({ medicionInstalacionId: ids[0], medicionInstalacionIds: ids, medicionFotos: cot.data().medicionFotos || [], medicionNotas: cot.data().medicionNotas || '', medicionPor: cot.data().medicionPor || '', medicionFecha: cot.data().medicionFecha || null });
+                for (const mid of ids) await db.doc('instalaciones/' + mid).update({ medicionPedidoFabricaId: id, medicionCotizacionEstado: o.status || 'pendiente_fabrica', medicionCotizacionEstadoFecha: FieldValue.serverTimestamp(), medicionPasos: FieldValue.arrayUnion({ estado: o.status || 'pendiente_fabrica', doc: o.docType || '', orderId: id, destino: o.destino || '', fechaISO: new Date().toISOString() }) }).catch(() => { });
+                return;
+            }
         }
-        if (pend.length) await event.data.ref.update({ medicionInstalacionIds: pend.map((d) => d.id) });
-    } catch (e) { console.error('medicionAlCotizar', event.params.id, e); }
+        const todos = (await db.collection('instalaciones').where('medicionEstado', '==', 'por_cotizar').get()).docs;
+        // (0) El cuaderno abierto desde «Abrir el cuaderno para cotizar» manda la medición por su id: enlace seguro aunque el nombre difiera.
+        const porId = o.medicionInstalacionId ? todos.filter((d) => d.id === o.medicionInstalacionId) : [];
+        const exactas = porId.length ? porId : todos.filter((d) => mismaObra(o.cliente, o.obra, d.data().cliente, d.data().obra));
+        for (const d of exactas) {
+            await d.ref.update({ medicionEstado: 'cotizada', medicionCotizacionId: id, medicionCotizadaPor: 'Sistema ARTAL', medicionCotizadaFecha: FieldValue.serverTimestamp(), medicionCotizadaDoc: o.docType || '', medicionPosible: FieldValue.delete(),
+                medicionCotizacionEstado: o.status || '', medicionCotizacionEstadoFecha: FieldValue.serverTimestamp(), medicionPasos: FieldValue.arrayUnion({ estado: o.status || '', doc: o.docType || '', orderId: id, destino: o.destino || '', fechaISO: new Date().toISOString() }) });
+            await db.collection('movimientosInstalaciones').add({ instalacionId: d.id, cliente: d.data().cliente || '', obra: d.data().obra || '', estado: 'completado', nota: 'Medidas cotizadas: se envió ' + (esFab ? 'el pedido de fábrica' : 'la cotización') + ' de esta obra desde el cuaderno', por: 'Sistema ARTAL', porEmail: '', fecha: FieldValue.serverTimestamp() });
+            console.log('medicionAlCotizar:', d.id, '→ cotizada por', id);
+        }
+        if (exactas.length) { await event.data.ref.update(fichaMedicion(exactas[0])); return; }
+        // (b) Sin coincidencia exacta: si el cliente se parece y la obra casa, se PROPONE (la oficina confirma en Cotizaciones «¿Es la cotización de estas medidas?»).
+        const aprox = todos.filter((d) => { const x = d.data(); return !(x.medicionPosibleRechazadas || []).includes(id) && mismoClienteAprox(o.cliente, x.cliente) && mismaObraNombre(o.obra, x.obra); });
+        for (const d of aprox) {
+            await d.ref.update({ medicionPosible: { orderId: id, docType: o.docType || '', cliente: o.cliente || '', obra: o.obra || '', destino: o.destino || '', status: o.status || '', idProyecto: idProyectoSrv(o) || '', fechaISO: new Date().toISOString() } });
+            console.log('medicionAlCotizar: posible', d.id, '↔', id);
+        }
+    } catch (e) { console.error('medicionAlCotizar', id, e); }
+});
+
+// Seguimiento de la cotización / el pedido que nació de una toma de medidas (Dylan 2026-11-11: «debemos hacer que se vincule
+// automáticamente para que haya un seguimiento»): cada cambio de estado del pedido enlazado se refleja en el trabajo de medición
+// (`medicionCotizacionEstado`, `medicionPasos[]`), que Instalación muestra como cadena Medidas → Cotización → Cliente → Fábrica.
+exports.medicionSeguirPedido = onDocumentWritten('orders/{id}', async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
+    const before = event.data.before.exists ? event.data.before.data() : {};
+    const ids = after.medicionInstalacionIds || (after.medicionInstalacionId ? [after.medicionInstalacionId] : []);
+    if (!ids.length) return;
+    const cambioEstado = before.status !== after.status;
+    const aprobada = after.enviadaAFabrica === true && before.enviadaAFabrica !== true;
+    if (!cambioEstado && !aprobada) return;
+    const estado = aprobada && !cambioEstado ? 'aprobada' : after.status;
+    try {
+        for (const mid of ids) {
+            await db.doc('instalaciones/' + mid).update({ medicionCotizacionEstado: estado, medicionCotizacionEstadoFecha: FieldValue.serverTimestamp(), medicionPasos: FieldValue.arrayUnion({ estado, doc: after.docType || '', orderId: event.params.id, destino: after.destino || '', fechaISO: new Date().toISOString() }) }).catch((e) => console.warn('medicionSeguirPedido', mid, e.message));
+        }
+    } catch (e) { console.error('medicionSeguirPedido', event.params.id, e); }
 });
 
 // ---------- Mensajes internos del Coordinador de Obras (agente IA, 2026-10-02) → push a sus destinatarios ----------
@@ -3067,6 +3109,20 @@ const STOP_OBRA = new Set(['y', 'de', 'del', 'la', 'el', 'los', 'las', 'en', 'a'
 const palabrasObra = (o) => normTxtObra(o).split(/[^a-z0-9]+/).filter((w) => w && !STOP_OBRA.has(w));
 function mismaObra(cliA, obraA, cliB, obraB) {
     if (normTxtObra(cliA) !== normTxtObra(cliB)) return false;
+    return mismaObraNombre(obraA, obraB);
+}
+// Cliente «aproximado» (Dylan 2026-11-11, medición de «FRANYER PEÑA CRUZ» que el cuaderno llamó «Franyer»): nombres iguales, o uno es
+// el principio del otro palabra a palabra, o comparten la primera palabra (≥ 4 letras, no un artículo). SOLO para proponer un enlace
+// que una persona confirma («¿Es la cotización de estas medidas?»), nunca para mismaObra, que cierra cosas sola.
+function mismoClienteAprox(a, b) {
+    const pa = normTxtObra(a).split(/[^a-z0-9]+/).filter(Boolean), pb = normTxtObra(b).split(/[^a-z0-9]+/).filter(Boolean);
+    if (!pa.length || !pb.length) return false;
+    if (pa.join(' ') === pb.join(' ')) return true;
+    const [c, l] = pa.length <= pb.length ? [pa, pb] : [pb, pa];
+    if (c.every((w, i) => l[i] === w)) return true;
+    return pa[0] === pb[0] && pa[0].length >= 4 && !['casa', 'villa', 'sr', 'sra', 'senor', 'senora', 'cliente', 'proyecto'].includes(pa[0]);
+}
+function mismaObraNombre(obraA, obraB) {
     const a = palabrasObra(obraA), b = palabrasObra(obraB);
     if (!a.length || !b.length) return a.join(' ') === b.join(' ');
     if (a.join(' ') === b.join(' ')) return true;

@@ -3834,6 +3834,25 @@ misma regla. **Fábrica interna**: botón «📦 Llegó sin el camión (entregad
 entregados) con los mismos campos; caso real: shutters de Niza (Marie Hélène) traídos por Delvis el 11/11, marcado a mano ese día.
 Deploy de functions pendiente de Dylan.
 
+### Medición → cotización: enlace por identidad, propuesta «¿es esta?» y seguimiento (2026-11-11)
+
+Dylan (caso Franyer — Casa triángulo): «creé el trabajo en el cuaderno, debemos hacer que se vincule automáticamente para que haya un
+seguimiento». El enlace automático (`medicionAlCotizar`) fallaba porque `mismaObra` compara el cliente EXACTO («Franyer» del cuaderno vs
+«FRANYER PEÑA CRUZ» del trabajo). Ahora, en `functions/index.js`: (0) si el pedido trae `medicionInstalacionId` (cuaderno abierto desde
+«Abrir el cuaderno para cotizar», que ahora pasa `?medicion=<id>&cliente=&obra=&telefono=&direccion=` — la lectura de esos parámetros en
+`index.html` es del área cuaderno, prompt entregado a Dylan) enlaza por id; (1) coincidencia exacta → `cotizada` como antes y el pedido recibe
+`medicionInstalacionId/Ids, medicionFotos[], medicionNotas, medicionPor, medicionFecha`; (2) sin exacta, `mismoClienteAprox` (nombres
+iguales, prefijo palabra a palabra o misma primera palabra ≥ 4 letras) + `mismaObraNombre` (la parte de obra de `mismaObra`, refactorizada)
+→ `medicionPosible {orderId, docType, cliente, obra, destino, status, idProyecto, fechaISO}` en el trabajo y la tarjeta «por cotizar» de
+`cotizaciones.html` pregunta «❓ ¿Es la cotización de estas medidas? ✓ Sí, es esta / No, es otra obra» (`medicionConfirmarPosible` enlaza
+y copia la ficha al pedido; rechazar guarda `medicionPosibleRechazadas[]`); (3) un pedido FAB con `cotizacionOrigenId` hereda la medición
+de su cotización. **Seguimiento**: trigger `medicionSeguirPedido` (orders, cambio de `status` o `enviadaAFabrica`) escribe en el trabajo
+`medicionCotizacionEstado` + `medicionPasos[] {estado, doc, orderId, destino, fechaISO}`; Instalación (`medicionCadenaHTML`) muestra
+«🔗 Medidas → Cotización enviada a ALUCUFEL (11 nov) → Costeada → Enviada al cliente → Aprobada → En fábrica → Instalada» con «⚠ N días sin
+avanzar» (7 solicitada / 15 enviada al cliente); Cotizaciones (`medidasHTML`) e Historial (`progresoExtra`) muestran «📏 Medidas de Wilson
+del 7 nov · ver foto»; el Coordinador recibe `medidasTomadas` en cada cotización y una regla de alerta con los mismos plazos. Deploy de
+functions pendiente de Dylan.
+
 ### Nº de proyecto PRY-AAAA-NNN visible en el Panel (2026-11-03)
 
 Dylan: «los proveedores nunca ven el cliente; los pedidos a proveedores llevan un Nº de proyecto. En el sistema interno se mantienen
