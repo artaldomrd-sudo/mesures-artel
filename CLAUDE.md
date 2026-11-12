@@ -2792,6 +2792,33 @@ el momento que se suben».
   {url, tipo, nombre}` y texto «📷 N fotos»; `hiloHTML` pinta las fotos dentro del mensaje (`.coment-fotos`, 150×110, abren en pestaña).
   Push y `instalacionActividad` lo tratan como un comentario más. Guía `guia-instalacion-02` (apartados «Misiones» y «Fotos»).
 
+### Reuniones: autoguardado y «atrás» que no saca de la página (2026-11-12, reunión de Miki perdida)
+
+Dylan: «las preguntas no las veo enteras, tengo que deslizar hacia los lados, y si lo hago fuerte me echa la página hacia atrás y
+pierdo todo el proceso de la reunión». Diagnóstico: la pregunta era un `<input>` de una línea (deslizar dentro + llegar al borde =
+gesto «atrás» de Safari) y el editor vivía solo en memoria; además el `onSnapshot` de `rrhhReuniones` llamaba `render()` también en
+`vista === 'editar'`, reconstruyendo el formulario y perdiendo lo tecleado desde la última acción. Lo de Miki no llegó a Firestore
+(el doc solo tenía el guion de la noche anterior). Cambios en `ops/rrhh-reuniones.html` (área reuniones, hechos desde la sesión de
+sistema con OK de Dylan): (1) pregunta en `<textarea class="preg-q">` que crece (`autoAlto`, también en `resize`; sin ancho no mide);
+(2) **autoguardado**: cada `input`/`change` pasa el DOM a `edit` (`leerEdit`), deja copia en `localStorage.artal_reunion_borrador`
+y 1,5 s después escribe en Firestore (`autoGuardar`: una reunión nueva se crea con `addDoc` en el primer autoguardado y pasa a
+«Editar»; `autoguardada` = ms; una sola escritura a la vez, `autoPromesa`/`autoPendiente`; reintento al volver `online`); estado
+«✓ Guardado hh:mm» en `.autosave`; `tocado()` encola el guardado al agregar/quitar bloques; «Guardar y cerrar» espera al autoguardado
+en curso (si no, una nueva se creaba dos veces) y crea el recordatorio; «← Salir» (antes Cancelar) guarda lo último y sale; (3) el
+snapshot NO repinta en `editar`; (4) **trampa del atrás**: `armarTrampaAtras()` deja un `pushState` al entrar, `popstate` en edición
+lo vuelve a poner y muestra un toast; `soltarTrampaAtras()` al salir/guardar; `beforeunload` avisa si hay algo sin subir; (5) banner
+«Reunión de X con texto sin subir» en inicio (`borradorBannerHTML`, solo si falló la nube: Continuar / Descartar). Probado en
+local con Firebase simulado (`ops/_prueba-reuniones.html`, borrada) a 390 px: pregunta en 2 líneas sin scroll lateral, foco
+conservado tras el guardado, 2 escrituras por 2 ediciones, atrás → sigue en la reunión, Salir → timeline.
+
+### Fotos: quién la subió (2026-11-12)
+
+`requireAuth` deja `window.__fotoAutor {nombre, email}` y `fotos.js` (`subirFotos`) graba `por`/`porEmail` en cada foto, PDF o
+documento subido desde cualquier pantalla. En la conversación de la obra (`hiloHTML`) el bloque de fotos sueltas dice «📷 Miki · 3
+fotos · fecha» (`autorFoto`: `por` grabado o, en las fotos viejas sin autor, quien escribió en el hilo (no gerencia) dentro de ±15 min
+de la subida); los bloques solo se agrupan si son del mismo autor; los mensajes con fotos copian `por` en cada foto.
+`fotos.js?v=20261112b` en Instalación.
+
 ### Obras: abrir al llegar, cerrar al irse — obligatorio desde el parte (2026-11-12)
 
 Dylan: «obligar al equipo a usar los botones: hoy llegan, pulsan retomar, hacen lo que se debe hacer y antes de irse marcan

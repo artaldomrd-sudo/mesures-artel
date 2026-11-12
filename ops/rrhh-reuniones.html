@@ -69,6 +69,15 @@
     .modal-bg.show { display: flex; }
     .modal { background: #fff; border-radius: 14px; padding: 20px; max-width: 620px; width: 100%; max-height: 90vh; overflow-y: auto; }
     .modal h3 { color: var(--artal-blue); margin: 0 0 10px; }
+    /* Editor (Dylan 2026-11-12, reunión de Miki perdida): la pregunta se lee completa (caja que crece), nada de deslizar a los lados;
+       el gesto «atrás» no saca de la página mientras se edita; y todo se guarda solo al escribir. */
+    html, body { overscroll-behavior-x: none; }
+    .field textarea.preg-q { min-height: 40px; overflow: hidden; }
+    .autosave { font-size: 12.5px; color: #8a93a0; }
+    .autosave.ok { color: #1f9d61; font-weight: bold; }
+    .autosave.err { color: #c0392b; font-weight: bold; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #1b2a3a; color: #fff; padding: 12px 18px; border-radius: 12px; font-size: 14px; z-index: 300; max-width: 92vw; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+    .borrador-box { background: #fff7e0; border-left: 4px solid var(--artal-yellow); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 </style>
 </head>
 <body>
@@ -129,8 +138,10 @@
     onSnapshot(qReuniones, (snap) => {
         reunionesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }))
             .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-        render();
-    }, (e) => { console.warn('rrhhReuniones', e && e.message); reunionesCache = []; render(); });
+        // Mientras se edita NO se repinta (un cambio que llegue de la nube —incluido el eco del autoguardado— reconstruía el
+        // formulario y borraba lo tecleado desde la última acción).
+        if (vista !== 'editar') render();
+    }, (e) => { console.warn('rrhhReuniones', e && e.message); reunionesCache = []; if (vista !== 'editar') render(); });
 
     const norm = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const mismoNombre = (a, b) => { a = norm(a); b = norm(b); return a && b && (a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')); };
@@ -167,7 +178,7 @@
         if (vista === 'inicio') cont.innerHTML = renderInicio();
         else if (vista === 'timeline') cont.innerHTML = renderTimeline();
         else if (vista === 'detalle') cont.innerHTML = renderDetalle();
-        else if (vista === 'editar') { cont.innerHTML = renderEditar(); }
+        else if (vista === 'editar') { cont.innerHTML = renderEditar(); cont.querySelectorAll('textarea.preg-q').forEach(autoAlto); }
     }
 
     // --- Empleado (solo lectura de las suyas) ---
@@ -202,7 +213,7 @@
                 ${pend ? `<span class="pend">${pend} objetivo(s) en curso</span>` : ''}
             </div>`;
         }).join('');
-        return `<p class="intro">Reunión individual de seguimiento (cada 90 días). Elige una persona para ver su historial, crear una nueva reunión y dar seguimiento a los objetivos. Las personas externas (contratadas, sin ficha en RRHH) aparecen con la etiqueta «externo».</p>
+        return borradorBannerHTML() + `<p class="intro">Reunión individual de seguimiento (cada 90 días). Elige una persona para ver su historial, crear una nueva reunión y dar seguimiento a los objetivos. Las personas externas (contratadas, sin ficha en RRHH) aparecen con la etiqueta «externo».</p>
             <div class="bar"><button class="btn-ghost" onclick="abrirImportar()">⬆️ Importar reuniones</button></div>
             <div class="grid">${cards || '<div class="empty">No hay empleados activos. Agrégalos en RRHH → Empleados.</div>'}</div>`;
     }
@@ -359,7 +370,7 @@
         if (tipo === 'blanco') { edit = plantillaVacia(e); }
         else if (tipo === 'anterior') { edit = desdeAnterior(e); }
         else { edit = desdePlantilla(e, tipo); }
-        vista = 'editar'; render(); window.scrollTo(0, 0);
+        vista = 'editar'; render(); window.scrollTo(0, 0); armarTrampaAtras();
     };
     function desdeAnterior(e) {
         const ed = plantillaVacia(e);
@@ -392,7 +403,7 @@
         edit = JSON.parse(JSON.stringify(r)); edit._id = rid;
         if (!edit.plan) edit.plan = { texto: '', reaccion: '' };
         ['secciones', 'necesito', 'acuerdos', 'seguimientoPrevio'].forEach(k => { if (!Array.isArray(edit[k])) edit[k] = []; });
-        vista = 'editar'; render(); window.scrollTo(0, 0);
+        vista = 'editar'; render(); window.scrollTo(0, 0); armarTrampaAtras();
     };
 
     function renderEditar() {
@@ -404,7 +415,7 @@
             <div class="field"><label>Título de la sección</label><input class="sec-titulo" value="${esc(s.titulo || '')}"></div>
             ${s.guia ? `<div class="guia">🔒 ${esc(s.guia)}</div>` : ''}
             <div class="preguntas">${(s.preguntas || []).map((p, pi) => `<div class="preg-row" data-pi="${pi}" style="margin-bottom:10px;padding-left:10px;border-left:2px solid #eef1f4">
-                <div class="field"><label>Pregunta</label><input class="preg-q" value="${esc(p.q || '')}"></div>
+                <div class="field"><label>Pregunta</label><textarea class="preg-q" rows="1">${esc(p.q || '')}</textarea></div>
                 ${p.guia ? `<div class="guia">🔒 ${esc(p.guia)}</div>` : ''}
                 <div class="field"><label>Respuesta</label><textarea class="preg-a">${esc(p.a || '')}</textarea></div>
                 <button class="mini" onclick="delPreg(${si},${pi})">− quitar pregunta</button>
@@ -426,10 +437,11 @@
             <button class="mini" onclick="delAcu(${i})">− quitar acuerdo</button>
         </div>`).join('');
 
-        return `<div class="crumbs"><a onclick="cancelarEdit()">← Cancelar</a></div>
-            <h2 style="color:var(--artal-blue);margin:0 0 4px">${e._id ? 'Editar' : 'Nueva'} reunión — ${esc(e.empleadoNombre)}</h2>
+        return `<div class="crumbs"><a onclick="cancelarEdit()">← Salir</a></div>
+            <h2 id="e-titulo" style="color:var(--artal-blue);margin:0 0 4px">${e._id ? 'Editar' : 'Nueva'} reunión — ${esc(e.empleadoNombre)}</h2>
             <div class="sub" style="color:#8a93a0;font-size:13px;margin-bottom:10px">${esc(e.puestoTexto || '')}</div>
-            <div class="bar"><button class="btn-blue btn-guardar-reu" onclick="guardarReunion()">💾 Guardar reunión</button><button class="btn-ghost" onclick="cancelarEdit()">Cancelar</button><span style="font-size:12px;color:#8a93a0">Las notas en gris 🔒 son la guía de gerencia; no se guardan como respuesta.</span></div>
+            <div class="bar"><button class="btn-blue btn-guardar-reu" onclick="guardarReunion()">💾 Guardar y cerrar</button><button class="btn-ghost" onclick="cancelarEdit()">← Salir</button><span id="autosave-estado" class="autosave">${e._id ? '✓ Se guarda sola mientras escribes' : 'Se guarda sola al empezar a escribir'}</span></div>
+            <div style="font-size:12px;color:#8a93a0;margin:-8px 0 12px">Las notas en gris 🔒 son la guía de gerencia; no se guardan como respuesta.</div>
             <div class="sec">
                 <div class="field"><label>Puesto / antigüedad (encabezado)</label><input id="e-puesto" value="${esc(e.puestoTexto || '')}"></div>
                 <div class="row3">
@@ -459,7 +471,7 @@
                 <div class="field"><label>Próxima reunión de seguimiento</label><input id="e-proxima" type="date" value="${esc(e.proximaFecha || '')}"></div>
                 <label style="font-size:12.5px;color:#556"><input type="checkbox" id="e-recordar" checked> Crear recordatorio para gerencia en esa fecha</label>
             </div>
-            <div class="bar"><button class="btn-blue btn-guardar-reu" id="btn-guardar" onclick="guardarReunion()">💾 Guardar reunión</button><button class="btn-ghost" onclick="cancelarEdit()">Cancelar</button></div>`;
+            <div class="bar"><button class="btn-blue btn-guardar-reu" id="btn-guardar" onclick="guardarReunion()">💾 Guardar y cerrar</button><button class="btn-ghost" onclick="cancelarEdit()">← Salir</button><span class="autosave autosave-abajo"></span></div>`;
     }
 
     // Lee todos los campos del DOM al objeto `edit` (antes de agregar/quitar o guardar).
@@ -479,17 +491,100 @@
         document.querySelectorAll('.seg-estado').forEach(se => { const i = +se.dataset.i; if (edit.seguimientoPrevio[i]) edit.seguimientoPrevio[i].estado = se.value; });
     }
 
-    window.addSec = () => { leerEdit(); edit.secciones.push({ titulo: '', preguntas: [{ q: '', a: '' }] }); render(); };
-    window.delSec = (si) => { leerEdit(); edit.secciones.splice(si, 1); render(); };
-    window.addPreg = (si) => { leerEdit(); edit.secciones[si].preguntas.push({ q: '', a: '' }); render(); };
-    window.delPreg = (si, pi) => { leerEdit(); edit.secciones[si].preguntas.splice(pi, 1); render(); };
-    window.addNec = () => { leerEdit(); edit.necesito.push({ titulo: '', detalle: '' }); render(); };
-    window.delNec = (i) => { leerEdit(); edit.necesito.splice(i, 1); render(); };
-    window.addAcu = () => { leerEdit(); edit.acuerdos.push({ texto: '', quien: edit.empleadoNombre || '', paraCuando: '90 días', estado: 'pendiente' }); render(); };
-    window.delAcu = (i) => { leerEdit(); edit.acuerdos.splice(i, 1); render(); };
-    window.cancelarEdit = () => { edit = null; vista = empSel ? 'timeline' : 'inicio'; render(); window.scrollTo(0, 0); };
+    // Agregar/quitar bloques: repinta y deja el cambio en la cola del autoguardado (`tocado`).
+    const tocado = () => { render(); autoSucio = true; estadoAuto('Guardando…'); clearTimeout(autoTimer); autoTimer = setTimeout(autoGuardar, 800); };
+    window.addSec = () => { leerEdit(); edit.secciones.push({ titulo: '', preguntas: [{ q: '', a: '' }] }); tocado(); };
+    window.delSec = (si) => { leerEdit(); edit.secciones.splice(si, 1); tocado(); };
+    window.addPreg = (si) => { leerEdit(); edit.secciones[si].preguntas.push({ q: '', a: '' }); tocado(); };
+    window.delPreg = (si, pi) => { leerEdit(); edit.secciones[si].preguntas.splice(pi, 1); tocado(); };
+    window.addNec = () => { leerEdit(); edit.necesito.push({ titulo: '', detalle: '' }); tocado(); };
+    window.delNec = (i) => { leerEdit(); edit.necesito.splice(i, 1); tocado(); };
+    window.addAcu = () => { leerEdit(); edit.acuerdos.push({ texto: '', quien: edit.empleadoNombre || '', paraCuando: '90 días', estado: 'pendiente' }); tocado(); };
+    window.delAcu = (i) => { leerEdit(); edit.acuerdos.splice(i, 1); tocado(); };
+    window.cancelarEdit = async () => {
+        clearTimeout(autoTimer);
+        if (edit && autoSucio) await autoGuardar();   // lo último tecleado también se guarda antes de salir
+        if (autoPromesa) await autoPromesa;
+        edit = null; autoSucio = false; vista = empSel ? 'timeline' : 'inicio'; render(); window.scrollTo(0, 0); soltarTrampaAtras();
+    };
+
+    // ---- Guardado automático mientras se escribe (Dylan 2026-11-12: «mientras escribo se vaya guardando automáticamente») ----
+    // Cada tecla pasa el formulario al objeto `edit`, deja una copia en este dispositivo (por si falla la red) y, 1,5 s después de la
+    // última tecla, escribe en Firestore: una reunión nueva se crea en la nube en ese primer autoguardado (ya tiene id para el resto).
+    const BORRADOR_KEY = 'artal_reunion_borrador';
+    let autoTimer = null, autoSucio = false, autoPromesa = null, autoPendiente = false;
+    function autoAlto(t) { if (!t || t.clientWidth < 40) return; t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }   // sin ancho (pestaña oculta) no se mide
+    window.addEventListener('resize', () => document.querySelectorAll('textarea.preg-q').forEach(autoAlto));
+    function estadoAuto(txt, cls) { document.querySelectorAll('.autosave').forEach(el => { el.textContent = txt; el.className = el.className.replace(/\b(ok|err)\b/g, '').trim() + (cls ? ' ' + cls : ''); }); }
+    const horaCorta = () => new Date().toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+    function alEscribir(e) {
+        if (vista !== 'editar' || !edit) return;
+        const t = e.target; if (t && t.classList && t.classList.contains('preg-q')) autoAlto(t);
+        leerEdit(); autoSucio = true;
+        try { localStorage.setItem(BORRADOR_KEY, JSON.stringify({ edit, ts: Date.now(), por: usuario.email })); } catch (_) {}
+        estadoAuto('Escribiendo… (se guarda solo)');
+        clearTimeout(autoTimer); autoTimer = setTimeout(autoGuardar, 1500);
+    }
+    document.addEventListener('input', alEscribir);
+    document.addEventListener('change', alEscribir);
+    function autoGuardar() {
+        if (!edit || vista !== 'editar') return Promise.resolve();
+        if (autoPromesa) { autoPendiente = true; return autoPromesa; }
+        estadoAuto('Guardando…');
+        autoPromesa = (async () => {
+            try {
+                const data = { ...edit }; delete data._id;
+                data.actualizada = Date.now(); data.autoguardada = data.actualizada;
+                if (edit._id) await updateDoc(doc(db, 'rrhhReuniones', edit._id), data);
+                else {
+                    data.creadoPor = usuario.nombre; data.fechaCreacion = serverTimestamp();
+                    const ref = await addDoc(collection(db, 'rrhhReuniones'), data); edit._id = ref.id;
+                    const h = document.getElementById('e-titulo'); if (h) h.textContent = h.textContent.replace(/^Nueva/, 'Editar');
+                }
+                autoSucio = false; try { localStorage.removeItem(BORRADOR_KEY); } catch (_) {}
+                estadoAuto('✓ Guardado ' + horaCorta(), 'ok');
+            } catch (e) {
+                console.warn('autoguardado', e && e.message);
+                estadoAuto('⚠ Sin conexión: el texto queda guardado en este dispositivo y se subirá al volver la red', 'err');
+            } finally {
+                autoPromesa = null;
+                if (autoPendiente) { autoPendiente = false; autoGuardar(); }
+            }
+        })();
+        return autoPromesa;
+    }
+    // Si se pierde la red, reintenta solo al recuperarla.
+    window.addEventListener('online', () => { if (edit && autoSucio) autoGuardar(); });
+    // Cerrar o recargar la pestaña con algo sin subir: el navegador pide confirmación (donde lo soporta).
+    window.addEventListener('beforeunload', (e) => { if (vista === 'editar' && edit && (autoSucio || autoPromesa)) { e.preventDefault(); e.returnValue = ''; } });
+
+    // ---- El gesto «atrás» no saca de la reunión ----
+    // Deslizar dentro de una casilla llegaba al borde y Safari lo tomaba como «atrás»: la página se iba y la reunión se perdía.
+    // Al entrar al editor se deja una entrada extra en el historial; «atrás» la consume y se vuelve a poner, con un aviso.
+    let trampaAtras = false;
+    function armarTrampaAtras() { if (!trampaAtras) { try { history.pushState({ reunionEditar: 1 }, ''); trampaAtras = true; } catch (_) {} } }
+    function soltarTrampaAtras() { if (trampaAtras) { trampaAtras = false; try { history.back(); } catch (_) {} } }
+    window.addEventListener('popstate', () => {
+        if (vista === 'editar' && edit) { try { history.pushState({ reunionEditar: 1 }, ''); } catch (_) {} toast('Sigues en la reunión: todo se guarda solo. Para salir usa «Guardar y cerrar» o «← Salir».'); }
+        else trampaAtras = false;
+    });
+    let toastTimer = null;
+    function toast(msg) { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); } t.textContent = msg; t.style.display = ''; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.style.display = 'none'; }, 4000); }
+
+    // ---- Borrador guardado en este dispositivo (solo queda si falló la subida a la nube) ----
+    function leerBorrador() { try { const b = JSON.parse(localStorage.getItem(BORRADOR_KEY) || 'null'); return (b && b.edit && b.por === usuario.email) ? b : null; } catch (_) { return null; } }
+    function borradorBannerHTML() {
+        const b = leerBorrador(); if (!b) return '';
+        const r = b.edit._id ? reunionesCache.find(x => x.id === b.edit._id) : null;
+        if (r && Number(r.actualizada || 0) >= b.ts) { try { localStorage.removeItem(BORRADOR_KEY); } catch (_) {} return ''; }   // la nube ya tiene esa versión
+        return `<div class="borrador-box">📝 Reunión de <b>${esc(b.edit.empleadoNombre || '')}</b> con texto sin subir a la nube (${esc(new Date(b.ts).toLocaleString('es-DO', { dateStyle: 'short', timeStyle: 'short' }))}).
+            <button class="btn-y" onclick="continuarBorrador()">Continuar</button><button class="btn-ghost" onclick="descartarBorrador()">Descartar</button></div>`;
+    }
+    window.continuarBorrador = () => { const b = leerBorrador(); if (!b) return; edit = b.edit; autoSucio = true; empSel = edit.empleadoId || empSel; vista = 'editar'; render(); window.scrollTo(0, 0); armarTrampaAtras(); autoGuardar(); };
+    window.descartarBorrador = () => { if (!confirm('¿Descartar ese texto sin subir?')) return; try { localStorage.removeItem(BORRADOR_KEY); } catch (_) {} render(); };
 
     window.guardarReunion = async () => {
+        clearTimeout(autoTimer); if (autoPromesa) await autoPromesa;   // nunca dos escrituras a la vez (una nueva se crearía dos veces)
         leerEdit();
         const crearRecordatorio = (document.getElementById('e-recordar') || {}).checked;
         const btns = Array.from(document.querySelectorAll('.btn-guardar-reu')); btns.forEach(b => { b.disabled = true; b.textContent = 'Guardando…'; });
@@ -501,8 +596,9 @@
             if (rid) { await updateDoc(doc(db, 'rrhhReuniones', rid), data); }
             else { data.creadoPor = usuario.nombre; data.fechaCreacion = serverTimestamp(); const ref = await addDoc(collection(db, 'rrhhReuniones'), data); rid = ref.id; }
             if (crearRecordatorio && data.proximaFecha) await crearReminder(data, rid);
-            reuSel = rid; vista = 'detalle'; edit = null; render(); window.scrollTo(0, 0);
-        } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); btns.forEach(b => { b.disabled = false; b.textContent = '💾 Guardar reunión'; }); }
+            autoSucio = false; try { localStorage.removeItem(BORRADOR_KEY); } catch (_) {}
+            reuSel = rid; vista = 'detalle'; edit = null; render(); window.scrollTo(0, 0); soltarTrampaAtras();
+        } catch (e) { alert('No se pudo guardar: ' + (e.message || e)); btns.forEach(b => { b.disabled = false; b.textContent = '💾 Guardar y cerrar'; }); }
     };
 
     async function crearReminder(data, rid) {
