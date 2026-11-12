@@ -3451,7 +3451,9 @@ exports.parteAcuseCoordinador = onDocumentWritten('partesDiarios/{id}', async (e
     const horas = lineas.reduce((t, l) => t + (l.tipo === 'ausente' ? 0 : (Number(l.horas) || 0)), 0);
     const personas = new Set(lineas.map((l) => l.empleadoId)).size;
     const items = Array.isArray(a.resumen.items) ? a.resumen.items : [];
-    const hechos = items.filter((i) => i.hecho), noHechos = items.filter((i) => !i.hecho);
+    const obrasT = items.filter((i) => i.estadoObra === 'terminada'), obrasP = items.filter((i) => i.estadoObra === 'pausa');
+    const hechos = items.filter((i) => i.hecho && !i.estadoObra), noHechos = items.filter((i) => !i.hecho);
+    const fRegreso = (ymd) => { try { return new Date(ymd + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }); } catch (_) { return ymd; } };
     // Mañana: trabajos abiertos asignados a esta persona con fecha = mañana (o en proceso con retoma mañana).
     let mananaTxt = [];
     try {
@@ -3463,6 +3465,8 @@ exports.parteAcuseCoordinador = onDocumentWritten('partesDiarios/{id}', async (e
     const cuerpo = [
         `Recibido, ${nombre}. Tu parte del ${diaTxt(a.fecha)} llegó a las ${fRD(firma)}: ${personas} persona${personas === 1 ? '' : 's'}, ${horas} h en total.`,
         '',
+        obrasT.length ? `Obras terminadas (${obrasT.length}): ${obrasT.map((i) => i.label).join(' · ')}. Ya quedaron cerradas en Instalación.` : '',
+        obrasP.length ? `Obras en pausa (${obrasP.length}): ${obrasP.map((i) => i.label + ' — vuelven el ' + fRegreso(i.regreso)).join(' · ')}.` : '',
         hechos.length ? `Cumplido hoy (${hechos.length}): ${hechos.map((i) => i.label).join(' · ')}.` : '',
         a.resumen.cumplido ? `Tus palabras: «${String(a.resumen.cumplido).slice(0, 300)}»` : '',
         '',

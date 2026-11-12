@@ -911,11 +911,11 @@
                 if (!puedeCambiarEstado) return `<div class="acciones-sec"><button onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>`;
                 let principal = '', sec = [];
                 if (estado === 'pendiente') { principal = `<button class="btn-primaria" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy">▶ Empezamos hoy</button>`; if (!asignadaAMi(j)) sec.push(`<button onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>`); }
-                else if (estado === 'en_proceso') { principal = `<button class="btn-primaria" onclick="cambiarEstado('${j.id}', 'completado')">✅ Terminamos</button>`; sec.push(`<button onclick="toggleRetomar('${j.id}')" title="Fija el día en que vuelven a terminar">↩ Volvemos otro día</button>`); }
+                else if (estado === 'en_proceso') { principal = `<button class="btn-primaria" onclick="cambiarEstado('${j.id}', 'completado')">✅ Obra terminada</button>`; sec.push(`<button onclick="retomarHoy('${j.id}')" title="Marca que hoy están en esta obra">▶ Retomamos hoy</button>`); sec.push(`<button onclick="toggleRetomar('${j.id}')" title="Fija el día en que vuelven">⏸ Pausar obra</button>`); }
                 sec.push(`<button onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>`);
                 return principal + `<div class="acciones-sec">${sec.join('')}</div>`;
             })()}
-            ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">¿Qué día vuelven a terminar?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar regreso</button></div>` : ''}
+            ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">Obra en pausa. ¿Qué día vuelven?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar</button></div>` : ''}
             ${(puedeCambiarEstado && (!hist || esOficina)) ? `
             <details class="mas" ${esOficina ? 'open' : ''}><summary>Más opciones</summary>
             <div class="admin-row">
@@ -2165,6 +2165,19 @@
             document.getElementById('retomar-input-' + id).value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
     };
+    // «Retomamos hoy» (Dylan 2026-11-12): al llegar a una obra en proceso, un toque deja constancia de que hoy están ahí (fecha = hoy,
+    // retoma registrada). Al irse, «Obra terminada» o «Pausar obra»; si se les olvida, Mi día lo exige al cerrar el día.
+    window.retomarHoy = async function (jobId) {
+        const j = allJobs.find(x => x.id === jobId); if (!j) return;
+        const cuando = new Date();
+        const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
+        const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
+        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: cuando.toISOString(), hoy: true }) };
+        if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = serverTimestamp(); }
+        if (!j.inicioReal) cambios.inicioReal = serverTimestamp();
+        try { await updateDoc(doc(db, 'instalaciones', jobId), cambios); await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Retomamos hoy', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
     window.retomarJob = async function (jobId) {
         const j = allJobs.find(x => x.id === jobId); if (!j) return;
         const val = (document.getElementById('retomar-input-' + jobId) || {}).value; if (!val) { alert('Elige el día y la hora en que vuelven.'); return; }
@@ -2177,7 +2190,7 @@
         if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = serverTimestamp(); if (!j.inicioReal) cambios.inicioReal = serverTimestamp(); }
         try {
             await updateDoc(doc(db, 'instalaciones', jobId), cambios);
-            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Retomar: vuelven el ' + txt, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Obra pausada: vuelven el ' + txt, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
             const row = document.getElementById('retomar-' + jobId); if (row) row.style.display = 'none';
         } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };

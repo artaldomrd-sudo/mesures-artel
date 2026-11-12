@@ -2747,6 +2747,22 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Obras: abrir al llegar, cerrar al irse — obligatorio desde el parte (2026-11-12)
+
+Dylan: «obligar al equipo a usar los botones: hoy llegan, pulsan retomar, hacen lo que se debe hacer y antes de irse marcan
+terminado o "volvemos otro día" (con un nombre más serio)». Nombres finales en Instalación: pendiente «▶ Empezamos hoy»; en proceso
+«✅ Obra terminada» (principal), «▶ Retomamos hoy» (`retomarHoy`: fecha = ahora + `retomas[{hoy:true}]`, en_proceso/inicioReal si
+faltaban, movimiento «Retomamos hoy») y «⏸ Pausar obra» (`toggleRetomar`/`retomarJob`, movimiento «Obra pausada: vuelven el …»).
+**La obligación vive en Mi día**: en «Cerrar el día» (paso 1, «¿Cómo quedó el día?») cada ítem `inst:` lleva tres estados
+`estadoObra` = terminada | pausa (+ `regreso` AAAA-MM-DD, fichas Mañana / El lunes / fecha) | nofui (+ motivo); `pasoSiguiente(1)` y
+`enviarParte` exigen todos, y si el parte trae horas en una obra abierta que no estaba en lo previsto la añade y vuelve al paso 1.
+Tras guardar el parte de HOY, `aplicarObras(items)` escribe en `instalaciones` lo mismo que los botones: terminada → completado
+(`validadoPor/validadoFecha/estadoPor/estadoFecha`, `cerradoDesde:'parte'`) y el trigger `pedidoSigueTrabajo` cierra el pedido;
+pausa → `fecha` = regreso 08:00, `retomas` arrayUnion (`desde:'parte'`), en_proceso + inicioReal si faltaban, asignado el que envía;
+movimiento en `movimientosInstalaciones` en ambos casos. El acuse nocturno (`parteAcuseCoordinador`) y el informe matinal
+(`coordinador.js` `previsto[]`) distinguen «obra TERMINADA / PAUSADA (vuelven el …) / no fueron». Guías `guia-instalacion-02` y
+`guia-parte-diario-01` actualizadas. Probado en `?demo=midia`: Niza → completado, Plaza Manuela → en proceso con fecha del lunes.
+
 ### Capa de claridad en todas las pantallas (2026-11-12)
 
 Dylan: «revisa todo el sistema y opera mejoras similares en todas las áreas: procesos más claros, cortos y sencillos; eficiencia,
