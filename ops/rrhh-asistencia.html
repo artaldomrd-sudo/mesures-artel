@@ -482,12 +482,30 @@
     }
 
     // ---------- FERIADOS ----------
+    // Ley 139-97 (RD): Reyes (6 ene), Duarte (26 ene), Trabajo (1 may), Constitución (6 nov) y Restauración (16 ago, salvo año de
+    // toma de posesión) se TRASLADAN al lunes cuando caen martes o miércoles (al lunes anterior) o jueves o viernes (al lunes
+    // siguiente). El sistema guarda en `fecha` el día OBSERVADO (el que no se trabaja) y en `fechaOriginal` el nominal. Caso real
+    // 2026-11-09: Constitución 6/11 cayó viernes y se celebró el lunes 9; el sistema tenía el 6 → pidió el parte del lunes, bloqueó a
+    // Wilson y Miki, marcó ausencias en RRHH y restó puntos.
+    const MOVIBLES = ['01-06', '01-26', '05-01', '11-06', '08-16'];
+    function feriadoObservado(fecha) {
+        const md = fecha.slice(5), y = Number(fecha.slice(0, 4));
+        if (!MOVIBLES.includes(md) || (md === '08-16' && y % 4 === 0)) return fecha;
+        const d = new Date(fecha + 'T12:00:00'); const dow = d.getDay();
+        if (dow === 2 || dow === 3) d.setDate(d.getDate() - (dow - 1));        // martes / miércoles → lunes anterior
+        else if (dow === 4 || dow === 5) d.setDate(d.getDate() + (8 - dow));   // jueves / viernes → lunes siguiente
+        else return fecha;
+        return d.toISOString().slice(0, 10);
+    }
+    window.feriadoObservado = feriadoObservado;
     window.agregarFeriado = async function () {
-        const fecha = document.getElementById('fer-fecha').value, nombre = document.getElementById('fer-nombre').value.trim();
-        if (!fecha || !nombre) { alert('Indica la fecha y el nombre del feriado.'); return; }
+        const nominal = document.getElementById('fer-fecha').value, nombre = document.getElementById('fer-nombre').value.trim();
+        if (!nominal || !nombre) { alert('Indica la fecha y el nombre del feriado.'); return; }
+        const fecha = feriadoObservado(nominal);
         if (feriados.some(f => f.fecha === fecha)) { alert('Ya hay un feriado en esa fecha.'); return; }
+        if (fecha !== nominal && !confirm(`Por la Ley 139-97 este feriado se traslada al lunes ${fmtFechaCorta(fecha)} (cae ${fmtFechaCorta(nominal)}). Se guardará el lunes como día no laborable. ¿Continuar?`)) return;
         try {
-            await addDoc(collection(db, 'rrhhFeriados'), { fecha, nombre, creadoPor: usuario.nombre });
+            await addDoc(collection(db, 'rrhhFeriados'), { fecha, nombre, creadoPor: usuario.nombre, ...(fecha !== nominal ? { fechaOriginal: nominal, trasladado: true } : {}) });
             document.getElementById('fer-nombre').value = '';
         } catch (e) { alert('No se pudo: ' + e.message); }
     };
@@ -501,11 +519,11 @@
             ['2026-05-01', 'Día del Trabajo'], ['2026-06-04', 'Corpus Christi'], ['2026-08-16', 'Día de la Restauración'],
             ['2026-09-24', 'Nuestra Señora de las Mercedes'], ['2026-11-06', 'Día de la Constitución'], ['2026-12-25', 'Navidad']
         ];
-        const nuevos = oficiales.filter(([f]) => !feriados.some(x => x.fecha === f));
+        const nuevos = oficiales.map(([f, n]) => [feriadoObservado(f), n, f]).filter(([f]) => !feriados.some(x => x.fecha === f));
         if (!nuevos.length) { alert('Los feriados de 2026 ya están cargados.'); return; }
-        if (!confirm(`Se agregarán ${nuevos.length} feriados oficiales de RD 2026. Algunos son movibles (Reyes, Duarte, Trabajo, Restauración, Constitución) — ajústalos a mano si la ley los pasa al lunes.`)) return;
+        if (!confirm(`Se agregarán ${nuevos.length} feriados oficiales de RD 2026. Los movibles (Reyes, Duarte, Trabajo, Restauración, Constitución) se guardan ya trasladados al lunes según la Ley 139-97.`)) return;
         try {
-            for (const [fecha, nombre] of nuevos) await addDoc(collection(db, 'rrhhFeriados'), { fecha, nombre, creadoPor: usuario.nombre });
+            for (const [fecha, nombre, nominal] of nuevos) await addDoc(collection(db, 'rrhhFeriados'), { fecha, nombre, creadoPor: usuario.nombre, ...(fecha !== nominal ? { fechaOriginal: nominal, trasladado: true } : {}) });
         } catch (e) { alert('No se pudo cargar todo: ' + e.message); }
     };
     function renderFeriados() {
@@ -513,7 +531,7 @@
         if (!feriados.length) { cont.innerHTML = '<p class="empty">Sin feriados cargados.</p>'; return; }
         cont.innerHTML = feriados.map(f => `<div class="order-card feriado-row">
             <span class="sub" style="min-width:130px">${esc(fmtFechaCorta(f.fecha))}</span>
-            <span class="nom">${esc(f.nombre)}</span>
+            <span class="nom">${esc(f.nombre)}${f.trasladado && f.fechaOriginal ? ` <span style="color:#889;font-weight:normal;font-size:12px">(trasladado del ${esc(fmtFechaCorta(f.fechaOriginal))})</span>` : ''}</span>
             <button class="b-del" onclick="borrarFeriado('${f.id}')" style="min-height:36px;border-radius:8px;padding:7px 11px;font-weight:bold;cursor:pointer;font-family:'Arimo';font-size:12.5px;">🗑</button>
         </div>`).join('');
     }

@@ -2747,6 +2747,18 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Feriados trasladados al lunes (Ley 139-97) — caso del lunes 9/11/2026 (2026-11-12)
+
+Wilson tuvo que rellenar el parte del lunes 9/11 (feriado: Constitución, 6/11 viernes → se celebra el lunes 9) porque `rrhhFeriados` tenía
+el 6/11 nominal: el viernes 6 se trabajó normal y el sistema trató el lunes como laborable (push 18:00/18:30, bloqueo de parte-gate,
+partes «ausente» de Wilson y Miki, 4 ausencias en `rrhhAsistencia` desde esos partes, −10 puntos a cada uno). **Código**
+(`ops/rrhh-asistencia.html`): `feriadoObservado(fecha)` — movibles `01-06, 01-26, 05-01, 11-06, 08-16` (este último no en año de toma de
+posesión, `y % 4 === 0`): martes/miércoles → lunes anterior, jueves/viernes → lunes siguiente, sábado/domingo se quedan; `agregarFeriado`
+y `cargarFeriadosRD` guardan `fecha` = observada + `fechaOriginal` + `trasladado:true` y la lista dice «(trasladado del vie 6 nov)». Todos
+los consumidores (parte-gate, recordarParteDiario, puntos, Instalación, Coordinador) leen `fecha`, así que basta con la fecha observada.
+**Datos**: la corrección del doc `LzeFWc5fdCGgiivAWdqq` (6/11 → 9/11), el borrado de los 2 partes «ausente» del 9/11, de las 4 ausencias
+de RRHH y de los 2 eventos `__parte__2026-11-09` (−10) requieren permiso explícito de Dylan (el clasificador bloqueó las escrituras).
+
 ### Misiones por obra + fotos en la conversación (2026-11-12)
 
 Dylan (captura de Vero solucentro — Jardines de la bonita): «agregar a este mismo trabajo un nuevo trabajo… permitir a un trabajo ya
