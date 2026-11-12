@@ -206,7 +206,9 @@ window.__subirFotos = async function (coleccion, id, campo, input) {
     input.disabled = true;
     if (label && label.firstChild) label.firstChild.textContent = '⏳ Subiendo…';
     try {
-        await agregarFotos(coleccion, id, files, campo || 'fotos', { docs: input.dataset.docs === '1' });
+        const nuevas = await agregarFotos(coleccion, id, files, campo || 'fotos', { docs: input.dataset.docs === '1' });
+        // Gancho por página (Instalación 2026-11-12: cada foto subida entra como mensaje en la conversación de la obra).
+        if (nuevas.length && typeof window.__alSubirFotos === 'function') { try { await window.__alSubirFotos(coleccion, id, nuevas, campo || 'fotos'); } catch (e2) { console.warn('__alSubirFotos', e2); } }
     } catch (e) {
         alert('No se pudieron subir los archivos: ' + (e && e.message ? e.message : e));
     } finally {

@@ -124,6 +124,18 @@
     .coment-box { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #e2e6ea; }
     .coment-title { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin-bottom: 6px; }
     .coment-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .coment-fotos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; } .coment-fotos a img { width: 150px; max-width: 100%; height: 110px; object-fit: cover; border-radius: 10px; display: block; border: 1px solid #dde3ea; } .coment-fotos .doc { display: inline-block; background: #fdf3f3; color: #b3413a; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; font-weight: bold; text-decoration: none; }
+    /* Misiones de una obra (Dylan 2026-11-12): un trabajo = una villa; dentro, las tareas que se van sumando. */
+    .misiones { margin-top: 10px; background: #f6f8fa; border-radius: 12px; padding: 10px 12px; }
+    .misiones .mt { font-size: 13px; font-weight: bold; color: var(--artal-blue); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .mision { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid #e6eaef; }
+    .mision:first-of-type { border-top: 0; }
+    .mision .chk { width: 30px; height: 30px; border-radius: 8px; border: 2px solid #b9c3cf; background: #fff; color: transparent; font-weight: bold; font-size: 16px; cursor: pointer; flex: none; font-family: 'Arimo'; }
+    .mision.ok .chk { background: #1e8449; border-color: #1e8449; color: #fff; }
+    .mision .tx { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.3; } .mision.ok .tx { color: #8a93a0; text-decoration: line-through; } .mision .tx small { display: block; color: #8a93a0; font-size: 12px; text-decoration: none; }
+    .mision .del { border: 0; background: transparent; color: #c9ced6; font-size: 18px; cursor: pointer; padding: 0 4px; }
+    .mision-add { display: flex; gap: 6px; margin-top: 8px; } .mision-add input { flex: 1; min-width: 0; padding: 9px 10px; border: 1.5px solid #ddd; border-radius: 8px; font-family: 'Arimo'; font-size: 14px; min-height: 40px; } .mision-add button { background: var(--artal-blue); color: #fff; border: 0; border-radius: 8px; padding: 0 12px; font-weight: bold; font-family: 'Arimo'; cursor: pointer; min-height: 40px; }
+    .tr-sug { background: #fff8e1; border: 1.5px solid #f0c66b; border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 13.5px; color: #6b4a08; } .tr-sug button { display: block; width: 100%; margin-top: 8px; background: var(--artal-yellow); color: var(--artal-blue); border: 0; border-radius: 9px; padding: 11px; font-weight: bold; font-family: 'Arimo'; font-size: 14px; cursor: pointer; }
     .coment-item { background: #f6f8fa; border-radius: 8px; padding: 7px 10px; font-size: 13px; color: #333; white-space: pre-wrap; }
     .coment-item .coment-meta { font-size: 11px; color: #8a93a0; font-weight: bold; margin-bottom: 2px; }
     /* Conversación de la obra: burbujas tipo chat — lo mío a la derecha en azul, lo del otro lado a la
@@ -371,6 +383,7 @@
         <label>🔍 Buscar cliente u obra <span class="hint" style="display:inline;font-weight:normal">(todo el historial: obras entregadas, pedidos, cotizaciones y fichas de clientes)</span></label>
         <input type="text" id="tr-busq" placeholder="Escribe parte del nombre del cliente, la obra o la dirección…" autocomplete="off" oninput="trBuscar()" onfocus="trBusqFoco()">
         <div id="tr-busq-res" class="tr-busq-res" style="display:none"></div>
+        <div id="tr-mision-sug" style="display:none"></div>
         <label>Cliente <button type="button" class="tr-mini-btn" onclick="trNuevoClienteToggle()">+ Crear cliente</button></label>
         <input type="text" id="tr-cliente" list="clientes-datalist" placeholder="Nombre del cliente" autocomplete="off">
         <div id="tr-nuevo-cli" class="tr-nuevo-cli" style="display:none">
@@ -491,7 +504,7 @@
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     import { esGpsTexto, buildClientMap, clientList } from './clients.js';
-    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
+    import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20261112';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import { borrarConRegistro } from './papelera.js';
     import { mismaObra } from './obras-util.js';
@@ -845,6 +858,50 @@
         try { await setDoc(doc(db, 'valoracionesEncargado', id + '_' + claveEm(usuario.email)), datos); alert('Gracias. Tu valoración quedó guardada; solo la ve gerencia.'); } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.copiarTexto = async (enc) => { const t = decodeURIComponent(enc); try { await navigator.clipboard.writeText(t); alert('Enlace copiado.'); } catch (_) { prompt('Copia el enlace:', t); } };
+    /* ===== Misiones de una obra (Dylan 2026-11-12) =====
+       Un trabajo es la villa; dentro van las tareas («misiones») que se suman con el tiempo: «desmontar el techo», «desmontar vidrios y
+       prensas para que el cliente cambie las cerámicas»… Así no se crea otro trabajo de la misma villa. `instalaciones.misiones[]` =
+       {id, titulo, estado 'pendiente'|'terminada', creadoPor, creadoEmail, fechaISO, terminadaPor, terminadaFechaISO}. Una misión nueva en
+       un trabajo completado lo REABRE (pendiente, sin fecha). «Obra terminada» con misiones pendientes pide confirmar. */
+    const misionesDe = (j) => Array.isArray(j && j.misiones) ? j.misiones : [];
+    const misionesPend = (j) => misionesDe(j).filter(m => m && m.estado !== 'terminada');
+    function misionesHTML(j, puede) {
+        const ms = misionesDe(j); if (!ms.length && !puede) return '';
+        const hechas = ms.length - misionesPend(j).length;
+        const filas = ms.map((m, i) => `<div class="mision ${m.estado === 'terminada' ? 'ok' : ''}"><button type="button" class="chk" ${puede ? `onclick="misionToggle('${j.id}', ${i})"` : 'disabled'} title="${m.estado === 'terminada' ? 'Marcar pendiente' : 'Marcar terminada'}">✓</button><span class="tx">${esc(m.titulo || '')}<small>${m.estado === 'terminada' ? 'Terminada' + (m.terminadaPor ? ' por ' + esc(m.terminadaPor) : '') + (m.terminadaFechaISO ? ' · ' + esc(fmtIso(m.terminadaFechaISO)) : '') : 'Pendiente' + (m.creadoPor ? ' · pedida por ' + esc(m.creadoPor) : '') + (m.fechaISO ? ' · ' + esc(fmtIso(m.fechaISO)) : '')}</small></span>${esOficina ? `<button type="button" class="del" onclick="misionQuitar('${j.id}', ${i})" title="Quitar misión">✕</button>` : ''}</div>`).join('');
+        return `<div class="misiones"><div class="mt"><span>🎯 Misiones de esta obra${ms.length ? ` · ${hechas} de ${ms.length} terminadas` : ''}</span></div>${filas || '<div style="font-size:12.5px;color:#8a93a0;padding:4px 0">Sin misiones: agrega lo que hay que hacer en esta obra.</div>'}
+            ${puede ? `<div class="mision-add"><input type="text" id="mision-nueva-${j.id}" placeholder="Nueva misión (ej. desmontar vidrios y prensas)" onkeydown="if(event.key==='Enter') misionAgregar('${j.id}')"><button type="button" onclick="misionAgregar('${j.id}')">+ Agregar</button></div>` : ''}</div>`;
+    }
+    async function misionesGuardar(id, fn, nota) {
+        const snap = await getDoc(doc(db, 'instalaciones', id)); if (!snap.exists()) return;
+        const d = snap.data(); const ms = misionesDe(d).map(m => ({ ...m })); const extra = fn(ms, d) || {};
+        await updateDoc(doc(db, 'instalaciones', id), { misiones: ms, ...extra });
+        if (nota) await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: d.cliente || '', obra: d.obra || '', estado: extra.estado || d.estado || 'pendiente', nota, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+    }
+    window.misionAgregar = async function (id, tituloDado) {
+        const inp = document.getElementById('mision-nueva-' + id);
+        const titulo = String(tituloDado || (inp && inp.value) || '').trim(); if (!titulo) { alert('Escribe qué hay que hacer.'); return; }
+        try {
+            await misionesGuardar(id, (ms, d) => {
+                ms.push({ id: 'm' + Date.now().toString(36), titulo, estado: 'pendiente', creadoPor: usuario.nombre, creadoEmail: usuario.email, fechaISO: new Date().toISOString() });
+                const extra = { enPausa: false };
+                if ((d.estado || 'pendiente') === 'completado') Object.assign(extra, { estado: 'pendiente', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: serverTimestamp(), reabiertoPor: usuario.nombre, reabiertoFecha: serverTimestamp(), reabiertoMotivo: 'misión nueva: ' + titulo, validadoPor: null, validadoPorEmail: null, validadoFecha: null, fecha: null, modoFecha: 'sin_fecha' });
+                return extra;
+            }, 'Misión nueva: ' + titulo);
+            if (inp) inp.value = '';
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.misionToggle = async function (id, i) {
+        try {
+            let nota = '';
+            await misionesGuardar(id, (ms) => { const m = ms[i]; if (!m) return; if (m.estado === 'terminada') { m.estado = 'pendiente'; m.terminadaPor = null; m.terminadaFechaISO = null; nota = 'Misión reabierta: ' + m.titulo; } else { m.estado = 'terminada'; m.terminadaPor = usuario.nombre; m.terminadaFechaISO = new Date().toISOString(); nota = 'Misión terminada: ' + m.titulo; } }, '');
+            const j = allJobs.find(x => x.id === id); if (nota) await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: id, cliente: (j || {}).cliente || '', obra: (j || {}).obra || '', estado: (j || {}).estado || 'en_proceso', nota, por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    window.misionQuitar = async function (id, i) {
+        if (!confirm('¿Quitar esta misión de la obra?')) return;
+        try { let t = ''; await misionesGuardar(id, (ms) => { t = (ms[i] || {}).titulo || ''; ms.splice(i, 1); }, 'Misión quitada'); } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
     function jobCardHTML(j, opts) {
         const hist = !!(opts && opts.hist);   // en Historial, quien no es admin solo consulta
         const hora = fechaTxtJob(j);
@@ -901,6 +958,7 @@
                 ${j.trabajoOrigenId ? (() => { const o = allJobs.find(x => x.id === j.trabajoOrigenId); return o ? `<br><span style="color:#556;font-size:12.5px;">🔗 Sobre el trabajo: <b>${esc([o.cliente, o.obra].filter(Boolean).join(' — '))}</b>${jobDate(o) ? ' (' + esc(jobDate(o).toLocaleDateString('es-DO', { day: 'numeric', month: 'short', year: '2-digit' })) + ')' : ''}${o.notas ? ' · ' + esc(String(o.notas).slice(0, 80)) : ''}</span>` : ''; })() : ''}
                 ${j.orderId ? `<br><a href="#" onclick="openOrderPreview('${j.orderId}', 'instalador'); return false;">Ver hoja de fabricación</a>` : (j.pedidoReferenciaId ? `<br><a href="#" onclick="openOrderPreview('${j.pedidoReferenciaId}', 'instalador'); return false;">Ver hoja del pedido original</a>` : '')}
             </div>
+            ${misionesHTML(j, puedeCambiarEstado && (!hist || esOficina))}
             ${navHtml}
             ${recInlineHTML(recsCache.filter(c => c.instalacionId === j.id))}
             ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
@@ -1140,7 +1198,7 @@
         return `<div class="job-row estado-${estado}" onclick="abrirJob('${j.id}')">
             <div class="r1">${alerta ? '<span class="punto" title="Mensaje nuevo o medición por entregar"></span>' : ''}${esc([j.cliente, j.obra].filter(Boolean).join(' — ') || 'Sin cliente')}${pryChipHTML(pryDeJob(j))}</div>
             <div class="fecha">${fechaTxtJob(j).replace(/^🔧 /, '')}</div>
-            <div class="r2"><span class="estado-badge ${estado}" style="font-size:10.5px;padding:2px 8px">${esc(ESTADO_LABEL[estado] || estado)}</span>${t ? `<span class="chip">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : '<span class="chip" style="background:#fff8e1;color:#c07a12">tipo sin definir</span>'}${asig ? `<span>🔧 ${esc(asig)}</span>` : '<span style="color:#c07a12">sin asignar</span>'}${nuevos ? `<span style="color:#e74c3c;font-weight:bold">💬 ${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}${j.medicionPendienteOficina === true ? '<span style="color:#e67e22;font-weight:bold">📏 oficina pendiente</span>' : ''}${j.notas ? `<span style="color:#667">· ${esc(String(j.notas).slice(0, 70))}${String(j.notas).length > 70 ? '…' : ''}</span>` : ''}</div>
+            <div class="r2"><span class="estado-badge ${estado}" style="font-size:10.5px;padding:2px 8px">${esc(ESTADO_LABEL[estado] || estado)}</span>${t ? `<span class="chip">${TIPO_ICONO[t] || ''} ${esc(TIPOS_TRABAJO[t] || t)}</span>` : '<span class="chip" style="background:#fff8e1;color:#c07a12">tipo sin definir</span>'}${misionesPend(j).length ? `<span class="chip" style="background:#fff3e0;color:#b9770e">🎯 ${misionesPend(j).length} misión${misionesPend(j).length > 1 ? 'es' : ''}</span>` : ''}${asig ? `<span>🔧 ${esc(asig)}</span>` : '<span style="color:#c07a12">sin asignar</span>'}${nuevos ? `<span style="color:#e74c3c;font-weight:bold">💬 ${nuevos} nuevo${nuevos > 1 ? 's' : ''}</span>` : ''}${j.medicionPendienteOficina === true ? '<span style="color:#e67e22;font-weight:bold">📏 oficina pendiente</span>' : ''}${j.notas ? `<span style="color:#667">· ${esc(String(j.notas).slice(0, 70))}${String(j.notas).length > 70 ? '…' : ''}</span>` : ''}</div>
         </div>`;
     }
     function renderMiDia() {
@@ -1478,6 +1536,7 @@
     };
     window.trObraExistente = function () {
         const v = document.getElementById('tr-obra-existente').value; trOrderId = null; trJobOrigenId = null; trPedidoRef = null;
+        trSugerirMision(v.startsWith('job:') ? allJobs.find(x => x.id === v.slice(4)) : null);
         if (!v) return;
         if (v.startsWith('job:')) {
             const j = allJobs.find(x => x.id === v.slice(4)); if (!j) return;
@@ -1565,9 +1624,22 @@
         box.style.display = 'block';
     };
     let trBusqRes = [];
+    // Si la obra elegida ya tiene un trabajo ABIERTO, lo natural es sumar una misión, no crear otro trabajo de la misma villa.
+    function trSugerirMision(job) {
+        const box = document.getElementById('tr-mision-sug'); if (!box) return;
+        if (!job || (job.estado || 'pendiente') === 'completado') { box.style.display = 'none'; box.innerHTML = ''; return; }
+        const lugar = [job.cliente, job.obra].filter(Boolean).join(' — ');
+        box.style.display = ''; box.innerHTML = `<div class="tr-sug">🎯 <b>${esc(lugar)}</b> ya tiene un trabajo abierto (${esc(ESTADO_LABEL[job.estado] || job.estado)}${misionesPend(job).length ? ', ' + misionesPend(job).length + ' misión(es) pendiente(s)' : ''}). Para no duplicar la villa, agrega lo nuevo como misión de ese trabajo:<input type="text" id="tr-mision-txt" placeholder="¿Qué hay que hacer? (ej. desmontar vidrios y prensas de suelo)" style="width:100%;box-sizing:border-box;margin-top:8px;padding:10px;border:1.5px solid #e0c98a;border-radius:8px;font-family:'Arimo';font-size:14px"><button type="button" onclick="trAgregarMision('${job.id}')">➕ Agregar como misión (sin crear otro trabajo)</button></div>`;
+    }
+    window.trAgregarMision = async function (jobId) {
+        const t = (document.getElementById('tr-mision-txt') || {}).value || (document.getElementById('tr-nota') || {}).value || '';
+        if (!t.trim()) { alert('Escribe qué hay que hacer.'); return; }
+        await misionAgregar(jobId, t.trim()); cerrarModalTrabajo(); abrirJob(jobId);
+    };
     window.trElegir = function (i) {
         const e = trBusqRes[i]; if (!e) return;
         trOrderId = null; trJobOrigenId = null; trPedidoRef = null;
+        trSugerirMision(e.job || null);
         const sel = document.getElementById('tr-obra-existente');
         if (e.abierto) { trOrderId = e.abierto.id; sel.value = 'order:' + e.abierto.id; }
         else if (e.job) { trJobOrigenId = e.job.id; trPedidoRef = e.job.orderId || (Array.isArray(e.job.orderIds) && e.job.orderIds[0]) || null; sel.value = 'job:' + e.job.id; if (sel.value !== 'job:' + e.job.id) sel.value = ''; }
@@ -1604,7 +1676,7 @@
     window.abrirModalTrabajo = function () {
         ['tr-cliente', 'tr-obra', 'tr-direccion', 'tr-gps', 'tr-fecha', 'tr-nota', 'tr-busq'].forEach(i => document.getElementById(i).value = '');
         document.getElementById('tr-busq-res').style.display = 'none'; trNuevoClienteToggle(false);
-        document.getElementById('tr-tipo').value = ''; trOrderId = null; trJobOrigenId = null; trPedidoRef = null; trTipoCambio();
+        document.getElementById('tr-tipo').value = ''; trOrderId = null; trJobOrigenId = null; trPedidoRef = null; trTipoCambio(); trSugerirMision(null);
         // Por defecto va quien lo crea; se pueden marcar los demás (o desmarcarse) antes de guardar.
         document.querySelectorAll('#tr-instaladores input').forEach(c => c.checked = c.value === yo.email);
         cargarClientes();   // H1: datalist de clientes bajo demanda
@@ -1825,6 +1897,7 @@
         if (estado === 'completado' && !yaConfirmado && tipoDeJob(j) === 'medicion' && !(Array.isArray(j.fotos) && j.fotos.length)) {
             if (!confirm('Esta toma de medidas no tiene fotos ni archivos adjuntos.\n\nSube las fotos de las medidas con «Agregar foto/PDF» antes de completar, para que la oficina las reciba. ¿Completar igual?')) { renderTodo(); return; }
         }
+        if (estado === 'completado' && !yaConfirmado && misionesPend(j).length && !confirm('Quedan misiones sin terminar en esta obra:\n\n' + misionesPend(j).map(m => '• ' + m.titulo).join('\n') + '\n\n¿Cerrar la obra igual? (Si falta hacerlas, usa «Pausar obra».)')) return;
         // Completar pasa por la ventana de horas (quiénes y cuánto) → parte diario del día.
         if (estado === 'completado' && !yaConfirmado) { abrirValidacion(id, { completar: true }); return; }
         const msg = `¿Cambiar el estado de "${lugar}" a "${ESTADO_LABEL[estado] || estado}"?`;
@@ -2040,7 +2113,8 @@
         const items = arr.map((cm, i) => {
             const mio = cm.email === usuario.email, ger = esGerencia(cm);
             const cls = 'coment-item ' + (mio ? 'mio' : 'otro') + (ger ? ' gerencia' : '') + (!mio && i >= vistos ? ' nuevo' : '');
-            return `<div class="${cls}"><div class="coment-meta">${ger ? '🏢 ' : '🔧 '}${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}</div>`;
+            const fotosHtml = Array.isArray(cm.fotos) && cm.fotos.length ? `<div class="coment-fotos">${cm.fotos.map(f => f.tipo === 'img' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.nombre || 'foto')}" loading="lazy"></a>` : `<a class="doc" href="${esc(f.url)}" target="_blank" rel="noopener">📄 ${esc(f.nombre || 'archivo')}</a>`).join('')}</div>` : '';
+            return `<div class="${cls}"><div class="coment-meta">${ger ? '🏢 ' : '🔧 '}${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}${fotosHtml}</div>`;
         }).join('');
         const ph = esOficina ? 'Escríbele al instalador: instrucciones, preguntas, qué resolver…' : 'Cuéntale a la oficina: cómo va, qué faltó, cliente ausente, daños, preguntas…';
         return `<div class="coment-box">
@@ -2054,6 +2128,19 @@
         if (col === 'orders') { const o = ordersCache.find(x => x.id === id); return o ? o.data : null; }
         return allJobs.find(x => x.id === id) || null;
     }
+    // Fotos en la conversación (Dylan 2026-11-12: «que las fotos aparezcan en el texto en el momento que se suben»): cada subida
+    // crea un mensaje del hilo con las fotos adentro (además de la galería de arriba). Para la oficina y el push es un mensaje más.
+    window.__alSubirFotos = async function (col, id, nuevas) {
+        if (col !== 'instalaciones') return;
+        const snap = await getDoc(doc(db, col, id));
+        const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
+        const imgs = nuevas.filter(f => f.tipo === 'img').length, docs = nuevas.length - imgs;
+        const texto = [imgs ? `📷 ${imgs} foto${imgs > 1 ? 's' : ''}` : '', docs ? `📄 ${docs} archivo${docs > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
+        const nuevo = prev.concat([{ texto, fotos: nuevas.map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '' })), nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol }]);
+        const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
+        if (esOficina) upd.comentariosInstaladorAtendidos = nuevo.length;
+        await updateDoc(doc(db, col, id), upd);
+    };
     window.hiloEnviar = async function (col, id) {
         const key = `hilo-${col}-${id}`;
         const ta = document.getElementById(key);

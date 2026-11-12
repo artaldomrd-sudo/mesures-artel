@@ -79,6 +79,7 @@ async function recogerDatos(lector, hoy) {
         asignados: nombres(t.asignados), pedidos: [t.orderId, ...(t.orderIds || [])].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i),
         idProyecto: [...new Set([t.orderId, t.pedidoReferenciaId, ...(t.orderIds || [])].filter(Boolean).map((id) => pryPorPedido.get(id)).filter(Boolean))].join(', '),
         notas: rec(t.notas, 220), direccion: rec(t.direccion, 80), gps: rec(t.gps, 40), origen: t.origen || '',
+        misiones: Array.isArray(t.misiones) && t.misiones.length ? (t.misiones.filter((m) => m && m.estado !== 'terminada').map((m) => 'PENDIENTE: ' + rec(m.titulo, 80)).concat(t.misiones.filter((m) => m && m.estado === 'terminada').map((m) => 'terminada: ' + rec(m.titulo, 60))).join(' · ')) : '',
         retoma: Array.isArray(t.retomas) && t.retomas.length ? fechaTxt(t.retomas[t.retomas.length - 1]) : '',
         medicion: t.medicionEstado || '', validadoPor: t.validadoPor || '', validadoFecha: fechaTxt(t.validadoFecha), creado: fechaTxt(t.fechaCreacion),
         ultimoComentario: t.ultimoComentario ? rec((t.ultimoComentario.nombre ? t.ultimoComentario.nombre + ': ' : '') + (t.ultimoComentario.texto || ''), 160) : '',

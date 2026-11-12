@@ -2747,6 +2747,26 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Misiones por obra + fotos en la conversación (2026-11-12)
+
+Dylan (captura de Vero solucentro — Jardines de la bonita): «agregar a este mismo trabajo un nuevo trabajo… permitir a un trabajo ya
+creado agregarle más misiones, eso evita crear más trabajos de la misma villa» y «que las fotos aparezcan en el texto directamente en
+el momento que se suben».
+- **Misiones** (`instalaciones.misiones[] {id, titulo, estado 'pendiente'|'terminada', creadoPor, creadoEmail, fechaISO, terminadaPor,
+  terminadaFechaISO}`): en `jobCardHTML` bloque «🎯 Misiones de esta obra · n de m terminadas» (`misionesHTML`, `misionesGuardar` relee el
+  doc y escribe el array + movimiento): ✓ por misión (`misionToggle`), «+ Agregar» (`misionAgregar(id, titulo?)`: una misión nueva en un
+  trabajo completado lo REABRE pendiente sin fecha, y quita `enPausa`), ✕ solo oficina (`misionQuitar`). «Obra terminada» con misiones
+  pendientes pide confirmar (`cambiarEstado`). Fila compacta: chip «🎯 N misiones». **«+ Trabajo»**: al elegir en el buscador o en «Obra
+  existente» un trabajo ABIERTO aparece `#tr-mision-sug` («ya tiene un trabajo abierto… ➕ Agregar como misión», `trAgregarMision`) para
+  no duplicar la villa. **Mi día**: el plan muestra «N misiones: …» y en «Cerrar el día» la obra (Terminada/Pausada) lista sus misiones
+  pendientes como fichas «terminadas hoy» (`resMision`, `item.misionesHechas[]`); `aplicarObras` las marca terminadas (todas si la obra
+  queda terminada). Coordinador: `trabajo().misiones` «PENDIENTE: … · terminada: …». Datos: Jardines de la bonita (`fT9NUMEGk0JJnWtGFHvp`)
+  recibió 2 misiones (terminar el techo grande; desmontaje de vidrios y prensas de suelo para que el cliente cambie las cerámicas).
+- **Fotos en el hilo**: `ops/fotos.js` `__subirFotos` llama al gancho `window.__alSubirFotos(coleccion, id, nuevas, campo)` si existe;
+  Instalación lo define (`fotos.js?v=20261112`): cada subida a `instalaciones` añade un mensaje a `comentariosInstalador` con `fotos[]
+  {url, tipo, nombre}` y texto «📷 N fotos»; `hiloHTML` pinta las fotos dentro del mensaje (`.coment-fotos`, 150×110, abren en pestaña).
+  Push y `instalacionActividad` lo tratan como un comentario más. Guía `guia-instalacion-02` (apartados «Misiones» y «Fotos»).
+
 ### Obras: abrir al llegar, cerrar al irse — obligatorio desde el parte (2026-11-12)
 
 Dylan: «obligar al equipo a usar los botones: hoy llegan, pulsan retomar, hacen lo que se debe hacer y antes de irse marcan

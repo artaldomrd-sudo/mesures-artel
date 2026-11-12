@@ -159,7 +159,7 @@
                 // Mi día (demo): lo previsto hoy para Wilson — una instalación de hoy, una reparación atrasada y una obra «en proceso» olvidada.
                 i3: { cliente: 'Marie Hélène', obra: 'Niza Villa personal', estado: 'pendiente', tipoTrabajo: 'instalacion', fecha: ts(0), asignados: [{ email: W, nombre: 'Wilson' }, { email: 'ayudante4@demo.artal', nombre: 'Ayudante Cuatro' }] },
                 i4: { cliente: 'Gregory', obra: 'Riviera Coson 2', estado: 'pendiente', tipoTrabajo: 'reparacion_artal', fecha: ts(1), asignados: [{ email: W, nombre: 'Wilson' }] },
-                i5: { cliente: 'Jose Manuel', obra: 'Plaza Manuela', estado: 'en_proceso', tipoTrabajo: 'instalacion', fecha: ts(12), inicioReal: ts(12), asignados: [{ email: W, nombre: 'Wilson' }] }
+                i5: { cliente: 'Jose Manuel', obra: 'Plaza Manuela', estado: 'en_proceso', tipoTrabajo: 'instalacion', fecha: ts(12), inicioReal: ts(12), asignados: [{ email: W, nombre: 'Wilson' }], misiones: [{ id: 'm1', titulo: 'Instalar las barandas del balcón', estado: 'terminada', terminadaPor: 'Wilson' }, { id: 'm2', titulo: 'Colocar los vidrios de la escalera', estado: 'pendiente', creadoPor: 'Dylan' }, { id: 'm3', titulo: 'Sellar las ventanas del fondo', estado: 'pendiente', creadoPor: 'Dylan' }] }
             },
             citas: { c1: { titulo: 'Viaje a Santo Domingo — cargar 5 compras directas', tipo: 'recordatorio', fecha: ts(3), completada: false, completadoPor: [], asignados: [{ email: W, nombre: 'Wilson' }] } },
             solicitudesMaterial: { s1: { estado: 'chofer', itemNombre: 'Masilla siliconizada blanca', cantidad: 12, unidad: 'tubos', proveedor: { nombre: 'Jaraba Import' }, pedidoPor: { nombre: 'Roosevelt' } } },
@@ -441,7 +441,8 @@
             else if (f === hoy) tag = 'hoy';
             else if (f && f < hoy) { tag = 'atrasado · era el ' + fechaCorta(j.fecha); cl = 'rojo'; }
             else return;   // pendiente para otro día
-            items.push({ ref: 'inst:' + j.id, ico: '🔧', label: [j.cliente, j.obra].filter(Boolean).join(' — '), sub: (j.tipoTrabajo || 'instalación').replace(/_/g, ' '), tag, cl });
+            const mp = (Array.isArray(j.misiones) ? j.misiones : []).filter(m => m && m.estado !== 'terminada');
+            items.push({ ref: 'inst:' + j.id, ico: '🔧', label: [j.cliente, j.obra].filter(Boolean).join(' — '), sub: (j.tipoTrabajo || 'instalación').replace(/_/g, ' ') + (mp.length ? ' · ' + mp.length + ' misión' + (mp.length > 1 ? 'es' : '') + ': ' + mp.map(m => m.titulo).join(' · ') : ''), tag, cl });
         });
         citasAbiertas.filter(c => esMiaCita(c) && !(c.completadoPor || []).includes(usuario.email)).forEach(c => { const f = ymdDe(c.fecha); if (!f || f > hoy) return; items.push({ ref: 'cita:' + c.id, ico: '🔔', label: c.titulo || c.descripcion || 'Recordatorio', sub: '', tag: f === hoy ? 'hoy' : 'vencido · ' + fechaCorta(c.fecha), cl: f < hoy ? 'rojo' : '' }); });
         if (soyChofer()) {
@@ -533,10 +534,12 @@
             const eo = it.estadoObra || '';
             const hoyD = new Date(parteActual.fecha + 'T12:00:00'); const man = new Date(hoyD); man.setDate(man.getDate() + (man.getDay() === 6 ? 2 : 1)); const lun = new Date(hoyD); lun.setDate(lun.getDate() + ((8 - lun.getDay()) % 7 || 7));
             const chipF = (d, txt) => { const v = ymd(d); return `<button type="button" class="${it.regreso === v ? 'on' : ''}" onclick="resRegreso(${i}, '${v}'); renderResumen()">${txt}</button>`; };
-            return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub} · ¿cómo quedó la obra?</div>
+            const jj = instCache.find(x => 'inst:' + x.id === it.ref); const mp = jj && Array.isArray(jj.misiones) ? jj.misiones.filter(m => m && m.estado !== 'terminada') : [];
+            const misHtml = mp.length && eo && eo !== 'nofui' ? `<div class="s" style="margin-top:10px">Misiones de esta obra · marca las terminadas hoy</div><div class="chips" style="margin-top:6px">${mp.map(m => `<button type="button" class="${(it.misionesHechas || []).includes(m.id) ? 'on' : ''}" onclick="resMision(${i}, '${m.id}'); renderResumen()">${(it.misionesHechas || []).includes(m.id) ? '✓ ' : ''}${esc(m.titulo)}</button>`).join('')}</div>` : '';
+            return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub.split(' · ')[0]} · ¿cómo quedó la obra?</div>
                 <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" class="${eo === 'terminada' ? 'on-si' : ''}" onclick="resObra(${i}, 'terminada')">✅ Terminada</button><button type="button" class="${eo === 'pausa' ? 'on-pausa' : ''}" onclick="resObra(${i}, 'pausa')">⏸ Pausada</button><button type="button" class="${eo === 'nofui' ? 'on-no' : ''}" onclick="resObra(${i}, 'nofui')">✖ No fuimos</button></div>
                 ${eo === 'pausa' ? `<div class="s" style="margin-top:10px">¿Qué día vuelven? <span style="color:var(--md-mut)">(si ya lo saben)</span></div><div class="chips" style="margin-top:6px"><button type="button" class="${!it.regreso ? 'on' : ''}" onclick="resRegreso(${i}, ''); renderResumen()">Sin fecha todavía</button>${chipF(man, 'Mañana')}${chipF(lun, 'El lunes')}<input type="date" class="inp" style="margin:0;flex:1;min-width:150px;min-height:40px;padding:6px 10px" value="${esc(it.regreso || '')}" min="${ymd(man)}" onchange="resRegreso(${i}, this.value); renderResumen()"></div>` : ''}
-                ${eo === 'nofui' ? motivosHtml(it, i) : ''}</div>`;
+                ${eo === 'nofui' ? motivosHtml(it, i) : ''}${misHtml}</div>`;
         }).join('');
         p1.innerHTML = `<p class="q">¿Cómo quedó el día?</p><p class="qs">Cada obra se cierra o se pausa con fecha. Lo demás, hecho o no.</p>${its || '<div class="item"><div class="n">Nada previsto en el sistema para hoy</div><div class="s">Cuenta el día en el paso siguiente.</div></div>'}<button class="cta" onclick="pasoSiguiente(1)">Siguiente</button>`;
         const m = (() => { const d = new Date(parteActual.fecha + 'T12:00:00'); d.setDate(d.getDate() + (d.getDay() === 6 ? 2 : 1)); return ymd(d); })();
@@ -555,6 +558,9 @@
             const j = instCache.find(x => 'inst:' + x.id === it.ref); if (!j) continue;
             const ref = doc(db, 'instalaciones', j.id); const ahora = serverTimestamp();
             try {
+                // Misiones marcadas como terminadas hoy (todas, si la obra queda terminada).
+                const msAll = Array.isArray(j.misiones) ? j.misiones.map(m => ({ ...m })) : [];
+                if (msAll.length) { let toco = false; msAll.forEach(m => { if (m.estado !== 'terminada' && (it.estadoObra === 'terminada' || (it.misionesHechas || []).includes(m.id))) { m.estado = 'terminada'; m.terminadaPor = usuario.nombre; m.terminadaFechaISO = new Date().toISOString(); m.desde = 'parte'; toco = true; } }); if (toco) await updateDoc(ref, { misiones: msAll }); }
                 if (it.estadoObra === 'terminada') {
                     if (j.estado === 'completado') continue;
                     await updateDoc(ref, { estado: 'completado', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: ahora, cerradoDesde: 'parte', ...(j.inicioReal ? {} : { inicioReal: ahora }) });
@@ -592,6 +598,7 @@
     window.resSet = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.hecho = v; if (v) { it.motivo = ''; it.nota = ''; } renderResumen(); };
     window.resObra = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.estadoObra = v; it.hecho = v !== 'nofui'; if (v !== 'nofui') { it.motivo = ''; it.nota = ''; } if (v !== 'pausa') it.regreso = ''; renderResumen(); };
     window.resRegreso = function (i, v) { const it = resumenActual.items[i]; if (it) it.regreso = v || ''; };
+    window.resMision = function (i, mid) { const it = resumenActual.items[i]; if (!it) return; it.misionesHechas = it.misionesHechas || []; const k = it.misionesHechas.indexOf(mid); if (k >= 0) it.misionesHechas.splice(k, 1); else it.misionesHechas.push(mid); };
     window.resMotivo = function (i, v) { const it = resumenActual.items[i]; if (it) it.motivo = v; };
     window.resNota = function (i, v) { const it = resumenActual.items[i]; if (it) it.nota = v; };
 
@@ -766,7 +773,7 @@
         const id = parteId(fecha, enc.email);
         const incluidosEmails = [...new Set(lineas.map(l => { const e = empPorId(l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
         const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, incluidosEmails, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
-        if (esHoyParte || resumenActual.items.length || resumenActual.cumplido || resumenActual.noCumplido) datos.resumen = { items: resumenActual.items.map(i => ({ ref: i.ref, label: i.label, hecho: i.hecho === true, motivo: i.motivo || '', nota: (i.nota || '').trim(), estadoObra: i.estadoObra || '', regreso: i.regreso || '' })), cumplido: resumenActual.cumplido.trim(), noCumplido: resumenActual.noCumplido.trim(), fechaISO: new Date().toISOString(), por: usuario.nombre };
+        if (esHoyParte || resumenActual.items.length || resumenActual.cumplido || resumenActual.noCumplido) datos.resumen = { items: resumenActual.items.map(i => ({ ref: i.ref, label: i.label, hecho: i.hecho === true, motivo: i.motivo || '', nota: (i.nota || '').trim(), estadoObra: i.estadoObra || '', regreso: i.regreso || '', misionesHechas: i.misionesHechas || [] })), cumplido: resumenActual.cumplido.trim(), noCumplido: resumenActual.noCumplido.trim(), fechaISO: new Date().toISOString(), por: usuario.nombre };
         // Un borrador (horas cargadas al validar trabajos) pasa a parte enviado AHORA: `creado` = momento real del envío
         // (es la hora que mira el sistema de puntos para «a tiempo / tarde»).
         if (!parteGuardado || parteGuardado.borrador) datos.creado = serverTimestamp();
