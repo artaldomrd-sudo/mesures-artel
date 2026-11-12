@@ -2846,6 +2846,11 @@ Parte diario de obra», enlace de Instalación «📋 Mi día · Parte diario»)
   nota plegada; CTA «Enviar parte y resumen» → `#paso-ok` (check grande). Días pasados sin resumen entran directo en el paso 3. Colores en
   variables `--md-*` con tema claro por defecto y oscuro por `prefers-color-scheme` (Dylan vio la maqueta en oscuro y la aprobó así: sigue el
   ajuste del teléfono). `shared.css` sigue cargado (login/widgets) pero `body`/`header` se sobrescriben.
+- Revisión de eficiencia (noche del 12/11): `renderMiDia` agrupa los repintados en 60 ms (al arrancar llegan 15 snapshots); «Entregado» de
+  Mi día aplica la misma regla que Transportes (compra directa / «solo recoger» → `status: completado`); la tarjeta del pedido en
+  Instalación conserva «🙋 Lo tomo yo» como botón principal. **Pendiente**: la suscripción a `mensajes` (`destinatarios array-contains`)
+  baja todos los mensajes de la persona (≈ 90 para Wilson); acotarla por fecha exige un índice compuesto `mensajes(destinatarios
+  CONTAINS, fecha)` que hay que crear en Firebase Console o con `firebase deploy --only firestore:indexes` (no hay archivo de índices).
 - **Simulación guiada `parte-diario.html?demo=midia`** (sin login; para presentarla al equipo): el modo demo trae un día completo
   (informe matinal de ejemplo, trabajos de hoy/atrasado/en proceso, pedido en ruta, recordatorio vencido, material al chofer) y una barra
   inferior con 12 pasos (`PASOS`, `tourGo(n)`, «🔊 Leer» con `speechSynthesis` es-MX): 7:50 informe → previsto → pendientes → un toque

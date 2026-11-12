@@ -469,7 +469,10 @@
         try { await updateDoc(doc(db, 'mensajes', m.id), { ['acuses.' + k]: { leido: true, aceptado: !!m.requiereFirma, fecha: new Date().toISOString(), nombre: usuario.nombre, email: usuario.email, desde: 'mi-dia' } }); } catch (_) { }
     }
     window.verInforme = function (id) { const m = informesMios.find(x => x.id === id); if (m) acusar(m); };
-    function renderMiDia() {
+    // Un solo repintado por ráfaga de snapshots (al arrancar llegan 15 colecciones seguidas): se agrupa en 60 ms.
+    let miDiaTimer = null;
+    function renderMiDia() { clearTimeout(miDiaTimer); miDiaTimer = setTimeout(renderMiDiaAhora, 60); }
+    function renderMiDiaAhora() {
         const box = document.getElementById('mi-dia'); if (!box || !arrancado) return;
         const enc = encargadoSel();
         if (esAdmin || String(enc.email || '').toLowerCase() !== miEmail) { box.innerHTML = `<div class="card"><h3>Vista de gerencia</h3><p style="margin:0">El plan del día lo ve cada encargado en su teléfono. Aquí puedes revisar o corregir sus partes.</p></div>`; return; }
@@ -497,7 +500,10 @@
     window.regEntregado = async function (id) {
         const o = ordersCache.find(x => x.id === id); if (!o) return;
         if (!confirm('¿Marcar ENTREGADO «' + [o.cliente, o.obra].filter(Boolean).join(' — ') + '»?\n\nQueda registrado con tu nombre como chofer.')) return;
-        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), enRuta: false, restoEnRuta: false, recepcionInstalador: { nombre: usuario.nombre, firma: null, fecha: new Date().toISOString() }, entregadoDesde: 'mi-dia', entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: usuario.nombre, chofer: usuario.nombre, resto: '' }) }); }
+        // Misma regla que «Entregado» en Transportes: una compra directa o un pedido «solo recoger» queda completado con la entrega;
+        // el resto espera la instalación (pedidoSigueTrabajo / pedidoEntregadoInterno hacen lo demás en el servidor).
+        const noNecesitaInstalador = o.docType === 'COMPRA_DIRECTA' || o.sinInstalacion === true;
+        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), enRuta: false, restoEnRuta: false, recepcionInstalador: { nombre: usuario.nombre, firma: null, fecha: new Date().toISOString() }, entregadoDesde: 'mi-dia', entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: usuario.nombre, chofer: usuario.nombre, resto: '' }), ...((o.instalado === true || noNecesitaInstalador) ? { status: 'completado' } : {}) }); }
         catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.regCitaHecha = async function (id) {
