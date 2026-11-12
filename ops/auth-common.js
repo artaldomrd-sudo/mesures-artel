@@ -249,6 +249,8 @@ export function requireAuth(rolesPermitidos) {
       const ocultar = () => { try { aplicarPermisosEnlaces(usuarioObj); } catch (_) {} };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ocultar); else ocultar();
       setTimeout(ocultar, 800);
+      // Autor para las fotos que suba esta sesión (fotos.js lo graba en cada foto: Dylan 2026-11-12, «agrega nombre de quien puso la foto»).
+      try { window.__fotoAutor = { nombre: usuarioObj.nombre || '', email: usuarioObj.email || '' }; } catch (_) {}
       resolve(usuarioObj);
     });
   });

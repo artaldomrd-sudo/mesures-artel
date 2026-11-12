@@ -516,7 +516,7 @@
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     import { esGpsTexto, buildClientMap, clientList } from './clients.js';
-    import { fotosThumbsHTML, fotoAddBtnHTML, subirFotos } from './fotos.js?v=20261112';
+    import { fotosThumbsHTML, fotoAddBtnHTML, subirFotos } from './fotos.js?v=20261112b';
     import { biometriaDisponible, biometriaRegistrada, registrarBiometria, confirmarBiometria } from './biometria.js';
     import { borrarConRegistro } from './papelera.js';
     import { mismaObra } from './obras-util.js';
@@ -2129,12 +2129,15 @@
         // momento de subida. Así las fotos viejas también quedan dentro de la conversación y no en una franja aparte arriba.
         const enMsgs = new Set(arr.flatMap(cm => (Array.isArray(cm.fotos) ? cm.fotos : []).map(f => f.url)));
         const sueltas = col === 'instalaciones' ? (Array.isArray(d.fotos) ? d.fotos : []).filter(f => f && f.url && !enMsgs.has(f.url)) : [];
-        const linea = arr.map((cm, i) => ({ t: Date.parse(cm.fecha) || 0, cm, i })).concat(sueltas.map(f => ({ t: Date.parse(fotoFechaISO(f)) || 0, foto: f })));
+        // Autor de una foto suelta (Dylan 2026-11-12, «agrega nombre de quien puso la foto»): el que grabó fotos.js (`por`) o, en las fotos
+        // viejas sin autor, quien escribió en el hilo (no gerencia) dentro de los 15 minutos siguientes o anteriores a la subida.
+        const autorFoto = (f, t) => { if (f.por) return f.por; if (!t) return ''; let mejor = null; arr.forEach(cm => { if (esGerencia(cm) || !cm.nombre) return; const dt = Math.abs((Date.parse(cm.fecha) || 0) - t); if (dt <= 15 * 60000 && (!mejor || dt < mejor.dt)) mejor = { dt, nombre: cm.nombre }; }); return mejor ? mejor.nombre : ''; };
+        const linea = arr.map((cm, i) => ({ t: Date.parse(cm.fecha) || 0, cm, i })).concat(sueltas.map(f => { const t = Date.parse(fotoFechaISO(f)) || 0; return { t, foto: f, por: autorFoto(f, t) }; }));
         // Fotos sueltas sin fecha reconocible van al principio; el resto por fecha. Varias fotos seguidas se agrupan en un solo bloque.
         linea.sort((a, b) => a.t - b.t);
-        const bloques = []; linea.forEach(x => { const u = bloques[bloques.length - 1]; if (x.foto && u && u.fotos && Math.abs(x.t - u.t) < 10 * 60000) { u.fotos.push(x.foto); return; } if (x.foto) bloques.push({ t: x.t, fotos: [x.foto] }); else bloques.push(x); });
+        const bloques = []; linea.forEach(x => { const u = bloques[bloques.length - 1]; if (x.foto && u && u.fotos && Math.abs(x.t - u.t) < 10 * 60000 && u.por === x.por) { u.fotos.push(x.foto); return; } if (x.foto) bloques.push({ t: x.t, fotos: [x.foto], por: x.por }); else bloques.push(x); });
         const items = bloques.map((b) => {
-            if (b.fotos) return `<div class="coment-item otro foto-solo"><div class="coment-meta">📷 ${b.fotos.length > 1 ? b.fotos.length + ' fotos' : 'Foto'}${b.t ? ' · ' + esc(fmtIso(new Date(b.t).toISOString())) : ''}</div>${fotosHtmlDe(b.fotos, col, id, puedeBorrar)}</div>`;
+            if (b.fotos) return `<div class="coment-item otro foto-solo"><div class="coment-meta">📷 ${b.por ? esc(b.por) + ' · ' : ''}${b.fotos.length > 1 ? b.fotos.length + ' fotos' : 'Foto'}${b.t ? ' · ' + esc(fmtIso(new Date(b.t).toISOString())) : ''}</div>${fotosHtmlDe(b.fotos, col, id, puedeBorrar)}</div>`;
             const cm = b.cm, i = b.i;
             const mio = cm.email === usuario.email, ger = esGerencia(cm);
             const cls = 'coment-item ' + (mio ? 'mio' : 'otro') + (ger ? ' gerencia' : '') + (!mio && i >= vistos ? ' nuevo' : '');
@@ -2162,7 +2165,7 @@
         const prev = (snap.exists() && Array.isArray(snap.data().comentariosInstalador)) ? snap.data().comentariosInstalador : [];
         const imgs = nuevas.filter(f => f.tipo === 'img').length, docs = nuevas.length - imgs;
         const texto = [imgs ? `📷 ${imgs} foto${imgs > 1 ? 's' : ''}` : '', docs ? `📄 ${docs} archivo${docs > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
-        const nuevo = prev.concat([{ texto, fotos: nuevas.map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '' })), nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol }]);
+        const nuevo = prev.concat([{ texto, fotos: nuevas.map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '', por: f.por || usuario.nombre })), nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol }]);
         const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
         if (esOficina) upd.comentariosInstaladorAtendidos = nuevo.length;
         await updateDoc(doc(db, col, id), upd);
@@ -2192,7 +2195,7 @@
             const d = snap.exists() ? snap.data() : {};
             const prev = Array.isArray(d.comentariosInstalador) ? d.comentariosInstalador : [];
             const msg = { texto: texto || (nuevas.length ? '📷' : ''), nombre: usuario.nombre, email: usuario.email, fecha: new Date().toISOString(), deRol: miRol };
-            if (nuevas.length) msg.fotos = nuevas.map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '' }));
+            if (nuevas.length) msg.fotos = nuevas.map(f => ({ url: f.url, tipo: f.tipo || 'img', nombre: f.nombre || '', por: f.por || usuario.nombre }));
             const nuevo = prev.concat([msg]);
             const upd = { comentariosInstalador: nuevo, ['leidoPor.' + claveEmail(usuario.email)]: nuevo.length };
             if (nuevas.length) upd.fotos = (Array.isArray(d.fotos) ? d.fotos : []).concat(nuevas);   // también a la galería de la obra

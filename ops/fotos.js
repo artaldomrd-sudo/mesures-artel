@@ -104,6 +104,9 @@ const extDe = (n) => { const m = /\.([a-z0-9]+)$/i.exec(n || ''); return m ? m[1
 // además documentos (DOC_EXT), tal cual, tipo 'archivo'. Ignora cualquier otro tipo.
 export async function subirFotos(fileList, pathPrefix, opts = {}) {
     const out = [];
+    // Quién la sube (lo fija requireAuth en window.__fotoAutor): viaja en cada foto como `por` / `porEmail` y la conversación de la obra lo muestra.
+    const autor = (typeof window !== 'undefined' && window.__fotoAutor && window.__fotoAutor.nombre) ? { por: window.__fotoAutor.nombre, porEmail: window.__fotoAutor.email || '' } : null;
+    const conAutor = (f) => autor ? Object.assign(f, autor) : f;
     for (const original of Array.from(fileList || [])) {
         const esPdf = original.type === 'application/pdf' || /\.pdf$/i.test(original.name || '');
         const esImg = /^image\//.test(original.type) || esHeic(original);
@@ -115,20 +118,20 @@ export async function subirFotos(fileList, pathPrefix, opts = {}) {
             const r = ref(storage, `${pathPrefix}/${nombre}`);
             await uploadBytes(r, original, { contentType: original.type || 'application/octet-stream' });
             const url = await getDownloadURL(r);
-            out.push({ url, nombre: original.name || 'documento', tipo: 'archivo' });
+            out.push(conAutor({ url, nombre: original.name || 'documento', tipo: 'archivo' }));
         } else if (esPdf) {
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.pdf';
             const r = ref(storage, `${pathPrefix}/${nombre}`);
             await uploadBytes(r, original, { contentType: 'application/pdf' });
             const url = await getDownloadURL(r);
-            out.push({ url, nombre: original.name || 'documento.pdf', tipo: 'pdf' });
+            out.push(conAutor({ url, nombre: original.name || 'documento.pdf', tipo: 'pdf' }));
         } else {
             const blob = await prepararImagenJpeg(original);   // lanza si un HEIC no se pudo convertir
             const nombre = (Date.now() + '_' + Math.random().toString(36).slice(2, 8)) + '.jpg';
             const r = ref(storage, `${pathPrefix}/${nombre}`);
             await uploadBytes(r, blob, { contentType: 'image/jpeg' });
             const url = await getDownloadURL(r);
-            out.push({ url, nombre: original.name || 'foto.jpg', tipo: 'img' });
+            out.push(conAutor({ url, nombre: original.name || 'foto.jpg', tipo: 'img' }));
         }
     }
     return out;
