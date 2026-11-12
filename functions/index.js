@@ -3466,7 +3466,7 @@ exports.parteAcuseCoordinador = onDocumentWritten('partesDiarios/{id}', async (e
         `Recibido, ${nombre}. Tu parte del ${diaTxt(a.fecha)} llegó a las ${fRD(firma)}: ${personas} persona${personas === 1 ? '' : 's'}, ${horas} h en total.`,
         '',
         obrasT.length ? `Obras terminadas (${obrasT.length}): ${obrasT.map((i) => i.label).join(' · ')}. Ya quedaron cerradas en Instalación.` : '',
-        obrasP.length ? `Obras en pausa (${obrasP.length}): ${obrasP.map((i) => i.label + ' — vuelven el ' + fRegreso(i.regreso)).join(' · ')}.` : '',
+        obrasP.length ? `Obras en pausa (${obrasP.length}): ${obrasP.map((i) => i.label + (i.regreso ? ' — vuelven el ' + fRegreso(i.regreso) : ' — sin fecha de regreso todavía')).join(' · ')}.` : '',
         hechos.length ? `Cumplido hoy (${hechos.length}): ${hechos.map((i) => i.label).join(' · ')}.` : '',
         a.resumen.cumplido ? `Tus palabras: «${String(a.resumen.cumplido).slice(0, 300)}»` : '',
         '',

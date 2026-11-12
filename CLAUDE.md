@@ -2758,7 +2758,10 @@ faltaban, movimiento «Retomamos hoy») y «⏸ Pausar obra» (`toggleRetomar`/`
 `enviarParte` exigen todos, y si el parte trae horas en una obra abierta que no estaba en lo previsto la añade y vuelve al paso 1.
 Tras guardar el parte de HOY, `aplicarObras(items)` escribe en `instalaciones` lo mismo que los botones: terminada → completado
 (`validadoPor/validadoFecha/estadoPor/estadoFecha`, `cerradoDesde:'parte'`) y el trigger `pedidoSigueTrabajo` cierra el pedido;
-pausa → `fecha` = regreso 08:00, `retomas` arrayUnion (`desde:'parte'`), en_proceso + inicioReal si faltaban, asignado el que envía;
+pausa CON fecha → `fecha` = regreso 08:00, `retomas` arrayUnion (`desde:'parte'`), en_proceso + inicioReal si faltaban, asignado el que envía;
+pausa SIN fecha (opcional, Dylan: «no siempre sabrán cuándo podrán retomar») → `fecha: null`, `enPausa:true`, `pausadoDesde/Por` (sale
+del plan diario y de los pendientes hasta «Retomamos hoy» o una fecha; en Instalación botón «Sin fecha todavía» = `pausarSinFecha`;
+`retomarHoy`/`retomarJob` ponen `enPausa:false`);
 movimiento en `movimientosInstalaciones` en ambos casos. El acuse nocturno (`parteAcuseCoordinador`) y el informe matinal
 (`coordinador.js` `previsto[]`) distinguen «obra TERMINADA / PAUSADA (vuelven el …) / no fueron». Guías `guia-instalacion-02` y
 `guia-parte-diario-01` actualizadas. Probado en `?demo=midia`: Niza → completado, Plaza Manuela → en proceso con fecha del lunes.

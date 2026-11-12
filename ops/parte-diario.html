@@ -535,7 +535,7 @@
             const chipF = (d, txt) => { const v = ymd(d); return `<button type="button" class="${it.regreso === v ? 'on' : ''}" onclick="resRegreso(${i}, '${v}'); renderResumen()">${txt}</button>`; };
             return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub} · ¿cómo quedó la obra?</div>
                 <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" class="${eo === 'terminada' ? 'on-si' : ''}" onclick="resObra(${i}, 'terminada')">✅ Terminada</button><button type="button" class="${eo === 'pausa' ? 'on-pausa' : ''}" onclick="resObra(${i}, 'pausa')">⏸ Pausada</button><button type="button" class="${eo === 'nofui' ? 'on-no' : ''}" onclick="resObra(${i}, 'nofui')">✖ No fuimos</button></div>
-                ${eo === 'pausa' ? `<div class="s" style="margin-top:10px">¿Qué día vuelven?</div><div class="chips" style="margin-top:6px">${chipF(man, 'Mañana')}${chipF(lun, 'El lunes')}<input type="date" class="inp" style="margin:0;flex:1;min-width:150px;min-height:40px;padding:6px 10px" value="${esc(it.regreso || '')}" min="${ymd(man)}" onchange="resRegreso(${i}, this.value); renderResumen()"></div>` : ''}
+                ${eo === 'pausa' ? `<div class="s" style="margin-top:10px">¿Qué día vuelven? <span style="color:var(--md-mut)">(si ya lo saben)</span></div><div class="chips" style="margin-top:6px"><button type="button" class="${!it.regreso ? 'on' : ''}" onclick="resRegreso(${i}, ''); renderResumen()">Sin fecha todavía</button>${chipF(man, 'Mañana')}${chipF(lun, 'El lunes')}<input type="date" class="inp" style="margin:0;flex:1;min-width:150px;min-height:40px;padding:6px 10px" value="${esc(it.regreso || '')}" min="${ymd(man)}" onchange="resRegreso(${i}, this.value); renderResumen()"></div>` : ''}
                 ${eo === 'nofui' ? motivosHtml(it, i) : ''}</div>`;
         }).join('');
         p1.innerHTML = `<p class="q">¿Cómo quedó el día?</p><p class="qs">Cada obra se cierra o se pausa con fecha. Lo demás, hecho o no.</p>${its || '<div class="item"><div class="n">Nada previsto en el sistema para hoy</div><div class="s">Cuenta el día en el paso siguiente.</div></div>'}<button class="cta" onclick="pasoSiguiente(1)">Siguiente</button>`;
@@ -559,15 +559,18 @@
                     if (j.estado === 'completado') continue;
                     await updateDoc(ref, { estado: 'completado', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: ahora, cerradoDesde: 'parte', ...(j.inicioReal ? {} : { inicioReal: ahora }) });
                     await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota: 'Obra terminada (marcada al cerrar el día en Mi día)', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
-                } else if (it.estadoObra === 'pausa' && it.regreso) {
-                    const cuando = new Date(it.regreso + 'T08:00:00');
+                } else if (it.estadoObra === 'pausa') {
+                    // Con fecha: queda agendada ese día (como «Pausar obra» + fecha). Sin fecha (Dylan 2026-11-12: «no siempre sabrán cuándo
+                    // podrán retomar»): queda en pausa sin fecha (enPausa, fecha null) hasta que alguien la retome o le ponga día.
                     const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
                     const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
-                    const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: new Date().toISOString(), desde: 'parte' }) };
+                    const cuando = it.regreso ? new Date(it.regreso + 'T08:00:00') : null;
+                    const cambios = { modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', enPausa: !cuando, pausadoDesde: ahora, pausadoPor: usuario.nombre,
+                        ...(cuando ? { fecha: Timestamp.fromDate(cuando), retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: new Date().toISOString(), desde: 'parte' }) } : { fecha: null }) };
                     if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = ahora; }
                     if (!j.inicioReal) cambios.inicioReal = ahora;
                     await updateDoc(ref, cambios);
-                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Obra pausada al cerrar el día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }), por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: cuando ? 'Obra pausada al cerrar el día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Obra pausada al cerrar el día, sin fecha de regreso todavía', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
                 }
             } catch (e) { console.warn('aplicarObras', j.id, e); }
         }
@@ -575,7 +578,6 @@
     window.pasoSiguiente = function (n) {
         if (n === 1) {
             const sinObra = resumenActual.items.filter(i => i.ref.startsWith('inst:') && !i.estadoObra); if (sinObra.length) { alert('Di cómo quedó la obra (Terminada, Pausada o No fuimos): ' + sinObra.map(i => i.label).join(' · ')); return; }
-            const sinRegreso = resumenActual.items.filter(i => i.estadoObra === 'pausa' && !i.regreso); if (sinRegreso.length) { alert('Pon el día en que vuelven a: ' + sinRegreso.map(i => i.label).join(' · ')); return; }
             const sinMarcar = resumenActual.items.filter(i => !i.ref.startsWith('inst:') && i.hecho == null); if (sinMarcar.length) { alert('Marca Hecho o No en: ' + sinMarcar.map(i => i.label).join(' · ')); return; }
             const sinMotivo = resumenActual.items.filter(i => i.hecho === false && !i.motivo); if (sinMotivo.length) { alert('Elige por qué no: ' + sinMotivo.map(i => i.label).join(' · ')); return; }
             setPaso(2); return;

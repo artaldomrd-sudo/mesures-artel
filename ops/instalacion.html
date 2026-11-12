@@ -915,7 +915,7 @@
                 sec.push(`<button onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>`);
                 return principal + `<div class="acciones-sec">${sec.join('')}</div>`;
             })()}
-            ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">Obra en pausa. ¿Qué día vuelven?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar</button></div>` : ''}
+            ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">Obra en pausa. ¿Qué día vuelven?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar</button><button class="mini-btn" style="background:#f0f3f7;color:var(--artal-blue)" onclick="pausarSinFecha('${j.id}')">Sin fecha todavía</button></div>` : ''}
             ${(puedeCambiarEstado && (!hist || esOficina)) ? `
             <details class="mas" ${esOficina ? 'open' : ''}><summary>Más opciones</summary>
             <div class="admin-row">
@@ -2172,11 +2172,21 @@
         const cuando = new Date();
         const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
         const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
-        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: cuando.toISOString(), hoy: true }) };
+        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, enPausa: false, asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: cuando.toISOString(), hoy: true }) };
         if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = serverTimestamp(); }
         if (!j.inicioReal) cambios.inicioReal = serverTimestamp();
         try { await updateDoc(doc(db, 'instalaciones', jobId), cambios); await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Retomamos hoy', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() }); }
         catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
+    };
+    // Pausar sin fecha (Dylan 2026-11-12): la obra queda en proceso, sin fecha (tile «Sin fecha»), fuera del plan diario hasta que alguien
+    // la retome («Retomamos hoy») o le ponga día. Mi día también puede dejarla así al cerrar el día.
+    window.pausarSinFecha = async function (jobId) {
+        const j = allJobs.find(x => x.id === jobId); if (!j) return;
+        try {
+            await updateDoc(doc(db, 'instalaciones', jobId), { fecha: null, modoFecha: 'unica', fechaFin: null, enPausa: true, pausadoDesde: serverTimestamp(), pausadoPor: usuario.nombre, ...(j.estado !== 'en_proceso' ? { estado: 'en_proceso', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: serverTimestamp() } : {}), ...(j.inicioReal ? {} : { inicioReal: serverTimestamp() }) });
+            await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: jobId, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: 'Obra pausada, sin fecha de regreso todavía', por: usuario.nombre, porEmail: usuario.email, fecha: serverTimestamp() });
+            const row = document.getElementById('retomar-' + jobId); if (row) row.style.display = 'none';
+        } catch (e) { alert('No se pudo: ' + (e && e.message ? e.message : e)); }
     };
     window.retomarJob = async function (jobId) {
         const j = allJobs.find(x => x.id === jobId); if (!j) return;
@@ -2185,7 +2195,7 @@
         const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
         const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
         const txt = cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) + ' ' + cuando.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
-        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '',
+        const cambios = { fecha: Timestamp.fromDate(cuando), modoFecha: 'unica', fechaFin: null, enPausa: false, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '',
             retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: new Date().toISOString() }) };
         if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = serverTimestamp(); if (!j.inicioReal) cambios.inicioReal = serverTimestamp(); }
         try {

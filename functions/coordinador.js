@@ -105,7 +105,7 @@ async function recogerDatos(lector, hoy) {
         // Resumen del día (Mi día, 2026-11-11): lo que cada encargado marcó como cumplido / no cumplido al cerrar la jornada.
         resumen: p.resumen ? {
             cumplido: rec(p.resumen.cumplido, 400), noCumplido: rec(p.resumen.noCumplido, 400),
-            previsto: (Array.isArray(p.resumen.items) ? p.resumen.items : []).slice(0, 20).map((i) => (i.estadoObra === 'terminada' ? '✅ obra TERMINADA: ' : i.estadoObra === 'pausa' ? '⏸ obra PAUSADA (vuelven el ' + (i.regreso || '?') + '): ' : i.estadoObra === 'nofui' ? '✖ no fueron: ' : (i.hecho ? '✅ ' : '❌ ')) + rec(i.label, 70) + (!i.hecho && i.motivo ? ' (' + i.motivo + (i.nota ? ': ' + rec(i.nota, 60) : '') + ')' : '')),
+            previsto: (Array.isArray(p.resumen.items) ? p.resumen.items : []).slice(0, 20).map((i) => (i.estadoObra === 'terminada' ? '✅ obra TERMINADA: ' : i.estadoObra === 'pausa' ? '⏸ obra PAUSADA (' + (i.regreso ? 'vuelven el ' + i.regreso : 'sin fecha de regreso: la oficina decide cuándo') + '): ' : i.estadoObra === 'nofui' ? '✖ no fueron: ' : (i.hecho ? '✅ ' : '❌ ')) + rec(i.label, 70) + (!i.hecho && i.motivo ? ' (' + i.motivo + (i.nota ? ': ' + rec(i.nota, 60) : '') + ')' : '')),
             enviadoA: fechaTxt(p.resumen.fechaISO),
         } : null,
     });
