@@ -2747,6 +2747,26 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### Capa de claridad en todas las pantallas (2026-11-12)
+
+Dylan: «revisa todo el sistema y opera mejoras similares en todas las áreas: procesos más claros, cortos y sencillos; eficiencia,
+fluidez y rapidez; que mañana cada persona entienda cómo proceder». Hecho esta noche, con el mismo lenguaje que «Mi día»:
+- **`ops/shared.css` (bloque «CAPA DE CLARIDAD» al final, versión `?v=20261112` en las 86 páginas)**: cabecera de UNA línea (52 px,
+  sticky, logo 26, título con elipsis; en ≤ 640 px se ocultan el nombre de usuario y los textos de 🔔/⏻/‹, quedan iconos de 36 px);
+  `.actions button` 48 px y 15 px; **`.btn-deshacer` pasa a texto subrayado a lo ancho** (secundario que no compite); clases nuevas
+  para todas las pantallas: `.btn-primaria` (amarillo ARTAL, ancho completo), `.acciones-sec` (fila de secundarios como texto azul),
+  `details.mas` («⋯ Más opciones» plegado). Probado con una página de prueba temporal en móvil y escritorio (borrada).
+- **Instalación (`jobCardHTML`)**: UNA acción principal por estado — pendiente «▶ Empezamos hoy»; en proceso «✅ Terminamos»
+  (`cambiarEstado(id,'completado')`, abre la ventana de horas) — y secundarios como texto («🙋 Lo tomo yo», «↩ Volvemos otro día»
+  = `toggleRetomar`, «🔔 Recordatorio»); el `admin-row` (select de estado, reprogramar, editar, eliminar) va dentro de `details.mas`
+  (abierto para oficina, plegado para el equipo). La fila de acciones del pedido (`orderCardHTML`) pasa a `.acciones-sec`.
+- **Transportes**: `.btn-enruta` amarillo (principal al cargar), «Entregado» verde (principal al descargar), «No está listo» / «No va
+  en ruta» como texto por la capa común; «Entregado» deshabilitado en gris plano.
+- Guías `guia-instalacion-02` y `guia-transportes-01` con el apartado «CAMBIO 12/11/2026». El comunicado al equipo quedó redactado
+  para que Dylan lo envíe (no se mandó solo: es un mensaje en su nombre).
+- Pendiente (segunda vuelta, misma lógica): pantallas de oficina (Cotizaciones, Compras, Historial, Panel) y Fábrica interna; no se
+  tocaron esta noche porque no se pueden verificar sin sesión (espejos con clave vencida).
+
 ### «Mi día»: plan + pendientes de registro + resumen del día en el parte (2026-11-11)
 
 Dylan (tras la reunión de seguimiento de Wilson): «que su parte diario lo haga directo en la sesión del Coordinador: a las 5:30 le aparece

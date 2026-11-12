@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20260806">
+<link rel="stylesheet" href="shared.css?v=20261112">
 <style>
     main { max-width: 720px; }
     /* Pestañas */
@@ -907,9 +907,17 @@
             ${(puedeCambiarEstado && (!hist || esOficina)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && estado === 'pendiente') ? `<button class="btn-tomar" style="background:#1f6aa5" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy (la agenda vieja no castiga)">▶ Empezamos hoy</button>` : ''}${(puedeCambiarEstado && estado === 'pendiente' && !asignadaAMi(j)) ? `<button class="btn-tomar" onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>` : ''}${(puedeCambiarEstado && estado === 'en_proceso') ? `<button class="btn-tomar" style="background:#8e44ad" onclick="toggleRetomar('${j.id}')" title="Fija el día en que vuelven a terminar; te suma como asignado si no lo estabas">↩ Retomar</button>` : ''}</div>
+            ${(() => {   // Capa de claridad (2026-11-12): UNA acción principal según el estado; lo demás como texto o plegado en «Más opciones».
+                if (!puedeCambiarEstado) return `<div class="acciones-sec"><button onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button></div>`;
+                let principal = '', sec = [];
+                if (estado === 'pendiente') { principal = `<button class="btn-primaria" onclick="empezarHoy('${j.id}')" title="Pasa a En proceso, te suma como asignado y pone la fecha de hoy">▶ Empezamos hoy</button>`; if (!asignadaAMi(j)) sec.push(`<button onclick="tomarTrabajo('${j.id}')">🙋 Lo tomo yo</button>`); }
+                else if (estado === 'en_proceso') { principal = `<button class="btn-primaria" onclick="cambiarEstado('${j.id}', 'completado')">✅ Terminamos</button>`; sec.push(`<button onclick="toggleRetomar('${j.id}')" title="Fija el día en que vuelven a terminar">↩ Volvemos otro día</button>`); }
+                sec.push(`<button onclick="abrirRecTrabajo('${j.id}')">🔔 Recordatorio</button>`);
+                return principal + `<div class="acciones-sec">${sec.join('')}</div>`;
+            })()}
             ${(puedeCambiarEstado && estado === 'en_proceso') ? `<div class="reprog-row" id="retomar-${j.id}"><span style="font-size:12.5px;color:#556">¿Qué día vuelven a terminar?</span><input type="datetime-local" id="retomar-input-${j.id}"><button class="mini-btn" onclick="retomarJob('${j.id}')">Guardar regreso</button></div>` : ''}
             ${(puedeCambiarEstado && (!hist || esOficina)) ? `
+            <details class="mas" ${esOficina ? 'open' : ''}><summary>Más opciones</summary>
             <div class="admin-row">
                 ${estado === 'completado' ? `<button class="btn-reabrir" onclick="cambiarEstado('${j.id}', 'pendiente')">↩ Reabrir</button>` : `
                 <select onchange="cambiarEstado('${j.id}', this.value)">
@@ -922,7 +930,7 @@
             <div class="reprog-row" id="reprog-${j.id}">
                 <input type="datetime-local" id="reprog-input-${j.id}">
                 <button class="mini-btn" onclick="reprogramarJob('${j.id}')">Guardar fecha</button>
-            </div>` : ''}
+            </div></details>` : ''}
         </div>`;
     }
 
@@ -1042,7 +1050,7 @@
                 ${puedeCambiarEstado ? fotoAddBtnHTML({ coleccion: 'orders', id, campo: 'pedidoVidriosPDF', pdf: true, label: '📎 Subir PDF pedido de vidrios' }) : ''}
             </div>
             ${recInlineHTML(recsCache.filter(c => c.orderId === id))}
-            <div class="card-actions"><button class="btn-rec" onclick="abrirRecObra('${id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && !esCompra && !asignadaAMi({ asignados: o.asignadosInstalador, instaladorEmail: o.asignadoInstaladorEmail })) ? `<button class="btn-tomar" onclick="tomarObra('${id}')">🙋 Lo tomo yo</button>` : ''}</div>
+            <div class="acciones-sec"><button onclick="abrirRecObra('${id}')">🔔 Recordatorio</button>${(puedeCambiarEstado && !esCompra && !asignadaAMi({ asignados: o.asignadosInstalador, instaladorEmail: o.asignadoInstaladorEmail })) ? `<button class="btn-tomar" onclick="tomarObra('${id}')">🙋 Lo tomo yo</button>` : ''}</div>
             ${esAdmin ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">
                 <span style="font-size:12.5px;font-weight:bold;color:var(--artal-blue)">👷 Instalador <span style="font-weight:normal;color:#8a93a0">(opcional)</span>:</span>
                 <select id="asig-inst-${id}" style="padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:13px;min-height:40px;background:#fff">
