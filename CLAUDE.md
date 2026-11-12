@@ -2762,6 +2762,14 @@ el momento que se suben».
   pendientes como fichas «terminadas hoy» (`resMision`, `item.misionesHechas[]`); `aplicarObras` las marca terminadas (todas si la obra
   queda terminada). Coordinador: `trabajo().misiones` «PENDIENTE: … · terminada: …». Datos: Jardines de la bonita (`fT9NUMEGk0JJnWtGFHvp`)
   recibió 2 misiones (terminar el techo grande; desmontaje de vidrios y prensas de suelo para que el cliente cambie las cerámicas).
+- **Conversación tipo WhatsApp (Dylan 2026-11-12, «si escriben "listo, ventana instalada" y suben foto, la foto se sube justo después
+  y con un clic se agranda»)**: el compositor del hilo lleva «📷 Foto» (solo `instalaciones`) + «Enviar ➤»; los archivos elegidos se ven
+  como miniaturas pendientes (`hiloPend`, `hiloAdjuntar`, `hiloQuitarAdj`) y `hiloEnviar` sube con `subirFotos` y escribe UN mensaje
+  `{texto, fotos[]}` (texto vacío → «📷»), sumando las fotos también a la galería `fotos` del trabajo en el mismo `updateDoc`.
+  **Visor** `#foto-lb` (`lbAbrir/lbCerrar/lbMover`, delegación de clic en `.coment-fotos a` y `.fotos-thumbs .foto-thumb a` con `<img>`;
+  PDF/documentos siguen abriendo aparte): pantalla completa, ‹ › entre las fotos del mismo mensaje o de la galería, pie «Miki · fecha ·
+  1 / 2», Esc/flechas. Probado con una página temporal (borrada). Jardines de la bonita: misión del techo grande marcada terminada
+  (según foto y comentario de Miki) y misión nueva «Techo reinstalado (estructura de madera frente a la piscina)».
 - **Fotos en el hilo**: `ops/fotos.js` `__subirFotos` llama al gancho `window.__alSubirFotos(coleccion, id, nuevas, campo)` si existe;
   Instalación lo define (`fotos.js?v=20261112`): cada subida a `instalaciones` añade un mensaje a `comentariosInstalador` con `fotos[]
   {url, tipo, nombre}` y texto «📷 N fotos»; `hiloHTML` pinta las fotos dentro del mensaje (`.coment-fotos`, 150×110, abren en pestaña).
