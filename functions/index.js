@@ -842,7 +842,7 @@ function hoySantoDomingo() {
     const g = (t) => (p.find((x) => x.type === t) || {}).value;
     return { fecha: `${g('year')}-${g('month')}-${g('day')}`, domingo: g('weekday') === 'Sun' };
 }
-async function recordarParteDiario(avisarAdmin) {
+async function recordarParteDiario(avisarAdmin, texto) {
     const { fecha, domingo } = hoySantoDomingo();
     if (domingo) return;
     const fer = await db.collection('rrhhFeriados').where('fecha', '==', fecha).limit(1).get();
@@ -863,12 +863,15 @@ async function recordarParteDiario(avisarAdmin) {
         // Trabajó bajo otro encargado ese día (lo incluyó en su parte) → no le toca enviar el suyo.
         if (delDia.some((x) => !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em))) continue;
         faltan.push(e);
-        await enviarPushUsuario(e.email, '📝 Falta el parte diario de hoy', 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
+        await enviarPushUsuario(e.email, (texto && texto.titulo) || '📝 Falta el parte diario de hoy', (texto && texto.cuerpo) || 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
     }
     if (avisarAdmin && faltan.length) {
         await pushATokens(await tokensPorRol('admin'), '📝 Partes diarios sin enviar', 'Faltan: ' + faltan.map((e) => e.nombre || e.email).join(', '), 'ops/parte-diario.html');
     }
 }
+// Mi día (2026-11-11): a las 17:30, antes de salir de la obra, el aviso que abre la pantalla con el plan del día, los pendientes de
+// registro y el parte con su resumen (cumplido / no cumplido). Los de las 18:00 y 18:30 siguen igual (falta + aviso a gerencia).
+exports.parteDiario1730 = onSchedule({ schedule: '30 17 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(false, { titulo: '📝 Antes de salir: parte y resumen del día', cuerpo: 'Marca lo que se cumplió y lo que no, pon las horas del equipo y envía. Con eso el Coordinador arma el plan de mañana.' }); });
 exports.parteDiario18 = onSchedule({ schedule: '0 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(false); });
 exports.parteDiario1830 = onSchedule({ schedule: '30 18 * * 1-6', timeZone: 'America/Santo_Domingo' }, async () => { await recordarParteDiario(true); });
 
@@ -3431,6 +3434,49 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }));
 
 if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));
+
+// Mi día (2026-11-11): cuando un encargado envía su parte CON resumen del día, el Coordinador le contesta en minutos con un acuse corto
+// (recibido + lo que marcó + lo que tiene mañana). Sin IA: texto armado con datos, barato y siempre igual. Un acuse por envío de resumen
+// (se repite solo si vuelve a enviar con un resumen distinto). Quien reporta y recibe respuesta sigue reportando.
+exports.parteAcuseCoordinador = onDocumentWritten('partesDiarios/{id}', async (event) => {
+    const a = event.data.after.exists ? event.data.after.data() : null; if (!a || a.borrador === true || !a.resumen || !a.encargadoEmail) return;
+    const firma = String(a.resumen.fechaISO || '');
+    if (!firma || a.acuseCoordinador === firma) return;
+    const em = String(a.encargadoEmail).toLowerCase();
+    const nombre = (a.encargadoNombre || '').split(' ')[0] || 'encargado';
+    const fRD = (iso) => { try { return new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santo_Domingo' }); } catch (_) { return ''; } };
+    const diaTxt = (ymd) => { try { return new Date(ymd + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (_) { return ymd; } };
+    const manana = (() => { const d = new Date(a.fecha + 'T12:00:00'); d.setDate(d.getDate() + (d.getDay() === 6 ? 2 : 1)); return d.toISOString().slice(0, 10); })();
+    const lineas = Array.isArray(a.lineas) ? a.lineas : [];
+    const horas = lineas.reduce((t, l) => t + (l.tipo === 'ausente' ? 0 : (Number(l.horas) || 0)), 0);
+    const personas = new Set(lineas.map((l) => l.empleadoId)).size;
+    const items = Array.isArray(a.resumen.items) ? a.resumen.items : [];
+    const hechos = items.filter((i) => i.hecho), noHechos = items.filter((i) => !i.hecho);
+    // Mañana: trabajos abiertos asignados a esta persona con fecha = mañana (o en proceso con retoma mañana).
+    let mananaTxt = [];
+    try {
+        const snap = await db.collection('instalaciones').where('estado', 'in', ['pendiente', 'en_proceso']).limit(300).get();
+        const ymdDe = (v) => { const d = v && v.toDate ? v.toDate() : (v ? new Date(v) : null); if (!d || isNaN(d)) return ''; return new Date(d.getTime() - 4 * 3600e3).toISOString().slice(0, 10); };
+        snap.docs.map((d) => d.data()).filter((j) => (Array.isArray(j.asignados) ? j.asignados : []).some((x) => String(x && x.email || '').toLowerCase() === em) || String(j.instaladorEmail || '').toLowerCase() === em)
+            .forEach((j) => { const f = ymdDe(j.fecha); const r = Array.isArray(j.retomas) && j.retomas.length ? ymdDe(j.retomas[j.retomas.length - 1]) : ''; if (f === manana || r === manana || (j.estado === 'en_proceso' && !r && f && f < manana)) mananaTxt.push([j.cliente, j.obra].filter(Boolean).join(' — ') + (j.estado === 'en_proceso' ? ' (sigue en proceso)' : '')); });
+    } catch (e) { console.error('parteAcuseCoordinador mañana', e); }
+    const cuerpo = [
+        `Recibido, ${nombre}. Tu parte del ${diaTxt(a.fecha)} llegó a las ${fRD(firma)}: ${personas} persona${personas === 1 ? '' : 's'}, ${horas} h en total.`,
+        '',
+        hechos.length ? `Cumplido hoy (${hechos.length}): ${hechos.map((i) => i.label).join(' · ')}.` : '',
+        a.resumen.cumplido ? `Tus palabras: «${String(a.resumen.cumplido).slice(0, 300)}»` : '',
+        '',
+        noHechos.length ? `No cumplido (${noHechos.length}): ${noHechos.map((i) => i.label + (i.motivo ? ' — ' + i.motivo + (i.nota ? ': ' + i.nota : '') : '')).join(' · ')}.` : 'No marcaste nada como no cumplido.',
+        a.resumen.noCumplido && !/^nada\.?$/i.test(String(a.resumen.noCumplido).trim()) ? `«${String(a.resumen.noCumplido).slice(0, 300)}»` : '',
+        '',
+        `Mañana ${diaTxt(manana)} tienes a tu nombre: ${mananaTxt.length ? mananaTxt.slice(0, 6).join(' · ') : 'nada agendado todavía'}. Lo que quedó pendiente hoy lo verás en el informe de las 7:50 con la propuesta para resolverlo.`,
+        '',
+        '— Coordinador de Obras',
+    ].filter((l, i, arr) => !(l === '' && arr[i - 1] === '')).join('\n');
+    const asunto = `✅ Recibido tu parte del ${a.fecha.slice(8, 10)}/${a.fecha.slice(5, 7)} · mañana`;
+    await db.collection('mensajes').add({ estado: 'enviado', asunto, cuerpo, remitenteEmail: 'coordinador@artal', remitenteNombre: 'Coordinador de Obras (IA)', fecha: FieldValue.serverTimestamp(), paraTodos: false, destinatarios: [em], requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'aviso_coordinador', parteId: event.params.id, generadoPor: 'parteAcuseCoordinador' });
+    await event.data.after.ref.update({ acuseCoordinador: firma, acuseCoordinadorFecha: FieldValue.serverTimestamp() });
+});
 
 // Coordinador de Obras: informe matinal en el servidor (2026-10-30; antes rutina local de la app de Claude). Ver functions/coordinador.js.
 Object.assign(exports, require('./coordinador')({ db, FieldValue, onSchedule, onRequest, anthropicKey, callerAdmin }));

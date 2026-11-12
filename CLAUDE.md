@@ -2747,6 +2747,34 @@ Todo vive en `functions/index.js` (bloque Citrus) y en `ops/citrus.html` (secci�
   `gastosFijosAutomaticos` (7:30 am RD) crea el movimiento sola el día de pago; los manuales siguen con
   "Registrar este mes".
 
+### «Mi día»: plan + pendientes de registro + resumen del día en el parte (2026-11-11)
+
+Dylan (tras la reunión de seguimiento de Wilson): «que su parte diario lo haga directo en la sesión del Coordinador: a las 5:30 le aparece
+el recuadro, lo rellena y pone "lo que se pudo cumplir hoy" y "lo que no se cumplió"; de ahí el Coordinador me hace el informe matinal;
+mismo proceso para Wilson y Miki, cada uno por su lado, y se cruzan». UN SOLO ENVÍO: todo vive en `ops/parte-diario.html` (título «Mi día ·
+Parte diario de obra», enlace de Instalación «📋 Mi día · Parte diario»), solo para el encargado que está viendo su propio parte (no admin):
+- **Arriba `#mi-dia`** (`renderMiDia`): el informe matinal de hoy dirigido a él (`mensajes` tipo `informe_coordinador`, consulta
+  `destinatarios array-contains` + filtro en memoria; si el texto nombra a la persona se muestran sus líneas y el completo plegado; abrirlo o
+  verlo escribe el MISMO acuse que Mensajería, `acuses.<clave> {leido, fecha, desde:'mi-dia'}` → puntos y seguimiento lo cuentan igual), los
+  avisos del Coordinador de ayer/hoy, **🎯 Previsto hoy** (`planDeHoy`: trabajos asignados agendados hoy / atrasados / en proceso sin retoma
+  futura; recordatorios asignados hasta hoy; si tiene rol chofer: pedidos en ruta por entregar, listos por cargar (`esMioPedido`: sin chofer o él,
+  no externo/hilux/contratista) y pedidos de material en estado `chofer`) y **🧹 Pendientes de registro** (`pendientesRegistro`: pedido ≥ 1 día
+  en ruta → botón «Entregado ✓» `regEntregado` (entregado, fechaEntregado, recepcionInstalador, entregas[], `entregadoDesde:'mi-dia'`);
+  trabajo ≥ 5 días en proceso sin retoma → enlace a Instalación; recordatorio vencido → «Hecho ✓» `regCitaHecha` (completadoPor / completada)).
+- **Abajo `#resumen-dia`** (`renderResumen`, antes de la nota): una fila por cosa prevista con ✅ / ❌ (`resumenActual.items {ref, label, hecho,
+  motivo, nota}`; ❌ abre el select `MOTIVOS` material/cliente/otra_obra/lluvia/personal/oficina/transporte/otro + detalle) y dos cajas «✅ Lo que se
+  pudo cumplir hoy» / «❌ Lo que NO se cumplió hoy». En el parte de HOY `enviarParte` EXIGE: todo marcado, motivo en cada ❌ y las dos cajas (≥ 3
+  caracteres; «Nada» vale). Se guarda en el MISMO doc: `partesDiarios.resumen {items[], cumplido, noCumplido, fechaISO, por}`; al reabrir un parte
+  con resumen se muestra tal cual; si el plan crece durante el día se suman ítems sin perder lo marcado. Correcciones de días pasados no lo exigen.
+- **Servidor** (`functions/index.js`): `parteDiario1730` (onSchedule 17:30 L–S) = `recordarParteDiario(false, texto)` con el aviso «Antes de salir:
+  parte y resumen del día»; `parteAcuseCoordinador` (onDocumentWritten partesDiarios): parte no borrador con `resumen.fechaISO` ≠ `acuseCoordinador`
+  → mensaje `aviso_coordinador` SIN IA («Recibido, Wilson. Tu parte … llegó a las 17:42: N personas, X h. Cumplido: … No cumplido: … (motivo).
+  Mañana tienes a tu nombre: …») y marca `acuseCoordinador`. `functions/coordinador.js`: `parte()` lleva `resumen {cumplido, noCumplido, previsto[],
+  enviadoA}` y `FORMATO_INFORME` pide cruzar los resúmenes de Wilson y Miki entre sí y con el plan de ayer, citando sus palabras. Deploy pendiente
+  de Dylan: `firebase deploy --only functions:parteDiario1730,functions:parteAcuseCoordinador,functions:coordinadorInformeDiario,functions:coordinadorInformeAhora`.
+- Guía `guia-parte-diario-01` actualizada. Probado en `?demo=1` (plan, ❌ con motivo, validación en tres pasos, envío). Sin reglas nuevas (todo son
+  colecciones que el instalador ya escribe: partesDiarios, orders, citas, acuses de mensajes).
+
 ### Puntos del equipo y encuesta de satisfacción del cliente (2026-09-24)
 
 Primer paso del sistema de Nivel / bonificaciones (memoria `artal-nivel-rango-gamificacion`). Ledger `puntos` (ya lo

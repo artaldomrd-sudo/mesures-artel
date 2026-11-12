@@ -102,6 +102,12 @@ async function recogerDatos(lector, hoy) {
         incluidos: Array.isArray(p.incluidosEmails) ? p.incluidosEmails.length : (Array.isArray(p.personas) ? p.personas.length : ''),
         lineas: (Array.isArray(p.lineas) ? p.lineas : []).slice(0, 30).map((l) => rec([l.nombre || l.empleadoNombre || l.persona, l.obraLabel || l.obra || l.tipo, l.horas != null ? l.horas + ' h' : ''].filter(Boolean).join(' · '), 90)),
         nota: rec(p.nota, 160),
+        // Resumen del día (Mi día, 2026-11-11): lo que cada encargado marcó como cumplido / no cumplido al cerrar la jornada.
+        resumen: p.resumen ? {
+            cumplido: rec(p.resumen.cumplido, 400), noCumplido: rec(p.resumen.noCumplido, 400),
+            previsto: (Array.isArray(p.resumen.items) ? p.resumen.items : []).slice(0, 20).map((i) => (i.hecho ? '✅ ' : '❌ ') + rec(i.label, 70) + (!i.hecho && i.motivo ? ' (' + i.motivo + (i.nota ? ': ' + rec(i.nota, 60) : '') + ')' : '')),
+            enviadoA: fechaTxt(p.resumen.fechaISO),
+        } : null,
     });
     const abiertosC = abiertos.map(trabajo);
     const recientes = completados.map(trabajo).filter((t) => (t.validadoFecha || t.fechaFin || t.fecha).slice(0, 10) >= hace3);
@@ -179,6 +185,7 @@ INFORME MATINAL — <día> <dd/mm/aaaa> (generado a las <hora>)
 HOY EN OBRA (propuesta; Wilson confirma o cambia)
 - <equipo> → <obra>: <tarea>. …
 - Ayer, según los partes: <resumen por persona/obra>.
+- Ayer, según Wilson y Miki (su «resumen del día» en el parte, campo resumen): CRÚZALOS entre sí y con el plan de ayer: lo que uno marcó ✅ y el otro ❌, lo que quedó ❌ con su motivo (eso pasa a HOY o a una alerta con propuesta), y lo previsto ayer que ninguno mencionó. Cita sus palabras. Si un encargado no mandó resumen, dilo en una línea sin regañar.
 
 CLIMA (Las Terrenas, Open-Meteo)
 - la semana en una línea por día y los trabajos de los próximos 3 días con su riesgo; un trabajo ☔ RIESGO es una alerta A… con propuesta concreta.
