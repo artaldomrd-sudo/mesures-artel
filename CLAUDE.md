@@ -2774,6 +2774,12 @@ Parte diario de obra», enlace de Instalación «📋 Mi día · Parte diario»)
   de Dylan: `firebase deploy --only functions:parteDiario1730,functions:parteAcuseCoordinador,functions:coordinadorInformeDiario,functions:coordinadorInformeAhora`.
 - Guía `guia-parte-diario-01` actualizada. Probado en `?demo=1` (plan, ❌ con motivo, validación en tres pasos, envío). Sin reglas nuevas (todo son
   colecciones que el instalador ya escribe: partesDiarios, orders, citas, acuses de mensajes).
+- **Simulación guiada `parte-diario.html?demo=midia`** (sin login; para presentarla al equipo): el modo demo trae un día completo
+  (informe matinal de ejemplo, trabajos de hoy/atrasado/en proceso, pedido en ruta, recordatorio vencido, material al chofer) y una barra
+  inferior con 12 pasos (`PASOS`, `tourGo(n)`, «🔊 Leer» con `speechSynthesis` es-MX): 7:50 informe → previsto → pendientes → un toque
+  Entregado/Hecho → durante el día → 5:30 aviso (banner simulado) → ✅/❌ con motivos → horas → enviar → acuse del Coordinador (inyectado en
+  el store demo) → informe de mañana cruzado → fin. Los nombres del demo son solo de pila (Wilson/Miki) con correos y sueldos ficticios.
+  Video narrado (voz Paulina de macOS + ffmpeg de `imageio-ffmpeg`, pantallas del tour a 750×1624) entregado a Dylan el 11/11 por el chat.
 
 ### Puntos del equipo y encuesta de satisfacción del cliente (2026-09-24)
 
