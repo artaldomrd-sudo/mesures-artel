@@ -2770,6 +2770,11 @@ el momento que se suben».
   PDF/documentos siguen abriendo aparte): pantalla completa, ‹ › entre las fotos del mismo mensaje o de la galería, pie «Miki · fecha ·
   1 / 2», Esc/flechas. Probado con una página temporal (borrada). Jardines de la bonita: misión del techo grande marcada terminada
   (según foto y comentario de Miki) y misión nueva «Techo reinstalado (estructura de madera frente a la piscina)».
+- **Todas las fotos dentro de la conversación (Dylan: «siguen apareciendo arriba»)**: la tarjeta del trabajo ya NO lleva la galería ni el
+  botón «Agregar foto/PDF» arriba; `hiloHTML` arma una línea de tiempo con los mensajes y las fotos de `fotos[]` que no estén en ningún
+  mensaje, cada una en su momento de subida (`fotoFechaISO`: el nombre del archivo en Storage lleva el epoch en ms, `…%2F1792416081715_x.jpg`),
+  agrupando en un bloque «📷 N fotos · fecha» las subidas con menos de 10 min de diferencia; sin fecha reconocible van al principio.
+  Borrar (✕ sobre la foto) solo oficina. Los pedidos (`orders`) conservan su galería.
 - **Fotos en el hilo**: `ops/fotos.js` `__subirFotos` llama al gancho `window.__alSubirFotos(coleccion, id, nuevas, campo)` si existe;
   Instalación lo define (`fotos.js?v=20261112`): cada subida a `instalaciones` añade un mensaje a `comentariosInstalador` con `fotos[]
   {url, tipo, nombre}` y texto «📷 N fotos»; `hiloHTML` pinta las fotos dentro del mensaje (`.coment-fotos`, 150×110, abren en pestaña).

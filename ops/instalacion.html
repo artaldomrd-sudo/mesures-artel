@@ -158,7 +158,8 @@
     .coment-row { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
     .coment-row .adj { display: inline-flex; align-items: center; gap: 6px; background: #f0f3f7; color: var(--artal-blue); border-radius: 10px; padding: 9px 12px; font-weight: bold; font-size: 14px; cursor: pointer; min-height: 42px; box-sizing: border-box; }
     .coment-pend { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; } .coment-pend img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1.5px solid #cfd8e3; } .coment-pend .n { font-size: 12.5px; color: #556; align-self: center; }
-    .coment-item .coment-fotos a img { cursor: zoom-in; }
+    .coment-item .coment-fotos a img { cursor: zoom-in; } .coment-fotos a { position: relative; display: inline-block; } .coment-fotos .foto-del { position: absolute; top: -6px; right: -6px; }
+    .coment-item.foto-solo { background: #f3f5f8; }
     #foto-lb { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,.92); display: none; align-items: center; justify-content: center; flex-direction: column; }
     #foto-lb.show { display: flex; } #foto-lb img { max-width: 100vw; max-height: 84vh; object-fit: contain; }
     #foto-lb .lb-x { position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: #fff; font-size: 24px; cursor: pointer; }
@@ -972,8 +973,6 @@
             ${misionesHTML(j, puedeCambiarEstado && (!hist || esOficina))}
             ${navHtml}
             ${recInlineHTML(recsCache.filter(c => c.instalacionId === j.id))}
-            ${fotosThumbsHTML(j.fotos, { coleccion: 'instalaciones', id: j.id, puedeBorrar: puedeCambiarEstado })}
-            ${(puedeCambiarEstado && (!hist || esOficina)) ? fotoAddBtnHTML({ coleccion: 'instalaciones', id: j.id, pdf: true }) : ''}
             ${completarHtml}
             ${hiloHTML('instalaciones', j.id, j)}
             ${(() => {   // Capa de claridad (2026-11-12): UNA acción principal según el estado; lo demás como texto o plegado en «Más opciones».
@@ -2119,13 +2118,27 @@
     // ese borrador tras cualquier repintado, y Enviar lee del borrador si el cuadro ya no está.
     const hiloBorradores = {};
     document.addEventListener('input', (e) => { const t = e.target; if (t && t.classList && t.classList.contains('coment-ta') && t.id) hiloBorradores[t.id] = t.value; });
+    // Fecha de subida de una foto de Storage: el nombre del archivo lleva el epoch en ms (`instalaciones%2F<id>%2F1792416081715_xxx.jpg`).
+    const fotoFechaISO = (f) => { const m = /%2F(\d{13})_/.exec(f && f.url || ''); return m ? new Date(Number(m[1])).toISOString() : ''; };
+    const fotosHtmlDe = (fotos, col, id, puedeBorrar) => `<div class="coment-fotos">${fotos.map(f => (f.tipo === 'img' || (!f.tipo && !/\.pdf(\?|$)/i.test(f.url || ''))) ? `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.nombre || 'foto')}" loading="lazy">${puedeBorrar ? `<button class="foto-del" title="Quitar" onclick="event.preventDefault();event.stopPropagation();__borrarFoto('${esc(col)}','${esc(id)}','${esc(f.url)}','fotos')">×</button>` : ''}</a>` : `<a class="doc" href="${esc(f.url)}" target="_blank" rel="noopener">📄 ${esc(f.nombre || 'archivo')}</a>`).join('')}</div>`;
     function hiloHTML(col, id, d) {
         const arr = hiloMsgs(d), vistos = Number((d.leidoPor || {})[claveEmail(usuario.email)]) || 0;
         const nuevos = hiloNoLeidos(d).length;
-        const items = arr.map((cm, i) => {
+        const puedeBorrar = col === 'instalaciones' && esOficina;
+        // Línea de tiempo tipo WhatsApp (Dylan 2026-11-12): mensajes + fotos de la galería que no están en ningún mensaje, cada una en su
+        // momento de subida. Así las fotos viejas también quedan dentro de la conversación y no en una franja aparte arriba.
+        const enMsgs = new Set(arr.flatMap(cm => (Array.isArray(cm.fotos) ? cm.fotos : []).map(f => f.url)));
+        const sueltas = col === 'instalaciones' ? (Array.isArray(d.fotos) ? d.fotos : []).filter(f => f && f.url && !enMsgs.has(f.url)) : [];
+        const linea = arr.map((cm, i) => ({ t: Date.parse(cm.fecha) || 0, cm, i })).concat(sueltas.map(f => ({ t: Date.parse(fotoFechaISO(f)) || 0, foto: f })));
+        // Fotos sueltas sin fecha reconocible van al principio; el resto por fecha. Varias fotos seguidas se agrupan en un solo bloque.
+        linea.sort((a, b) => a.t - b.t);
+        const bloques = []; linea.forEach(x => { const u = bloques[bloques.length - 1]; if (x.foto && u && u.fotos && Math.abs(x.t - u.t) < 10 * 60000) { u.fotos.push(x.foto); return; } if (x.foto) bloques.push({ t: x.t, fotos: [x.foto] }); else bloques.push(x); });
+        const items = bloques.map((b) => {
+            if (b.fotos) return `<div class="coment-item otro foto-solo"><div class="coment-meta">📷 ${b.fotos.length > 1 ? b.fotos.length + ' fotos' : 'Foto'}${b.t ? ' · ' + esc(fmtIso(new Date(b.t).toISOString())) : ''}</div>${fotosHtmlDe(b.fotos, col, id, puedeBorrar)}</div>`;
+            const cm = b.cm, i = b.i;
             const mio = cm.email === usuario.email, ger = esGerencia(cm);
             const cls = 'coment-item ' + (mio ? 'mio' : 'otro') + (ger ? ' gerencia' : '') + (!mio && i >= vistos ? ' nuevo' : '');
-            const fotosHtml = Array.isArray(cm.fotos) && cm.fotos.length ? `<div class="coment-fotos">${cm.fotos.map(f => f.tipo === 'img' ? `<a href="${esc(f.url)}" target="_blank" rel="noopener"><img src="${esc(f.url)}" alt="${esc(f.nombre || 'foto')}" loading="lazy"></a>` : `<a class="doc" href="${esc(f.url)}" target="_blank" rel="noopener">📄 ${esc(f.nombre || 'archivo')}</a>`).join('')}</div>` : '';
+            const fotosHtml = Array.isArray(cm.fotos) && cm.fotos.length ? fotosHtmlDe(cm.fotos, col, id, puedeBorrar) : '';
             return `<div class="${cls}"><div class="coment-meta">${ger ? '🏢 ' : '🔧 '}${esc(cm.nombre || '')} · ${esc(fmtIso(cm.fecha))}</div>${esc(cm.texto || '')}${fotosHtml}</div>`;
         }).join('');
         const ph = esOficina ? 'Escríbele al instalador: instrucciones, preguntas, qué resolver…' : 'Cuéntale a la oficina: cómo va, qué faltó, cliente ausente, daños, preguntas…';
