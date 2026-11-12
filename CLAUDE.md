@@ -2838,6 +2838,25 @@ movimiento en `movimientosInstalaciones` en ambos casos. El acuse nocturno (`par
 (`coordinador.js` `previsto[]`) distinguen «obra TERMINADA / PAUSADA (vuelven el …) / no fueron». Guías `guia-instalacion-02` y
 `guia-parte-diario-01` actualizadas. Probado en `?demo=midia`: Niza → completado, Plaza Manuela → en proceso con fecha del lunes.
 
+### «Cerrar el día» fijo hasta enviar, con borrador en el teléfono (2026-11-12, caso Miki)
+
+Dylan: «la página Mi día que el equipo tiene que llenar mañana y tarde necesito que esté fija, que no se pueda quitar hasta terminar el
+proceso; Miki estaba rellenando, le dio a algo sin querer, se le cerró y ya no sale». Causa: el cierre (paso, obras, dos líneas, horas,
+nota) vivía solo en memoria y la página tenía tres salidas sin aviso (flecha ‹ a Instalación, «Mi plan» del menú, gesto «atrás»). En
+`ops/parte-diario.html` (bloque junto a `irCerrar`): `guardarCierre()` escribe en `localStorage` (`artal_midia_cierre_<email>_<fecha>`:
+`{t, paso, resumen, lineas, nota}`) 250 ms después de cualquier `input`/`change`/`click` dentro de `#v-cerrar` o `#sheet` y en cada
+`setPaso`; SOLO para el encargado (no admin, no vista previa) y el parte de HOY en pasos 1–3 (`cierreAplica`). Al primer guardado el
+cierre queda **en curso** (`cierreEnCurso`, `pintarCierreFijo`): se ocultan la flecha ‹, «📋 Mi plan» (`#btn-mi-plan`) y la fecha
+(`#p-fecha-wrap`), aparece la línea «🔒 Se va guardando en tu teléfono · para salir, termina y toca Enviar parte» (`#cierre-fijo`),
+`setVista('plan')` se rechaza con un toast (`toastMd`), `popstate` repone el `pushState({cierreFijo:1})` y `beforeunload` avisa.
+`restaurarCierre(ex)` (desde `cargarParte`, tras `prepararResumen`) fusiona el borrador sobre el parte cargado (ítems por `ref`, líneas
+completas conservando las `origenValidacion` del borrador de Firestore, nota, paso) y `vistaInicial` abre directo en «Cerrar el día» a
+cualquier hora si hay cierre en curso; si el parte de hoy ya se envió DESPUÉS del borrador (`ex.resumen` y `actualizado > t`), el
+borrador se descarta. `enviarParte` → `limpiarCierre()` al confirmar el `setDoc` (se liberan flecha, menú y atrás). Probado en
+`?demo=midia` a 390 px: toque → guardado y bloqueo; recarga en paso 2 con texto → vuelve al paso 2 con el texto y las obras marcadas;
+recarga en paso 3 → horas y obra elegida en la hoja; atrás → toast y sigue; enviar → clave borrada y flecha visible. Lo tecleado por
+Miki el 12/11 antes de este cambio no se guardó en ningún sitio (no es recuperable).
+
 ### Capa de claridad en todas las pantallas (2026-11-12)
 
 Dylan: «revisa todo el sistema y opera mejoras similares en todas las áreas: procesos más claros, cortos y sencillos; eficiencia,

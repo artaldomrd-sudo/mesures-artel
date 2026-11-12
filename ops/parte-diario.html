@@ -16,6 +16,8 @@
     html, body { background: var(--md-bg) !important; color: var(--md-fg); font-family: 'Arimo', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.45; }
     body::before, body::after { display: none !important; }
     header.hd { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 14px calc(10px); padding-top: calc(10px + env(safe-area-inset-top, 0px)); background: var(--md-bg); border: 0; border-radius: 0; box-shadow: none; }
+    .md-toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #1b2430; color: #fff; padding: 12px 16px; border-radius: 12px; font-size: 15px; z-index: 9999; max-width: min(92vw, 420px); text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+    .cierre-fijo { font-size: 12px; color: var(--md-mut); text-align: center; margin: -6px 0 10px; }
     header.hd .back { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--md-blue); text-decoration: none; font-size: 24px; font-weight: bold; flex: none; background: var(--md-card); }
     header.hd .lg { height: 30px; width: auto; flex: none; }
     header.hd .t { flex: 1; min-width: 0; } header.hd .t b { display: block; font-size: 17px; line-height: 1.2; color: var(--md-fg); } header.hd .t span { font-size: 12.5px; color: var(--md-mut); }
@@ -85,9 +87,9 @@
 <div id="menu" hidden>
     <span id="user-name" style="font-weight:bold;flex:1"></span>
     <div class="adm-links" id="adm-links" style="display:none;gap:8px;flex-wrap:wrap"><a href="parte-diario-seguimiento.html">📊 Seguimiento</a><a href="contabilidad-obras.html">💰 Costo de obras</a></div>
-    <label>Fecha <input type="date" id="p-fecha" onchange="cargarParte()"></label>
+    <label id="p-fecha-wrap">Fecha <input type="date" id="p-fecha" onchange="cargarParte()"></label>
     <label id="enc-wrap" style="display:none">Encargado <select id="p-encargado" onchange="cargarParte()"></select></label>
-    <button onclick="setVista('plan')">📋 Mi plan</button>
+    <button id="btn-mi-plan" onclick="setVista('plan')">📋 Mi plan</button>
     <button id="signout-btn">Cerrar sesión</button>
 </div>
 
@@ -104,6 +106,7 @@
     <section id="v-cerrar" hidden>
         <p class="estado" id="p-estado"></p>
         <div class="steps" id="steps"><i></i><i></i><i></i></div>
+        <p class="cierre-fijo" id="cierre-fijo" hidden>🔒 Se va guardando en tu teléfono · para salir, termina y toca «Enviar parte»</p>
         <div id="resumen-dia">
             <div id="paso1" class="paso"></div>
             <div id="paso2" class="paso" hidden></div>
@@ -211,6 +214,7 @@
     let vista = 'plan', paso = 1;
     window.toggleMenu = () => { const m = document.getElementById('menu'); m.hidden = !m.hidden; };
     window.setVista = function (v) {
+        if (v === 'plan' && cierreEnCurso) { toastMd('Termina de cerrar el día y toca «Enviar parte» para salir.'); return; }
         vista = v; document.getElementById('v-plan').hidden = v !== 'plan'; document.getElementById('v-cerrar').hidden = v !== 'cerrar';
         document.getElementById('menu').hidden = true;
         document.getElementById('hd-title').textContent = v === 'plan' ? 'Mi día' : 'Cerrar el día';
@@ -227,8 +231,69 @@
         const st = document.getElementById('steps'); st.hidden = n === 4 || !conResumen; st.innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('');
         if (n === 1 || n === 2) renderResumen(); if (n === 3) renderParte();
         window.scrollTo({ top: 0 });
+        guardarCierre();
     };
     window.irCerrar = function () { paso = 1; setVista('cerrar'); };
+    // ---- Cierre del día FIJO hasta enviar (Dylan 2026-11-12; caso Miki: tocó algo sin querer, la página se cerró y perdió lo rellenado) ----
+    // Todo lo que se marca en «Cerrar el día» (paso, obras, dos líneas, horas, nota) queda en el teléfono al instante (localStorage,
+    // una clave por encargado y día) y se restaura al volver a abrir, directo en el paso donde iba, a cualquier hora. Mientras hay
+    // un cierre a medias no se puede salir: sin flecha ‹, sin «Mi plan» ni cambio de fecha, el gesto «atrás» no saca de la página y
+    // cerrar la pestaña avisa. Se libera al enviar el parte. Nunca aplica a admin ni a la vista previa «como encargado».
+    const CIERRE_KEY = () => 'artal_midia_cierre_' + claveEmail(miEmail) + '_' + hoyStr();
+    let cierreEnCurso = false, cierreTimer = null, toastTimer = null;
+    function cierreAplica() { return !esAdmin && !previewComo && !!parteActual && parteActual.fecha === hoyStr() && vista === 'cerrar' && paso >= 1 && paso <= 3; }
+    function guardarCierre() {
+        if (!cierreAplica()) return;
+        clearTimeout(cierreTimer);
+        cierreTimer = setTimeout(() => {
+            if (!cierreAplica()) return;
+            try {
+                const ta = document.getElementById('res-cumplido'), tb = document.getElementById('res-nocumplido');
+                if (ta) resumenActual.cumplido = ta.value; if (tb) resumenActual.noCumplido = tb.value;
+                const nota = (document.getElementById('p-nota') || {}).value || '';
+                localStorage.setItem(CIERRE_KEY(), JSON.stringify({ t: Date.now(), paso, resumen: resumenActual, lineas: parteActual.lineas, nota }));
+                if (!cierreEnCurso) { cierreEnCurso = true; pintarCierreFijo(); }
+            } catch (_) { }
+        }, 250);
+    }
+    function leerCierre() { try { const r = JSON.parse(localStorage.getItem(CIERRE_KEY()) || 'null'); return r && r.t ? r : null; } catch (_) { return null; } }
+    function limpiarCierre() { clearTimeout(cierreTimer); try { localStorage.removeItem(CIERRE_KEY()); } catch (_) { } cierreEnCurso = false; pintarCierreFijo(); }
+    function pintarCierreFijo() {
+        const on = cierreEnCurso;
+        ['header.hd .back', '#btn-mi-plan', '#p-fecha-wrap'].forEach(q => { const el = document.querySelector(q); if (el) el.hidden = on; });
+        const cf = document.getElementById('cierre-fijo'); if (cf) cf.hidden = !on;
+        if (on && !(history.state && history.state.cierreFijo)) { try { history.pushState({ cierreFijo: 1 }, ''); } catch (_) { } }
+    }
+    function toastMd(txt) {
+        let t = document.getElementById('md-toast'); if (!t) { t = document.createElement('div'); t.id = 'md-toast'; t.className = 'md-toast'; document.body.appendChild(t); }
+        t.textContent = txt; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+    }
+    // Restaura el cierre a medias sobre el parte recién cargado (lo llama cargarParte). Devuelve true si había algo.
+    function restaurarCierre(ex) {
+        if (esAdmin || previewComo || !parteActual || parteActual.fecha !== hoyStr()) return false;
+        const br = leerCierre(); if (!br) return false;
+        if (ex && ex.resumen && !ex.borrador && tsMs(ex.actualizado) > br.t) { limpiarCierre(); return false; }   // ya se envió después del borrador
+        if (br.resumen && Array.isArray(br.resumen.items)) {
+            const porRef = new Map(br.resumen.items.map(i => [i.ref, i]));
+            resumenActual.items = resumenActual.items.map(i => porRef.has(i.ref) ? { ...i, ...porRef.get(i.ref) } : i);
+            br.resumen.items.forEach(i => { if (!resumenActual.items.some(x => x.ref === i.ref)) resumenActual.items.push({ ...i }); });
+            resumenActual.cumplido = br.resumen.cumplido || ''; resumenActual.noCumplido = br.resumen.noCumplido || '';
+        }
+        if (Array.isArray(br.lineas) && br.lineas.length) {
+            const lineas = br.lineas.map(l => ({ ...l }));
+            (parteActual.lineas || []).forEach(l => { if (l.origenValidacion && !lineas.some(x => x.empleadoId === l.empleadoId && x.origenValidacion === l.origenValidacion)) lineas.push({ ...l }); });
+            parteActual.lineas = lineas;
+        }
+        if (typeof br.nota === 'string') { parteActual.nota = br.nota; document.getElementById('p-nota').value = br.nota; }
+        paso = [1, 2, 3].includes(br.paso) ? br.paso : 1;
+        cierreEnCurso = true; pintarCierreFijo();
+        return true;
+    }
+    document.addEventListener('input', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); });
+    document.addEventListener('change', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); });
+    document.addEventListener('click', (e) => { if (e.target.closest('#v-cerrar, #sheet')) setTimeout(guardarCierre, 0); });
+    window.addEventListener('popstate', () => { if (cierreEnCurso) { try { history.pushState({ cierreFijo: 1 }, ''); } catch (_) { } toastMd('Termina de cerrar el día y toca «Enviar parte» para salir.'); } });
+    window.addEventListener('beforeunload', (e) => { if (cierreEnCurso) { e.preventDefault(); e.returnValue = ''; } });
     window.cerrarSheet = () => { document.getElementById('sheet').hidden = true; };
     function abrirSheet(html) { document.getElementById('sheet-body').innerHTML = html; document.getElementById('sheet').hidden = false; }
     window.toggleNota = () => { const w = document.getElementById('nota-wrap'); w.hidden = !w.hidden; if (!w.hidden) document.getElementById('p-nota').focus(); };
@@ -382,6 +447,7 @@
     function vistaInicial() {
         const qs = new URLSearchParams(location.search);
         const soyEnc = (config.encargados || []).some(e => String(e.email || '').toLowerCase() === miEmail);
+        if (cierreEnCurso) { setVista('cerrar'); return; }
         if (esAdmin || !soyEnc || qs.get('cerrar') || qs.get('fecha') || new Date().getHours() >= 15) { paso = (qs.get('fecha') && qs.get('fecha') !== hoyStr()) ? 3 : 1; setVista('cerrar'); } else setVista('plan');
     }
     function arranque() {
@@ -626,7 +692,7 @@
                 lineas: equipoInstalacion().map(e => ({ empleadoId: e.id, nombre: e.nombre, tipo: 'obra', obraKey: '', obraLabel: '', horas: n2(config.horasJornada) || JORNADA_H })) };
         }
         document.getElementById('p-nota').value = parteActual.nota || '';
-        prepararResumen(ex); renderMiDia(); if (vista === 'cerrar') setPaso(paso);
+        prepararResumen(ex); restaurarCierre(ex); renderMiDia(); if (vista === 'cerrar') setPaso(paso);
         const ft = feriadosTrab.get(fecha);
         const nVal = ex && ex.borrador ? (ex.lineas || []).filter(l => l.origenValidacion).length : 0;
         const yaEnviado = ex && ex.borrador ? `✅ <b>Ya tienes ${nVal} línea(s) cargadas</b> desde los trabajos que validaste este día (marcadas «✓ validado»). Revísalas, completa el resto del equipo y toca <b>Enviar parte</b>: hasta entonces el parte cuenta como NO enviado. `
@@ -787,6 +853,7 @@
         const btn = document.getElementById('btn-enviar'); btn.disabled = true;
         try {
             await setDoc(doc(db, 'partesDiarios', id), datos, { merge: true });
+            if (esHoyParte) limpiarCierre();   // parte enviado: se libera la pantalla (flecha, Mi plan, atrás)
             // La línea de estado pasa a «✓ Enviado» al instante (antes esperaba al siguiente cargarParte y seguía diciendo «sin enviar»).
             parteGuardado = { ...(parteGuardado || {}), ...datos, borrador: false, actualizado: { toDate: () => new Date() } };
             renderParte();
