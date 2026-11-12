@@ -863,7 +863,7 @@ async function recordarParteDiario(avisarAdmin, texto) {
         // Trabajó bajo otro encargado ese día (lo incluyó en su parte) → no le toca enviar el suyo.
         if (delDia.some((x) => !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.includes(em))) continue;
         faltan.push(e);
-        await enviarPushUsuario(e.email, (texto && texto.titulo) || '📝 Falta el parte diario de hoy', (texto && texto.cuerpo) || 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html');
+        await enviarPushUsuario(e.email, (texto && texto.titulo) || '📝 Falta el parte diario de hoy', (texto && texto.cuerpo) || 'Registra en qué obras trabajó tu equipo hoy y cuántas horas. Hasta que lo envíes no podrás usar el resto de la plataforma.', 'ops/parte-diario.html?cerrar=1');
     }
     if (avisarAdmin && faltan.length) {
         await pushATokens(await tokensPorRol('admin'), '📝 Partes diarios sin enviar', 'Faltan: ' + faltan.map((e) => e.nombre || e.email).join(', '), 'ops/parte-diario.html');

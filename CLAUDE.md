@@ -2774,6 +2774,19 @@ Parte diario de obra», enlace de Instalación «📋 Mi día · Parte diario»)
   de Dylan: `firebase deploy --only functions:parteDiario1730,functions:parteAcuseCoordinador,functions:coordinadorInformeDiario,functions:coordinadorInformeAhora`.
 - Guía `guia-parte-diario-01` actualizada. Probado en `?demo=1` (plan, ❌ con motivo, validación en tres pasos, envío). Sin reglas nuevas (todo son
   colecciones que el instalador ya escribe: partesDiarios, orders, citas, acuses de mensajes).
+- **Rediseño visual 2026-11-12 (Dylan: «pantalla cargada que cansa la vista»; maqueta aprobada)**: la página es ahora «Mi día» con dos
+  vistas (`vista` plan | cerrar, `setVista`; `vistaInicial`: plan antes de las 15:00 para el encargado, cerrar desde las 15:00, con
+  `?cerrar=1` (push de las 17:30), `?fecha=` o para admin). Cabecera compacta `header.hd` (‹, logo, título/fecha, avatar que abre `#menu`
+  con fecha/encargado/Mi plan/cerrar sesión). **Plan** (`renderMiDia` → `#mi-dia`): tarjeta «Tu plan de hoy» = líneas del informe matinal que
+  nombran a la persona (sin «Ayer…», sin el prefijo «Wilson →») + lo del sistema que no esté ya en esas líneas, con punto azul/rojo/gris;
+  «Ver el informe completo ›» abre la hoja `#sheet` (y acusa); «Te falta cerrar» (`pendientesRegistro` → `{titulo, sub, accion, fn|href}`)
+  con botón redondo Entregado / Hecho / Retomar; «Del Coordinador» = último aviso. **Cerrar el día** en 3 pasos (`setPaso`, barra `.steps`;
+  `pasoSiguiente(1|2)` valida): 1 `#paso1` «¿Qué se hizo hoy?» una tarjeta por ítem con ✓ Hecho / No y fichas de motivo; 2 `#paso2` «En dos
+  líneas» (`#res-cumplido`, `#res-nocumplido`) + «Mañana tienes»; 3 `#paso3` «Horas del equipo»: por fila chip de obra/actividad (toca →
+  `abrirObraSheet` con obras agrupadas + actividades), − / + sobre un `<input number>`, ✕ = quitar; `abrirPersonaSheet`, Igual que el último,
+  nota plegada; CTA «Enviar parte y resumen» → `#paso-ok` (check grande). Días pasados sin resumen entran directo en el paso 3. Colores en
+  variables `--md-*` con tema claro por defecto y oscuro por `prefers-color-scheme` (Dylan vio la maqueta en oscuro y la aprobó así: sigue el
+  ajuste del teléfono). `shared.css` sigue cargado (login/widgets) pero `body`/`header` se sobrescriben.
 - **Simulación guiada `parte-diario.html?demo=midia`** (sin login; para presentarla al equipo): el modo demo trae un día completo
   (informe matinal de ejemplo, trabajos de hoy/atrasado/en proceso, pedido en ruta, recordatorio vencido, material al chofer) y una barra
   inferior con 12 pasos (`PASOS`, `tourGo(n)`, «🔊 Leer» con `speechSynthesis` es-MX): 7:50 informe → previsto → pendientes → un toque
