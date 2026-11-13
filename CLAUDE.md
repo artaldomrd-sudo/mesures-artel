@@ -2870,6 +2870,22 @@ borrador se descarta. `enviarParte` → `limpiarCierre()` al confirmar el `setDo
 recarga en paso 3 → horas y obra elegida en la hoja; atrás → toast y sigue; enviar → clave borrada y flecha visible. Lo tecleado por
 Miki el 12/11 antes de este cambio no se guardó en ningún sitio (no es recuperable).
 
+### Mi día para todo el equipo + chips que no se marcaban (2026-11-12 noche)
+
+Dylan: «habilita la página Mi día a Roosevelt (como instalador) y a Emerson como ayudante, que puedan ver el programa del día cada día»
+y «en su página principal, donde encuentran el botón Mi día». (1) `parte-diario.html`: `requireAuth(['instalador','ayudante'])`
+(también en `paginas.js`); `soloPlan()` = no admin, no vista previa y no está en `rrhhConfig/parteDiario.encargados` → `vistaInicial`
+abre siempre en «Mi plan», sin botón «Cerrar el día» (`irCerrar` lo ignora); el parte sigue siendo de los encargados. (2) Instalación:
+botón amarillo `#btn-mi-dia` (`.btn-primaria`, enlace a `parte-diario.html`) arriba de `<main>`, visible a instalador/ayudante/chofer
+no admin; el enlace del menú ☰ sigue. (3) Informe matinal: `functions/coordinador.js` `LECTORES` (Miki, Roosevelt, Emerson) se suman a
+`destinatarios` del mensaje `informe_coordinador` (la regla de `mensajes` solo deja leer al destinatario); `coordinador-chat.js` manda
+la contestación del chat solo a `DESTINATARIOS` + quien preguntó (los lectores no reciben el hilo). Deploy pendiente de Dylan
+(`coordinadorInformeDiario`, `coordinadorInformeAhora`, `coordinadorRespuestaProcesar`). **Bug real del rediseño del 11/11**: los chips
+del paso 1 (motivo, «¿Qué día vuelven?», misiones) llaman `renderResumen()` desde el `onclick` y la función no estaba en `window` →
+guardaban el valor pero NO se pintaban seleccionados (parte de «se nos hizo difícil»); ahora `window.renderResumen` y las dos cajas de
+texto usan `resTexto(k, v)`. Guía `guia-parte-diario-01`: apartado «QUIÉN VE MI DÍA». Pendiente de decisión de Dylan: «Gestionar el día»
+(botón visible todo el día) y si el candado del cierre aplica solo desde las 15:00.
+
 ### Revisión de los partes de Miki y Wilson (2026-11-12) → tres arreglos en «Cerrar el día»
 
 Dylan: «verifica los datos rellenados por Miki y Wilson, identifica posibles fallos o procesos mal hechos». Fallos del SISTEMA

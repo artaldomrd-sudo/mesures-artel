@@ -210,7 +210,10 @@
         ({ collection, onSnapshot, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, arrayUnion, Timestamp, query, where, serverTimestamp, deleteField } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'));   // deleteField: faltaba y el envío de un BORRADOR fallaba en silencio (Wilson, 30/09, visto 2026-10-06)
     }
 
-    const usuario = await requireAuth(['instalador']);
+    // Ayudantes (Emerson) y no encargados (Roosevelt) también entran (Dylan 2026-11-12: «que puedan ver el programa del día cada
+    // día»): ven SOLO «Mi plan» (informe del Coordinador con sus líneas, lo previsto a su nombre, lo que les falta cerrar); el parte
+    // («Cerrar el día») sigue siendo de los encargados de rrhhConfig/parteDiario.
+    const usuario = await requireAuth(['instalador', 'ayudante']);
     // ---- Mi día: vistas y pasos (rediseño 2026-11-12). 'plan' por la mañana; 'cerrar' (3 pasos) desde las 15:00 o al tocar el aviso. ----
     let vista = 'plan', paso = 1;
     window.toggleMenu = () => { const m = document.getElementById('menu'); m.hidden = !m.hidden; };
@@ -234,7 +237,9 @@
         window.scrollTo({ top: 0 });
         if (cierreEnCurso) guardarCierre();   // abrir la pantalla no crea el borrador: solo el primer toque real (paso 1)
     };
-    window.irCerrar = function () { paso = 1; setVista('cerrar'); };
+    window.irCerrar = function () { if (soloPlan()) return; paso = 1; setVista('cerrar'); };
+    // Solo plan: no es admin, no es vista previa de gerencia y no está en la lista de encargados del parte.
+    function soloPlan() { return !esAdmin && !previewComo && !(config.encargados || []).some(e => String(e.email || '').toLowerCase() === miEmail); }
     // ---- Cierre del día FIJO hasta enviar (Dylan 2026-11-12; caso Miki: tocó algo sin querer, la página se cerró y perdió lo rellenado) ----
     // Todo lo que se marca en «Cerrar el día» (paso, obras, dos líneas, horas, nota) queda en el teléfono al instante (localStorage,
     // una clave por encargado y día) y se restaura al volver a abrir, directo en el paso donde iba, a cualquier hora. Mientras hay
@@ -449,6 +454,7 @@
         const qs = new URLSearchParams(location.search);
         const soyEnc = (config.encargados || []).some(e => String(e.email || '').toLowerCase() === miEmail);
         if (cierreEnCurso) { setVista('cerrar'); return; }
+        if (soloPlan()) { const b = document.getElementById('btn-ir-cerrar'); if (b) b.hidden = true; setVista('plan'); return; }   // ayudante / no encargado: solo el plan
         const feriadoHoy = feriados.has(hoyStr()) && !feriadosTrab.has(hoyStr());   // feriado no trabajado: no se exige parte → se queda en el plan
         if (esAdmin || !soyEnc || qs.get('cerrar') || qs.get('fecha') || (new Date().getHours() >= 15 && !feriadoHoy)) { paso = (qs.get('fecha') && qs.get('fecha') !== hoyStr()) ? 3 : 1; setVista('cerrar'); } else setVista('plan');
     }
@@ -558,7 +564,7 @@
             + (ultimoAviso ? `<div class="card" id="aviso-box"><h3>Del Coordinador</h3><div class="li"><span class="dot ok"></span><span class="tx">${esc(ultimoAviso.asunto || 'Aviso')}<small>${esc((ultimoAviso.cuerpo || '').split('\n').filter(Boolean)[0] || '').slice(0, 120)}</small></span><button class="act" onclick="verInforme('${ultimoAviso.id}')">Leer</button></div></div>` : '');
         if (inf && lineasMias.length) acusar(inf);   // sus líneas ya están a la vista
         const f = parteActual && parteActual.fecha === hoyStr() ? partes.find(p => p.id === parteId(hoyStr(), miEmail) && !p.borrador) : null;
-        const b = document.getElementById('btn-ir-cerrar'); if (b) b.textContent = f ? 'Ver o corregir el parte de hoy' : (new Date().getHours() >= 15 ? 'Cerrar el día' : 'Cerrar el día · a las 5:30');
+        const b = document.getElementById('btn-ir-cerrar'); if (b) { b.hidden = soloPlan(); b.textContent = f ? 'Ver o corregir el parte de hoy' : (new Date().getHours() >= 15 ? 'Cerrar el día' : 'Cerrar el día · a las 5:30'); }
         if (vista === 'cerrar' && (paso === 1 || paso === 2)) renderResumen();
     }
     window.verInforme = function (id) {
@@ -628,8 +634,8 @@
         const m = (() => { const d = new Date(parteActual.fecha + 'T12:00:00'); d.setDate(d.getDate() + (d.getDay() === 6 ? 2 : 1)); return ymd(d); })();
         const manana = instCache.filter(j => esMioJob(j) && ['pendiente', 'en_proceso'].includes(j.estado) && (ymdDe(j.fecha) === m || (Array.isArray(j.retomas) && j.retomas.length && ymdDe(j.retomas[j.retomas.length - 1]) === m))).map(j => [j.cliente, j.obra].filter(Boolean).join(' — '));
         p2.innerHTML = `<p class="q">En dos líneas</p><p class="qs">Como se lo contarías a Dylan por teléfono.</p>
-            <div class="lab">✓ Lo que se cumplió</div><textarea class="inp" id="res-cumplido" placeholder="Ej: Terminamos las ventanas de Niza y entregamos el material de Toni." oninput="resumenActual.cumplido = this.value">${esc(resumenActual.cumplido)}</textarea>
-            <div class="lab">✗ Lo que no, y por qué</div><textarea class="inp" id="res-nocumplido" placeholder="Si todo se cumplió, escribe «Nada»." oninput="resumenActual.noCumplido = this.value">${esc(resumenActual.noCumplido)}</textarea>
+            <div class="lab">✓ Lo que se cumplió</div><textarea class="inp" id="res-cumplido" placeholder="Ej: Terminamos las ventanas de Niza y entregamos el material de Toni." oninput="resTexto('cumplido', this.value)">${esc(resumenActual.cumplido)}</textarea>
+            <div class="lab">✗ Lo que no, y por qué</div><textarea class="inp" id="res-nocumplido" placeholder="Si todo se cumplió, escribe «Nada»." oninput="resTexto('noCumplido', this.value)">${esc(resumenActual.noCumplido)}</textarea>
             <div class="ack"><b>Mañana tienes:</b> ${manana.length ? esc(manana.slice(0, 3).join(' · ')) : 'nada agendado todavía'}. Lo que marques aquí llega al informe de las 7:50.</div>
             <button class="cta" style="margin-top:14px" onclick="pasoSiguiente(2)">Siguiente</button><button class="cta sec" onclick="setPaso(1)">‹ Atrás</button>`;
     }
@@ -706,6 +712,10 @@
     }
     window.resSet = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.hecho = v; if (v) { it.motivo = ''; it.nota = ''; } renderResumen(); };
     window.resObra = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.estadoObra = v; it.hecho = v !== 'nofui'; if (v !== 'nofui') { it.motivo = ''; it.nota = ''; } if (v !== 'pausa') it.regreso = ''; renderResumen(); };
+    // Los chips del paso 1 llaman «resMotivo(...); renderResumen()» desde el onclick: sin esta línea renderResumen no existía fuera
+    // del módulo, el chip guardaba el valor pero NO se pintaba seleccionado (bug real 2026-11-12; Wilson y Miki «se nos hizo difícil»).
+    window.renderResumen = renderResumen;
+    window.resTexto = function (k, v) { resumenActual[k] = v; };
     window.resRegreso = function (i, v) { const it = resumenActual.items[i]; if (it) it.regreso = v || ''; };
     window.resMision = function (i, mid) { const it = resumenActual.items[i]; if (!it) return; it.misionesHechas = it.misionesHechas || []; const k = it.misionesHechas.indexOf(mid); if (k >= 0) it.misionesHechas.splice(k, 1); else it.misionesHechas.push(mid); };
     window.resMotivo = function (i, v) { const it = resumenActual.items[i]; if (it) it.motivo = v; };

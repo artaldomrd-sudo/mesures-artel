@@ -19,6 +19,10 @@
 // el informe repetía alertas que Dylan ya había resuelto en el archivo del agente (PABLO en pausa, Toni = TESEMATIN…).
 
 const DESTINATARIOS = ['wilsonhernandezrodriguez81@gmail.com', 'dylan.r.rd@gmail.com'];
+// Quienes además LEEN el informe en «Mi día» (Dylan 2026-11-12: Roosevelt y Emerson «que puedan ver el programa del día cada
+// día»; Miki como encargado). Van en `destinatarios` del mensaje (la regla de `mensajes` solo deja leer al destinatario), pero
+// las contestaciones del chat (coordinador-chat.js) siguen yendo solo a DESTINATARIOS + quien preguntó.
+const LECTORES = ['ariasvaldezmiki@gmail.com', 'rooseveltstephen9@gmail.com', '1932001jean@gmail.com'];
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const DIAS_SEM = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -279,7 +283,7 @@ async function generarInforme({ lector, apiKey, hoy = ymdRD(), forzar = false, p
     if (!publicar) return { ok: true, publicado: false, motivo: 'solo prueba', asunto, texto, lecciones: lecc.origen, resumen: resumenDatos(datos) };
     const id = await escribirMensaje({
         estado: 'enviado', asunto, cuerpo: texto, remitenteEmail: 'coordinador@artal', remitenteNombre: 'Coordinador de Obras (IA)',
-        paraTodos: false, destinatarios: DESTINATARIOS, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
+        paraTodos: false, destinatarios: [...DESTINATARIOS, ...LECTORES], requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
         generadoPor: 'cloud-function', modelo: MODELO, tokens: uso || null, leccionesOrigen: lecc.origen,
     });
     return { ok: true, publicado: true, id, asunto, texto };
@@ -331,3 +335,4 @@ module.exports.fechaTxt = fechaTxt;
 module.exports.ymdRD = ymdRD;
 module.exports.horaRD = horaRD;
 module.exports.DESTINATARIOS = DESTINATARIOS;
+module.exports.LECTORES = LECTORES;

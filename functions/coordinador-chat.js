@@ -414,7 +414,8 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
             const porEmail = low(r.porEmail);
             try {
                 const res = await procesar(id, r, anthropicKey.value());
-                const dest = [...new Set([...(res.informe.destinatarios || []).map(low), porEmail].filter(Boolean))];
+                // Solo gerencia + Wilson + quien preguntó: los LECTORES del informe (Miki, Roosevelt, Emerson) no reciben el hilo del chat.
+                const dest = [...new Set([...coord.DESTINATARIOS.map(low), porEmail].filter(Boolean))];
                 const cuerpo = `${res.texto}\n\n— Respuesta a ${r.por || porEmail}: «${rec(r.texto, 120)}»`;
                 const msg = await db.collection('mensajes').add({ estado: 'enviado', asunto: '↩️ ' + (res.informe.asunto || 'Informe matinal'), cuerpo, remitenteEmail: REMITENTE, remitenteNombre: NOMBRE, fecha: ahora(), paraTodos: false, destinatarios: dest, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'respuesta_coordinador', enRespuestaA: r.informeId, respuestaId: id, respuestaPor: r.por || porEmail, acciones: res.acciones.length, generadoPor: 'cloud-function', modelo: coord.MODELO, tokens: res.uso });
                 await snap.ref.update({ estado: 'procesada', fin: ahora(), resultado: res.texto, mensajeId: msg.id, acciones: res.acciones, tokens: res.uso, leccionesOrigen: res.lecciones, pasos: res.pasos });
