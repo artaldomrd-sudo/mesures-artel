@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     .order-card { border-left-color: #2ecc71; }
     .checklist-note { font-size: 12.5px; color: #e67e22; margin-top: 8px; font-weight: bold; }
@@ -65,7 +65,6 @@
 
 <main>
     <div id="aviso-ruta" style="display:none;"></div>
-    <p style="margin:0 0 10px;font-size:13px"><a href="academia.html" style="color:var(--artal-blue);font-weight:bold">🎓 Academia · guía de Transportes</a></p>
     <div class="tabs">
         <button class="tab-btn active" id="tab-espera" onclick="setTab('espera')">En espera</button>
         <button class="tab-btn" id="tab-ruta" onclick="setTab('ruta')">En ruta</button>
@@ -82,6 +81,7 @@
         <p class="per-resumen" id="entregado-resumen"></p>
     </div>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
+    <p style="margin:16px 0 0;font-size:13px;text-align:center"><a href="academia.html" style="color:var(--artal-blue);font-weight:bold">🎓 Guía de Transportes (Academia)</a></p><!-- (auditoría 2026-11-12) al pie, no compite con las pestañas -->
 </main>
 
 <!-- Salir en ruta: el costo del viaje (combustible, desgaste, peajes y fijos del vehículo) se
@@ -113,6 +113,11 @@
     .per-btn.active { background: var(--artal-blue); color: #fff; border-color: var(--artal-blue); }
     .per-resumen { font-size: 12.5px; color: #667; margin: 8px 0 0; }
     .dia-sep { font-size: 12px; font-weight: bold; color: var(--artal-blue); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; padding-left: 4px; }
+    /* Móvil (auditoría 2026-11-12): nada que se toque por debajo de 16 px (iOS hace zoom) ni botón por debajo de 40 px. */
+    @media (max-width: 640px) {
+        main input:not([type="checkbox"]):not([type="radio"]), main select, main textarea, .vj-box input, .vj-box select { font-size: 16px; }
+        main button, .vj-box button { min-height: 40px; }
+    }
 </style>
 
 <script type="module">
@@ -124,7 +129,8 @@
     import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { restoPendiente, restoTxt, fotoPartes, pestanaDe } from './chofer-pendientes.js';
     import { borrarConRegistro } from './papelera.js';
-    import { viaDe, envioTxt, VIAS } from './envios.js';
+    import { viaDe, envioTxt, VIAS, marcarEntregado } from './envios.js';
+    import { etiquetaPedido, ESTADO_PEDIDO } from './estados.js';   // nombres únicos de los estados (auditoría 2026-11-12)
     import { openOrderPreview } from './order-preview.js';
     import { setupSignaturePad } from './signature.js';
     window.openOrderPreview = openOrderPreview;
@@ -198,11 +204,11 @@
                 ${metaLine}
                 ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
             </div>
-            ${viaDe(o) === 'guagua' ? `<div style="background:#eaf6ff;border:1.5px solid #7fb8e6;border-radius:10px;padding:8px 12px;margin:6px 0 4px;font-size:14px;color:#174a7a;font-weight:bold;">🚌 Llega por guagua SDQ–LT${o.envio && o.envio.nota ? ' · ' + esc(o.envio.nota) : ''}<div style="font-weight:normal;font-size:12.5px;color:#456;margin-top:2px;">Lo recoge en la parada quien pueda (cualquiera del equipo de obra lo ve). Al tenerlo, marca «Entregado».</div></div>` : ''}
+            ${viaDe(o) === 'guagua' ? `<div style="background:#eaf6ff;border:1.5px solid #7fb8e6;border-radius:10px;padding:8px 12px;margin:6px 0 4px;font-size:14px;color:#174a7a;font-weight:bold;">🚌 Llega por guagua SDQ–LT${o.envio && o.envio.nota ? ' · ' + esc(o.envio.nota) : ''}<div style="font-weight:normal;font-size:13px;color:#456;margin-top:2px;">Lo recoge en la parada quien pueda y marca «Entregado».</div></div>` : ''}
             ${compraTop}${restoBox}
-            ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 Fábrica interna — la oficina todavía no lo marcó listo. Si el material ya está hecho puedes recogerlo: al marcar «En ruta» pasa solo a Listo para cargar.</div>` : ''}
-            ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ Pedido PARCIAL — no todos los ítems están listos. Abre "Ver hoja" para ver cuáles sí, marcados en verde.</div>` : ''}
-            ${resuelto ? '' : `<div class="checklist-note">⚠ Completa el checklist de cada ítem en "Ver hoja" antes de marcar entregado.</div>`}
+            ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 ${esc(etiquetaPedido(o))} (fábrica interna) — si ya está hecho, «En ruta» lo pasa a ${esc(ESTADO_PEDIDO.listo_para_cargar)}.</div>` : ''}
+            ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ ${esc(etiquetaPedido(o))} — en «Ver hoja» lo listo está en verde.</div>` : ''}
+            ${resuelto ? '' : `<div class="checklist-note">⚠ Marca cada ítem en «Ver hoja» antes de «Entregado».</div>`}
             ${(enRuta && (!entregado || o.restoEnRuta === true)) ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
             <div class="actions">
                 ${(entregado ? o.restoEnRuta === true : enRuta) ? `<button class="btn-deshacer" onclick="quitarDeRuta('${id}')" title="Se marcó En ruta por error: vuelve a En espera y sale del viaje">↩ No va en ruta</button>` : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
@@ -487,23 +493,11 @@
 
         const snap = await getDoc(doc(db, 'orders', id));
         const d = snap.exists() ? snap.data() : {};
-        // Un pedido pasa a "Completado" con solo la entrega si nunca hay instalador de por medio
-        // (Compra Directa, ej. al almacén propio) o si un admin ya lo marcó "sin instalación"
-        // desde ops/instalaciones.html — si no, hace falta ADEMÁS que el instalador confirme.
-        // Antes esto exigía siempre las dos cosas, así que una Compra Directa entregada se
-        // quedaba mostrando "Listo para cargar/instalar" para siempre (bug real reportado).
-        const noNecesitaInstalador = d.docType === 'COMPRA_DIRECTA' || d.sinInstalacion === true;
-        const yaInstalado = d.instalado === true || noNecesitaInstalador;
-        const resto = restoPendiente(d);
-        await updateDoc(doc(db, 'orders', id), {
-            entregado: true,
-            fechaEntregado: serverTimestamp(),
-            recepcionInstalador: { nombre, firma: pad.toDataUrl(), fecha: serverTimestamp() },
-            // Foto de lo que se llevó en esta entrega: si fábrica marca más piezas después, el pedido vuelve como «resto por recoger».
-            entregaPartes: fotoPartes(d), restoEnRuta: false,
-            entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: nombre, chofer: usuario.nombre || '', resto: resto.length ? restoTxt(resto) : '' }),
-            ...(yaInstalado ? { status: 'completado' } : {})
-        });
+        // (auditoría 2026-11-12) La escritura de «Entregado» vive en envios.js → marcarEntregado (la comparten Transportes,
+        // Instalación y Mi día): completa el pedido solo si no necesita instalador (compra directa / «solo recoger») o ya está
+        // instalado; guarda la foto de partes para el «resto por recoger». La firma dibujada se mantiene (decisión pendiente de Dylan).
+        try { await marcarEntregado(db, id, d, usuario, { recibio: nombre, firma: pad.toDataUrl() }); }
+        catch (e) { alert('No se pudo marcar entregado: ' + (e && e.message ? e.message : e)); }
     };
     // «↩ No va en ruta» (Dylan 2026-11-05, caso Daria — Casa naranjitos marcado por inadvertencia): deshace «En ruta» de UN
     // pedido sin tocar los demás del mismo viaje: el pedido vuelve a «En espera» (o a «resto por recoger» si ya estaba

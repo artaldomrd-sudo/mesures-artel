@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARTAL — Parte diario de obra</title>
+<title>ARTAL — Mi día</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     /* Mi día — rediseño 2026-11-12 (maqueta aprobada por Dylan): una pregunta por pantalla, 3 colores, un botón amarillo. Sigue el tema del teléfono. */
     :root { --md-bg: #eef1f5; --md-card: #fff; --md-fg: #1b2430; --md-mut: #6b7580; --md-line: #e6eaef; --md-blue: #0A3D62; --md-blue-s: #eaf1f8; --md-yel: #f4c430; --md-ok: #1e8449; --md-ok-s: #e6f4ec; --md-bad: #c0392b; --md-bad-s: #fbeae8; --md-gray: #c3cad3; }
@@ -113,7 +113,7 @@
             <div id="paso2" class="paso" hidden></div>
         </div>
         <div id="paso3" class="paso" hidden>
-            <p class="q">Horas del equipo</p><p class="qs">Toca la obra para cambiarla. 9 = jornada completa.</p>
+            <p class="q">Horas del equipo</p><p class="qs">Toca la obra para cambiarla. <span id="qs-jornada">9</span> = jornada completa.</p>
             <div class="card"><div id="personas"></div>
                 <div class="links"><button onclick="abrirPersonaSheet()">+ Agregar persona</button><button onclick="igualQueAyer()">↺ Igual que el último</button><button onclick="toggleNota()">✎ Nota para la oficina</button></div>
                 <select id="add-persona" hidden></select>
@@ -209,6 +209,8 @@
         await import('./mensajeria-widget.js');
         ({ collection, onSnapshot, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, arrayUnion, Timestamp, query, where, serverTimestamp, deleteField } = await import('https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js'));   // deleteField: faltaba y el envío de un BORRADOR fallaba en silencio (Wilson, 30/09, visto 2026-10-06)
     }
+    const { marcarEntregado } = await import('./envios.js');   // «Entregado» único (auditoría 2026-11-12); en demo recibe el Firestore simulado
+    const { etiquetaTrabajo } = await import('./estados.js');
 
     // Ayudantes (Emerson) y no encargados (Roosevelt) también entran (Dylan 2026-11-12: «que puedan ver el programa del día cada
     // día»): ven SOLO «Mi plan» (informe del Coordinador con sus líneas, lo previsto a su nombre, lo que les falta cerrar); el parte
@@ -362,7 +364,7 @@
     onSnapshot(query(collection(db, 'mensajes'), where('destinatarios', 'array-contains', usuario.email)), (s) => { informesMios = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => (m.tipo === 'informe_coordinador' || m.tipo === 'aviso_coordinador') && (m.destinatarios || []).includes(usuario.email)); renderMiDia(); }, () => {});
     onSnapshot(query(collection(db, 'citas'), where('completada', '==', false)), (s) => { citasAbiertas = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.completada !== true); renderMiDia(); }, () => {});
     onSnapshot(query(collection(db, 'solicitudesMaterial'), where('estado', '==', 'chofer')), (s) => { solChofer = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.estado === 'chofer'); renderMiDia(); }, () => {});
-    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; ready.cfg = true; arranque(); renderTodo(); }, () => { ready.cfg = true; arranque(); });
+    onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; const qj = document.getElementById('qs-jornada'); if (qj) qj.textContent = String(n2(config.horasJornada) || JORNADA_H); ready.cfg = true; arranque(); renderTodo(); }, () => { ready.cfg = true; arranque(); });   // (auditoría 2026-11-12) el «9 = jornada completa» sale de la configuración
     // H2: partes de los últimos 45 días (la ventana de corrección/bloqueo es de 7 laborables; «igual que ayer» y las obras de partes recientes caben de sobra).
     onSnapshot(query(collection(db, 'partesDiarios'), where('fecha', '>=', addDias(hoyStr(), -45))), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); ready.partes = true; arranque(); renderTodo(); }, () => { ready.partes = true; arranque(); });
 
@@ -524,7 +526,7 @@
     function pendientesRegistro() {
         const hoy = hoyStr(), out = [];
         if (soyChofer()) ordersCache.filter(o => esMioPedido(o) && o.enRuta === true && o.entregado !== true).forEach(o => { const d = Math.round((Date.now() - tsMs(o.fechaEnRuta)) / 86400000); if (d >= 1) out.push({ tipo: 'order', id: o.id, titulo: esc([o.cliente, o.obra].filter(Boolean).join(' — ')), sub: `En ruta desde hace ${d} día${d > 1 ? 's' : ''}`, accion: 'Entregado', fn: `regEntregado('${o.id}')` }); });
-        instCache.filter(j => esMioJob(j) && j.estado === 'en_proceso' && !(j.enPausa === true)).forEach(j => { const retoma = Array.isArray(j.retomas) && j.retomas.length ? ymdDe(j.retomas[j.retomas.length - 1]) : ''; const d = Math.round((Date.now() - tsMs(j.inicioReal || j.fecha)) / 86400000); if (d >= 5 && !(retoma && retoma >= hoy)) out.push({ tipo: 'inst', id: j.id, titulo: esc([j.cliente, j.obra].filter(Boolean).join(' — ')), sub: `En proceso desde el ${fechaCorta(j.inicioReal || j.fecha)} · sin fecha de retomar`, accion: 'Retomar', href: 'instalacion.html' }); });
+        instCache.filter(j => esMioJob(j) && j.estado === 'en_proceso' && !(j.enPausa === true)).forEach(j => { const retoma = Array.isArray(j.retomas) && j.retomas.length ? ymdDe(j.retomas[j.retomas.length - 1]) : ''; const d = Math.round((Date.now() - tsMs(j.inicioReal || j.fecha)) / 86400000); if (d >= 5 && !(retoma && retoma >= hoy)) out.push({ tipo: 'inst', id: j.id, titulo: esc([j.cliente, j.obra].filter(Boolean).join(' — ')), sub: `${etiquetaTrabajo(j)} desde el ${fechaCorta(j.inicioReal || j.fecha)} · sin fecha de retomar`, accion: 'Retomar', href: 'instalacion.html' }); });
         citasAbiertas.filter(c => esMiaCita(c) && !(c.completadoPor || []).includes(usuario.email)).forEach(c => { const f = ymdDe(c.fecha); if (f && f < hoy) out.push({ tipo: 'cita', id: c.id, titulo: esc(c.titulo || 'Recordatorio'), sub: `Recordatorio del ${fechaCorta(c.fecha)}`, accion: 'Hecho', fn: `regCitaHecha('${c.id}')` }); });
         return out;
     }
@@ -536,7 +538,6 @@
         acusesHechos.add(m.id);
         try { await updateDoc(doc(db, 'mensajes', m.id), { ['acuses.' + k]: { leido: true, aceptado: !!m.requiereFirma, fecha: new Date().toISOString(), nombre: usuario.nombre, email: usuario.email, desde: 'mi-dia' } }); } catch (_) { }
     }
-    window.verInforme = function (id) { const m = informesMios.find(x => x.id === id); if (m) acusar(m); };
     // Un solo repintado por ráfaga de snapshots (al arrancar llegan 15 colecciones seguidas): se agrupa en 60 ms.
     let miDiaTimer = null;
     function renderMiDia() { clearTimeout(miDiaTimer); miDiaTimer = setTimeout(renderMiDiaAhora, 60); }
@@ -568,10 +569,9 @@
     window.regEntregado = async function (id) {
         const o = ordersCache.find(x => x.id === id); if (!o) return;
         if (!confirm('¿Marcar ENTREGADO «' + [o.cliente, o.obra].filter(Boolean).join(' — ') + '»?\n\nQueda registrado con tu nombre como chofer.')) return;
-        // Misma regla que «Entregado» en Transportes: una compra directa o un pedido «solo recoger» queda completado con la entrega;
-        // el resto espera la instalación (pedidoSigueTrabajo / pedidoEntregadoInterno hacen lo demás en el servidor).
-        const noNecesitaInstalador = o.docType === 'COMPRA_DIRECTA' || o.sinInstalacion === true;
-        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), enRuta: false, restoEnRuta: false, recepcionInstalador: { nombre: usuario.nombre, firma: null, fecha: new Date().toISOString() }, entregadoDesde: 'mi-dia', entregas: arrayUnion({ fechaISO: new Date().toISOString(), recibio: usuario.nombre, chofer: usuario.nombre, resto: '' }), ...((o.instalado === true || noNecesitaInstalador) ? { status: 'completado' } : {}) }); }
+        // (auditoría 2026-11-12) La misma escritura que «Entregado» en Transportes y «Recibido» en Instalación: envios.js → marcarEntregado
+        // (completa el pedido solo si es compra directa / «solo recoger» / ya instalado; el servidor hace el resto). Sin firma aquí.
+        try { await marcarEntregado(db, id, o, usuario, { firma: null, desde: 'mi-dia' }, { doc, updateDoc, serverTimestamp, arrayUnion }); }
         catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.regCitaHecha = async function (id) {
@@ -811,16 +811,6 @@
         const l = parteActual.lineas[i]; if (!l) return;
         if (campo === 'horas') l.horas = Math.max(0, Math.min(16, n2(valor)));
         else if (campo === 'tipo') { l.tipo = valor; if (valor !== 'obra') { l.obraKey = ''; l.obraLabel = ''; } if (valor === 'ausente') l.horas = 0; else if (!n2(l.horas)) l.horas = n2(config.horasJornada) || JORNADA_H; }
-        renderParte();
-    };
-    window.setObra = function (i, sel) {
-        const l = parteActual.lineas[i]; if (!l) return;
-        if (sel.value === '__manual__') {
-            const txt = (prompt('Escribe la obra (cliente — obra):') || '').trim();
-            if (!txt) { renderParte(); return; }
-            const partesTxt = txt.split(/\s+[—-]\s+/); const cliente = partesTxt[0] || txt, obra = partesTxt.slice(1).join(' — ');
-            l.obraKey = obraKeyDe(cliente, obra); l.obraLabel = [cliente, obra].filter(Boolean).join(' — ');
-        } else { const o = obrasDisponibles().find(x => x.key === sel.value); l.obraKey = sel.value; l.obraLabel = o ? o.label : ''; }
         renderParte();
     };
     window.agregarLinea = function (empId) {

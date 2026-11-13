@@ -14,7 +14,7 @@ import { db } from './firebase-config.js';
 import {
     collection, doc, addDoc, updateDoc, onSnapshot, query, where, getDoc, increment, serverTimestamp, arrayUnion
 } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20260812';
+import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js?v=20261112b';
 
 export const COL = 'solicitudesMaterial';
 export const ESTADOS = ['pedida', 'pedido_proveedor', 'por_pagar', 'pagado', 'chofer', 'recogido', 'entregada', 'rechazada', 'cancelada', 'vista', 'comprando', 'lista'];
@@ -386,7 +386,7 @@ export function solicitudCardHTML(s, opts) {
     const quien = s.pedidoPor ? s.pedidoPor.nombre : '';
     const sum = Array.isArray(s.sumados) && s.sumados.length ? ` <span style="color:#889;font-size:12px">+ ${s.sumados.map(x => esc(x.nombre)).join(', ')}</span>` : '';
     const ult = Array.isArray(s.historial) && s.historial.length ? s.historial[s.historial.length - 1] : null;
-    const estadoLinea = `<span style="display:inline-block;background:${color};color:#fff;border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:bold;">${ESTADO_ICO[s.estado] || ''} ${esc(ESTADO_TXT[s.estado] || s.estado)}</span>` +
+    const estadoLinea = `<span style="display:inline-block;background:${color};color:#fff;border-radius:100px;padding:3px 10px;font-size:12px;font-weight:bold;">${ESTADO_ICO[s.estado] || ''} ${esc(ESTADO_TXT[s.estado] || s.estado)}</span>` +
         (s.atiende && s.atiende.nombre && s.estado !== 'pedida' ? ` <span style="font-size:12px;color:#556">· ${esc(s.atiende.nombre)}</span>` : '') +
         (ult && ult.fechaISO ? ` <span style="font-size:12px;color:#889">· ${hace(ult.fechaISO)}</span>` : '');
     const puedeAdjuntar = ((opts.gestor || opts.chofer) && ['pedido_proveedor', 'chofer', 'recogido'].includes(s.estado)) || ((opts.gestor || opts.pagos) && s.estado === 'por_pagar');
@@ -422,23 +422,26 @@ export function solicitudCardHTML(s, opts) {
     const bGris = (txt, fn, title) => `<button onclick="${fn}" title="${esc(title || '')}" style="background:transparent;color:#667;border:1.5px dashed #c5ccd6;border-radius:8px;padding:8px 12px;font-size:13px;font-family:inherit;cursor:pointer;">${txt}</button>`;
     // Correcciones (2026-11-04): corregir datos (oficina siempre; quien pidió mientras está en Pedida), sacar del lote, deshacer el
     // último paso del lote y cambiar el estado a mano.
-    if (opts.gestor || (mia && s.estado === 'pedida')) acciones += bGris('✏️ Corregir', `solForm('${s.id}','editar')`, 'Cantidad, unidad, nota o urgencia');
-    if (opts.gestor && ['pedido_proveedor', 'por_pagar', 'pagado'].includes(s.estado)) acciones += bGris('↩ Sacar de este pedido al proveedor', `solForm('${s.id}','sacar')`, 'Este pedido vuelve a Pedida; el resto del lote sigue igual');
-    if (opts.gestor && s.estado === 'por_pagar') acciones += bGris('↩ Cotización equivocada', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «pedido al proveedor» y se cierra el recordatorio de pago');
-    if (opts.gestor && s.estado === 'pagado') acciones += bGris('↩ Comprobante equivocado', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Por pagar» y se reabre el recordatorio');
-    if (opts.gestor && s.estado === 'chofer' && s.pagoValidado) acciones += bGris('↩ Validado por error', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Pagado»');
-    if (opts.gestor) acciones += bGris('⚙️ Cambiar estado', `solForm('${s.id}','estado')`, 'Corregir el estado a mano');
+    // (auditoría 2026-11-12) las correcciones van plegadas en «⋯ Corregir» para no competir con la acción del momento.
+    let correcciones = '';
+    if (opts.gestor || (mia && s.estado === 'pedida')) correcciones += bGris('✏️ Corregir', `solForm('${s.id}','editar')`, 'Cantidad, unidad, nota o urgencia');
+    if (opts.gestor && ['pedido_proveedor', 'por_pagar', 'pagado'].includes(s.estado)) correcciones += bGris('↩ Sacar de este pedido al proveedor', `solForm('${s.id}','sacar')`, 'Este pedido vuelve a Pedida; el resto del lote sigue igual');
+    if (opts.gestor && s.estado === 'por_pagar') correcciones += bGris('↩ Cotización equivocada', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «pedido al proveedor» y se cierra el recordatorio de pago');
+    if (opts.gestor && s.estado === 'pagado') correcciones += bGris('↩ Comprobante equivocado', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Por pagar» y se reabre el recordatorio');
+    if (opts.gestor && s.estado === 'chofer' && s.pagoValidado) correcciones += bGris('↩ Validado por error', `solForm('${s.id}','deshacer')`, 'Todo el lote vuelve a «Pagado»');
+    if (opts.gestor) correcciones += bGris('⚙️ Cambiar estado', `solForm('${s.id}','estado')`, 'Corregir el estado a mano');
     const selec = opts.seleccionable && opts.gestor && POR_DECIDIR.includes(s.estado)
         ? `<input type="checkbox" class="sol-sel" data-id="${s.id}" onchange="solSelCambio && solSelCambio()" style="width:20px;height:20px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;" title="Seleccionar para decidir varios juntos">` : '';
     return `<div class="sol-card" id="sol-${s.id}" style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);padding:12px 14px;border-left:6px solid ${color};margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;">
-            <div>${selec}<b style="color:#0A3D62;font-size:15px;">${esc(nombreDe(s))}</b> <span style="font-size:14px;color:#223;">× ${esc(cantidadTxt(s))}</span>${s.itemId ? '' : ' <span style="font-size:11px;color:#889;border:1px solid #dde;border-radius:6px;padding:1px 5px;">no está en inventario</span>'}</div>
+            <div>${selec}<b style="color:#0A3D62;font-size:15px;">${esc(nombreDe(s))}</b> <span style="font-size:14px;color:#223;">× ${esc(cantidadTxt(s))}</span>${s.itemId ? '' : ' <span style="font-size:12px;color:#889;border:1px solid #dde;border-radius:6px;padding:1px 5px;">no está en inventario</span>'}</div>
             <span style="font-size:12px;font-weight:bold;color:${urgCol};white-space:nowrap;">${esc(URGENCIA_CORTA[s.urgencia] || '')}</span>
         </div>
         <div style="font-size:12.5px;color:#667;margin-top:3px;">${mia ? 'Pediste tú' : 'Pidió ' + esc(quien)}${sum} · ${esc(fechaCorta(s.fechaISO))}</div>
         <div style="margin-top:6px;">${estadoLinea}</div>
         ${detalle}${adjuntos}
         ${acciones ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">${acciones}</div>` : ''}
+        ${correcciones ? `<details class="mas"><summary>Corregir</summary><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${correcciones}</div></details>` : ''}
         <div id="sol-form-${s.id}"></div>
     </div>`;
 }
@@ -489,7 +492,7 @@ export function montarAcciones({ usuario, getSolicitud, getTodas }) {
                 <label style="font-size:12px;">Proveedor${defecto ? ' <span style="font-weight:normal;color:#27ae60">· el del inventario para esta pieza</span>' : (s.itemProveedor ? ` <span style="font-weight:normal;color:#b9770e">· el inventario dice «${esc(s.itemProveedor)}», no está en la lista</span>` : '')}</label>${sel('sf-prov-' + id, opciones, defecto, `document.getElementById('sf-provotro-${id}').style.display = this.value === 'otro' ? 'grid' : 'none'`)}
                 <div id="sf-provotro-${id}" style="display:none;grid-template-columns:1fr 1fr;gap:8px;"><div><label style="font-size:12px;">Nombre</label>${inp('sf-provnom-' + id, 'Ferretería X')}</div><div><label style="font-size:12px;">WhatsApp (10 dígitos)</label>${inp('sf-provtel-' + id, '8095551234', 'tel')}</div></div>
                 <label style="font-size:12px;">Mensaje (puedes editarlo)</label><textarea id="sf-msg-${id}" rows="6" style="width:100%;box-sizing:border-box;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-size:13px;font-family:inherit;">${esc(mensajeProveedor(s, ''))}</textarea>
-                <div style="font-size:11.5px;color:#778;">Se abre WhatsApp con el texto; lo envías tú y al volver confirmas «Sí, lo envié»: hasta entonces el pedido NO se marca. Cuando el proveedor mande la cotización, súbela con 📎 en la tarjeta: se manda a pagar sola. Si en ese sitio no se paga por adelantado, usa «Sin pago anticipado: lo compra el chofer».</div>`,
+                <div style="font-size:12.5px;color:#778;">Se abre WhatsApp con el texto; al volver confirma «Sí, lo envié». La cotización se sube después con 📎.</div>`,
                 'Abrir WhatsApp', `solOkProveedor('${id}')`, '#2980b9');
         } else if (tipo === 'chofer') {
             box.innerHTML = caja(id, `<div style="font-size:13px;font-weight:bold;color:#0A3D62;">🚚 ${s.estado === 'pedido_proveedor' ? 'Enviar al chofer para retirarlo' : 'Pasar directo al chofer'}</div>
