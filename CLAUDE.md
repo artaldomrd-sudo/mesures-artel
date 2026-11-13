@@ -2910,6 +2910,9 @@ colección entera). Índices compuestos creados por API: `mensajes(tipo, fecha)`
 **Pendiente de Dylan**: deploy de functions (lista en el informe; afecta a casi todo `index.js` → `firebase deploy --only functions`),
 pegar `firestore.rules`, y las 35 decisiones de `preguntas-dylan.md` (cotización no aprobada, firma del chofer, huella vs Obra
 terminada, Sara/contable, qué ve ALUCUFEL por regla, firma.html, mosaicos del Panel, nombres «Terminada/En obra», etc.).
+**Corrección 13/11 (Dylan: «en ningún momento di la orden de quitar esto»)**: la auditoría quitó los segundos botones «🏠 Panel» de 13
+páginas y Sara (Panel en `paginasExtra`) se quedó sin camino al Panel y al Calendario; restaurados tal cual (9168acd). Regla: una auditoría
+no elimina botones/enlaces/páginas sin pedirlo, y los accesos se comprueban contra `usuarios` reales (memoria `feedback-no-quitar-sin-orden`).
 **Trampa nueva**: `chatBot` solo acepta `Origin` del sitio (artaldominicana.com y la Pages del repo del sitio) → la maqueta b2b local
 ya no puede usar el bot. Verificación: sin sesión solo se probó Mi día (demo) y la sintaxis/handlers de todo; las pantallas con login
 las verá Dylan o se prueban con una clave de espejo renovada.
