@@ -2884,6 +2884,36 @@ borrador se descarta. `enviarParte` → `limpiarCierre()` al confirmar el `setDo
 recarga en paso 3 → horas y obra elegida en la hoja; atrás → toast y sigue; enviar → clave borrada y flecha visible. Lo tecleado por
 Miki el 12/11 antes de este cambio no se guardó en ningún sitio (no es recuperable).
 
+### Auditoría completa del sistema (2026-11-12 noche → 13): fallos, fricción y capa «Mi día» en todo ops/
+
+Dylan: «auditoría completa: fallos, procesos complicados, mejoras; obra maestra al 100 %; todo el sistema con la línea de Mi día:
+botones sencillos, claros y visibles, textos concisos». Método: chequeo mecánico propio (`scratchpad/auditoria/mecanica.mjs`: sintaxis de
+los 92 HTML + 26 módulos, manejadores inline sin función en `window`, enlaces rotos, ids duplicados, imports de Firestore sin importar,
+colecciones sin regla) + 5 revisores por área (obra, oficina, ERP/RRHH, servidor/reglas, transversal) + 5 ejecutores con archivos
+disjuntos. Criterio y reglas de los ejecutores en el scratchpad (`CRITERIO.md`, `EJECUTOR.md`); preguntas para Dylan en
+`preguntas-dylan.md` (35). Commits: bb19687 (urgentes), 2cf5653 (obra), 8efd862 (oficina), 774ac0c (servidor), 98eedd1 (ERP+transversal).
+**Fallos reales encontrados y corregidos**: Mi día con `?bloqueo=1` (a donde parte-gate manda al encargado con parte pendiente desde las
+6 pm) quedaba VACÍA (`#tab-parte` no existía desde el rediseño) — probable causa de «Wilson no ve bien la página»; en Mensajería las
+casillas «Requiere firma» y «Se trabaja un feriado» no llegaban al mensaje (`let` del módulo asignados desde `onchange`); los chips de
+motivo/regreso/misión del paso 1 no se marcaban (`renderResumen` fuera de `window`) y, al arreglarlo, el borrador local dejaba de
+guardarse (oyentes en burbujeo con el botón ya repintado → ahora en CAPTURA); los lectores del informe podían dar órdenes al
+Coordinador; «Empezamos hoy»/reprogramar no sacaban la obra de Pausadas; «No está listo» del chofer sin motivo; la Hilux no completaba
+«solo recoger»; cierre manual escribía `fechaEntrega` (nadie la leía); PIN saltable con `?embed=1`; botones Volver que rebotaban a
+no-admin; mapas de estado con códigos crudos y textos engañosos; fechas en UTC; `callerAdmin` sin mirar `activo`/`cuentaPrueba`;
+correos personales y cédulas en el repo público (correos → `rrhhConfig/coordinador` y `envios`; `firma.html` pendiente de decisión).
+**Estándar aplicado**: `ops/estados.js` (`etiquetaPedido`/`etiquetaTrabajo`, único diccionario de nombres de estado);
+`envios.js` `marcarEntregado()` (única escritura de Entregado: Transportes, Instalación, Mi día); un `.btn-primaria` por vista o
+tarjeta, secundarios `.acciones-sec`, administrativo en `details.mas`; textos de ayuda ≤ 1 línea (el detalle va a las guías de la
+Academia); capa móvil general en `shared.css` (`?v=20261113`: inputs 16 px, botones ≥ 44 px, tablas con scroll; excluye Mi día);
+consultas acotadas en Panel, ERP, Calendario, Compras, Producción, Costo de obras, Seguimiento y triggers (ninguna pantalla baja una
+colección entera). Índices compuestos creados por API: `mensajes(tipo, fecha)` e `instalaciones(estado, validadoFecha desc)`.
+**Pendiente de Dylan**: deploy de functions (lista en el informe; afecta a casi todo `index.js` → `firebase deploy --only functions`),
+pegar `firestore.rules`, y las 35 decisiones de `preguntas-dylan.md` (cotización no aprobada, firma del chofer, huella vs Obra
+terminada, Sara/contable, qué ve ALUCUFEL por regla, firma.html, mosaicos del Panel, nombres «Terminada/En obra», etc.).
+**Trampa nueva**: `chatBot` solo acepta `Origin` del sitio (artaldominicana.com y la Pages del repo del sitio) → la maqueta b2b local
+ya no puede usar el bot. Verificación: sin sesión solo se probó Mi día (demo) y la sintaxis/handlers de todo; las pantallas con login
+las verá Dylan o se prueban con una clave de espejo renovada.
+
 ### Mi día para todo el equipo + chips que no se marcaban (2026-11-12 noche)
 
 Dylan: «habilita la página Mi día a Roosevelt (como instalador) y a Emerson como ayudante, que puedan ver el programa del día cada día»
