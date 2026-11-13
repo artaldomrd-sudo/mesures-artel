@@ -82,7 +82,7 @@
         <label>Persona</label>
         <select id="en-persona"></select>
         <label>Fecha de entrega</label>
-        <input type="date" id="en-fecha">
+        <input type="date" id="en-fecha">   <!-- max = hoy (se fija en JS): una entrega no puede llevar fecha futura (Dylan 2026-11-12) -->
         <label>Artículos</label>
         <div id="en-filas"></div>
         <button type="button" class="btn-light" style="margin-top:8px" onclick="agregarFila()">＋ Otro artículo</button>
@@ -279,7 +279,7 @@
         const sel = document.getElementById('en-persona');
         sel.innerHTML = '<option value="">— elegir persona —</option>' + activas().map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('');
         if (personaId) sel.value = personaId;
-        document.getElementById('en-fecha').value = hoyISO(); document.getElementById('en-nota').value = '';
+        document.getElementById('en-fecha').value = hoyISO(); document.getElementById('en-fecha').max = hoyISO(); document.getElementById('en-nota').value = '';
         document.getElementById('en-filas').innerHTML = ''; agregarFila();
         document.getElementById('modal-ent').classList.add('show');
     };
@@ -323,6 +323,7 @@
         const pid = document.getElementById('en-persona').value, p = personaDe(pid);
         const fecha = document.getElementById('en-fecha').value || hoyISO(), nota = document.getElementById('en-nota').value.trim();
         if (!p) { alert('Elige la persona.'); return; }
+        if (fecha > hoyISO()) { alert('La fecha de entrega no puede ser posterior a hoy. Se registra el día en que se entregó de verdad; la reposición la calcula el sistema.'); return; }
         let filas;
         try { filas = [...document.querySelectorAll('#en-filas .fila-art')].map(f => { const a = articuloDe(f.querySelector('.fa-art').value); return a ? { a, talla: esTarjeta(a) ? '' : f.querySelector('.fa-talla').value, cant: esTarjeta(a) ? 1 : (Number(f.querySelector('.fa-cant').value) || 1), tarjeta: tarjetaDeFila(f, a) } : null; }).filter(Boolean); }
         catch (err) { alert(err.message); return; }
@@ -351,7 +352,7 @@
         const [txt] = ESTADO[nuevo];
         document.getElementById('est-title').textContent = { devuelto: '↩ Marcar devuelto', perdido: '⚠ Marcar perdido', danado: '💔 Marcar dañado' }[nuevo];
         document.getElementById('est-desc').textContent = `${e.empleadoNombre} · ${e.articulo}${e.talla ? ' talla ' + e.talla : ''} × ${e.cantidad}`;
-        document.getElementById('est-fecha').value = hoyISO(); document.getElementById('est-nota').value = '';
+        document.getElementById('est-fecha').value = hoyISO(); document.getElementById('est-fecha').max = hoyISO(); document.getElementById('est-nota').value = '';
         document.getElementById('est-nota-hint').textContent = nuevo === 'devuelto' ? '(opcional)' : '(obligatoria: qué pasó)';
         document.getElementById('est-aviso').textContent = (nuevo === 'devuelto' ? 'El artículo deja de estar en su poder.' : `Queda como «${txt}» con una marca «revisar con RRHH». Nunca se descuenta nada automáticamente: lo decide RRHH.`)
             + (e.tarjeta && nuevo !== 'devuelto' ? ` ⚠ ES UNA TARJETA: bloquéala ya con ${e.tarjeta.emisor || 'el emisor'} (${e.tarjeta.numero || ''}).` : '');
@@ -360,6 +361,7 @@
     window.guardarEstado = async () => {
         const e = entregas.find(x => x.id === estId); if (!e) return;
         const fecha = document.getElementById('est-fecha').value || hoyISO(), nota = document.getElementById('est-nota').value.trim();
+        if (fecha > hoyISO()) { alert('La fecha no puede ser posterior a hoy.'); return; }
         if (estNuevo !== 'devuelto' && !nota) { alert('Escribe qué pasó.'); return; }
         const [txt] = ESTADO[estNuevo];
         try {
