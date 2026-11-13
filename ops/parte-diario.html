@@ -604,12 +604,13 @@
             const sub = esc(it.label.startsWith('Entregar') ? 'Entregar' : it.label.startsWith('Cargar') ? 'Cargar' : it.label.startsWith('Comprar') ? 'Retirar material' : tipoDe(it.ref));
             if (!esObra) return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub}</div><div class="seg"><button type="button" class="${it.hecho === true ? 'on-si' : ''}" onclick="resSet(${i}, true)">✓ Hecho</button><button type="button" class="${it.hecho === false ? 'on-no' : ''}" onclick="resSet(${i}, false)">No</button></div>${it.hecho === false ? motivosHtml(it, i) : ''}</div>`;
             const eo = it.estadoObra || '';
+            const jj0 = instCache.find(x => 'inst:' + x.id === it.ref); const empezada = !!(jj0 && (jj0.estado === 'en_proceso' || jj0.inicioReal));
             const hoyD = new Date(parteActual.fecha + 'T12:00:00'); const man = new Date(hoyD); man.setDate(man.getDate() + (man.getDay() === 6 ? 2 : 1)); const lun = new Date(hoyD); lun.setDate(lun.getDate() + ((8 - lun.getDay()) % 7 || 7));
             const chipF = (d, txt) => { const v = ymd(d); return `<button type="button" class="${it.regreso === v ? 'on' : ''}" onclick="resRegreso(${i}, '${v}'); renderResumen()">${txt}</button>`; };
             const jj = instCache.find(x => 'inst:' + x.id === it.ref); const mp = jj && Array.isArray(jj.misiones) ? jj.misiones.filter(m => m && m.estado !== 'terminada') : [];
             const misHtml = mp.length && eo && eo !== 'nofui' ? `<div class="s" style="margin-top:10px">Misiones de esta obra · marca las terminadas hoy</div><div class="chips" style="margin-top:6px">${mp.map(m => `<button type="button" class="${(it.misionesHechas || []).includes(m.id) ? 'on' : ''}" onclick="resMision(${i}, '${m.id}'); renderResumen()">${(it.misionesHechas || []).includes(m.id) ? '✓ ' : ''}${esc(m.titulo)}</button>`).join('')}</div>` : '';
-            return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub.split(' · ')[0]} · ¿cómo quedó la obra?</div>
-                <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" class="${eo === 'terminada' ? 'on-si' : ''}" onclick="resObra(${i}, 'terminada')">✅ Terminada</button><button type="button" class="${eo === 'pausa' ? 'on-pausa' : ''}" onclick="resObra(${i}, 'pausa')">⏸ Pausada</button><button type="button" class="${eo === 'nofui' ? 'on-no' : ''}" onclick="resObra(${i}, 'nofui')">✖ No fuimos</button></div>
+            return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub.split(' · ')[0]} · ${empezada ? '¿cómo quedó la obra?' : 'sin empezar · ¿fueron hoy?'}</div>
+                <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" class="${eo === 'terminada' ? 'on-si' : ''}" onclick="resObra(${i}, 'terminada')">✅ Terminada</button><button type="button" class="${eo === 'pausa' ? 'on-pausa' : ''}" onclick="resObra(${i}, 'pausa')">${empezada ? '⏸ Pausada' : '📅 Otro día'}</button><button type="button" class="${eo === 'nofui' ? 'on-no' : ''}" onclick="resObra(${i}, 'nofui')">✖ No fuimos</button></div>
                 ${eo === 'pausa' ? `<div class="s" style="margin-top:10px">¿Qué día vuelven? <span style="color:var(--md-mut)">(si ya lo saben)</span></div><div class="chips" style="margin-top:6px"><button type="button" class="${!it.regreso ? 'on' : ''}" onclick="resRegreso(${i}, ''); renderResumen()">Sin fecha todavía</button>${chipF(man, 'Mañana')}${chipF(lun, 'El lunes')}<input type="date" class="inp" style="margin:0;flex:1;min-width:150px;min-height:40px;padding:6px 10px" value="${esc(it.regreso || '')}" min="${ymd(man)}" onchange="resRegreso(${i}, this.value); renderResumen()"></div>` : ''}
                 ${eo === 'nofui' ? motivosHtml(it, i) : ''}${misHtml}</div>`;
         }).join('');
@@ -645,12 +646,23 @@
                     const cuando = it.regreso ? new Date(it.regreso + 'T08:00:00') : null;
                     const cambios = { modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '', enPausa: !cuando, pausadoDesde: ahora, pausadoPor: usuario.nombre,
                         ...(cuando ? { fecha: Timestamp.fromDate(cuando), retomas: arrayUnion({ fecha: cuando.toISOString(), por: usuario.nombre, porEmail: usuario.email, cuando: new Date().toISOString(), desde: 'parte' }) } : { fecha: null }) };
-                    if (j.estado !== 'en_proceso') { cambios.estado = 'en_proceso'; cambios.estadoPor = usuario.nombre; cambios.estadoPorEmail = usuario.email; cambios.estadoFecha = ahora; }
-                    if (!j.inicioReal) cambios.inicioReal = ahora;
+                    // Solo una obra que YA empezó queda «en proceso»: si estaba pendiente y nadie fue, sigue pendiente (con fecha nueva o en pausa)
+                    // — antes se marcaba en proceso con inicioReal = hoy aunque no hubieran ido (Riviera Coson 2 y Aridia Portillos, 12/11).
+                    const yaEmpezada = j.estado === 'en_proceso' || !!j.inicioReal;
+                    if (yaEmpezada && !j.inicioReal) cambios.inicioReal = ahora;
                     await updateDoc(ref, cambios);
-                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: cuando ? 'Obra pausada al cerrar el día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Obra pausada al cerrar el día, sin fecha de regreso todavía', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: (yaEmpezada ? '' : 'Sin empezar · ') + (cuando ? 'Obra pausada al cerrar el día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Obra pausada al cerrar el día, sin fecha de regreso todavía'), por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
                 }
             } catch (e) { console.warn('aplicarObras', j.id, e); }
+        }
+        // Recordatorios marcados ✓ Hecho en el paso 1: misma escritura que el botón «Hecho ✓» de Pendientes (antes no se aplicaba y
+        // el recordatorio volvía a salir al día siguiente; caso Miki 12/11 con dos recordatorios del 2 y 3/11).
+        for (const it of items.filter(i => i.ref.startsWith('cita:') && i.hecho === true)) {
+            const c = citasAbiertas.find(x => 'cita:' + x.id === it.ref); if (!c || c.completada) continue;
+            const asg = Array.isArray(c.asignados) ? c.asignados : []; const cp = (c.completadoPor || []).includes(usuario.email) ? (c.completadoPor || []) : (c.completadoPor || []).concat([usuario.email]);
+            const todos = asg.length <= 1 || asg.every(p => cp.includes(p.email));
+            try { await updateDoc(doc(db, 'citas', c.id), { completadoPor: cp, ...(todos ? { completada: true, fechaCompletada: serverTimestamp(), recordatoriosPendientes: false, completadoDesde: 'mi-dia' } : {}) }); }
+            catch (e) { console.warn('aplicarObras cita', c.id, e); }
         }
     }
     window.pasoSiguiente = function (n) {
@@ -804,6 +816,10 @@
         if (sinObra.length) { alert('Falta elegir la obra de: ' + [...new Set(sinObra)].join(', ') + '.'); return; }
         const sinHoras = lineas.filter(l => l.tipo !== 'ausente' && !(l.horas > 0)).map(l => l.nombre);
         if (sinHoras.length) { alert('Horas en 0 para: ' + [...new Set(sinHoras)].join(', ') + '. Pon las horas o márcalo como ausente.'); return; }
+        // Misma persona dos veces en la misma obra (una fila «✓ validado» + otra escrita a mano): las horas se contarían dos veces.
+        const rep = new Map(); lineas.forEach(l => { if (l.tipo === 'obra' && l.obraKey) { const k = l.empleadoId + '|' + l.obraKey; rep.set(k, (rep.get(k) || 0) + 1); } });
+        const repetidas = [...new Set(lineas.filter(l => l.tipo === 'obra' && rep.get(l.empleadoId + '|' + l.obraKey) > 1).map(l => l.nombre + ' en ' + l.obraLabel))];
+        if (repetidas.length && !confirm('Hay dos filas de la misma persona en la misma obra (las horas se sumarían dos veces):\n\n' + repetidas.join('\n') + '\n\n¿Es correcto? Cancelar = volver y quitar la fila repetida con ✕.')) return;
         // Resumen del día (obligatorio en el parte de HOY): cada cosa prevista marcada, motivo en las ❌, y las dos líneas.
         const esHoyParte = fecha === hoyStr();
         if (esHoyParte) {

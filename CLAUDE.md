@@ -2857,6 +2857,21 @@ borrador se descarta. `enviarParte` → `limpiarCierre()` al confirmar el `setDo
 recarga en paso 3 → horas y obra elegida en la hoja; atrás → toast y sigue; enviar → clave borrada y flecha visible. Lo tecleado por
 Miki el 12/11 antes de este cambio no se guardó en ningún sitio (no es recuperable).
 
+### Revisión de los partes de Miki y Wilson (2026-11-12) → tres arreglos en «Cerrar el día»
+
+Dylan: «verifica los datos rellenados por Miki y Wilson, identifica posibles fallos o procesos mal hechos». Fallos del SISTEMA
+corregidos en `ops/parte-diario.html`: (1) `aplicarObras` marcaba «en proceso» con `inicioReal` = hoy una obra PENDIENTE a la que
+nadie fue solo por elegir «Pausada» (Riviera Coson 2 y Aridia Portillos quedaron «en proceso desde el 12/11»): ahora `yaEmpezada`
+(en_proceso o inicioReal) decide; una obra sin empezar sigue pendiente (con fecha nueva o `enPausa`) y el botón del paso 1 dice
+«📅 Otro día» + «sin empezar · ¿fueron hoy?» en vez de «⏸ Pausada». (2) Los recordatorios marcados «✓ Hecho» en el paso 1 no se
+aplicaban (solo las obras) y volvían a salir al día siguiente: `aplicarObras` ahora completa las `citas` con la misma escritura que
+`regCitaHecha` (`completadoDesde:'mi-dia'`). (3) `enviarParte` avisa con `confirm` si una persona tiene dos filas en la misma obra
+(una «✓ validado» + otra escrita a mano → horas dobles; pasó el 5/11 con Yunairy ×2 para Miki/Emerson y Jade ×2 para Wilson).
+Fallos de DATOS vistos (corrección con OK de Dylan): Miki 12/11 cargó 8 h a «Almacén Artal» cuando fue a montar la puerta en AMARES
+(camino del Limón) y Miki 5/11 cargó 8 h a «MIRKO — COCOLOBA» (obra cerrada el 13/10) mientras Emerson iba a «STEVE Y ALAIN — Villa
+Cocoloba». Al cerrar el día, Miki puso «Pausada sin fecha» a sus 8 obras abiertas → todas con `enPausa:true` (desaparecen del plan
+de todos hasta «Retomamos hoy»).
+
 ### Capa de claridad en todas las pantallas (2026-11-12)
 
 Dylan: «revisa todo el sistema y opera mejoras similares en todas las áreas: procesos más claros, cortos y sencillos; eficiencia,
