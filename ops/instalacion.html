@@ -788,6 +788,10 @@
         const fmt = (d) => d.toLocaleDateString('es-DO', { day: 'numeric', month: 'short' });
         // En proceso (usuario 2026-10-01): se dice desde cuándo empezaron y, si falta terminar, cuándo vuelven.
         // Fecha en el pasado = la obra quedó en espera de volver (falta algo) → se pide «Retomar» con el día de regreso.
+        if (j.enPausa === true && j.estado !== 'completado') {
+            const pd = (j.pausadoDesde && j.pausadoDesde.toDate) ? j.pausadoDesde.toDate() : null;
+            return `⏸ En pausa${pd ? ' desde el ' + fmt(pd) : ''} · hasta nuevo aviso${j.pausadoPor ? ' (' + j.pausadoPor + ')' : ''}`;
+        }
         if (j.estado === 'en_proceso') {
             const ir = (j.inicioReal && j.inicioReal.toDate) ? j.inicioReal.toDate() : null;
             const hoy0 = d0(new Date()).getTime();
@@ -1182,13 +1186,14 @@
     const hoy0 = () => d0(new Date()).getTime();
     const fechaValJob = (j) => { const v = j.validadoFecha || j.estadoFecha || j.fecha; return v && v.toDate ? v.toDate().getTime() : 0; };
     const FILTROS_INST = {
-        hoy: { g: 'Hoy', label: 'Hoy en obra', ic: '📅', f: (j) => j.estado !== 'completado' && jobEnDia(j, new Date()) },
-        sinFecha: { g: 'Hoy', label: 'Sin fecha', ic: '📋', f: (j) => j.estado !== 'completado' && !jobDate(j) },
+        hoy: { g: 'Hoy', label: 'Hoy en obra', ic: '📅', f: (j) => j.estado !== 'completado' && j.enPausa !== true && jobEnDia(j, new Date()) },
+        sinFecha: { g: 'Hoy', label: 'Sin fecha', ic: '📋', f: (j) => j.estado !== 'completado' && j.enPausa !== true && !jobDate(j) },
         atrasados: { g: 'Hoy', label: 'Atrasados', ic: '⏰', f: (j) => (j.estado === 'pendiente' || !j.estado) && jobDate(j) && d0(jobDate(j)).getTime() < hoy0() },
         abiertos: { g: 'Seguimiento', label: 'Todos abiertos', ic: '🗂', f: (j) => j.estado !== 'completado' },
         porEmpezar: { g: 'Seguimiento', label: 'Por empezar', ic: '🟡', f: (j) => j.estado === 'pendiente' || !j.estado },
         enProceso: { g: 'Seguimiento', label: 'En proceso', ic: '🔧', f: (j) => j.estado === 'en_proceso' },
-        enEspera: { g: 'Seguimiento', label: 'En espera de volver', ic: '⏸', f: (j) => j.estado === 'en_proceso' && jobDate(j) && d0(jobDate(j)).getTime() < hoy0() },
+        // Pausadas (Dylan 2026-11-12): una obra en pausa «no se ha previsto volver hasta nuevo aviso»; vive aquí, no en Hoy ni en Sin fecha.
+        enEspera: { g: 'Seguimiento', label: 'Pausadas · en espera de volver', ic: '⏸', f: (j) => j.estado !== 'completado' && (j.enPausa === true || (j.estado === 'en_proceso' && jobDate(j) && d0(jobDate(j)).getTime() < hoy0())) },
         mediciones: { g: 'Seguimiento', label: 'Mediciones por entregar', ic: '📏', f: (j) => j.medicionPendienteOficina === true },
         completados7: { g: 'Seguimiento', label: 'Completados 7 días', ic: '✅', f: (j) => j.estado === 'completado' && fechaValJob(j) >= Date.now() - 7 * 86400000 }
     };

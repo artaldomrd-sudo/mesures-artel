@@ -2872,6 +2872,19 @@ Fallos de DATOS vistos (corrección con OK de Dylan): Miki 12/11 cargó 8 h a «
 Cocoloba». Al cerrar el día, Miki puso «Pausada sin fecha» a sus 8 obras abiertas → todas con `enPausa:true` (desaparecen del plan
 de todos hasta «Retomamos hoy»).
 
+### Mi día: menos frenos en «Cerrar el día» (2026-11-12 noche, Wilson y Miki «se nos hizo difícil»)
+
+Revisión a 360 px (Android) y 390 px: sin desbordes, botones ≥ 40 px, inputs 16 px → el problema era de FLUJO, no visual. Cambios en
+`ops/parte-diario.html`: (1) abrir la pantalla ya no crea el borrador ni bloquea (`setPaso` solo guarda si `cierreEnCurso`; antes el
+`guardarCierre()` de `setPaso` arrancaba el candado nada más abrir a las 15:00). (2) `planDeHoy` marca `opcional` las obras «en
+proceso» sin cita para hoy y los recordatorios vencidos; en el paso 1 van plegados en `details.mas` «Otras obras abiertas (N) · toca
+solo si estuviste hoy» y sin respuesta = sin cambios (no bloquean `pasoSiguiente(1)` ni `enviarParte`, y no se guardan en
+`resumen.items`). Lo previsto para hoy (agendado, atrasado, entregas, material) sigue siendo obligatorio. (3) `prellenarHoras()` (al
+pasar al paso 3): si nadie tocó las filas, cada persona recibe una fila por obra marcada Terminada/Pausada en el paso 1 con la jornada
+repartida (redondeo a 0,5 h); las filas «✓ validado» no se tocan. (4) La hoja «¿dónde estuvo?» pone las ACTIVIDADES (taller, almacén,
+oficina, transporte…) arriba y las obras debajo (antes quedaban al fondo tras 10 obras). Instalación: mosaico «⏸ Pausadas · en espera
+de volver» incluye `enPausa` (y Hoy / Sin fecha las excluyen); `fechaTxtJob` dice «⏸ En pausa desde el … · hasta nuevo aviso».
+
 ### Capa de claridad en todas las pantallas (2026-11-12)
 
 Dylan: «revisa todo el sistema y opera mejoras similares en todas las áreas: procesos más claros, cortos y sencillos; eficiencia,

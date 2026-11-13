@@ -16,6 +16,7 @@
     html, body { background: var(--md-bg) !important; color: var(--md-fg); font-family: 'Arimo', Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.45; }
     body::before, body::after { display: none !important; }
     header.hd { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 14px calc(10px); padding-top: calc(10px + env(safe-area-inset-top, 0px)); background: var(--md-bg); border: 0; border-radius: 0; box-shadow: none; }
+    .paso details.mas > summary { font-size: 15px; color: var(--md-blue); padding: 10px 0; font-weight: 700; }
     .md-toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: #1b2430; color: #fff; padding: 12px 16px; border-radius: 12px; font-size: 15px; z-index: 9999; max-width: min(92vw, 420px); text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
     .cierre-fijo { font-size: 12px; color: var(--md-mut); text-align: center; margin: -6px 0 10px; }
     header.hd .back { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--md-blue); text-decoration: none; font-size: 24px; font-weight: bold; flex: none; background: var(--md-card); }
@@ -231,7 +232,7 @@
         const st = document.getElementById('steps'); st.hidden = n === 4 || !conResumen; st.innerHTML = [1, 2, 3].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('');
         if (n === 1 || n === 2) renderResumen(); if (n === 3) renderParte();
         window.scrollTo({ top: 0 });
-        guardarCierre();
+        if (cierreEnCurso) guardarCierre();   // abrir la pantalla no crea el borrador: solo el primer toque real (paso 1)
     };
     window.irCerrar = function () { paso = 1; setVista('cerrar'); };
     // ---- Cierre del día FIJO hasta enviar (Dylan 2026-11-12; caso Miki: tocó algo sin querer, la página se cerró y perdió lo rellenado) ----
@@ -503,14 +504,15 @@
         instCache.filter(j => esMioJob(j) && ['pendiente', 'en_proceso'].includes(j.estado) && !(j.enPausa === true)).forEach(j => {
             const f = ymdDe(j.fecha); const retoma = Array.isArray(j.retomas) && j.retomas.length ? ymdDe(j.retomas[j.retomas.length - 1]) : '';
             let tag = '', cl = '';
-            if (j.estado === 'en_proceso') { if (retoma && retoma > hoy) return; tag = 'en proceso' + (j.inicioReal ? ' desde ' + fechaCorta(j.inicioReal) : ''); cl = retoma && retoma < hoy ? 'amb' : ''; }
+            let opcional = false;
+            if (j.estado === 'en_proceso') { if (retoma && retoma > hoy) return; opcional = !(f === hoy || retoma === hoy); tag = 'en proceso' + (j.inicioReal ? ' desde ' + fechaCorta(j.inicioReal) : ''); cl = retoma && retoma < hoy ? 'amb' : ''; }
             else if (f === hoy) tag = 'hoy';
             else if (f && f < hoy) { tag = 'atrasado · era el ' + fechaCorta(j.fecha); cl = 'rojo'; }
             else return;   // pendiente para otro día
             const mp = (Array.isArray(j.misiones) ? j.misiones : []).filter(m => m && m.estado !== 'terminada');
-            items.push({ ref: 'inst:' + j.id, ico: '🔧', label: [j.cliente, j.obra].filter(Boolean).join(' — '), sub: (j.tipoTrabajo || 'instalación').replace(/_/g, ' ') + (mp.length ? ' · ' + mp.length + ' misión' + (mp.length > 1 ? 'es' : '') + ': ' + mp.map(m => m.titulo).join(' · ') : ''), tag, cl });
+            items.push({ ref: 'inst:' + j.id, ico: '🔧', label: [j.cliente, j.obra].filter(Boolean).join(' — '), sub: (j.tipoTrabajo || 'instalación').replace(/_/g, ' ') + (mp.length ? ' · ' + mp.length + ' misión' + (mp.length > 1 ? 'es' : '') + ': ' + mp.map(m => m.titulo).join(' · ') : ''), tag, cl, opcional });
         });
-        citasAbiertas.filter(c => esMiaCita(c) && !(c.completadoPor || []).includes(usuario.email)).forEach(c => { const f = ymdDe(c.fecha); if (!f || f > hoy) return; items.push({ ref: 'cita:' + c.id, ico: '🔔', label: c.titulo || c.descripcion || 'Recordatorio', sub: '', tag: f === hoy ? 'hoy' : 'vencido · ' + fechaCorta(c.fecha), cl: f < hoy ? 'rojo' : '' }); });
+        citasAbiertas.filter(c => esMiaCita(c) && !(c.completadoPor || []).includes(usuario.email)).forEach(c => { const f = ymdDe(c.fecha); if (!f || f > hoy) return; items.push({ ref: 'cita:' + c.id, ico: '🔔', label: c.titulo || c.descripcion || 'Recordatorio', sub: '', tag: f === hoy ? 'hoy' : 'vencido · ' + fechaCorta(c.fecha), cl: f < hoy ? 'rojo' : '', opcional: f < hoy }); });
         if (soyChofer()) {
             ordersCache.filter(o => esMioPedido(o) && o.entregado !== true && o.enRuta === true).forEach(o => items.push({ ref: 'order:' + o.id, ico: '🚚', label: 'Entregar: ' + [o.cliente, o.obra].filter(Boolean).join(' — '), sub: fechaCorta(o.fechaEnRuta) ? 'en ruta desde ' + fechaCorta(o.fechaEnRuta) : '', tag: '', cl: '' }));
             ordersCache.filter(o => esMioPedido(o) && o.entregado !== true && o.enRuta !== true && ['listo_para_cargar', 'parcialmente_listo'].includes(o.status)).forEach(o => items.push({ ref: 'order:' + o.id, ico: '📦', label: 'Cargar: ' + [o.cliente, o.obra].filter(Boolean).join(' — '), sub: fechaCorta(o.fechaListoParaCargar) ? 'listo desde ' + fechaCorta(o.fechaListoParaCargar) : '', tag: '', cl: '' }));
@@ -585,20 +587,20 @@
     let resumenActual = { items: [], cumplido: '', noCumplido: '' };
     function prepararResumen(ex) {
         if (ex && ex.resumen) resumenActual = { items: (ex.resumen.items || []).map(i => ({ ...i })), cumplido: ex.resumen.cumplido || '', noCumplido: ex.resumen.noCumplido || '' };
-        else if (parteActual && parteActual.fecha === hoyStr()) resumenActual = { items: planDeHoy().map(it => ({ ref: it.ref, label: it.label, hecho: null, motivo: '', nota: '' })), cumplido: '', noCumplido: '' };
+        else if (parteActual && parteActual.fecha === hoyStr()) resumenActual = { items: planDeHoy().map(it => ({ ref: it.ref, label: it.label, hecho: null, motivo: '', nota: '', opcional: !!it.opcional })), cumplido: '', noCumplido: '' };
         else resumenActual = { items: [], cumplido: '', noCumplido: '' };
     }
     function renderResumen() {
         const p1 = document.getElementById('paso1'), p2 = document.getElementById('paso2'); if (!p1 || !parteActual) return;
         const esHoy = parteActual.fecha === hoyStr();
-        if (esHoy && !(parteGuardado && parteGuardado.resumen)) { const ya = new Set(resumenActual.items.map(i => i.ref)); planDeHoy().forEach(it => { if (!ya.has(it.ref)) resumenActual.items.push({ ref: it.ref, label: it.label, hecho: null, motivo: '', nota: '' }); }); }
+        if (esHoy && !(parteGuardado && parteGuardado.resumen)) { const ya = new Set(resumenActual.items.map(i => i.ref)); planDeHoy().forEach(it => { if (!ya.has(it.ref)) resumenActual.items.push({ ref: it.ref, label: it.label, hecho: null, motivo: '', nota: '', opcional: !!it.opcional }); }); }
         const act = document.activeElement; if (act && (p1.contains(act) || p2.contains(act)) && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) return;
         const tipoDe = (ref) => ref.startsWith('inst:') ? ((instCache.find(j => 'inst:' + j.id === ref) || {}).tipoTrabajo || 'instalación').replace(/_/g, ' ') : ref.startsWith('order:') ? 'Transporte' : ref.startsWith('sol:') ? 'Material' : 'Recordatorio';
         // Las OBRAS (trabajos de Instalación) no se marcan «hecho / no»: se cierran o se pausan con fecha de regreso. Dylan 2026-11-12:
         // «hoy llegan, pulsan retomar, hacen lo que se debe hacer y antes de irse marcan terminado o vuelven otro día»; al enviar el
         // parte, el sistema aplica el estado a la obra (ver aplicarObras). Lo demás (entregas, recordatorios, material) sigue con ✓ / No.
         const motivosHtml = (it, i) => `<div class="chips">${MOTIVOS.filter(m => m[0]).map(m => `<button type="button" class="${m[0] === it.motivo ? 'on' : ''}" onclick="resMotivo(${i}, '${m[0]}'); renderResumen()">${esc(m[1].replace(' (explica)', ''))}</button>`).join('')}</div><input class="inp" type="text" placeholder="Detalle (opcional)" value="${esc(it.nota || '')}" oninput="resNota(${i}, this.value)">`;
-        const its = resumenActual.items.map((it, i) => {
+        const itemHtml = (it, i) => {
             const esObra = it.ref.startsWith('inst:');
             const titulo = esc(it.label.replace(/^(Entregar|Cargar|Comprar \/ retirar): /, ''));
             const sub = esc(it.label.startsWith('Entregar') ? 'Entregar' : it.label.startsWith('Cargar') ? 'Cargar' : it.label.startsWith('Comprar') ? 'Retirar material' : tipoDe(it.ref));
@@ -613,8 +615,15 @@
                 <div class="seg" style="grid-template-columns:1fr 1fr 1fr"><button type="button" class="${eo === 'terminada' ? 'on-si' : ''}" onclick="resObra(${i}, 'terminada')">✅ Terminada</button><button type="button" class="${eo === 'pausa' ? 'on-pausa' : ''}" onclick="resObra(${i}, 'pausa')">${empezada ? '⏸ Pausada' : '📅 Otro día'}</button><button type="button" class="${eo === 'nofui' ? 'on-no' : ''}" onclick="resObra(${i}, 'nofui')">✖ No fuimos</button></div>
                 ${eo === 'pausa' ? `<div class="s" style="margin-top:10px">¿Qué día vuelven? <span style="color:var(--md-mut)">(si ya lo saben)</span></div><div class="chips" style="margin-top:6px"><button type="button" class="${!it.regreso ? 'on' : ''}" onclick="resRegreso(${i}, ''); renderResumen()">Sin fecha todavía</button>${chipF(man, 'Mañana')}${chipF(lun, 'El lunes')}<input type="date" class="inp" style="margin:0;flex:1;min-width:150px;min-height:40px;padding:6px 10px" value="${esc(it.regreso || '')}" min="${ymd(man)}" onchange="resRegreso(${i}, this.value); renderResumen()"></div>` : ''}
                 ${eo === 'nofui' ? motivosHtml(it, i) : ''}${misHtml}</div>`;
-        }).join('');
-        p1.innerHTML = `<p class="q">¿Cómo quedó el día?</p><p class="qs">Cada obra se cierra o se pausa con fecha. Lo demás, hecho o no.</p>${its || '<div class="item"><div class="n">Nada previsto en el sistema para hoy</div><div class="s">Cuenta el día en el paso siguiente.</div></div>'}<button class="cta" onclick="pasoSiguiente(1)">Siguiente</button>`;
+        };
+        // Lo previsto para hoy (agendado, atrasado, entregas, material) se contesta sí o sí; las obras abiertas sin cita para hoy y los
+        // recordatorios vencidos van plegados y son opcionales: sin respuesta = sin cambios (Dylan 2026-11-12: Miki tuvo que contestar
+        // por 8 obras a las que no fue y acabó pausándolas todas).
+        const idx = resumenActual.items.map((it, i) => i);
+        const req = idx.filter(i => !resumenActual.items[i].opcional), opc = idx.filter(i => resumenActual.items[i].opcional);
+        const its = req.map(i => itemHtml(resumenActual.items[i], i)).join('');
+        const itsOpc = opc.length ? `<details class="mas" style="margin-top:14px" ${opc.some(i => resumenActual.items[i].estadoObra || resumenActual.items[i].hecho != null) ? 'open' : ''}><summary>Otras obras abiertas (${opc.length}) · toca solo si estuviste hoy</summary>${opc.map(i => itemHtml(resumenActual.items[i], i)).join('')}</details>` : '';
+        p1.innerHTML = `<p class="q">¿Cómo quedó el día?</p><p class="qs">Cada obra se cierra o se pausa con fecha. Lo demás, hecho o no.</p>${(its + itsOpc) || '<div class="item"><div class="n">Nada previsto en el sistema para hoy</div><div class="s">Cuenta el día en el paso siguiente.</div></div>'}<button class="cta" onclick="pasoSiguiente(1)">Siguiente</button>`;
         const m = (() => { const d = new Date(parteActual.fecha + 'T12:00:00'); d.setDate(d.getDate() + (d.getDay() === 6 ? 2 : 1)); return ymd(d); })();
         const manana = instCache.filter(j => esMioJob(j) && ['pendiente', 'en_proceso'].includes(j.estado) && (ymdDe(j.fecha) === m || (Array.isArray(j.retomas) && j.retomas.length && ymdDe(j.retomas[j.retomas.length - 1]) === m))).map(j => [j.cliente, j.obra].filter(Boolean).join(' — '));
         p2.innerHTML = `<p class="q">En dos líneas</p><p class="qs">Como se lo contarías a Dylan por teléfono.</p>
@@ -667,8 +676,8 @@
     }
     window.pasoSiguiente = function (n) {
         if (n === 1) {
-            const sinObra = resumenActual.items.filter(i => i.ref.startsWith('inst:') && !i.estadoObra); if (sinObra.length) { alert('Di cómo quedó la obra (Terminada, Pausada o No fuimos): ' + sinObra.map(i => i.label).join(' · ')); return; }
-            const sinMarcar = resumenActual.items.filter(i => !i.ref.startsWith('inst:') && i.hecho == null); if (sinMarcar.length) { alert('Marca Hecho o No en: ' + sinMarcar.map(i => i.label).join(' · ')); return; }
+            const sinObra = resumenActual.items.filter(i => i.ref.startsWith('inst:') && !i.estadoObra && !i.opcional); if (sinObra.length) { alert('Di cómo quedó la obra (Terminada, Pausada o No fuimos): ' + sinObra.map(i => i.label).join(' · ')); return; }
+            const sinMarcar = resumenActual.items.filter(i => !i.ref.startsWith('inst:') && i.hecho == null && !i.opcional); if (sinMarcar.length) { alert('Marca Hecho o No en: ' + sinMarcar.map(i => i.label).join(' · ')); return; }
             const sinMotivo = resumenActual.items.filter(i => i.hecho === false && !i.motivo); if (sinMotivo.length) { alert('Elige por qué no: ' + sinMotivo.map(i => i.label).join(' · ')); return; }
             setPaso(2); return;
         }
@@ -676,9 +685,24 @@
             const ta = document.getElementById('res-cumplido'), tb = document.getElementById('res-nocumplido'); if (ta) resumenActual.cumplido = ta.value; if (tb) resumenActual.noCumplido = tb.value;
             if (resumenActual.cumplido.trim().length < 3) { alert('Escribe en una línea qué se cumplió hoy.'); ta.focus(); return; }
             if (resumenActual.noCumplido.trim().length < 3) { alert('Escribe qué no se cumplió y por qué. Si todo se cumplió, escribe «Nada».'); tb.focus(); return; }
+            prellenarHoras();
             setPaso(3);
         }
     };
+    // Las obras marcadas Terminada / Pausada en el paso 1 son donde estuvieron: el paso 3 arranca con una fila por obra y persona
+    // (jornada repartida) en vez de «Elige la obra» en cada fila. Solo si nadie ha tocado todavía las filas (sin obra elegida a mano).
+    function prellenarHoras() {
+        if (!parteActual || parteActual.fecha !== hoyStr()) return;
+        const libres = parteActual.lineas.filter(l => !l.origenValidacion);
+        if (!libres.length || libres.some(l => l.tipo !== 'obra' || l.obraKey)) return;
+        const obras = resumenActual.items.filter(i => i.ref.startsWith('inst:') && (i.estadoObra === 'terminada' || i.estadoObra === 'pausa')).map(i => instCache.find(j => 'inst:' + j.id === i.ref)).filter(Boolean)
+            .map(j => ({ obraKey: obraKeyDe(j.cliente, j.obra), obraLabel: [j.cliente, j.obra].filter(Boolean).join(' — ') }));
+        const unicas = [...new Map(obras.map(o => [o.obraKey, o])).values()]; if (!unicas.length) return;
+        const jornada = n2(config.horasJornada) || JORNADA_H; const h = Math.max(0.5, Math.round((jornada / unicas.length) * 2) / 2);
+        const nuevas = [];
+        parteActual.lineas.forEach(l => { if (l.origenValidacion) { nuevas.push(l); return; } unicas.forEach(o => nuevas.push({ ...l, obraKey: o.obraKey, obraLabel: o.obraLabel, horas: h })); });
+        parteActual.lineas = nuevas;
+    }
     window.resSet = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.hecho = v; if (v) { it.motivo = ''; it.nota = ''; } renderResumen(); };
     window.resObra = function (i, v) { const it = resumenActual.items[i]; if (!it) return; it.estadoObra = v; it.hecho = v !== 'nofui'; if (v !== 'nofui') { it.motivo = ''; it.nota = ''; } if (v !== 'pausa') it.regreso = ''; renderResumen(); };
     window.resRegreso = function (i, v) { const it = resumenActual.items[i]; if (it) it.regreso = v || ''; };
@@ -764,7 +788,7 @@
         const obras = obrasDisponibles(); const G = ['Tus obras', 'En curso', 'Terminadas (45 días)'];
         const acts = TIPOS.filter(t => t[0] !== 'obra').map(t => `<button type="button" class="chips-b" onclick="setLinea(${i},'tipo','${t[0]}'); cerrarSheet()" style="border:1.5px solid var(--md-line);border-radius:999px;padding:8px 12px;font-size:14px;background:${l.tipo === t[0] ? 'var(--md-blue)' : 'var(--md-card)'};color:${l.tipo === t[0] ? '#fff' : 'var(--md-fg)'};font-family:Arimo;cursor:pointer;margin:0 6px 6px 0">${esc(t[1])}</button>`).join('');
         const lista = [0, 1, 2].map(g => { const L = obras.filter(o => o.grupo === g); return L.length ? `<div class="gh">${G[g]}</div>` + L.map(o => `<button type="button" class="ob" onclick="elegirObra(${i}, '${esc(o.key)}')">${esc(o.label)}<small>${esc(finTxt(o))}</small></button>`).join('') : ''; }).join('');
-        abrirSheet(`<h4>${esc(l.nombre.replace(/\s*\(demo\)/, ''))} · ¿dónde estuvo?<button onclick="cerrarSheet()">✕</button></h4><div class="gh">Obra</div>${lista}<button type="button" class="ob" onclick="elegirObra(${i}, '__manual__')">✎ Otra obra (escribir)…</button><div class="gh" style="margin-top:16px">O una actividad</div><div style="margin-top:6px">${acts}</div>`);
+        abrirSheet(`<h4>${esc(l.nombre.replace(/\s*\(demo\)/, ''))} · ¿dónde estuvo?<button onclick="cerrarSheet()">✕</button></h4><div class="gh">Actividad</div><div style="margin:6px 0 14px">${acts}</div><div class="gh">Obra</div>${lista}<button type="button" class="ob" onclick="elegirObra(${i}, '__manual__')">✎ Otra obra (escribir)…</button>`);
     };
     window.elegirObra = function (i, key) {
         const l = parteActual.lineas[i]; if (!l) return;
@@ -827,10 +851,10 @@
             const keysLineas = new Set(lineas.filter(l => l.tipo === 'obra' && l.obraKey).map(l => l.obraKey));
             const faltan = instCache.filter(j => ['pendiente', 'en_proceso'].includes(j.estado) && keysLineas.has(obraKeyDe(j.cliente, j.obra)) && !resumenActual.items.some(i => i.ref === 'inst:' + j.id));
             if (faltan.length) { faltan.forEach(j => resumenActual.items.push({ ref: 'inst:' + j.id, label: [j.cliente, j.obra].filter(Boolean).join(' — '), hecho: null, motivo: '', nota: '', estadoObra: '', regreso: '' })); alert('Trabajaste en ' + faltan.map(j => [j.cliente, j.obra].filter(Boolean).join(' — ')).join(' · ') + ': di cómo quedó la obra (paso 1).'); setPaso(1); return; }
-            const sinObra = resumenActual.items.filter(i => i.ref.startsWith('inst:') && !i.estadoObra); if (sinObra.length) { alert('Falta decir cómo quedó: ' + sinObra.map(i => i.label).join(' · ') + ' (paso 1).'); setPaso(1); return; }
+            const sinObra = resumenActual.items.filter(i => i.ref.startsWith('inst:') && !i.estadoObra && !i.opcional); if (sinObra.length) { alert('Falta decir cómo quedó: ' + sinObra.map(i => i.label).join(' · ') + ' (paso 1).'); setPaso(1); return; }
             const ta = document.getElementById('res-cumplido'), tb = document.getElementById('res-nocumplido');
             if (ta) resumenActual.cumplido = ta.value; if (tb) resumenActual.noCumplido = tb.value;
-            const sinMarcar = resumenActual.items.filter(i => i.hecho == null);
+            const sinMarcar = resumenActual.items.filter(i => i.hecho == null && !i.opcional);
             if (sinMarcar.length) { alert('En el resumen del día marca ✅ o ❌ en: ' + sinMarcar.map(i => i.label).join(' · ')); return; }
             const sinMotivo = resumenActual.items.filter(i => i.hecho === false && !i.motivo);
             if (sinMotivo.length) { alert('Di por qué no se hizo: ' + sinMotivo.map(i => i.label).join(' · ')); return; }
@@ -861,7 +885,7 @@
         const id = parteId(fecha, enc.email);
         const incluidosEmails = [...new Set(lineas.map(l => { const e = empPorId(l.empleadoId); return e && e.correo ? String(e.correo).toLowerCase() : ''; }).filter(Boolean))];
         const datos = { fecha, encargadoEmail: enc.email, encargadoNombre: enc.nombre, lineas, incluidosEmails, nota: parteActual.nota, actualizado: serverTimestamp(), editadoPor: usuario.nombre };
-        if (esHoyParte || resumenActual.items.length || resumenActual.cumplido || resumenActual.noCumplido) datos.resumen = { items: resumenActual.items.map(i => ({ ref: i.ref, label: i.label, hecho: i.hecho === true, motivo: i.motivo || '', nota: (i.nota || '').trim(), estadoObra: i.estadoObra || '', regreso: i.regreso || '', misionesHechas: i.misionesHechas || [] })), cumplido: resumenActual.cumplido.trim(), noCumplido: resumenActual.noCumplido.trim(), fechaISO: new Date().toISOString(), por: usuario.nombre };
+        if (esHoyParte || resumenActual.items.length || resumenActual.cumplido || resumenActual.noCumplido) datos.resumen = { items: resumenActual.items.filter(i => !(i.opcional && !i.estadoObra && i.hecho == null)).map(i => ({ ref: i.ref, label: i.label, hecho: i.hecho === true, motivo: i.motivo || '', nota: (i.nota || '').trim(), estadoObra: i.estadoObra || '', regreso: i.regreso || '', misionesHechas: i.misionesHechas || [] })), cumplido: resumenActual.cumplido.trim(), noCumplido: resumenActual.noCumplido.trim(), fechaISO: new Date().toISOString(), por: usuario.nombre };
         // Un borrador (horas cargadas al validar trabajos) pasa a parte enviado AHORA: `creado` = momento real del envío
         // (es la hora que mira el sistema de puntos para «a tiempo / tarde»).
         if (!parteGuardado || parteGuardado.borrador) datos.creado = serverTimestamp();
