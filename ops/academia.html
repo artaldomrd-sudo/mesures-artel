@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 820px; }
     .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 16px; }
@@ -120,6 +120,14 @@
     .lec-read .nav { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
     .btn-done { background: #2ecc71; color: #fff; border: none; border-radius: 9px; padding: 12px 18px; font-weight: bold; font-size: 14px; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-done.is-done { background: #eaf7ef; color: #1e8449; }
+    /* La lección ya completada: el botón principal pasa a verde claro (auditoría 2026-11-12, antes .btn-done). */
+    .btn-primaria.is-done { background: #eaf7ef; color: #1e8449; box-shadow: none; }
+    /* Móvil (auditoría 2026-11-12): botones tocables ≥ 40 px; los micro-botones del editor de bloques (＋ entre bloques, ✎, ◧ ▣ ◨)
+       son herramienta del capacitador en escritorio y conservan su tamaño. Los inputs los pone shared.css a 16 px. */
+    @media (max-width: 640px) {
+        .btn-ghost, .btn-ia, .lec-row .adm button, .pres-top button, .blk-bar button, .inline-bar button, .gap-menu button { min-height: 40px !important; }
+        .blk-gap .gap-plus, .lec-read .cont .blk-pen, .fig-tools button { min-height: 0; }
+    }
 
     .crumbs { font-size: 12.5px; color: #8a93a0; margin-bottom: 10px; }
     .crumbs a { color: var(--artal-blue); font-weight: bold; text-decoration: none; cursor: pointer; }
@@ -199,6 +207,7 @@
     </div>
     <div class="who">
         <span id="user-name"></span>
+        <button id="notif-btn" title="Recibir avisos en este dispositivo">🔔 Notificaciones</button>
         <button id="signout-btn">Cerrar sesión</button>
     </div>
 </header>
@@ -270,7 +279,7 @@
 <div class="modal-overlay" id="modal-esquema">
     <div class="modal-box">
         <h2>✨ Generar curso con IA</h2>
-        <p style="font-size:12.5px;color:#667;margin:0 0 6px;line-height:1.5;">Cuéntale a la IA de qué trata el curso y todo lo que se te ocurra. Te propone las lecciones en orden; tú eliges cuáles crear y luego las editas.</p>
+        <p style="font-size:12.5px;color:#667;margin:0 0 6px;line-height:1.5;">Cuenta de qué trata el curso; la IA propone las lecciones y tú eliges cuáles crear.</p>
         <label>Tema del curso</label>
         <input type="text" id="e-tema" placeholder="Ej. Instalación de ventanas correderas">
         <label>Notas / lo que sabes <span class="lbl-opt">— mientras más, mejor</span></label>
@@ -297,6 +306,7 @@
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { fotoAddBtnHTML, fotosThumbsHTML, agregarFotoPorUrl } from './fotos.js';
+    import { enableNotifications } from './notifications.js';
 
     // Todo el equipo interno puede VER la academia (2026-09-22: abierta a instalador/ayudante/chofer/
     // cotizaciones/contable/comunicaciones; ALUCUFEL queda fuera). Editar el contenido queda gateado en
@@ -313,6 +323,7 @@
     });
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
+    document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));   // 🔔 como en Instalación (auditoría 2026-11-12)
     const esAutor = usuario.roles.includes('admin') || usuario.roles.includes('capacitador');
     const FN_ACADEMIA = 'https://us-central1-artal-operaciones.cloudfunctions.net/academiaRedactar';
 
@@ -394,8 +405,9 @@
     };
     function renderCursos(cont) {
         const list = cursosVisibles().filter(coincide);
-        const nuevo = esAutor ? `<button class="btn-y" onclick="abrirCurso()">+ Nuevo curso</button><button class="btn-ghost" onclick="irA('progreso')">📊 Progreso del equipo</button>` : '';
-        let html = `<p class="intro">📘 <b>Guías de la plataforma</b>: cómo usar cada pantalla, paso a paso — consúltalas cuando tengas una duda. 🎓 <b>Cursos</b>: clases para aprender a instalar y la forma de trabajar de ARTAL, con tu avance en cada uno.</p>
+        // Un solo botón principal por vista (auditoría 2026-11-12): «+ Nuevo curso»; el resto como texto.
+        const nuevo = esAutor ? `<button class="btn-primaria" style="flex:1 1 100%" onclick="abrirCurso()">+ Nuevo curso</button><div class="acciones-sec" style="flex:1 1 100%;margin-top:0"><button class="sec" onclick="irA('progreso')">📊 Progreso del equipo</button></div>` : '';
+        let html = `<p class="intro">📘 <b>Guías</b>: cómo usar cada pantalla. 🎓 <b>Cursos</b>: clases con tu avance y examen.</p>
             <div class="bar"><input type="search" id="buscador" value="${esc(buscaTxt)}" oninput="buscarAcademia(this.value)" placeholder="🔎 ¿Tienes una duda? Busca: parte diario, en ruta, firma, gastos fijos…" style="flex:1;min-width:220px;padding:11px 12px;border:1.5px solid #ddd;border-radius:9px;font-family:'Arimo';font-size:14px;min-height:44px;">${nuevo}</div>`;
         if (!list.length) { cont.innerHTML = html + '<p class="empty">' + (buscaTxt ? 'Nada coincide con «' + esc(buscaTxt) + '».' : 'Aún no hay cursos. ' + (esAutor ? 'Crea el primero con «+ Nuevo curso».' : 'Pronto habrá contenido.')) + '</p>'; return; }
         // Agrupado por categoría: las "Guías · …" primero (en su orden), después el resto.
@@ -422,16 +434,18 @@
     function renderCurso(cont) {
         const c = cursoById(cursoSelId); if (!c) { irA('cursos'); return; }
         const lecs = leccionesDe(c.id), done = completadasDe(c.id);
-        const admCurso = esAutor ? `${puedeEnviar ? `<button class="btn-ghost" style="border-color:var(--artal-blue)" onclick="abrirEnviarCurso('${c.id}')">📨 Enviar curso a…</button>` : ''}<button class="btn-ghost" onclick="abrirEditarCurso('${c.id}')">✏ Editar curso</button>
-            <button class="btn-ghost" onclick="togglePublicado('${c.id}')">${c.publicado === false ? '👁 Publicar' : '🚫 Despublicar'}</button>
-            <button class="btn-ghost" style="color:#c0392b;border-color:#f0c9c4" onclick="borrarCurso('${c.id}')">🗑 Eliminar</button>` : '';
+        // Secundarios como texto (auditoría 2026-11-12); el principal de la vista es «+ Lección».
+        const admCurso = esAutor ? `${puedeEnviar ? `<button class="sec" onclick="abrirEnviarCurso('${c.id}')">📨 Enviar curso a…</button>` : ''}<button class="sec" onclick="abrirEditarCurso('${c.id}')">✏ Editar curso</button>
+            <button class="sec" onclick="togglePublicado('${c.id}')">${c.publicado === false ? '👁 Publicar' : '🚫 Despublicar'}</button>
+            <button class="sec" onclick="abrirEsquema('${c.id}')">✨ Generar curso con IA</button>
+            <button class="sec rojo" onclick="borrarCurso('${c.id}')">🗑 Eliminar</button>` : '';
         let html = `<div class="crumbs"><a onclick="irA('cursos')">← Cursos</a></div>
             <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:8px;">
                 <div style="font-size:34px">${esc(c.emoji || '🎓')}</div>
                 <div><h2 style="color:var(--artal-blue);font-size:20px;margin:0" ${esAutor ? `title="Doble clic para corregir" ondblclick="inlineTexto(this, (v) => guardarCampoCurso('${c.id}', 'titulo', v))"` : ''}>${esc(c.titulo || 'Curso')}</h2>
                 ${c.descripcion || esAutor ? `<div style="font-size:13.5px;color:#556;margin-top:3px" ${esAutor ? `title="Doble clic para corregir la descripción" ondblclick="inlineTexto(this, (v) => guardarCampoCurso('${c.id}', 'descripcion', v))"` : ''}>${esc(c.descripcion || (esAutor ? '(sin descripción — doble clic para escribirla)' : ''))}</div>` : ''}</div>
             </div>`;
-        if (esAutor) html += `<div class="bar">${admCurso}<button class="btn-y" onclick="abrirLeccion('${c.id}')">+ Lección</button><button class="btn-ia" onclick="abrirEsquema('${c.id}')">✨ Generar curso con IA</button></div>`;
+        if (esAutor) html += `<div class="bar"><button class="btn-primaria" onclick="abrirLeccion('${c.id}')">+ Lección</button><div class="acciones-sec" style="margin-top:0;flex:1 1 100%">${admCurso}</div></div>`;
         if (!lecs.length) { cont.innerHTML = html + '<p class="empty">Este curso todavía no tiene lecciones.</p>'; return; }
         html += '<div class="lec-list">' + lecs.map((l, i) => {
             const isDone = done.has(l.id);
@@ -461,7 +475,7 @@
                 ? `Examen activo · ${c.examen.preguntas.length} pregunta(s) · aprueba con ${c.examen.notaMinima || 70}% · ${c.examen.puntos || 100} pts`
                 : 'Sin examen todavía. Crea uno para evaluar y dar puntos al equipo.';
             return `<div class="examen-box"><div class="ex-h">📝 Examen del curso</div><div class="ex-info">${esc(info)}</div>
-                <div class="bar" style="margin-top:8px"><button class="btn-ghost" onclick="abrirExamen('${c.id}')">${tieneExamen(c) ? '✏ Editar examen' : '＋ Crear examen'}</button></div></div>`;
+                <div class="acciones-sec"><button class="sec" onclick="abrirExamen('${c.id}')">${tieneExamen(c) ? '✏ Editar examen' : '＋ Crear examen'}</button></div></div>`;
         }
         if (!tieneExamen(c)) return '';
         const MAX = 2;
@@ -470,7 +484,7 @@
         if (p && p.examenAprobado) {
             return `<div class="examen-box aprobado"><div class="ex-h">✅ Examen aprobado</div>
                 <div class="ex-info">Nota: ${p.examenNota || 0}% · ganaste ${c.examen.puntos || 100} puntos. Ya quedó validado: no se puede volver a tomar.</div>
-                <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="verCertificado('${c.id}')">🏅 Ver certificado</button></div></div>`;
+                <div class="bar" style="margin-top:8px"><button class="btn-primaria" onclick="verCertificado('${c.id}')">🏅 Ver certificado</button></div></div>`;
         }
         if (p && p.examenBloqueado) {
             return `<div class="examen-box" style="background:#fdeeee;border-color:#f2c9c4"><div class="ex-h" style="color:#c0392b">❌ Examen no superado</div>
@@ -479,7 +493,7 @@
         const restante = MAX - intentos;
         return `<div class="examen-box"><div class="ex-h">📝 Examen del curso</div>
             <div class="ex-info">${todasHechas ? `Aprueba con ${c.examen.notaMinima || 70}% y gana ${c.examen.puntos || 100} puntos.${intentos > 0 ? ` <b>Te queda ${restante} intento.</b>` : ` Tienes ${MAX} intentos.`}` : `Primero completa las ${total} lecciones (llevas ${hechas}).`}</div>
-            <div class="bar" style="margin-top:8px"><button class="btn-y" onclick="irA('examen','${c.id}')" ${todasHechas ? '' : 'disabled style="opacity:.5;cursor:default"'}>📝 ${intentos > 0 ? 'Reintentar (último intento)' : 'Presentar examen'}</button></div></div>`;
+            <div class="bar" style="margin-top:8px"><button class="btn-primaria" onclick="irA('examen','${c.id}')" ${todasHechas ? '' : 'disabled'}>📝 ${intentos > 0 ? 'Reintentar (último intento)' : 'Presentar examen'}</button></div></div>`;
     }
 
     // ---------------- Examen: presentar (alumno) ----------------
@@ -495,7 +509,7 @@
             <div id="ex-preguntas">${preg.map((p, i) => `<div class="ex-q"><div class="ex-qt">${i + 1}. ${esc(p.q || '')}</div>
                 ${(p.opciones || []).map((o, j) => `<label class="ex-opt"><input type="radio" name="q${i}" value="${j}"><span>${esc(o)}</span></label>`).join('')}</div>`).join('')}</div>
             <div id="ex-result" style="margin:14px 0"></div>
-            <div class="bar"><button class="btn-y" onclick="entregarExamen('${c.id}')">Entregar examen</button><button class="btn-ghost" onclick="irA('curso','${c.id}')">Cancelar</button></div>`;
+            <div class="bar"><button class="btn-primaria" onclick="entregarExamen('${c.id}')">Entregar examen</button><div class="acciones-sec" style="margin-top:0;flex:1 1 100%;justify-content:center"><button class="sec" onclick="irA('curso','${c.id}')">Cancelar</button></div></div>`;
     }
     window.entregarExamen = async function (cursoId) {
         const c = cursoById(cursoId); if (!c || !tieneExamen(c)) return;
@@ -612,7 +626,7 @@
                 <div class="cert-meta">Nota: ${p.examenNota || 0}% · ${esc(fTxt)}</div>
                 <div class="cert-firma">ARTAL Dominicana · Formación interna</div>
             </div></div>
-            <div class="bar" style="margin-top:14px"><button class="btn-y" onclick="window.print()">🖨 Imprimir / guardar PDF</button><button class="btn-ghost" onclick="irA('curso','${c.id}')">Volver</button></div>`
+            <div class="bar" style="margin-top:14px"><button class="btn-primaria" onclick="window.print()">🖨 Imprimir / guardar PDF</button><div class="acciones-sec" style="margin-top:0;flex:1 1 100%;justify-content:center"><button class="sec" onclick="irA('curso','${c.id}')">Volver</button></div></div>`
             : '<div class="empty">Aún no has aprobado el examen de este curso.</div>'}`;
     }
 
@@ -652,12 +666,14 @@
                 ${videoEmbedHTML(l.video)}
                 <div class="cont ${esAutor ? 'editable' : ''}" id="lec-cont">${contenidoHTML(l, esAutor)}</div>
                 ${fotos}${addBtn}${esAutor && imgsDe(l).length ? `<div class="hint" style="font-size:12px;color:#8a93a0;margin-top:4px">Una imagen «sin colocar» se pone en su sitio con ＋ → 🖼️ Imagen. Para quitar un adjunto del todo: ✏ Editar lección → adjuntos.</div>` : ''}
-                ${esAutor ? `<div class="bar" style="margin-top:14px"><button class="btn-ghost" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="btn-ghost" onclick="editarContenidoInline('${l.id}')" title="Todo el texto en una sola caja">📝 Editar todo el texto</button><button class="btn-ia" style="margin-top:0" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
+                ${esAutor ? `<div class="acciones-sec" style="margin-top:14px"><button class="sec" onclick="abrirEditarLeccion('${l.id}')">✏ Editar lección</button><button class="sec" onclick="editarContenidoInline('${l.id}')" title="Todo el texto en una sola caja">📝 Editar todo el texto</button><button class="sec" onclick="desarrollarLeccionIA('${l.id}')">✨ Desarrollar con IA</button></div>` : ''}
                 <div class="nav">
-                    <button class="btn-done ${done ? 'is-done' : ''}" onclick="toggleHecha('${l.cursoId}','${l.id}')">${done ? '✓ Completada' : 'Marcar como completada'}</button>
-                    <button class="btn-ghost" onclick="presentar('${l.id}')" title="Ver la lección como diapositivas, un apartado por pantalla">▶ Presentación</button>
-                    ${prev ? `<button class="btn-ghost" onclick="irA('leccion','${l.cursoId}','${prev.id}')">← Anterior</button>` : ''}
-                    ${next ? `<button class="btn-ghost" onclick="irA('leccion','${l.cursoId}','${next.id}')">Siguiente →</button>` : ''}
+                    <button class="btn-primaria ${done ? 'is-done' : ''}" onclick="toggleHecha('${l.cursoId}','${l.id}')">${done ? '✓ Completada' : 'Marcar como completada'}</button>
+                    <div class="acciones-sec" style="margin-top:0;flex:1 1 100%;justify-content:center">
+                    <button class="sec" onclick="presentar('${l.id}')" title="Ver la lección como diapositivas, un apartado por pantalla">▶ Presentación</button>
+                    ${prev ? `<button class="sec" onclick="irA('leccion','${l.cursoId}','${prev.id}')">← Anterior</button>` : ''}
+                    ${next ? `<button class="sec" onclick="irA('leccion','${l.cursoId}','${next.id}')">Siguiente →</button>` : ''}
+                    </div>
                 </div>
             </div>`;
     }

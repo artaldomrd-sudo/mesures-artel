@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 900px; }
     .kpis { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
@@ -62,6 +62,10 @@
     .btn-scan:disabled { opacity: .6; cursor: default; }
     .scan-status { font-size: 12.5px; margin: 2px 0 4px; min-height: 15px; }
     .scan-status.ok { color: #1f9d61; } .scan-status.err { color: #d9483b; } .scan-status.work { color: var(--artal-blue); }
+    /* (auditoría 2026-11-12) capa de claridad «Mi día»: Guardar = único botón principal (amarillo), Cancelar como texto debajo */
+    .modal-actions { flex-direction: column-reverse; gap: 2px; align-items: stretch; }
+    .modal-actions .btn-guardar, .modal-actions .btn-main, .modal-actions .btn-primaria { flex: none; width: 100%; background: linear-gradient(180deg, #ffd634, var(--amarillo, #F2C200)) !important; color: var(--azul-noche, #12314B) !important; border: 0 !important; border-radius: 14px; font-size: 16px; min-height: 50px; box-shadow: 0 10px 20px -12px rgba(217,168,0,.8); }
+    .modal-actions .btn-cancelar, .modal-actions .btn-light { flex: none; width: 100%; background: transparent !important; border: 0 !important; color: var(--azul, #2C6BA4) !important; font-size: 14px; min-height: 40px; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -86,9 +90,13 @@
         <select id="f-periodo" onchange="render()"><option value="mes">Este mes</option><option value="anio">Este año</option><option value="todo">Todo</option></select>
         <select id="f-tipo" onchange="render()"><option value="">Ingresos y gastos</option><option value="ingreso">Solo ingresos</option><option value="gasto">Solo gastos</option></select>
         <input class="buscar" id="buscar" placeholder="Buscar concepto, categoría, tercero…" oninput="render()">
-        <button class="btn-606" onclick="exportar606()" title="Exporta las compras con NCF del período — base para el 606 de la DGII">📥 606</button>
-        <button class="btn-606" onclick="exportar607()" title="Exporta las ventas con NCF del período — base para el 607 de la DGII" style="background:#1f9d61;">📤 607</button>
     </div>
+    <details class="mas" style="margin:-8px 0 10px"><summary>Exportar para la DGII (606 / 607)</summary>
+        <div class="acciones-sec">
+            <button class="btn-606 sec" onclick="exportar606()" title="Compras con NCF del período — base del 606">📥 Formato 606 (compras)</button>
+            <button class="btn-606 sec" onclick="exportar607()" title="Ventas con NCF del período — base del 607">📤 Formato 607 (ventas)</button>
+        </div>
+    </details>
     <div id="lista"><p class="empty">Cargando…</p></div>
 </main>
 
@@ -114,10 +122,10 @@
             <div><label>Categoría</label><input type="text" id="m-categoria" list="cat-gas" placeholder="Categoría"></div>
             <div><label>Monto (RD$) *</label><input type="number" id="m-monto" min="0" step="0.01"></div>
         </div>
-        <div class="grid2">
-            <div><label>ITBIS incluido (RD$) <span class="lbl-opt">— opcional</span></label><input type="number" id="m-itbis" min="0" step="0.01"></div>
-            <div><label>Método</label><select id="m-metodo"><option>Efectivo</option><option>Transferencia</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select></div>
-        </div>
+        <label>Método</label><select id="m-metodo"><option>Efectivo</option><option>Transferencia</option><option>Cheque</option><option>Tarjeta</option><option>Caja chica</option></select>
+        <!-- (auditoría 2026-11-12) capa de claridad: Tipo/Fecha/Concepto/Categoría/Monto/Método a la vista; lo fiscal y el pago, plegados (se abren solos si traen datos) -->
+        <details class="mas" id="m-fiscal"><summary>Datos fiscales y pago</summary>
+        <label>ITBIS incluido (RD$) <span class="lbl-opt">— opcional</span></label><input type="number" id="m-itbis" min="0" step="0.01">
         <div class="grid2">
             <div><label>Monto real pagado (RD$) <span class="lbl-opt">— si difiere</span></label><input type="number" id="m-pagado" min="0" step="0.01" placeholder="Ej. con 3% de descuento por pronto pago"></div>
             <div><label>Fecha de pago <span class="lbl-opt">— opcional</span></label><input type="date" id="m-fechapago"></div>
@@ -136,6 +144,7 @@
         <input type="file" id="m-foto" accept="image/*,application/pdf" multiple>
         <label>Notas <span class="lbl-opt">— opcional</span></label>
         <textarea id="m-notas"></textarea>
+        </details>
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
             <button class="btn-guardar" onclick="guardar()">Guardar</button>
@@ -151,7 +160,7 @@
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
     const usuario = await requireAuth(['contable']);
-    if (!new URLSearchParams(location.search).has('embed')) await requirePin(usuario);   // embebido: el wrapper ya pidio el PIN
+    await requirePin(usuario);   // (auditoría 2026-11-12) SIEMPRE, también embebida: ?embed=1 saltaba el PIN; el desbloqueo dura 10 min en sessionStorage (mismo origen), así que dentro del iframe no vuelve a preguntar
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -240,6 +249,7 @@
         if (f.proveedor) document.getElementById('m-tercero').value = f.proveedor;
         if (f.rnc) document.getElementById('m-rnc').value = String(f.rnc).replace(/\D/g, '');
         if (f.ncf) document.getElementById('m-ncf').value = String(f.ncf).trim().toUpperCase();
+        document.getElementById('m-fiscal').open = true;   // que se vea lo que leyó la IA
         if (f.fecha && /^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) document.getElementById('m-fecha').value = f.fecha;
         if (Number(f.montoPagado)) document.getElementById('m-pagado').value = Number(f.montoPagado);
         if (f.fechaPago && /^\d{4}-\d{2}-\d{2}$/.test(f.fechaPago)) document.getElementById('m-fechapago').value = f.fechaPago;
@@ -330,6 +340,7 @@
         document.getElementById('m-fecha').value = hoyISO();
         document.getElementById('m-metodo').value = 'Transferencia';
         document.getElementById('m-cuenta').value = '';
+        document.getElementById('m-fiscal').open = false;
         onTipo(); document.getElementById('modal').classList.add('show');
     };
     window.editar = function (id) {
@@ -351,6 +362,7 @@
         document.getElementById('m-ncf').value = m.ncf || '';
         document.getElementById('m-notas').value = m.notas || '';
         document.getElementById('m-foto').value = '';
+        document.getElementById('m-fiscal').open = !!(m.itbis || m.montoPagado || m.fechaPago || m.cuentaBancoId || m.centroCosto || m.tercero || m.rnc || m.ncf || m.notas);
         setStatus('', ''); scannedFile = null;
         onTipo(); document.getElementById('modal').classList.add('show');
     };

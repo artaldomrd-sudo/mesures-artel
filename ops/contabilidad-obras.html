@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 1100px; }
     .tabs { display: flex; gap: 6px; background: #fff; border-radius: 12px; padding: 5px; box-shadow: var(--shadow); margin-bottom: 14px; flex-wrap: wrap; }
@@ -64,11 +64,13 @@
         <button class="tab" data-tab="informes" onclick="setTab('informes')">📋 Informes de cierre</button>
     </div>
     <div class="bar">
-        <input type="month" id="mes" onchange="renderTodo()">
-        <label style="font-size:13px"><input type="checkbox" id="todo" onchange="renderTodo()"> Todo el histórico</label>
+        <input type="month" id="mes" onchange="cambioFiltro()">
+        <label style="font-size:13px"><input type="checkbox" id="todo" onchange="cambioFiltro()"> Todo el histórico</label>
         <button class="btn btn-o" onclick="exportarCSV()">⬇ CSV</button>
-        <span class="hint">Mano de obra = horas de los partes diarios × costo por hora (costo por día de RRHH ÷ 9 h de jornada; las horas por encima de 9 al 135 %; un feriado trabajado, al 200 %). Transporte = viajes del camión registrados en Transportes, repartidos entre las obras que iban a bordo.</span>
     </div>
+
+    <!-- (auditoría 2026-11-12) la fórmula, una sola vez y plegada (antes repetida en la barra, en Informes y en el informe) -->
+    <details class="mas"><summary>¿Cómo se calcula?</summary><p class="hint" style="margin:4px 0 0">Mano de obra = horas de los partes × costo por hora (costo por día de RRHH ÷ 9 h; más de 9 h al 135 %; feriado trabajado al 200 %). Transporte = viajes del camión repartidos entre las obras a bordo.</p></details>
 
     <div class="tabpanel active" id="tab-obras">
         <div class="kpis" id="o-kpis"></div>
@@ -79,13 +81,14 @@
         <div class="tabla-wrap" id="pe-tabla"></div>
     </div>
     <div class="tabpanel" id="tab-informes">
-        <p class="hint" style="margin:0 0 10px">Cada vez que un trabajo de instalación se marca completado, el sistema genera un informe con el costo real de esa obra (partes diarios + viajes) y lo envía por Mensajería a gerencia. Aquí queda el archivo completo; en Historial → carpeta por obra aparece también.</p>
+        <p class="hint" style="margin:0 0 10px">Un informe por obra, generado al completar el trabajo (también en Historial → carpeta de la obra).</p>
         <div id="inf-lista"></div>
     </div>
 </main>
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
+    import { requirePin } from './pin-gate.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
     import { collection, onSnapshot, doc, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -93,6 +96,7 @@
     import { mismaObra, agruparObras } from './obras-util.js';   // misma regla que el informe de cierre e Historial
 
     const usuario = await requireAuth(['contable']);
+    await requirePin(usuario);   // (auditoría 2026-11-12) muestra el costo por persona: PIN como el resto del área financiera
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -113,7 +117,15 @@
     let costosPartes = {};   // G3: costo por hora congelado por parte (partesCostos, solo finanzas)
     onSnapshot(collection(db, 'partesCostos'), (s) => { costosPartes = {}; s.docs.forEach(d => { costosPartes[d.id] = (d.data() || {}).costos || {}; }); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
-    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    // (auditoría 2026-11-12) partes solo desde el mes elegido (antes bajaba la colección entera); con «Todo el histórico» se trae todo.
+    let _offPartes = null;
+    function suscribirPartes() {
+        if (_offPartes) { _offPartes(); _offPartes = null; }
+        const todo = document.getElementById('todo').checked, mes = document.getElementById('mes').value;
+        const ref = (!todo && mes) ? query(collection(db, 'partesDiarios'), where('fecha', '>=', mes + '-01')) : collection(db, 'partesDiarios');
+        _offPartes = onSnapshot(ref, (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    }
+    window.cambioFiltro = function () { suscribirPartes(); renderTodo(); };
     onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'viajes'), (s) => { viajes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
     // Solo los pedidos que ya llevan Nº de proyecto (consulta liviana: no baja las fichas de todos los pedidos).
@@ -123,6 +135,7 @@
     onSnapshot(collection(db, 'informesObra'), (s) => { informes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
 
     document.getElementById('mes').value = hoyStr().slice(0, 7);
+    suscribirPartes();
     window.setTab = function (t) {
         document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
         document.querySelectorAll('.tabpanel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t));

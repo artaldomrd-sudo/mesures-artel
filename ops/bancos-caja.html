@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 920px; }
     .bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 14px; }
@@ -61,6 +61,10 @@
     .modal-actions { display: flex; gap: 10px; margin-top: 18px; }
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; } .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    /* (auditoría 2026-11-12) capa de claridad «Mi día»: Guardar = único botón principal (amarillo), Cancelar como texto debajo */
+    .modal-actions { flex-direction: column-reverse; gap: 2px; align-items: stretch; }
+    .modal-actions .btn-guardar, .modal-actions .btn-main, .modal-actions .btn-primaria { flex: none; width: 100%; background: linear-gradient(180deg, #ffd634, var(--amarillo, #F2C200)) !important; color: var(--azul-noche, #12314B) !important; border: 0 !important; border-radius: 14px; font-size: 16px; min-height: 50px; box-shadow: 0 10px 20px -12px rgba(217,168,0,.8); }
+    .modal-actions .btn-cancelar, .modal-actions .btn-light { flex: none; width: 100%; background: transparent !important; border: 0 !important; color: var(--azul, #2C6BA4) !important; font-size: 14px; min-height: 40px; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -80,14 +84,19 @@
 <main>
     <div class="bar">
         <select id="sel-caja" onchange="render()"></select>
-        <button class="btn-o" onclick="abrirCaja()">+ Nueva caja</button>
-        <button class="btn-g" onclick="abrirDesembolso()">− Desembolso de caja</button>
+        <!-- (auditoría 2026-11-12) capa de claridad: 3 acciones del día a la vista; lo administrativo plegado -->
+        <button class="btn-primaria" style="width:auto;display:inline-block;padding:12px 18px" onclick="abrirDesembolso()">− Desembolso de caja</button>
         <button class="btn-r" onclick="abrirVenta()">+ Entrada por venta</button>
-        <button class="btn-r" onclick="abrirRepo()">+ Reponer fondo</button>
         <button class="btn-a" onclick="abrirArqueo()">🧮 Arqueo</button>
-        <button class="btn-o" onclick="abrirReporte()">📊 Reporte</button>
-        <a class="btn-o" href="bancos-caja-historial.html" style="text-decoration:none;display:inline-flex;align-items:center;">🗒 Historial</a>
     </div>
+    <details class="mas" style="margin:-8px 0 10px"><summary>Más opciones</summary>
+        <div class="acciones-sec">
+            <button class="sec" onclick="abrirCaja()">+ Nueva caja</button>
+            <button class="sec" onclick="abrirRepo()">+ Reponer fondo</button>
+            <button class="sec" onclick="abrirReporte()">📊 Reporte</button>
+            <a class="sec" href="bancos-caja-historial.html">🗒 Historial</a>
+        </div>
+    </details>
     <div id="arqueo-banner"></div>
     <div class="kpis" id="kpis"></div>
     <div class="caja-meta" id="caja-meta"></div>
@@ -116,28 +125,7 @@
     </div>
 </div>
 
-<!-- Modal: gasto -->
-<div class="modal-overlay" id="modal-gasto">
-    <div class="modal-box">
-        <h2 id="g-modal-title">Gasto de caja chica</h2>
-        <div id="g-edit-note" style="display:none;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:8px;padding:8px 11px;font-size:12.5px;color:#8a5a12;margin-bottom:10px;">✏ Estás <b>modificando</b> este gasto. El cambio queda registrado (quién, cuándo y los valores anteriores).</div>
-        <div class="grid2">
-            <div><label>Fecha</label><input type="date" id="g-fecha"></div>
-            <div><label>Monto (RD$) *</label><input type="number" id="g-monto" min="0" step="0.01"></div>
-        </div>
-        <label>Concepto *</label>
-        <input type="text" id="g-concepto" placeholder="Ej. Gasolina motor, café reunión…">
-        <div class="grid2">
-            <div><label>Categoría</label><input type="text" id="g-categoria" list="cat-caja" placeholder="Categoría"></div>
-            <div><label>Referencia <span class="lbl-opt">— opcional</span></label><input type="text" id="g-ref" placeholder="Nº recibo"></div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:normal;font-size:13px;color:#333;"><input type="checkbox" id="g-conta" checked style="width:auto;min-height:auto"> Registrar también en <b>Contabilidad (Gastos)</b></label>
-        <div class="modal-actions">
-            <button class="btn-cancelar" onclick="cerrar('modal-gasto')">Cancelar</button>
-            <button class="btn-guardar" id="g-btn-guardar" onclick="guardarGasto()">Registrar gasto</button>
-        </div>
-    </div>
-</div>
+<!-- (auditoría 2026-11-12) se quitó el modal «Gasto de caja chica»: nada lo abría (la barra usa Desembolso) -->
 
 <!-- Modal: reposición -->
 <div class="modal-overlay" id="modal-repo">
@@ -331,81 +319,6 @@
             cerrar('modal-caja'); render();
         } catch (e) { alert('No se pudo crear: ' + (e && e.message ? e.message : e)); }
         finally { btn.disabled = false; btn.textContent = 'Crear caja'; }
-    };
-    let editandoGastoId = null;
-    window.abrirGasto = function () {
-        if (!cajaSel()) { alert('Primero elige (o crea) una caja.'); return; }
-        editandoGastoId = null;
-        document.getElementById('g-modal-title').textContent = 'Gasto de caja chica';
-        document.getElementById('g-btn-guardar').textContent = 'Registrar gasto';
-        document.getElementById('g-edit-note').style.display = 'none';
-        ['g-monto', 'g-concepto', 'g-categoria', 'g-ref'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('g-fecha').value = hoyISO();
-        document.getElementById('g-conta').checked = true;
-        document.getElementById('modal-gasto').classList.add('show');
-    };
-    // Modificar un gasto ya hecho, guardando constancia del cambio (igual que el desembolso).
-    window.abrirEditarGasto = function (id) {
-        const m = movs.find(x => x.id === id); if (!m) return;
-        editandoGastoId = id;
-        document.getElementById('g-modal-title').textContent = '✏ Modificar gasto';
-        document.getElementById('g-btn-guardar').textContent = 'Guardar cambios';
-        document.getElementById('g-edit-note').style.display = 'block';
-        document.getElementById('g-fecha').value = m.fecha || hoyISO();
-        document.getElementById('g-monto').value = m.monto != null ? m.monto : '';
-        document.getElementById('g-concepto').value = m.concepto || '';
-        document.getElementById('g-categoria').value = m.categoria || '';
-        document.getElementById('g-ref').value = m.referencia || '';
-        document.getElementById('g-conta').checked = !!m.contaMovId;
-        document.getElementById('modal-gasto').classList.add('show');
-    };
-    window.guardarGasto = async function () {
-        const c = cajaSel(); if (!c) return;
-        const concepto = document.getElementById('g-concepto').value.trim();
-        const monto = n2(document.getElementById('g-monto').value);
-        if (!concepto) { alert('Escribe el concepto.'); return; }
-        if (monto <= 0) { alert('Escribe el monto.'); return; }
-        const fecha = document.getElementById('g-fecha').value || hoyISO();
-        const categoria = document.getElementById('g-categoria').value.trim();
-        const referencia = document.getElementById('g-ref').value.trim();
-        const aConta = document.getElementById('g-conta').checked;
-        const editando = editandoGastoId ? (movs.find(x => x.id === editandoGastoId) || null) : null;
-        const btn = document.querySelector('#modal-gasto .btn-guardar'); btn.disabled = true; btn.textContent = 'Guardando…';
-        if (editando) {
-            try {
-                const antes = { fecha: editando.fecha || '', monto: n2(editando.monto), concepto: editando.concepto || '', categoria: editando.categoria || '', referencia: editando.referencia || '' };
-                const historial = (Array.isArray(editando.historialCambios) ? editando.historialCambios : []).concat([{ fechaCambio: new Date().toISOString(), por: usuario.nombre, antes }]);
-                await updateDoc(doc(db, 'bancosCajaMovimientos', editandoGastoId), { fecha, monto, concepto, categoria, referencia, modificado: true, historialCambios: historial });
-                if (editando.contaMovId) { try { await updateDoc(doc(db, 'contaMovimientos', editando.contaMovId), { fecha, monto, concepto, categoria: categoria || 'Caja chica' }); } catch (e3) { /* ok */ } }
-                cerrar('modal-gasto'); editandoGastoId = null;
-            } catch (e) { alert('No se pudo guardar el cambio: ' + (e && e.message ? e.message : e)); }
-            finally { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
-            return;
-        }
-        const saldo = saldoCaja(c.id);
-        if (monto > saldo && !confirm('El gasto (' + fmt(monto) + ') es mayor al efectivo en caja (' + fmt(saldo) + '). ¿Registrarlo igual?')) { btn.disabled = false; btn.textContent = 'Registrar gasto'; return; }
-        try {
-            // Si va a Contabilidad, se crea primero el gasto ahí para guardar su id en el movimiento
-            // de caja (así al borrar el gasto de caja se puede quitar también de Contabilidad).
-            let contaMovId = null;
-            if (aConta) {
-                try {
-                    const cref = await addDoc(collection(db, 'contaMovimientos'), {
-                        tipo: 'gasto', fecha, concepto, categoria: categoria || 'Caja chica', monto, itbis: 0,
-                        metodo: 'Efectivo (caja chica)', tercero: '', rnc: '', ncf: '',
-                        notas: 'Caja chica: ' + (c.nombre || '') + (referencia ? ' · ' + referencia : ''),
-                        origen: 'caja_chica', cajaId: c.id, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
-                    });
-                    contaMovId = cref.id;
-                } catch (e2) { alert('El gasto se guardará en la caja, pero no se pudo pasar a Contabilidad: ' + (e2 && e2.message ? e2.message : e2)); }
-            }
-            await addDoc(collection(db, 'bancosCajaMovimientos'), {
-                cajaId: c.id, tipo: 'gasto', fecha, concepto, categoria, monto, referencia,
-                contaMovId, creadoPor: usuario.nombre, fechaCreacion: serverTimestamp()
-            });
-            cerrar('modal-gasto');
-        } catch (e) { alert('No se pudo guardar: ' + (e && e.message ? e.message : e)); }
-        finally { btn.disabled = false; btn.textContent = 'Registrar gasto'; }
     };
 
     // ---------- Desembolso con firma (pago a un beneficiario / servicio) ----------
@@ -842,7 +755,7 @@
         document.getElementById('rep-out').innerHTML =
             `<div class="kpis"><div class="kpi"><div class="n" style="color:#d9483b">${fmt0(totGasto)}</div><div class="l">Gastado (${gastos.length})</div></div>` +
             `<div class="kpi"><div class="n" style="color:#1f9d61">${fmt0(totRepo)}</div><div class="l">Repuesto (${repos.length})</div></div></div>` +
-            `<table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:13px"><thead><tr><th style="text-align:left;border-bottom:1.5px solid #e5e9ee;padding:6px">Categoría</th><th style="text-align:right;border-bottom:1.5px solid #e5e9ee;padding:6px">Gastado</th></tr></thead><tbody>${catRows || '<tr><td colspan="2" style="padding:8px;color:#999">Sin gastos en el período.</td></tr>'}</tbody></table>` +
+            `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;margin-top:6px;font-size:13px"><thead><tr><th style="text-align:left;border-bottom:1.5px solid #e5e9ee;padding:6px">Categoría</th><th style="text-align:right;border-bottom:1.5px solid #e5e9ee;padding:6px">Gastado</th></tr></thead><tbody>${catRows || '<tr><td colspan="2" style="padding:8px;color:#999">Sin gastos en el período.</td></tr>'}</tbody></table></div>` +
             `<div style="display:flex;gap:10px;margin-top:14px"><button class="btn-r" style="flex:1" onclick="descargarCSV()">⬇️ Descargar CSV</button><button class="btn-o" style="flex:1" onclick="imprimirReporte()">🖨 Imprimir</button></div>`;
     };
     window.descargarCSV = function () {

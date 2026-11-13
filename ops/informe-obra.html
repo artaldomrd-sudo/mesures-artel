@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 820px; }
     .cab { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 12px; }
@@ -57,12 +57,14 @@
 
 <script type="module">
     import { requireAuth, auth, signOut } from './auth-common.js';
+    import { requirePin } from './pin-gate.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
     import { doc, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { idProyectoDe, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
 
     const usuario = await requireAuth(['contable']);   // gerencia (admin) siempre entra
+    await requirePin(usuario);   // (auditoría 2026-11-12) muestra el costo por persona: PIN como el resto del área financiera
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
@@ -129,7 +131,7 @@
             ${(i.pedidos || []).length ? `<h3 class="sec">📦 Pedidos de esta obra</h3><div class="tabla-wrap"><table class="rep"><thead><tr><th>Obra (nombre en el pedido)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
                 ${i.pedidos.map(p => `<tr><td>${esc(p.obra || '')}${p.idProyecto ? pryChipHTML(p.idProyecto) : ''}</td><td>${esc(p.docType)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
-            <p class="hint" style="margin-top:12px">Mano de obra = horas de los partes diarios × costo por hora de RRHH (costo por día ÷ 9 h de jornada; horas por encima de 9 al día al 135 %). Transporte = costo del viaje del camión (combustible, desgaste, peajes y fijos del vehículo) repartido a partes iguales entre las obras que iban a bordo. Compara el total con lo cotizado de transporte e instalación en la factura.</p>
+            <details class="mas" style="margin-top:12px"><summary>¿Cómo se calcula?</summary><p class="hint" style="margin:4px 0 0">Mano de obra = horas de los partes × costo por hora (costo por día de RRHH ÷ 9 h; más de 9 h al 135 %). Transporte = costo del viaje del camión repartido entre las obras a bordo. Compara el total con lo cotizado de transporte e instalación.</p></details>
             <div class="acts">
                 <button class="b" id="btn-recalc">↻ Recalcular</button>
                 <a href="historial.html?cliente=${encodeURIComponent(i.cliente || '')}&obra=${encodeURIComponent(i.obra || '')}">📁 Carpeta de la obra en Historial</a>

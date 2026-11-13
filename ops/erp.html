@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 900px; padding-top: 24px; }
     .welcome { color: var(--artal-blue); font-size: 15px; margin: 0 0 4px; font-weight: bold; }
@@ -64,7 +64,7 @@
     <div class="header-title">
         <a class="btn-back" id="btn-back" href="index.html" title="Volver al panel">← Panel</a>
         <img class="logo" src="../logo.png" alt="ARTAL">
-        <h1>ERP <span class="accent">ARTAL</span></h1>
+        <h1>ERP</h1>
     </div>
     <div class="who">
         <span id="user-name"></span>
@@ -76,9 +76,9 @@
     <p class="welcome" id="welcome-msg"></p>
     <div id="tablero">
         <div class="tb-hoy"><h2>Hoy en ARTAL</h2><div class="cuando" id="tb-cuando">Cargando cifras…</div></div>
-        <div id="tb-cuerpo"><div class="tb-vacio">Las cifras de Citrus aparecen aquí después de la primera sincronización (6:30 am, 12:30 pm y 5:30 pm, o «Sincronizar ahora» en Citrus).</div></div>
+        <div id="tb-cuerpo"><div class="tb-vacio">Las cifras llegan de Citrus tres veces al día (6:30 · 12:30 · 17:30).</div></div>
         <div class="tb-oper" id="tb-oper"></div>
-        <div class="tb-fuente"><span><i style="background:var(--artal-blue)"></i>Contabilidad: Citrus, 3 veces al día (6:30 · 12:30 · 17:30), sin ITBIS</span><span><i style="background:#1f9d61"></i>Operación: Panel, en vivo</span><span><i style="background:#F2B90C"></i>Cada cuadro abre su módulo</span></div>
+        <div class="tb-fuente"><span><i style="background:var(--artal-blue)"></i>Contabilidad: Citrus, sin ITBIS</span><span><i style="background:#1f9d61"></i>Operación: en vivo</span></div>
     </div>
     <p class="intro" style="margin-top:22px;">Módulos internos de gestión de ARTAL.</p>
 
@@ -93,8 +93,8 @@
         <a class="card-link" id="tile-produccion" href="produccion.html"><div class="emoji">🧱</div><div class="title">Producción</div><div class="desc">Costeo y control de obra: estimado vs real</div></a>
         <a class="card-link" id="tile-citrus" href="citrus.html"><div class="emoji">🔌</div><div class="title">Citrus (Integración)</div><div class="desc">Conexión con el ERP fiscal Citrus (facturación / e-CF)</div></a>
         <a class="card-link" id="tile-mantenimiento" href="mantenimiento.html"><div class="emoji">🧹</div><div class="title">Mantenimiento</div><div class="desc">Limpiar clientes y proyectos duplicados en la nube</div></a>
-        <a class="card-link" id="tile-nomina" href="rrhh-nomina.html" style="display:none"><div class="emoji">💵</div><div class="title">Nómina RD</div><div class="desc">Cálculo de nómina, AFP/SFS e ISR</div></a>
-        <a class="card-link" id="tile-empleados" href="rrhh-empleados.html" style="display:none"><div class="emoji">🧑‍💼</div><div class="title">Empleados</div><div class="desc">Información del personal (solo lectura)</div></a>
+        <a class="card-link" id="tile-nomina" href="rrhh-nomina.html"><div class="emoji">💵</div><div class="title">Nómina RD</div><div class="desc">Cálculo de nómina, AFP/SFS e ISR</div></a>
+        <a class="card-link" id="tile-empleados" href="rrhh-empleados.html"><div class="emoji">🧑‍💼</div><div class="title">Empleados</div><div class="desc">Información del personal (solo lectura)</div></a>
     </div>
 </main>
 
@@ -104,6 +104,7 @@
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { collection, doc, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { puedeVer, idDeHref } from './paginas.js';
 
     // Admin (gerencia) ve todo el ERP; la contable solo el área financiera/fiscal.
     const usuario = await requireAuth(['contable']);
@@ -120,7 +121,6 @@
     // validan el rol; esto es solo la navegación visible.
     // Desde 2026-09-13 la visibilidad sale del catálogo de páginas (ops/paginas.js) + los permisos
     // por persona de Usuarios y roles (extra / bloqueadas), no de una lista fija por rol.
-    const { puedeVer, idDeHref } = await import('./paginas.js');
     const esAdmin = usuario.roles.includes('admin');
     if (!esAdmin) {
         document.querySelectorAll('#mod-grid > a.card-link').forEach((a) => {
@@ -198,15 +198,20 @@
         const fab = o.filter(x => ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'].includes(x.status)).length;
         const listos = o.filter(x => x.status === 'listo_para_cargar' && !x.instalado).length;
         const pend = i.filter(x => x.estado === 'pendiente').length, curso = i.filter(x => x.estado === 'en_proceso').length;
-        const chip = (cls, n, t, sub, href) => `<a class="tb-chip ${cls}" href="${href}"><div class="n">${n}</div><div class="t"><b>${t}</b>${sub}</div></a>`;
+        // (auditoría 2026-11-12) sin enlace cuando el rol no puede abrir esa página (antes el chip rebotaba a la contable)
+        const chip = (cls, n, t, sub, href) => puedeVer(usuario, idDeHref(href))
+            ? `<a class="tb-chip ${cls}" href="${href}"><div class="n">${n}</div><div class="t"><b>${t}</b>${sub}</div></a>`
+            : `<div class="tb-chip ${cls}" style="cursor:default"><div class="n">${n}</div><div class="t"><b>${t}</b>${sub}</div></div>`;
         document.getElementById('tb-oper').innerHTML = chip(cot ? 'alerta' : 'info', cot, 'Cotizaciones', 'por costear o enviar', 'cotizaciones.html')
             + chip('info', fab, 'En fábrica', 'pedidos en producción', 'historial.html')
             + chip(listos ? 'listo' : 'info', listos, 'Listos para instalar', 'esperando agenda o entrega', 'instalacion.html')
             + chip('info', pend + curso, 'Trabajos agendados', `${pend} pendiente${pend === 1 ? '' : 's'} · ${curso} en curso`, 'instalacion.html');
     }
     onSnapshot(doc(db, 'tablero', 'erp'), (s) => pintarTablero(s.exists() ? s.data() : null), () => { document.getElementById('tb-cuando').textContent = 'Sin acceso a las cifras'; });
-    onSnapshot(collection(db, 'orders'), (s) => { ops.orders = s.docs.map(d => d.data()); pintarOperacion(); }, () => {});
-    onSnapshot(collection(db, 'instalaciones'), (s) => { ops.inst = s.docs.map(d => d.data()); pintarOperacion(); }, () => {});
+    // (auditoría 2026-11-12) solo lo activo: antes bajaba `orders` e `instalaciones` enteras (fichas completas) para contar 4 números
+    const ESTADOS_ACTIVOS = ['solicitada', 'costeada', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'];
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ESTADOS_ACTIVOS)), (s) => { ops.orders = s.docs.map(d => d.data()); pintarOperacion(); }, () => {});
+    onSnapshot(query(collection(db, 'instalaciones'), where('estado', 'in', ['pendiente', 'en_proceso', 'sin_fecha'])), (s) => { ops.inst = s.docs.map(d => d.data()); pintarOperacion(); }, () => {});
 
 </script>
 

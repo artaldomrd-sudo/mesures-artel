@@ -2,16 +2,16 @@
 // solo lectura). Lo usan el Panel y Usuarios y roles. La función espejoCrear (acción 'acceso') devuelve la clave del espejo (la
 // guarda en `espejosClaves`, que nadie lee desde el navegador) y la crea si hace falta. La pestaña nueva entra sola (firebase-config.js).
 import { auth } from './firebase-config.js';
+import { homePorRol } from './auth-common.js';
 const FN = 'https://us-central1-artal-operaciones.cloudfunctions.net/espejoCrear';
 
-// Pantalla de inicio según el rol de la persona real.
+// Pantalla de inicio según el rol de la persona real: la MISMA regla que usa requireAuth/«Volver» (`homePorRol`), para que
+// la vista espejo abra donde aterriza la persona (auditoría 2026-11-12: antes tenía su propia regla y divergían). Si por
+// permiso de página puede ver el Panel, se abre el Panel.
 export function paginaInicio(roles = [], paginasExtra = []) {
     const r = Array.isArray(roles) ? roles : [roles];
-    if (r.some(x => ['instalador', 'ayudante', 'chofer'].includes(x))) return 'instalacion.html';
-    if (r.some(x => ['fabrica', 'contratista'].includes(x))) return 'alucufel/index.html';
     if ((paginasExtra || []).includes('index.html')) return 'index.html';
-    if (r.some(x => ['cotizaciones', 'contable', 'comunicaciones', 'capacitador'].includes(x))) return 'erp.html';
-    return 'index.html';
+    return homePorRol(r.filter(Boolean));
 }
 export async function verComo(emailReal, { roles = [], paginasExtra = [], pagina = null } = {}) {
     const w = window.open('about:blank', '_blank');   // se abre en el mismo toque para que el navegador no la bloquee

@@ -111,7 +111,8 @@ export async function enableNotifications(button) {
     if (!soportado()) { alert('Este navegador no soporta notificaciones push.'); return; }
     if (!auth.currentUser || !auth.currentUser.email) { alert('Inicia sesión antes de activar notificaciones.'); return; }
     if (Notification.permission === 'denied') {
-        alert('Las notificaciones están BLOQUEADAS en este navegador/teléfono, y una web no puede desbloquearlas sola.\n\nCómo reactivarlas:\n• iPhone/iPad (app en inicio): Ajustes → Notificaciones → ARTAL → Permitir.\n• Chrome (Mac/Windows/Android): candado 🔒 junto a la dirección → Notificaciones → Permitir.\n• Safari (Mac): Safari → Ajustes → Sitios web → Notificaciones → Permitir.\n\nLuego vuelve aquí y toca el botón de nuevo.');
+        // Texto corto (auditoría 2026-11-12); el paso a paso por dispositivo está en la guía de la Academia.
+        alert('Las notificaciones están bloqueadas en este teléfono o navegador.\nPermítelas en los ajustes del sitio (candado 🔒 o Ajustes → Notificaciones → ARTAL) y vuelve a tocar el botón.');
         return;
     }
     const originalText = button ? button.textContent : '';
@@ -121,7 +122,7 @@ export async function enableNotifications(button) {
         if (permission !== 'granted') { pintarBoton(permission, button); alert('No se activaron las notificaciones — el permiso quedó denegado. Puedes cambiarlo en los ajustes de notificaciones de tu navegador.'); return; }
         await obtenerYGuardarToken(true);
         pintarBoton('granted', button);
-        alert('✓ Notificaciones activadas en este dispositivo (' + dispositivoTxt() + ').\n\nNo hace falta volver a activarlas: se renuevan solas cada vez que entras. Si las activas en otro teléfono o computadora, este sigue recibiendo.');
+        alert('✓ Notificaciones activadas en este dispositivo (' + dispositivoTxt() + ').\nSe renuevan solas cada vez que entras.');
     } catch (e) {
         alert('No se pudieron activar las notificaciones: ' + (e && e.message ? e.message : e));
         if (button) { button.textContent = originalText; }

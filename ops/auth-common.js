@@ -114,16 +114,32 @@ function showLoginScreen() {
   };
 }
 
-function showUnauthorizedScreen(email) {
+// Ruta relativa desde la página actual hasta una pantalla de ops/ (`home` = id del catálogo, p. ej. 'mensajes.html').
+// Desde ops/alucufel/ hay que subir un nivel; desde ops/ ninguno. (auditoría 2026-11-12: antes estaba repetido en dos sitios)
+function rutaDesdeAqui(home) {
+  const carpeta = location.pathname.replace(/[^/]*$/, '');
+  const opsIdx = carpeta.indexOf('/ops/');
+  const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
+  return '../'.repeat(prof) + home;
+}
+
+function showUnauthorizedScreen(email, roles) {
   const safeEmail = String(email).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Salida: si la persona tiene un rol conocido, un botón a SU pantalla (auditoría 2026-11-12: comunicaciones/capacitador
+  // solos caían en el Panel de admin sin ninguna salida salvo cerrar sesión).
+  const home = Array.isArray(roles) && roles.length ? homePorRol(roles) : '';
+  const actual = location.pathname.split('/').pop() || 'index.html';
+  const conSalida = home && home.split('/').pop() !== actual;
   const el = showOverlay(
     '<h2 style="margin:0;font-size:20px;">Sin autorización</h2>' +
     '<p style="max-width:320px;">La cuenta <b>' + safeEmail + '</b> no tiene acceso a esta pantalla. ' +
     'Pide al administrador que la agregue con el rol correcto.</p>' +
+    (conSalida ? '<button id="auth-home-btn" style="font-size:16px;padding:12px 22px;border-radius:10px;border:none;background:#fff;color:#0A3D62;font-weight:700;cursor:pointer;min-height:48px;">Ir a mi pantalla</button>' : '') +
     '<button id="auth-signout-btn" style="font-size:14px;padding:8px 16px;border-radius:8px;' +
     'border:1px solid #fff;background:transparent;color:#fff;cursor:pointer;">' +
     'Cerrar sesión</button>'
   );
+  if (conSalida) el.querySelector('#auth-home-btn').onclick = () => location.replace(rutaDesdeAqui(home));
   document.getElementById('auth-signout-btn').onclick = () => signOut(auth);
 }
 
@@ -187,18 +203,15 @@ export function requireAuth(rolesPermitidos) {
           const home = homePorRol(roles);
           const actual = location.pathname.split('/').pop() || 'index.html';
           if (home.split('/').pop() !== actual) {
-            const carpeta = location.pathname.replace(/[^/]*$/, '');
-            const opsIdx = carpeta.indexOf('/ops/');
-            const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
-            location.replace('../'.repeat(prof) + home);
+            location.replace(rutaDesdeAqui(home));
             return;
           }
         }
-        showUnauthorizedScreen(user.email);
+        showUnauthorizedScreen(user.email, data && data.activo !== false ? roles : []);
         return;
       }
-      // Roles sensibles (admin/contable/comunicaciones): verificación en 2 pasos obligatoria. Si la
-      // cuenta aún no la tiene, se inscribe aquí mismo (QR + código) antes de mostrar la pantalla.
+      // Verificación en 2 pasos obligatoria para los roles de `ROLES_2FA` en mfa.js (hoy SOLO admin, decisión del
+      // usuario 2026-09-12). Si la cuenta aún no la tiene, se inscribe aquí mismo (QR + código) antes de mostrar la pantalla.
       try {
         const m = await mfaMod;
         if (m && m.requiere2FA(roles) && !m.tieneMFA(user)) await m.inscribirMFA(user, user.email);
@@ -214,9 +227,7 @@ export function requireAuth(rolesPermitidos) {
           const g = await gateMod;
           const pend = g ? await g.partesPendientes(((data.cuentaPrueba === true && data.espejoDe) ? String(data.espejoDe).toLowerCase() : user.email)) : [];
           if (pend.length) {
-            const carpeta = location.pathname.replace(/[^/]*$/, ''), opsIdx = carpeta.indexOf('/ops/');
-            const prof = opsIdx === -1 ? 0 : carpeta.slice(opsIdx + '/ops/'.length).split('/').filter(Boolean).length;
-            location.replace('../'.repeat(prof) + 'parte-diario.html?bloqueo=1&fecha=' + pend[pend.length - 1]);
+            location.replace(rutaDesdeAqui('parte-diario.html?bloqueo=1&fecha=' + pend[pend.length - 1]));
             return;
           }
         } catch (e) { console.warn('parte-gate', e && e.message ? e.message : e); }
@@ -268,6 +279,9 @@ export function homePorRol(roles) {
   if (roles.includes('contratista') || roles.includes('fabrica')) return 'alucufel/index.html';
   if (roles.includes('cotizaciones')) return 'cotizaciones.html';
   if (roles.includes('dotacion')) return 'rrhh-dotacion.html';   // solo dotación (uniformes/EPP): su página es su inicio
+  // (auditoría 2026-11-12) comunicaciones y capacitador SOLOS caían en index.html (solo admin) → «Sin autorización» sin salida.
+  if (roles.includes('comunicaciones')) return 'mensajes.html';
+  if (roles.includes('capacitador')) return 'academia.html';
   // Roles del inbox omnicanal (WhatsApp): su inicio es la bandeja compartida.
   if (roles.some((r) => ['inbox_admin', 'inbox_supervisor', 'inbox_agente', 'inbox_lector'].includes(r))) return 'inbox.html';
   return 'index.html';
@@ -287,4 +301,5 @@ export function wireBackButton(roles) {
   back.textContent = '← Volver';
 }
 
-export { auth, signOut };
+// `aplicarPermisosEnlaces` se re-exporta para que un hub pueda volver a llamarla tras pintar mosaicos con JS (auditoría 2026-11-12).
+export { auth, signOut, aplicarPermisosEnlaces };

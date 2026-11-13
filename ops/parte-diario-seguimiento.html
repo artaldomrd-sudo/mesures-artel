@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 960px; }
     h2.sec { font-size: 15px; color: var(--artal-blue); margin: 18px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -86,13 +86,13 @@
 
     <details class="cfg" id="cfg">
         <summary>⚙️ Encargados que deben enviar el parte, supervisor y bloqueo</summary>
-        <p class="hint" style="margin:0 0 6px">Cada encargado recibe el aviso a las 6:00 pm y a las 6:30 pm si todavía no lo envió (lunes a sábado, sin feriados); a las 6:30 pm gerencia recibe la lista de los que faltan. Desde las 6:00 pm el parte de hoy cuenta como pendiente y, con cualquier parte pendiente de los últimos 7 días, solo pueden usar el parte y Transportes. <b>Desde</b>: fecha a partir de la cual se le exige. <b>Supervisor</b>: cuando dos encargados trabajan juntos, él los incluye en su parte y el otro ese día no envía el suyo. Gerencia (admin) nunca entra en el cálculo de horas.</p>
+        <p class="hint" style="margin:0 0 6px">Avisos 5:30 · 6:00 · 6:30 pm; desde las 6:00 pm el parte bloquea la plataforma.</p>
         <div class="enc-list" id="enc-list"></div>
         <div class="bar">
             <label style="font-size:13px">Bloqueo activo desde <input type="datetime-local" id="c-bloqueo" oninput="this.dataset.tocado='1'" title="Antes de esta fecha/hora no se bloquea a nadie (solo se le avisa)"></label>
             <button class="btn btn-b" onclick="guardarConfig()">Guardar</button>
         </div>
-        <p class="hint">Costo por hora de cada persona = su costo laboral por día (RRHH → Empleados: sueldo + cargas de ley) ÷ 9 h (jornada de 9 horas); sin ese dato, sueldo ÷ 23.83 días. Las horas por encima de 9 en un día se cuentan al 135 %.</p>
+        <details class="mas"><summary>¿Cómo se calcula el costo?</summary><p class="hint">Costo por hora = costo por día de RRHH ÷ 9 h; horas por encima de 9 al 135 %. <b>Desde</b>: fecha desde la que se exige el parte. <b>Supervisor</b>: si dos encargados trabajan juntos, él incluye al otro en su parte.</p></details>
     </details>
 </main>
 
@@ -100,7 +100,7 @@
     import { requireAuth, auth, signOut } from './auth-common.js';
     import { db } from './firebase-config.js';
     import './mensajeria-widget.js';
-    import { collection, onSnapshot, doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, doc, setDoc, serverTimestamp, query, where } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
     const usuario = await requireAuth([]);   // solo gerencia (admin)
     document.getElementById('user-name').textContent = usuario.nombre;
@@ -126,9 +126,11 @@
     onSnapshot(collection(db, 'rrhhFeriados'), (s) => { feriados = new Set(s.docs.map(d => d.data().fecha).filter(Boolean)); renderTodo(); }, () => {});
     onSnapshot(collection(db, 'rrhhFeriadosTrabajados'), (s) => { feriadosTrab = new Map(s.docs.map(d => [d.data().fecha, d.data()])); renderTodo(); }, () => {});
     onSnapshot(doc(db, 'rrhhConfig', 'parteDiario'), (s) => { if (s.exists()) config = { ...config, ...s.data() }; renderTodo(); }, () => {});
-    onSnapshot(collection(db, 'partesDiarios'), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
+    // (auditoría 2026-11-12) solo los últimos 14 días (la pantalla no mira más atrás); antes bajaba la colección entera
+    const _desde14 = ymd(new Date(Date.now() - 14 * 86400000));
+    onSnapshot(query(collection(db, 'partesDiarios'), where('fecha', '>=', _desde14)), (s) => { partes = s.docs.map(d => ({ id: d.id, ...d.data() })); renderTodo(); }, () => {});
 
-    document.getElementById('f-dia').value = hoyStr(); document.getElementById('f-dia').max = hoyStr();
+    document.getElementById('f-dia').value = hoyStr(); document.getElementById('f-dia').max = hoyStr(); document.getElementById('f-dia').min = _desde14;   // la consulta solo trae 14 días
     window.irHoy = function () { document.getElementById('f-dia').value = hoyStr(); renderTodo(); };
     const fechaSel = () => document.getElementById('f-dia').value || hoyStr();
 
@@ -211,7 +213,8 @@
         const bdv = (document.getElementById('c-bloqueo') || {}).value || ''; const bloqueoDesde = bdv ? new Date(bdv).toISOString() : '';
         const jefeR = document.querySelector('#enc-list input[name="jefe"]:checked'); const jefe = jefeR ? jefeR.value : (encargados[0] || {}).email || '';
         if (jefe && !encargados.some(e => e.email === jefe)) { alert('El supervisor debe estar marcado también como encargado.'); return; }
-        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, jefe, bloqueoDesde, horasJornada: JORNADA_H, factorExtra: 1.35, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
+        // (auditoría 2026-11-12) sin horasJornada/factorExtra: antes los pisaba con constantes en cada guardado
+        try { await setDoc(doc(db, 'rrhhConfig', 'parteDiario'), { encargados, jefe, bloqueoDesde, actualizado: serverTimestamp(), por: usuario.nombre }, { merge: true }); alert('✓ Guardado.'); }
         catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
     window.renderTodo = function () { renderHoy(); renderDia(); render14(); renderConfig(); };

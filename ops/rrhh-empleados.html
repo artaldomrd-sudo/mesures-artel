@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 820px; }
     .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -59,6 +59,10 @@
     .modal-actions button { flex: 1; padding: 12px; border: none; border-radius: 9px; font-weight: bold; cursor: pointer; font-family: 'Arimo'; min-height: 46px; }
     .btn-guardar { background: #2ecc71; color: #fff; }
     .btn-cancelar { background: transparent; color: #888; border: 1.5px solid #ddd !important; }
+    /* (auditoría 2026-11-12) capa de claridad «Mi día»: Guardar = único botón principal (amarillo), Cancelar como texto debajo */
+    .modal-actions { flex-direction: column-reverse; gap: 2px; align-items: stretch; }
+    .modal-actions .btn-guardar, .modal-actions .btn-main, .modal-actions .btn-primaria { flex: none; width: 100%; background: linear-gradient(180deg, #ffd634, var(--amarillo, #F2C200)) !important; color: var(--azul-noche, #12314B) !important; border: 0 !important; border-radius: 14px; font-size: 16px; min-height: 50px; box-shadow: 0 10px 20px -12px rgba(217,168,0,.8); }
+    .modal-actions .btn-cancelar, .modal-actions .btn-light { flex: none; width: 100%; background: transparent !important; border: 0 !important; color: var(--azul, #2C6BA4) !important; font-size: 14px; min-height: 40px; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -93,6 +97,8 @@
         <h2 id="modal-title">Nuevo empleado</h2>
         <label>Nombre completo *</label>
         <input type="text" id="f-nombre" placeholder="Nombre y apellido">
+        <!-- (auditoría 2026-11-12) capa de claridad: 18 campos en tres grupos plegables -->
+        <details class="mas" id="det-contacto"><summary>Datos de contacto</summary>
         <div class="grid2">
             <div>
                 <label>Cédula</label>
@@ -105,6 +111,10 @@
         </div>
         <label>Correo</label>
         <input type="email" id="f-correo" placeholder="correo@ejemplo.com">
+        <label>Dirección</label>
+        <input type="text" id="f-direccion" placeholder="Dirección">
+        </details>
+        <details class="mas" id="det-puesto" open><summary>Puesto y sueldo</summary>
         <label>Cargo(s) <span class="lbl-opt">— puedes marcar varios</span></label>
         <div class="chk-group" id="f-cargos"></div>
         <div class="grid2">
@@ -136,8 +146,8 @@
             </div>
         </div>
         <p class="hint" id="cat-hint" style="display:none;">¿Faltan cargos, departamentos o sucursales? Agrégalos en <a href="rrhh-catalogos.html" target="_blank" style="color:var(--artal-blue);font-weight:bold;">Catálogos</a> (se abre en otra pestaña) y vuelve aquí.</p>
-        <label>Dirección</label>
-        <input type="text" id="f-direccion" placeholder="Dirección">
+        </details>
+        <details class="mas" id="det-expediente"><summary>Documentos y expediente</summary>
         <label>Notas (opcional)</label>
         <textarea id="f-notas" placeholder="Información adicional…"></textarea>
 
@@ -162,6 +172,7 @@
             <div id="emp-dotacion-list"></div>
             <a href="rrhh-dotacion.html" style="display:inline-block;margin-top:6px;font-size:12.5px;font-weight:bold;color:#1c4e7a;text-decoration:none;">👕 Abrir Dotación del equipo ↗</a>
         </div>
+        </details>
 
         <div class="modal-actions">
             <button class="btn-cancelar" onclick="cerrar()">Cancelar</button>
@@ -195,7 +206,8 @@
 
 <script type="module">
     import './mensajeria-widget.js';   // botón ✉️ Mensajes + banda roja de mensajes nuevos (2026-11-02)
-    import { requireAuth, auth, signOut } from './auth-common.js';
+    import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
+    import { puedeVer, idDeHref } from './paginas.js';
     import { requirePin } from './pin-gate.js';
     import { db, storage } from './firebase-config.js';
     import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -203,6 +215,8 @@
 
     // Admin gestiona; la contable (Yunairy) entra en SOLO LECTURA para ver la información del personal.
     const usuario = await requireAuth(['contable']);
+    // (auditoría 2026-11-12) «← Volver»: si el rol no puede abrir el hub del botón, lo apunta a su inicio (antes rebotaba a no-admin)
+    { const _b = document.querySelector('.btn-back'); if (_b && !puedeVer(usuario, idDeHref(_b.getAttribute('href')))) wireBackButton(usuario.roles); }
     await requirePin(usuario);
     const esAdmin = usuario.roles.includes('admin');
     if (!esAdmin) { const bn = document.querySelector('.btn-nuevo'); if (bn) bn.style.display = 'none'; }
@@ -368,13 +382,14 @@
     };
     // Dotación del empleado (2026-11-03): lo que tiene en su poder, con reposición, y el historial de devueltos/perdidos/dañados.
     const DOT_ESTADO = { entregado: 'En su poder', devuelto: 'Devuelto', perdido: 'Perdido', danado: 'Dañado' };
+    const hoyISO = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };   // (auditoría 2026-11-12) fecha local, no UTC
     const addMesesD = (iso, m) => { const d = new Date(iso + 'T00:00:00'); d.setMonth(d.getMonth() + Number(m)); return d.toISOString().slice(0, 10); };
     function dotacionDe(empId) { return dotacion.filter(x => x.empleadoId === empId); }
     function renderDotacionEmpleado() {
         const cont = document.getElementById('emp-dotacion-list'); if (!cont || !editingId) return;
         const mias = dotacionDe(editingId).slice().sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
         if (!mias.length) { cont.innerHTML = '<p class="hint">Sin dotación registrada.</p>'; return; }
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = hoyISO();
         cont.innerHTML = mias.map(x => {
             let rep = '';
             if (x.estado === 'entregado' && Number(x.vidaUtilMeses) > 0 && x.fecha) { const f = addMesesD(x.fecha, x.vidaUtilMeses); rep = ` · reposición <span style="color:${f < hoy ? '#c0392b' : '#1f9d61'};font-weight:bold">${esc(fmtFecha(f))}</span>`; }
