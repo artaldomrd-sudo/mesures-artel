@@ -541,10 +541,19 @@
         } catch (e) { alert('No se pudo quitar de la ruta: ' + (e && e.message ? e.message : e)); btns.forEach(b => { b.disabled = false; }); }
     };
     window.regresarAFabrica = async function (id) {
-        if (!confirm('¿Regresar este pedido a fábrica? Saldrá de tu lista de entregas.')) return;
+        // Misma regla que «No está listo» en Instalación: motivo obligatorio que fábrica ve como instrucción roja (auditoría 2026-11-12).
+        const motivo = prompt('¿Qué falta o qué está mal? Fábrica lo verá como instrucción.');
+        if (motivo === null) return;
+        if (!motivo.trim()) { alert('Escribe el motivo para que fábrica sepa qué corregir.'); return; }
         // Se borra también la marca "en ruta": si no, cuando fábrica lo vuelva a dejar listo
         // reaparece aquí como "en ruta hace N horas" con la fecha vieja (bug real, Woof Woof 2026-09-21).
-        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', enRuta: false, fechaEnRuta: null });
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                status: 'en_fabrica', enRuta: false, fechaEnRuta: null, listoAutomatico: null,
+                noListoPor: usuario.nombre, noListoPorEmail: usuario.email, noListoFecha: serverTimestamp(), noListoMotivo: motivo.trim(),
+                comentarioParaFabrica: '↩ Devuelto por transporte (' + usuario.nombre + '): ' + motivo.trim(), comentarioParaFabricaAtendido: false
+            });
+        } catch (e) { alert('No se pudo: ' + e.message); }
     };
 </script>
 

@@ -283,7 +283,7 @@ async function generarInforme({ lector, apiKey, hoy = ymdRD(), forzar = false, p
     if (!publicar) return { ok: true, publicado: false, motivo: 'solo prueba', asunto, texto, lecciones: lecc.origen, resumen: resumenDatos(datos) };
     const id = await escribirMensaje({
         estado: 'enviado', asunto, cuerpo: texto, remitenteEmail: 'coordinador@artal', remitenteNombre: 'Coordinador de Obras (IA)',
-        paraTodos: false, destinatarios: [...DESTINATARIOS, ...LECTORES], requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
+        paraTodos: false, destinatarios: [...DESTINATARIOS, ...LECTORES], respondedores: DESTINATARIOS, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
         generadoPor: 'cloud-function', modelo: MODELO, tokens: uso || null, leccionesOrigen: lecc.origen,
     });
     return { ok: true, publicado: true, id, asunto, texto };

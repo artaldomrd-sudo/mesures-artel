@@ -354,8 +354,10 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
         const u = await lector.obtener('usuarios', porEmail);
         const roles = u ? (Array.isArray(u.rol) ? u.rol : [u.rol]) : [];
         const esAdmin = roles.includes('admin') && u.activo !== false && u.cuentaPrueba !== true;
-        const esDest = (informe.destinatarios || []).map(low).includes(porEmail);
-        if (!esAdmin && !esDest) throw Object.assign(new Error('solo los destinatarios del informe o un admin pueden responderle'), { rechazo: true });
+        // Solo quien puede dar órdenes (`respondedores` del informe = DESTINATARIOS: Wilson y gerencia), no los lectores (Miki, Roosevelt,
+        // Emerson leen el informe en Mi día pero no mandan al Coordinador; auditoría 2026-11-12).
+        const esDest = (informe.respondedores || coord.DESTINATARIOS).map(low).includes(porEmail);
+        if (!esAdmin && !esDest) throw Object.assign(new Error('solo Wilson o gerencia pueden responder al Coordinador'), { rechazo: true });
 
         const hoy = coord.ymdRD();
         const [lecc, datos, equipoDocs, hilo] = await Promise.all([

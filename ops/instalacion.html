@@ -1883,6 +1883,7 @@
             // A1: solo una INSTALACIÓN se engancha sola al pedido abierto de la obra; medición/reparación/etc. no tocan pedidos.
             orderId: window._orderIdParaGuardar || (editingId ? ((allJobs.find(x => x.id === editingId) || {}).orderId || null) : null) || (tipoJob === 'instalacion' ? (pedidoAbiertoDeObra(cliente, document.getElementById('job-obra').value.trim()) || {}).id || null : null)
         };
+        if (datos.fecha) { datos.enPausa = false; datos.pausadoDesde = null; }   // editar con fecha = ya no está en pausa
         // A5: un trabajo que no es instalación no lleva orderId (el pedido no lo sigue); el pedido elegido queda como referencia.
         if (tipoJob && tipoJob !== 'instalacion' && datos.orderId) { datos.pedidoReferenciaId = datos.orderId; datos.orderId = null; datos.orderIds = []; }
         // A7: nunca dos trabajos abiertos para el mismo pedido.
@@ -1924,6 +1925,7 @@
         if (!yaConfirmado && !confirm(msg)) { renderTodo(); return; }   // renderTodo restaura el select si se cancela
         const ahora = serverTimestamp();
         const cambios = { estado, estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora };
+        if (estado === 'en_proceso' || estado === 'completado') { cambios.enPausa = false; cambios.pausadoDesde = null; }   // sale de «Pausadas» (auditoría 2026-11-12)
         if (estado === 'completado') { cambios.validadoPor = usuario.nombre; cambios.validadoPorEmail = usuario.email; cambios.validadoFecha = ahora; }
         // A4: al reabrir se limpia el cierre (quién validó, medición pendiente en la oficina) y queda registro de la reapertura.
         if (j.estado === 'completado' && estado !== 'completado') { cambios.validadoPor = null; cambios.validadoPorEmail = null; cambios.validadoFecha = null; cambios.reabiertoPor = usuario.nombre; cambios.reabiertoFecha = ahora; if (j.medicionPendienteOficina === true) cambios.medicionPendienteOficina = false; }
@@ -2093,7 +2095,7 @@
     };
     window.reprogramarJob = async function (id) {
         const val = document.getElementById('reprog-input-' + id).value; if (!val) { alert('Elige la nueva fecha y hora.'); return; }
-        try { await updateDoc(doc(db, 'instalaciones', id), { fecha: Timestamp.fromDate(new Date(val)), fechaFin: null, modoFecha: 'unica', recordatoriosEnviados: [] }); }   // fechaFin: null → al editar no vuelve a ser un rango con fin anterior al inicio
+        try { await updateDoc(doc(db, 'instalaciones', id), { fecha: Timestamp.fromDate(new Date(val)), fechaFin: null, modoFecha: 'unica', recordatoriosEnviados: [], enPausa: false, pausadoDesde: null }); }   // una fecha nueva saca la obra de «Pausadas»   // fechaFin: null → al editar no vuelve a ser un rango con fin anterior al inicio
         catch (e) { alert('No se pudo reprogramar: ' + e.message); }
     };
     window.eliminarJob = async function (id) {
@@ -2308,7 +2310,7 @@
         const prev = Array.isArray(j.asignados) ? j.asignados.filter(a => a && a.email) : (j.instaladorEmail ? [{ email: j.instaladorEmail, nombre: j.instaladorNombre || '' }] : []);
         const asignados = prev.some(a => a.email === yo.email) ? prev : prev.concat([yo]);
         const ahora = serverTimestamp();
-        const cambios = { estado: 'en_proceso', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, inicioReal: ahora, fecha: Timestamp.now(), modoFecha: 'unica', fechaFin: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '' };
+        const cambios = { estado: 'en_proceso', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, inicioReal: ahora, fecha: Timestamp.now(), modoFecha: 'unica', fechaFin: null, enPausa: false, pausadoDesde: null, recordatoriosEnviados: [], asignados, instaladorEmail: asignados[0].email, instaladorNombre: asignados[0].nombre || '' };
         if (j.fecha && !j.fechaOriginal) cambios.fechaOriginal = j.fecha;
         try {
             await updateDoc(doc(db, 'instalaciones', jobId), cambios);

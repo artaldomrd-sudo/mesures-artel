@@ -145,7 +145,7 @@
     let composeAdjuntos = [];
     let composeModo = 'todos';     // 'todos' | 'personas'
     let composeSel = new Set();
-    let composeFirma = false;
+    let composeFirma = true;   // comunicados siempre con firma (regla de Dylan 2026-11-02)
     // Feriado que SÍ se trabaja (usuario 2026-09-22): Anny lo avisa en el comunicado marcando la casilla y la fecha;
     // se guarda en rrhhFeriadosTrabajados/{fecha} y el parte diario (bloqueo, avisos, costos al 200 %) lo lee de ahí.
     let composeFeriado = false, composeFeriadoFecha = '';
@@ -193,6 +193,10 @@
     function noLeidos() { return bandejaMsgs().filter(esNoLeido).length; }
 
     // ---------------- Render ----------------
+    // Las casillas del compositor son `let` del módulo: desde un onchange inline no se alcanzan (creaban globales sueltas y
+    // «Requiere firma» / «Se trabaja un feriado» nunca llegaban al mensaje; auditoría 2026-11-12). Entran por aquí.
+    window.setCompose = (k, v) => { if (k === 'firma') composeFirma = !!v; else if (k === 'feriado') { composeFeriado = !!v; render(); } else if (k === 'feriadoFecha') composeFeriadoFecha = v; };
+    window.render = render;
     function render() {
         const cont = document.getElementById('cont');
         const nl = noLeidos();
@@ -300,7 +304,9 @@
             const x = it.x;
             return `<div class="coord-burb bot ${x.error ? 'err' : ''}"><div class="quien">🤖 ${esc(x.remitenteNombre || 'Coordinador de Obras')} · ${esc(fFecha(x.fecha))}${x.acciones ? ` · ${x.acciones} acción${x.acciones === 1 ? '' : 'es'} en el panel` : ''}</div>${esc(x.cuerpo || '')}</div>`;
         }).join('');
-        const puede = (esParaMi(m) || esAdminUsr) && !usuario.esEspejo;
+        // Responder solo quien puede dar órdenes al Coordinador (`respondedores` del informe); los demás destinatarios solo leen.
+        const puedeOrdenar = Array.isArray(m.respondedores) ? m.respondedores.some(d => mismoEmail(d, usuario.email)) : esParaMi(m);
+        const puede = (puedeOrdenar || esAdminUsr) && !usuario.esEspejo;
         const caja = puede ? `<div class="coord-caja"><label>💬 Responder al Coordinador</label>
             <textarea id="coord-resp-${m.id}" placeholder="Ej.: haz A2 · envía M1 · anota que PABLO queda en pausa hasta el lunes · mueve Cocoloba al martes 8:00" oninput="coordDraftSet('${m.id}', this.value)">${esc(coordDraft[m.id] || '')}</textarea>
             <div style="display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap"><button class="btn-blue" id="coord-btn-${m.id}" onclick="enviarRespuestaCoordinador('${m.id}')">📨 Enviar al Coordinador</button></div>
@@ -392,7 +398,7 @@
     };
 
     // ---------------- Nuevo mensaje (remitente) ----------------
-    function resetCompose() { composeAdjuntos = []; composeModo = 'todos'; composeSel = new Set(); composeFirma = false; composeFeriado = false; composeFeriadoFecha = ''; }
+    function resetCompose() { composeAdjuntos = []; composeModo = 'todos'; composeSel = new Set(); composeFirma = true; composeFeriado = false; composeFeriadoFecha = ''; }
 
     function renderNuevo() {
         const roles = [...new Set(usuariosCache.map(u => Array.isArray(u.rol) ? u.rol : [u.rol]).flat().filter(Boolean))].sort();
@@ -417,10 +423,10 @@
             </div>
         </div>
 
-        <label class="check-firma"><input type="checkbox" id="c-firma" ${composeFirma ? 'checked' : ''} onchange="composeFirma=this.checked"><span>📄 Requiere aceptación / firma de recibido (documento para firmar)</span></label>
-        <label class="check-firma"><input type="checkbox" id="c-feriado" ${composeFeriado ? 'checked' : ''} onchange="composeFeriado=this.checked; render()"><span>🗓️ Este comunicado avisa que se TRABAJA un día feriado (el parte diario de ese día se exige como uno normal y las horas se pagan al 200 %)</span></label>
+        <label class="check-firma"><input type="checkbox" id="c-firma" ${composeFirma ? 'checked' : ''} onchange="setCompose('firma', this.checked)"><span>📄 Requiere aceptación / firma de recibido (documento para firmar)</span></label>
+        <label class="check-firma"><input type="checkbox" id="c-feriado" ${composeFeriado ? 'checked' : ''} onchange="setCompose('feriado', this.checked)"><span>🗓️ Este comunicado avisa que se TRABAJA un día feriado (el parte diario de ese día se exige como uno normal y las horas se pagan al 200 %)</span></label>
         ${composeFeriado ? (() => { const prox = feriadosCache.filter(f => f.fecha >= hoyISO()).slice(0, 6); if (!composeFeriadoFecha && prox.length) composeFeriadoFecha = prox[0].fecha; return `<div class="field" style="margin-top:-4px"><label>¿Qué feriado se trabaja?</label>
-            <select onchange="composeFeriadoFecha=this.value">${prox.map(f => `<option value="${esc(f.fecha)}" ${f.fecha === composeFeriadoFecha ? 'selected' : ''}>${esc(fFer(f.fecha))} — ${esc(f.nombre || 'feriado')}</option>`).join('')}${prox.length ? '' : '<option value="">No hay feriados próximos en RRHH → Asistencia → Feriados</option>'}</select></div>`; })() : ''}
+            <select onchange="setCompose('feriadoFecha', this.value)">${prox.map(f => `<option value="${esc(f.fecha)}" ${f.fecha === composeFeriadoFecha ? 'selected' : ''}>${esc(fFer(f.fecha))} — ${esc(f.nombre || 'feriado')}</option>`).join('')}${prox.length ? '' : '<option value="">No hay feriados próximos en RRHH → Asistencia → Feriados</option>'}</select></div>`; })() : ''}
 
         <div class="field"><label>Adjuntar documento (PDF o imagen)</label>
             <div class="adj-wrap" id="adj-wrap"></div>
