@@ -356,7 +356,8 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
         const esAdmin = roles.includes('admin') && u.activo !== false && u.cuentaPrueba !== true;
         // Solo quien puede dar órdenes (`respondedores` del informe = DESTINATARIOS: Wilson y gerencia), no los lectores (Miki, Roosevelt,
         // Emerson leen el informe en Mi día pero no mandan al Coordinador; auditoría 2026-11-12).
-        const esDest = (informe.respondedores || coord.DESTINATARIOS).map(low).includes(porEmail);
+        const respondedores = Array.isArray(informe.respondedores) ? informe.respondedores : (await coord.destinatarios(lector)).destinatarios;   // rrhhConfig/coordinador (auditoría 2026-11-12)
+        const esDest = respondedores.map(low).includes(porEmail);
         if (!esAdmin && !esDest) throw Object.assign(new Error('solo Wilson o gerencia pueden responder al Coordinador'), { rechazo: true });
 
         const hoy = coord.ymdRD();
@@ -404,7 +405,7 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
         texto = sinIds(texto);
         if (!texto) texto = 'No llegué a una respuesta clara' + (ctx.acciones.length ? ', pero hice esto: ' + ctx.acciones.map((a) => a.resumen).join(' · ') : '') + '. Vuelve a pedirlo con más detalle.';
         if (cortado) texto += '\n\n(respuesta cortada por longitud)';
-        return { texto, acciones: ctx.acciones, uso, informe, lecciones: lecc.origen, pasos };
+        return { texto, acciones: ctx.acciones, uso, informe, lecciones: lecc.origen, pasos, respondedores };
     }
 
     return {
@@ -417,7 +418,7 @@ module.exports = function montar({ db, FieldValue, Timestamp, onDocumentCreated,
             try {
                 const res = await procesar(id, r, anthropicKey.value());
                 // Solo gerencia + Wilson + quien preguntó: los LECTORES del informe (Miki, Roosevelt, Emerson) no reciben el hilo del chat.
-                const dest = [...new Set([...coord.DESTINATARIOS.map(low), porEmail].filter(Boolean))];
+                const dest = [...new Set([...(res.respondedores || []).map(low), porEmail].filter(Boolean))];   // respondedores del informe (rrhhConfig/coordinador)
                 const cuerpo = `${res.texto}\n\n— Respuesta a ${r.por || porEmail}: «${rec(r.texto, 120)}»`;
                 const msg = await db.collection('mensajes').add({ estado: 'enviado', asunto: '↩️ ' + (res.informe.asunto || 'Informe matinal'), cuerpo, remitenteEmail: REMITENTE, remitenteNombre: NOMBRE, fecha: ahora(), paraTodos: false, destinatarios: dest, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'respuesta_coordinador', enRespuestaA: r.informeId, respuestaId: id, respuestaPor: r.por || porEmail, acciones: res.acciones.length, generadoPor: 'cloud-function', modelo: coord.MODELO, tokens: res.uso });
                 await snap.ref.update({ estado: 'procesada', fin: ahora(), resultado: res.texto, mensajeId: msg.id, acciones: res.acciones, tokens: res.uso, leccionesOrigen: res.lecciones, pasos: res.pasos });

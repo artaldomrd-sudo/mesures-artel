@@ -18,11 +18,25 @@
 // `scripts/ops/lecciones.js`). Si el doc no existe o está vacío, se usa `LECCIONES_BASE` (las de siempre). Antes estaban fijas aquí y
 // el informe repetía alertas que Dylan ya había resuelto en el archivo del agente (PABLO en pausa, Toni = TESEMATIN…).
 
-const DESTINATARIOS = ['wilsonhernandezrodriguez81@gmail.com', 'dylan.r.rd@gmail.com'];
-// Quienes además LEEN el informe en «Mi día» (Dylan 2026-11-12: Roosevelt y Emerson «que puedan ver el programa del día cada
-// día»; Miki como encargado). Van en `destinatarios` del mensaje (la regla de `mensajes` solo deja leer al destinatario), pero
-// las contestaciones del chat (coordinador-chat.js) siguen yendo solo a DESTINATARIOS + quien preguntó.
-const LECTORES = ['ariasvaldezmiki@gmail.com', 'rooseveltstephen9@gmail.com', '1932001jean@gmail.com'];
+// DESTINATARIOS (quienes reciben el informe Y pueden dar órdenes al Coordinador: Wilson y gerencia) y LECTORES (quienes además lo
+// LEEN en «Mi día» — Dylan 2026-11-12: Roosevelt y Emerson «que puedan ver el programa del día cada día»; Miki como encargado) viven
+// en Firestore `rrhhConfig/coordinador` { destinatarios: [correos], lectores: [correos] } — el repo es público, aquí no van correos
+// (auditoría 2026-11-12). Los lectores van en `destinatarios` del mensaje (la regla de `mensajes` solo deja leer al destinatario); las
+// contestaciones del chat (coordinador-chat.js) van solo a `respondedores` (= destinatarios) + quien preguntó. Si el doc no existe:
+// listas vacías y aviso en el log (nunca un valor fijo).
+const DEST_CACHE_MS = 5 * 60000;
+let _destCache = null;   // { t, destinatarios, lectores }
+async function destinatarios(fuente) {
+    if (_destCache && Date.now() - _destCache.t < DEST_CACHE_MS) return { destinatarios: _destCache.destinatarios, lectores: _destCache.lectores };
+    const lector = fuente && typeof fuente.obtener === 'function' ? fuente : lectorAdmin(fuente);   // acepta el lector abstracto o la `db` del Admin SDK
+    const limpia = (a) => (Array.isArray(a) ? a : []).map((e) => String(e || '').trim().toLowerCase()).filter((e) => e.includes('@'));
+    let d = null;
+    try { d = await lector.obtener('rrhhConfig', 'coordinador'); } catch (e) { console.warn('destinatarios: no se pudo leer rrhhConfig/coordinador', e && e.message); }
+    const out = { destinatarios: limpia(d && d.destinatarios), lectores: limpia(d && d.lectores) };
+    if (!out.destinatarios.length) console.warn('destinatarios: rrhhConfig/coordinador sin `destinatarios` → el informe del Coordinador no llega a nadie');
+    _destCache = { t: Date.now(), ...out };
+    return out;
+}
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const DIAS_SEM = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -61,8 +75,11 @@ async function recogerDatos(lector, hoy) {
     const ayer = sumarDias(hoy, diaSemana(hoy) === 1 ? -2 : -1);           // lunes mira el sábado
     const antes = sumarDias(ayer, diaSemana(ayer) === 1 ? -2 : -1);
     const [abiertos, completados, pedidos, cotiz, partes, viajes, citas, antic, vacas, feriados, feriadosTrab, informePrevio, solMaterial] = await Promise.all([
-        lector.consultar('instalaciones', [['estado', '!=', 'completado']], 400),
-        lector.consultar('instalaciones', [['estado', '==', 'completado']], 400),
+        // (auditoría 2026-11-12) abiertos por estado en el servidor (antes bajaba la colección entera y filtraba '!=' en memoria) y
+        // completados: los 120 más recientes por validadoFecha (índice compuesto estado + validadoFecha desc; sin él, el lector
+        // vuelve solo a la consulta sin orden, limitada a 400, y lo avisa en el log).
+        lector.consultar('instalaciones', [['estado', 'in', ['pendiente', 'en_proceso', 'sin_fecha']]], 400),
+        lector.consultar('instalaciones', [['estado', '==', 'completado']], 120, { campo: 'validadoFecha', dir: 'desc' }),
         lector.consultar('orders', [['status', 'in', ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar']]], 300),
         lector.consultar('orders', [['status', 'in', ['solicitada', 'costeada', 'enviada_cliente']]], 300),
         lector.consultar('partesDiarios', [['fecha', 'in', [ayer, antes, hoy]]], 60),
@@ -281,9 +298,10 @@ async function generarInforme({ lector, apiKey, hoy = ymdRD(), forzar = false, p
     const { texto, uso, cortado } = await pedirInforme(apiKey, datos, clima, lecc.texto);
     log('informe generado', texto.length, 'caracteres', uso ? `(${uso.input_tokens} in / ${uso.output_tokens} out)` : '', 'lecciones:', lecc.origen, cortado ? 'CORTADO' : '');
     if (!publicar) return { ok: true, publicado: false, motivo: 'solo prueba', asunto, texto, lecciones: lecc.origen, resumen: resumenDatos(datos) };
+    const dst = await destinatarios(lector);   // rrhhConfig/coordinador (auditoría 2026-11-12)
     const id = await escribirMensaje({
         estado: 'enviado', asunto, cuerpo: texto, remitenteEmail: 'coordinador@artal', remitenteNombre: 'Coordinador de Obras (IA)',
-        paraTodos: false, destinatarios: [...DESTINATARIOS, ...LECTORES], respondedores: DESTINATARIOS, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
+        paraTodos: false, destinatarios: [...new Set([...dst.destinatarios, ...dst.lectores])], respondedores: dst.destinatarios, requiereFirma: false, adjuntos: [], acuses: {}, tipo: 'informe_coordinador',
         generadoPor: 'cloud-function', modelo: MODELO, tokens: uso || null, leccionesOrigen: lecc.origen,
     });
     return { ok: true, publicado: true, id, asunto, texto };
@@ -293,10 +311,16 @@ const resumenDatos = (d) => ({ trabajosAbiertos: d.trabajosAbiertos.length, pedi
 // Lector sobre el Admin SDK: '==' e 'in' van a Firestore; '!=' se resuelve en memoria (evita índices y el límite de un solo '!=').
 function lectorAdmin(db) {
     return {
-        async consultar(col, filtros = [], limite = 500) {
+        // `orden` opcional {campo, dir} (auditoría 2026-11-12): orderBy en el servidor; si Firestore rechaza la consulta (falta el índice
+        // compuesto), se repite SIN orden con límite 400 para que el informe salga igual, y queda el aviso en el log.
+        async consultar(col, filtros = [], limite = 500, orden = null) {
             let q = db.collection(col); const enMemoria = [];
             for (const [campo, op, valor] of filtros) { if (op === '==' || op === 'in') q = q.where(campo, op, valor); else enMemoria.push([campo, op, valor]); }
-            const snap = await q.limit(limite).get();
+            let snap;
+            if (orden && orden.campo) {
+                try { snap = await q.orderBy(orden.campo, orden.dir === 'desc' ? 'desc' : 'asc').limit(limite).get(); }
+                catch (e) { console.warn('lectorAdmin.consultar', col, 'sin índice para orderBy', orden.campo, '→ sin orden:', e && e.message); snap = await q.limit(Math.max(limite, 400)).get(); }
+            } else snap = await q.limit(limite).get();
             return snap.docs.map((d) => ({ _id: d.id, ...d.data() })).filter((x) => enMemoria.every(([c, op, v]) => op === '!=' ? x[c] !== v : true));
         },
         async obtener(col, id) { const s = await db.doc(col + '/' + id).get(); return s.exists ? { _id: s.id, ...s.data() } : null; },
@@ -334,5 +358,4 @@ module.exports.MODELO = MODELO;
 module.exports.fechaTxt = fechaTxt;
 module.exports.ymdRD = ymdRD;
 module.exports.horaRD = horaRD;
-module.exports.DESTINATARIOS = DESTINATARIOS;
-module.exports.LECTORES = LECTORES;
+module.exports.destinatarios = destinatarios;   // async (lector | db) → { destinatarios, lectores } desde rrhhConfig/coordinador, caché 5 min

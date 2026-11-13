@@ -61,7 +61,7 @@ const ROLES_EQUIPO = ['instalador', 'ayudante', 'chofer'];
 const URL_BASE = 'https://artaldomrd-sudo.github.io/mesures-artel/';
 const URL_CORTA_ENCUESTA = 'https://artaldominicana.com/e/';   // redirección en el sitio → ops/satisfaccion.html?t=CODIGO
 
-module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }) {
+module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra, ausenciasJustificadas }) {
 
     // ---- utilidades de fecha en hora de RD --------------------------------------------------
     const TZ = 'America/Santo_Domingo';
@@ -158,6 +158,9 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
         const emps = await empleadosPorId();
         const nombreDe = (em) => (eq.get(String(em || '').toLowerCase()) || {}).nombre || em;
         const laborable = await esLaborable(D);
+        // Vacaciones / permiso aprobado ese día (una sola consulta, compartida con recordarParteDiario de index.js): sin parte
+        // exigido y sin falta. (auditoría 2026-11-12)
+        const justificados = laborable ? await ausenciasJustificadas(D, emps) : new Set();
 
         // 1) Parte diario de los encargados.
         if (laborable) {
@@ -168,6 +171,7 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                 if (!e || !e.email) continue;
                 const em = String(e.email).toLowerCase();
                 if (e.desde && D < e.desde) continue;
+                if (justificados.has(em)) continue;   // de vacaciones o con permiso: ese día no le toca el parte
                 const mio = delDia.find((x) => String(x.encargadoEmail || '').toLowerCase() === em && !x.borrador);   // un borrador no es parte enviado
                 const incluido = !mio && delDia.some((x) => !x.borrador && String(x.encargadoEmail || '').toLowerCase() !== em && Array.isArray(x.incluidosEmails) && x.incluidosEmails.map((z) => String(z).toLowerCase()).includes(em));
                 let pts, det;
@@ -223,13 +227,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                     if (!((horasPor.get(e.email) || {}).horas > 0)) ausentes.add(e.email);
                 });
                 if (ausentes.size) {
-                    const permisos = (await db.collection('rrhhPermisos').where('estado', '==', 'aprobado').get()).docs.map((d) => d.data()).filter((p) => p.fechaInicio <= D && D <= p.fechaFin);
-                    // Vacaciones registradas en RRHH que cubren el día (cualquier estado salvo rechazadas/canceladas) tampoco son falta.
-                    const vacaciones = (await db.collection('rrhhVacaciones').get()).docs.map((d) => d.data()).filter((v) => v.fechaInicio && v.fechaFin && v.fechaInicio <= D && D <= v.fechaFin && !/rechaz|cancel/i.test(String(v.estado || '')));
+                    // Permiso aprobado o vacaciones (salvo rechazadas/canceladas) que cubren el día → no es falta. Misma consulta
+                    // `ausenciasJustificadas` que usa el parte (arriba) y recordarParteDiario. (auditoría 2026-11-12)
                     for (const em of ausentes) {
-                        const idsEmp = [...emps].filter(([, v]) => v.email === em).map(([k]) => k);
-                        if (permisos.some((p) => idsEmp.includes(p.empleadoId))) continue;
-                        if (vacaciones.some((v) => idsEmp.includes(v.empleadoId))) continue;
+                        if (justificados.has(em)) continue;
                         await evento({ email: em, nombre: nombreDe(em), tipo: 'falta', ref: D, puntos: R.faltaSinPermiso, fechaEvento: D, detalle: `Falta del ${fmtF(D)} sin permiso registrado en RRHH.` });
                         res.faltas++;
                     }
@@ -339,8 +340,10 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             const asignados = (Array.isArray(after.asignados) && after.asignados.length ? after.asignados : (after.instaladorEmail ? [{ email: after.instaladorEmail, nombre: after.instaladorNombre || '' }] : []))
                 .filter((a) => a && a.email).map((a) => ({ email: String(a.email).toLowerCase(), nombre: a.nombre || '' }));
             const url = URL_CORTA_ENCUESTA + token;
+            // (auditoría 2026-11-12) `encuestas/{token}` es legible por cualquiera que tenga el enlace (get público): solo NOMBRES, nunca
+            // correos. encuestaRespondida vuelve a leer los correos desde la instalación.
             await db.doc('encuestas/' + token).set({
-                instalacionId: event.params.id, cliente: cli, obra: String(after.obra || ''), asignados,
+                instalacionId: event.params.id, cliente: cli, obra: String(after.obra || ''), asignados: asignados.map((a) => ({ nombre: a.nombre || '' })),
                 completadoPor: after.validadoPor || '', fechaTrabajo: fechaRD(after.validadoFecha) || hoySantoDomingo().fecha,
                 estado: 'pendiente', creada: FieldValue.serverTimestamp(), url
             });
@@ -366,11 +369,14 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
             // Participantes = asignados + quien tenga horas en el parte de esa obra alrededor del día del trabajo
             // (desde el día agendado, o el anterior al trabajo, hasta 2 días después; nunca más allá de hoy).
             const participantes = new Map();
-            (after.asignados || []).forEach((a) => { if (a && a.email) participantes.set(String(a.email).toLowerCase(), a.nombre || ''); });
+            (after.asignados || []).forEach((a) => { if (a && a.email) participantes.set(String(a.email).toLowerCase(), a.nombre || ''); });   // encuestas anteriores a 2026-11-12 (traían el correo)
             try {
                 const eq = await equipo(); const emps = await empleadosPorId();
                 const instS = after.instalacionId ? await db.doc('instalaciones/' + after.instalacionId).get() : null;
                 const inst = instS && instS.exists ? instS.data() : { cliente: after.cliente, obra: after.obra };
+                // (auditoría 2026-11-12) la encuesta ya no guarda correos: los asignados se leen de la instalación.
+                (Array.isArray(inst.asignados) && inst.asignados.length ? inst.asignados : (inst.instaladorEmail ? [{ email: inst.instaladorEmail, nombre: inst.instaladorNombre || '' }] : []))
+                    .forEach((a) => { if (a && a.email) { const em = String(a.email).toLowerCase(); if (!participantes.has(em)) participantes.set(em, a.nombre || (eq.get(em) || {}).nombre || ''); } });
                 const fT = after.fechaTrabajo || D, ini = fechaRD(inst.fecha) || fT;
                 const desde = addDias(ini < fT ? ini : fT, -1), hasta = [addDias(fT, 2), D].sort()[0];
                 (await personasEnObra({ cliente: inst.cliente || after.cliente, obra: inst.obra || after.obra }, desde < addDias(fT, -14) ? addDias(fT, -14) : desde, hasta, eq, emps)).forEach((n, em) => { if (!participantes.has(em)) participantes.set(em, n); });
@@ -380,7 +386,7 @@ module.exports = function ({ db, FieldValue, hoySantoDomingo, enviarPushUsuario,
                     detalle: `El cliente calificó ${lugar} con ${estrellas} (${g}/5)${r.comentario ? ': «' + String(r.comentario).slice(0, 160) + '»' : ''}.` });
             }
             const listaEquipo = [...participantes].map(([em, n]) => n || em);
-            await db.doc('encuestas/' + event.params.token).update({ puntosAplicados: pts, puntosFecha: FieldValue.serverTimestamp(), participantes: [...participantes].map(([email, nombre]) => ({ email, nombre })) });
+            await db.doc('encuestas/' + event.params.token).update({ puntosAplicados: pts, puntosFecha: FieldValue.serverTimestamp(), participantes: [...participantes].map(([email, nombre]) => ({ nombre: nombre || email.split('@')[0] })) });   // solo nombres (doc público)
             if (after.instalacionId) { try { await db.doc('instalaciones/' + after.instalacionId).update({ encuestaEstado: 'respondida', encuestaGeneral: g, encuestaFecha: D }); } catch (_) { } }
             // Aviso a gerencia por Mensajería + push.
             const admins = (await db.collection('usuarios').get()).docs.filter((d) => { const x = d.data().rol; return (Array.isArray(x) ? x : [x]).includes('admin') && d.data().activo !== false; }).map((d) => d.id);

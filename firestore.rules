@@ -78,11 +78,13 @@ service cloud.firestore {
         'inventario', 'categoriasInventario', 'subgruposInventario', 'bultosHerramientas', 'equiposInstalacion',
         'movimientosInventario', 'movimientosInstalaciones',
         'academiaCursos', 'academiaLecciones', 'academiaProgreso',
-        'puntosConfig', 'rrhhFeriados', 'rrhhFeriadosTrabajados', 'rrhhTurnos', 'rrhhConfig',
+        'puntosConfig', 'rrhhFeriados', 'rrhhFeriadosTrabajados', 'rrhhTurnos',
         'rrhhDepartamentos', 'rrhhCargos', 'rrhhSucursales',
-        'proyectosGuardados', 'calculadores', 'cotizacionesEspecificaciones', 'productosUnidades', 'tasas'
+        'calculadores', 'cotizacionesEspecificaciones', 'productosUnidades', 'tasas'
       ];
     }
+    // (auditoría 2026-11-12) `proyectosGuardados` (cuaderno de medidas, con clientes y teléfonos) y `rrhhConfig` (encargados, listas de
+    // correos, suplidores) salen de la lectura general: los leen oficina y equipo de obra; ALUCUFEL (fabrica/contratista) no los usa.
     match /equipo/{email} {
       allow write: if false;   // solo la Cloud Function sincronizarEquipo (Admin SDK)
     }
@@ -163,9 +165,9 @@ service cloud.firestore {
         || (request.auth.token.email == email
             && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol', 'activo', 'nombre', 'paginasExtra', 'paginasBloqueadas', 'cuentaPrueba', 'espejoDe'])));   // G2: un espejo no puede quitarse la marca de prueba
     }
-    match /proyectosGuardados/{id}   { allow write: if puedeEscribir(); }   // cuaderno de medidas (cualquier sesión que no sea lector)
-    // Historial de versiones del cuaderno (proyectosGuardados/{id}/versiones/{ts}): la escritura NO se hereda del padre.
-    match /proyectosGuardados/{id}/versiones/{v} { allow write: if puedeEscribir(); }
+    match /proyectosGuardados/{id}   { allow read: if oficina() || obra(); allow write: if puedeEscribir(); }   // cuaderno de medidas (cualquier sesión que no sea lector)
+    // Historial de versiones del cuaderno (proyectosGuardados/{id}/versiones/{ts}): ni la lectura ni la escritura se heredan del padre.
+    match /proyectosGuardados/{id}/versiones/{v} { allow read: if oficina() || obra(); allow write: if puedeEscribir(); }
 
     // Academia (capacitación): el CONTENIDO (cursos/lecciones) solo lo edita gerencia (admin) o el
     // rol 'capacitador'. El PROGRESO lo escribe cada quien sobre su propio avance (cualquier sesión).
@@ -289,7 +291,7 @@ service cloud.firestore {
     match /rrhhVacaciones/{id}    { allow read, write: if rrhh(); }
     match /rrhhVacantes/{id}      { allow read, write: if rrhh(); }
     match /rrhhCandidatos/{id}    { allow read, write: if rrhh(); }
-    match /rrhhConfig/{id}        { allow write: if esAdmin(); }
+    match /rrhhConfig/{id}        { allow read: if oficina() || obra(); allow write: if esAdmin(); }   // (auditoría 2026-11-12) ya no está en la lectura general
     match /rrhhNominas/{id}       { allow read, write: if finanzas(); }
     match /rrhhPrestamos/{id}     { allow read, write: if finanzas(); }
     match /rrhhReuniones/{id} {

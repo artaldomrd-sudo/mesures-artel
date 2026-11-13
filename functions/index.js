@@ -33,8 +33,6 @@ async function tokensDe(email) {
     const s = await db.collection('usuarios').doc(email).get();
     return s.exists ? tokensDeDoc(s.data()) : [];
 }
-// Compat: primer token (lo usan llamadas viejas que esperaban uno solo).
-async function tokenDe(email) { const t = await tokensDe(email); return t.length ? t[0].token : null; }
 // Borra de usuarios/{email} un token que FCM reporta como muerto (dispositivo que desinstaló la app,
 // permiso revocado, token rotado…). Así la lista se limpia sola y no se acumulan tokens inútiles.
 async function purgarToken(email, entry) {
@@ -178,16 +176,9 @@ exports.enviarNotificacionCita = onDocumentCreated('citas/{citaId}', async (even
 // en memoria (el rol puede ser string o array).
 exports.enviarNotificacionSolicitud = onDocumentCreated('solicitudesWeb/{id}', async (event) => {
     const s = event.data.data();
-    const usuarios = await db.collection('usuarios').get();
-    const admins = usuarios.docs.filter((u) => {
-        const rol = u.data().rol;
-        const roles = Array.isArray(rol) ? rol : [rol];
-        return roles.includes('admin');
-    });
     const cuerpo = [s.tipo, s.nombre, s.telefono].filter(Boolean).join(' · ');
-    for (const u of admins) {
-        await enviarPushUsuario(u.id, 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''), cuerpo || 'Un cliente pidió cotización desde el sitio web', 'ops/solicitudes.html');
-    }
+    // (auditoría 2026-11-12) misma regla que el resto de los avisos a gerencia: tokensPorRol salta espejos e inactivos.
+    await pushATokens(await tokensPorRol('admin'), 'Nueva solicitud web' + (s.tipo ? ': ' + s.tipo : ''), cuerpo || 'Un cliente pidió cotización desde el sitio web', 'ops/solicitudes.html');
 });
 
 // Avisa por push a cada ROL cuando un pedido entra a su cola — SOLO al rol que le corresponde:
@@ -211,8 +202,15 @@ exports.instalacionAlListo = onDocumentWritten('orders/{id}', async (event) => {
     if (after.docType === 'COMPRA_DIRECTA' || after.sinInstalacion === true || after.instalado === true) return;
     const id = event.params.id;
     try {
-        const todos = (await db.collection('instalaciones').get()).docs.map((d) => ({ id: d.id, ...d.data() }));
-        if (todos.some((j) => j.orderId === id || (Array.isArray(j.orderIds) && j.orderIds.includes(id)))) return;   // ya tiene trabajo
+        // (auditoría 2026-11-12) antes bajaba `instalaciones` entera: ahora solo los trabajos enlazados a este pedido (cualquier estado,
+        // para no crear otro si ya hubo uno) y los ABIERTOS (para engancharse a uno de la misma obra).
+        const [porId, porIds, abiertosS] = await Promise.all([
+            db.collection('instalaciones').where('orderId', '==', id).limit(1).get(),
+            db.collection('instalaciones').where('orderIds', 'array-contains', id).limit(1).get(),
+            db.collection('instalaciones').where('estado', 'in', ['pendiente', 'en_proceso', 'sin_fecha']).get(),
+        ]);
+        if (!porId.empty || !porIds.empty) return;   // ya tiene trabajo
+        const todos = abiertosS.docs.map((d) => ({ id: d.id, ...d.data() }));
         const abierto = todos.find((j) => j.estado !== 'completado' && esTrabajoInstalacion(j) && mismaObra(after.cliente, after.obra, j.cliente, j.obra));   // A1: nunca engancharse a una medición/reparación
         if (abierto) {
             await db.doc('instalaciones/' + abierto.id).update({ orderIds: FieldValue.arrayUnion(...[...new Set([abierto.orderId, ...(abierto.orderIds || []), id].filter(Boolean))]), orderId: abierto.orderId || id });
@@ -310,7 +308,8 @@ exports.pedidoSigueTrabajo = onDocumentWritten('instalaciones/{id}', async (even
         const pedidos = await pedidosDelTrabajo(id, after);
         if (!pedidos.length) return;
         if (estado === 'completado') {
-            const otros = (await db.collection('instalaciones').get()).docs.filter((d) => d.id !== id && (d.data().estado || 'pendiente') !== 'completado' && esTrabajoInstalacion(d.data()) && mismaObra(after.cliente, after.obra, d.data().cliente, d.data().obra));   // A1: una medición abierta no frena el cierre
+            // (auditoría 2026-11-12) solo los trabajos ABIERTOS (antes bajaba la colección entera).
+            const otros = (await db.collection('instalaciones').where('estado', 'in', ['pendiente', 'en_proceso', 'sin_fecha']).get()).docs.filter((d) => d.id !== id && esTrabajoInstalacion(d.data()) && mismaObra(after.cliente, after.obra, d.data().cliente, d.data().obra));   // A1: una medición abierta no frena el cierre
             if (otros.length) { console.log('pedidoSigueTrabajo: obra por partes, queda abierto', otros.map((d) => d.id).join(','), '→ no se cierra el pedido'); return; }
             for (const o of pedidos) {
                 if (o.instalado === true && o.status === 'completado') continue;
@@ -431,7 +430,14 @@ exports.medicionAlCotizar = onDocumentCreated('orders/{id}', async (event) => {
         }
         const todos = (await db.collection('instalaciones').where('medicionEstado', '==', 'por_cotizar').get()).docs;
         // (0) El cuaderno abierto desde «Abrir el cuaderno para cotizar» manda la medición por su id: enlace seguro aunque el nombre difiera.
-        const porId = o.medicionInstalacionId ? todos.filter((d) => d.id === o.medicionInstalacionId) : [];
+        // (auditoría 2026-11-12) se lee ESE doc directo: vale con cualquier medicionEstado salvo 'descartada' (antes solo si estaba en
+        // 'por_cotizar', y una medición aún «pendiente de oficina» o ya 'cotizada' por otro documento no se enlazaba).
+        let porId = [];
+        if (o.medicionInstalacionId) {
+            const dm = await db.doc('instalaciones/' + String(o.medicionInstalacionId)).get();
+            if (dm.exists && dm.data().medicionEstado !== 'descartada') porId = [dm];
+            else console.log('medicionAlCotizar: medición', o.medicionInstalacionId, dm.exists ? 'descartada' : 'no existe', '→ se busca por nombre');
+        }
         const exactas = porId.length ? porId : todos.filter((d) => mismaObra(o.cliente, o.obra, d.data().cliente, d.data().obra));
         for (const d of exactas) {
             await d.ref.update({ medicionEstado: 'cotizada', medicionCotizacionId: id, medicionCotizadaPor: 'Sistema ARTAL', medicionCotizadaFecha: FieldValue.serverTimestamp(), medicionCotizadaDoc: o.docType || '', medicionPosible: FieldValue.delete(),
@@ -454,7 +460,8 @@ exports.medicionAlCotizar = onDocumentCreated('orders/{id}', async (event) => {
 // (`medicionCotizacionEstado`, `medicionPasos[]`), que Instalación muestra como cadena Medidas → Cotización → Cliente → Fábrica.
 exports.medicionSeguirPedido = onDocumentWritten('orders/{id}', async (event) => {
     const after = event.data.after.exists ? event.data.after.data() : null; if (!after) return;
-    const before = event.data.before.exists ? event.data.before.data() : {};
+    if (!event.data.before.exists) return;   // (auditoría 2026-11-12) el paso de la CREACIÓN lo escribe medicionAlCotizar; aquí salía duplicado
+    const before = event.data.before.data();
     const ids = after.medicionInstalacionIds || (after.medicionInstalacionId ? [after.medicionInstalacionId] : []);
     if (!ids.length) return;
     const cambioEstado = before.status !== after.status;
@@ -566,6 +573,10 @@ exports.solicitudMaterialPush = onDocumentWritten('solicitudesMaterial/{id}', as
                         pushTitulo: titulo, pushCuerpo: `${lineas.length} pieza(s) · cotización adjunta`, pushUrl: 'ops/solicitudes-material.html', fechaCreacion: FieldValue.serverTimestamp(),
                     });
                     citaId = cref.id;
+                } else {
+                    // (auditoría 2026-11-12) sin nadie en la lista de pagos la cotización se quedaba sin aviso: avisa a la oficina (compras).
+                    console.warn('solicitudMaterialPush: rrhhConfig/solicitudesMaterial.pagos vacío; aviso a la oficina');
+                    for (const em of [...new Set(oficina)].filter(Boolean)) { try { await enviarPushUsuario(em, `💳 Cotización por pagar — ${provNom}`, 'Hay una cotización por pagar y nadie está en la lista de pagos', url); } catch (_) { } }
                 }
                 for (const r of refs) await r.update({ estado: 'por_pagar', cotizacion: nuevas, pagoCitaId: citaId, historial: FieldValue.arrayUnion({ estado: 'por_pagar', por: 'Sistema ARTAL', email: '', fechaISO: ahoraIso, nota: 'Cotización subida: pendiente de pago' }) });
                 return;
@@ -643,7 +654,17 @@ async function avisarEnvio(o, lugar, cambio) {
     const pre = cambio ? '🔁 Cambió el envío · ' : '';
     if (via === 'camion') {
         if (compra) await pushATokens(await tokensPorRol('chofer'), pre + '🛒 Comprar o retirar en ' + (o.proveedor || 'proveedor'), [que, 'para ' + lugar].filter(Boolean).join(' · '), 'ops/chofer.html');
-        else await pushATokens(await tokensPorRol('chofer'), pre + 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+        else if (cambio) await pushATokens(await tokensPorRol('chofer'), pre + 'Pedido listo para cargar', lugar, 'ops/chofer.html');
+        else {
+            // (auditoría 2026-11-12) UN solo aviso «Listo en fábrica» para chofer + instaladores + ayudantes (antes el chofer recibía «Pedido
+            // listo para cargar» y, si también es instalador, otro «Obra lista para instalar»). Mismo título; cada token una sola vez,
+            // el chofer abre Transportes y el equipo de obra Instalación.
+            const titulo = 'Listo en fábrica: ' + lugar;
+            const chofer = await tokensPorRol('chofer');
+            const yaEnviados = new Set(chofer.map((t) => t.token));
+            await pushATokens(chofer, titulo, 'Pedido listo para cargar', 'ops/chofer.html');
+            await pushATokens((await tokensPorRol('instalador', 'ayudante')).filter((t) => !yaEnviados.has(t.token)), titulo, 'Obra lista para instalar', 'ops/instalacion.html');
+        }
     } else if (via === 'guagua') {
         await pushATokens(await tokensPorRol('chofer', 'instalador', 'ayudante', 'admin'), pre + '🚌 Llega por guagua SDQ–LT', [lugar, que, nota].filter(Boolean).join(' · ').slice(0, 160), 'ops/instalacion.html');
     } else if (via === 'externo') {
@@ -652,7 +673,9 @@ async function avisarEnvio(o, lugar, cambio) {
         if (asig.length) { for (const em of asig) { try { await enviarPushUsuario(em, titulo, cuerpo, 'ops/instalacion.html'); } catch (_) { } } }
         else await pushATokens(await tokensPorRol('instalador', 'ayudante'), titulo, cuerpo, 'ops/instalacion.html');
     } else if (via === 'hilux') {
-        let hx = ['dylan.r.rd@gmail.com']; try { const c = await db.collection('rrhhConfig').doc('envios').get(); if (c.exists && Array.isArray(c.data().hilux) && c.data().hilux.length) hx = c.data().hilux; } catch (_) { }
+        // (auditoría 2026-11-12) quién conduce la Hilux vive SOLO en rrhhConfig/envios.hilux (repo público: sin correos en el código).
+        let hx = []; try { const c = await db.collection('rrhhConfig').doc('envios').get(); if (c.exists && Array.isArray(c.data().hilux)) hx = c.data().hilux; } catch (_) { }
+        if (!hx.length) console.warn('avisarEnvio: rrhhConfig/envios.hilux vacío o inexistente → nadie recibe el aviso de la Hilux');
         for (const em of hx) { try { await enviarPushUsuario(String(em).toLowerCase(), pre + '🛻 Para llevar en la Hilux', [lugar, que, nota].filter(Boolean).join(' · ').slice(0, 160), 'ops/index.html'); } catch (_) { } }
     }
 }
@@ -699,7 +722,9 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
             const reapertura = (after.reaperturaFecha && after.reaperturaFecha !== before.reaperturaFecha) || before.status === 'completado';
             if (!automatico && !yaSalio && !reapertura) {
                 await avisarEnvio(after, lugar);
-                if (after.docType !== 'COMPRA_DIRECTA') await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
+                // (auditoría 2026-11-12) con camión o guagua avisarEnvio ya avisó al equipo de obra en el mismo push; solo las demás vías
+                // (externo / Hilux / contratista) necesitan además el aviso a instaladores y ayudantes.
+                if (after.docType !== 'COMPRA_DIRECTA' && !['camion', 'guagua'].includes(viaEnvioSrv(after))) await pushATokens(await tokensPorRol('instalador', 'ayudante'), 'Obra lista para instalar', lugar, 'ops/instalacion.html');
             } else console.log('enviarNotificacionPedido: sin push de listo para', event.params.id, { automatico: !!automatico, yaSalio, reapertura });
         }
     }
@@ -842,6 +867,35 @@ function hoySantoDomingo() {
     const g = (t) => (p.find((x) => x.type === t) || {}).value;
     return { fecha: `${g('year')}-${g('month')}-${g('day')}`, domingo: g('weekday') === 'Sun' };
 }
+// 'YYYY-MM-DD' de cualquier Date en hora de RD (auditoría 2026-11-12: antes se usaba toISOString(), que es UTC).
+function ymdSantoDomingo(d) {
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    const g = (t) => (p.find((x) => x.type === t) || {}).value;
+    return `${g('year')}-${g('month')}-${g('day')}`;
+}
+// Encargados/empleados que ese día están de VACACIONES (rrhhVacaciones, salvo rechazadas/canceladas) o con PERMISO aprobado
+// (rrhhPermisos): no se les exige el parte ni se les descuenta. Devuelve un Set de correos en minúsculas. `emps` opcional =
+// Map id → {email} de rrhhEmpleados (puntos.js ya lo tiene cargado); si falta, se lee aquí. La usan recordarParteDiario y
+// puntos.js (parte y falta). (auditoría 2026-11-12)
+async function ausenciasJustificadas(fecha, emps) {
+    const out = new Set();
+    try {
+        if (!emps) {
+            emps = new Map();
+            (await db.collection('rrhhEmpleados').get()).docs.forEach((d) => emps.set(d.id, { email: String((d.data() || {}).correo || '').toLowerCase() }));
+        }
+        const [permS, vacS] = await Promise.all([
+            db.collection('rrhhPermisos').where('estado', '==', 'aprobado').get(),
+            db.collection('rrhhVacaciones').get(),
+        ]);
+        const cubre = (x) => x && x.fechaInicio && x.fechaFin && x.fechaInicio <= fecha && fecha <= x.fechaFin;
+        const ids = new Set();
+        permS.docs.forEach((d) => { const x = d.data(); if (cubre(x)) ids.add(x.empleadoId); });
+        vacS.docs.forEach((d) => { const x = d.data(); if (cubre(x) && !/rechaz|cancel/i.test(String(x.estado || ''))) ids.add(x.empleadoId); });
+        for (const id of ids) { const e = emps.get(id); if (e && e.email) out.add(e.email); }
+    } catch (e) { console.warn('ausenciasJustificadas', e && e.message); }
+    return out;
+}
 async function recordarParteDiario(avisarAdmin, texto) {
     const { fecha, domingo } = hoySantoDomingo();
     if (domingo) return;
@@ -853,10 +907,12 @@ async function recordarParteDiario(avisarAdmin, texto) {
     if (!encargados.length) return;
     const faltan = [];
     const delDia = (await db.collection('partesDiarios').where('fecha', '==', fecha).get()).docs.map((d) => d.data());
+    const justificados = await ausenciasJustificadas(fecha);   // (auditoría 2026-11-12) de vacaciones o con permiso: no se le exige el parte
     for (const e of encargados) {
         if (!e || !e.email) continue;
         const em = String(e.email).toLowerCase();
         if (e.desde && fecha < e.desde) continue;   // todavía no se le exige (arranque escalonado)
+        if (justificados.has(em)) continue;
         const id = fecha + '_' + em.replace(/[.@]/g, '_');
         const p = await db.doc('partesDiarios/' + id).get();
         if (p.exists && !p.data().borrador) continue;   // borrador (horas cargadas al validar un trabajo) ≠ parte enviado
@@ -911,7 +967,7 @@ function debeSeguirRepitiendo(c, nextDate, nextCount) {
     const fin = c.repetirFin || 'nunca';
     if (fin === 'nunca') return true;
     if (fin === 'veces') return nextCount <= (Number(c.repetirFinValor) || 1);
-    if (fin === 'fecha') { const tope = c.repetirFinValor ? new Date(c.repetirFinValor + 'T23:59:59') : null; return tope ? nextDate <= tope : true; }
+    if (fin === 'fecha') { const tope = c.repetirFinValor ? new Date(c.repetirFinValor + 'T23:59:59-04:00') : null; return tope ? nextDate <= tope : true; }   // (auditoría 2026-11-12) fin del día en hora RD
     if (fin === 'meses') {
         const inicio = c.repetirInicio ? new Date(c.repetirInicio) : (c.fecha && c.fecha.toDate ? c.fecha.toDate() : new Date());
         const tope = new Date(inicio); tope.setMonth(tope.getMonth() + (Number(c.repetirFinValor) || 1));
@@ -1010,9 +1066,24 @@ ESTILO (muy importante):
 - Respuestas BREVES y al grano (2 a 5 frases). Sin rodeos y sin repetir lo que ya dijiste.
 - Escribe en TEXTO PLANO. NO uses formato markdown de ningún tipo: nada de asteriscos para negrita (** **), nada de #, nada de listas con viñetas o números con símbolos. Solo texto normal, como un mensaje de WhatsApp. Puedes usar algún emoji de vez en cuando, con moderación.`;
 
+// Solo el sitio web puede usar el bot (auditoría 2026-11-12): sin Origin o con otro Origin se rechaza, y cada IP tiene un tope de
+// 30 mensajes por hora (`chatBotCuota/{hashIp_hora}`, solo lo escribe el servidor; sin regla de cliente). PROBARLO desde
+// artaldominicana.com antes de confiar: si el navegador no mandara el Origin esperado, el chat del sitio dejaría de responder.
+const CHATBOT_ORIGENES = new Set(['https://artaldominicana.com', 'https://www.artaldominicana.com', 'https://artaldomrd-sudo.github.io']);   // el tercero: Pages del repo del sitio (vista previa)
+const CHATBOT_MAX_HORA = 30;
 exports.chatBot = onRequest({ secrets: [anthropicKey], cors: true }, async (req, res) => {
     if (req.method !== 'POST') { res.status(405).json({ error: 'metodo' }); return; }
+    const origen = String(req.headers.origin || '');
+    if (!CHATBOT_ORIGENES.has(origen)) { console.warn('chatBot: origen rechazado', origen || '(sin Origin)'); res.status(403).json({ error: 'origen' }); return; }
     try {
+        const ip = String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim() || 'sin-ip';
+        const cuotaId = crypto.createHash('sha256').update('artal-chat-' + ip).digest('hex').slice(0, 16) + '_' + new Date().toISOString().slice(0, 13).replace(/[-T]/g, '');
+        try {
+            const cref = db.doc('chatBotCuota/' + cuotaId);
+            await cref.set({ n: FieldValue.increment(1), hora: new Date().toISOString().slice(0, 13), actualizado: FieldValue.serverTimestamp() }, { merge: true });
+            const n = Number(((await cref.get()).data() || {}).n) || 0;
+            if (n > CHATBOT_MAX_HORA) { console.warn('chatBot: cuota superada', cuotaId, n); res.status(429).json({ error: 'cuota' }); return; }
+        } catch (e) { console.warn('chatBot cuota', e && e.message); }   // si Firestore falla, el bot sigue contestando
         const entrada = Array.isArray(req.body && req.body.messages) ? req.body.messages : [];
         // Saneo anti-abuso: solo roles válidos, texto acotado, máximo 20 turnos.
         const mensajes = entrada
@@ -1219,6 +1290,7 @@ async function callerAdmin(req) {
         if (!email) return null;
         const s = await db.collection('usuarios').doc(email).get();
         if (!s.exists) return null;
+        if (s.data().activo === false || s.data().cuentaPrueba === true) return null;   // (auditoría 2026-11-12) baja o espejo: nunca admin
         const rol = s.data().rol;
         const roles = Array.isArray(rol) ? rol : [rol];
         return roles.includes('admin') ? email : null;
@@ -2327,6 +2399,7 @@ async function callerConRol(req, roles) {
     try {
         const decoded = await getAuth().verifyIdToken(m[1]); const email = decoded.email; if (!email) return null;
         const s = await db.collection('usuarios').doc(email).get(); if (!s.exists) return null;
+        if (s.data().activo === false || s.data().cuentaPrueba === true) return null;   // (auditoría 2026-11-12) baja o espejo: sin acceso
         const rol = s.data().rol; const rs = Array.isArray(rol) ? rol : [rol];
         return rs.some(r => r === 'admin' || roles.includes(r)) ? email : null;
     } catch (_) { return null; }
@@ -2674,7 +2747,7 @@ exports.anticipoPedido = onRequest({ cors: true, timeoutSeconds: 60 }, async (re
         }
         if (accion === 'marcar') {   // a mano, sin Citrus (Cotizaciones / Historial / Fábrica interna): anticipo o PAGO COMPLETO
             const tipo = b.tipo === 'completo' ? 'completo' : 'anticipo';
-            const fecha = String(b.fecha || new Date().toISOString().slice(0, 10)), nota = String(b.nota || '').trim(), moneda = String(b.moneda || 'RD$');
+            const fecha = String(b.fecha || hoySantoDomingo().fecha), nota = String(b.nota || '').trim(), moneda = String(b.moneda || 'RD$');   // (auditoría 2026-11-12) fecha de RD, no UTC
             const formaPago = tipo === 'completo' ? String(b.formaPago || '').trim() : '', facturaCitrus = tipo === 'completo' ? String(b.facturaCitrus || '').trim() : '';
             // Una misma factura al contado puede cubrir VARIOS pedidos del mismo cliente (Niza: ventanas + shutters, fact. 290): `pedidos`
             // [{orderId, monto|null}] — monto null = «incluido en la factura» (se guarda 0 e `incluidoEnFactura`).
@@ -2733,7 +2806,7 @@ async function aplicarAnticiposCitrus(ctx, quien) {
     const comprasTodas = pedidosSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((o) => o.docType === 'COMPRA_DIRECTA').concat(cerrados.filter((o) => o.docType === 'COMPRA_DIRECTA'));
     const registro = new Map(regSnap.docs.map((d) => [d.id, d.data()]));
     const nombresFicha = (f) => [f.nombre, f.nombreFacturacion, ...(Array.isArray(f.alias) ? f.alias : [])].map(normNombre).filter(Boolean);
-    const fechaDe = (t) => (t && t.toDate) ? t.toDate().toISOString().slice(0, 10) : '';
+    const fechaDe = (t) => (t && t.toDate) ? ymdSantoDomingo(t.toDate()) : '';   // (auditoría 2026-11-12) día de RD, no UTC (a las 8 pm ya era «mañana»)
     // Detalle de cada candidato para que la oficina pueda distinguir documentos con el mismo nombre de obra (Anny 2026-10-14):
     // tipo de documento y destino, fecha de creación y de cierre, nº de cotización Citrus si se conoce, y qué ítems lleva.
     const resumenItems = (o) => { const its = Array.isArray(o.items) ? o.items : []; const cont = {}; its.forEach((it) => { const k = (it.tipo || it.label || it.nombre || 'ítem') + (it.ancho && it.alto ? ' ' + it.ancho + '×' + it.alto : ''); cont[k] = (cont[k] || 0) + (Number(it.cantidad) || 1); }); const l = Object.entries(cont).map(([k, n]) => (n > 1 ? n + '× ' : '') + k); return l.length ? (its.length + ' ítem(s): ' + l.slice(0, 4).join(', ') + (l.length > 4 ? '…' : '')) : (o.totalItems ? o.totalItems + ' ítem(s)' : (o.descripcion ? String(o.descripcion).slice(0, 80) : '')); };
@@ -2823,7 +2896,6 @@ async function aplicarAnticiposCitrus(ctx, quien) {
     }
     return res;
 }
-exports.aplicarAnticiposCitrus = aplicarAnticiposCitrus;
 async function sincronizarCitrus(motivo) {
     const ctx = citrusCtx({ body: {} }, true);
     const { fecha } = hoySantoDomingo();   // devuelve { fecha, domingo }
@@ -2867,8 +2939,6 @@ exports.citrusSincronizarAhora = onRequest({ secrets: [citrusToken, citrusTokenP
     try { res.status(200).json(await sincronizarCitrus('manual · ' + admin)); }
     catch (e) { res.status(500).json({ error: String((e && e.message) || e) }); }
 });
-
-// redeploy 1786120000 (arqueo caja chica: push 8:00 / 4:55)
 
 // --- Precios de combustible (MICM) ---------------------------------------------------------------
 // El MICM fija los precios de combustibles cada semana (rigen de sábado a viernes). Esta función
@@ -3186,7 +3256,8 @@ async function generarInformeObra(instId, inst, opts) {
     const costoHoraEmp = (e) => { if (!e) return 0; const dia = Number(e.costoDiaReal) > 0 ? Number(e.costoDiaReal) : (Number(e.sueldoBase) > 0 ? Number(e.sueldoBase) / 23.83 : 0); return dia / jornada; };
 
     // Mano de obra: líneas de partes de esta obra, con la jornada por persona y día (extras al factor).
-    const partes = (await db.collection('partesDiarios').get()).docs.map((d) => ({ _id: d.id, ...d.data() })).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
+    // (auditoría 2026-11-12) solo los partes de la ventana del informe (antes bajaba la colección entera); el filtro en memoria se conserva.
+    const partes = (await db.collection('partesDiarios').where('fecha', '>', desde || '').where('fecha', '<=', hoy).get()).docs.map((d) => ({ _id: d.id, ...d.data() })).filter((p) => p.fecha && p.fecha > desde && p.fecha <= hoy);
     // G3: el costo por hora congelado de cada parte vive en partesCostos (solo finanzas); si falta, se calcula con la ficha actual.
     const costosParte = {}; (await db.collection('partesCostos').get()).docs.forEach((d) => { costosParte[d.id] = (d.data() || {}).costos || {}; });
     const personas = {}, dias = {}, obrasIncluidas = {}; let horas = 0, horasExtra = 0, costoMO = 0, sinCosto = [];
@@ -3223,7 +3294,10 @@ async function generarInformeObra(instId, inst, opts) {
     const listaPersonas = Object.values(personas).sort((a, b) => b.horas - a.horas).map((p) => ({ nombre: p.nombre, horas: Math.round(p.horas * 10) / 10, costo: Math.round(p.costo * 100) / 100, dias: p.dias.size }));
     const listaDias = Object.keys(dias).sort().map((f) => ({ fecha: f, horas: dias[f] }));
     // Pedidos de la obra (para el enlace y para saber qué se entregó).
-    const pedidos = (await db.collection('orders').get()).docs.filter((d) => esMia(d.data().cliente, d.data().obra)).map((d) => ({ id: d.id, obra: d.data().obra || '', docType: d.data().docType || '', status: d.data().status || '', idProyecto: idProyectoSrv(d.data()) }));
+    // (auditoría 2026-11-12) mismaObra compara el cliente NORMALIZADO (mayúsculas/tildes), así que un where('cliente','==') exacto
+    // podría perder pedidos; en vez de filtrar, se proyectan solo los 6 campos que se usan (sin appJSON ni items: la colección
+    // entera pasa de ~1 MB a unos KB). Mismo resultado que antes.
+    const pedidos = (await db.collection('orders').select('cliente', 'obra', 'docType', 'status', 'idProyecto', 'appJSON.header.idProveedor').get()).docs.filter((d) => esMia(d.data().cliente, d.data().obra)).map((d) => ({ id: d.id, obra: d.data().obra || '', docType: d.data().docType || '', status: d.data().status || '', idProyecto: idProyectoSrv(d.data()) }));
 
     const informe = {
         instalacionId: instId, cliente, obra, obraKey, obraLabel: [cliente, obra].filter(Boolean).join(' — '),
@@ -3431,7 +3505,7 @@ exports.informeObraAlCompletar = onDocumentWritten('instalaciones/{id}', async (
 // despliegan y el deploy no pide los secretos WHATSAPP_* ni la versión de Graph.
 // ---------------------------------------------------------------------------------------------
 // PUNTOS DEL EQUIPO + ENCUESTA DE SATISFACCIÓN DEL CLIENTE (usuario 2026-09-24). Ver ./puntos.js.
-Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra }));
+Object.assign(exports, require('./puntos')({ db, FieldValue, hoySantoDomingo, enviarPushUsuario, tokensPorRol, pushATokens, callerAdmin, mismaObra, ausenciasJustificadas }));
 
 if (process.env.INBOX_ACTIVO === '1') Object.assign(exports, require('./inbox')({ anthropicKey }));
 
@@ -3446,10 +3520,18 @@ exports.parteAcuseCoordinador = onDocumentWritten('partesDiarios/{id}', async (e
     const nombre = (a.encargadoNombre || '').split(' ')[0] || 'encargado';
     const fRD = (iso) => { try { return new Date(iso).toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santo_Domingo' }); } catch (_) { return ''; } };
     const diaTxt = (ymd) => { try { return new Date(ymd + 'T12:00:00').toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (_) { return ymd; } };
-    const manana = (() => { const d = new Date(a.fecha + 'T12:00:00'); d.setDate(d.getDate() + (d.getDay() === 6 ? 2 : 1)); return d.toISOString().slice(0, 10); })();
+    // «Mañana» = próximo día laborable: salta domingos Y feriados de rrhhFeriados que no se trabajen (auditoría 2026-11-12; antes solo el domingo).
+    const manana = await (async () => {
+        let fer = new Set(), trab = new Set();
+        try { const [f, t] = await Promise.all([db.collection('rrhhFeriados').get(), db.collection('rrhhFeriadosTrabajados').get()]); fer = new Set(f.docs.map((d) => d.data().fecha).filter(Boolean)); trab = new Set(t.docs.map((d) => d.data().fecha || d.id)); } catch (_) { }
+        const d = new Date(a.fecha + 'T12:00:00Z');
+        for (let i = 0; i < 10; i++) { d.setUTCDate(d.getUTCDate() + 1); const ymd = d.toISOString().slice(0, 10); if (d.getUTCDay() !== 0 && !(fer.has(ymd) && !trab.has(ymd))) return ymd; }
+        return d.toISOString().slice(0, 10);
+    })();
     const lineas = Array.isArray(a.lineas) ? a.lineas : [];
-    const horas = lineas.reduce((t, l) => t + (l.tipo === 'ausente' ? 0 : (Number(l.horas) || 0)), 0);
-    const personas = new Set(lineas.map((l) => l.empleadoId)).size;
+    // Solo las horas EN OBRA; las personas sin contar a quien está 'ausente' (auditoría 2026-11-12).
+    const horas = lineas.reduce((t, l) => t + (l.tipo === 'obra' ? (Number(l.horas) || 0) : 0), 0);
+    const personas = new Set(lineas.filter((l) => l.tipo !== 'ausente').map((l) => l.empleadoId)).size;
     const items = Array.isArray(a.resumen.items) ? a.resumen.items : [];
     const obrasT = items.filter((i) => i.estadoObra === 'terminada'), obrasP = items.filter((i) => i.estadoObra === 'pausa');
     const hechos = items.filter((i) => i.hecho && !i.estadoObra), noHechos = items.filter((i) => !i.hecho);
