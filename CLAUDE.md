@@ -2851,7 +2851,21 @@ movimiento en `movimientosInstalaciones` en ambos casos. El acuse nocturno (`par
 (`coordinador.js` `previsto[]`) distinguen «obra TERMINADA / PAUSADA (vuelven el …) / no fueron». Guías `guia-instalacion-02` y
 `guia-parte-diario-01` actualizadas. Probado en `?demo=midia`: Niza → completado, Plaza Manuela → en proceso con fecha del lunes.
 
-### «Cerrar el día» fijo hasta enviar, con borrador en el teléfono (2026-11-12, caso Miki)
+### «Gestionar el día» sin candado (2026-11-12 noche; sustituye al candado de la sección siguiente)
+
+Dylan, al ver el botón «Cerrar el día · a las 5:30» en el demo de la mañana: «¿por qué a las 8 am le permitiríamos cerrar el día? mejor
+cambiar "cerrar el día" por gestionar el día, para que se puedan ir rellenando informaciones eventualmente», y sobre el candado: «cancela
+esto; lo que importa es que se pueda volver desde la pantalla hacia atrás o desde Mi día pasar a cerrar». Hecho en `parte-diario.html`:
+la vista `cerrar` se llama **«Gestionar el día»** (título, botón `#btn-ir-cerrar` visible todo el día, recorrido demo, notas de
+movimientos «desde Mi día»); se quitaron `pintarCierreFijo`, el `popstate` con `pushState`, el `beforeunload`, el toast de `setVista('plan')`
+y la línea `#cierre-fijo`. Se conserva el BORRADOR local (`guardarCierre`/`restaurarCierre`, clave `artal_midia_cierre_*`) y `cierreEnCurso`
+solo decide que `vistaInicial` abra en «Gestionar el día» si hay algo a medias. **Trampa real**: los oyentes `input/change/click` que
+guardan el borrador van en fase de CAPTURA (`true`): el `onclick` de un chip repinta el paso y en burbujeo el botón ya no cuelga de
+`#v-cerrar` (`closest` → null → no se guardaba); solo «funcionaba» antes porque `renderResumen()` fallaba en el onclick. Guía
+`guia-parte-diario-01`: apartado «GESTIONAR EL DÍA: A CUALQUIER HORA». Lección de método: cuando Dylan pone dos opciones sobre la mesa,
+recomendar y preguntar, no elegir por él (memoria `feedback-opciones-sobre-la-mesa`).
+
+### «Cerrar el día» fijo hasta enviar, con borrador en el teléfono (2026-11-12, caso Miki) — CANDADO RETIRADO la misma noche, ver arriba
 
 Dylan: «la página Mi día que el equipo tiene que llenar mañana y tarde necesito que esté fija, que no se pueda quitar hasta terminar el
 proceso; Miki estaba rellenando, le dio a algo sin querer, se le cerró y ya no sale». Causa: el cierre (paso, obras, dos líneas, horas,

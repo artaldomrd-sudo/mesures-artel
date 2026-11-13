@@ -100,14 +100,14 @@
     <!-- ===== MAÑANA: plan de hoy + lo que falta cerrar ===== -->
     <section id="v-plan">
         <div id="mi-dia"></div>
-        <button class="cta sec" id="btn-ir-cerrar" onclick="irCerrar()">Cerrar el día · a las 5:30</button>
+        <!-- Visible todo el día (Dylan 2026-11-12): lo que no se pudo hacer se marca de inmediato; el parte se envía al final. -->
+        <button class="cta sec" id="btn-ir-cerrar" onclick="irCerrar()">Gestionar el día</button>
     </section>
 
-    <!-- ===== TARDE: cerrar el día en 3 pasos (resumen ✅/❌ · dos líneas · horas) ===== -->
+    <!-- ===== GESTIONAR EL DÍA en 3 pasos (resumen ✅/❌ · dos líneas · horas); se puede ir y volver a «Mi día» a cualquier hora ===== -->
     <section id="v-cerrar" hidden>
         <p class="estado" id="p-estado"></p>
         <div class="steps" id="steps"><i></i><i></i><i></i></div>
-        <p class="cierre-fijo" id="cierre-fijo" hidden>🔒 Se va guardando en tu teléfono · para salir, termina y toca «Enviar parte»</p>
         <div id="resumen-dia">
             <div id="paso1" class="paso"></div>
             <div id="paso2" class="paso" hidden></div>
@@ -212,16 +212,15 @@
 
     // Ayudantes (Emerson) y no encargados (Roosevelt) también entran (Dylan 2026-11-12: «que puedan ver el programa del día cada
     // día»): ven SOLO «Mi plan» (informe del Coordinador con sus líneas, lo previsto a su nombre, lo que les falta cerrar); el parte
-    // («Cerrar el día») sigue siendo de los encargados de rrhhConfig/parteDiario.
+    // («Gestionar el día») sigue siendo de los encargados de rrhhConfig/parteDiario.
     const usuario = await requireAuth(['instalador', 'ayudante']);
     // ---- Mi día: vistas y pasos (rediseño 2026-11-12). 'plan' por la mañana; 'cerrar' (3 pasos) desde las 15:00 o al tocar el aviso. ----
     let vista = 'plan', paso = 1;
     window.toggleMenu = () => { const m = document.getElementById('menu'); m.hidden = !m.hidden; };
     window.setVista = function (v) {
-        if (v === 'plan' && cierreEnCurso) { toastMd('Termina de cerrar el día y toca «Enviar parte» para salir.'); return; }
         vista = v; document.getElementById('v-plan').hidden = v !== 'plan'; document.getElementById('v-cerrar').hidden = v !== 'cerrar';
         document.getElementById('menu').hidden = true;
-        document.getElementById('hd-title').textContent = v === 'plan' ? 'Mi día' : 'Cerrar el día';
+        document.getElementById('hd-title').textContent = v === 'plan' ? 'Mi día' : 'Gestionar el día';
         if (v === 'cerrar') setPaso(paso); else { try { renderMiDia(); } catch (_) { } }
         window.scrollTo({ top: 0 });
     };
@@ -240,11 +239,11 @@
     window.irCerrar = function () { if (soloPlan()) return; paso = 1; setVista('cerrar'); };
     // Solo plan: no es admin, no es vista previa de gerencia y no está en la lista de encargados del parte.
     function soloPlan() { return !esAdmin && !previewComo && !(config.encargados || []).some(e => String(e.email || '').toLowerCase() === miEmail); }
-    // ---- Cierre del día FIJO hasta enviar (Dylan 2026-11-12; caso Miki: tocó algo sin querer, la página se cerró y perdió lo rellenado) ----
-    // Todo lo que se marca en «Cerrar el día» (paso, obras, dos líneas, horas, nota) queda en el teléfono al instante (localStorage,
-    // una clave por encargado y día) y se restaura al volver a abrir, directo en el paso donde iba, a cualquier hora. Mientras hay
-    // un cierre a medias no se puede salir: sin flecha ‹, sin «Mi plan» ni cambio de fecha, el gesto «atrás» no saca de la página y
-    // cerrar la pestaña avisa. Se libera al enviar el parte. Nunca aplica a admin ni a la vista previa «como encargado».
+    // ---- Borrador de «Gestionar el día» en el teléfono (Dylan 2026-11-12; caso Miki: tocó algo sin querer, la página se cerró y perdió lo
+    // rellenado). Todo lo que se marca (paso, obras, dos líneas, horas, nota) queda en localStorage al instante (una clave por encargado
+    // y día) y se restaura al volver a abrir, en el paso donde iba, a cualquier hora. Hubo un CANDADO (sin flecha, sin «Mi plan», atrás
+    // bloqueado) que Dylan quitó la misma noche: «lo que importa es que se pueda volver desde Gestionar el día hacia atrás o desde Mi
+    // día pasar a Gestionar». Se va y se vuelve libremente; el borrador se borra al enviar. Nunca aplica a admin ni a la vista previa.
     const CIERRE_KEY = () => 'artal_midia_cierre_' + claveEmail(miEmail) + '_' + hoyStr();
     let cierreEnCurso = false, cierreTimer = null, toastTimer = null;
     function cierreAplica() { return !esAdmin && !previewComo && !!parteActual && parteActual.fecha === hoyStr() && vista === 'cerrar' && paso >= 1 && paso <= 3; }
@@ -258,18 +257,12 @@
                 if (ta) resumenActual.cumplido = ta.value; if (tb) resumenActual.noCumplido = tb.value;
                 const nota = (document.getElementById('p-nota') || {}).value || '';
                 localStorage.setItem(CIERRE_KEY(), JSON.stringify({ t: Date.now(), paso, resumen: resumenActual, lineas: parteActual.lineas, nota }));
-                if (!cierreEnCurso) { cierreEnCurso = true; pintarCierreFijo(); }
+                cierreEnCurso = true;   // solo sirve para abrir en «Gestionar el día» al volver (vistaInicial)
             } catch (_) { }
         }, 250);
     }
     function leerCierre() { try { const r = JSON.parse(localStorage.getItem(CIERRE_KEY()) || 'null'); return r && r.t ? r : null; } catch (_) { return null; } }
-    function limpiarCierre() { clearTimeout(cierreTimer); try { localStorage.removeItem(CIERRE_KEY()); } catch (_) { } cierreEnCurso = false; pintarCierreFijo(); }
-    function pintarCierreFijo() {
-        const on = cierreEnCurso;
-        ['header.hd .back', '#btn-mi-plan', '#p-fecha-wrap'].forEach(q => { const el = document.querySelector(q); if (el) el.hidden = on; });
-        const cf = document.getElementById('cierre-fijo'); if (cf) cf.hidden = !on;
-        if (on && !(history.state && history.state.cierreFijo)) { try { history.pushState({ cierreFijo: 1 }, ''); } catch (_) { } }
-    }
+    function limpiarCierre() { clearTimeout(cierreTimer); try { localStorage.removeItem(CIERRE_KEY()); } catch (_) { } cierreEnCurso = false; }
     function toastMd(txt) {
         let t = document.getElementById('md-toast'); if (!t) { t = document.createElement('div'); t.id = 'md-toast'; t.className = 'md-toast'; document.body.appendChild(t); }
         t.textContent = txt; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
@@ -292,14 +285,14 @@
         }
         if (typeof br.nota === 'string') { parteActual.nota = br.nota; document.getElementById('p-nota').value = br.nota; }
         paso = [1, 2, 3].includes(br.paso) ? br.paso : 1;
-        cierreEnCurso = true; pintarCierreFijo();
+        cierreEnCurso = true;
         return true;
     }
-    document.addEventListener('input', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); });
-    document.addEventListener('change', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); });
-    document.addEventListener('click', (e) => { if (e.target.closest('#v-cerrar, #sheet')) setTimeout(guardarCierre, 0); });
-    window.addEventListener('popstate', () => { if (cierreEnCurso) { try { history.pushState({ cierreFijo: 1 }, ''); } catch (_) { } toastMd('Termina de cerrar el día y toca «Enviar parte» para salir.'); } });
-    window.addEventListener('beforeunload', (e) => { if (cierreEnCurso) { e.preventDefault(); e.returnValue = ''; } });
+    // En fase de CAPTURA: el onclick de un chip repinta el paso y, en burbujeo, el botón tocado ya no cuelga de #v-cerrar (closest da
+    // null y no se guardaba nada; visto 2026-11-12 al arreglar renderResumen). El guardado en sí va en un setTimeout, tras el repintado.
+    document.addEventListener('input', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); }, true);
+    document.addEventListener('change', (e) => { if (e.target.closest('#v-cerrar, #sheet')) guardarCierre(); }, true);
+    document.addEventListener('click', (e) => { if (e.target.closest('#v-cerrar, #sheet')) setTimeout(guardarCierre, 0); }, true);
     window.cerrarSheet = () => { document.getElementById('sheet').hidden = true; };
     function abrirSheet(html) { document.getElementById('sheet-body').innerHTML = html; document.getElementById('sheet').hidden = false; }
     window.toggleNota = () => { const w = document.getElementById('nota-wrap'); w.hidden = !w.hidden; if (!w.hidden) document.getElementById('p-nota').focus(); };
@@ -564,7 +557,7 @@
             + (ultimoAviso ? `<div class="card" id="aviso-box"><h3>Del Coordinador</h3><div class="li"><span class="dot ok"></span><span class="tx">${esc(ultimoAviso.asunto || 'Aviso')}<small>${esc((ultimoAviso.cuerpo || '').split('\n').filter(Boolean)[0] || '').slice(0, 120)}</small></span><button class="act" onclick="verInforme('${ultimoAviso.id}')">Leer</button></div></div>` : '');
         if (inf && lineasMias.length) acusar(inf);   // sus líneas ya están a la vista
         const f = parteActual && parteActual.fecha === hoyStr() ? partes.find(p => p.id === parteId(hoyStr(), miEmail) && !p.borrador) : null;
-        const b = document.getElementById('btn-ir-cerrar'); if (b) { b.hidden = soloPlan(); b.textContent = f ? 'Ver o corregir el parte de hoy' : (new Date().getHours() >= 15 ? 'Cerrar el día' : 'Cerrar el día · a las 5:30'); }
+        const b = document.getElementById('btn-ir-cerrar'); if (b) { b.hidden = soloPlan(); b.textContent = f ? 'Ver o corregir el parte de hoy' : 'Gestionar el día'; }
         if (vista === 'cerrar' && (paso === 1 || paso === 2)) renderResumen();
     }
     window.verInforme = function (id) {
@@ -653,7 +646,7 @@
                 if (it.estadoObra === 'terminada') {
                     if (j.estado === 'completado') continue;
                     await updateDoc(ref, { estado: 'completado', estadoPor: usuario.nombre, estadoPorEmail: usuario.email, estadoFecha: ahora, validadoPor: usuario.nombre, validadoPorEmail: usuario.email, validadoFecha: ahora, cerradoDesde: 'parte', ...(j.inicioReal ? {} : { inicioReal: ahora }) });
-                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota: 'Obra terminada (marcada al cerrar el día en Mi día)', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'completado', nota: 'Obra terminada (marcada desde Mi día)', por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
                 } else if (it.estadoObra === 'pausa') {
                     // Con fecha: queda agendada ese día (como «Pausar obra» + fecha). Sin fecha (Dylan 2026-11-12: «no siempre sabrán cuándo
                     // podrán retomar»): queda en pausa sin fecha (enPausa, fecha null) hasta que alguien la retome o le ponga día.
@@ -667,7 +660,7 @@
                     const yaEmpezada = j.estado === 'en_proceso' || !!j.inicioReal;
                     if (yaEmpezada && !j.inicioReal) cambios.inicioReal = ahora;
                     await updateDoc(ref, cambios);
-                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: (yaEmpezada ? '' : 'Sin empezar · ') + (cuando ? 'Obra pausada al cerrar el día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Obra pausada al cerrar el día, sin fecha de regreso todavía'), por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
+                    await addDoc(collection(db, 'movimientosInstalaciones'), { instalacionId: j.id, cliente: j.cliente || '', obra: j.obra || '', estado: 'en_proceso', nota: (yaEmpezada ? '' : 'Sin empezar · ') + (cuando ? 'Obra pausada desde Mi día: vuelven el ' + cuando.toLocaleDateString('es-DO', { weekday: 'long', day: 'numeric', month: 'short' }) : 'Obra pausada desde Mi día, sin fecha de regreso todavía'), por: usuario.nombre, porEmail: usuario.email, fecha: ahora });
                 }
             } catch (e) { console.warn('aplicarObras', j.id, e); }
         }
@@ -991,7 +984,7 @@
             { t: 'Te falta cerrar', n: 'La segunda tarjeta es lo que está abierto a su nombre y nadie más puede cerrar. El pedido de Toni lleva tres días «en ruta»: un toque en «Entregado». El recordatorio del viaje, «Hecho». Plaza Manuela hay que retomarla o cerrarla desde Instalación.', go: () => { setVista('plan'); resaltar('#cerrar-box .li'); ir('#cerrar-box'); } },
             { t: 'Un toque y listo', n: 'Wilson toca «Entregado» y «Hecho». Desaparecen de la lista y quedan registrados con su nombre y la hora. Diez segundos que antes se quedaban semanas sin hacer.', go: async () => { const c = window.confirm; window.confirm = () => true; const o = ordersCache.find(x => x.obra === 'Casa playa bonita'); if (o && o.enRuta) await regEntregado(o.id); const ci = citasAbiertas.find(x => /Santo Domingo/.test(x.titulo || '')); if (ci) await regCitaHecha(ci.id); window.confirm = c; setTimeout(() => { setVista('plan'); resaltar('#cerrar-box'); ir('#cerrar-box'); }, 300); } },
             { t: 'Durante el día', n: 'El equipo sale a la obra. El día pasa como siempre: Niza se termina pero se alarga, Riviera Coson 2 no se alcanza, y en Jaraba no tenían la masilla. Nada de esto hay que escribirlo por WhatsApp: se cuenta a las 5:30.', go: () => { aviso(''); setVista('plan'); ir('#plan-box'); } },
-            { t: '5:30 pm · Llega el aviso', n: 'A las cinco y media suena el teléfono: «Antes de salir: parte y resumen del día». Wilson lo toca desde la obra y se abre «Cerrar el día», en tres pasos.', go: () => { aviso('📝 Antes de salir: parte y resumen del día — Marca lo que se cumplió y lo que no, pon las horas del equipo y envía.'); setTimeout(() => { paso = 1; setVista('cerrar'); }, 700); } },
+            { t: '5:30 pm · Llega el aviso', n: 'A las cinco y media suena el teléfono: «Antes de salir: parte y resumen del día». Wilson lo toca desde la obra y se abre «Gestionar el día», en tres pasos.', go: () => { aviso('📝 Antes de salir: parte y resumen del día — Marca lo que se cumplió y lo que no, pon las horas del equipo y envía.'); setTimeout(() => { paso = 1; setVista('cerrar'); }, 700); } },
             { t: 'Paso 1 · ¿Cómo quedó el día?', n: 'Cada obra se cierra o se pausa: Niza, terminada. Plaza Manuela, pausada, y elige el día en que vuelven: el lunes. Riviera Coson 2: no fuimos, y el motivo «se alargó otra obra». La masilla: no, «faltó material». Al enviar, el sistema cierra Niza y pone a Plaza Manuela la fecha del lunes en Instalación. Sin marcar todo, no pasa al siguiente paso.', go: () => { aviso(''); demoResumen(); paso = 1; setVista('cerrar'); } },
             { t: 'Paso 2 · En dos líneas', n: 'Qué se cumplió y qué no, como se lo contaría a Dylan por teléfono. Debajo ya ve lo que tiene mañana a su nombre. Si todo se cumplió, escribe «Nada».', go: () => { demoResumen(); setPaso(2); } },
             { t: 'Paso 3 · Horas del equipo', n: 'El parte de siempre, más simple: cada persona con su obra y las horas con menos y más. Hoy Wilson y el ayudante estuvieron en Niza nueve horas. Quien no estuvo con él, se quita con la equis.', go: () => { demoHoras(); setPaso(3); } },
