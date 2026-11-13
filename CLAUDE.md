@@ -2759,6 +2759,19 @@ los consumidores (parte-gate, recordarParteDiario, puntos, Instalación, Coordin
 **Datos**: la corrección del doc `LzeFWc5fdCGgiivAWdqq` (6/11 → 9/11), el borrado de los 2 partes «ausente» del 9/11, de las 4 ausencias
 de RRHH y de los 2 eventos `__parte__2026-11-09` (−10) requieren permiso explícito de Dylan (el clasificador bloqueó las escrituras).
 
+### Feriados: calendario cargado hasta 2027 y cargador para cualquier año (2026-11-12 noche)
+
+Dylan: «asegúrate de manera definitiva de que ya no saldrá absolutamente nada los próximos feriados». Auditoría: TODO lo que exige o
+evalúa el parte lee `rrhhFeriados.fecha` (observada) y respeta `rrhhFeriadosTrabajados`: `recordarParteDiario` (18:00/18:30 y el aviso
+de las 17:30), `parte-gate.js`, `puntos.js` (`esLaborable`), `coordinadorInformeDiario` (no publica), `parte-diario.html` /
+`parte-diario-seguimiento.html` / Instalación (aviso), Caja y Panel (arqueo). El único hueco era el CALENDARIO: solo estaba cargado 2026
+(lista escrita a mano en `cargarFeriadosRD`) → el 1/1/2027 el sistema habría exigido el parte. Hecho: los 12 feriados de 2027 cargados
+ya trasladados (Reyes → lun 4/1, Duarte → lun 25/1; Viernes Santo 26/3; Corpus 27/5; Trabajo, Constitución y Navidad caen en sábado y se
+quedan), y `cargarFeriadosRD` ahora genera cualquier año (`feriadosRD(y)` con `pascua(y)` para Viernes Santo y Corpus) y carga este año y
+el próximo (botón «Cargar feriados RD (este año y el próximo)» en RRHH → Asistencia). Cada diciembre basta con pulsarlo. Mi día en un
+feriado no trabajado ya no fuerza «Cerrar el día» a las 15:00 (`feriadoHoy` en `vistaInicial`). Datos del 9/11 limpiados del todo
+(partes, asistencia, puntos y `partesCostos` huérfanos).
+
 ### Misiones por obra + fotos en la conversación (2026-11-12)
 
 Dylan (captura de Vero solucentro — Jardines de la bonita): «agregar a este mismo trabajo un nuevo trabajo… permitir a un trabajo ya
