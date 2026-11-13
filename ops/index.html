@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 1180px; padding-top: 28px; }
     .welcome { color: var(--artal-blue); font-size: 15px; margin: 0 0 4px; font-weight: bold; }
@@ -127,8 +127,9 @@
     import { requirePin } from './pin-gate.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, setDoc, serverTimestamp, arrayUnion, addDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, getDocs, setDoc, serverTimestamp, arrayUnion, addDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
+    import { etiquetaPedido } from './estados.js';   // (auditoría 2026-11-12) nombres únicos de estado
     import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
     // Solo admin: es el panel central con acceso a todas las pantallas.
@@ -230,6 +231,7 @@
     let sesionesViejas = [];
     let hiluxEmails = ['dylan.r.rd@gmail.com'];   // quién conduce la Hilux (rrhhConfig/envios.hilux lo cambia sin tocar código)   // sesiones de Claude abiertas con 3+ días sin actividad (solo admin las lee)   // solMaterialCache = pedidos de material abiertos
     let ultimoCotizaciones = 0, medicionesPorCotizar = 0;
+    let cotEnviadasCache = [], cotEnviadasCargando = false;   // (auditoría 2026-11-12) cotizaciones enviadas al cliente, solo para el desplegable del anticipo
     // Comentarios del instalador (en pedidos y en trabajos del calendario) que gerencia aún no marcó
     // como atendidos: se compara el largo del array con `comentariosInstaladorAtendidos` (cuántos ya vio).
     // Solo cuentan los mensajes del INSTALADOR (los de gerencia, `deRol:'gerencia'`, son respuestas nuestras).
@@ -340,12 +342,15 @@
                     <label class="ac-rep" style="display:none;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" class="ac-rep-chk" data-oid="${c.orderId}" onchange="notifAnticipoRepartoCalc('${id}')"> <input type="number" class="ac-rep-monto" data-oid="${c.orderId}" placeholder="RD$" min="0" step="0.01" style="width:110px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px" oninput="notifAnticipoRepartoCalc('${id}', true)"></label>
                 </div>`).join('')).join('');
             const quien = (a.cliente || a.clienteFacturacion) ? `${a.cliente || ''}${a.clienteFacturacion && a.clienteFacturacion !== a.cliente ? ' (factura: ' + a.clienteFacturacion + ')' : ''}` : `cliente Citrus id ${a.citrusClienteId || '?'}`;
+            // (auditoría 2026-11-12) el desplegable «Otro pedido del Panel…» incluye también las cotizaciones enviadas al cliente (cotEnviadasCache, getDocs acotado).
+            const opcionesPed = [...ordersCache.filter(x => x.o && x.o.docType !== 'COMPRA_DIRECTA'), ...cotEnviadasCache].slice().sort((x, y) => String(x.o.cliente || '').localeCompare(String(y.o.cliente || '')));
             N.push({ key: `ac:${id}`, tipo: 'tarea', ic: '💰', titulo: `Anticipo en Citrus sin obra: ${quien} · RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}`, sub: `${a.fecha || ''}${a.citrusAnticipoId ? ' · anticipo nº ' + a.citrusAnticipoId : ''}`, txt: (a.descripcion ? 'Descripción en Citrus: «' + a.descripcion + '» · ' : 'Sin descripción en Citrus · ') + (a.motivo || ''),
-                acciones: `<div id="ac-card-${id}" data-monto="${Number(a.monto || 0)}">` + (btns ? `<div style="font-size:12px;color:#556;">¿A qué documento va? Toca uno para asignarle TODO el anticipo, o usa ➗ Repartir para dividirlo entre varios. 🔒 = obra ya cerrada.</div>${btns}` : '')
+                acciones: `<div id="ac-card-${id}" data-monto="${Number(a.monto || 0)}">` + (btns ? `<div style="font-size:12px;color:#556;">¿A qué obra va? Toca una (🔒 = obra cerrada).</div>${btns}` : '')
                     // B4: siempre se puede elegir cualquier pedido abierto del Panel (el pedido pudo entrar después del anticipo).
-                    + `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;"><select id="ac-sel-${id}" style="max-width:300px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px"><option value="">Otro pedido del Panel…</option>${ordersCache.filter(x => x.o && x.o.docType !== 'COMPRA_DIRECTA').slice().sort((x, y) => String(x.o.cliente || '').localeCompare(String(y.o.cliente || ''))).map(x => `<option value="${x.id}">${esc(x.o.cliente || '')} — ${esc(x.o.obra || '')} (${esc(x.o.status || '')}${x.o.totalItems ? ', ' + x.o.totalItems + ' ítems' : ''})</option>`).join('')}</select><button class="n-done" onclick="notifAnticipoAsignar('${id}','')">Asignar</button>`
-                    + (cands.length > 1 ? `<button class="n-done" style="background:#8e44ad" onclick="notifAnticipoRepartoToggle('${id}')">➗ Repartir entre varios</button>` : '')
-                    + `<button class="n-done" style="background:#889" onclick="notifAnticipoIgnorar('${id}')">No es de una obra / ignorar</button></div>`
+                    + `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;"><select id="ac-sel-${id}" style="max-width:300px;font-size:12px;padding:4px;border:1px solid #cfd6de;border-radius:6px"><option value="">Otro pedido del Panel…</option>${opcionesPed.map(x => `<option value="${x.id}">${esc(x.o.cliente || '')} — ${esc(x.o.obra || '')} (${esc(etiquetaPedido(x.o))}${x.o.totalItems ? ', ' + x.o.totalItems + ' ítems' : ''})</option>`).join('')}</select><button class="n-done" onclick="notifAnticipoAsignar('${id}','')">Asignar</button></div>`
+                    + `<div class="acciones-sec">`
+                    + (cands.length > 1 ? `<button onclick="notifAnticipoRepartoToggle('${id}')">➗ Repartir</button>` : '')
+                    + `<button onclick="notifAnticipoIgnorar('${id}')">Ignorar</button></div>`
                     + `<div class="ac-rep-bar" style="display:none;margin-top:8px;padding:8px 10px;background:#f3eefa;border-radius:8px;font-size:12.5px;"><span class="ac-rep-txt">Marca los pedidos y escribe cuánto va a cada uno.</span> <button class="n-done" style="background:#8e44ad;margin-left:6px" onclick="notifAnticipoRepartir('${id}')">Asignar el reparto</button></div></div>` });
         });
         // 3b) Comentarios del instalador en trabajos del calendario (colección instalaciones), sin atender.
@@ -512,7 +517,14 @@
     });
     // Trabajos del calendario de instalación: sus comentarios también cuentan en el badge y el centro.
     let instComentariosSinAtender = 0;
-    onSnapshot(query(collection(db, 'anticiposCitrus'), where('estado', '==', 'pendiente')), (snap) => { anticiposPend = snap.docs.map(d => ({ id: d.id, a: d.data() })); renderNotifs(); }, () => { /* sin permiso: no admin */ });
+    onSnapshot(query(collection(db, 'anticiposCitrus'), where('estado', '==', 'pendiente')), (snap) => { anticiposPend = snap.docs.map(d => ({ id: d.id, a: d.data() })); renderNotifs(); if (anticiposPend.length) cargarCotEnviadas(); }, () => { /* sin permiso: no admin */ });
+    // (auditoría 2026-11-12) una sola lectura acotada: las cotizaciones «enviada_cliente» no están en ESTADOS_ACTIVOS pero un anticipo puede ser de una de ellas.
+    async function cargarCotEnviadas() {
+        if (cotEnviadasCargando || cotEnviadasCache.length) return; cotEnviadasCargando = true;
+        try { const snap = await getDocs(query(collection(db, 'orders'), where('status', '==', 'enviada_cliente'))); cotEnviadasCache = snap.docs.map(d => ({ id: d.id, o: d.data() })); renderNotifs(); }
+        catch (_) { /* sin permiso o sin red: el desplegable sigue con los activos */ }
+        finally { cotEnviadasCargando = false; }
+    }
     // B2: el anticipo de un pedido se toca SOLO por el servidor (anticipoPedido): aplicar/quitar recalculan desde anticipos[].
     async function anticipoPedidoFn(body) {
         const token = await auth.currentUser.getIdToken();
@@ -523,7 +535,7 @@
         const p = anticiposPend.find(x => x.id === asientoId); if (!p) return;
         if (!orderId) { orderId = (document.getElementById('ac-sel-' + asientoId) || {}).value; if (!orderId) { alert('Elige el pedido en la lista.'); return; } }
         const a = p.a; const c = (a.candidatos || []).find(x => x.orderId === orderId) || {};
-        const od = ((ordersCache.find(x => x.id === orderId) || {}).o) || {};
+        const od = ((ordersCache.find(x => x.id === orderId) || cotEnviadasCache.find(x => x.id === orderId) || {}).o) || {};
         const obraTxt = c.obra || (od.cliente ? od.cliente + ' — ' + od.obra : orderId);
         if (!confirm(`¿Aplicar el anticipo de ${a.cliente} (RD$ ${Number(a.monto || 0).toLocaleString('es-DO')}, ${a.fecha}) a «${obraTxt}»?`)) return;
         try { await anticipoPedidoFn({ accion: 'asignar', registroId: asientoId, orderId }); }
@@ -593,14 +605,15 @@
                 ${j.notas ? `<div style="font-size:13px;color:#333;background:#f6f8fb;border-radius:8px;padding:7px 10px;margin-bottom:8px;white-space:pre-wrap;">${esc(j.notas)}</div>` : ''}
                 ${fotos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;">${thumbs}</div>` : '<div style="font-size:12.5px;color:#c0392b;font-weight:bold;margin-bottom:8px;">⚠ Sin fotos ni archivos adjuntos. Pide las medidas al equipo antes de marcarla.</div>'}
                 ${Array.isArray(j.comentariosInstalador) && j.comentariosInstalador.length ? `<div style="font-size:12.5px;color:#556;margin-bottom:8px;">💬 Último mensaje: ${esc(j.comentariosInstalador[j.comentariosInstalador.length - 1].texto || '')}</div>` : ''}
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                    <button onclick="medicionRecibir('${id}')" style="background:#1e8449;color:#fff;border:none;border-radius:9px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:13.5px;cursor:pointer;">📥 Recibido → a Cotizaciones, por cotizar</button>
-                    <a href="instalacion.html" style="font-size:12.5px;color:#0A3D62;">Abrir en Instalación</a>
+                <button class="btn-primaria" onclick="medicionRecibir('${id}')">📥 Recibidas → a cotizar</button>
+                <div class="acciones-sec">
+                    <button onclick="medicionEnlazarToggle('${id}')">Enlazar a un pedido…</button>
+                    <button onclick="medicionDescartar('${id}')">No se cotiza</button>
+                    <a href="instalacion.html">Abrir en Instalación</a>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
-                    <select id="md-ped-${id}" style="font-size:12.5px;padding:7px;border:1.5px solid #c9d3df;border-radius:8px;max-width:360px;"><option value="">¿Es para un pedido que ya existe? Elige el pedido…</option>${pedidosParaMedicion(j).map(o => `<option value="${o.id}">${esc(o.o.cliente || '')} — ${esc(o.o.obra || '')} (${esc(ORDER_ST[o.o.status] || o.o.status || '')}${o.o.destino === 'interno' ? ', interna' : ', ALUCUFEL'})</option>`).join('')}</select>
-                    <button onclick="medicionParaPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:9px;padding:9px 12px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">📥 Recibido → enlazar a ese pedido</button>
-                    <button onclick="medicionDescartar('${id}')" style="background:#fff;color:#8a93a0;border:1.5px solid #cfd6de;border-radius:9px;padding:9px 12px;font-family:'Arimo';font-size:12.5px;cursor:pointer;">✖ No se cotiza</button>
+                <div id="md-enlazar-${id}" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;">
+                    <select id="md-ped-${id}" style="font-size:14px;padding:9px;border:1.5px solid #c9d3df;border-radius:8px;max-width:360px;"><option value="">Elige el pedido…</option>${pedidosParaMedicion(j).map(o => `<option value="${o.id}">${esc(o.o.cliente || '')} — ${esc(o.o.obra || '')} (${esc(etiquetaPedido(o.o))}${o.o.destino === 'interno' ? ', interna' : ', ALUCUFEL'})</option>`).join('')}</select>
+                    <button class="n-done" onclick="medicionParaPedido('${id}')">Enlazar</button>
                 </div></div>`;
         }).join('');
         box.style.display = 'flex';
@@ -609,7 +622,6 @@
     // gestionando estas medidas»). Estados en el trabajo (`medicionEstado`): pendiente_oficina (este pop-up) → por_cotizar (sección
     // «📏 Por cotizar» de Cotizaciones; se cierra SOLA cuando el cuaderno envía la cotización o el pedido de esa obra) · para_pedido
     // (enlazada a un pedido existente: fábrica recibe las fotos/notas como instrucción) · cotizada · descartada (con motivo).
-    const ORDER_ST = { solicitada: 'cotización solicitada', costeada: 'cotización costeada', enviada_cliente: 'cotización enviada', pendiente_fabrica: 'pendiente en fábrica', en_fabrica: 'en fábrica', parcialmente_listo: 'parcialmente listo', listo_para_cargar: 'listo para cargar', parcialmente_instalado: 'parcialmente instalado' };
     const normCliMd = (x) => String(x || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
     function pedidosParaMedicion(j) {
         const c = normCliMd(j.cliente);
@@ -626,6 +638,8 @@
         try { await medicionMarcar(id, { medicionEstado: 'por_cotizar', medicionDestino: 'cotizar' }, 'Medidas recibidas por la oficina → Cotizaciones, por cotizar'); }
         catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
+    // (auditoría 2026-11-12) el desplegable de pedidos solo aparece al tocar «Enlazar a un pedido…».
+    window.medicionEnlazarToggle = (id) => { const el = document.getElementById('md-enlazar-' + id); if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none'; };
     window.medicionParaPedido = async (id) => {
         const it = instCache.find(x => x.id === id); const j = it ? it.j : {};
         const oid = (document.getElementById('md-ped-' + id) || {}).value; if (!oid) { alert('Elige el pedido al que corresponden estas medidas.'); return; }
@@ -647,16 +661,25 @@
         try { await medicionMarcar(id, { medicionEstado: 'descartada', medicionDestino: 'descartar', medicionDescartadaMotivo: motivo.trim() }, 'Medidas descartadas (no se cotiza): ' + motivo.trim()); }
         catch (e) { alert('No se pudo marcar: ' + e.message); }
     };
-    onSnapshot(collection(db, 'instalaciones'), (snap) => {
-        instCache = snap.docs.map(d => ({ id: d.id, j: d.data() }));
+    // (auditoría 2026-11-12) antes bajaba la colección `instalaciones` ENTERA. Ahora tres consultas acotadas unidas por id:
+    // trabajos abiertos (comentarios/avisos), mediciones pendientes de la oficina (pop-up) y mediciones por cotizar (badge Cotizaciones).
+    const instPorFuente = { abiertas: [], medPend: [], medCot: [] };
+    function unirInst() {
+        const m = new Map(); [...instPorFuente.abiertas, ...instPorFuente.medPend, ...instPorFuente.medCot].forEach(x => m.set(x.id, x)); instCache = [...m.values()];
         medicionesPorCotizar = instCache.filter(({ j }) => j.medicionEstado === 'por_cotizar').length; setBadge('badge-cotizaciones', ultimoCotizaciones + medicionesPorCotizar);
         renderMediciones();
-        avisarComentariosNuevos(snap, instPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); instPrimera = false;
         instComentariosSinAtender = instCache.reduce((n, { j }) => n + comentariosSinAtender(j).length, 0);
         const b = document.getElementById('badge-instalador');
         const base = ordersCache.reduce((n, { o }) => n + (tieneProblemaSinAtender(o.itemStatusInstalador) ? 1 : 0) + comentariosSinAtender(o).length, 0);
         if (b) setBadge('badge-instalador', base + instComentariosSinAtender);
         renderNotifs();
+    }
+    onSnapshot(query(collection(db, 'instalaciones'), where('medicionPendienteOficina', '==', true)), (snap) => { instPorFuente.medPend = snap.docs.map(d => ({ id: d.id, j: d.data() })); unirInst(); }, () => {});
+    onSnapshot(query(collection(db, 'instalaciones'), where('medicionEstado', '==', 'por_cotizar')), (snap) => { instPorFuente.medCot = snap.docs.map(d => ({ id: d.id, j: d.data() })); unirInst(); }, () => {});
+    onSnapshot(query(collection(db, 'instalaciones'), where('estado', 'in', ['pendiente', 'en_proceso', 'sin_fecha'])), (snap) => {
+        instPorFuente.abiertas = snap.docs.map(d => ({ id: d.id, j: d.data() }));
+        avisarComentariosNuevos(snap, instPrimera, (d) => [d.cliente, d.obra].filter(Boolean).join(' — ')); instPrimera = false;
+        unirInst();
     }, () => {});
 
     // Solicitudes web sin atender (leads que llegan del sitio): badge propio + notificación.
@@ -672,7 +695,7 @@
         });
         setBadge('badge-inventario', n);
     }
-    onSnapshot(collection(db, 'inventario'), (snap) => { invItems = snap.docs.map(d => d.data()); recomputeInvBadge(); }, () => {});
+    onSnapshot(collection(db, 'inventario'), (snap) => { invItems = snap.docs.map(d => { const x = d.data(); return { cantidad: x.cantidad, minimo: x.minimo, categoria: x.categoria }; }); recomputeInvBadge(); }, () => {});   // (auditoría 2026-11-12) solo los 3 campos del conteo, no el ítem entero
     onSnapshot(collection(db, 'categoriasInventario'), (snap) => {
         herramCatIds = new Set(snap.docs.filter(d => /herramient/i.test((d.data().nombre) || '')).map(d => d.id));
         recomputeInvBadge();
@@ -699,22 +722,31 @@
         setBadge('badge-erp', n);
     }
     onSnapshot(collection(db, 'bancosCajaChica'), (s) => { cajasCC = s.docs.map(d => ({ id: d.id, ...d.data() })); recomputeArqueoBadge(); }, () => {});
-    onSnapshot(collection(db, 'bancosCajaMovimientos'), (s) => { movsCC = s.docs.map(d => d.data()); recomputeArqueoBadge(); }, () => {});
-    setInterval(recomputeArqueoBadge, 5 * 60 * 1000);   // recalcula al cruzar las 8:00 / 4:55 aunque no cambien datos
+    // (auditoría 2026-11-12) solo los movimientos de HOY (el badge solo mira los arqueos de hoy); al cambiar el día se vuelve a suscribir.
+    let movsDia = '', movsUnsub = null;
+    function suscribirMovsHoy() {
+        const hoy = hoyISOcc(); if (hoy === movsDia) return; movsDia = hoy;
+        if (movsUnsub) { try { movsUnsub(); } catch (_) {} }
+        movsUnsub = onSnapshot(query(collection(db, 'bancosCajaMovimientos'), where('fecha', '==', hoy)), (s) => { movsCC = s.docs.map(d => d.data()); recomputeArqueoBadge(); }, () => {});
+    }
+    suscribirMovsHoy();
+    setInterval(() => { suscribirMovsHoy(); recomputeArqueoBadge(); }, 5 * 60 * 1000);   // recalcula al cruzar las 8:00 / 4:55 aunque no cambien datos
 
     // Inbox omnicanal: conversaciones abiertas SIN agente asignado (las que nadie está atendiendo).
     onSnapshot(query(collection(db, 'inboxConversaciones'), where('asignadoA', '==', null)), (snap) => {
         setBadge('badge-inbox', snap.docs.filter((d) => !['closed', 'resolved'].includes(d.data().estado)).length);
     }, () => {});
     // Pedidos de material del equipo: badge = pedidos aún sin ver por la oficina («pedida»); tarjeta solo para los urgentes.
-    onSnapshot(query(collection(db, 'solicitudesMaterial'), where('estado', 'in', ['pedida', 'vista', 'comprando', 'lista'])), (snap) => {
+    onSnapshot(query(collection(db, 'solicitudesMaterial'), where('estado', '==', 'pedida')), (snap) => {   // (auditoría 2026-11-12) solo «pedida»: es lo único que cuenta y lista
         solMaterialCache = snap.docs.map(d => ({ id: d.id, s: d.data() }));
         setBadge('badge-sol-material', solMaterialCache.filter(({ s }) => s.estado === 'pedida').length);
         renderNotifs();
     }, () => { });
     // Coordinador de Obras: badge = informes de hoy que todavía no leí (acuse), igual que cuenta Mensajería.
-    onSnapshot(query(collection(db, 'mensajes'), where('tipo', '==', 'informe_coordinador')), (snap) => {
-        const k = String(auth.currentUser && auth.currentUser.email || '').toLowerCase().replace(/[.@]/g, '_'); const lim = Date.now() - 36 * 3600000;
+    // (auditoría 2026-11-12) solo los informes de las últimas 36 h (antes bajaba todo el histórico). Necesita índice compuesto mensajes(tipo, fecha).
+    const limInformes = Date.now() - 36 * 3600000;
+    onSnapshot(query(collection(db, 'mensajes'), where('tipo', '==', 'informe_coordinador'), where('fecha', '>=', new Date(limInformes))), (snap) => {
+        const k = String(auth.currentUser && auth.currentUser.email || '').toLowerCase().replace(/[.@]/g, '_'); const lim = limInformes;
         const n = snap.docs.filter(d => { const m = d.data(); const t = m.fecha && m.fecha.toDate ? m.fecha.toDate().getTime() : 0; return t > lim && !(m.acuses && m.acuses[k] && m.acuses[k].leido); }).length;
         setBadge('badge-coordinador', n);
     }, () => { });
@@ -722,7 +754,7 @@
     window.hiluxEntregado = async (id) => {
         if (!confirm('¿Marcar como ENTREGADO lo que llevaste en la Hilux?')) return;
         const it = ordersCache.find(x => x.id === id); const o = it ? it.o : {};
-        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), recepcionInstalador: { nombre: (auth.currentUser && auth.currentUser.displayName) || 'Dylan', firma: null, fecha: serverTimestamp(), via: 'hilux' }, entregas: arrayUnion({ fechaISO: new Date().toISOString(), via: 'hilux' }), ...((o.docType === 'COMPRA_DIRECTA' || o.instalado === true) ? { status: 'completado' } : {}) }); }
+        try { await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), recepcionInstalador: { nombre: (auth.currentUser && auth.currentUser.displayName) || 'Dylan', firma: null, fecha: serverTimestamp(), via: 'hilux' }, entregas: arrayUnion({ fechaISO: new Date().toISOString(), via: 'hilux' }), ...((o.docType === 'COMPRA_DIRECTA' || o.sinInstalacion === true || o.instalado === true) ? { status: 'completado' } : {}) }); }   // (auditoría 2026-11-12) «solo recoger» también completa, como chofer.html
         catch (e) { alert('No se pudo: ' + (e.message || e)); }
     };
     // Trabajos con Claude a medias: badge = abiertas con 3+ días sin actividad (la colección solo la lee admin; si falla, sin badge).
@@ -764,15 +796,13 @@
 <!-- Pop-up de MEDICIONES por tomar en cuenta (Dylan 2026-10-09): no se cierra hasta que la oficina marque cada una. -->
 <div id="modal-mediciones" style="display:none;position:fixed;inset:0;z-index:9980;background:rgba(10,30,50,.72);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
     <div style="background:#fff;border-radius:18px;max-width:720px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);padding:22px 22px 18px;font-family:'Arimo',Arial,sans-serif;">
-        <h2 style="margin:0 0 4px;color:#0A3D62;font-size:20px;">📏 Medidas tomadas por el equipo</h2>
-        <p style="margin:0 0 14px;color:#556;font-size:13.5px;">El equipo validó estas tomas de medidas. Revísalas (fotos y notas) y marca cada una como <b>tomada en cuenta</b>: es la única forma de cerrar esta ventana, para que ninguna medición se quede sin cotizar ni pedir a fábrica.</p>
+        <h2 style="margin:0 0 12px;color:#0A3D62;font-size:20px;">📏 ¿Qué hacemos con estas medidas?</h2>
         <div id="modal-mediciones-list"></div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-top:1px solid #eef1f4;padding-top:12px;margin-top:4px;">
-            <span style="font-size:12.5px;color:#556;">¿Estás terminando otra cosa? Volver a mostrar en:</span>
+            <span style="font-size:12.5px;color:#556;">Volver a mostrar en:</span>
             <button onclick="medicionesPosponer(15)" style="background:#f0f3f7;color:#0A3D62;border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">15 min</button>
             <button onclick="medicionesPosponer(30)" style="background:#f0f3f7;color:#0A3D62;border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">30 min</button>
             <button onclick="medicionesPosponer(60)" style="background:#f0f3f7;color:#0A3D62;border:none;border-radius:8px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">1 hora</button>
-            <span style="font-size:11.5px;color:#889;">Las mediciones siguen pendientes hasta que las marques.</span>
         </div>
     </div>
 </div>

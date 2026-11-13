@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     .order-card.status-pendiente_fabrica { border-left-color: var(--artal-yellow); }
     .order-card.status-en_fabrica { border-left-color: #3498db; }
@@ -49,7 +49,7 @@
     <div id="sup-admin-box"></div>
     <div class="tabs">
         <button class="tab-btn active" id="tab-pendientes" onclick="setTab('pendientes')">Pendientes</button>
-        <button class="tab-btn" id="tab-enviados" onclick="setTab('enviados')">Enviados</button>
+        <button class="tab-btn" id="tab-enviados" onclick="setTab('enviados')">Listos / entregados</button>
     </div>
     <div id="orders-list"><p class="empty">Cargando…</p></div>
 </main>
@@ -61,31 +61,27 @@
     import { montarAnticipoUI, anticipoChipHTML } from './anticipo-ui.js';
     import { enableNotifications } from './notifications.js';
     import { db } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
     import { mismaObra } from './obras-util.js';
     import { selectorEnvioHTML, leerSelectorEnvio, envioTxt } from './envios.js';
     import { fotosThumbsHTML, fotoAddBtnHTML } from './fotos.js';
     import { escucharSuplidores, suplidorBotonHTML, enviadoChipHTML, montarSuplidorWA, montarSuplidoresAdmin } from './suplidor-wa.js';
+    import { etiquetaPedido } from './estados.js';          // (auditoría 2026-11-12) nombres únicos de estado
+    import { borrarConRegistro } from './papelera.js';      // (auditoría 2026-11-12) borrar con registro, como Historial
     window.openOrderPreview = openOrderPreview;
 
     // Solo gerencia (admin): fabricación interna la maneja el taller propio de ARTAL, sin un rol
     // dedicado todavía (a diferencia de ALUCUFEL, que sí tiene su rol 'fabrica' para el
     // contratista externo).
     const usuario = await requireAuth([]);
+    window.__artalRoles = usuario.roles;   // (auditoría 2026-11-12) order-preview.js decide con esto si muestra «Reenviar»
     // Nº de proyecto PRY-AAAA-NNN junto al cliente (2026-11-03). Una compra directa sin número propio no muestra nada.
     const pryO = (o) => pryChipHTML(idProyectoDe(o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' });
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
 
-    const STATUS_LABEL = {
-        pendiente_fabrica: 'Pendiente',
-        en_fabrica: 'En fábrica',
-        parcialmente_listo: 'Parcialmente listo',
-        listo_para_cargar: 'Listo para cargar',
-        completado: 'Completado'
-    };
     const PENDIENTES = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo'];
     const ENVIADOS = ['listo_para_cargar', 'completado'];
 
@@ -95,18 +91,17 @@
         }[c]));
     }
 
-    // Control de chofer: Wilson por defecto (siempre), más los choferes registrados y la obra
-    // ya asignada si es otra, más la opción de escribir un nombre nuevo a mano. La asignación de
-    // chofer es solo informativa (no restringe acceso), así que basta con el nombre.
+    // Control de chofer (auditoría 2026-11-12: antes preseleccionaba «Wilson» sin que nadie lo hubiera asignado y «Guardar» lo
+    // escribía). Ahora «(sin asignar)» va seleccionado cuando el pedido no tiene chofer, y guardar no escribe el chofer si sigue así.
     function choferControlHTML(id, o) {
-        const actual = o.asignadoChoferNombre != null ? o.asignadoChoferNombre : 'Wilson';
+        const actual = o.asignadoChoferNombre || '';
         const base = ['Wilson', ...choferesCache.map(u => u.nombre).filter(Boolean)];
         if (actual && !base.includes(actual)) base.push(actual);
         const nombres = [...new Set(base)];
         const opts = nombres.map(n => `<option value="${esc(n)}" ${n === actual ? 'selected' : ''}>${esc(n)}</option>`).join('');
         return `<select id="asignar-chofer-${id}" onchange="onChoferSel('${id}')">
+                    <option value="" ${actual === '' ? 'selected' : ''}>(sin asignar)</option>
                     ${opts}
-                    <option value="" ${actual === '' ? 'selected' : ''}>(sin asignar — cualquiera)</option>
                     <option value="__nuevo__">➕ Escribir chofer nuevo…</option>
                 </select>
                 <input type="text" id="asignar-chofer-nuevo-${id}" placeholder="Nombre del chofer nuevo" style="display:none;flex:1;min-width:160px;padding:9px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">`;
@@ -117,36 +112,39 @@
     };
 
     function orderCardHTML(id, o) {
-        let actionsHtml;
+        // (auditoría 2026-11-12) UN botón principal por estado; lo demás como texto o plegado en «⋯ Más opciones».
+        let principal = '', secundarias = [], aviso = '';
         const salio = rioAbajo(id, o).salio;   // ya se entregó / se está instalando → no tiene sentido «Tomar pedido»
         if (o.status === 'pendiente_fabrica' && salio) {
-            actionsHtml = `<div class="actions"><span style="font-size:12.5px;color:#c07a12;font-weight:bold;">Este pedido ya salió de fábrica (ver arriba) — márcalo listo para que deje de aparecer como pendiente.</span><button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button></div>`;
+            aviso = `<div style="font-size:13px;color:#c07a12;font-weight:bold;margin-top:8px;">Este pedido ya salió de fábrica: márcalo listo para que deje de aparecer como pendiente.</div>`;
+            principal = `<button class="btn-primaria" onclick="listoParaCargar('${id}')">✅ Listo para cargar</button>`;
         } else if (o.status === 'pendiente_fabrica') {
-            actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarAbrir('${id}')">Tomar pedido</button></div>
+            principal = `<button class="btn-primaria" onclick="tomarAbrir('${id}')">Tomar pedido</button>
             <div id="tomar-form-${id}" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;background:#eef4fb;border-radius:9px;padding:9px 11px;">
-                <span style="font-size:13px;color:#1f6aa5;font-weight:bold;">📅 ¿Para qué fecha estimas tenerlo listo para cargar?</span>
-                <input type="date" id="tomar-fecha-${id}" min="${ymdHoy()}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:14px;">
-                <button onclick="tomarPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Confirmar y tomar</button>
-                <span style="font-size:12px;color:#667;width:100%">Es una estimación, no una promesa: después podrás moverla hasta ${SALIDA_MARGEN_DIAS} días. La oficina la usa para agendar transporte e instalación.</span>
+                <span style="font-size:14px;color:#1f6aa5;font-weight:bold;">📅 ¿Para qué fecha estimas tenerlo listo?</span>
+                <input type="date" id="tomar-fecha-${id}" min="${ymdHoy()}" style="padding:9px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:16px;">
+                <button onclick="tomarPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">Confirmar y tomar</button>
             </div>`;
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
-            actionsHtml = `<div class="actions">
-                <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar ítems listos</button>
-                <button class="btn-parcial" onclick="parcialmenteListo('${id}')">Parcialmente listo para cargar</button>
-                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
-                ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
-            </div>`;
+            principal = `<button class="btn-primaria" onclick="listoParaCargar('${id}')">✅ Listo para cargar</button>`;
+            secundarias.push(`<button onclick="parcialmenteListo('${id}')">Parcialmente listo</button>`);
+            secundarias.push(`<button onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar ítems listos</button>`);
+            if (o.status === 'en_fabrica') secundarias.push(`<button onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>`);
         } else if (o.status === 'listo_para_cargar' && o.entregado !== true) {
             // Dylan 2026-11-11 (shutters de Niza traídos por Delvis): el material llegó sin el camión y la oficina no tenía dónde marcarlo.
-            actionsHtml = `<div class="actions"><button class="btn-deshacer" onclick="entregaExterna('${id}')" title="El material llegó sin el camión de ARTAL (contratista, transportista o el cliente): queda como entregado y Transportes deja de esperarlo">📦 Llegó sin el camión (entregado)</button></div>`;
-        } else {
-            actionsHtml = '';
+            secundarias.push(`<button onclick="entregaExternaAbrir('${id}')" title="El material llegó sin el camión de ARTAL: queda como entregado y Transportes deja de esperarlo">📦 Llegó sin el camión</button>`);
+            principal = `<div id="entrega-ext-${id}" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;background:#f6f8fa;border-radius:10px;padding:10px 12px;">
+                <input type="text" id="entrega-ext-quien-${id}" placeholder="¿Quién lo trajo? (Delvis, transportista, el cliente…)" style="flex:1;min-width:200px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:16px;">
+                <input type="text" id="entrega-ext-donde-${id}" placeholder="¿Dónde quedó? (obra, local, taller)" style="flex:1;min-width:180px;padding:9px;border:1.5px solid #ddd;border-radius:8px;font-family:'Arimo';font-size:16px;">
+                <button onclick="entregaExterna('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">Confirmar entrega</button>
+            </div>`;
         }
+        const sec = secundarias.length ? `<div class="acciones-sec">${secundarias.join('')}</div>` : '';
         return `
         <div class="order-card status-${o.status}">
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b>
-                <span class="badge">${STATUS_LABEL[o.status] || esc(o.status)}</span>
+                <span class="badge">${esc(etiquetaPedido(o))}</span>
             </div>
             <div class="order-meta">
                 ${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
@@ -157,14 +155,15 @@
             ${o.status !== 'completado' && o.entregado !== true ? `<div style="margin-top:8px;font-size:13.5px;">Cómo llega: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvioInt('${id}'); return false;">cambiar</a><div id="envio-int-${id}"></div></div>` : ''}
             ${String(o.docType || '').indexOf('FAB') === 0 && o.status !== 'completado' ? anticipoHTML(id, o) : (anticipoChip(o) ? `<div style="margin-top:8px;">${anticipoChip(o)}</div>` : '')}
             ${salidaHTML(id, o)}
-            ${PENDIENTES.includes(o.status) ? suplidorBotonHTML(id, o) : (enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : '')}
-            ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar ítems listos" para ver/actualizar cuáles.</div>` : ''}
+            ${!PENDIENTES.includes(o.status) && enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : ''}
+            ${o.status === 'parcialmente_listo' ? `<div style="font-size:13px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo una parte está lista: «Marcar ítems listos» muestra cuáles.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
                 <div style="font-size:13px;color:#333;margin:4px 0;white-space:pre-wrap;">${esc(o.comentarioParaFabrica)}</div>
                 <button onclick="atenderInstruccion('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">Marcar atendido</button>
             </div>` : ''}
-            ${actionsHtml}
+            ${aviso}${principal}${sec}
+            <details class="mas"><summary>⋯ Más opciones</summary>
             <div class="assign-row">
                 <label>Chofer:</label>
                 ${choferControlHTML(id, o)}
@@ -179,9 +178,11 @@
                 <textarea id="comentario-${id}" placeholder="Comentario sobre este pedido (problemas de producción, etc.)">${esc(o.comentarioFabrica)}</textarea>
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
             </div>
+            ${PENDIENTES.includes(o.status) ? suplidorBotonHTML(id, o) : ''}
             ${fotosThumbsHTML(o.fotos, { coleccion: 'orders', id, puedeBorrar: true })}
             ${fotoAddBtnHTML({ coleccion: 'orders', id, label: '📷 Agregar fotos de fabricación' })}
             <div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar obra</a></div>
+            </details>
         </div>`;
     }
 
@@ -305,17 +306,20 @@
         if (!docs.length) {
             list.innerHTML = currentTab === 'pendientes'
                 ? '<p class="empty">No hay pedidos pendientes.</p>'
-                : '<p class="empty">No hay pedidos enviados todavía.</p>';
+                : '<p class="empty">No hay pedidos listos ni entregados en los últimos 30 días.</p>';
             return;
         }
         const sorted = docs.slice().sort((a, b) => (a.data().status > b.data().status ? 1 : -1));
         list.innerHTML = sorted.map(d => orderCardHTML(d.id, d.data())).join('');
     }
 
-    const q = query(collection(db, 'orders'), where('status', 'in', [...PENDIENTES, ...ENVIADOS]));
-    onSnapshot(q, (snap) => { allOrders = snap.docs; render(); }, (err) => {
-        document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>';
-    });
+    // (auditoría 2026-11-12) antes bajaba TODOS los completados con su ficha entera. Ahora: abiertos + listos, y los completados
+    // solo si se instalaron en los últimos 30 días (`fechaInstalado`, que escriben Instalación y el cierre manual de Historial).
+    const porFuente = { abiertos: [], completados: [] };
+    const unirOrders = () => { const m = new Map(); [...porFuente.abiertos, ...porFuente.completados].forEach(d => m.set(d.id, d)); allOrders = [...m.values()]; render(); };
+    const errLista = (err) => { document.getElementById('orders-list').innerHTML = '<p class="empty">Error cargando pedidos: ' + err.message + '</p>'; };
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', [...PENDIENTES, 'listo_para_cargar'])), (snap) => { porFuente.abiertos = snap.docs; unirOrders(); }, errLista);
+    onSnapshot(query(collection(db, 'orders'), where('fechaInstalado', '>=', new Date(Date.now() - 30 * 86400000))), (snap) => { porFuente.completados = snap.docs.filter(d => d.data().status === 'completado'); unirOrders(); }, () => {});
 
     // Choferes/instaladores para poder asignarlos desde aquí (inicio del proceso), sin tener que
     // ir al Historial. La asignación es informativa (no restringe acceso): "(sin asignar)" deja
@@ -333,7 +337,8 @@
     window.tomarPedido = async function (id) {
         const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
-        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
+        try { await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + e.message); }   // (auditoría 2026-11-12)
     };
     // Cómo llega (2026-11-03): camión (Wilson), guagua, transporte externo, Hilux o el contratista que lo instala (Delvis).
     window.abrirEnvioInt = function (id) {
@@ -356,14 +361,14 @@
         const items = docSnap ? (docSnap.data().items || []) : [];
         const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() };
         items.forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
-        await updateDoc(doc(db, 'orders', id), cambios);
+        try { await updateDoc(doc(db, 'orders', id), cambios); } catch (e) { alert('No se pudo: ' + e.message); }   // (auditoría 2026-11-12)
     };
     // Entrega sin el camión (mismos campos que el chofer en Transportes, sin firma; el pedido NO se completa: la instalación sigue).
+    window.entregaExternaAbrir = function (id) { const f = document.getElementById('entrega-ext-' + id); if (f) f.style.display = f.style.display === 'flex' ? 'none' : 'flex'; };
     window.entregaExterna = async function (id) {
-        const d = (allOrders.find(x => x.id === id) || { data: () => ({}) }).data();
-        const quien = prompt(`¿Quién trajo el material de "${d.cliente || ''} — ${d.obra || ''}"?\n(p. ej. Delvis, contratista · transportista · el cliente)`);
-        if (quien == null) return; const q = quien.trim() || 'transporte externo';
-        const donde = (prompt('¿Dónde quedó? (obra / local de Las Terrenas / taller)') || '').trim();
+        // (auditoría 2026-11-12) antes eran dos prompt(); ahora un formulario inline con un botón Confirmar.
+        const q = ((document.getElementById('entrega-ext-quien-' + id) || {}).value || '').trim() || 'transporte externo';
+        const donde = ((document.getElementById('entrega-ext-donde-' + id) || {}).value || '').trim();
         const nota = `Material entregado sin el camión de ARTAL: lo trajo ${q}${donde ? ' hasta ' + donde : ''}. Marcado por ${usuario.nombre} en Fábrica interna.`;
         try {
             await updateDoc(doc(db, 'orders', id), { entregado: true, fechaEntregado: serverTimestamp(), transporteExterno: true, enRuta: false, restoEnRuta: false,
@@ -374,11 +379,11 @@
     };
     window.parcialmenteListo = async function (id) {
         if (!confirm('¿Marcar como PARCIALMENTE LISTO?\n\nSe enviará a chofer/instalador lo que ya esté marcado como listo.')) return;
-        await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() });
+        try { await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.deshacerTomarPedido = async function (id) {
         if (!confirm('¿Regresar el pedido a "Pendiente"?')) return;
-        await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' });
+        try { await updateDoc(doc(db, 'orders', id), { status: 'pendiente_fabrica' }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     // Asigna chofer/instalador al pedido (mismos campos que usa Historial y que leen
     // chofer.html/instalador.html para mostrar "Asignado a …").
@@ -390,10 +395,12 @@
         const instaladorEmail = document.getElementById('asignar-instalador-' + id).value;
         const chofer = choferesCache.find(u => u.nombre === choferNombre);
         const instalador = instaladorDeValor(instaladorEmail);
+        const dAct = allOrders.find(x => x.id === id); const choferActual = dAct ? (dAct.data().asignadoChoferNombre || '') : '';
+        // (auditoría 2026-11-12) si el chofer sigue en «(sin asignar)» y el pedido no tenía chofer, no se escribe nada de chofer.
+        const camposChofer = (choferNombre === '' && choferActual === '') ? {} : { asignadoChoferEmail: chofer ? chofer.email : null, asignadoChoferNombre: choferNombre || null };
         try {
             await updateDoc(doc(db, 'orders', id), {
-                asignadoChoferEmail: chofer ? chofer.email : null,
-                asignadoChoferNombre: choferNombre || null,
+                ...camposChofer,
                 asignadoInstaladorEmail: instaladorEmail || null,
                 asignadoInstaladorNombre: instalador ? instalador.nombre : null,
                 asignadosInstalador: instaladorEmail ? [{ email: instaladorEmail, nombre: instalador ? instalador.nombre : '', ...(instalador && instalador.externo ? { externo: true } : {}) }] : []   // ambos formatos (2026-09-30)
@@ -406,12 +413,14 @@
 
     window.guardarComentario = async function (id) {
         const texto = document.getElementById('comentario-' + id).value.trim();
-        await updateDoc(doc(db, 'orders', id), {
-            comentarioFabrica: texto,
-            comentarioFabricaFecha: serverTimestamp(),
-            comentarioFabricaAtendido: texto ? false : true
-        });
-        alert('Comentario guardado.');
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                comentarioFabrica: texto,
+                comentarioFabricaFecha: serverTimestamp(),
+                comentarioFabricaAtendido: texto ? false : true
+            });
+            alert('Comentario guardado.');
+        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }   // (auditoría 2026-11-12)
     };
     // Marcar como vista la instrucción que envió la oficina (comentarioParaFabrica).
     window.atenderInstruccion = async function (id) {
@@ -423,10 +432,10 @@
     window.eliminarPedido = async function (id) {
         const o = allOrders.find(d => d.id === id);
         const nombre = o ? [o.data().cliente, o.data().obra].filter(Boolean).join(' — ') : '';
-        if (!confirm(`¿Eliminar la obra "${nombre}"? Esta acción no se puede deshacer.`)) return;
-        if (!confirm('Confirma de nuevo: se borrará definitivamente de la plataforma.')) return;
+        if (!confirm(`¿Eliminar la obra "${nombre}"?\n\nQueda registrado quién lo eliminó y cuándo, y se puede restaurar desde Historial → Auditoría → Eliminados.`)) return;
         try {
-            await deleteDoc(doc(db, 'orders', id));
+            // (auditoría 2026-11-12) borrado con registro en la papelera, como Historial.
+            await borrarConRegistro({ coleccion: 'orders', id, datos: o ? o.data() : {}, resumen: nombre + ' · ' + ((o && o.data().docType) || 'pedido'), usuario, pantalla: 'fabrica-interna.html' });
         } catch (e) {
             alert('No se pudo eliminar: ' + e.message);
         }

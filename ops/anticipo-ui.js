@@ -64,8 +64,14 @@ export function montarAnticipoUI({ pedidosDelCliente }) {
             <span style="font-weight:bold;color:#8a6d00;">💰 Pago del cliente: <span style="color:#c0392b">sin validar</span></span>
             <button onclick="const f=document.getElementById('antic-form-${id}');f.style.display=f.style.display==='block'?'none':'block';" style="margin-left:8px;background:#fff;color:#8a6d00;border:1.5px solid #f6d365;border-radius:7px;padding:5px 9px;font-weight:bold;font-family:'Arimo';font-size:12px;cursor:pointer;">✓ Marcar pago recibido</button>
             <div id="antic-form-${id}" style="display:none;margin-top:8px;">
+                <!-- (auditoría 2026-11-12) primero la pregunta «¿qué pagó?» con dos fichas; los campos salen después y solo los que aplican -->
+                <div style="font-size:13px;color:#556;margin-bottom:4px;">¿Qué pagó el cliente?</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+                    <button type="button" id="antic-ficha-anticipo-${id}" onclick="anticipoTipoSet('${id}','anticipo')" style="background:#0A3D62;color:#fff;border:1.5px solid #0A3D62;border-radius:999px;padding:8px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">💰 Anticipo</button>
+                    <button type="button" id="antic-ficha-completo-${id}" onclick="anticipoTipoSet('${id}','completo')" style="background:#fff;color:#0A3D62;border:1.5px solid #0A3D62;border-radius:999px;padding:8px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">💵 Pago completo</button>
+                    <input type="hidden" id="antic-tipo-${id}" value="anticipo">
+                </div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-                    <select id="antic-tipo-${id}" onchange="anticipoTipoCambio('${id}')" style="${inp}font-weight:bold;"><option value="anticipo">Anticipo</option><option value="completo">Pago completo</option></select>
                     <input type="number" id="antic-monto-${id}" placeholder="Monto" min="0" step="0.01" style="${inp}width:120px;">
                     <select id="antic-moneda-${id}" style="${inp}"><option>RD$</option><option>US$</option><option>€</option></select>
                     <input type="date" id="antic-fecha-${id}" value="${hoyISO()}" style="${inp}">
@@ -90,7 +96,10 @@ export function montarAnticipoUI({ pedidosDelCliente }) {
         const t = (document.getElementById('antic-tipo-' + id) || {}).value || 'anticipo';
         const box = document.getElementById('antic-completo-' + id); if (box) box.style.display = t === 'completo' ? 'block' : 'none';
         const m = document.getElementById('antic-monto-' + id); if (m) m.placeholder = t === 'completo' ? 'Monto de este pedido' : 'Monto';
+        ['anticipo', 'completo'].forEach((k) => { const b = document.getElementById('antic-ficha-' + k + '-' + id); if (!b) return; const on = k === t; b.style.background = on ? '#0A3D62' : '#fff'; b.style.color = on ? '#fff' : '#0A3D62'; });
     };
+    // Las dos fichas escriben el mismo valor que antes elegía el <select> (anticipo | completo).
+    window.anticipoTipoSet = function (id, t) { const h = document.getElementById('antic-tipo-' + id); if (h) h.value = t; window.anticipoTipoCambio(id); };
     window.anticipoGuardar = async function (id) {
         const v = (k) => ((document.getElementById('antic-' + k + '-' + id) || {}).value || '').trim();
         const tipo = v('tipo') === 'completo' ? 'completo' : 'anticipo';

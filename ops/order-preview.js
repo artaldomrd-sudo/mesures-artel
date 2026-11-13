@@ -3,6 +3,7 @@
 // tal cual, como un envío nuevo). Compartido por todas las pantallas de ops/.
 import { db } from './firebase-config.js';
 import { rootPath } from './paths.js';
+import { etiquetaPedido } from './estados.js';   // (auditoría 2026-11-12) nombres únicos de estado
 import { collection, addDoc, doc, getDoc, getDocs, query, where, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
 function closePreview() {
@@ -33,8 +34,17 @@ function ensureStyles() {
     document.head.appendChild(style);
 }
 
-export function openOrderPreview(orderId, role) {
+// (auditoría 2026-11-12) «Reenviar» solo para admin/cotizaciones (los roles los deja cada página en window.__artalRoles o se pasan
+// en opts.roles) y nunca cuando la ficha se abre con checklist (fábrica, chofer, instalador).
+function puedeReenviar(role, opts) {
+    if (role) return false;
+    const roles = (opts && Array.isArray(opts.roles)) ? opts.roles : (Array.isArray(window.__artalRoles) ? window.__artalRoles : []);
+    return roles.includes('admin') || roles.includes('cotizaciones');
+}
+
+export function openOrderPreview(orderId, role, opts) {
     ensureStyles();
+    const conReenvio = puedeReenviar(role, opts);
     const overlay = document.createElement('div');
     overlay.id = 'order-preview-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -45,7 +55,7 @@ export function openOrderPreview(orderId, role) {
                 <b>Ficha técnica</b>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;">
                     <button id="preview-print-btn" disabled style="padding:9px 14px;border:none;border-radius:8px;background:#2ecc71;color:#fff;font-weight:bold;cursor:pointer;font-family:Arimo;">Cargando…</button>
-                    <button id="preview-resend-btn" style="padding:9px 14px;border:none;border-radius:8px;background:#F6B93B;color:#0A3D62;font-weight:bold;cursor:pointer;font-family:Arimo;">Reenviar</button>
+                    ${conReenvio ? '<button id="preview-resend-btn" style="padding:9px 14px;border:none;border-radius:8px;background:#F6B93B;color:#0A3D62;font-weight:bold;cursor:pointer;font-family:Arimo;">Reenviar</button>' : ''}
                     <button id="preview-close-btn" style="padding:9px 14px;border:1.5px solid #fff;border-radius:8px;background:transparent;color:#fff;cursor:pointer;font-family:Arimo;">✕ Cerrar</button>
                 </div>
             </div>
@@ -60,7 +70,7 @@ export function openOrderPreview(orderId, role) {
     document.getElementById('preview-print-btn').onclick = () => {
         if (currentIframe.contentWindow.exportPDF) currentIframe.contentWindow.exportPDF();
     };
-    document.getElementById('preview-resend-btn').onclick = () => reenviarOrden(orderId);
+    const rb = document.getElementById('preview-resend-btn'); if (rb) rb.onclick = () => reenviarOrden(orderId);
 }
 
 async function reenviarOrden(orderId) {
@@ -72,14 +82,13 @@ async function reenviarOrden(orderId) {
     // Reenviar CREA UN PEDIDO NUEVO (un duplicado), no reemplaza el existente. Caso real 2026-09-22: "Gregory —
     // Riviera Coson 4" apareció dos veces en Instalación porque alguien reenvió la ficha el 07/09 sin querer.
     // Si ya hay pedidos abiertos de la misma obra, se avisa con nombre y estado antes de duplicar.
-    const ETAPA = { solicitada: 'cotización pendiente', costeada: 'cotización costeada', enviada_cliente: 'cotización enviada al cliente', pendiente_fabrica: 'pendiente en fábrica', en_fabrica: 'en fábrica', parcialmente_listo: 'parcialmente listo', listo_para_cargar: 'listo para cargar', parcialmente_instalado: 'parcialmente instalado', completado: 'completado' };
     let abiertos = [];
     try {
         const qs = await getDocs(query(collection(db, 'orders'), where('cliente', '==', o.cliente || ''), where('obra', '==', o.obra || '')));
         abiertos = qs.docs.filter(d => d.id !== orderId && ((d.data().docType || '').indexOf('FAB') === 0) === isFab && d.data().status !== 'completado').map(d => d.data());
         if (!isFab || o.status !== 'completado') abiertos.push(o);   // el propio pedido también sigue vivo
     } catch (_) { abiertos = [o]; }
-    const lista = abiertos.map(x => `• ${x.docType || ''} · ${ETAPA[x.status] || x.status || ''}${x.entregado ? ' · entregado' : ''}`).join('\n');
+    const lista = abiertos.map(x => `• ${x.docType || ''} · ${etiquetaPedido(x)}${x.entregado ? ' · entregado' : ''}`).join('\n');
     const msg = abiertos.length
         ? `⚠ ATENCIÓN: "${o.cliente} — ${o.obra}" YA tiene ${abiertos.length} pedido(s) en curso:\n${lista}\n\nReenviar crea OTRO pedido igual (un duplicado que aparecerá dos veces en fábrica, Transportes e Instalación). Solo hazlo si ${destino} perdió la ficha y necesita una nueva.\n\n¿Crear el pedido duplicado de todos modos?`
         : `¿Reenviar "${o.cliente} — ${o.obra}" tal cual, como un pedido nuevo a ${destino}?`;
@@ -99,6 +108,14 @@ async function reenviarOrden(orderId) {
             totalItems: o.totalItems,
             appJSON: o.appJSON,
             destino: o.destino || 'alucufel',
+            // (auditoría 2026-11-12) la identidad del pedido viaja completa, como hace aprobarYEnviarFabrica en cotizaciones.html.
+            ...(o.idProyecto ? { idProyecto: o.idProyecto } : {}),
+            ...(o.clienteId ? { clienteId: o.clienteId } : {}), ...(o.clienteFacturacion ? { clienteFacturacion: o.clienteFacturacion } : {}),
+            ...(o.clienteTelefono ? { clienteTelefono: o.clienteTelefono } : {}),
+            ...(o.anticipo ? { anticipo: o.anticipo } : {}), ...(Array.isArray(o.anticipos) && o.anticipos.length ? { anticipos: o.anticipos } : {}),
+            ...(o.direccion ? { direccion: o.direccion } : {}), ...(o.gps ? { gps: o.gps } : {}),
+            ...(o.medicionInstalacionId ? { medicionInstalacionId: o.medicionInstalacionId } : {}),
+            ...(Array.isArray(o.medicionInstalacionIds) && o.medicionInstalacionIds.length ? { medicionInstalacionIds: o.medicionInstalacionIds } : {}),
             reenvioDe: orderId, reenviadoEn: serverTimestamp(),
             ...(isFab ? { fechaCotizado: serverTimestamp() } : { fechaSolicitada: serverTimestamp() })
         });

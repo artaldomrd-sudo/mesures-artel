@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../shared.css?v=20261112">
+<link rel="stylesheet" href="../shared.css?v=20261113">
 <style>
     .order-card.status-pendiente_fabrica { border-left-color: var(--artal-yellow); }
     .order-card.status-en_fabrica { border-left-color: #3498db; }
@@ -59,8 +59,10 @@
     import { idProyectoDe, idsProyectoObra, pryChipHTML } from '../proyecto-id.js';   // Nº de proyecto (2026-11-03)
     import { enableNotifications } from '../notifications.js';
     import { db } from '../firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from '../order-preview.js';
+    import { etiquetaPedido } from '../estados.js';         // (auditoría 2026-11-12) nombres únicos de estado
+    import { borrarConRegistro } from '../papelera.js';     // (auditoría 2026-11-12) borrar con registro, como Historial
     import { mismaObra } from '../obras-util.js';
     import { selectorEnvioHTML, leerSelectorEnvio, VIAS_ALUCUFEL, envioTxt } from '../envios.js';
     window.openOrderPreview = openOrderPreview;
@@ -69,17 +71,11 @@
     // Nº de proyecto PRY-AAAA-NNN junto al cliente (2026-11-03). Una compra directa sin número propio no muestra nada.
     const pryO = (o) => pryChipHTML(idProyectoDe(o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' });
     const esGerencia = usuario.roles.includes('admin');
+    window.__artalRoles = usuario.roles;   // (auditoría 2026-11-12) order-preview.js decide con esto si muestra «Reenviar»
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
     document.getElementById('notif-btn').onclick = () => enableNotifications(document.getElementById('notif-btn'));
 
-    const STATUS_LABEL = {
-        pendiente_fabrica: 'Pendiente',
-        en_fabrica: 'En fábrica',
-        parcialmente_listo: 'Parcialmente listo',
-        listo_para_cargar: 'Listo para cargar',
-        completado: 'Completado'
-    };
     const PENDIENTES = ['pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'pendiente_proveedor'];   // pendiente_proveedor = compra directa a ALUCUFEL por preparar
     const ENVIADOS = ['listo_para_cargar', 'completado'];
 
@@ -113,52 +109,50 @@
     const itemsSinTerminar = (o) => (o.items || []).filter(it => { const iid = String(it.id), p = (o.partesFabrica || {})[iid];
         if (p && typeof p === 'object' && Object.keys(p).length) return !Object.values(p).every(v => v === true); return (o.itemsListosFabrica || {})[iid] !== true; });
     function orderCardHTML(id, o) {
-        let actionsHtml;
+        // (auditoría 2026-11-12) UN botón principal por estado; lo demás como texto o plegado en «⋯ Más opciones».
+        let principal = '', secundarias = [], aviso = '';
         if (o.status === 'pendiente_fabrica') {
-            actionsHtml = `<div class="actions"><button class="btn-tomar" onclick="tomarAbrir('${id}')">Tomar pedido</button></div>
+            principal = `<button class="btn-primaria" onclick="tomarAbrir('${id}')">Tomar pedido</button>
             <div id="tomar-form-${id}" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;background:#eef4fb;border-radius:9px;padding:9px 11px;">
-                <span style="font-size:13px;color:#1f6aa5;font-weight:bold;">📅 ¿Para qué fecha estimas tenerlo listo para cargar?</span>
-                <input type="date" id="tomar-fecha-${id}" min="${ymdHoy()}" style="padding:7px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:14px;">
-                <button onclick="tomarPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Confirmar y tomar</button>
-                <span style="font-size:12px;color:#667;width:100%">Es una estimación, no una promesa: después podrás moverla hasta ${SALIDA_MARGEN_DIAS} días. La oficina la usa para agendar transporte e instalación.</span>
+                <span style="font-size:14px;color:#1f6aa5;font-weight:bold;">📅 ¿Para qué fecha estimas tenerlo listo?</span>
+                <input type="date" id="tomar-fecha-${id}" min="${ymdHoy()}" style="padding:9px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:16px;">
+                <button onclick="tomarPedido('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:10px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:pointer;">Confirmar y tomar</button>
+                <span style="font-size:12.5px;color:#667;width:100%">Es una estimación: luego puedes moverla hasta ${SALIDA_MARGEN_DIAS} días.</span>
             </div>`;
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
-            actionsHtml = `<div class="actions">
-                <button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>
-                <button class="btn-parcial" onclick="parcialmenteListo('${id}')">Parcialmente listo para cargar</button>
-                <button class="btn-listo" onclick="listoParaCargar('${id}')">Listo para cargar (completo)</button>
-                ${o.status === 'en_fabrica' ? `<button class="btn-deshacer" onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>` : ''}
-            </div>`;
+            principal = `<button class="btn-primaria" onclick="listoParaCargar('${id}')">✅ Listo para cargar</button>`;
+            secundarias.push(`<button onclick="parcialmenteListo('${id}')">Parcialmente listo</button>`);
+            secundarias.push(`<button onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>`);
+            if (o.status === 'en_fabrica') secundarias.push(`<button onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>`);
         } else if (o.status === 'listo_para_cargar' && o.docType !== 'COMPRA_DIRECTA' && itemsSinTerminar(o).length) {
             // 2026-11-03 (caso Aloha parte 1): marcado listo con ítems sin terminar → se pueden seguir marcando partes.
-            actionsHtml = `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ ${itemsSinTerminar(o).length} ítem(s) todavía sin todas sus partes marcadas.</div>
-            <div class="actions"><button class="btn-marcar" onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button></div>`;
-        } else {
-            actionsHtml = '';
+            aviso = `<div style="font-size:13px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ ${itemsSinTerminar(o).length} ítem(s) sin todas sus partes marcadas.</div>`;
+            secundarias.push(`<button onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>`);
         }
         // Compra directa hecha a ALUCUFEL (2026-11-03): ellos la preparan y la marcan ENVIADA diciendo cómo se envía.
         const esCompra = o.docType === 'COMPRA_DIRECTA';
-        if (esCompra && o.status === 'pendiente_proveedor') actionsHtml = `<div class="actions"><button class="btn-listo" onclick="abrirEnvio('${id}', 'compra')">📦 Marcar enviado</button></div>`;
-        // Ya enviado y todavía no entregado: se puede corregir cómo se envía.
+        if (esCompra && o.status === 'pendiente_proveedor') principal = `<button class="btn-primaria" onclick="abrirEnvio('${id}', 'compra')">📦 Marcar enviado</button>`;
         // Mabelin (ALUCUFEL, 2026-11-11): marcar listo no obliga a nada más. Cómo se envía y el chofer son pasos OPCIONALES al
         // final; sin elegir, el pedido va por camión de ARTAL (Wilson) y la oficina lo ajusta si hace falta.
-        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true) actionsHtml += o.envio
+        let envioHtml = '';
+        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true) envioHtml = o.envio
             ? `<div style="margin-top:6px;font-size:13px;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">cambiar</a></div>`
-            : `<div style="margin-top:6px;font-size:13px;color:#556;">Cómo se envía: <b>${esc(envioTxt(o))}</b> <span style="color:#889">(por defecto; la oficina lo organiza)</span> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">elegir otra forma (opcional)</a></div>`;
-        actionsHtml += `<div id="envio-box-${id}"></div>`;
+            : `<div style="margin-top:6px;font-size:13px;color:#556;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">elegir otra forma (opcional)</a></div>`;
+        envioHtml += `<div id="envio-box-${id}"></div>`;
+        const sec = secundarias.length ? `<div class="acciones-sec">${secundarias.join('')}</div>` : '';
         if (esCompra) return `
         <div class="order-card status-${o.status === 'pendiente_proveedor' ? 'en_fabrica' : o.status}">
-            <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : (STATUS_LABEL[o.status] || esc(o.status))}</span></div>
+            <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : esc(etiquetaPedido(o))}</span></div>
             <div class="order-meta" style="font-size:14px;color:#333;white-space:pre-wrap;">${esc(o.descripcion || '')}</div>
             <div class="order-meta">${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 Ver orden de compra</a>` : ''}${o.creadoPorNombre ? ' · pedida por ' + esc(o.creadoPorNombre) : ''}</div>
             ${rioAbajoHTML(id, o)}
-            ${actionsHtml}
+            ${aviso}${principal}${sec}${envioHtml}
         </div>`;
         return `
         <div class="order-card status-${o.status}">
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b>
-                <span class="badge">${STATUS_LABEL[o.status] || esc(o.status)}</span>
+                <span class="badge">${esc(etiquetaPedido(o))}</span>
             </div>
             <div class="order-meta">
                 ${esc(o.docType)} · ${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems ·
@@ -168,15 +162,16 @@
             </div>
             ${rioAbajoHTML(id, o)}
             ${salidaHTML(id, o)}
-            ${o.status === 'parcialmente_listo' ? `<div style="font-size:12.5px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo parte de este pedido está lista — usa "Marcar partes listas" para ver/actualizar qué partes (marco, hojas, vidrios, accesorios) van de cada ítem.</div>` : ''}
+            ${o.status === 'parcialmente_listo' ? `<div style="font-size:13px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo una parte está lista: «Marcar partes listas» muestra cuáles.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
                 <div style="font-size:13px;color:#333;margin:4px 0;white-space:pre-wrap;">${esc(o.comentarioParaFabrica)}</div>
                 <button onclick="atenderInstruccion('${id}')" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">Marcar atendido</button>
             </div>` : ''}
-            ${actionsHtml}
+            ${aviso}${principal}${sec}${envioHtml}
+            <details class="mas"><summary>⋯ Más opciones</summary>
             ${['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && o.entregado !== true ? `<div class="assign-row">
-                <label>Chofer <span style="font-weight:normal;color:#889">(opcional, último paso — normalmente lo pone la oficina)</span>:</label>
+                <label>Chofer <span style="font-weight:normal;color:#889">(opcional, normalmente lo pone la oficina)</span>:</label>
                 ${choferControlHTML(id, o)}
                 <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
             </div>` : ''}
@@ -185,6 +180,7 @@
                 <button onclick="guardarComentario('${id}')">Guardar comentario</button>
             </div>
             ${esGerencia ? `<div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar obra (gerencia)</a></div>` : ''}
+            </details>
         </div>`;
     }
 
@@ -234,13 +230,6 @@
         const d = allOrders.find(x => x.id === id); const o = d ? d.data() : {};
         try { await fijarSalida(id, o, nueva); } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
-    function anticipoChip(o) {
-        const a = o.anticipo || null;
-        if (a && a.recibido) return `<span style="background:#e9f7ef;color:#1e8449;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:bold;">💰 Anticipo validado${a.fecha ? ' ' + a.fecha.slice(5).split('-').reverse().join('/') : ''}</span>`;
-        if (String(o.docType || '').indexOf('FAB') !== 0) return '';
-        return `<span style="background:#fff8e1;color:#8a6d00;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:bold;" title="La oficina no ha marcado el anticipo como recibido (Cotizaciones o Historial)">💰 Anticipo sin validar</span>`;
-    }
-
     // Lo que pasó RÍO ABAJO de fábrica (usuario 2026-10-01: «si se instaló ya no debe estar como tomar pedido»): entrega del
     // camión, instalación en proceso (trabajo de Instalación enlazado o de la misma obra) e instalación terminada. Se muestra
     // en cada tarjeta para que fábrica sepa que el pedido ya salió, aunque nadie haya tocado los botones de aquí.
@@ -339,7 +328,8 @@
         if (yaSalio(id)) { alert('Este pedido ya salió de fábrica (en ruta, entregado o en instalación): no hay nada que tomar. Márcalo listo para que deje de aparecer como pendiente.'); return; }
         const f = (document.getElementById('tomar-fecha-' + id) || {}).value;
         if (!f) { alert('Pon la fecha estimada de salida antes de tomar el pedido.'); return; }
-        await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() });
+        try { await updateDoc(doc(db, 'orders', id), { status: 'en_fabrica', fechaEnFabrica: serverTimestamp(), fechaSalidaEstimada: f, fechaSalidaEstimadaOriginal: f, fechaSalidaPor: usuario.nombre, fechaSalidaFecha: serverTimestamp() }); }
+        catch (e) { alert('No se pudo: ' + e.message); }   // (auditoría 2026-11-12)
     };
     // ¿Cómo se envía? (2026-11-03): la vía decide a quién le llega (camión → Wilson; guagua → equipo de obra; transporte externo →
     // equipo de esa obra; Hilux → Dylan). Desde 2026-11-11 (pedido de Mabelin) ALUCUFEL ya NO la elige al marcar listo: queda como
@@ -398,12 +388,14 @@
     };
     window.guardarComentario = async function (id) {
         const texto = document.getElementById('comentario-' + id).value.trim();
-        await updateDoc(doc(db, 'orders', id), {
-            comentarioFabrica: texto,
-            comentarioFabricaFecha: serverTimestamp(),
-            comentarioFabricaAtendido: texto ? false : true
-        });
-        alert('Comentario guardado.');
+        try {
+            await updateDoc(doc(db, 'orders', id), {
+                comentarioFabrica: texto,
+                comentarioFabricaFecha: serverTimestamp(),
+                comentarioFabricaAtendido: texto ? false : true
+            });
+            alert('Comentario guardado.');
+        } catch (e) { alert('No se pudo guardar el comentario: ' + e.message); }   // (auditoría 2026-11-12)
     };
     // Marcar como vista la instrucción que envió la oficina (comentarioParaFabrica).
     window.atenderInstruccion = async function (id) {
@@ -416,10 +408,10 @@
     window.eliminarPedido = async function (id) {
         const o = allOrders.find(d => d.id === id);
         const nombre = o ? [o.data().cliente, o.data().obra].filter(Boolean).join(' — ') : '';
-        if (!confirm(`¿Eliminar la obra "${nombre}"? Esta acción no se puede deshacer.`)) return;
-        if (!confirm('Confirma de nuevo: se borrará definitivamente de la plataforma.')) return;
+        if (!confirm(`¿Eliminar la obra "${nombre}"?\n\nQueda registrado quién lo eliminó y cuándo, y se puede restaurar desde Historial → Auditoría → Eliminados.`)) return;
         try {
-            await deleteDoc(doc(db, 'orders', id));
+            // (auditoría 2026-11-12) borrado con registro en la papelera, como Historial.
+            await borrarConRegistro({ coleccion: 'orders', id, datos: o ? o.data() : {}, resumen: nombre + ' · ' + ((o && o.data().docType) || 'pedido'), usuario, pantalla: 'alucufel/fabrica.html' });
         } catch (e) {
             alert('No se pudo eliminar: ' + e.message);
         }

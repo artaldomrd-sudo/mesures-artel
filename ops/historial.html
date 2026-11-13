@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 900px; }
     #search-input, #audit-search, #carpeta-search { width: 100%; padding: 12px 14px; border: 1.5px solid #ddd; border-radius: 10px; font-family: 'Arimo'; font-size: 15px; min-height: 48px; background: #fff; box-sizing: border-box; }
@@ -109,7 +109,7 @@
     </div>
 
     <div id="registro-view" style="display:none;">
-        <p class="empty" style="margin:0 0 10px;font-size:12.5px;text-align:left;">Registro de Nº de proyecto: es lo que ve el proveedor en lugar del cliente. Lo asigna el cuaderno al guardar o enviar; aquí solo se consulta. Sale de los pedidos y de los proyectos guardados del cuaderno.</p>
+        <p class="empty" style="margin:0 0 10px;font-size:12.5px;text-align:left;">Nº de proyecto = lo que ve el proveedor en lugar del cliente; lo asigna el cuaderno, aquí solo se consulta.</p>
         <div id="registro-avisos"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
             <input type="text" id="registro-search" placeholder="🔎 Buscar Nº, cliente, proyecto, ubicación o proveedor…" autocomplete="off" style="flex:1;min-width:220px;margin:0;">
@@ -144,26 +144,18 @@
     import { buildClientMap, clientList } from './clients.js';
     import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
     import { getDocs } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { etiquetaPedido } from './estados.js';   // (auditoría 2026-11-12) nombres únicos de estado
     window.openOrderPreview = openOrderPreview;
 
     // Solo admin: es un archivo histórico completo de todos los pedidos, no una pantalla
     // operativa de un rol específico. requireAuth([]) solo deja pasar a quien tenga rol admin.
     const usuario = await requireAuth([]);
+    window.__artalRoles = usuario.roles;   // (auditoría 2026-11-12) order-preview.js decide con esto si muestra «Reenviar»
     document.getElementById('user-name').textContent = usuario.nombre;
     document.getElementById('signout-btn').onclick = () => signOut(auth);
 
-    const STATUS_LABEL = {
-        solicitada: 'Cotización: solicitada al contratista',
-        costeada: 'Cotización: costeada, falta enviar',
-        enviada_cliente: 'Cotización: enviada al cliente',
-        pendiente_proveedor: 'Compra: pendiente de confirmación de proveedor',
-        pendiente_fabrica: 'Fabricación: pendiente',
-        en_fabrica: 'Fabricación: en proceso',
-        parcialmente_listo: 'Parcialmente listo para cargar',
-        listo_para_cargar: 'Listo para cargar/instalar',
-        parcialmente_instalado: 'Parcialmente instalado',
-        completado: 'Completado (entregado e instalado)'
-    };
+    // (auditoría 2026-11-12) los nombres de estado salen de ops/estados.js; `pendiente_proveedor` (solo compras) no está ahí.
+    const lblEstado = (st) => st === 'pendiente_proveedor' ? 'Pendiente de proveedor' : etiquetaPedido(st);
 
     const STATUS_OPTIONS_BY_TYPE = {
         COTIZACION: ['solicitada', 'costeada', 'enviada_cliente'],
@@ -196,7 +188,7 @@
 
         { key: 'compra_pendiente', emoji: '⏳', label: 'Pendiente de proveedor', group: 'Compra Directa', statuses: ['pendiente_proveedor'], tipo: esCompraDirecta },
         { key: 'compra_lista', emoji: '🧾', label: 'Lista para cargar', group: 'Compra Directa', statuses: ['listo_para_cargar'], tipo: esCompraDirecta },
-        { key: 'compra_completa', emoji: '✅', label: 'Entregada', group: 'Compra Directa', statuses: ['completado'], tipo: esCompraDirecta }
+        { key: 'compra_completa', emoji: '✅', label: 'Completada (entregada)', group: 'Compra Directa', statuses: ['completado'], tipo: esCompraDirecta }
     ];
     const CATEGORY_GROUPS = ['Cotización', 'Fabricación', 'Compra Directa'];
     let currentCategory = 'todos';
@@ -276,10 +268,10 @@
     }
 
     window.atenderFabrica = async function (id) {
-        await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true });
+        try { await updateDoc(doc(db, 'orders', id), { comentarioFabricaAtendido: true }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.atenderItem = async function (id, field, itemId) {
-        await updateDoc(doc(db, 'orders', id), { [`${field}.${itemId}.atendido`]: true });
+        try { await updateDoc(doc(db, 'orders', id), { [`${field}.${itemId}.atendido`]: true }); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     // Instrucción/nota de la OFICINA para fábrica (canal aparte de comentarioFabrica, que es
     // fábrica→oficina). Se guarda como pendiente para que le aparezca como alerta a ALUCUFEL en
@@ -407,6 +399,7 @@
         if (o.compraPdfUrl) extraLinks.push(`<a href="${esc(o.compraPdfUrl)}" target="_blank">Orden de compra</a>`);
         if (o.recepcionInstalador && o.recepcionInstalador.firma) extraLinks.push(`<a href="#" onclick="verFirma('${id}','rec'); return false;">Firma recepción (${esc(o.recepcionInstalador.nombre)})</a>`);
         if (o.clienteAprobacion && o.clienteAprobacion.firma) extraLinks.push(`<a href="#" onclick="verFirma('${id}','cli'); return false;">Firma cliente (${esc(o.clienteAprobacion.nombre)})</a>`);
+        extraLinks.push(`<a href="#" onclick="abrirCorregir('${id}'); return false;">✏️ Corregir</a>`);   // (auditoría 2026-11-12) ya existía en Carpetas
 
         const isFab = (o.docType || '').indexOf('FAB') === 0;
         const isCompra = o.docType === 'COMPRA_DIRECTA';
@@ -421,21 +414,28 @@
         <div class="order-card">
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryChipHTML(pryDeOrden(id, o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' })}</b>
-                <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
+                <span class="badge">${esc(lblEstado(o.status))}</span>
             </div>
-            <div class="order-meta">
-                <span>${metaLine}</span>
-                ${verLink}
-                ${extraLinks.join(' ')}
-                <a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;">🗑 Eliminar</a>
-            </div>
+            <div class="order-meta"><span>${metaLine}</span></div>
+            <div class="acciones-sec">${verLink}${extraLinks.join('')}</div>
             ${fichaHTML(id, o)}
             ${isCompra ? '' : anticipoHTML(id, o)}
             ${isFab && o.destino === 'interno' && !['completado'].includes(o.status) ? suplidorBotonHTML(id, o) : (enviadoChipHTML(o) ? `<div style="margin-top:8px;">${enviadoChipHTML(o)}</div>` : '')}
             ${lineaTiempoHTML(o)}
+            ${isFab ? `
+            <div class="instr-fabrica" style="margin-top:8px;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:9px;padding:9px 11px;">
+                <div style="font-size:12px;font-weight:bold;color:#b9770e;margin-bottom:5px;">📌 Instrucción / nota para fábrica (${o.destino === 'interno' ? 'fábrica interna' : 'ALUCUFEL'})</div>
+                <textarea id="instr-fab-${id}" placeholder="Ej: adelantar fabricación de las 2 PV3…" style="width:100%;min-height:44px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;box-sizing:border-box;">${esc(o.comentarioParaFabrica || '')}</textarea>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                    <button onclick="guardarInstrFabrica('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Enviar a fábrica</button>
+                    ${o.comentarioParaFabrica ? (o.comentarioParaFabricaAtendido ? '<span style="font-size:12px;color:#16a085;font-weight:bold;">✓ Fábrica ya la vio</span>' : '<span style="font-size:12px;color:#b9770e;font-weight:bold;">⏳ Pendiente de que fábrica la marque</span>') : ''}
+                </div>
+            </div>` : ''}
+            <!-- (auditoría 2026-11-12) lo administrativo, plegado -->
+            <details class="mas"><summary>⋯ Más opciones</summary>
             <div class="status-change-row">
                 <select id="status-select-${id}">
-                    ${statusOptions.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('')}
+                    ${statusOptions.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(lblEstado(s))}</option>`).join('')}
                 </select>
                 <button onclick="cambiarEstado('${id}')">Cambiar estado</button>
             </div>
@@ -450,15 +450,8 @@
                 </select>
                 <button onclick="guardarAsignacion('${id}')">Guardar asignación</button>
             </div>` : ''}
-            ${isFab ? `
-            <div class="instr-fabrica" style="margin-top:8px;background:#fff8ec;border:1.5px solid #f5d79a;border-radius:9px;padding:9px 11px;">
-                <div style="font-size:12px;font-weight:bold;color:#b9770e;margin-bottom:5px;">📌 Instrucción / nota para fábrica (ALUCUFEL)</div>
-                <textarea id="instr-fab-${id}" placeholder="Ej: adelantar fabricación de las 2 PV3…" style="width:100%;min-height:44px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;box-sizing:border-box;">${esc(o.comentarioParaFabrica || '')}</textarea>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
-                    <button onclick="guardarInstrFabrica('${id}')" style="background:var(--artal-blue);color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Enviar a fábrica</button>
-                    ${o.comentarioParaFabrica ? (o.comentarioParaFabricaAtendido ? '<span style="font-size:12px;color:#16a085;font-weight:bold;">✓ Fábrica ya la vio</span>' : '<span style="font-size:12px;color:#b9770e;font-weight:bold;">⏳ Pendiente de que fábrica la marque</span>') : ''}
-                </div>
-            </div>` : ''}
+            <div style="margin-top:8px;"><a href="#" onclick="eliminarPedido('${id}'); return false;" style="color:#e74c3c;font-size:12.5px;font-weight:bold;">🗑 Eliminar</a></div>
+            </details>
         </div>`;
     }
 
@@ -504,14 +497,14 @@
         if (nuevoEstado !== 'completado' && o.instalado === true) avisos.push('ya estaba marcado INSTALADO: se quitará esa marca');
         if (nuevoEstado === 'completado' && esFabricacion(o) && o.instalado !== true) avisos.push('se marcará como INSTALADO sin pasar por Instalación (cierre manual)');
         if (nuevoEstado === 'completado' && esCompraDirecta(o) && o.entregado !== true) avisos.push('se marcará como ENTREGADO sin pasar por Transportes (cierre manual)');
-        if (!confirm(`¿Cambiar el estado de "${o.cliente || ''} — ${o.obra || ''}" a "${STATUS_LABEL[nuevoEstado] || nuevoEstado}"?` + (avisos.length ? '\n\nOjo: ' + avisos.join('; ') + '.' : ''))) return;
+        if (!confirm(`¿Cambiar el estado de "${o.cliente || ''} — ${o.obra || ''}" a "${lblEstado(nuevoEstado)}"?` + (avisos.length ? '\n\nOjo: ' + avisos.join('; ') + '.' : ''))) return;
         try {
             const cambios = { status: nuevoEstado, estadoManualPor: usuario.nombre, estadoManualPorEmail: usuario.email, estadoManualFecha: serverTimestamp(), estadoManualDesde: o.status || null };
             if (ANTES_CARGA.includes(nuevoEstado)) { if (o.entregado === true) cambios.entregado = false; if (o.enRuta === true) { cambios.enRuta = false; cambios.fechaEnRuta = null; } }
             if (nuevoEstado !== 'completado' && o.instalado === true) { cambios.instalado = false; cambios.cierreAutomatico = null; cambios.cierreAutomaticoTrabajo = null; }
             if (nuevoEstado === 'completado') {
                 if (esFabricacion(o) && o.instalado !== true) { cambios.instalado = true; cambios.fechaInstalado = serverTimestamp(); cambios.instaladoPorNombre = usuario.nombre; cambios.cierreManual = 'historial'; }
-                if (esCompraDirecta(o) && o.entregado !== true) { cambios.entregado = true; cambios.fechaEntrega = serverTimestamp(); cambios.cierreManual = 'historial'; }
+                if (esCompraDirecta(o) && o.entregado !== true) { cambios.entregado = true; cambios.fechaEntregado = serverTimestamp(); cambios.cierreManual = 'historial'; }   // (auditoría 2026-11-12) fechaEntregado es lo que lee el resto del sistema (antes fechaEntrega)
             }
             await updateDoc(doc(db, 'orders', id), cambios);
         } catch (e) {
@@ -1206,7 +1199,7 @@
                         <div class="doc-head">
                             <span class="doc-tag ${t.cls}">${t.label}</span>
                             ${normTexto(obraTexto) !== normTexto(proyecto.rootTitulo) ? `<span class="carpeta-doc-obra">${esc(obraTexto)}</span>` : ''}
-                            <span style="font-size:12.5px;color:#555;">${esc(STATUS_LABEL[o.status] || o.status)}${progresoExtra(o)}</span>
+                            <span style="font-size:12.5px;color:#555;">${esc(lblEstado(o.status))}${progresoExtra(o)}</span>
                             ${pryChipHTML(pryDeOrden(id, o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' })}
                         </div>
                         ${(o.descripcion || o.proveedor) ? `<div style="font-size:12.5px;color:#556;margin-top:3px;">${o.descripcion ? '📝 ' + esc(o.descripcion) : ''}${o.proveedor ? (o.descripcion ? '  ·  ' : '') + '🏭 ' + esc(o.proveedor) : ''}</div>` : ''}
@@ -1248,7 +1241,7 @@
                 f.proveedores.add(DEST_TXT(o));
                 (o.enviadoASuplidor || []).forEach(x => x && x.nombre && f.proveedores.add(x.nombre));
                 const t = orderDate(o); f.docs++;
-                if (t > f.estadoFecha) { f.estadoFecha = t; f.estado = (o.docType === 'COMPRA_DIRECTA' ? 'Compra · ' : ((o.docType || '').indexOf('FAB') === 0 ? 'Fabricación · ' : 'Cotización · ')) + (STATUS_LABEL[o.status] || o.status || ''); }
+                if (t > f.estadoFecha) { f.estadoFecha = t; f.estado = (o.docType === 'COMPRA_DIRECTA' ? 'Compra · ' : ((o.docType || '').indexOf('FAB') === 0 ? 'Fabricación · ' : 'Cotización · ')) + lblEstado(o.status); }
                 f.fecha = f.fecha ? Math.min(f.fecha, t || f.fecha) : t;
             });
         });

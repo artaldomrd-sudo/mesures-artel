@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="shared.css?v=20261112">
+<link rel="stylesheet" href="shared.css?v=20261113">
 <style>
     main { max-width: 700px; }
     .form-box { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 20px; }
@@ -43,10 +43,7 @@
 <main>
     <div class="form-box">
         <h2 class="section-title" id="form-title">Registrar compra a proveedor</h2>
-        <p style="font-size:12.5px;color:#666;margin:0 0 6px;">
-            Para artículos que no pasan por fábrica (comprados ya hechos a un proveedor: tubos, puertas, vidrios, etc.).
-            Se sube la orden de compra y, cuando esté lista para cargar, aparece para chofer e instalador.
-        </p>
+        <p style="font-size:12.5px;color:#666;margin:0 0 6px;">Artículos comprados ya hechos a un proveedor (tubos, puertas, vidrios); al estar listos aparecen al chofer.</p>
         <label>Cliente</label>
         <select id="c-cliente-sel" onchange="onClienteSel()"></select>
         <input type="text" id="c-cliente" placeholder="Escribe el nombre del cliente nuevo" autocomplete="off" style="display:none; margin-top:6px;">
@@ -58,7 +55,7 @@
         <div style="margin-top:8px;">
             <button type="button" id="c-rep-btn" onclick="toggleReparto()" style="background:#fff7e0;color:#8a6d00;border:1px solid #f1d98a;border-radius:999px;font-size:12px;font-weight:bold;padding:4px 12px;cursor:pointer;font-family:'Arimo';">📦 Compra para varias obras (repartir)</button>
             <div id="c-repartos" style="display:none;margin-top:8px;background:#fffbea;border:1.5px dashed #f1d98a;border-radius:10px;padding:10px;">
-                <div style="font-size:12px;color:#8a6d00;margin-bottom:6px;">Elige a qué obras va esta compra y cuánto le toca a cada una. La compra saldrá en la carpeta de CADA obra.</div>
+                <div style="font-size:12px;color:#8a6d00;margin-bottom:6px;">A qué obras va y cuánto le toca a cada una.</div>
                 <div id="c-rep-filas"></div>
                 <button type="button" onclick="repAddFila()" style="margin-top:6px;background:#eef4fb;color:#1f6aa5;border:1px solid #cfe0f2;border-radius:999px;font-size:12px;font-weight:bold;padding:4px 12px;cursor:pointer;font-family:'Arimo';">+ Otra obra</button>
                 <div id="c-rep-total" style="font-size:12px;color:#556;margin-top:6px;"></div>
@@ -75,17 +72,19 @@
         <input type="file" id="c-pdf" accept="application/pdf,image/png,image/jpeg" multiple>
         <div id="c-pdf-actual" style="font-size:12px;color:#666;margin-top:4px;display:none;"></div>
         <label>Estado</label>
-        <select id="c-status">
-            <option value="pendiente_proveedor">Pendiente de confirmación de proveedor</option>
-            <option value="listo_para_cargar">Listo para cargar/instalar</option>
-            <option value="completado" disabled>Entregada / completada (no se cambia desde aquí)</option>
+        <!-- (auditoría 2026-11-12) dos fichas en vez del desplegable; el <select> sigue existiendo (oculto) porque el resto del código lee su valor -->
+        <select id="c-status" style="display:none;">
+            <option value="pendiente_proveedor">Pendiente del proveedor</option>
+            <option value="listo_para_cargar">Listo para cargar</option>
+            <option value="completado" disabled>Completado</option>
         </select>
-        <div id="c-alu-nota" style="display:none;margin-top:6px;background:#eef4fb;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f4e7a;">🏗️ Compra a ALUCUFEL: <b>les llega a ellos</b> para prepararla; cuando la manden, la marcan «Enviada» y eligen cómo llega. No hace falta que pongas el estado ni el transporte.</div>
+        <div id="c-status-fichas" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+            <button type="button" data-v="pendiente_proveedor" onclick="setEstadoCompra('pendiente_proveedor')">⏳ Pendiente del proveedor</button>
+            <button type="button" data-v="listo_para_cargar" onclick="setEstadoCompra('listo_para_cargar')">📦 Listo para cargar</button>
+        </div>
+        <div id="c-alu-nota" style="display:none;margin-top:6px;background:#eef4fb;border-radius:8px;padding:8px 10px;font-size:13px;color:#1f4e7a;">🏗️ Compra a ALUCUFEL: les llega a ellos; al mandarla la marcan enviada y eligen cómo llega.</div>
         <div id="c-envio-wrap"><label>¿Cómo llega?</label><div id="c-envio-box"></div></div>
-        <p style="font-size:11.5px;color:#888;margin:4px 0 0;">
-            Mientras esté <b>Pendiente de confirmación de proveedor</b> no le aparece al chofer.
-            Cámbialo a <b>Listo para cargar</b> cuando el proveedor confirme.
-        </p>
+        <p style="font-size:11.5px;color:#888;margin:4px 0 0;">«Pendiente del proveedor» no le aparece al chofer; «Listo para cargar» sí.</p>
         <button class="submit" id="c-btn" onclick="registrarCompra()">Registrar compra</button>
         <button class="submit" id="c-cancel-btn" onclick="cancelarEdicion()" style="display:none;background:#888;margin-top:8px;">Cancelar edición</button>
     </div>
@@ -94,7 +93,7 @@
     <div id="compras-filtro" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px;">
         <button class="cf-btn active" data-f="todas" onclick="setFiltroCompras('todas')">Todas</button>
         <button class="cf-btn" data-f="pendiente_proveedor" onclick="setFiltroCompras('pendiente_proveedor')">Pendiente proveedor</button>
-        <button class="cf-btn" data-f="listo_para_cargar" onclick="setFiltroCompras('listo_para_cargar')">Listo para recoger</button>
+        <button class="cf-btn" data-f="listo_para_cargar" onclick="setFiltroCompras('listo_para_cargar')">Listo para cargar</button>
         <button class="cf-btn" data-f="completado" onclick="setFiltroCompras('completado')">Completado</button>
     </div>
     <div id="compras-list"><p class="empty">Cargando…</p></div>
@@ -106,10 +105,11 @@
     import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto (2026-11-03)
     import { borrarConRegistro } from './papelera.js';
     import { db, storage } from './firebase-config.js';
-    import { collection, query, where, onSnapshot, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+    import { collection, query, where, onSnapshot, getDocs, doc, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
     import { buildClientMap, clientList, normalizarCliente, normalizarObra, esGpsTexto } from './clients.js';
     import { selectorEnvioHTML, leerSelectorEnvio } from './envios.js';
+    import { etiquetaPedido } from './estados.js';   // (auditoría 2026-11-12) nombres únicos de estado
 
     // Solo admin/oficina: es una herramienta de registro, no una pantalla de rol operativo.
     const usuario = await requireAuth([]);
@@ -137,7 +137,17 @@
         if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
         onClienteSel();
     }
-    onSnapshot(collection(db, 'orders'), (snap) => { ordersCache = snap.docs.map(d => ({ _id: d.id, ...d.data() })); refreshClientMap(); refreshProveedores(); });
+    // (auditoría 2026-11-12) antes bajaba `orders` ENTERA (todas las fichas) solo para listar clientes/obras. Ahora los pedidos
+    // ABIERTOS en vivo y los completados UNA vez, solo cuando hacen falta («Ver todas las obras» o editar una compra de obra cerrada).
+    const ESTADOS_ABIERTOS = ['solicitada', 'costeada', 'enviada_cliente', 'pendiente_fabrica', 'en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado', 'pendiente_proveedor'];
+    let ordersAbiertos = [], ordersCompletados = [], completadosCargados = false;
+    const unirOrders = () => { const m = new Map(); [...ordersCompletados, ...ordersAbiertos].forEach(o => m.set(o._id, o)); ordersCache = [...m.values()]; refreshClientMap(); refreshProveedores(); if (comprasDocs.length) pintarCompras(); };
+    onSnapshot(query(collection(db, 'orders'), where('status', 'in', ESTADOS_ABIERTOS)), (snap) => { ordersAbiertos = snap.docs.map(d => ({ _id: d.id, ...d.data() })); unirOrders(); });
+    async function cargarCompletados() {
+        if (completadosCargados) return; completadosCargados = true;
+        try { const snap = await getDocs(query(collection(db, 'orders'), where('status', '==', 'completado'))); ordersCompletados = snap.docs.map(d => ({ _id: d.id, ...d.data() })); unirOrders(); poblarObras(); }
+        catch (e) { completadosCargados = false; console.warn('completados', e); }
+    }
     onSnapshot(collection(db, 'clientes'), (snap) => { clientesCache = snap.docs.map(d => d.data()); refreshClientMap(); });
 
     // Nombre del cliente elegido en este momento (de la lista o escrito a mano).
@@ -178,16 +188,16 @@
         // VINCULADA a ese pedido (`pedidoVinculadoId`) y no solo al texto de la obra. Abiertos arriba, cerrados después.
         const pedidos = pedidosDelCliente(clienteActual());
         const cubiertas = new Set(pedidos.map(o => normObra(o.obra)));
-        const optPed = (o) => `<option value="order:${esc(o._id)}">${esc(o.obra || '')}${idProyectoDe(o) ? ' · ' + esc(idProyectoDe(o)) : ''} · ${esc(tipoPedido(o))} · ${esc(ORDER_STATUS_LABEL[o.status] || o.status || '')}</option>`;
+        const optPed = (o) => `<option value="order:${esc(o._id)}">${esc(o.obra || '')}${idProyectoDe(o) ? ' · ' + esc(idProyectoDe(o)) : ''} · ${esc(tipoPedido(o))} · ${esc(lblEstado(o.status))}</option>`;
         const abiertos = pedidos.filter(o => o.status !== 'completado'), cerrados = pedidos.filter(o => o.status === 'completado');
         const otras = obras.filter(o => !cubiertas.has(normObra(o)));
         // Por defecto solo las obras EN CURSO (pedidos abiertos); el historial completo (pedidos completados + otras obras
         // conocidas) se despliega con «➕ Ver todas las obras» (Dylan 2026-10-20: «lo más probable es que la compra sea para
         // una obra en curso, pero puede pasar que sea para una obra vieja»).
-        const hayHist = cerrados.length + otras.length > 0;
+        const hayHist = cerrados.length + otras.length > 0 || !completadosCargados;   // los completados se cargan al pedirlos
         const btn = document.getElementById('c-obra-todas');
         btn.style.display = hayHist ? 'inline-block' : 'none';
-        btn.textContent = obrasTodas ? '➖ Solo obras en curso' : `➕ Ver todas las obras (historial: ${cerrados.length + otras.length})`;
+        btn.textContent = obrasTodas ? '➖ Solo obras en curso' : (completadosCargados ? `➕ Ver todas las obras (historial: ${cerrados.length + otras.length})` : '➕ Ver todas las obras (historial)');
         sel.innerHTML = `<option value="">— Elige una obra —</option>`
             + (abiertos.length ? `<optgroup label="📦 Obras en curso de este cliente (vincula la compra al pedido)">${abiertos.map(optPed).join('')}</optgroup>` : '')
             + (obrasTodas && cerrados.length ? `<optgroup label="✅ Pedidos ya completados">${cerrados.map(optPed).join('')}</optgroup>` : '')
@@ -198,7 +208,7 @@
     }
 
     let obrasTodas = false;
-    window.toggleObrasTodas = function () { obrasTodas = !obrasTodas; poblarObras(); };
+    window.toggleObrasTodas = function () { obrasTodas = !obrasTodas; if (obrasTodas) cargarCompletados(); poblarObras(); };
 
     /* ===== Compra para VARIAS obras (Dylan 2026-10-20: «Lingotes para clientes Altea y Gabor… elegir a cuál obra asignar y qué
        cantidad cada una»). `repartos: [{cliente, obra, pedidoVinculadoId, cantidad}]`; la compra aparece en la carpeta de cada
@@ -209,7 +219,7 @@
         const entry = clientMap.get(String(cliente || '').toLowerCase()); const otras = (entry ? Array.from(entry.obras.values()) : []).filter(o => !cub.has(normObra(o)));
         const op = (v, t) => `<option value="${esc(v)}"${v === actual ? ' selected' : ''}>${esc(t)}</option>`;
         return `<option value="">— Obra —</option>`
-            + peds.filter(o => o.status !== 'completado').map(o => op('order:' + o._id, `${o.obra || ''} · ${tipoPedido(o)} · ${ORDER_STATUS_LABEL[o.status] || o.status || ''}`)).join('')
+            + peds.filter(o => o.status !== 'completado').map(o => op('order:' + o._id, `${o.obra || ''} · ${tipoPedido(o)} · ${lblEstado(o.status)}`)).join('')
             + peds.filter(o => o.status === 'completado').map(o => op('order:' + o._id, `${o.obra || ''} · ${tipoPedido(o)} · completado`)).join('')
             + otras.map(o => op(o, o)).join('');
     };
@@ -248,6 +258,15 @@
         if (out.length < 2) { alert('Para repartir la compra elige al menos dos obras (o desactiva el reparto).'); return null; }
         return out;
     }
+    // (auditoría 2026-11-12) las dos fichas de Estado escriben el mismo <select id="c-status"> (mismos valores, misma función).
+    window.pintarFichasEstado = function () {
+        const st = document.getElementById('c-status'); const wrap = document.getElementById('c-status-fichas'); if (!st || !wrap) return;
+        const bloqueado = st.disabled || st.value === 'completado';
+        wrap.querySelectorAll('button[data-v]').forEach(b => { const on = b.dataset.v === st.value; b.disabled = bloqueado; b.style.cssText = `border-radius:999px;padding:9px 14px;font-weight:bold;font-family:'Arimo';font-size:14px;cursor:${bloqueado ? 'default' : 'pointer'};border:1.5px solid #0A3D62;background:${on ? '#0A3D62' : '#fff'};color:${on ? '#fff' : '#0A3D62'};opacity:${bloqueado && !on ? '.45' : '1'};`; });
+        wrap.title = st.value === 'completado' ? 'Completada: el estado se cambia desde la tarjeta' : '';
+    };
+    window.setEstadoCompra = function (v) { const st = document.getElementById('c-status'); if (!st || st.disabled) return; st.value = v; pintarFichasEstado(); };
+    pintarFichasEstado();
     window.onObraSel = function () {
         const sel = document.getElementById('c-obra-sel').value;
         document.getElementById('c-obra').style.display = sel === NUEVO ? 'block' : 'none';
@@ -290,6 +309,7 @@
         document.getElementById('c-alu-nota').style.display = alu ? 'block' : 'none';
         document.getElementById('c-envio-wrap').style.display = alu ? 'none' : 'block';
         if (alu && !editandoId) { st.value = 'pendiente_proveedor'; st.disabled = true; } else if (!editandoId) st.disabled = false;
+        pintarFichasEstado();
     };
     document.getElementById('c-proveedor').addEventListener('input', () => window.onProveedorSel());
     const pintarEnvio = (o) => { document.getElementById('c-envio-box').innerHTML = selectorEnvioHTML('c-env', o || {}, ['camion', 'guagua', 'externo', 'hilux']); };
@@ -306,12 +326,8 @@
         }[c]));
     }
 
-    const STATUS_LABEL = {
-        pendiente_proveedor: 'Pendiente de confirmación de proveedor',
-        listo_para_cargar: 'Listo para cargar/instalar',
-        completado: 'Completado'
-    };
-    const ORDER_STATUS_LABEL = { solicitada: 'Cotización solicitada', costeada: 'Cotización costeada', enviada_cliente: 'Cotización enviada', pendiente_fabrica: 'Pendiente en fábrica', en_fabrica: 'En fábrica', parcialmente_listo: 'Parcialmente listo', listo_para_cargar: 'Listo para cargar', parcialmente_instalado: 'Parcialmente instalado', completado: 'Completado' };
+    // (auditoría 2026-11-12) nombres de estado desde ops/estados.js; `pendiente_proveedor` (solo compras) no está ahí.
+    const lblEstado = (st) => st === 'pendiente_proveedor' ? 'Pendiente del proveedor' : etiquetaPedido(st);
     const normObra = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
     const tipoPedido = (o) => String(o.docType || '').startsWith('FAB') ? 'Fabricación' : (String(o.docType || '').startsWith('COT') ? 'Cotización' : (o.docType || ''));
     const msDe = (v) => v && v.toMillis ? v.toMillis() : (typeof v === 'string' ? Date.parse(v) || 0 : 0);
@@ -446,7 +462,7 @@
         document.getElementById('c-proveedor').value = '';
         document.getElementById('c-cantidad').value = '1';
         document.getElementById('c-descripcion').value = '';
-        document.getElementById('c-status').value = 'pendiente_proveedor'; document.getElementById('c-status').disabled = false; pintarEnvio({});
+        document.getElementById('c-status').value = 'pendiente_proveedor'; document.getElementById('c-status').disabled = false; pintarFichasEstado(); pintarEnvio({});
         document.getElementById('c-pdf').value = '';
         document.getElementById('c-pdf-actual').style.display = 'none';
         document.getElementById('form-title').textContent = 'Registrar compra a proveedor';
@@ -473,7 +489,7 @@
         // Obra (después de poblar las obras del cliente elegido).
         const obraSel = document.getElementById('c-obra-sel');
         const enLista = (v) => [...obraSel.options].some(op => op.value === v);
-        if (!obrasTodas && !enLista(o.pedidoVinculadoId ? 'order:' + o.pedidoVinculadoId : o.obra)) { obrasTodas = true; poblarObras(); }
+        if (!obrasTodas && !enLista(o.pedidoVinculadoId ? 'order:' + o.pedidoVinculadoId : o.obra)) { obrasTodas = true; cargarCompletados(); poblarObras(); }
         if (o.pedidoVinculadoId && [...obraSel.options].some(op => op.value === 'order:' + o.pedidoVinculadoId)) {
             obraSel.value = 'order:' + o.pedidoVinculadoId;
         } else if ([...obraSel.options].some(op => op.value === o.obra)) {
@@ -500,6 +516,7 @@
         const stSel = document.getElementById('c-status');
         stSel.value = o.status || 'pendiente_proveedor';   // A10: una compra completada se muestra tal cual, sin volverla a «listo»
         stSel.disabled = o.status === 'completado' || o.entregado === true;
+        pintarFichasEstado();
         document.getElementById('c-pdf').value = '';
         const actual = document.getElementById('c-pdf-actual');
         const arch = compraArchivosDe(o);
@@ -518,14 +535,13 @@
         const o = comprasCache[id];
         if (!o || nuevo === o.status) return;
         // A10: confirmación con aviso de lo que se deshace (p. ej. reabrir una compra que el chofer ya entregó) y registro de quién.
-        const LBL = { pendiente_proveedor: 'Pendiente de proveedor', listo_para_cargar: 'Listo para cargar', completado: 'Entregada / completada' };
         let aviso = '';
         if (o.status === 'completado' || o.entregado === true) aviso = '\n\nOjo: el chofer ya la marcó ENTREGADA; volverá a aparecer en Transportes.';
         if (nuevo === 'completado' && o.entregado !== true) aviso = '\n\nSe cerrará sin pasar por Transportes (cierre manual).';
-        if (!confirm('¿Cambiar "' + (o.cliente || '') + ' — ' + (o.obra || '') + '" a «' + (LBL[nuevo] || nuevo) + '»?' + aviso)) { pintarCompras(); return; }
+        if (!confirm('¿Cambiar "' + (o.cliente || '') + ' — ' + (o.obra || '') + '" a «' + lblEstado(nuevo) + '»?' + aviso)) { pintarCompras(); return; }
         const datos = { status: nuevo, estadoManualPor: usuario.nombre, estadoManualPorEmail: usuario.email, estadoManualFecha: serverTimestamp(), estadoManualDesde: o.status || null };
         if (nuevo !== 'completado' && o.entregado === true) { datos.entregado = false; datos.enRuta = false; datos.fechaEnRuta = null; }
-        if (nuevo === 'completado' && o.entregado !== true) { datos.entregado = true; datos.fechaEntrega = serverTimestamp(); datos.cierreManual = 'compras'; }
+        if (nuevo === 'completado' && o.entregado !== true) { datos.entregado = true; datos.fechaEntregado = serverTimestamp(); datos.cierreManual = 'compras'; }   // (auditoría 2026-11-12) fechaEntregado es lo que lee el resto del sistema
         if (nuevo === 'listo_para_cargar' && o.status !== 'listo_para_cargar') {
             datos.fechaListoParaCargar = serverTimestamp();
         }
@@ -564,7 +580,7 @@
         <div class="order-card">
             <div class="order-head">
                 <b>${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b>
-                <span class="badge">${esc(STATUS_LABEL[o.status] || o.status)}</span>
+                <span class="badge">${esc(lblEstado(o.status))}</span>
             </div>
             <div class="order-meta">
                 Proveedor: ${esc(o.proveedor)} · ${esc(o.totalItems) || 0} artículo(s)
@@ -572,15 +588,18 @@
             </div>
             ${o.descripcion ? `<p style="font-size:13px;color:#555;margin:8px 0 0;">${esc(o.descripcion)}</p>` : ''}
             ${Array.isArray(o.repartos) && o.repartos.length ? `<p style="font-size:12px;color:#8a6d00;margin:8px 0 0;">📦 Repartida entre obras: ${o.repartos.map(r => `<b>${esc(r.cliente)} — ${esc(r.obra)}</b>${r.cantidad != null ? ' ×' + esc(String(r.cantidad)) : ''}`).join(' · ')}</p>` : ''}
-            ${o.pedidoVinculadoId ? (() => { const pv = pedidoDe(o.pedidoVinculadoId); return `<p style="font-size:12px;color:#1f6aa5;margin:8px 0 0;">🔗 Vinculada al pedido: <b>${esc(o.pedidoVinculadoTipo || '')}</b> ${esc(pv ? pv.obra : (o.pedidoVinculadoObra || ''))}${pv ? ' · ' + esc(ORDER_STATUS_LABEL[pv.status] || pv.status || '') : ''}</p>`; })() : ''}
+            ${o.pedidoVinculadoId ? (() => { const pv = pedidoDe(o.pedidoVinculadoId); return `<p style="font-size:12px;color:#1f6aa5;margin:8px 0 0;">🔗 Vinculada al pedido: <b>${esc(o.pedidoVinculadoTipo || '')}</b> ${esc(pv ? pv.obra : (o.pedidoVinculadoObra || ''))}${pv ? ' · ' + esc(lblEstado(pv.status)) : ''}</p>`; })() : ''}
             <p style="font-size:11.5px;color:#999;margin:8px 0 0;">Registrado por ${esc(o.creadoPorNombre)}</p>
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;">
-                <select onchange="cambiarEstadoCompra('${id}', this.value)" style="flex:1;min-width:180px;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
-                    ${opciones.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('')}
-                </select>
-                <button onclick="editarCompra('${id}')" style="padding:8px 12px;border:none;border-radius:7px;background:var(--artal-blue);color:#fff;font-family:'Arimo';font-weight:bold;font-size:13px;cursor:pointer;">✏ Editar</button>
-                <button onclick="eliminarCompra('${id}')" style="padding:8px 12px;border:none;border-radius:7px;background:#c0392b;color:#fff;font-family:'Arimo';font-weight:bold;font-size:13px;cursor:pointer;">🗑</button>
+            <div class="acciones-sec">
+                <button onclick="editarCompra('${id}')">✏ Editar</button>
+                <button class="rojo" onclick="eliminarCompra('${id}')">🗑 Eliminar</button>
             </div>
+            <details class="mas"><summary>⋯ Más opciones</summary>
+                <label style="font-size:12px;color:#666;font-weight:bold;">Cambiar estado</label>
+                <select onchange="cambiarEstadoCompra('${id}', this.value)" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-family:'Arimo';font-size:13px;">
+                    ${opciones.map(s => `<option value="${s}" ${s === o.status ? 'selected' : ''}>${esc(lblEstado(s))}</option>`).join('')}
+                </select>
+            </details>
         </div>`;
     }
 

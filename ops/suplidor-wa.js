@@ -133,7 +133,7 @@ export function suplidorBotonHTML(id, o) {
                 <button onclick="supEnviar('${id}')" ${conTel.length ? '' : 'disabled'} style="background:#25D366;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Abrir WhatsApp con el pedido</button>
             </div>` : `<div style="font-size:13px;color:#8a6d00;background:#fff8e1;border-radius:7px;padding:7px 10px;">No hay suplidores con teléfono todavía. Agrégalos en «⚙️ Suplidores y contratistas externos» (arriba, solo gerencia).</div>`}
             <pre id="sup-previa-${id}" style="display:none;white-space:pre-wrap;font-family:'Arimo';font-size:12.5px;background:#fff;border:1px solid #dfe8e2;border-radius:7px;padding:8px 10px;margin:8px 0 0;max-height:260px;overflow:auto;"></pre>
-            <div style="font-size:12px;color:#556;margin-top:6px;">WhatsApp se abre en otra pestaña con el texto ya escrito: <b>revísalo y toca Enviar allí</b> (la plataforma no manda nada sola). El mensaje lleva cliente de referencia, obra, ítems con medidas, material/acabado, fecha de salida y el enlace a la ficha; <b>nunca</b> teléfono del cliente, precios ni anticipo. El enlace de la ficha solo abre con una cuenta de la plataforma: si el suplidor no tiene, mándale el PDF de la hoja aparte.</div>
+            <div style="font-size:12px;color:#556;margin-top:6px;" title="El mensaje lleva cliente de referencia, obra, ítems con medidas, material/acabado, fecha de salida y el enlace a la ficha; nunca teléfono del cliente, precios ni anticipo. El enlace de la ficha solo abre con una cuenta de la plataforma: si el suplidor no tiene, mándale el PDF de la hoja aparte.">WhatsApp se abre con el texto listo: <b>revísalo y toca Enviar allí</b>. Sin teléfono del cliente, precios ni anticipo.</div>
         </div>
     </div>`;
 }
@@ -189,7 +189,7 @@ export function suplidoresAdminHTML() {
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
             <button onclick="supAdminAgregar()" style="background:#fff;color:#0A3D62;border:1.5px solid #0A3D62;border-radius:7px;padding:7px 11px;font-weight:bold;font-family:'Arimo';font-size:12.5px;cursor:pointer;">➕ Agregar suplidor</button>
             <button onclick="supAdminGuardar()" style="background:#0A3D62;color:#fff;border:none;border-radius:7px;padding:8px 12px;font-weight:bold;font-family:'Arimo';font-size:13px;cursor:pointer;">Guardar lista</button>
-            <span style="font-size:12px;color:#667;">«¿Instala?» marcado = aparece también como instalador asignable (p. ej. Delvis). Un suplidor de vidrio o tubos va sin marcar. Desmarcar «Activo» lo esconde sin borrar el historial.</span>
+            <span style="font-size:12px;color:#667;" title="«¿Instala?» marcado = aparece también como instalador asignable (p. ej. Delvis). Un suplidor de vidrio o tubos va sin marcar. Desmarcar «Activo» lo esconde sin borrar el historial.">«¿Instala?» = también se puede asignar como instalador · «Activo» sin marcar lo esconde.</span>
         </div>
     </details>`;
 }
