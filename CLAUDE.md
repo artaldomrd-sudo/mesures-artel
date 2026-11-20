@@ -1754,6 +1754,19 @@ se corrige, id libre → se agrega, id ocupado por otro tipo → id nuevo; `item
 agregaron/corrigieron) y **"Dejar ese pedido SOLO con los N marcados"** (modo `reemplazar`, con `confirm`). Sin selección,
 "Actualizar el original" sigue reemplazando toda la ficha. `_seleccion` no viaja dentro de `appJSON` del pedido.
 
+**«📄 Nueva versión del proyecto» (Dylan 2026-11-20: «seleccionar ítems para crear una nueva versión del proyecto y modificar
+cualquier proyecto sin rehacer cada ficha una a una»)**: botón en la barra amarilla de selección («Nueva versión con estos») y en el
+menú lateral (todos los ítems si no hay ☑). `nuevaVersionProyecto()` (junto a `nuevaParteProyecto`): exige cliente + obra y
+`validateAllCards(idsOperacion())`; propone el nombre «<obra> v2» (`VERSION_RE`: si ya termina en vN propone vN+1 y salta los que ya
+existan; `obraBaseVersion`), rechaza el mismo nombre o uno ya guardado; guarda el original tal cual (`saveProgress` +
+`autosaveOpenedProject`), copia profunda de `appJSONSoloSeleccion(getAppJSON())` con el encabezado intacto (cliente con la grafía
+guardada, Nº de proyecto HEREDADO porque es la misma obra para el proveedor, `medicionId` vacío, fechas de hoy), `restoreData` y
+`finalizarGuardadoProyecto(projects, cliKey, nombre, null, silencioso=true)` (parámetro nuevo: sin el alert de guardado ni el
+«¿dejar la hoja en blanco?», que vaciaba la versión recién creada) → queda guardada y ABIERTA, el autoguardado escribe desde ahí en
+la versión. `idProveedorUsadoPorOtro` no avisa de número repetido entre «Obra» y «Obra vN» del mismo cliente. Probado en navegador:
+3 ítems fijados, 2 marcados → «Casa Aaron v2» con esos 2 (candados, referencias, medidas), original con 3, cambio en la v2 no toca el
+original, tercera copia propone v3.
+
 ## Perfilería y accesorios — resumen para cotizar al proveedor (2026-11-01, primer paso de la fábrica propia)
 
 Dylan: la fábrica interna propia arranca a inicios de 2027 y ALUCUFEL pasa a secundario; el módulo de producción (barras,

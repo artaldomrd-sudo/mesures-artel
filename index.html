@@ -491,6 +491,7 @@
             <div id="nube-estado" style="font-size:11px; color:#9fb3c8; margin-top:5px; text-align:center; line-height:1.3; display:none;"></div>
             <button class="side-btn danger" style="margin-top:6px;" onclick="deleteProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Eliminar</button>
             <button class="side-btn" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="nuevaParteProyecto()" title="Arranca una hoja nueva del mismo proyecto (2da etapa, barandas, adicional…) sin pisar la parte anterior">➕ Nueva parte del proyecto</button>
+            <button class="side-btn" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="nuevaVersionProyecto()" title="Copia los ítems de esta hoja (todos, o solo los marcados con ☑) a un proyecto nuevo «v2» del mismo cliente para modificarlos sin rehacer cada ficha. El original no se toca.">📄 Nueva versión del proyecto</button>
         </div>
 
         <!-- Modal: Fusionar clientes/proyectos duplicados -->
@@ -610,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-11 15:26</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-20 08:19</div>
         </div>
     </div>
     
@@ -855,7 +856,7 @@
         const bar = document.getElementById('sel-bar'), hint = document.getElementById('sel-hint');
         if (bar) {
             bar.classList.toggle('on', activa);
-            bar.innerHTML = activa ? `☑ ${selIds.size} de ${total} ítems seleccionados<br><span style="font-weight:normal;">El PDF y el envío a fábrica llevan solo esos.</span><br><button onclick="selTodos()">Todos</button><button onclick="selNinguno()">Quitar selección</button>` : '';
+            bar.innerHTML = activa ? `☑ ${selIds.size} de ${total} ítems seleccionados<br><span style="font-weight:normal;">El PDF y el envío a fábrica llevan solo esos.</span><br><button onclick="selTodos()">Todos</button><button onclick="selNinguno()">Quitar selección</button><button onclick="nuevaVersionProyecto()" title="Copia los ítems marcados a un proyecto nuevo (versión) del mismo cliente, sin tocar este">📄 Nueva versión con estos</button>` : '';
         }
         if (hint) hint.style.display = activa || total === 0 ? 'none' : '';
     }
@@ -1359,7 +1360,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
     // Guardado real del proyecto. `borrarSimilar` (opcional): nombre de un proyecto parecido a
     // corregir/eliminar (cuando el usuario eligió "corregir el nombre" en el diálogo de arriba).
-    function finalizarGuardadoProyecto(projects, cliKey, obraKey, borrarSimilar) {
+    function finalizarGuardadoProyecto(projects, cliKey, obraKey, borrarSimilar, silencioso) {
         // Si ya existe un proyecto guardado con ese cliente+nombre Y esta hoja no es la que se
         // abrió/guardó como ese proyecto en esta sesión, un "Guardar" lo reemplazaría en silencio.
         const targetKey = (cliKey + '|' + obraKey).toLowerCase();
@@ -1392,6 +1393,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         saveProgress();   // persiste YA qué proyecto quedó abierto (estado en vivo + memoria de esta pestaña), sin esperar al guardado periódico
         updateSavedStatusBadge();
 
+        if (silencioso) return;   // "Nueva versión del proyecto": se sigue trabajando en la hoja recién guardada
         alert(` Proyecto "${obraKey}" del cliente "${cliKey}" guardado en la memoria.`);
 
         // Ofrecer dejar la hoja en blanco (pregunta, no automático) para el próximo proyecto.
@@ -2264,8 +2266,9 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const k = v => (typeof normNombreKey === 'function' ? normNombreKey(v) : String(v || '').trim().toLowerCase());
         const cliRaw = document.getElementById('header-cliente').value, obraRaw = document.getElementById('header-obra').value;
         if (idPreasignado(cliRaw, obraRaw) === id) return '';   // misma villa con otro nombre: el número compartido es a propósito
-        const cli = k(cliRaw), obra = k(obraRaw);
-        const otro = pryIdsGuardados().find(x => x.id === id && !(k(x.cli) === cli && k(x.obra) === obra));
+        const cli = k(cliRaw), obra = k(obraRaw), base = k(obraBaseVersion(obraRaw));
+        // Una versión («Obra v2») del mismo proyecto comparte el número a propósito: no cuenta como otro proyecto.
+        const otro = pryIdsGuardados().find(x => x.id === id && !(k(x.cli) === cli && (k(x.obra) === obra || k(obraBaseVersion(x.obra)) === base)));
         return otro ? `${otro.cli} · ${otro.obra}` : '';
     }
     window.siguienteIdProveedor = siguienteIdProveedor;
@@ -4402,6 +4405,51 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         updateSavedStatusBadge();
         saveProgress();
         alert(`Listo. Agrega los ítems de "${parteT}" y dale "Guardar proyecto". Se guardará como "${nuevoNombre}" sin tocar la parte anterior.`);
+    };
+
+    // "Nueva versión del proyecto" (Dylan 2026-11-20: «seleccionar ítems para crear una nueva versión del proyecto y
+    // modificar cualquier proyecto sin rehacer cada ficha una a una»): copia los ítems marcados con ☑ (o todos si no
+    // hay selección) a un proyecto NUEVO del mismo cliente — mismo encabezado, mismo Nº de proyecto (misma obra para el
+    // proveedor), nombre «<obra> v2» — y lo deja guardado y abierto. El original queda como estaba.
+    const VERSION_RE = /^(.*?)\s+v(\d+)$/i;
+    function obraBaseVersion(o) { const m = VERSION_RE.exec(String(o || '').trim()); return m ? m[1] : String(o || '').trim(); }
+    window.nuevaVersionProyecto = function () {
+        const cliente = (document.getElementById('header-cliente').value || '').trim();
+        const obra = (document.getElementById('header-obra').value || '').trim();
+        if (!cliente || !obra) { alert('Primero escribe arriba el Cliente y el Nombre del proyecto.'); return; }
+        const total = Object.keys(cardsState).length;
+        if (!total) { alert('La hoja no tiene ítems que copiar.'); return; }
+        if (!validateAllCards(idsOperacion())) return;
+        const ids = idsOperacion(), parcial = selActiva();
+        const projects = getProjects();
+        const cliKey = Object.keys(projects).find(c => normNombreKey(c) === normNombreKey(cliente)) || cliente;
+        const existe = nombre => !!(projects[cliKey] && Object.keys(projects[cliKey]).some(o => normNombreKey(o) === normNombreKey(nombre)));
+        const m = VERSION_RE.exec(obra);
+        const base = m ? m[1] : obra;
+        let n = m ? Number(m[2]) + 1 : 2;
+        while (existe(`${base} v${n}`)) n++;
+        const nombre = prompt(`Nombre de la versión nueva.\n\nSe copian ${parcial ? ids.length + ' de ' + total : 'los ' + total} ítems con sus medidas y opciones. El proyecto actual queda guardado tal cual.`, `${base} v${n}`);
+        if (nombre === null) return;
+        const nuevoNombre = nombre.trim();
+        if (!nuevoNombre) { alert('Escribe el nombre de la versión.'); return; }
+        if (normNombreKey(nuevoNombre) === normNombreKey(obra)) { alert('Pon un nombre distinto al del proyecto actual (por ejemplo «' + base + ' v' + n + '»).'); return; }
+        if (existe(nuevoNombre)) { alert(`Ya existe un proyecto «${nuevoNombre}» de este cliente. Elige otro nombre.`); return; }
+        // 1. El original se guarda tal cual (estado en vivo + proyecto abierto, sin esperar al autoguardado).
+        try { saveProgress(); if (openedProjectCli && openedProjectObra) autosaveOpenedProject(getAppJSON()); } catch (e) { console.error('nuevaVersionProyecto: guardar original', e); }
+        // 2. Copia profunda de los ítems elegidos con el mismo encabezado; el Nº de proyecto se hereda.
+        const json = JSON.parse(JSON.stringify(appJSONSoloSeleccion(getAppJSON())));
+        delete json._seleccion;
+        const hoy = new Date().toLocaleDateString('es-ES');
+        json.header = { ...json.header, cliente: cliKey, obra: nuevoNombre, fechaCreacion: hoy, fechaModificacion: hoy, _syncUpdatedAt: Date.now(), _openedCli: null, _openedObra: null, medicionId: '' };
+        selIds.clear();
+        openedProjectKey = null; openedProjectCli = null; openedProjectObra = null;
+        restoreData(json);
+        // 3. Queda guardado y abierto como proyecto aparte: el autoguardado escribe desde ahora en la versión nueva.
+        if (!projects[cliKey]) projects[cliKey] = {};
+        finalizarGuardadoProyecto(projects, cliKey, nuevoNombre, null, true);
+        if (window.refreshObraDatalist) try { window.refreshObraDatalist(); } catch (e) { }
+        selRefresh();
+        alert(`Versión «${nuevoNombre}» creada con ${ids.length} ítem(s) y guardada. Abre el candado del ítem que quieras cambiar. «${obra}» sigue guardado como estaba.`);
     };
 
     document.addEventListener('input', () => { saveProgress(); updateSavedStatusBadge(); });
