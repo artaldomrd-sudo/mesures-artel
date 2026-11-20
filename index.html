@@ -589,7 +589,7 @@
             <button class="side-btn save" onclick="saveProject()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Guardar proyecto</button>
             <div id="saved-status-badge" class="saved-status-badge unsaved">○ Sin guardar</div>
             <div id="sel-bar" class="sel-bar"></div>
-            <div id="sel-hint" class="sel-hint">Marca ☑ en una o varias tarjetas para enviar a fábrica o exportar en PDF solo esos ítems.</div>
+            <div id="sel-hint" class="sel-hint">Marca ☑ en una o varias tarjetas para enviar a fábrica, exportar en PDF o copiar a una versión nueva solo esos ítems.<br><button onclick="selTodos()" style="margin-top:6px;width:100%;padding:7px;border:1.5px solid var(--artal-yellow);border-radius:6px;background:#fff8e1;color:#5d4a00;font-weight:bold;cursor:pointer;font-family:'Arimo';">☑ Seleccionar todos los ítems</button></div>
 
             <button class="side-btn pdf" style="margin-top:8px;" onclick="exportPDF()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Exportar PDF</button>
             <button class="side-btn pdf" style="margin-top:6px; border:1.5px solid var(--artal-yellow);" onclick="openCotizCliente()" title="Cotización formal para el cliente, con precios y dibujos del cuaderno">💲 Cotización cliente</button>
@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-20 08:19</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-20 08:24</div>
         </div>
     </div>
     
@@ -8841,7 +8841,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const iFa = gridFajaInfo(st, st.fajaArriba, 'arriba');
         st.alto = st.gridAlto + ((iFa && iFa.local) ? 0 : faH) + fbH + gridEntreHExtraH(st);
     }
-    window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); };
+    window.gridToggleFaja = (id, side) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; cardsState[id][k] = cardsState[id][k] ? null : { h: 400, celda: 'pf', alu: celdaAluDefault('pf') }; gridFull(id); if (!cardsState[id][k]) gridRevisarUnico(id); };
     window.gridSetFajaH = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) cardsState[id][k].h = parseInt(v) || 0; gridDraw(id); };
     window.gridSetFajaCelda = (id, side, v) => { const k = side === 'arriba' ? 'fajaArriba' : 'fajaAbajo'; if (cardsState[id][k]) { cardsState[id][k].celda = v; cardsState[id][k].alu = celdaAluDefault(v); } gridFull(id); };
 
@@ -9002,9 +9002,63 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         gridFull(id);
     };
     window.gridAddCol = (id) => { cardsState[id].cols.push({ w: 1000, rows: [{ h: cardsState[id].gridAlto || 2000, celda: 'pf', alu: celdaAluDefault('pf') }] }); gridFull(id); };
-    window.gridDelCol = (id, ci) => { const st = cardsState[id]; if (st.cols.length > 1) { gridSepararEn(st, ci, null); st.cols.splice(ci, 1); } gridFull(id); };
+    // Fachada compuesta reducida a UN solo elemento → ítem normal (Dylan 2026-11-20: «si le quito un elemento y queda un
+    // solo ítem, que se vuelva un ítem normal»). Mismo mapa celda → tipo que `celdaMini` (perfilería); conserva id,
+    // referencia, ubicación, notas, cantidad, acabado y la posición de la tarjeta en la hoja. Muro, louvers y módulo de
+    // muro cortina no tienen ítem suelto equivalente: se quedan como fachada.
+    function gridCeldaAItem(st) {
+        const cols = st.cols || [];
+        if (cols.length !== 1 || (cols[0].rows || []).length !== 1 || st.fajaArriba || st.fajaAbajo) return null;
+        const r = cols[0].rows[0] || {}, c = r.celda || 'pf';
+        let type = c, categoria = 'fachada';
+        if (c.startsWith('cor')) { type = c === 'cor4' ? 'cor4_lat' : c; categoria = 'corredera'; }
+        else if (c.startsWith('gal')) { categoria = 'galandaje'; }
+        else if (c === 'puerta') { type = 'door_abat'; categoria = 'ventana'; }
+        else if (c === 'ventana') { type = 'win_abat'; categoria = 'ventana'; }
+        else if (c === 'osci') { type = 'win_ob'; categoria = 'ventana'; }
+        else if (c === 'proy') { type = 'win_proy'; categoria = 'ventana'; }
+        else if (c === 'pleg') { categoria = 'plegable'; }
+        else if (c === 'pflot') { type = 'door_flot'; categoria = 'puerta_vidrio'; }
+        else if (c === 'pf') { type = 'fachada_din'; categoria = 'fachada'; }
+        else return null;
+        const label = (GRID_CELDAS.find(x => x[0] === c) || [c, c])[1];
+        const ladoDer = (r.lado || r.gal_pocket || r.cor_interior || '') === 'der' || (r.lado || '') === 'D';
+        const nuevo = {
+            type, categoria, label, orientacion: ladoDer ? 'D' : 'I', cantidad: st.cantidad || 1, locked: false,
+            ancho: parseInt(cols[0].w) || 0, alto: parseInt(r.h) || 0,
+            vidrio: r.vidrio || st.vidrio || '', espesor: r.espesor || st.espesor || '', color_vidrio: st.color_vidrio || 'natural',
+            color_perfil: st.color_perfil || '', color_ral: st.color_ral || '', herraje_color: st.herraje_color || '',
+            tipo_aluminio: (categoria === 'corredera' || categoria === 'galandaje' || categoria === 'plegable') ? (r.alu || '') : '',
+            panos: r.panos || 1, union: r.union || 'T', vista: 'adentro', bisagras: 'botella', cerradura_tipo: 'ninguna', cerradura_piso: 'no', tirador: r.tirador || '',
+            fijacion: c === 'pf' ? (r.alu === 'P40 puerta' ? 'p40_puerta' : 'p40') : (r.fijacion || ''),
+            apertura: r.apertura, mosquitera: r.mosquitera, cierre: r.cierre, cerradura: r.cerradura, semifijo: r.semifijo, semifijo_ancho: r.semifijo_ancho,
+            hoja_principal: r.hoja_principal, cor_interior: r.cor_interior, gal_install: r.gal_install, gal_sheetrock: r.gal_sheetrock, gal_tubo: '', anchoMarco: 0,
+            pleg_esquema: r.pleg_esquema, pleg_apertura: r.pleg_apertura, penetracionRiel: !!r.penetracionRiel,
+            cerr_luna: r.cerr_luna, cerr_digital: r.cerr_digital, cerr_piso: r.cerr_piso, precioCliente: st.precioCliente
+        };
+        Object.keys(nuevo).forEach(k => { if (nuevo[k] === undefined) delete nuevo[k]; });
+        if (c === 'louvers') { nuevo.vidrio = 'louvers'; nuevo.espesor = ''; }
+        return nuevo;
+    }
+    function gridRevisarUnico(id) {
+        const st = cardsState[id]; if (!st || st.categoria !== 'fachada_grid') return false;
+        const nuevo = gridCeldaAItem(st); if (!nuevo) return false;
+        const card = document.getElementById('card-' + id); if (!card) return false;
+        const refEl = card.querySelector('.card-ref-row input'), ubiEl = card.querySelector('input[placeholder*="Ubicación"]'), notesEl = card.querySelector('.notes-area');
+        const saved = { ref: refEl ? refEl.value : '', ubi: ubiEl ? ubiEl.value : '', notes: notesEl ? notesEl.value : '' };
+        const list = document.getElementById('item-list'), next = card.nextElementSibling;
+        cerrarEditorFachada();
+        card.remove(); delete cardsState[id]; selIds.delete(String(id));
+        addItem(nuevo.label, nuevo.type, nuevo.categoria, saved, parseInt(id), nuevo);
+        const nc = document.getElementById('card-' + id);
+        if (nc && next && next.parentNode === list) list.insertBefore(nc, next);
+        saveProgress();
+        alert(`La fachada quedó con un solo elemento: la tarjeta pasó a ser «${nuevo.label}» normal (${nuevo.ancho} × ${nuevo.alto} mm). Revisa el lado de apertura y las opciones.`);
+        return true;
+    }
+    window.gridDelCol = (id, ci) => { const st = cardsState[id]; if (st.cols.length > 1) { gridSepararEn(st, ci, null); st.cols.splice(ci, 1); } gridFull(id); gridRevisarUnico(id); };
     window.gridAddRow = (id, ci) => { const c = cardsState[id].cols[ci]; const used = c.rows.reduce((a, r) => a + (parseInt(r.h) || 0), 0); c.rows.push({ h: Math.max(200, (cardsState[id].gridAlto || 2000) - used), celda: 'pf', alu: celdaAluDefault('pf') }); gridFull(id); };
-    window.gridDelRow = (id, ci, ri) => { const st = cardsState[id], c = st.cols[ci]; if (c.rows.length > 1) { gridSepararEn(st, ci, ri); c.rows.splice(ri, 1); } gridFull(id); };
+    window.gridDelRow = (id, ci, ri) => { const st = cardsState[id], c = st.cols[ci]; if (c.rows.length > 1) { gridSepararEn(st, ci, ri); c.rows.splice(ri, 1); } gridFull(id); gridRevisarUnico(id); };
     // Tubos / refuerzos
     window.gridToggleTubo = (id, key) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = !st.tubos[key]; gridFull(id); };
     window.gridSetTuboModo = (id, key, v) => { const st = cardsState[id]; if (!st.tubos) st.tubos = { medida: '100 x 45' }; st.tubos[key] = v; gridFull(id); };

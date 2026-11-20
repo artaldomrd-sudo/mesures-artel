@@ -1767,6 +1767,22 @@ la versión. `idProveedorUsadoPorOtro` no avisa de número repetido entre «Obra
 3 ítems fijados, 2 marcados → «Casa Aaron v2» con esos 2 (candados, referencias, medidas), original con 3, cambio en la v2 no toca el
 original, tercera copia propone v3.
 
+**Botón «☑ Seleccionar todos los ítems» en la pista `#sel-hint`** (Dylan 2026-11-20, «copiar todos los ítems en un solo click»):
+visible cuando hay tarjetas y nada marcado; llama `selTodos()` y la barra amarilla pasa a «N de N» con «Nueva versión con estos».
+
+**Fachada compuesta con UN solo elemento → ítem normal (Dylan 2026-11-20: «si le quito un elemento y queda un solo ítem, que se
+vuelva un ítem normal»)**: `gridRevisarUnico(id)` se llama tras `gridDelCol`, `gridDelRow` y al quitar una faja en `gridToggleFaja`.
+`gridCeldaAItem(st)` (mismo mapa celda → tipo que `celdaMini`: cor*/gal*/pleg/puerta→door_abat/ventana→win_abat/osci→win_ob/
+proy→win_proy/pflot→door_flot/pf→fachada_din; vacio, louvers, mc y fus NO se convierten) devuelve el state del ítem suelto con
+ancho = columna, alto = fila, vidrio/espesor de la celda o global, acabado/herraje/cantidad/precio de la fachada, `tipo_aluminio`
+(cor/gal/pleg) o `fijacion` p40/p40_puerta (pf), y los campos de la celda (apertura, mosquitera, cierre, cerradura, semifijo,
+hoja_principal, cor_interior, gal_install/sheetrock, pleg_*, cerr_*, penetracionRiel); `orientacion` = 'D' si `lado`/`gal_pocket`/
+`cor_interior` es «der» (el usuario revisa el lado). Conserva id, ref, ubicación, notas y la posición en la hoja (quita la tarjeta,
+`addItem(..., saved, id, state)` y la reinserta antes de la siguiente), cierra el pop-up y avisa con un `alert`. Probado: 2 columnas
+→ borrar la puerta deja «Corredera 2 Hojas» 2000 × 2200 con cor_interior/mosquitera/vidrio/E100/negro/cantidad 2 y ref/ubi/notas;
+1 columna PF (2 paños a tope) + faja → quitar la faja deja Paño Fijo p40 con panos/union; muro + corredera → borrar la corredera
+deja la fachada (muro no se convierte).
+
 ## Perfilería y accesorios — resumen para cotizar al proveedor (2026-11-01, primer paso de la fábrica propia)
 
 Dylan: la fábrica interna propia arranca a inicios de 2027 y ALUCUFEL pasa a secundario; el módulo de producción (barras,
