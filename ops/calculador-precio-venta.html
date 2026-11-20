@@ -98,7 +98,7 @@
                 <div><label><b>Precio de venta por m² (RD$)</b></label><input type="number" step="1" id="c-precio" style="border-color:#1f9d61;font-weight:bold"></div>
                 <div><label>Mínimo por pieza (RD$)</label><input type="number" step="1" id="c-min"></div>
                 <div><label><b>Margen bruto mínimo (%)</b></label><input type="number" step="1" id="c-margenmin" style="border-color:#1f9d61;font-weight:bold"></div>
-                <div><label>Lado corto máximo si el largo pasa el rollo (mm)</label><input type="number" step="10" id="c-maxcorto"></div>
+                <div><label>Ancho útil del rollo (mm) · ancho − 20, se calcula solo</label><input type="number" step="10" id="c-maxcorto" readonly style="background:#f3f5f8"></div>
             </div>
             <div class="kpis" id="kpis"></div>
             <div style="margin:10px 0 6px;font-weight:bold;font-size:13.5px;color:var(--artal-blue)">🚚 Transporte + instalación en Las Terrenas, según cuántas telas se cambian</div>
@@ -188,7 +188,10 @@
         let desde = 1;
         $('tramos').innerHTML = (cfg.tramos || []).map((t, i) => { const h = `<div><label>De ${desde} a <input type="number" step="1" min="${desde}" value="${t.hasta}" style="width:60px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-family:'Arimo'" oninput="setTramo(${i},'hasta',this.value)"> telas → RD$</label><input type="number" step="100" value="${t.precio}" oninput="setTramo(${i},'precio',this.value)"></div>`; desde = t.hasta + 1; return h; }).join('');
     }
-    function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => cfg[k] = k === 'fecha' ? $(id).value : n2($(id).value)); cfg.extraPor3 = n2($('c-extra').value); }
+    // Ancho útil = ancho del rollo − 20 mm (los bordes no sirven): 1220 → 1200 (Dylan 2026-11-04), 1500 → 1480. Antes era un número
+    // fijo y con un rollo de 1.50 m seguía bloqueando una tela de 1400 (Anny, 2026-11-20).
+    const anchoUtil = () => Math.max(0, Math.round(n2(cfg.ancho) * 1000) - 20);
+    function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => { if (k === 'maxCorto') return; cfg[k] = k === 'fecha' ? $(id).value : n2($(id).value); }); cfg.maxCorto = anchoUtil(); $('c-maxcorto').value = cfg.maxCorto; cfg.extraPor3 = n2($('c-extra').value); }
     window.setTramo = (i, k, v) => { cfg.tramos[i][k] = Math.round(n2(v)); calcular(); };
     if (esAdmin) $('c-extra').oninput = () => { leerConfig(); calcular(); };
     // Precio de transporte + instalación según nº de telas (tabla por tramos; más allá, +extraPor3 por cada 3 telas).
@@ -208,6 +211,7 @@
 
     onSnapshot(doc(db, 'calculadores', 'telaMosquitera'), (s) => {
         if (s.exists()) { const d = s.data(); Object.keys(DEF).forEach(k => { if (d[k] != null && d[k] !== '') cfg[k] = d[k]; }); }
+        cfg.maxCorto = anchoUtil();   // siempre derivado del ancho del rollo guardado
         pintarConfig(); calcular();
     }, () => { pintarConfig(); calcular(); });
 
