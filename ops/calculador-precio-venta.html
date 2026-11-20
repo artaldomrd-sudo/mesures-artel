@@ -89,25 +89,15 @@
             <summary>⚙️ Rollo y precio (definir con gerencia)</summary>
             <div class="hint" style="margin:6px 0 8px">Cambia el costo del rollo cuando compres uno nuevo. El precio por m² y el mínimo por pieza son los que salen en la línea de arriba.</div>
             <div class="frm">
-                <div><label>Ancho del rollo (m)</label><input type="number" step="0.01" id="c-ancho"></div>
-                <div><label>Largo del rollo (m)</label><input type="number" step="0.01" id="c-largo"></div>
-                <div><label>Costo del rollo (RD$)</label><input type="number" step="1" id="c-costo"></div>
-                <div><label>Fecha del precio</label><input type="date" id="c-fecha"></div>
                 <div><label>Desperdicio estimado (%)</label><input type="number" step="1" id="c-desp"></div>
                 <div><label>Margen de corte por lado (cm)</label><input type="number" step="1" id="c-margen"></div>
                 <div><label><b>Precio de venta por m² (RD$)</b></label><input type="number" step="1" id="c-precio" style="border-color:#1f9d61;font-weight:bold"></div>
                 <div><label>Mínimo por pieza (RD$)</label><input type="number" step="1" id="c-min"></div>
                 <div><label><b>Margen bruto mínimo (%)</b></label><input type="number" step="1" id="c-margenmin" style="border-color:#1f9d61;font-weight:bold"></div>
-                <div><label>Ancho útil del rollo (mm) · ancho − 20, se calcula solo</label><input type="number" step="10" id="c-maxcorto" readonly style="background:#f3f5f8"></div>
             </div>
-            <div style="margin:10px 0 6px;font-weight:bold;font-size:13.5px;color:var(--artal-blue)">🧵 Segundo rollo (el calculador elige solo el más barato que sirva para cada tela; ancho 0 = sin segundo rollo)</div>
-            <div class="frm">
-                <div><label>Ancho del rollo 2 (m)</label><input type="number" step="0.01" id="c-ancho2"></div>
-                <div><label>Largo del rollo 2 (m)</label><input type="number" step="0.01" id="c-largo2"></div>
-                <div><label>Costo del rollo 2 (RD$)</label><input type="number" step="1" id="c-costo2"></div>
-                <div><label>Fecha del precio</label><input type="date" id="c-fecha2"></div>
-                <div><label>Ancho útil del rollo 2 (mm) · se calcula solo</label><input type="number" step="10" id="c-maxcorto2" readonly style="background:#f3f5f8"></div>
-            </div>
+            <div style="margin:12px 0 6px;font-weight:bold;font-size:13.5px;color:var(--artal-blue)">🧵 Rollos en almacén · el calculador usa el más barato que sirva para cada tela y dice cuál (referencia)</div>
+            <div style="overflow-x:auto"><table id="rollos-tabla" style="border-collapse:collapse;width:100%;font-size:13.5px"></table></div>
+            <button type="button" class="btn" style="margin-top:6px" onclick="agregarRollo()">+ Rollo</button>
             <div class="kpis" id="kpis"></div>
             <div style="margin:10px 0 6px;font-weight:bold;font-size:13.5px;color:var(--artal-blue)">🚚 Transporte + instalación en Las Terrenas, según cuántas telas se cambian</div>
             <div class="frm" id="tramos"></div>
@@ -182,27 +172,45 @@
     // Valores iniciales (usuario 2026-09-26): rollo de 48" × 100 pies = 1.22 × 30.48 m, RD$ 6,500.
     // Precio de venta propuesto RD$ 450/m² y mínimo RD$ 500 por pieza — se ajustan aquí mismo.
     const DEF = { ancho: 1.22, largo: 30.48, costo: 6500, fecha: '2026-09-26', desperdicio: 20, margenCm: 10, precioM2: 450, minimo: 500, margenMin: 50, maxCorto: 1200,
-        ancho2: 0, largo2: 0, costo2: 0, fecha2: '', maxCorto2: 0,   // segundo rollo (2026-11-20); ancho2 = 0 → no existe
+        // Rollos con referencia y color (Dylan 2026-11-20: «R-001 negro 48", R-002 gris 48", R-003 negro 60", R-004 gris 60"»): el
+        // calculador usa, entre los rollos del color de la tela, el más barato que sirva, y la línea dice cuál. `ancho/largo/costo`
+        // de arriba quedan solo como respaldo si la lista está vacía.
+        rollos: [],
         // Transporte + instalación en Las Terrenas por cantidad de telas (usuario 2026-09-26); más allá de la tabla, +extraPor3 por cada 3 telas.
         tramos: [{ hasta: 3, precio: 2500 }, { hasta: 6, precio: 3000 }, { hasta: 10, precio: 3500 }, { hasta: 13, precio: 4500 }, { hasta: 16, precio: 5500 }], extraPor3: 1000 };
     let cfg = { ...DEF };
-    let filas = [{ ancho: 0, alto: 0, cant: 1 }];
+    let filas = [{ ancho: 0, alto: 0, cant: 1, color: 'negro' }];
     const $ = (id) => document.getElementById(id);
-    const CAMPOS = { 'c-ancho': 'ancho', 'c-largo': 'largo', 'c-costo': 'costo', 'c-fecha': 'fecha', 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo', 'c-margenmin': 'margenMin', 'c-maxcorto': 'maxCorto', 'c-ancho2': 'ancho2', 'c-largo2': 'largo2', 'c-costo2': 'costo2', 'c-fecha2': 'fecha2', 'c-maxcorto2': 'maxCorto2' };
+    const CAMPOS = { 'c-desp': 'desperdicio', 'c-margen': 'margenCm', 'c-precio': 'precioM2', 'c-min': 'minimo', 'c-margenmin': 'margenMin' };
+    const COLORES_ROLLO = ['negro', 'gris', 'blanco'];
+    const pulg = (m) => Math.round(n2(m) / 0.0254) + '"';   // 1.22 → 48", 1.52 → 60"
 
     function pintarConfig() {
         if (!esAdmin) return;
         Object.entries(CAMPOS).forEach(([id, k]) => $(id).value = cfg[k]);
         $('c-extra').value = cfg.extraPor3;
+        const td = 'style="padding:4px 6px;border-bottom:1px solid #eef1f4"', inp = 'style="width:100%;box-sizing:border-box;padding:6px;border:1px solid #ddd;border-radius:6px;font-family:Arimo;font-size:13.5px"';
+        $('rollos-tabla').innerHTML = `<tr style="color:#667;font-size:12px;text-align:left"><th ${td}>Ref.</th><th ${td}>Color</th><th ${td}>Ancho (m)</th><th ${td}>Largo (m)</th><th ${td}>Costo (RD$)</th><th ${td}>Fecha</th><th ${td}>Útil (mm)</th><th ${td}>Costo/m²</th><th ${td}></th></tr>`
+            + rollos().map((r, i) => `<tr>
+                <td ${td}><input ${inp} value="${esc(r.ref)}" oninput="setRollo(${i},'ref',this.value)"></td>
+                <td ${td}><select ${inp} onchange="setRollo(${i},'color',this.value)">${COLORES_ROLLO.map(c => `<option value="${c}" ${r.color === c ? 'selected' : ''}>${c}</option>`).join('')}</select></td>
+                <td ${td}><input type="number" step="0.01" ${inp} value="${r.ancho}" oninput="setRollo(${i},'ancho',this.value)"></td>
+                <td ${td}><input type="number" step="0.01" ${inp} value="${r.largo}" oninput="setRollo(${i},'largo',this.value)"></td>
+                <td ${td}><input type="number" step="1" ${inp} value="${r.costo}" oninput="setRollo(${i},'costo',this.value)"></td>
+                <td ${td}><input type="date" ${inp} value="${esc(r.fecha || '')}" onchange="setRollo(${i},'fecha',this.value)"></td>
+                <td ${td}>${r.util}</td><td ${td}>${r.ancho * r.largo ? RD(r.costo / (r.ancho * r.largo)) : '—'}</td>
+                <td ${td}><button type="button" class="btn x" onclick="quitarRollo(${i})" title="Quitar">✕</button></td></tr>`).join('');
         let desde = 1;
         $('tramos').innerHTML = (cfg.tramos || []).map((t, i) => { const h = `<div><label>De ${desde} a <input type="number" step="1" min="${desde}" value="${t.hasta}" style="width:60px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-family:'Arimo'" oninput="setTramo(${i},'hasta',this.value)"> telas → RD$</label><input type="number" step="100" value="${t.precio}" oninput="setTramo(${i},'precio',this.value)"></div>`; desde = t.hasta + 1; return h; }).join('');
     }
     // Ancho útil = ancho del rollo − 20 mm (los bordes no sirven): 1220 → 1200 (Dylan 2026-11-04), 1500 → 1480. Antes era un número
     // fijo y con un rollo de 1.50 m seguía bloqueando una tela de 1400 (Anny, 2026-11-20).
     const anchoUtilDe = (anchoM) => Math.max(0, Math.round(n2(anchoM) * 1000) - 20);
-    const anchoUtil = () => anchoUtilDe(cfg.ancho);
-    function derivar() { cfg.maxCorto = anchoUtil(); cfg.maxCorto2 = n2(cfg.ancho2) > 0 ? anchoUtilDe(cfg.ancho2) : 0; }
-    function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => { if (k === 'maxCorto' || k === 'maxCorto2') return; cfg[k] = (k === 'fecha' || k === 'fecha2') ? $(id).value : n2($(id).value); }); derivar(); $('c-maxcorto').value = cfg.maxCorto; $('c-maxcorto2').value = cfg.maxCorto2 || ''; cfg.extraPor3 = n2($('c-extra').value); }
+    function derivar() { if (!Array.isArray(cfg.rollos) || !cfg.rollos.length) cfg.rollos = [{ ref: 'R-001', color: 'negro', ancho: n2(cfg.ancho) || 1.22, largo: n2(cfg.largo) || 30.48, costo: n2(cfg.costo) || 0, fecha: cfg.fecha || '' }]; cfg.maxCorto = anchoUtilDe(cfg.rollos[0].ancho); }
+    function leerConfig() { Object.entries(CAMPOS).forEach(([id, k]) => { cfg[k] = n2($(id).value); }); cfg.extraPor3 = n2($('c-extra').value); derivar(); }
+    window.setRollo = (i, k, v) => { const r = cfg.rollos[i]; if (!r) return; r[k] = (k === 'ref' || k === 'color' || k === 'fecha') ? String(v).trim() : n2(v); if (k !== 'ref' && k !== 'fecha') { pintarConfig(); } calcular(); };
+    window.agregarRollo = () => { cfg.rollos.push({ ref: 'R-00' + (cfg.rollos.length + 1), color: 'negro', ancho: 1.22, largo: 30.48, costo: 0, fecha: '' }); pintarConfig(); calcular(); };
+    window.quitarRollo = (i) => { if (cfg.rollos.length <= 1) { alert('Tiene que quedar al menos un rollo.'); return; } if (!confirm('¿Quitar el rollo ' + (cfg.rollos[i].ref || '') + '?')) return; cfg.rollos.splice(i, 1); pintarConfig(); calcular(); };
     window.setTramo = (i, k, v) => { cfg.tramos[i][k] = Math.round(n2(v)); calcular(); };
     if (esAdmin) $('c-extra').oninput = () => { leerConfig(); calcular(); };
     // Precio de transporte + instalación según nº de telas (tabla por tramos; más allá, +extraPor3 por cada 3 telas).
@@ -222,7 +230,7 @@
 
     onSnapshot(doc(db, 'calculadores', 'telaMosquitera'), (s) => {
         if (s.exists()) { const d = s.data(); Object.keys(DEF).forEach(k => { if (d[k] != null && d[k] !== '') cfg[k] = d[k]; }); }
-        derivar();   // anchos útiles siempre derivados de los anchos de rollo guardados
+        derivar();   // lista de rollos (o el rollo de respaldo) y ancho útil derivado
         pintarConfig(); calcular();
     }, () => { pintarConfig(); calcular(); });
 
@@ -236,14 +244,14 @@
     // ---- cálculo -----------------------------------------------------------------------------
     // Rollos disponibles (el segundo solo si tiene ancho): el calculador prueba cada uno y usa el más barato que sirva.
     function rollos() {
-        const L = [{ n: 1, ancho: n2(cfg.ancho), largo: n2(cfg.largo), costo: n2(cfg.costo), util: cfg.maxCorto }];
-        if (n2(cfg.ancho2) > 0 && n2(cfg.largo2) > 0) L.push({ n: 2, ancho: n2(cfg.ancho2), largo: n2(cfg.largo2), costo: n2(cfg.costo2), util: cfg.maxCorto2 });
-        return L.map(r => ({ ...r, costoMl: r.largo ? r.costo / r.largo : 0 }));
+        if (!Array.isArray(cfg.rollos) || !cfg.rollos.length) derivar();
+        return cfg.rollos.map((r, i) => { const ancho = n2(r.ancho), largo = n2(r.largo), costo = n2(r.costo); return { n: i + 1, ref: r.ref || ('R-00' + (i + 1)), color: r.color || 'negro', ancho, largo, costo, fecha: r.fecha || '', util: anchoUtilDe(ancho), costoMl: largo ? costo / largo : 0 }; });
     }
     function costos() {
-        const m2Rollo = cfg.ancho * cfg.largo;
-        const costoM2 = m2Rollo ? cfg.costo / m2Rollo : 0;
-        const costoMl = cfg.largo ? cfg.costo / cfg.largo : 0;           // por metro lineal de rollo (tira completa de 1.22)
+        const r0 = rollos()[0];
+        const m2Rollo = r0.ancho * r0.largo;
+        const costoM2 = m2Rollo ? r0.costo / m2Rollo : 0;
+        const costoMl = r0.largo ? r0.costo / r0.largo : 0;           // por metro lineal del primer rollo (para los KPI)
         const costoM2Real = costoM2 * (1 + cfg.desperdicio / 100);
         return { m2Rollo, costoM2, costoMl, costoM2Real };
     }
@@ -257,7 +265,10 @@
         // Con dos rollos (2026-11-20, Dylan: «que se cambie el rollo que se usa automáticamente»): se prueba cada rollo con la
         // misma regla y se usa el más barato de los que sirven; si ninguno sirve, se bloquea.
         const sinMedida = !(a > 0 && h > 0);
-        const opciones = rollos().map(r => {
+        const color = f.color || 'negro';
+        const delColor = rollos().filter(r => r.color === color);
+        const sinColor = !delColor.length;
+        const opciones = (sinColor ? rollos() : delColor).map(r => {
             const bloq = m2 > 0 && largo * 1000 > r.ancho * 1000 + 0.5 && corto * 1000 > r.util + 0.5;
             let lc = largo + marg;
             if (largo + marg <= r.ancho) lc = corto + marg;   // cabe entera en el ancho: se corta solo el lado corto
@@ -265,22 +276,22 @@
         });
         const sirven = opciones.filter(o => !o.bloq && (sinMedida || o.r.costo > 0));
         const mejor = sirven.length ? sirven.reduce((m, o) => o.costoTela < m.costoTela ? o : m) : null;
-        const bloqueada = m2 > 0 && !mejor;
+        const bloqueada = m2 > 0 && (!mejor || sinColor);
         const rollo = mejor ? mejor.r : opciones[0].r;
         const largoCorte = mejor ? mejor.largoCorte : opciones[0].largoCorte;
         const costoTela = mejor ? mejor.costoTela : 0;
         const porM2 = m2 * cfg.precioM2, porMargen = costoTela / Math.max(0.05, 1 - cfg.margenMin / 100);
         const precioUnit = bloqueada || sinMedida ? 0 : Math.max(porM2, cfg.minimo, porMargen);
         const motivo = bloqueada ? '' : precioUnit === porMargen && porMargen > porM2 && porMargen > cfg.minimo ? `ajustado para no bajar del ${cfg.margenMin} % de margen` : precioUnit === cfg.minimo && cfg.minimo > porM2 ? 'aplica el mínimo' : '';
-        return { a, h, q, m2, bloqueada, rollo, largoCorte, costoTela, precioUnit, motivo, margen: precioUnit ? (1 - costoTela / precioUnit) * 100 : 0, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
+        return { a, h, q, m2, bloqueada, sinColor, color, rollo, largoCorte, costoTela, precioUnit, motivo, margen: precioUnit ? (1 - costoTela / precioUnit) * 100 : 0, totalM2: m2 * q, totalCosto: costoTela * q, totalVenta: precioUnit * q };
     }
     window.calcular = () => {
         const C = costos();
         const margenPct = C.costoM2Real ? (1 - C.costoM2Real / (cfg.precioM2 || 1)) * 100 : 0;
         if ($('kpis')) $('kpis').innerHTML = `
-            <div class="kpi"><div class="v">${f2(C.m2Rollo)} m²</div><div class="l">rinde el rollo (${f2(cfg.ancho)} × ${f2(cfg.largo)} m)</div></div>
+            <div class="kpi"><div class="v">${f2(C.m2Rollo)} m²</div><div class="l">rinde el rollo ${esc(rollos()[0].ref)} (${f2(rollos()[0].ancho)} × ${f2(rollos()[0].largo)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2)}</div><div class="l">costo por m² de tela</div></div>
-            <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal de rollo (tira de ${f2(cfg.ancho)} m)</div></div>
+            <div class="kpi"><div class="v">${RD(C.costoMl)}</div><div class="l">costo por metro lineal del rollo ${esc(rollos()[0].ref)} (tira de ${f2(rollos()[0].ancho)} m)</div></div>
             <div class="kpi"><div class="v">${RD(C.costoM2Real)}</div><div class="l">costo real por m² con ${cfg.desperdicio} % de desperdicio</div></div>
             <div class="kpi venta"><div class="v">${RD0(cfg.precioM2)}/m²</div><div class="l">precio de venta · margen ${Math.round(margenPct)} % sobre el costo real · nunca menos del ${cfg.margenMin} % por pieza · bloqueo: lado corto > ${cfg.maxCorto} mm (ancho útil del rollo) cuando el largo pasa el rollo</div></div>`;
         const R = filas.map(f => calcFila(f, C));
@@ -288,7 +299,7 @@
         // La celda de precio se pinta aparte: al escribir, calcular() solo cambia esa celda y NO reconstruye la fila
         // (Dylan 2026-11-04: reconstruir el input en cada tecla le quitaba el foco y solo dejaba escribir un número).
         const celda = (i, r) => `<div class="precio" id="fp-${i}" ${r.bloqueada ? 'style="background:#fdeaea;border-color:#d9483b"' : ''}><div class="v" ${r.bloqueada ? 'style="color:#d9483b;font-size:15px"' : ''}>${r.bloqueada ? '🚫 No se puede fabricar' : r.m2 > 0 ? RD(r.precioUnit) + (r.q > 1 ? ' × ' + r.q + ' = ' + RD(r.totalVenta) : '') : '—'}</div>
-                <div class="d">${r.bloqueada ? `Con ${rollos().length > 1 ? 'ninguno de los rollos (' + rollos().map(x => f2(x.ancho) + ' m').join(' y ') + ')' : 'el rollo de ' + f2(cfg.ancho) + ' m'} se puede: si un lado pasa el ancho del rollo, el otro tiene que caber en su ancho útil (${rollos().map(x => x.util + ' mm').join(' / ')}). No cotizar esta medida por ahora.` : r.m2 > 0 ? `${f2(r.m2)} m² · corte ${f2(r.largoCorte)} m de rollo${rollos().length > 1 ? ' de ' + f2(r.rollo.ancho) + ' m' : ''}${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : ''}` : 'escribe ancho y alto'}</div></div>`;
+                <div class="d">${r.bloqueada ? (r.sinColor ? `No hay rollo de color ${r.color} en la lista de rollos.` : `Con ningún rollo ${r.color} (${rollos().filter(x => x.color === r.color).map(x => x.ref + ' ' + pulg(x.ancho)).join(', ')}) se puede: si un lado pasa el ancho del rollo, el otro tiene que caber en su ancho útil (${rollos().filter(x => x.color === r.color).map(x => x.util + ' mm').join(' / ')}). No cotizar esta medida por ahora.`) : r.m2 > 0 ? `<b>usar rollo ${esc(r.rollo.ref)}</b> (${r.rollo.color} ${pulg(r.rollo.ancho)}) · ${f2(r.m2)} m² · corte ${f2(r.largoCorte)} m${esAdmin ? `${r.motivo ? ' · ' + r.motivo : ''} · tela nos cuesta ${RD0(r.costoTela)} · margen ${Math.round(r.margen)} %` : ''}` : 'escribe ancho y alto'}</div></div>`;
         const cont = $('filas');
         if (cont.children.length === filas.length && filas.every((_, i) => $('fp-' + i))) {
             filas.forEach((_, i) => { $('fp-' + i).outerHTML = celda(i, R[i]); });
@@ -297,6 +308,7 @@
             <div><label>Ancho (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.ancho || ''}" placeholder="1000" oninput="setF(${i},'ancho',this.value)"></div>
             <div><label>Alto (mm)</label><input type="number" step="10" inputmode="numeric" value="${f.alto || ''}" placeholder="1800" oninput="setF(${i},'alto',this.value)"></div>
             <div><label>Cant.</label><input type="number" step="1" min="1" inputmode="numeric" value="${f.cant}" oninput="setF(${i},'cant',this.value)"></div>
+            <div><label>Color</label><select onchange="setF(${i},'color',this.value)">${[...new Set(rollos().map(r => r.color))].map(c => `<option value="${c}" ${(f.color || 'negro') === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
             ${celda(i, R[i])}
             <div class="quitar">${filas.length > 1 ? `<button class="btn x" onclick="quitarFila(${i})" title="Quitar">✕</button>` : ''}</div>
         </div>`).join('');
@@ -312,14 +324,14 @@
         $('p-trans').innerHTML = fuera ? `<div class="v" style="font-size:15px;color:#c0392b">Cotizar aparte</div><div class="d">Fuera de Las Terrenas: usa el Calculador de obra para el transporte real.</div>`
             : nTelas ? `<div class="v">${RD(trans)}</div><div class="d">${nTelas} tela${nTelas > 1 ? 's' : ''} en Las Terrenas · tramo ${tramoTxt(nTelas)}</div>` : `<div class="v">—</div><div class="d">se calcula solo con la cantidad de telas</div>`;
         $('avisos').innerHTML = esAdmin && tv && tc ? `<div class="aviso">Con estas piezas la tela cuesta ${RD(tc)} y se vende en ${RD(tv)}: margen bruto real de <b>${Math.round((1 - tc / tv) * 100)} %</b> (${(tv / tc).toFixed(2)}× el costo, contando el corte real y el mínimo por pieza).</div>` : '';
-        $('resumen').textContent = R.map((r, i) => r.bloqueada ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm → NO SE PUEDE FABRICAR con los rollos actuales` : r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
+        $('resumen').textContent = R.map((r, i) => r.bloqueada ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm ${r.color} → NO SE PUEDE FABRICAR con los rollos actuales` : r.m2 > 0 ? `Tela mosquitera ${filas[i].ancho} × ${filas[i].alto} mm ${r.color} (${f2(r.m2)} m²)${r.q > 1 ? ' × ' + r.q : ''} → rollo ${r.rollo.ref} · tela ${RD0(r.totalVenta)}` : null).filter(Boolean).join('\n')
             + (tv ? `\nTela mosquitera: ${RD0(tv)} (${nTelas} tela${nTelas > 1 ? 's' : ''})` : '')
             + (tv ? (fuera ? `\nTransporte + instalación: cotizar aparte (fuera de Las Terrenas)` : `\nTransporte + instalación en Las Terrenas: ${RD0(trans)}`) : '')
             + (tv ? `\nTOTAL: ${RD0(total)}${itbis ? ' + ITBIS ' + RD0(itbis) + ' = ' + RD0(total + itbis) : ''}` : '');
     };
-    window.setF = (i, k, v) => { filas[i][k] = n2(v); calcular(); };
-    window.agregarFila = () => { filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
-    window.quitarFila = (i) => { filas.splice(i, 1); if (!filas.length) filas.push({ ancho: 0, alto: 0, cant: 1 }); calcular(); };
+    window.setF = (i, k, v) => { filas[i][k] = k === 'color' ? String(v) : n2(v); calcular(); };
+    window.agregarFila = () => { filas.push({ ancho: 0, alto: 0, cant: 1, color: filas[filas.length - 1].color || 'negro' }); calcular(); };
+    window.quitarFila = (i) => { filas.splice(i, 1); if (!filas.length) filas.push({ ancho: 0, alto: 0, cant: 1, color: 'negro' }); calcular(); };
     // ---- Citrus: crear la cotización con un clic ----------------------------------------------------
     const FN_CITRUS = 'https://us-central1-artal-operaciones.cloudfunctions.net/citrusCrearCotizacion';
     let clientesCache = [];
