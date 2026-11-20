@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-20 08:24</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 00:22</div>
         </div>
     </div>
     
@@ -2634,7 +2634,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.6;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:6px; padding-bottom:5px;">
                     <strong>${cols.some(c => (c.rows || []).some(r => r.celda === 'mc')) ? 'FACHADA MURO CORTINA' : 'FACHADA COMPUESTA'}</strong> &nbsp;·&nbsp; Cant: ${state.cantidad || 1}
-                    <div style="margin-top:3px;">Ancho total <b style="color:#e74c3c;">${totalW} mm</b> &nbsp;·&nbsp; Alto total <b style="color:#e74c3c;">${totalH} mm</b></div>
+                    <div style="margin-top:3px;">Ancho total <b style="color:#e74c3c;">${totalW} mm</b> &nbsp;·&nbsp; Alto total <b style="color:#e74c3c;">${totalH} mm</b>${state.vistaGrid === 'adentro' ? ' &nbsp;·&nbsp; <b>Dibujo visto de ADENTRO</b> (las columnas y los lados de abajo se describen vistos de afuera)' : ''}</div>
                     ${cols.some(c => (c.rows || []).some(r => r.celda === 'mc')) ? '' : `<div style="color:var(--artal-blue); font-weight:bold; margin-top:2px;">${compDesc}</div>`}
                     ${state.muro && state.muro.nc && cols.length === state.muro.nc ? `<div style="margin-top:2px;"><b>Muro de cortina:</b> ${state.muro.nc} × ${state.muro.nr} módulos de <b>${Math.round(state.muro.w / state.muro.nc)} × ${Math.round(state.muro.h / state.muro.nr)} mm</b> (${state.muro.nc * state.muro.nr} módulos; las columnas y filas editadas conservan su medida)${state.muro.perfV || state.muro.perfH ? ` · <b>Perfil de muro cortina:</b> vertical ${state.muro.perfV || '4'}" · horizontal ${state.muro.perfH || '4'}"` : ''}</div>` : ''}
                     ${(() => {
@@ -8119,7 +8119,37 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         return s;   // pf / louvers / osci / proy: solo la línea de pared
     }
+    // Vista INTERIOR de la fachada compuesta (Dylan 2026-11-20: «permite, igual que en las puertas, poner vista de adentro o
+    // de afuera… y que la planta se adapte»). El dibujo siempre se construye como vista exterior; para la vista de adentro se
+    // renderiza una COPIA espejada de los datos: columnas en orden inverso y todo lo que tiene lado (izq ↔ der: lado de
+    // apertura, hoja interior, bolsillo, hoja principal, marco abierto, alineación y rango de las fajas, ala de la esquina),
+    // las fusiones a lo ancho con el maestro en el nuevo extremo izquierdo, y `_ci` = índice original de cada columna para
+    // que las etiquetas C1…Cn sigan siendo las del pop-up. Con `_espejo` la planta va vista desde adentro (interior abajo),
+    // como ya hacía la OB. El texto no se espeja (se espejan los datos, no el SVG).
+    function gridEspejo(st) {
+        const sw = v => v === 'izq' ? 'der' : v === 'der' ? 'izq' : v;
+        const cell = r => { if (!r) return r; const o = { ...r }; ['lado', 'cor_interior', 'gal_pocket', 'hoja_principal', 'marco_abierto'].forEach(k => { if (o[k]) o[k] = sw(o[k]); }); return o; };
+        const cols = st.cols || [], n = cols.length;
+        const nuevas = cols.map((c, ci) => ({ ...c, _ci: ci, rows: (c.rows || []).map(cell) })).reverse();
+        cols.forEach((c, ci) => (c.rows || []).forEach((r, k) => {
+            if (!(r.span > 1)) return;
+            const s = r.span, j0 = n - 1 - (ci + s - 1);
+            if (!nuevas[j0]) return;
+            nuevas[j0].rows[k] = { ...cell(r), span: s };
+            for (let j = 1; j < s; j++) if (nuevas[j0 + j]) nuevas[j0 + j].rows[k] = { celda: 'fus', h: r.h, de: j0 };
+        }));
+        const faja = f => {
+            if (!f) return f;
+            const o = cell(f);
+            if (o.align) o.align = sw(o.align);
+            if (o.desde || o.hasta) { const d = parseInt(o.desde) || 1, h = parseInt(o.hasta) || n; o.desde = n + 1 - h; o.hasta = n + 1 - d; }
+            if (Array.isArray(o.cols)) o.cols = o.cols.map(cell).reverse();
+            return o;
+        };
+        return { ...st, _espejo: true, cols: nuevas, fajaArriba: faja(st.fajaArriba), fajaAbajo: faja(st.fajaAbajo), esquinaLado: sw(st.esquinaLado) };
+    }
     function renderFachadaGrid(state, uid) {
+        if (state.vistaGrid === 'adentro' && !state._espejo) return renderFachadaGrid(gridEspejo(state), uid);
         gridCell.herraje = state.herraje_color || 'cromado';   // para los herrajes de la puerta flotante
         const cols = (state.cols && state.cols.length) ? state.cols : [{ w: 1000, rows: [{ h: state.gridAlto || 2000, celda: 'pf' }] }];
         const gAlto = Math.max(1, gridBandAlto(state));   // alto de la banda = la columna más alta
@@ -8376,7 +8406,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         dimRows.forEach(row => {
             cotas += dimSegH(row.xs, row.mms, dyc, DHt + extB, 3.6);
             // Número de columna bajo su cota ("C1", "C2"…): el mismo que usa el pop-up (usuario 2026-10-17, "saber cuál es la columna 1").
-            if (row.cols) colInfo.forEach((ci, i) => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(dyc + 3.6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" font-weight="bold" fill="#9aa6b2" text-anchor="middle" stroke="none">C${i + 1}</text>`; });
+            if (row.cols) colInfo.forEach((ci, i) => { cotas += `<text x="${(ci.x + ci.w / 2).toFixed(1)}" y="${(dyc + 3.6).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="3" font-weight="bold" fill="#9aa6b2" text-anchor="middle" stroke="none">C${(ci.col && ci.col._ci != null ? ci.col._ci : i) + 1}</text>`; });
             dyc += row.cols ? 11 : 8;
         });
         cotas += dimLineH(0, DW, dyc + 3, DHt + extB, `${totalW} mm`, 5.5);
@@ -8410,7 +8440,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         }
         // Alturas de filas apiladas dentro de una columna (paños distintos en altura): etiqueta en cada fila.
         // (las alturas de filas apiladas van como cotas verticales junto a su columna, ver arriba)
-        cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">VISTA EXTERIOR</text>`;
+        cotas += `<text x="0" y="${(-4 - extT).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="4" fill="#9aa6b2" stroke="none">${state._espejo ? 'VISTA INTERIOR (de adentro)' : 'VISTA EXTERIOR'}</text>`;
         // Vista en planta (opcional): útil cuando hay correderas / puertas o ventanas abisagradas.
         // IDÉNTICA a la tarjeta suelta (planViewAbatible): mismo radio en proporción al ancho de la
         // hoja (la suelta usa maxR=34 con un panel de 65 → 34/65 del ancho) y la franja de planta
@@ -8498,7 +8528,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             // "abajo interior y arriba exterior"): todo el dibujo de la planta se espeja verticalmente alrededor
             // de la línea de pared (x no cambia: mismo orden de columnas que la elevación exterior) y las
             // reservas de espacio arriba/abajo se intercambian. Las etiquetas int/ext van fuera del espejo.
-            const planAdentro = colInfo.some(ci => (ci.col.rows || []).some(r => r.celda === 'osci'));
+            const planAdentro = !!state._espejo || colInfo.some(ci => (ci.col.rows || []).some(r => r.celda === 'osci'));
             const arribaNeed = planAdentro ? Math.max(downNeed, wMaxY > 0 ? wMaxY - 2 : 0) : Math.max(upNeed, -wMinY > 0 ? -wMinY - 2 : 0);
             const abajoNeed = planAdentro ? Math.max(upNeed, -wMinY, 8) : Math.max(downNeed, wMaxY, 8);
             // Línea de pared del frente: deja arriba el espacio del giro hacia el lado que queda arriba y de lo que suba el ala.
@@ -8741,6 +8771,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const NCOL = Array.from({ length: Math.max(1, cols.length - 1) }, (_, i) => [String(i + 1), (i + 1) + (i ? ' columnas' : ' columna') + ' en el ala']);
             const GIROS = ESQ_GIROS.map(g => [String(g[0]), `Giro ${g[0]}  ${g[3]}`]);
             const INTP = [['arriba', 'Interior arriba · exterior abajo'], ['abajo', 'Exterior arriba · interior abajo']];
+            const VISTAS = [['afuera', 'Exterior (de afuera)'], ['adentro', 'Interior (de adentro)']];
             // Siempre visible (el usuario no la encontraba con 1 sola columna). Con una sola columna no hay
             // nada que girar: se avisa que hace falta una 2ª columna (una por cada lado de la esquina).
             const aviso = cols.length < 2 ? `<div style="grid-column:1 / -1;font-size:11px;color:#a55;">Para la esquina hacen falta al menos 2 columnas (una a cada lado): agrega otra con "+ Columna".</div>` : '';
@@ -8748,7 +8779,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <label style="${gbl}">Esquina</label><select style="${inp}" onchange="gridSetEsquina(${id},this.value)">${opt(ESQ, esq ? 'si' : '')}</select>
                 ${esq && cols.length >= 2 ? `<label style="${gbl}">Giro</label><select style="${inp}font-size:14px;" onchange="gridSetEsquinaGiroN(${id},this.value)">${opt(GIROS, String(esquinaGiroN(st) || 1))}</select>` : ''}
                 ${esq && cols.length >= 2 ? `<label style="${gbl}">Ala</label><select style="${inp}" onchange="gridSetEsquinaCols(${id},this.value)">${opt(NCOL, String(nE))}</select>` : ''}
-                <label style="${gbl}" title="Qué lado de la vista en planta es el interior de la casa">Planta</label><select style="${inp}" onchange="gridSetPlanInterior(${id},this.value)">${opt(INTP, st.planInterior === 'abajo' ? 'abajo' : 'arriba')}</select>
+                <label style="${gbl}" title="Desde dónde se mira el dibujo: de afuera (como se ve en la calle) o de adentro (como se ve en la casa). La planta se adapta sola.">Vista</label><select style="${inp}" onchange="gridSetVista(${id},this.value)">${opt(VISTAS, st.vistaGrid === 'adentro' ? 'adentro' : 'afuera')}</select>
+                ${st.vistaGrid === 'adentro' ? '' : `<label style="${gbl}" title="Qué lado de la vista en planta es el interior de la casa">Planta</label><select style="${inp}" onchange="gridSetPlanInterior(${id},this.value)">${opt(INTP, st.planInterior === 'abajo' ? 'abajo' : 'arriba')}</select>`}
                 ${esq ? aviso : ''}
             </div>`;
         }
@@ -8921,6 +8953,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     window.gridSetEsquina = (id, v) => { const st = cardsState[id]; st.esquinaLado = v === 'si' ? (st.esquinaLado || 'izq') : (v === 'izq' || v === 'der') ? v : ''; gridFull(id); };
     window.gridSetEsquinaGiroN = (id, v) => { const g = ESQ_GIROS.find(x => x[0] === parseInt(v)); if (!g) return; cardsState[id].esquinaLado = g[1]; cardsState[id].esquinaGiro = g[2]; gridDraw(id); };
     window.gridSetPlanInterior = (id, v) => { cardsState[id].planInterior = v === 'abajo' ? 'abajo' : 'arriba'; gridDraw(id); };
+    window.gridSetVista = (id, v) => { cardsState[id].vistaGrid = v === 'adentro' ? 'adentro' : 'afuera'; gridFull(id); };
     window.gridSetFajaSobre = (id, side, v) => {
         const f = cardsState[id][side === 'arriba' ? 'fajaArriba' : 'fajaAbajo']; if (!f) return;
         delete f.desde; delete f.hasta; f.esquinaSolo = '';

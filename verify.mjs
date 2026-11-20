@@ -197,6 +197,16 @@ for (const lado of ['izq', 'der']) for (const [giro, ang] of [['adentro', 90], [
   try { ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vidrio: 'templado', color_vidrio: 'natural', verPlanta: true, esquinaLado: lado, esquinaCols: 1, esquinaGiro: giro, esquinaAngulo: ang, cols: [{ w: 1200, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', cor_interior: 'I' }] }, { w: 2400, rows: [{ h: 2400, celda: 'cor3', alu: 'P92', cor_interior: 'D' }] }, { w: 900, rows: [{ h: 2400, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1' }] }] }); ok++; }
   catch (e) { fail++; console.error(`  esquina ${lado}/${giro}/${ang}:`, e.message); }
 }
+// Vista INTERIOR de la fachada (vistaGrid 'adentro'): copia espejada con esquina, fusión a lo ancho, fajas con rango y sub-columnas, OB y galandaje
+for (const lado of ['izq', 'der']) {
+  try {
+    const svg = ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vistaGrid: 'adentro', vidrio: 'templado', color_vidrio: 'natural', verPlanta: true, esquinaLado: lado, esquinaCols: 1, tubos: { entre: true, entreModo: 'suma', medida: '100 x 45', incluidos: true },
+      cols: [{ w: 1200, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', cor_interior: 'der', mosquitera: 'con' }] }, { w: 1000, rows: [{ h: 1200, celda: 'osci', apertura: 'adentro_1', lado: 'der', span: 2 }, { h: 1200, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado: 'izq', semifijo: 'si', semifijo_ancho: 400 }] }, { w: 1000, rows: [{ celda: 'fus', h: 1200, de: 1 }, { h: 1200, celda: 'gal2_lat', alu: 'E70', gal_pocket: 'der' }] }, { w: 900, rows: [{ h: 2400, celda: 'pf', marco_abierto: 'izq' }] }],
+      fajaArriba: { h: 400, celda: 'pf', desde: 2, hasta: 3, align: 'izq' }, fajaAbajo: { h: 300, celda: 'proy', cols: [{ w: 1500, celda: 'proy' }, { w: 2600, celda: 'pf' }] } });
+    if (!/VISTA INTERIOR/.test(svg) || !/>C1</.test(svg)) throw new Error('falta el rótulo de vista interior o la etiqueta C1');
+    ok++;
+  } catch (e) { fail++; console.error(`  vista interior ${lado}:`, e.message); }
+}
 // Ventilación tubos 20x40 (no-vidrio como louver): tarjeta suelta, paño adosado y celda de fachada
 for (const t of ['win_abat', 'door_abat', 'fachada_din', 'cor2']) {
   try { ctx.__render('card1', { type: t, categoria: ctx.getCategoriaByType(t), ancho: 1000, alto: 2100, orientacion: 'D', vidrio: 'tubos2040', color_perfil: 'negro', panoArriba: t === 'win_abat' ? { alto: 300, vidrio: 'tubos2040', fijacion: 'p40', color_perfil: 'negro' } : null }); ok++; }

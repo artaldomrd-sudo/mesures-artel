@@ -1042,6 +1042,19 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   haga falta. **La planta de correderas dentro de la fachada respeta `cor_interior`** (I/D, un
   riel por hoja en escalera, hoja interior arriba), misma regla que `correderaPlan` — antes lo
   ignoraba (reportado con foto). Verificado en navegador lado a lado con la puerta suelta.
+- **Vista INTERIOR de la fachada (Dylan 2026-11-20: «permite, igual que en las puertas, poner vista de adentro o de afuera… me
+  interesa cambiar la vista y que la planta se adapte»)**: fila «Vista» en el pop-up (`VISTAS` afuera | adentro, `gridSetVista` →
+  `st.vistaGrid`; NO se usa `st.vista`, que `addItem` pone en 'adentro' para todo ítem). El dibujo se construye siempre como vista
+  exterior; con `vistaGrid === 'adentro'`, `renderFachadaGrid` se llama a sí mismo con `gridEspejo(state)`: copia con las columnas en
+  orden inverso (`_ci` = índice original → las etiquetas C1…Cn siguen siendo las del pop-up) y los lados intercambiados izq ↔ der
+  (`lado`, `cor_interior`, `gal_pocket`, `hoja_principal`, `marco_abierto` de celdas y fajas; `align`, `desde/hasta` y sub-`cols`
+  de las fajas; `esquinaLado`), fusiones a lo ancho con el maestro en el nuevo extremo izquierdo, y `_espejo:true` → rótulo «VISTA
+  INTERIOR (de adentro)», `planAdentro` forzado (planta vista desde adentro, interior abajo, como la OB) y la fila «Planta» del
+  pop-up se oculta. Se espejan los DATOS, no el SVG (el texto no sale al revés); la copia nunca llega a `cardsState`. El resumen
+  agrega «Dibujo visto de ADENTRO (las columnas y los lados de abajo se describen vistos de afuera)». `verify.mjs`: esquina
+  izq/der con fusión, fajas con rango y sub-columnas, OB, puerta con semi-fijo y galandaje (RENDER OK: 304). Probado en navegador:
+  PF 2200 + puerta 1400 (lado der, semi-fijo) → de adentro la puerta pasa a la izquierda con el semi-fijo en el borde izquierdo,
+  C2 | C1, planta ext arriba / int abajo.
 - **Selector de tipo de celda REDUCIDO (2026-09-14, "haz lo mismo que con plegable")**: el select
   principal muestra `GRID_FAMILIAS` (Paño Fijo, Corredera, Galandaje, Plegable, Puerta, Ventana, OB,
   Proyectada, Louver, Muro) y la variante va en una fila "Hojas" dentro de `cellExtra` (`COR_VARS`
