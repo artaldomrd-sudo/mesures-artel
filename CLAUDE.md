@@ -2930,6 +2930,18 @@ no elimina botones/enlaces/páginas sin pedirlo, y los accesos se comprueban con
 ya no puede usar el bot. Verificación: sin sesión solo se probó Mi día (demo) y la sintaxis/handlers de todo; las pantallas con login
 las verá Dylan o se prueban con una clave de espejo renovada.
 
+### «The client has already been terminated» en iPhone → reconexión sola (2026-11-20, caso Miki)
+
+Miki, en la conversación de una obra (Instalación) desde Safari iOS, tocó «Enviar» y salió «No se pudo enviar: The client has already
+been terminated». Es Firebase: Safari cierra el almacén local (IndexedDB) de una pestaña que lleva un rato en segundo plano, el SDK apaga
+el cliente de esa pestaña y desde ahí toda lectura/escritura falla hasta recargar. Nada en `ops/` llama a `terminate`. Dylan eligió
+(opciones 1 + 4): `ops/firebase-config.js` exporta `clienteTerminado(e)` y `reconectar()` (toast «🔄 Reconectando…» + `location.reload()`,
+tope de una recarga cada 30 s vía `sessionStorage.artal_reconexion`) y un `unhandledrejection` global que recarga cualquier pantalla si
+ese error se escapa. `instalacion.html` `hiloEnviar`: con ese error guarda `{col, id, texto}` en `sessionStorage.artal_hilo_reintento`,
+recarga y, al volver, deja el texto en la casilla (`hiloBorradores`), abre la obra (`abrirJob`) y avisa «✅ Conectado de nuevo… toca
+Enviar» (fotos elegidas NO sobreviven a la recarga). Los demás errores salen en español (`errorHumano`: sin conexión / sin permiso /
+texto técnico). No se cambió la caché persistente multi-pestaña.
+
 ### Mi día para todo el equipo + chips que no se marcaban (2026-11-12 noche)
 
 Dylan: «habilita la página Mi día a Roosevelt (como instalador) y a Emerson como ayudante, que puedan ver el programa del día cada día»

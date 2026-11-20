@@ -520,7 +520,7 @@
 
 <script type="module">
     import { requireAuth, auth, signOut, wireBackButton } from './auth-common.js';
-    import { db } from './firebase-config.js';
+    import { db, clienteTerminado, reconectar } from './firebase-config.js';
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { enableNotifications } from './notifications.js';
     import { openOrderPreview } from './order-preview.js';
@@ -2218,9 +2218,40 @@
             delete hiloBorradores[key]; delete hiloPend[key];
             const ta2 = document.getElementById(key); if (ta2) ta2.value = '';
             const box = document.getElementById('hilo-pend-' + col + '-' + id); if (box) box.innerHTML = '';
-        } catch (e) { alert('No se pudo enviar: ' + e.message); }
+        } catch (e) {
+            // Cliente apagado por Safari (segundo plano): se guarda el texto, se recarga y al volver queda en la casilla (Dylan 2026-11-20).
+            if (clienteTerminado(e)) { try { sessionStorage.setItem('artal_hilo_reintento', JSON.stringify({ col, id, texto, t: Date.now() })); } catch (_) { } if (reconectar()) return; }
+            alert('No se pudo enviar: ' + errorHumano(e));
+        }
         finally { if (btn) { btn.disabled = false; btn.textContent = 'Enviar ➤'; } }
     };
+    // Texto del error en palabras de la casa (antes salía el mensaje técnico en inglés).
+    function errorHumano(e) {
+        const code = (e && e.code) || '', m = String((e && e.message) || e || '');
+        if (clienteTerminado(e)) return 'se perdió la conexión. Recarga la página y vuelve a enviar.';
+        if (code === 'unavailable' || /network|offline|failed to fetch/i.test(m)) return 'sin conexión. Revisa la señal y vuelve a enviar.';
+        if (code === 'permission-denied') return 'no tienes permiso para escribir aquí.';
+        return m;
+    }
+    // Tras la recarga automática: el mensaje que no salió vuelve a la casilla y se abre la obra.
+    try {
+        const r = JSON.parse(sessionStorage.getItem('artal_hilo_reintento') || 'null');
+        if (r && r.col && r.id && Date.now() - (r.t || 0) < 5 * 60000) {
+            sessionStorage.removeItem('artal_hilo_reintento');
+            hiloBorradores['hilo-' + r.col + '-' + r.id] = r.texto || '';
+            const desde = Date.now();
+            const esperar = setInterval(() => {
+                const listo = r.col === 'instalaciones' ? allJobs.some(j => j.id === r.id) : true;
+                if (!listo && Date.now() - desde < 15000) return;
+                clearInterval(esperar);
+                if (listo && r.col === 'instalaciones') { try { abrirJob(r.id); } catch (_) { } }
+                const ta = document.getElementById('hilo-' + r.col + '-' + r.id); if (ta && !ta.value) ta.value = r.texto || '';
+                const d = document.createElement('div'); d.textContent = '✅ Conectado de nuevo. Tu mensaje está en la casilla: toca Enviar.';
+                d.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1e8449;color:#fff;padding:12px 18px;border-radius:12px;font:700 15px Archivo,Inter,sans-serif;z-index:99999;max-width:92vw;text-align:center';
+                document.body.appendChild(d); setTimeout(() => d.remove(), 6000);
+            }, 300);
+        }
+    } catch (_) { }
     // Visor de fotos (hilo y galería): un toque agranda, ‹ › recorre las del mismo grupo, toque fuera o ✕ cierra.
     let lbFotos = [], lbIdx = 0;
     function lbPintar() { const f = lbFotos[lbIdx]; if (!f) return; document.getElementById('foto-lb-img').src = f.url; document.getElementById('foto-lb-cap').textContent = (f.cap || '') + (lbFotos.length > 1 ? ` · ${lbIdx + 1} / ${lbFotos.length}` : ''); }

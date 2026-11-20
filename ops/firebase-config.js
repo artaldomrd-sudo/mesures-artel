@@ -60,3 +60,30 @@ export async function salirVerComo() {
   window.close();
   setTimeout(() => { location.href = location.pathname.replace(/[^/]*$/, '') + 'index.html'; }, 300);
 }
+
+
+// ---- Cliente apagado por Safari (iPhone): «The client has already been terminated» (caso Miki 2026-11-20) ----
+// Safari cierra el almacén local (IndexedDB) de una pestaña que lleva un rato en segundo plano; Firebase lo detecta y apaga el
+// cliente de esa pestaña, y desde ahí toda lectura/escritura falla con ese texto hasta recargar. Aquí se detecta y se recarga
+// sola una vez (tope: una recarga cada 30 s para no entrar en bucle). Cada pantalla guarda antes lo que tenga a medias.
+export function clienteTerminado(e) {
+  const m = String((e && (e.message || e.reason && e.reason.message)) || e || '');
+  return /already been terminated/i.test(m);
+}
+export function reconectar() {
+  try {
+    const t = Number(sessionStorage.getItem('artal_reconexion') || 0);
+    if (t && Date.now() - t < 30000) return false;
+    sessionStorage.setItem('artal_reconexion', String(Date.now()));
+  } catch (_) { }
+  try {
+    const d = document.createElement('div');
+    d.textContent = '🔄 Reconectando…';
+    d.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1b2430;color:#fff;padding:12px 18px;border-radius:12px;font:700 15px Archivo,Inter,sans-serif;z-index:99999;box-shadow:0 8px 24px rgba(0,0,0,.35)';
+    document.body.appendChild(d);
+  } catch (_) { }
+  setTimeout(() => location.reload(), 700);
+  return true;
+}
+// Red de seguridad para cualquier pantalla: un fallo de este tipo que nadie atrapó también recarga.
+window.addEventListener('unhandledrejection', (ev) => { if (clienteTerminado(ev.reason)) { ev.preventDefault(); reconectar(); } });
