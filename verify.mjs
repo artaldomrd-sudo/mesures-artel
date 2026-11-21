@@ -201,7 +201,7 @@ for (const lado of ['izq', 'der']) for (const [giro, ang] of [['adentro', 90], [
 for (const lado of ['izq', 'der']) {
   try {
     const svg = ctx.__render('card1', { type: 'fachada_grid', categoria: 'fachada_grid', vistaGrid: 'adentro', vidrio: 'templado', color_vidrio: 'natural', verPlanta: true, esquinaLado: lado, esquinaCols: 1, tubos: { entre: true, entreModo: 'suma', medida: '100 x 45', incluidos: true },
-      cols: [{ w: 1200, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', cor_interior: 'der', mosquitera: 'con' }] }, { w: 1000, rows: [{ h: 1200, celda: 'osci', apertura: 'adentro_1', lado: 'der', span: 2 }, { h: 1200, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado: 'izq', semifijo: 'si', semifijo_ancho: 400 }] }, { w: 1000, rows: [{ celda: 'fus', h: 1200, de: 1 }, { h: 1200, celda: 'gal2_lat', alu: 'E70', gal_pocket: 'der' }] }, { w: 900, rows: [{ h: 2400, celda: 'pf', marco_abierto: 'izq' }] }],
+      cols: [{ w: 1200, rows: [{ h: 2400, celda: 'cor2', alu: 'P92', cor_interior: 'D', mosquitera: 'con' }] }, { w: 1000, rows: [{ h: 1200, celda: 'osci', apertura: 'adentro_1', lado: 'der', span: 2 }, { h: 1200, celda: 'puerta', alu: 'p40_puerta', apertura: 'adentro_1', lado: 'izq', semifijo: 'si', semifijo_ancho: 400 }] }, { w: 1000, rows: [{ celda: 'fus', h: 1200, de: 1 }, { h: 1200, celda: 'gal2_lat', alu: 'E70', gal_pocket: 'der' }] }, { w: 900, rows: [{ h: 2400, celda: 'pf', marco_abierto: 'izq' }] }],
       fajaArriba: { h: 400, celda: 'pf', desde: 2, hasta: 3, align: 'izq' }, fajaAbajo: { h: 300, celda: 'proy', cols: [{ w: 1500, celda: 'proy' }, { w: 2600, celda: 'pf' }] } });
     if (!/VISTA INTERIOR/.test(svg) || !/>C1</.test(svg)) throw new Error('falta el rótulo de vista interior o la etiqueta C1');
     ok++;

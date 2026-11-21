@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 00:22</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 08:28</div>
         </div>
     </div>
     
@@ -8127,7 +8127,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // que las etiquetas C1…Cn sigan siendo las del pop-up. Con `_espejo` la planta va vista desde adentro (interior abajo),
     // como ya hacía la OB. El texto no se espeja (se espejan los datos, no el SVG).
     function gridEspejo(st) {
-        const sw = v => v === 'izq' ? 'der' : v === 'der' ? 'izq' : v;
+        const sw = v => ({ izq: 'der', der: 'izq', I: 'D', D: 'I' })[v] || v;   // cor_interior usa I/D
         const cell = r => { if (!r) return r; const o = { ...r }; ['lado', 'cor_interior', 'gal_pocket', 'hoja_principal', 'marco_abierto'].forEach(k => { if (o[k]) o[k] = sw(o[k]); }); return o; };
         const cols = st.cols || [], n = cols.length;
         const nuevas = cols.map((c, ci) => ({ ...c, _ci: ci, rows: (c.rows || []).map(cell) })).reverse();
@@ -8618,6 +8618,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         const GAL_POCKET = [['izq', 'Bolsillo a la izquierda'], ['der', 'Bolsillo a la derecha']];
         const PLEG_ESQ = Object.keys(PLEG_ESQUEMAS).map(k => [k, PLEG_ESQUEMAS[k].label]);
         const PLEG_LADO = [['izq', 'Pliega a la izquierda'], ['der', 'Pliega a la derecha']];
+        // Vista INTERIOR (Dylan 2026-11-21: «que el pop-up también hable de adentro»): los selectores de lado definidos
+        // vistos de afuera (lado de apertura, hoja principal, bolsillo, hoja interior, marco abierto, pliega) muestran
+        // el texto tal como se ve de adentro y guardan el valor de afuera (se intercambian los VALORES de las opciones,
+        // no el dato). Los de la OB no cambian: ya se definen de adentro.
+        const adentro = st.vistaGrid === 'adentro';
+        const swV = v => ({ izq: 'der', der: 'izq', I: 'D', D: 'I' })[v] || v;
+        const swOpts = opts => adentro ? opts.map(([v, t]) => [swV(v), swV(v) !== v ? t + ' · de adentro' : t]) : opts;
         const PLEG_AP = [['afuera', 'Pliega hacia afuera'], ['adentro', 'Pliega hacia adentro']];
         const GAL_INST = [['dentro', 'Instalación: Por dentro'], ['fuera', 'Instalación: Por fuera']];
         const GAL_SHEET = [['si', 'Sheetrock: Sí'], ['no', 'Sheetrock: No']];
@@ -8633,7 +8640,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const effVid = obj.vidrio || st.vidrio || '';
             const grosor = (effVid === 'templado' || effVid === 'laminado') ? cfgRow('Grosor', cfgSel(obj.espesor || st.espesor || '', ESP, mk('espesor'))) : '';
             const vid = cfgRow('Vidrio', cfgSel(effVid, VIDCELL, mk('vidrio'))) + grosor;
-            const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', LADO, mk('lado'))) : cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']], mk('hoja_principal')));
+            const lado = (obj.apertura || 'adentro_1').includes('_1') ? cfgRow('Lado', cfgSel(obj.lado || 'der', swOpts(LADO), mk('lado'))) : cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', swOpts([['der', 'Principal: derecha (manija)'], ['izq', 'Principal: izquierda (manija)']]), mk('hoja_principal')));
             if (celda === 'mc') return vid;
             if (celda === 'puerta') {
                 let sfRows = '';
@@ -8662,16 +8669,16 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                     : dos ? cfgRow('Hoja ppal.', cfgSel(obj.hoja_principal || 'der', [['der', 'Principal: derecha (vista de adentro)'], ['izq', 'Principal: izquierda (vista de adentro)']], mk('hoja_principal'))) : cfgRow('Lado', cfgSel(obj.lado || 'der', [['der', 'Abre a la derecha (vista de adentro)'], ['izq', 'Abre a la izquierda (vista de adentro)']], mk('lado')));
                 return vid + hojasSel + ladoOPpal + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_CAS, mk('mosquitera')));
             }
-            if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', PLEG_LADO, mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
+            if (celda === 'pleg') return vid + cfgRow('Hojas', cfgSel(obj.pleg_esquema || '330', PLEG_ESQ, mk('pleg_esquema'))) + (plegEsCentral(obj.pleg_esquema || '330') ? '' : cfgRow('Pliega', cfgSel(obj.lado || 'izq', swOpts(PLEG_LADO), mk('lado')))) + cfgRow('Apertura', cfgSel(obj.pleg_apertura || 'afuera', PLEG_AP, mk('pleg_apertura'))) + cfgRow('Cierre', cfgSel(obj.cierre, CIERRE_O, mk('cierre'))) + cfgRow('Cerradura', cfgSel(obj.cerradura, CERR_O, mk('cerradura')));
             const rielRow = enFaja ? '' : cfgRow('Riel suelo', cfgSel(obj.penetracionRiel && obj.penetracionRiel !== 'no' ? 'si' : '', [['', 'Sin penetración de riel'], ['si', '+ Penetración riel suelo (E70 45 · E100/E200 55 mm)']], mk('penetracionRiel')));
-            if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + rielRow + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', GAL_POCKET, mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
-            if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + rielRow + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', COR_INT, mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, cierreCorOpts(obj.cierre), mk('cierre')));
+            if (gridGal(celda)) return cfgRow('Hojas', cfgSel(celda, galVars(celda), mk('celda'))) + vid + rielRow + (gridGal(celda).central ? '' : cfgRow('Bolsillo', cfgSel(obj.gal_pocket || 'izq', swOpts(GAL_POCKET), mk('gal_pocket')))) + cfgRow('Instalación', cfgSel(obj.gal_install || 'dentro', GAL_INST, mk('gal_install'))) + cfgRow('Sheetrock', cfgSel(obj.gal_sheetrock || 'si', GAL_SHEET, mk('gal_sheetrock'))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera')));
+            if (isCor(celda)) return cfgRow('Hojas', cfgSel(celda, COR_VARS, mk('celda'))) + vid + rielRow + (gridCorCentral(celda) ? '' : cfgRow('Hoja int.', cfgSel(obj.cor_interior || 'I', swOpts(COR_INT), mk('cor_interior')))) + cfgRow('Mosquitera', cfgSel(obj.mosquitera, MOSQ_COR, mk('mosquitera'))) + cfgRow('Cierre', cfgSel(obj.cierre, cierreCorOpts(obj.cierre), mk('cierre')));
             if (celda === 'pf') {
                 const np = Math.max(1, parseInt(obj.panos) || 1);
                 const PANOS = [1, 2, 3, 4, 5, 6, 8, 10].map(n => [String(n), n === 1 ? '1 paño (sin división)' : n + ' paños iguales']);
                 // Marco en 3 lados (usuario 2026-09-30): el lado sin perfil queda como junta vidrio/vidrio con una Puerta Flotante vecina.
                 const MARCO = [['', 'Marco: 4 lados (completo)'], ['izq', 'Marco: 3 lados, sin perfil a la IZQUIERDA (junta vidrio/vidrio)'], ['der', 'Marco: 3 lados, sin perfil a la DERECHA (junta vidrio/vidrio)'], ['arriba', 'Marco: 3 lados, sin perfil ARRIBA'], ['abajo', 'Marco: 3 lados, sin perfil ABAJO']];
-                return vid + cfgRow('Paños', cfgSel(String(np), PANOS, mk('panos'))) + (np > 1 ? cfgRow('Unión', cfgSel(obj.union || 'T', [['T', 'Con división "T" (perfil)'], ['tope', 'Vidrios a tope']], mk('union'))) : '') + cfgRow('Marco', cfgSel(obj.marco_abierto || '', MARCO, mk('marco_abierto')));
+                return vid + cfgRow('Paños', cfgSel(String(np), PANOS, mk('panos'))) + (np > 1 ? cfgRow('Unión', cfgSel(obj.union || 'T', [['T', 'Con división "T" (perfil)'], ['tope', 'Vidrios a tope']], mk('union'))) : '') + cfgRow('Marco', cfgSel(obj.marco_abierto || '', swOpts(MARCO), mk('marco_abierto')));
             }
             return vid;   // proy → al menos el selector de vidrio por paño
         };
@@ -9055,7 +9062,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         else if (c === 'pf') { type = 'fachada_din'; categoria = 'fachada'; }
         else return null;
         const label = (GRID_CELDAS.find(x => x[0] === c) || [c, c])[1];
-        const ladoDer = (r.lado || r.gal_pocket || r.cor_interior || '') === 'der' || (r.lado || '') === 'D';
+        const ladoDer = (r.lado || r.gal_pocket || '') === 'der' || (r.cor_interior || '') === 'D';
         const nuevo = {
             type, categoria, label, orientacion: ladoDer ? 'D' : 'I', cantidad: st.cantidad || 1, locked: false,
             ancho: parseInt(cols[0].w) || 0, alto: parseInt(r.h) || 0,

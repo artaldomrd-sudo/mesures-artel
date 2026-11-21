@@ -1054,7 +1054,11 @@ Todo vive en el `<script>` clásico, bloque "FACHADA POR GRILLA (2D)" (~línea 5
   agrega «Dibujo visto de ADENTRO (las columnas y los lados de abajo se describen vistos de afuera)». `verify.mjs`: esquina
   izq/der con fusión, fajas con rango y sub-columnas, OB, puerta con semi-fijo y galandaje (RENDER OK: 304). Probado en navegador:
   PF 2200 + puerta 1400 (lado der, semi-fijo) → de adentro la puerta pasa a la izquierda con el semi-fijo en el borde izquierdo,
-  C2 | C1, planta ext arriba / int abajo.
+  C2 | C1, planta ext arriba / int abajo. **El pop-up también habla de adentro (Dylan 2026-11-21)**: con `vistaGrid === 'adentro'`,
+  `swOpts(opts)` del builder intercambia los VALORES de las opciones de los selectores definidos de afuera (Lado, Hoja ppal. de
+  puerta/ventana, Pliega, Bolsillo, Hoja int. I/D, Marco abierto izq/der) y les añade «· de adentro»: se muestra lo que la persona ve
+  desde la casa y se guarda el valor de afuera (el dato no cambia de convención). Los selectores de la OB no se tocan (ya son de
+  adentro). `gridEspejo` también intercambia `cor_interior` I/D (la primera versión solo izq/der) y `gridCeldaAItem` lee I/D.
 - **Selector de tipo de celda REDUCIDO (2026-09-14, "haz lo mismo que con plegable")**: el select
   principal muestra `GRID_FAMILIAS` (Paño Fijo, Corredera, Galandaje, Plegable, Puerta, Ventana, OB,
   Proyectada, Louver, Muro) y la variante va en una fila "Hojas" dentro de `cellExtra` (`COR_VARS`
