@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 19:54</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 20:49</div>
         </div>
     </div>
     
@@ -2054,25 +2054,26 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // donde corre (`orientacion`); si no hay fijo al lado, el ancho de la deslizante se toma como el hueco completo (2 vidrios).
     // Los repartos que no son mitad y mitad son casos puntuales: por ahora no se contemplan. Las demás puertas y paneles siguen
     // «por definir» (no se muestra nada). Devuelve { [índice de panel]: { w, h, nota } }.
-    const DUCHA_DESL_ALTO_DESC_MM = 40, DUCHA_DESL_CRUCE_MM = 25;
+    // Segunda vuelta (Dylan, mismo día): SOLO el descuento de ALTO de la deslizante suspendida con prensas es automático; el ancho
+    // (÷ 2 + 25 de cruce) y los demás descuentos se hacen a mano según cada caso. Devuelve { [índice de panel]: { h, nota } }.
+    const DUCHA_DESL_ALTO_DESC_MM = 40;
     function calcVidrioDucha(state) {
         const out = {};
         if (!state || state.categoria !== 'cerramiento') return out;
         const ps = state.paneles || [], H = parseInt(state.alto) || 0;
         if (!H) return out;
-        const h = H - DUCHA_DESL_ALTO_DESC_MM;
-        ps.forEach((p, i) => {
-            if (p.tipo !== 'deslizante') return;
-            const w = parseInt(p.ancho) || 0; if (!w) return;
-            const j = (p.orientacion || 'I') !== 'D' ? i - 1 : i + 1;
-            const fijo = ps[j] && ps[j].tipo === 'fijo' && !out[j] ? ps[j] : null;
-            const hueco = w + (fijo ? (parseInt(fijo.ancho) || 0) : 0);
-            const vw = Math.round(hueco / 2 + DUCHA_DESL_CRUCE_MM);
-            const base = `hueco ${hueco} ÷ 2 + ${DUCHA_DESL_CRUCE_MM} mm de cruce; alto ${H} − ${DUCHA_DESL_ALTO_DESC_MM}`;
-            out[i] = { w: vw, h, nota: fijo ? base : `${base}; sin panel fijo al lado: la deslizante se toma como el hueco completo → 2 vidrios (puerta + fijo)`, n: fijo ? 1 : 2 };
-            if (fijo) out[j] = { w: vw, h, nota: `mismo hueco que la puerta deslizante (panel ${i + 1})`, n: 1 };
-        });
+        ps.forEach((p, i) => { if (p.tipo === 'deslizante') out[i] = { h: H - DUCHA_DESL_ALTO_DESC_MM, nota: `alto ${H} − ${DUCHA_DESL_ALTO_DESC_MM}; el ancho se define a mano según el caso` }; });
         return out;
+    }
+    // Medida total del HUECO de la ducha (recordatorio, solo cuando es compuesta: 2+ paneles). Con esquina, ancho 1 / ancho 2 (un
+    // ancho por lado) y alto 1 / alto 2 si las alturas varían. `state.hueco = { a1, a2, h1, h2 }` (mm, texto libre).
+    function huecoDuchaTxt(state) {
+        const hu = (state && state.hueco) || {}, n = (state && state.paneles || []).length;
+        if (n < 2 || !(hu.a1 || hu.h1 || hu.a2 || hu.h2)) return '';
+        const esq = !!facadeEsquinaK(state);
+        const lado = (a, h) => `${a || '?'} × ${h || '?'} mm`;
+        if (!esq) return lado(hu.a1, hu.h1);
+        return `lado A ${lado(hu.a1, hu.h1)} · lado B ${lado(hu.a2 || hu.a1, hu.h2 || hu.h1)}`;
     }
     function calcVidrioPanoFijo(state) {
         if (state.type !== 'fachada_din') return null;
@@ -2760,20 +2761,21 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 { const txt = accesoriosKitTxt(p, facadeCtxPanel(state, i)); if (txt) extras.push('Accesorios: ' + txt); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
-                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Vidrio a cortar: ${vc[i].n > 1 ? '2 × ' : ''}${vc[i].w} × ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span>` : '';
+                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Alto de vidrio a cortar: ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span>` : '';
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
             const esqKit = facadeEsquinaKit(state);
             const esqSinDueno = esqK && facadeCtxPanel(state, esqK).sinDueno;   // ningún panel fijo con conectores junto a la esquina: las prensas van aparte
+            const huecoTxt = huecoDuchaTxt(state) ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Hueco (medida total):</b> ${huecoDuchaTxt(state)}</div>` : '';
             const esqKitTxt = esqSinDueno ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Unión de esquina (panel ${esqK} ↔ panel ${esqK + 1}):</b> ${esqKit ? esqKit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ') + ' (prensa cuadrada vidrio/vidrio 45x45)' : '<span style="color:#b9770e;">prensa vidrio/vidrio sin referencia para este color todavía</span>'}</div>` : '';
             const rieles = rielesDeDucha(state);
             const rielTxt = rieles.length ? (() => { const r = rielBarrasNecesarias(rieles); return `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)}${rieles.length > 1 ? ` (${rieles.length} puertas)` : ''}:</b> ${(r.totalMm / 1000).toFixed(2)} m lineales → <b>${rielBarrasTxt(r)}</b></div>`; })() : '';
             const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90° · Giro ${facadeGiro(state)} ${(DUCHA_GIROS.find(g => g[0] === facadeGiro(state)) || [0, ''])[1]}</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA DE DUCHA</strong> (${paneles.length} panel${paneles.length === 1 ? '' : 'es'}${esqK ? ', en esquina' : ''}) — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
-                ${esqTxt}${esqKitTxt}${rielTxt}
+                ${huecoTxt}${esqTxt}${esqKitTxt}${rielTxt}
                 <div style="color:#555; font-size:12px;">${list}</div>
             </div>`;
             return;
@@ -8989,6 +8991,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     window.gridSetEsquinaGiroN = (id, v) => { const g = ESQ_GIROS.find(x => x[0] === parseInt(v)); if (!g) return; cardsState[id].esquinaLado = g[1]; cardsState[id].esquinaGiro = g[2]; gridDraw(id); };
     window.gridSetPlanInterior = (id, v) => { cardsState[id].planInterior = v === 'abajo' ? 'abajo' : 'arriba'; gridDraw(id); };
     window.gridSetVista = (id, v) => { cardsState[id].vistaGrid = v === 'adentro' ? 'adentro' : 'afuera'; gridFull(id); };
+    // Hueco de la ducha (recordatorio): se guarda sin reconstruir el formulario (es un input mientras se escribe).
+    window.facadeSetHueco = (id, k, v) => { const st = cardsState[id]; if (!st) return; st.hueco = st.hueco || {}; st.hueco[k] = String(v || '').trim(); saveProgress(); };
     window.gridSetFajaSobre = (id, side, v) => {
         const f = cardsState[id][side === 'arriba' ? 'fajaArriba' : 'fajaAbajo']; if (!f) return;
         delete f.desde; delete f.hasta; f.esquinaSolo = '';
@@ -10101,6 +10105,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <select onchange="facadeSetEsquina(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; font-family:Arimo;"><option value="0" ${!k ? 'selected' : ''}>Sin esquina (todo en línea)</option>${paneles.slice(0, -1).map((_, i) => `<option value="${i + 1}" ${k === i + 1 ? 'selected' : ''}>Esquina después del panel ${i + 1} (lado A: ${i + 1} · lado B: ${paneles.length - i - 1})</option>`).join('')}</select>
                 ${k && facadeCtxPanel(cardsState[id], k).sinDueno ? (() => { const kit = facadeEsquinaKit(cardsState[id]); return `<div style="grid-column: span 2; font-size:11px; color:#333; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px;"><b style="color:#0A3D62;">Unión de esquina (panel ${k} ↔ ${k + 1}):</b> ${kit ? kit.map(x => `${escHtml(resolveAccesorioLabel(x.ref))} x${x.qty}`).join(', ') : '<span style="color:#b9770e;">sin referencia para este color todavía</span>'}</div>`; })() : ''}
                 ${k ? `<label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Giro</label><select onchange="facadeSetGiro(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:14px; font-family:Arimo;">${DUCHA_GIROS.map(g => `<option value="${g[0]}" ${facadeGiro(cardsState[id]) === g[0] ? 'selected' : ''}>Giro ${g[0]}  ${g[1]}</option>`).join('')}</select>` : ''}
+            </div>`;
+        }
+        // Medida total del HUECO (recordatorio, Dylan 2026-11-21): solo en ducha compuesta (2+ paneles); con esquina un ancho por
+        // lado y un alto 2 si las alturas varían. No calcula nada: queda en el resumen y la ficha para no perder la medida de obra.
+        if (paneles.length >= 2) {
+            const hu = cardsState[id].hueco || {}, esq = !!facadeEsquinaK(cardsState[id]);
+            const hin = (k, ph) => `<input type="number" inputmode="numeric" value="${hu[k] || ''}" placeholder="${ph}" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box;" oninput="facadeSetHueco(${id}, '${k}', this.value)">`;
+            h += `<div style="margin-top:8px; background:#fff8e1; border:1px solid #f0c33c; border-radius:6px; padding:6px;">
+                <div style="font-size:12px; font-weight:bold; color:#5d4a00; margin-bottom:4px;">📐 Hueco (medida total de obra, recordatorio)</div>
+                <div style="display:grid; grid-template-columns:${esq ? '1fr 1fr 1fr 1fr' : '1fr 1fr'}; gap:5px;">
+                    ${hin('a1', esq ? 'Ancho 1' : 'Ancho hueco')}${hin('h1', esq ? 'Alto 1' : 'Alto hueco')}${esq ? hin('a2', 'Ancho 2') + hin('h2', 'Alto 2 (si varía)') : ''}
+                </div>
             </div>`;
         }
         h += `<div style="display:flex; gap:6px; margin-top:8px;">
