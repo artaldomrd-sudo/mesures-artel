@@ -796,9 +796,13 @@ estilo simplificado del CAD.
   apuntar hacia la mampara»)**: `deslOrientacion(ps, i)` — con mampara (fijo) a UN solo lado la puerta corre hacia ella ('I' si
   está a la izquierda, 'D' si a la derecha) sin importar `orientacion`; con fijo a los dos lados o a ninguno manda
   `orientacion`. Lo usan la `mini` de `renderFacade` (tirador en el borde libre, flecha hacia la mampara), la prolongación del
-  riel, `rielDeslizanteMm` y el «Apertura Izq/Der» del resumen. Referencias (Dylan mismo día): riel `ALC00467`
-  (`RIEL_DESLIZANTE`), kit de prensas `ALC00466`, tirador redondo `ALC00478` (`TIRADOR_REDONDO_REF`, se suma al kit de
-  `deslizante`/`deslizante_conn` cuando `tirador` es redondo o vacío; negro sigue sin kit → sin línea de accesorios). **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
+  riel, `rielDeslizanteMm` y el «Apertura Izq/Der» del resumen. **Referencias SOLO NEGRO (Dylan mismo día: «las referencias que
+  te di son solo para negro, no tengo las de cromado aún»)**: riel `ALC00467` (`RIEL_DESLIZANTE.ref = { negro }`, etiqueta
+  `rielRefLabel(color)`: sin ref → «(cromado: ref. por definir)»; el banner del proyecto, sin color, dice «ALC00467 (negro) ·
+  cromado: ref. por definir»), kit de prensas `ALC00466` (`ACCESORIOS_KIT.deslizante.negro`), tirador redondo `ALC00478`
+  (`TIRADOR_REDONDO_REF = { negro }`, se suma al kit de `deslizante`/`deslizante_conn` cuando `tirador` es redondo o vacío).
+  Cromado: sin kit → la cajita dice «sin definir para este color todavía» y el resumen no lista accesorios. Las refs anteriores
+  `ALC00401`/`ALC00186` (mensaje de Dylan del 2026-10-13, commit 7592733) eran equivocadas y se borraron de todo. **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
   2+ paneles (ducha compuesta), caja amarilla «📐 Hueco» con Ancho/Alto (`state.hueco = {a1, h1, a2, h2}`, `facadeSetHueco` sin
   reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → «Hueco
   (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. Pendiente de confirmar: el descuento de alto
@@ -849,9 +853,9 @@ estilo simplificado del CAD.
   artalInventarioPorReferencia` → `window.refreshAccesoriosInfo()` re-pinta los constructores de
   Vidrio de Ducha ya abiertos cuando llegan los datos). Nada de esto depende de cantidad en
   stock (los `qty` son fijos por kit, no relacionados a inventario disponible).
-  - **Puerta Deslizante Prensas (`deslizante`), referencias del usuario 2026-10-13**: cromado = 1 kit de
-    prensas `ALC00466` por puerta (`ACCESORIOS_KIT.deslizante.cromado`; negro pendiente) + el riel
-    `ALC00467`, que NO es un ítem por unidad: se compra por **barra de 5 m o media barra de 2,5 m** según
+  - **Puerta Deslizante Prensas (`deslizante`)**: NEGRO = 1 kit de prensas `ALC00466` por puerta
+    (`ACCESORIOS_KIT.deslizante.negro`; cromado pendiente — corregido 2026-11-21, antes decía cromado con refs equivocadas) +
+    el riel `ALC00467` (negro), que NO es un ítem por unidad: se compra por **barra de 5 m o media barra de 2,5 m** según
     el ancho, y con varias puertas hay que calcular cuánto tubo hace falta. `RIEL_DESLIZANTE`
     `{ref, barraMm:5000, mediaMm:2500}`; `rielDeslizanteMm(state,i)` = largo del riel de esa puerta =
     lo que recorre en el dibujo (la puerta + los paneles del lado hacia donde corre) y nunca menos de

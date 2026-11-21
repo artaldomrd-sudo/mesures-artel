@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 21:11</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 21:33</div>
         </div>
     </div>
     
@@ -2781,7 +2781,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const huecoTxt = huecoDuchaTxt(state) ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Hueco (medida total):</b> ${huecoDuchaTxt(state)}</div>` : '';
             const esqKitTxt = esqSinDueno ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Unión de esquina (panel ${esqK} ↔ panel ${esqK + 1}):</b> ${esqKit ? esqKit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ') + ' (prensa cuadrada vidrio/vidrio 45x45)' : '<span style="color:#b9770e;">prensa vidrio/vidrio sin referencia para este color todavía</span>'}</div>` : '';
             const rieles = rielesDeDucha(state);
-            const rielTxt = rieles.length ? (() => { const r = rielBarrasNecesarias(rieles); return `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)}${rieles.length > 1 ? ` (${rieles.length} puertas)` : ''}:</b> ${(r.totalMm / 1000).toFixed(2)} m lineales → <b>${rielBarrasTxt(r)}</b></div>`; })() : '';
+            const rielTxt = rieles.length ? (() => { const r = rielBarrasNecesarias(rieles); return `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Riel ${rielRefLabel((paneles.find(p => p.tipo === 'deslizante') || {}).herraje_color)}${rieles.length > 1 ? ` (${rieles.length} puertas)` : ''}:</b> ${(r.totalMm / 1000).toFixed(2)} m lineales → <b>${rielBarrasTxt(r)}</b></div>`; })() : '';
             const esqTxt = esqK ? `<div style="margin:2px 0 4px; color:var(--artal-blue);"><b>Esquina a 90° · Giro ${facadeGiro(state)} ${(DUCHA_GIROS.find(g => g[0] === facadeGiro(state)) || [0, ''])[1]}</b> después del panel ${esqK}: lado A = panel${esqK > 1 ? 'es' : ''} 1${esqK > 1 ? '–' + esqK : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(0, esqK))} mm</b>) · lado B = panel${paneles.length - esqK > 1 ? 'es' : ''} ${esqK + 1}${paneles.length - esqK > 1 ? '–' + paneles.length : ''} (<b style="color:#e74c3c;">${mmDe(paneles.slice(esqK))} mm</b>). El ancho total es la fachada desplegada.</div>` : '';
             summaryBox.innerHTML = `<div style="font-size:13px; line-height:1.7;">
                 <div style="border-bottom:2px solid var(--artal-blue); margin-bottom:8px; padding-bottom:5px;"><strong>FACHADA DE DUCHA</strong> (${paneles.length} panel${paneles.length === 1 ? '' : 'es'}${esqK ? ', en esquina' : ''}) — A: <span style="color:#e74c3c;">${state.ancho || 0}</span> mm | H: <span style="color:#e74c3c;">${state.alto || 0}</span> mm | Cant: ${state.cantidad || 1}</div>
@@ -4159,7 +4159,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         let html = '';
         if (rieles.length) {
             const r = rielBarrasNecesarias(rieles);
-            html += `🚿 <b>Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)} para este trabajo: ${rielBarrasTxt(r)}</b> ` +
+            html += `🚿 <b>Riel ${rielRefLabel()} para este trabajo: ${rielBarrasTxt(r)}</b> ` +
                 `<span style="color:#555;">(${r.piezas} puerta${r.piezas > 1 ? 's' : ''} deslizante${r.piezas > 1 ? 's' : ''} de prensas · ${(r.totalMm / 1000).toFixed(2)} m lineales, optimizado reusando sobrantes)</span>`;
         }
         if (!hayBaranda) { el.innerHTML = html; return; }
@@ -9901,7 +9901,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // ALC00467, que se compra por barra de 5 m o media barra de 2,5 m (ver RIEL_DESLIZANTE y
         // rielBarrasNecesarias). Negro: pendiente de confirmar.
         deslizante: {
-            cromado: [{ ref: 'ALC00466', qty: 1 }],
+            // Dylan 2026-11-21: las referencias ALC00466 (kit) / ALC00467 (riel) / ALC00478 (tirador) son SOLO NEGRO; cromado pendiente.
+            negro: [{ ref: 'ALC00466', qty: 1 }],
         },
         deslizante_conn: {
             cromado: [{ ref: 'ALC00344', qty: 1 }, { ref: 'TUB00380', qty: 1 }],
@@ -9921,7 +9922,13 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // Riel de la Puerta Deslizante Prensas: se compra por barra (5 m) o media barra (2,5 m). Largo por
     // puerta = lo que recorre el riel en el dibujo (la puerta + los paneles del lado hacia donde corre) y
     // nunca menos de 2 × ancho de la puerta (hace falta sitio para abrirla del todo) — supuesto propio.
-    const RIEL_DESLIZANTE = { ref: 'ALC00467', barraMm: 5000, mediaMm: 2500 };
+    const RIEL_DESLIZANTE = { ref: { negro: 'ALC00467' }, barraMm: 5000, mediaMm: 2500 };   // ref por color de herraje; cromado pendiente
+    // Etiqueta del riel según el color del herraje; sin color (banner del proyecto) muestra lo que se sabe.
+    function rielRefLabel(color) {
+        if (color === undefined) return `${resolveAccesorioLabel(RIEL_DESLIZANTE.ref.negro)} (negro) · cromado: ref. por definir`;
+        const ref = RIEL_DESLIZANTE.ref[color || 'cromado'];
+        return ref ? resolveAccesorioLabel(ref) : `(${color || 'cromado'}: ref. por definir)`;
+    }
     // Hacia dónde corre una puerta deslizante (Dylan 2026-11-21, con captura: «el tirador va en el borde opuesto y la flecha debe
     // apuntar hacia la mampara»): si tiene una mampara (fijo) a UN solo lado, corre hacia ella — 'I' si está a la izquierda,
     // 'D' si está a la derecha — sin importar lo que diga `orientacion`; con mampara a los dos lados o a ninguno manda `orientacion`.
@@ -10022,10 +10029,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             if (ref) kit.push({ ref, qty: 1 });
         }
         // Tirador redondo de la puerta deslizante (Dylan 2026-11-21): ALC00478 (negro pendiente de confirmar).
-        if ((p.tipo === 'deslizante_conn' || p.tipo === 'deslizante') && (p.tirador || 'redondo') === 'redondo') kit.push({ ref: TIRADOR_REDONDO_REF, qty: 1 });
+        if ((p.tipo === 'deslizante_conn' || p.tipo === 'deslizante') && (p.tirador || 'redondo') === 'redondo') { const tr = TIRADOR_REDONDO_REF[p.herraje_color || 'cromado']; if (tr) kit.push({ ref: tr, qty: 1 }); }
         return kit;
     }
-    const TIRADOR_REDONDO_REF = 'ALC00478';
+    const TIRADOR_REDONDO_REF = { negro: 'ALC00478' };   // por color de herraje; cromado pendiente (Dylan 2026-11-21)
     // HTML de la caja "Accesorios" sola (sin el <div> contenedor con el id, ver accesoriosBoxHTML
     // más abajo) — separado para poder refrescar SOLO esta caja cuando cambia ancho/color/forma,
     // sin reconstruir el resto del formulario del panel (evita perder el foco del campo Ancho,
@@ -10038,7 +10045,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         let txt = kit.map(k => `${f(resolveAccesorioLabel(k.ref))} x${k.qty}`).join(', ');
         if (p.tipo === 'deslizante' && ctx && ctx.rielMm > 0) {
             const L = ctx.rielMm, cut = L <= RIEL_DESLIZANTE.mediaMm ? 'media barra 2,5 m' : L <= RIEL_DESLIZANTE.barraMm ? 'barra completa 5 m' : 'más largo que una barra, lleva empalme';
-            txt += `, Riel ${f(resolveAccesorioLabel(RIEL_DESLIZANTE.ref))}: ${L} mm (${cut})`;
+            txt += `, Riel ${f(rielRefLabel(p.herraje_color))}: ${L} mm (${cut})`;
         }
         return txt;
     }
