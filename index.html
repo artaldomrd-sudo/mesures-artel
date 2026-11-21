@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 20:53</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 21:02</div>
         </div>
     </div>
     
@@ -2056,18 +2056,21 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // «por definir» (no se muestra nada). Devuelve { [índice de panel]: { w, h, nota } }.
     // Segunda vuelta (Dylan, mismo día): SOLO el descuento de ALTO de la deslizante suspendida con prensas es automático; el ancho
     // (÷ 2 + 25 de cruce) y los demás descuentos se hacen a mano según cada caso. Devuelve { [índice de panel]: { h, nota } }.
-    // Deslizante de CONECTORES (Dylan, mismo día): a la puerta se le quitan 10 mm de alto respecto al alto final de fabricación
-    // (el ancho, +25 mm por hoja para el cruce, sigue a mano). En los dos casos el resumen lleva una nota corta y visible
-    // «ya se descontó N cm al alto de la puerta · no volver a descontar» para que fábrica no lo reste dos veces.
-    const DUCHA_DESL_ALTO_DESC_MM = { deslizante: 40, deslizante_conn: 10 };
-    function calcVidrioDucha(state) {
-        const out = {};
+    // Tercera vuelta (Dylan 2026-11-21, «vamos a modificar el proceso: el cuaderno no calcula nada»): según lo que se seleccione
+    // en el Vidrio de Ducha aparece una GUÍA DE PROCEDIMIENTO (constructor + resumen/ficha) que dice qué sumar y qué descontar;
+    // el encargado hace sus sumas y sus descuentos. Descuento de alto por tipo de puerta deslizante (mm) y cruce de 25 + 25.
+    const GUIA_DUCHA_DESC_ALTO = { deslizante: 50, deslizante_conn: 10 }, GUIA_DUCHA_CRUCE = 25;
+    function guiaDucha(state) {
+        const out = [];
         if (!state || state.categoria !== 'cerramiento') return out;
-        const ps = state.paneles || [], H = parseInt(state.alto) || 0;
-        if (!H) return out;
-        ps.forEach((p, i) => {
-            const d = DUCHA_DESL_ALTO_DESC_MM[p.tipo]; if (!d) return;
-            out[i] = { h: H - d, desc: d, nota: `alto ${H} − ${d}`, aviso: `ya se descontó ${d / 10} cm al alto de la puerta · no volver a descontar` };
+        const ps = state.paneles || [], hayMampara = ps.some(p => p.tipo === 'fijo');
+        const nom = { deslizante: 'Puerta deslizante de prensas', deslizante_conn: 'Puerta deslizante de conectores' };
+        Object.keys(GUIA_DUCHA_DESC_ALTO).forEach(t => {
+            if (!ps.some(p => p.tipo === t)) return;
+            const d = GUIA_DUCHA_DESC_ALTO[t], c = GUIA_DUCHA_CRUCE;
+            out.push(hayMampara
+                ? `${nom[t]} — Alto: descontar ${d} mm al alto del hueco. Ancho: agregar ${c} mm a la mampara y ${c} mm a la puerta para que se crucen ${2 * c} mm.`
+                : `${nom[t]} sola (sin mampara) — Alto: descontar ${d} mm al alto del hueco. Ancho: agregar lo necesario para que la puerta cubra el hueco.`);
         });
         return out;
     }
@@ -2759,7 +2762,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (state.categoria === 'cerramiento') {
             const tipoTxt = { fijo: 'Panel Fijo', puerta: 'Puerta Abatible (bisagras pared/vidrio)', deslizante: 'Puerta Deslizante Prensas', deslizante_conn: 'Puerta Deslizante Conectores' };
             const paneles = state.paneles || [];
-            const vc = calcVidrioDucha(state);   // descuentos de vidrio (por ahora solo deslizante de prensas + su fijo)
+            const guia = guiaDucha(state);   // guía de procedimiento (qué sumar / descontar); el cuaderno no calcula
             const list = paneles.map((p, i) => {
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
@@ -2767,14 +2770,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 { const txt = accesoriosKitTxt(p, facadeCtxPanel(state, i)); if (txt) extras.push('Accesorios: ' + txt); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
-                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Alto de vidrio a cortar: ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span> <span style="color:#8a6d00; background:#fff8e1; border-radius:3px; padding:0 4px; white-space:nowrap;">⚠ ${vc[i].aviso}</span>` : '';
+                const corte = '';
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
             const esqKit = facadeEsquinaKit(state);
             const esqSinDueno = esqK && facadeCtxPanel(state, esqK).sinDueno;   // ningún panel fijo con conectores junto a la esquina: las prensas van aparte
-            const huecoTxt = huecoDuchaTxt(state) ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Hueco (medida total):</b> ${huecoDuchaTxt(state)}</div>` : '';
+            const huecoTxt = (huecoDuchaTxt(state) ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Hueco (medida total):</b> ${huecoDuchaTxt(state)}</div>` : '')
+                + (guia.length ? `<div style="margin:0 0 6px; padding:5px 8px; background:#fff8e1; border:1px solid #f0c33c; border-radius:5px; color:#5d4a00; font-size:12px;"><b>📐 Guía de corte</b> (el encargado hace las sumas y los descuentos):<br>${guia.map(g => '• ' + g).join('<br>')}</div>` : '');
             const esqKitTxt = esqSinDueno ? `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Unión de esquina (panel ${esqK} ↔ panel ${esqK + 1}):</b> ${esqKit ? esqKit.map(k => `${resolveAccesorioLabel(k.ref)} x${k.qty}`).join(', ') + ' (prensa cuadrada vidrio/vidrio 45x45)' : '<span style="color:#b9770e;">prensa vidrio/vidrio sin referencia para este color todavía</span>'}</div>` : '';
             const rieles = rielesDeDucha(state);
             const rielTxt = rieles.length ? (() => { const r = rielBarrasNecesarias(rieles); return `<div style="margin:0 0 4px; color:#555; font-size:12px;"><b style="color:#333;">Riel ${resolveAccesorioLabel(RIEL_DESLIZANTE.ref)}${rieles.length > 1 ? ` (${rieles.length} puertas)` : ''}:</b> ${(r.totalMm / 1000).toFixed(2)} m lineales → <b>${rielBarrasTxt(r)}</b></div>`; })() : '';
@@ -10089,7 +10093,10 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
 
     function renderFacadeBuilder(id) {
         const paneles = cardsState[id].paneles || [];
-        let h = '<div style="display:flex; flex-direction:column; gap:6px;">';
+        let h = '';
+        // Guía de procedimiento según lo seleccionado (Dylan 2026-11-21): el cuaderno no calcula; dice qué sumar y qué descontar.
+        { const g = guiaDucha(cardsState[id]); if (g.length) h += `<div style="margin:0 0 8px; padding:6px 9px; background:#fff8e1; border:1px solid #f0c33c; border-radius:6px; color:#5d4a00; font-size:12.5px; line-height:1.45;"><b>📐 Guía de corte</b> · el encargado hace las sumas y los descuentos<br>${g.map(x => '• ' + x).join('<br>')}</div>`; }
+        h += '<div style="display:flex; flex-direction:column; gap:6px;">';
         paneles.forEach((p, i) => {
             h += `<div style="border:1px solid #d7dde3; border-radius:6px; padding:7px; background:#fbfcfd;">
                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:5px;">
@@ -10190,7 +10197,19 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         // Etiquetas de ancho por panel y alto total
         let labels = '';
         layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, headTop, `${L.p.ancho} mm`, fsDim); });
-        if (alto > 0) labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, fsDim);
+        // Alto de la MAMPARA y alto de la PUERTA marcados aparte en el dibujo (Dylan 2026-11-21: «la mayoría no lee la descripción»).
+        // El cuaderno no calcula: las dos cotas llevan el alto cargado; la guía de corte (resumen y constructor) dice qué descontar.
+        let extraL = 0;
+        if (alto > 0) {
+            const esPuerta = p => p && p.tipo !== 'fijo', first = paneles[0], last = paneles[paneles.length - 1];
+            const nomb = p => esPuerta(p) ? 'puerta' : 'mampara';
+            const hayFijo = paneles.some(p => p.tipo === 'fijo'), hayPuerta = paneles.some(esPuerta);
+            if (hayFijo && hayPuerta && paneles.length >= 2 && esPuerta(first) !== esPuerta(last)) {
+                labels += dimLineV(headTop, headTop + Hd, -4, 0, `${nomb(first)} ${alto} mm`, fsDim);
+                labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${nomb(last)} ${alto} mm`, fsDim);
+                extraL = Math.max(14, fsDim * 7);
+            } else labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${hayFijo && hayPuerta ? '' : (hayPuerta ? 'puerta ' : 'mampara ')}${alto} mm`, fsDim);
+        }
         let vbH = headTop + Hd + 4;
         // ESQUINA a 90°: elevación desplegada (plana) con la esquina marcada + vista en planta con la "L".
         const esqK = facadeEsquinaK(state);
@@ -10249,7 +10268,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             vbH = planY + 14 + (vertUp ? 0 : lenV);
         }
         const extraR = Math.max(0, fsDim * 4.4 - 14);   // sitio para la cota de alto cuando la fuente crece
-        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -3 ${(DW + 24 + extraR).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
+        let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${(-6 - extraL).toFixed(1)} -3 ${(DW + 24 + extraR + extraL).toFixed(1)} ${(vbH + 4).toFixed(1)}" preserveAspectRatio="xMidYMid meet" width="100%" height="100%" style="stroke:#0A3D62; fill:none; stroke-linecap:round; stroke-linejoin:round;">`;
         svg += defs;
         svg += `<style>path, rect, line, circle, polyline, polygon { vector-effect: non-scaling-stroke; stroke-width: 1.5px; }</style>`;
         svg += body + labels + '</svg>';

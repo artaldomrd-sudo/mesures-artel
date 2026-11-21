@@ -778,17 +778,23 @@ estilo simplificado del CAD.
   con esquina agrega `ALC00486` (`TUBO_ESQUINA_KIT`, solo cromado por ahora): conexión del tubo
   ornamental TUB00380 con el panel perpendicular. El resumen y el constructor muestran "Unión de
   esquina (panel k ↔ k+1): … x2".
-- **Descuento de vidrio en la ducha: SOLO el alto de la deslizante de prensas (Dylan 2026-11-21)**: primera versión calculaba también
-  el ancho (hueco ÷ 2 + 25 de cruce, con el fijo vecino) y Dylan la acotó el mismo día: «solo el descuento en altura de la puerta
-  deslizante suspendida con prensas; los otros descuentos los hacemos a mano según cada caso». `calcVidrioDucha(state)` (junto a
-  `calcVidrioPanoFijo`, `DUCHA_DESL_ALTO_DESC_MM = { deslizante: 40, deslizante_conn: 10 }`) devuelve `{ [índice]: {h, desc, nota,
-  aviso} }` para `deslizante` (prensas: alto − 40) y `deslizante_conn` (conectores, Dylan mismo día: alto − 10 solo a la puerta; el
-  ancho +25 por hoja sigue a mano). Resumen/PDF al final de la línea del panel: «Alto de vidrio a cortar: 1990 mm (alto 2000 − 10)»
-  + nota ámbar corta y visible «⚠ ya se descontó 1 cm al alto de la puerta · no volver a descontar» (idem 4 cm en prensas) para que
-  fábrica no lo reste dos veces. **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
+- **Vidrio de Ducha: GUÍA DE CORTE, no cálculo (Dylan 2026-11-21, tres vueltas el mismo día)**. Primero pidió el descuento
+  automático de la deslizante de prensas (hueco ÷ 2 + 25 de cruce, alto − 40), luego solo el alto (prensas −40, conectores −10 con
+  nota «ya se descontó») y al final cambió el proceso: «el cuaderno no calcula nada; según lo que se seleccione aparece un mensaje
+  informativo: son guías de procedimiento, el encargado hace sus sumas y descuentos». `guiaDucha(state)` (junto a
+  `calcVidrioPanoFijo`; `GUIA_DUCHA_DESC_ALTO = { deslizante: 50, deslizante_conn: 10 }`, `GUIA_DUCHA_CRUCE = 25`) devuelve una
+  frase por tipo de deslizante presente: con mampara «Puerta deslizante de prensas — Alto: descontar 50 mm al alto del hueco.
+  Ancho: agregar 25 mm a la mampara y 25 mm a la puerta para que se crucen 50 mm.»; sin mampara «… sola (sin mampara) — … Ancho:
+  agregar lo necesario para que la puerta cubra el hueco.» Se pinta en caja ámbar «📐 Guía de corte · el encargado hace las sumas
+  y los descuentos» arriba del constructor (`renderFacadeBuilder`) y en el resumen/ficha (junto a `huecoTxt`). Puerta abatible y
+  mamparas solas: sin guía (a mano). **Cotas de alto por tipo en el dibujo** («la mayoría no lee la descripción»): `renderFacade`
+  marca «mampara 2442 mm» en el lado del primer panel y «puerta 2442 mm» en el del último cuando la ducha mezcla mampara y
+  puerta (viewBox ensanchado a la izquierda con `extraL`); con un solo tipo, una cota «puerta …»/«mampara …». Las dos cotas
+  llevan el alto cargado: el cuaderno no descuenta. **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
   2+ paneles (ducha compuesta), caja amarilla «📐 Hueco» con Ancho/Alto (`state.hueco = {a1, h1, a2, h2}`, `facadeSetHueco` sin
-  reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → línea «Hueco
-  (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. No calcula nada: evita perder la medida de obra.
+  reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → «Hueco
+  (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. Pendiente de confirmar: el descuento de alto
+  de prensas (dijo 40 y luego 50; quedó 50) y el de conectores (10).
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin
