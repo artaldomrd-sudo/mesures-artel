@@ -778,6 +778,17 @@ estilo simplificado del CAD.
   con esquina agrega `ALC00486` (`TUBO_ESQUINA_KIT`, solo cromado por ahora): conexión del tubo
   ornamental TUB00380 con el panel perpendicular. El resumen y el constructor muestran "Unión de
   esquina (panel k ↔ k+1): … x2".
+- **Descuentos de vidrio en la ducha — primer paso: deslizante de prensas (Dylan 2026-11-21: «empezamos con la puerta corrediza
+  deslizante prensas; alto −40; hueco 2500 → 2500/2 + 25 cada vidrio, se cruzan 50; a veces no es mitad y mitad, casos puntuales,
+  por ahora solo esto»)**: `calcVidrioDucha(state)` (junto a `calcVidrioPanoFijo`; `DUCHA_DESL_ALTO_DESC_MM = 40`,
+  `DUCHA_DESL_CRUCE_MM = 25`) devuelve `{ [índice]: {w, h, nota, n} }`: para cada panel `deslizante`, hueco = su ancho + el del
+  panel `fijo` vecino del lado hacia donde corre (`orientacion` I → i−1, D → i+1); vidrio = hueco ÷ 2 + 25 × (alto − 40) para la
+  puerta Y para ese fijo; sin fijo al lado, la deslizante se toma como el hueco completo → `n: 2` («2 × 1275 × 1960»). Solo en el
+  resumen/PDF (`generateSummary`, rama cerramiento: «Vidrio a cortar: 1275 × 1960 mm (hueco 2500 ÷ 2 + 25 mm de cruce; alto 2000
+  − 40)» en verde al final de la línea del panel), igual que el Paño Fijo. Puerta abatible, deslizante de conectores y fijos sueltos
+  siguen sin descuento (no se muestra nada). Reparto distinto de mitad y mitad: pendiente. Probado: fijo 1250 + deslizante 1250 →
+  1275 × 1960 los dos; deslizante sola 2500 → 2 × 1275 × 1960; deslizante D 1300 + fijo 1200 + puerta 700 → 1275 × 2060 en los dos
+  primeros y nada en la puerta.
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin

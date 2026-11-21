@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 08:28</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 19:54</div>
         </div>
     </div>
     
@@ -2048,6 +2048,32 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // alto = alto total − descuento arriba − descuento abajo (igual que 1 paño). Con unión "T" (perfil entre paños)
     // el descuento por junta no está definido todavía: se devuelve solo el total con `pendiente:true`.
     const JUNTA_TOPE_MM = 3;
+    // Descuentos de vidrio en el Vidrio de Ducha (Dylan 2026-11-21, «empezamos con la puerta deslizante de prensas»): la puerta
+    // deslizante y el panel fijo sobre el que corre se reparten el HUECO mitad y mitad y cada vidrio lleva +25 mm para que se
+    // crucen 50 mm; el alto del vidrio = alto total − 40. Hueco = ancho de la deslizante + ancho del fijo vecino del lado hacia
+    // donde corre (`orientacion`); si no hay fijo al lado, el ancho de la deslizante se toma como el hueco completo (2 vidrios).
+    // Los repartos que no son mitad y mitad son casos puntuales: por ahora no se contemplan. Las demás puertas y paneles siguen
+    // «por definir» (no se muestra nada). Devuelve { [índice de panel]: { w, h, nota } }.
+    const DUCHA_DESL_ALTO_DESC_MM = 40, DUCHA_DESL_CRUCE_MM = 25;
+    function calcVidrioDucha(state) {
+        const out = {};
+        if (!state || state.categoria !== 'cerramiento') return out;
+        const ps = state.paneles || [], H = parseInt(state.alto) || 0;
+        if (!H) return out;
+        const h = H - DUCHA_DESL_ALTO_DESC_MM;
+        ps.forEach((p, i) => {
+            if (p.tipo !== 'deslizante') return;
+            const w = parseInt(p.ancho) || 0; if (!w) return;
+            const j = (p.orientacion || 'I') !== 'D' ? i - 1 : i + 1;
+            const fijo = ps[j] && ps[j].tipo === 'fijo' && !out[j] ? ps[j] : null;
+            const hueco = w + (fijo ? (parseInt(fijo.ancho) || 0) : 0);
+            const vw = Math.round(hueco / 2 + DUCHA_DESL_CRUCE_MM);
+            const base = `hueco ${hueco} ÷ 2 + ${DUCHA_DESL_CRUCE_MM} mm de cruce; alto ${H} − ${DUCHA_DESL_ALTO_DESC_MM}`;
+            out[i] = { w: vw, h, nota: fijo ? base : `${base}; sin panel fijo al lado: la deslizante se toma como el hueco completo → 2 vidrios (puerta + fijo)`, n: fijo ? 1 : 2 };
+            if (fijo) out[j] = { w: vw, h, nota: `mismo hueco que la puerta deslizante (panel ${i + 1})`, n: 1 };
+        });
+        return out;
+    }
     function calcVidrioPanoFijo(state) {
         if (state.type !== 'fachada_din') return null;
         const ancho = parseInt(state.ancho) || 0, alto = parseInt(state.alto) || 0;
@@ -2726,6 +2752,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
         if (state.categoria === 'cerramiento') {
             const tipoTxt = { fijo: 'Panel Fijo', puerta: 'Puerta Abatible (bisagras pared/vidrio)', deslizante: 'Puerta Deslizante Prensas', deslizante_conn: 'Puerta Deslizante Conectores' };
             const paneles = state.paneles || [];
+            const vc = calcVidrioDucha(state);   // descuentos de vidrio (por ahora solo deslizante de prensas + su fijo)
             const list = paneles.map((p, i) => {
                 const extras = [];
                 if (p.tipo === 'fijo') { extras.push(p.fijacion === 'moldura' ? ('Moldura U ' + (p.moldura_color === 'blanco' ? 'Blanca' : 'Negra')) : 'Conectores'); }
@@ -2733,7 +2760,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 { const txt = accesoriosKitTxt(p, facadeCtxPanel(state, i)); if (txt) extras.push('Accesorios: ' + txt); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
-                return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}`;
+                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Vidrio a cortar: ${vc[i].n > 1 ? '2 × ' : ''}${vc[i].w} × ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span>` : '';
+                return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
