@@ -2833,6 +2833,17 @@ el momento que se suben».
   pendientes como fichas «terminadas hoy» (`resMision`, `item.misionesHechas[]`); `aplicarObras` las marca terminadas (todas si la obra
   queda terminada). Coordinador: `trabajo().misiones` «PENDIENTE: … · terminada: …». Datos: Jardines de la bonita (`fT9NUMEGk0JJnWtGFHvp`)
   recibió 2 misiones (terminar el techo grande; desmontaje de vidrios y prensas de suelo para que el cliente cambie las cerámicas).
+  **«+ Agregar» que no agregaba + detalle y fotos por misión (Dylan 2026-11-21, captura «Escribe qué hay que hacer» con texto escrito)**:
+  causa = el botón leía la casilla en el clic, pero al tocarlo la casilla perdía el foco, un snapshot repintaba la tarjeta vacía y el botón
+  leía nada. Ahora el borrador vive en `misionBorr[jobId]` (título, detalle, archivos, detalle abierto; oyente `input` global para
+  `mision-nueva-*`/`mision-det-*`), `misionesHTML` lo vuelve a pintar tras cada repintado, el botón lleva `onmousedown preventDefault`
+  (no roba el foco) y tras guardar se quita el foco y se llama `renderJobPanel()` para que la misión se vea al instante. Enlace
+  «＋ Agregar detalle o foto» (`misionMas`) abre textarea de detalle + «📷 Foto» (`misionAdj`/`misionQuitarAdj`, miniaturas pendientes);
+  `misionAgregar` sube con `subirFotos(files, 'instalaciones/<id>')` y guarda `m.detalle` y `m.fotos[] {url, tipo, nombre, por}` SOLO en
+  la misión (no en `fotos[]` de la obra: una foto `img` en la galería haría que `instalacionActividad` pasara el trabajo a en_proceso).
+  La fila muestra el detalle y las fotos (`.coment-fotos`, el visor usa el título `.mtitulo` como pie). `misionEnviando` evita el doble
+  envío; botón «⏳ Subiendo…». Probado con Firestore simulado (`ops/_prueba-misiones.html`, borrada): texto conservado tras repintar,
+  clic y Enter envían, detalle + foto guardados, título vacío avisa sin guardar.
 - **Conversación tipo WhatsApp (Dylan 2026-11-12, «si escriben "listo, ventana instalada" y suben foto, la foto se sube justo después
   y con un clic se agranda»)**: el compositor del hilo lleva «📷 Foto» (solo `instalaciones`) + «Enviar ➤»; los archivos elegidos se ven
   como miniaturas pendientes (`hiloPend`, `hiloAdjuntar`, `hiloQuitarAdj`) y `hiloEnviar` sube con `subirFotos` y escribe UN mensaje
