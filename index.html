@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 20:49</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 20:53</div>
         </div>
     </div>
     
@@ -2056,13 +2056,19 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     // «por definir» (no se muestra nada). Devuelve { [índice de panel]: { w, h, nota } }.
     // Segunda vuelta (Dylan, mismo día): SOLO el descuento de ALTO de la deslizante suspendida con prensas es automático; el ancho
     // (÷ 2 + 25 de cruce) y los demás descuentos se hacen a mano según cada caso. Devuelve { [índice de panel]: { h, nota } }.
-    const DUCHA_DESL_ALTO_DESC_MM = 40;
+    // Deslizante de CONECTORES (Dylan, mismo día): a la puerta se le quitan 10 mm de alto respecto al alto final de fabricación
+    // (el ancho, +25 mm por hoja para el cruce, sigue a mano). En los dos casos el resumen lleva una nota corta y visible
+    // «ya se descontó N cm al alto de la puerta · no volver a descontar» para que fábrica no lo reste dos veces.
+    const DUCHA_DESL_ALTO_DESC_MM = { deslizante: 40, deslizante_conn: 10 };
     function calcVidrioDucha(state) {
         const out = {};
         if (!state || state.categoria !== 'cerramiento') return out;
         const ps = state.paneles || [], H = parseInt(state.alto) || 0;
         if (!H) return out;
-        ps.forEach((p, i) => { if (p.tipo === 'deslizante') out[i] = { h: H - DUCHA_DESL_ALTO_DESC_MM, nota: `alto ${H} − ${DUCHA_DESL_ALTO_DESC_MM}; el ancho se define a mano según el caso` }; });
+        ps.forEach((p, i) => {
+            const d = DUCHA_DESL_ALTO_DESC_MM[p.tipo]; if (!d) return;
+            out[i] = { h: H - d, desc: d, nota: `alto ${H} − ${d}`, aviso: `ya se descontó ${d / 10} cm al alto de la puerta · no volver a descontar` };
+        });
         return out;
     }
     // Medida total del HUECO de la ducha (recordatorio, solo cuando es compuesta: 2+ paneles). Con esquina, ancho 1 / ancho 2 (un
@@ -2761,7 +2767,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 { const txt = accesoriosKitTxt(p, facadeCtxPanel(state, i)); if (txt) extras.push('Accesorios: ' + txt); }
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
-                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Alto de vidrio a cortar: ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span>` : '';
+                const corte = vc[i] ? ` · <b style="color:#1e7a46;">Alto de vidrio a cortar: ${vc[i].h} mm</b> <span style="color:#777;">(${vc[i].nota})</span> <span style="color:#8a6d00; background:#fff8e1; border-radius:3px; padding:0 4px; white-space:nowrap;">⚠ ${vc[i].aviso}</span>` : '';
                 return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);

@@ -781,9 +781,11 @@ estilo simplificado del CAD.
 - **Descuento de vidrio en la ducha: SOLO el alto de la deslizante de prensas (Dylan 2026-11-21)**: primera versión calculaba también
   el ancho (hueco ÷ 2 + 25 de cruce, con el fijo vecino) y Dylan la acotó el mismo día: «solo el descuento en altura de la puerta
   deslizante suspendida con prensas; los otros descuentos los hacemos a mano según cada caso». `calcVidrioDucha(state)` (junto a
-  `calcVidrioPanoFijo`, `DUCHA_DESL_ALTO_DESC_MM = 40`) devuelve `{ [índice]: {h, nota} }` solo para paneles `deslizante`: alto de
-  vidrio = alto total − 40; se muestra en el resumen/PDF al final de la línea del panel («Alto de vidrio a cortar: 1960 mm (alto
-  2000 − 40; el ancho se define a mano según el caso)»). **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
+  `calcVidrioPanoFijo`, `DUCHA_DESL_ALTO_DESC_MM = { deslizante: 40, deslizante_conn: 10 }`) devuelve `{ [índice]: {h, desc, nota,
+  aviso} }` para `deslizante` (prensas: alto − 40) y `deslizante_conn` (conectores, Dylan mismo día: alto − 10 solo a la puerta; el
+  ancho +25 por hoja sigue a mano). Resumen/PDF al final de la línea del panel: «Alto de vidrio a cortar: 1990 mm (alto 2000 − 10)»
+  + nota ámbar corta y visible «⚠ ya se descontó 1 cm al alto de la puerta · no volver a descontar» (idem 4 cm en prensas) para que
+  fábrica no lo reste dos veces. **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
   2+ paneles (ducha compuesta), caja amarilla «📐 Hueco» con Ancho/Alto (`state.hueco = {a1, h1, a2, h2}`, `facadeSetHueco` sin
   reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → línea «Hueco
   (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. No calcula nada: evita perder la medida de obra.
