@@ -806,7 +806,15 @@ estilo simplificado del CAD.
   2+ paneles (ducha compuesta), caja amarilla «📐 Hueco» con Ancho/Alto (`state.hueco = {a1, h1, a2, h2}`, `facadeSetHueco` sin
   reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → «Hueco
   (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. Pendiente de confirmar: el descuento de alto
-  de prensas (dijo 40 y luego 50; quedó 50) y el de conectores (10).
+  de prensas (dijo 40 y luego 50; quedó 50) y el de conectores (10). **Ancho × alto POR PANEL + Hueco arriba del todo (Dylan
+  2026-11-21, captura del constructor: «ponme campo de ancho x alto como en los demás ítems… para cada ítem… el recuadro del hueco
+  arriba del todo para que sea lo primero que se apunte»)**: la caja «📐 Hueco» es ahora el PRIMER bloque de `renderFacadeBuilder`
+  (antes de la guía y de los paneles) y cada fila de panel lleva dos inputs juntos tras el tipo: «A mm» (`ancho`) y «H {H Total}»
+  (`p.alto`, opcional: vacío = `state.alto`, que sigue siendo el alto general del campo «H Total»). `hAlto(p)` en `renderFacade`:
+  el viewBox toma el panel más alto y los más bajos se alinean al PISO (`yTop = headTop + (Hd − hi)`; el riel y la cota de ancho
+  usan `L.y`); las cotas de alto izquierda/derecha muestran el alto real del primer/último panel y, con un solo tipo, salen dos
+  cotas si difieren. `facadeUpdatePanel(id, i, 'alto')`, resumen «Panel 2: … · 695 × 2000 mm», `medidasSospechosas` valida
+  `pn.alto`. Probado en navegador: mampara 800 × 2440 + deslizante 695 × 2000 (cotas «mampara 2440» / «puerta 2000»).
 - **Puerta Deslizante: dos variantes de hardware, "Prensas" y "Conectores"** (pedido explícito
   del usuario, con una foto real de referencia). La deslizante original (`tipo: 'deslizante'`,
   `type: 'door_slide'`) se renombró a **"Puerta Deslizante Prensas"** (nombres internos sin

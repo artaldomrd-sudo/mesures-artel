@@ -611,7 +611,7 @@
             <!-- Sello de versión: lo actualiza solo el hook pre-commit de git (.git/hooks/pre-commit) en cada
                  commit que toque index.html. Sirve para saber si un dispositivo (iPad, app del Dock) ya tiene
                  el código nuevo o sigue con uno viejo. -->
-            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 21:33</div>
+            <div id="build-stamp" style="font-size:10px;color:#8a93a0;text-align:center;margin-top:12px;letter-spacing:.3px;">Versión 2026-11-21 21:38</div>
         </div>
     </div>
     
@@ -815,7 +815,7 @@
             });
             return out;
         }
-        if (state.categoria === 'cerramiento') { (state.paneles || []).forEach((pn, i) => chk(pn.ancho, MEDIDA_MIN_MM, `Panel ${i + 1}, ancho`)); chk(state.alto, MEDIDA_MIN_MM, 'Alto'); return out; }
+        if (state.categoria === 'cerramiento') { (state.paneles || []).forEach((pn, i) => { chk(pn.ancho, MEDIDA_MIN_MM, `Panel ${i + 1}, ancho`); if (pn.alto) chk(pn.alto, MEDIDA_MIN_MM, `Panel ${i + 1}, alto`); }); chk(state.alto, MEDIDA_MIN_MM, 'Alto'); return out; }
         if (state.type === 'draw' || state.categoria === 'baranda') return out;   // medidas derivadas (CAD) / por tramos (baranda)
         chk(state.ancho, MEDIDA_MIN_MM, 'Ancho'); chk(state.alto, MEDIDA_MIN_MM, 'Alto');
         if (state.categoria === 'galandaje') { chk(state.anchoMarco, MEDIDA_MIN_MM, 'Ancho de marco'); if ((parseInt(state.anchoMarco) || 0) > 0 && (parseInt(state.anchoMarco) || 0) < (parseInt(state.ancho) || 0)) out.push(`Ancho de marco (${state.anchoMarco} mm) menor que el hueco (${state.ancho} mm)`); }
@@ -2771,7 +2771,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 if (p.accesoriosExtra) extras.push('Accesorios adicionales: ' + p.accesoriosExtra);
                 const vid = (p.vidrio ? `${p.vidrio} ${espesorLabel(p.espesor)} ${p.color_vidrio || ''}` : 'vidrio sin especificar').trim();
                 const corte = '';
-                return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
+                return `Panel ${i + 1}: <strong>${tipoTxt[p.tipo] || p.tipo}</strong> · ${p.ancho || 0} × ${parseInt(p.alto) || state.alto || 0} mm · ${vid}${extras.length ? ' · ' + extras.join(' · ') : ''}${corte}`;
             }).join('<br>');
             const esqK = facadeEsquinaK(state);
             const mmDe = arr => arr.reduce((a, p) => a + (parseInt(p.ancho) || 0), 0);
@@ -9865,6 +9865,7 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     window.facadeUpdatePanel = function (id, i, key, value) {
         const p = cardsState[id].paneles[i]; if (!p) return;
         if (key === 'ancho') p.ancho = parseInt(String(value).replace(/\D/g, '')) || 0;
+        else if (key === 'alto') p.alto = parseInt(String(value).replace(/\D/g, '')) || 0;   // alto por panel; 0 = H Total de la tarjeta
         else p[key] = value;
         if (key === 'espesor') { if (['3+3', '4+4', '5+5', '6+6'].includes(value)) p.vidrio = 'laminado'; else if (['10mm', '12mm'].includes(value)) p.vidrio = 'templado'; }
         // herraje_color/prensaForma/fijacion cambian qué referencia de ACCESORIOS_KIT aplica —
@@ -10118,6 +10119,18 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function renderFacadeBuilder(id) {
         const paneles = cardsState[id].paneles || [];
         let h = '';
+        // HUECO (medida total de obra) ARRIBA DEL TODO (Dylan 2026-11-21: «que sea lo primero que se apunte»): solo en ducha
+        // compuesta (2+ paneles); con esquina un ancho por lado y un alto 2 si las alturas varían. No calcula nada.
+        if (paneles.length >= 2) {
+            const hu = cardsState[id].hueco || {}, esq = !!facadeEsquinaK(cardsState[id]);
+            const hin = (k, ph) => `<input type="number" inputmode="numeric" value="${hu[k] || ''}" placeholder="${ph}" style="width:100%; padding:6px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; font-size:14px;" oninput="facadeSetHueco(${id}, '${k}', this.value)">`;
+            h += `<div style="margin:0 0 8px; background:#fff8e1; border:1.5px solid #f0c33c; border-radius:6px; padding:7px;">
+                <div style="font-size:12.5px; font-weight:bold; color:#5d4a00; margin-bottom:5px;">📐 Hueco: ancho × alto total de obra</div>
+                <div style="display:grid; grid-template-columns:${esq ? '1fr 1fr 1fr 1fr' : '1fr 1fr'}; gap:5px;">
+                    ${hin('a1', esq ? 'Ancho 1' : 'Ancho hueco')}${hin('h1', esq ? 'Alto 1' : 'Alto hueco')}${esq ? hin('a2', 'Ancho 2') + hin('h2', 'Alto 2 (si varía)') : ''}
+                </div>
+            </div>`;
+        }
         // Guía de procedimiento según lo seleccionado (Dylan 2026-11-21): el cuaderno no calcula; dice qué sumar y qué descontar.
         { const g = guiaDucha(cardsState[id]); if (g.length) h += `<div style="margin:0 0 8px; padding:6px 9px; background:#fff8e1; border:1px solid #f0c33c; border-radius:6px; color:#5d4a00; font-size:12.5px; line-height:1.45;"><b>📐 Guía de corte</b> · el encargado hace las sumas y los descuentos<br>${g.map(x => '• ' + x).join('<br>')}</div>`; }
         h += '<div style="display:flex; flex-direction:column; gap:6px;">';
@@ -10126,7 +10139,8 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <div style="display:flex; gap:6px; align-items:center; margin-bottom:5px;">
                     <b style="color:#0A3D62; font-size:12px; white-space:nowrap;">Panel ${i + 1}</b>
                     <select onchange="facadeSetTipo(${id}, ${i}, this.value)" style="flex:1;"><option value="fijo" ${p.tipo === 'fijo' ? 'selected' : ''}>Mampara (Fijo)</option><option value="puerta" ${p.tipo === 'puerta' ? 'selected' : ''}>Puerta Abisagrada</option><option value="deslizante" ${p.tipo === 'deslizante' ? 'selected' : ''}>Puerta Deslizante Prensas</option><option value="deslizante_conn" ${p.tipo === 'deslizante_conn' ? 'selected' : ''}>Puerta Deslizante Conectores</option></select>
-                    <input type="number" inputmode="numeric" value="${p.ancho || ''}" placeholder="Ancho mm" style="width:70px; padding:5px; border:1px solid #ccc; border-radius:3px;" oninput="facadeUpdatePanel(${id}, ${i}, 'ancho', this.value)">
+                    <input type="number" inputmode="numeric" value="${p.ancho || ''}" placeholder="A mm" title="Ancho del panel (mm)" style="width:62px; padding:5px; border:1px solid #ccc; border-radius:3px;" oninput="facadeUpdatePanel(${id}, ${i}, 'ancho', this.value)">
+                    <input type="number" inputmode="numeric" value="${p.alto || ''}" placeholder="H ${cardsState[id].alto || ''}" title="Alto del panel (mm); vacío = H Total de la tarjeta" style="width:62px; padding:5px; border:1px solid #ccc; border-radius:3px;" oninput="facadeUpdatePanel(${id}, ${i}, 'alto', this.value)">
                     ${(p.tipo === 'fijo' && (p.fijacion || 'conectores') === 'moldura') ? '' : `<button onclick="facadeInvertPanel(${id}, ${i})" title="Invertir este panel (lado de fijación / apertura)" style="background:#f39c12; color:#fff; border:none; border-radius:3px; width:26px; height:26px; cursor:pointer; font-weight:bold;">&#8646;</button>`}
                     <button onclick="facadeRemovePanel(${id}, ${i})" title="Borrar panel" style="background:#e74c3c; color:#fff; border:none; border-radius:3px; width:26px; height:26px; cursor:pointer; font-weight:bold;">×</button>
                 </div>
@@ -10142,18 +10156,6 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
                 <select onchange="facadeSetEsquina(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; font-family:Arimo;"><option value="0" ${!k ? 'selected' : ''}>Sin esquina (todo en línea)</option>${paneles.slice(0, -1).map((_, i) => `<option value="${i + 1}" ${k === i + 1 ? 'selected' : ''}>Esquina después del panel ${i + 1} (lado A: ${i + 1} · lado B: ${paneles.length - i - 1})</option>`).join('')}</select>
                 ${k && facadeCtxPanel(cardsState[id], k).sinDueno ? (() => { const kit = facadeEsquinaKit(cardsState[id]); return `<div style="grid-column: span 2; font-size:11px; color:#333; background:#f4f7f9; border:1px solid #e1e7ec; border-radius:3px; padding:5px 8px;"><b style="color:#0A3D62;">Unión de esquina (panel ${k} ↔ ${k + 1}):</b> ${kit ? kit.map(x => `${escHtml(resolveAccesorioLabel(x.ref))} x${x.qty}`).join(', ') : '<span style="color:#b9770e;">sin referencia para este color todavía</span>'}</div>`; })() : ''}
                 ${k ? `<label style="font-size:12px; font-weight:bold; color:var(--artal-blue);">Giro</label><select onchange="facadeSetGiro(${id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:14px; font-family:Arimo;">${DUCHA_GIROS.map(g => `<option value="${g[0]}" ${facadeGiro(cardsState[id]) === g[0] ? 'selected' : ''}>Giro ${g[0]}  ${g[1]}</option>`).join('')}</select>` : ''}
-            </div>`;
-        }
-        // Medida total del HUECO (recordatorio, Dylan 2026-11-21): solo en ducha compuesta (2+ paneles); con esquina un ancho por
-        // lado y un alto 2 si las alturas varían. No calcula nada: queda en el resumen y la ficha para no perder la medida de obra.
-        if (paneles.length >= 2) {
-            const hu = cardsState[id].hueco || {}, esq = !!facadeEsquinaK(cardsState[id]);
-            const hin = (k, ph) => `<input type="number" inputmode="numeric" value="${hu[k] || ''}" placeholder="${ph}" style="width:100%; padding:5px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box;" oninput="facadeSetHueco(${id}, '${k}', this.value)">`;
-            h += `<div style="margin-top:8px; background:#fff8e1; border:1px solid #f0c33c; border-radius:6px; padding:6px;">
-                <div style="font-size:12px; font-weight:bold; color:#5d4a00; margin-bottom:4px;">📐 Hueco (medida total de obra, recordatorio)</div>
-                <div style="display:grid; grid-template-columns:${esq ? '1fr 1fr 1fr 1fr' : '1fr 1fr'}; gap:5px;">
-                    ${hin('a1', esq ? 'Ancho 1' : 'Ancho hueco')}${hin('h1', esq ? 'Alto 1' : 'Alto hueco')}${esq ? hin('a2', 'Ancho 2') + hin('h2', 'Alto 2 (si varía)') : ''}
-                </div>
             </div>`;
         }
         h += `<div style="display:flex; gap:6px; margin-top:8px;">
@@ -10179,7 +10181,11 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
     function facadeEsquinaK(state) { const n = (state.paneles || []).length; const k = parseInt(state.esquinaAfter) || 0; return (n >= 2 && k >= 1 && k <= n - 1) ? k : 0; }
     function renderFacade(state, uid) {
         const paneles = (state.paneles && state.paneles.length) ? state.paneles : [{ tipo: 'fijo', ancho: 800 }];
-        const alto = state.alto > 0 ? state.alto : 2000;
+        // Alto POR PANEL (Dylan 2026-11-21: «ancho × alto para cada ítem, así se pueden poner las diferentes medidas»): `p.alto`
+        // o, si está vacío, el H Total de la tarjeta. Los paneles se alinean al piso; el más alto da la escala.
+        const altoBase = state.alto > 0 ? state.alto : 2000;
+        const hAlto = p => Math.max(200, parseInt(p.alto) || altoBase);
+        const alto = Math.max(...paneles.map(hAlto));
         const widths = paneles.map(p => Math.max(200, parseInt(p.ancho) || 800));
         const total = widths.reduce((a, b) => a + b, 0);
         const DW = 100, scale = DW / total, Hd = alto * scale;
@@ -10197,11 +10203,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const herrajeCol = p.herraje_color === 'negro' ? '#111111' : '#8d99a4';
             const mini = { type: tipoMap[p.tipo] || 'mamp_fija', categoria: (p.tipo === 'fijo' ? 'mampara' : 'puerta_vidrio'), orientacion: deslOrientacion(paneles, i), bisagras: p.tipo === 'puerta' ? 'bisagra' : (p.bisagras || 'botella'), tirador: p.tirador || '', cerr_luna: p.cerr_luna, cerr_digital: p.cerr_digital, cerr_piso: p.cerr_piso, herraje_color: p.herraje_color, color_vidrio: p.color_vidrio, fijacion: p.fijacion, moldura_color: p.moldura_color, moldura: p.moldura, ancho: p.ancho, sinConectoresLado: facadeCtxPanel(state, i).ladoEnEsquina };
             defs += glassDefs(puid, p.color_vidrio);
-            body += `<g transform="translate(${xoff.toFixed(2)}, ${headTop.toFixed(2)})">`;
-            body += glassOnlyPanel(puid, 0, 0, wi - 1.8, Hd - 1.8);
-            body += cadTechnical(mini, wi, Hd, puid, herrajeCol);
+            const hi = hAlto(p) * scale, yTop = headTop + (Hd - hi);   // alineado al piso
+            body += `<g transform="translate(${xoff.toFixed(2)}, ${yTop.toFixed(2)})">`;
+            body += glassOnlyPanel(puid, 0, 0, wi - 1.8, hi - 1.8);
+            body += cadTechnical(mini, wi, hi, puid, herrajeCol);
             body += `</g>`;
-            layout.push({ x: xoff, w: wi, p });
+            layout.push({ x: xoff, w: wi, p, y: yTop, h: hi });
             xoff += wi;
         });
         // Riel de las deslizantes: una sola pieza continua que llega hasta el extremo del lado
@@ -10215,12 +10222,12 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             let x1, x2, capX;
             if (openLeft) { x1 = 0; x2 = L.x + L.w; capX = x2 - 1.6; }
             else { x1 = L.x; x2 = DW; capX = x1; }
-            body += `<rect x="${x1.toFixed(2)}" y="${headTop.toFixed(2)}" width="${(x2 - x1).toFixed(2)}" height="${railH.toFixed(2)}" fill="${col}" stroke="#000" stroke-width="0.3"/>`;
-            body += `<rect x="${capX.toFixed(2)}" y="${(headTop - 0.6).toFixed(2)}" width="1.6" height="${(railH + 1.2).toFixed(2)}" fill="${col}" stroke="none"/>`;
+            body += `<rect x="${x1.toFixed(2)}" y="${L.y.toFixed(2)}" width="${(x2 - x1).toFixed(2)}" height="${railH.toFixed(2)}" fill="${col}" stroke="#000" stroke-width="0.3"/>`;
+            body += `<rect x="${capX.toFixed(2)}" y="${(L.y - 0.6).toFixed(2)}" width="1.6" height="${(railH + 1.2).toFixed(2)}" fill="${col}" stroke="none"/>`;
         });
         // Etiquetas de ancho por panel y alto total
         let labels = '';
-        layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, headTop, `${L.p.ancho} mm`, fsDim); });
+        layout.forEach(L => { if (L.p.ancho > 0) labels += dimLineH(L.x, L.x + L.w, headTop - 3, L.y, `${L.p.ancho} mm`, fsDim); });
         // Alto de la MAMPARA y alto de la PUERTA marcados aparte en el dibujo (Dylan 2026-11-21: «la mayoría no lee la descripción»).
         // El cuaderno no calcula: las dos cotas llevan el alto cargado; la guía de corte (resumen y constructor) dice qué descontar.
         let extraL = 0;
@@ -10230,13 +10237,15 @@ Si solo cambiaste el cliente por error, cancela y corrige el encabezado (o cambi
             const hayFijo = paneles.some(p => p.tipo === 'fijo'), hayPuerta = paneles.some(esPuerta);
             // La palabra va ENCIMA del número (Dylan 2026-11-21) para que la cota no ensanche el dibujo.
             const palabra = (x, dir, txt) => `<text x="${(x + dir * 2.2).toFixed(1)}" y="${(headTop + Hd / 2 - fsDim * 0.95).toFixed(1)}" font-family="Arimo, Helvetica, Arial, sans-serif" font-size="${(fsDim * 0.8).toFixed(1)}" fill="#2c3742" text-anchor="${dir > 0 ? 'start' : 'end'}" stroke="none">${txt}</text>`;
+            const L0 = layout[0], Ln = layout[layout.length - 1];
             if (hayFijo && hayPuerta && paneles.length >= 2 && esPuerta(first) !== esPuerta(last)) {
-                labels += dimLineV(headTop, headTop + Hd, -4, 0, `${alto} mm`, fsDim) + palabra(-4, -1, nomb(first));
-                labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, fsDim) + palabra(DW + 4, 1, nomb(last));
+                labels += dimLineV(L0.y, headTop + Hd, -4, 0, `${hAlto(first)} mm`, fsDim) + palabra(-4, -1, nomb(first));
+                labels += dimLineV(Ln.y, headTop + Hd, DW + 4, DW, `${hAlto(last)} mm`, fsDim) + palabra(DW + 4, 1, nomb(last));
                 extraL = Math.max(14, fsDim * 4.4);
             } else {
-                labels += dimLineV(headTop, headTop + Hd, DW + 4, DW, `${alto} mm`, fsDim);
+                labels += dimLineV(Ln.y, headTop + Hd, DW + 4, DW, `${hAlto(last)} mm`, fsDim);
                 if (!(hayFijo && hayPuerta)) labels += palabra(DW + 4, 1, hayPuerta ? 'puerta' : 'mampara');
+                if (paneles.length >= 2 && hAlto(first) !== hAlto(last)) { labels += dimLineV(L0.y, headTop + Hd, -4, 0, `${hAlto(first)} mm`, fsDim); extraL = Math.max(14, fsDim * 4.4); }
             }
         }
         let vbH = headTop + Hd + 4;
