@@ -786,11 +786,19 @@ estilo simplificado del CAD.
   frase por tipo de deslizante presente: con mampara «Puerta deslizante de prensas — Alto: descontar 50 mm al alto del hueco.
   Ancho: agregar 25 mm a la mampara y 25 mm a la puerta para que se crucen 50 mm.»; sin mampara «… sola (sin mampara) — … Ancho:
   agregar lo necesario para que la puerta cubra el hueco.» Se pinta en caja ámbar «📐 Guía de corte · el encargado hace las sumas
-  y los descuentos» arriba del constructor (`renderFacadeBuilder`) y en el resumen/ficha (junto a `huecoTxt`). Puerta abatible y
+  y los descuentos» SOLO arriba del constructor (`renderFacadeBuilder`, `.hide-on-lock`): «una vez se valida el ítem ya no debe
+  aparecer» (Dylan 2026-11-21) → nada en el resumen ni en la ficha. Puerta abatible y
   mamparas solas: sin guía (a mano). **Cotas de alto por tipo en el dibujo** («la mayoría no lee la descripción»): `renderFacade`
-  marca «mampara 2442 mm» en el lado del primer panel y «puerta 2442 mm» en el del último cuando la ducha mezcla mampara y
-  puerta (viewBox ensanchado a la izquierda con `extraL`); con un solo tipo, una cota «puerta …»/«mampara …». Las dos cotas
-  llevan el alto cargado: el cuaderno no descuenta. **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
+  marca el alto a la izquierda con la palabra «mampara»/«puerta» ENCIMA del número (`palabra()`, el texto al lado ensanchaba el
+  dibujo) según el primer panel, y a la derecha según el último, cuando la ducha mezcla mampara y puerta (viewBox ensanchado a
+  la izquierda con `extraL`); con un solo tipo, una cota con su palabra. Las dos cotas llevan el alto cargado: el cuaderno no
+  descuenta. **Sentido de la deslizante (Dylan 2026-11-21, con captura: «el tirador va en el borde opuesto y la flecha debe
+  apuntar hacia la mampara»)**: `deslOrientacion(ps, i)` — con mampara (fijo) a UN solo lado la puerta corre hacia ella ('I' si
+  está a la izquierda, 'D' si a la derecha) sin importar `orientacion`; con fijo a los dos lados o a ninguno manda
+  `orientacion`. Lo usan la `mini` de `renderFacade` (tirador en el borde libre, flecha hacia la mampara), la prolongación del
+  riel, `rielDeslizanteMm` y el «Apertura Izq/Der» del resumen. Referencias (Dylan mismo día): riel `ALC00467`
+  (`RIEL_DESLIZANTE`), kit de prensas `ALC00466`, tirador redondo `ALC00478` (`TIRADOR_REDONDO_REF`, se suma al kit de
+  `deslizante`/`deslizante_conn` cuando `tirador` es redondo o vacío; negro sigue sin kit → sin línea de accesorios). **Hueco (medida total de obra, recordatorio)**: en el constructor, solo con
   2+ paneles (ducha compuesta), caja amarilla «📐 Hueco» con Ancho/Alto (`state.hueco = {a1, h1, a2, h2}`, `facadeSetHueco` sin
   reconstruir el formulario); con esquina, Ancho 1 / Ancho 2 y Alto 1 / Alto 2 (si varía). `huecoDuchaTxt(state)` → «Hueco
   (medida total): 2500 × 2100 mm» o «lado A … · lado B …» en el resumen y la ficha. Pendiente de confirmar: el descuento de alto
@@ -842,19 +850,19 @@ estilo simplificado del CAD.
   Vidrio de Ducha ya abiertos cuando llegan los datos). Nada de esto depende de cantidad en
   stock (los `qty` son fijos por kit, no relacionados a inventario disponible).
   - **Puerta Deslizante Prensas (`deslizante`), referencias del usuario 2026-10-13**: cromado = 1 kit de
-    prensas `ALC00401` por puerta (`ACCESORIOS_KIT.deslizante.cromado`; negro pendiente) + el riel
-    `ALC00186`, que NO es un ítem por unidad: se compra por **barra de 5 m o media barra de 2,5 m** según
+    prensas `ALC00466` por puerta (`ACCESORIOS_KIT.deslizante.cromado`; negro pendiente) + el riel
+    `ALC00467`, que NO es un ítem por unidad: se compra por **barra de 5 m o media barra de 2,5 m** según
     el ancho, y con varias puertas hay que calcular cuánto tubo hace falta. `RIEL_DESLIZANTE`
     `{ref, barraMm:5000, mediaMm:2500}`; `rielDeslizanteMm(state,i)` = largo del riel de esa puerta =
     lo que recorre en el dibujo (la puerta + los paneles del lado hacia donde corre) y nunca menos de
     2 × ancho de la puerta (**supuesto propio**, a confirmar); viaja en `facadeCtxPanel(...).rielMm`.
-    `accesoriosKitTxt(p, ctx, esc)` (compartido por la cajita y el resumen) agrega "Riel ALC00186: 1800
+    `accesoriosKitTxt(p, ctx, esc)` (compartido por la cajita y el resumen) agrega "Riel ALC00467: 1800
     mm (media barra 2,5 m)". `rielesDeDucha(state)` (largos × cantidad) y `rielBarrasNecesarias(largos)`
     (reparte de mayor a menor en barras de 5 m reusando sobrantes; una barra con ≤ 2,5 m de uso se
     compra como media; un largo > 5 m marca "empalme") dan la compra: en el resumen de la tarjeta
-    ("Riel ALC00186 (4 puertas): 7.60 m lineales → 2 barras completas (5 m)") y en el banner del
+    ("Riel ALC00467 (4 puertas): 7.60 m lineales → 2 barras completas (5 m)") y en el banner del
     proyecto `#perfil-u-banner` (`actualizarPerfilUTotal`, ahora también aparece sin barandas:
-    "🚿 Riel ALC00186 para este trabajo: 2 barras completas + 1 media barra").
+    "🚿 Riel ALC00467 para este trabajo: 2 barras completas + 1 media barra").
   - **"fijo" (mampara) tiene una dimensión extra: la forma de la prensa.** El usuario dio 4
     referencias reales (2 formas x 2 colores): cromado → recta `ALC00150` / L `ALC00151`;
     negro → recta `ALC00004` / L `ALC00445` (confirmó explícitamente que negro sigue el mismo
