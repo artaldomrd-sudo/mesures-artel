@@ -211,6 +211,7 @@
     }
     const { marcarEntregado } = await import('./envios.js');   // «Entregado» único (auditoría 2026-11-12); en demo recibe el Firestore simulado
     const { etiquetaTrabajo } = await import('./estados.js');
+    const { restoPorRecoger, partesTxt } = await import('./partes.js');   // qué recoger por partes (2026-11-24)
 
     // Ayudantes (Emerson) y no encargados (Roosevelt) también entran (Dylan 2026-11-12: «que puedan ver el programa del día cada
     // día»): ven SOLO «Mi plan» (informe del Coordinador con sus líneas, lo previsto a su nombre, lo que les falta cerrar); el parte
@@ -516,13 +517,27 @@
         });
         citasAbiertas.filter(c => esMiaCita(c) && !(c.completadoPor || []).includes(usuario.email)).forEach(c => { const f = ymdDe(c.fecha); if (!f || f > hoy) return; items.push({ ref: 'cita:' + c.id, ico: '🔔', label: c.titulo || c.descripcion || 'Recordatorio', sub: '', tag: f === hoy ? 'hoy' : 'vencido · ' + fechaCorta(c.fecha), cl: f < hoy ? 'rojo' : '', opcional: f < hoy }); });
         if (soyChofer()) {
-            ordersCache.filter(o => esMioPedido(o) && o.entregado !== true && o.enRuta === true).forEach(o => items.push({ ref: 'order:' + o.id, ico: '🚚', label: 'Entregar: ' + [o.cliente, o.obra].filter(Boolean).join(' — '), sub: fechaCorta(o.fechaEnRuta) ? 'en ruta desde ' + fechaCorta(o.fechaEnRuta) : '', tag: '', cl: '' }));
-            ordersCache.filter(o => esMioPedido(o) && o.entregado !== true && o.enRuta !== true && ['listo_para_cargar', 'parcialmente_listo'].includes(o.status)).forEach(o => items.push({ ref: 'order:' + o.id, ico: '📦', label: 'Cargar: ' + [o.cliente, o.obra].filter(Boolean).join(' — '), sub: fechaCorta(o.fechaListoParaCargar) ? 'listo desde ' + fechaCorta(o.fechaListoParaCargar) : '', tag: '', cl: '' }));
+            const lugarDe = (o) => [o.cliente, o.obra].filter(Boolean).join(' — ');
+            ordersCache.filter(o => esMioPedido(o) && o.entregado !== true && o.enRuta === true).forEach(o => items.push({ ref: 'order:' + o.id, ico: '🚚', label: 'Entregar: ' + lugarDe(o), sub: fechaCorta(o.fechaEnRuta) ? 'en ruta desde ' + fechaCorta(o.fechaEnRuta) : '', tag: '', cl: '' }));
+            // Pedidos de fábrica listos (o con resto por recoger): qué partes recoger, no solo «cargar» (Dylan 2026-11-24, videos de Wilson).
+            ordersCache.filter(o => esMioPedido(o) && o.docType !== 'COMPRA_DIRECTA' && o.enRuta !== true && ['listo_para_cargar', 'parcialmente_listo'].includes(o.status) && (o.entregado !== true || restoPorRecoger(o).length)).forEach(o => {
+                const resto = restoPorRecoger(o); const que = resto.length ? partesTxt(o, resto) : '';
+                items.push({ ref: 'order:' + o.id, ico: '📦', label: (o.entregado === true ? 'Recoger el resto: ' : 'Cargar: ') + lugarDe(o), sub: [que ? 'recoger ' + que : '', fechaCorta(o.fechaListoParaCargar) ? 'listo desde ' + fechaCorta(o.fechaListoParaCargar) : ''].filter(Boolean).join(' · '), tag: '', cl: '' });
+            });
+            // Compras directas: UNA línea por parada (proveedor) con lo que hay que buscar ahí, en vez de una por compra.
+            const paradas = new Map();
+            ordersCache.filter(o => esMioPedido(o) && o.docType === 'COMPRA_DIRECTA' && o.enRuta !== true && o.entregado !== true && ['listo_para_cargar', 'parcialmente_listo'].includes(o.status)).forEach(o => {
+                const k = String(o.proveedor || 'Proveedor sin indicar').trim().toLowerCase(); if (!paradas.has(k)) paradas.set(k, { nombre: o.proveedor || 'Proveedor sin indicar', ids: [], que: [] });
+                const pa = paradas.get(k); pa.ids.push(o.id); pa.que.push(String(o.descripcion || o.cliente || '').replace(/\s+/g, ' ').trim().slice(0, 60) + (o.cliente ? ' (' + o.cliente + ')' : ''));
+            });
+            [...paradas.entries()].forEach(([k, pa]) => items.push({ ref: 'parada:' + k, ico: '🛒', label: 'Parada ' + pa.nombre + ': ' + pa.ids.length + ' cosa' + (pa.ids.length > 1 ? 's' : '') + ' que buscar', sub: pa.que.join(' · '), tag: '', cl: '', ids: pa.ids }));
             solChofer.forEach(x => items.push({ ref: 'sol:' + x.id, ico: '🛒', label: 'Comprar / retirar: ' + (x.itemNombre || x.itemTipo || x.texto || 'material') + (x.cantidad ? ' × ' + x.cantidad + ' ' + (x.unidad || '') : ''), sub: x.proveedor && x.proveedor.nombre ? x.proveedor.nombre : '', tag: '', cl: '' }));
         }
-        return items;
+        // Sin duplicados (dos pedidos de la misma obra listos = una línea).
+        const vistos = new Set();
+        return items.filter(it => { const k = it.label.toLowerCase(); if (vistos.has(k)) return false; vistos.add(k); return true; });
     }
-    // Pendientes de registro: lo que el sistema ve abierto a su nombre y se resuelve con un toque desde aquí.
+    // Pendientes de registro    // Pendientes de registro: lo que el sistema ve abierto a su nombre y se resuelve con un toque desde aquí.
     function pendientesRegistro() {
         const hoy = hoyStr(), out = [];
         if (soyChofer()) ordersCache.filter(o => esMioPedido(o) && o.enRuta === true && o.entregado !== true).forEach(o => { const d = Math.round((Date.now() - tsMs(o.fechaEnRuta)) / 86400000); if (d >= 1) out.push({ tipo: 'order', id: o.id, titulo: esc([o.cliente, o.obra].filter(Boolean).join(' — ')), sub: `En ruta desde hace ${d} día${d > 1 ? 's' : ''}`, accion: 'Entregado', fn: `regEntregado('${o.id}')` }); });
@@ -547,13 +562,15 @@
         if (esAdmin || String(enc.email || '').toLowerCase() !== miEmail) { box.innerHTML = `<div class="card"><h3>Vista de gerencia</h3><p style="margin:0">El plan del día lo ve cada encargado en su teléfono. Aquí puedes revisar o corregir sus partes.</p></div>`; return; }
         const inf = informeDeHoy(), avisos = avisosDeHoy(), plan = planDeHoy(), reg = pendientesRegistro();
         const nombre = (usuario.nombre || '').split(' ')[0];
-        const lineasMias = inf ? (inf.cuerpo || '').split('\n').filter(l => /^\s*[-•]/.test(l) && !/^\s*[-•]\s*Ayer\b/i.test(l) && new RegExp('\\b' + nombre + '\\b', 'i').test(l)).map(l => l.replace(/^\s*[-•]\s*/, '').replace(new RegExp('^' + nombre + '(\\s*\\+\\s*[^→:]+)?\\s*(,\\s*al terminar)?\\s*→\\s*', 'i'), '')).slice(0, 5) : [];
+        const lineasMias = inf ? (inf.cuerpo || '').split('\n').filter(l => /^\s*[-•]/.test(l) && !/^\s*[-•]\s*Ayer\b/i.test(l) && new RegExp('\\b' + nombre + '\\b', 'i').test(l)).map(l => l.replace(/^\s*[-•]\s*/, '').replace(new RegExp('^' + nombre + '(\\s*\\+\\s*[^→:]+)?\\s*(,\\s*al terminar)?\\s*→\\s*', 'i'), '')).filter(l => !/no mand[oó] (el )?parte|no verificad|sin verificar|¿|registrad[oa]|confirme|pendiente que dylan|ver a\d/i.test(l)).map(l => l.replace(/\s*[—–-]?\s*\(?ver a\d+\)?\.?/gi, '').trim()).filter(Boolean).slice(0, 5) : [];   // frases para gerencia («no mandó parte», «ver A2», preguntas) no van al teléfono de Wilson (2026-11-24)
         const dotDe = (it) => it.cl === 'rojo' ? 'red' : (it.cl === 'amb' ? 'gray' : '');
         const planHtml = (lineasMias.length ? lineasMias.map(l => { const i = l.indexOf(':'); const t = i > 0 && i < 70 ? l.slice(0, i) : l; const d = i > 0 && i < 70 ? l.slice(i + 1).trim() : ''; return `<div class="li"><span class="dot"></span><span class="tx">${esc(t)}${d ? `<small>${esc(d)}</small>` : ''}</span></div>`; }).join('') : '')
-            + plan.filter(it => !lineasMias.some(l => l.toLowerCase().includes((it.label.split(' — ').pop() || '').toLowerCase().slice(0, 12)))).map(it => `<div class="li"><span class="dot ${dotDe(it)}"></span><span class="tx">${esc(it.label.replace(/^(Entregar|Cargar|Comprar \/ retirar): /, (m) => m))}${(it.sub || it.tag) ? `<small>${esc([it.tag, it.sub].filter(Boolean).join(' · '))}</small>` : ''}</span></div>`).join('');
+            + plan.filter(it => !it.opcional && !lineasMias.some(l => l.toLowerCase().includes((it.label.split(' — ').pop() || '').toLowerCase().slice(0, 12)))).map(it => `<div class="li"><span class="dot ${dotDe(it)}"></span><span class="tx">${esc(it.label.replace(/^(Entregar|Cargar|Comprar \/ retirar): /, (m) => m))}${(it.sub || it.tag) ? `<small>${esc([it.tag, it.sub].filter(Boolean).join(' · '))}</small>` : ''}</span></div>`).join('');
         const regHtml = reg.map(r => `<div class="li"><span class="dot ${r.tipo === 'inst' ? 'gray' : 'red'}"></span><span class="tx">${r.titulo}<small>${esc(r.sub)}</small></span>${r.href ? `<a class="act" href="${r.href}">${esc(r.accion)}</a>` : `<button class="act" onclick="${r.fn}">${esc(r.accion)}</button>`}</div>`).join('');
         const ultimoAviso = avisos[0];
-        box.innerHTML = `<div class="card" id="plan-box"><h3>Tu plan de hoy</h3>${planHtml || `<p style="margin:0;color:var(--md-mut)">Nada agendado a tu nombre${inf ? '' : ' todavía. El informe del Coordinador llega a las 7:50'}.</p>`}${inf ? `<button class="sheet-link" onclick="verInforme('${inf.id}')">Ver el informe completo ›</button>` : ''}</div>`
+        const viejos = plan.filter(it => it.opcional);
+        const viejosHtml = viejos.length ? `<details class="mas" style="margin-top:10px"><summary>Pendientes antiguos (${viejos.length}) · toca para cerrarlos</summary>${viejos.map(it => `<div class="li"><span class="dot gray"></span><span class="tx">${esc(it.label)}<small>${esc([it.tag, it.sub].filter(Boolean).join(' · '))}</small></span></div>`).join('')}</details>` : '';
+        box.innerHTML = `<div class="card" id="plan-box"><h3>Tu plan de hoy</h3>${planHtml || `<p style="margin:0;color:var(--md-mut)">Nada agendado a tu nombre${inf ? '' : ' todavía. El informe del Coordinador llega a las 7:50'}.</p>`}${viejosHtml}${inf ? `<button class="sheet-link" onclick="verInforme('${inf.id}')">Ver el informe completo ›</button>` : ''}</div>`
             + (reg.length ? `<div class="card" id="cerrar-box"><h3>Te falta cerrar</h3>${regHtml}</div>` : '')
             + (ultimoAviso ? `<div class="card" id="aviso-box"><h3>Del Coordinador</h3><div class="li"><span class="dot ok"></span><span class="tx">${esc(ultimoAviso.asunto || 'Aviso')}<small>${esc((ultimoAviso.cuerpo || '').split('\n').filter(Boolean)[0] || '').slice(0, 120)}</small></span><button class="act" onclick="verInforme('${ultimoAviso.id}')">Leer</button></div></div>` : '');
         if (inf && lineasMias.length) acusar(inf);   // sus líneas ya están a la vista
@@ -595,15 +612,15 @@
         const esHoy = parteActual.fecha === hoyStr();
         if (esHoy && !(parteGuardado && parteGuardado.resumen)) { const ya = new Set(resumenActual.items.map(i => i.ref)); planDeHoy().forEach(it => { if (!ya.has(it.ref)) resumenActual.items.push({ ref: it.ref, label: it.label, hecho: null, motivo: '', nota: '', opcional: !!it.opcional }); }); }
         const act = document.activeElement; if (act && (p1.contains(act) || p2.contains(act)) && (act.tagName === 'TEXTAREA' || act.tagName === 'INPUT')) return;
-        const tipoDe = (ref) => ref.startsWith('inst:') ? ((instCache.find(j => 'inst:' + j.id === ref) || {}).tipoTrabajo || 'instalación').replace(/_/g, ' ') : ref.startsWith('order:') ? 'Transporte' : ref.startsWith('sol:') ? 'Material' : 'Recordatorio';
+        const tipoDe = (ref) => ref.startsWith('inst:') ? ((instCache.find(j => 'inst:' + j.id === ref) || {}).tipoTrabajo || 'instalación').replace(/_/g, ' ') : ref.startsWith('order:') || ref.startsWith('parada:') ? 'Transporte' : ref.startsWith('sol:') ? 'Material' : 'Recordatorio';
         // Las OBRAS (trabajos de Instalación) no se marcan «hecho / no»: se cierran o se pausan con fecha de regreso. Dylan 2026-11-12:
         // «hoy llegan, pulsan retomar, hacen lo que se debe hacer y antes de irse marcan terminado o vuelven otro día»; al enviar el
         // parte, el sistema aplica el estado a la obra (ver aplicarObras). Lo demás (entregas, recordatorios, material) sigue con ✓ / No.
         const motivosHtml = (it, i) => `<div class="chips">${MOTIVOS.filter(m => m[0]).map(m => `<button type="button" class="${m[0] === it.motivo ? 'on' : ''}" onclick="resMotivo(${i}, '${m[0]}'); renderResumen()">${esc(m[1].replace(' (explica)', ''))}</button>`).join('')}</div><input class="inp" type="text" placeholder="Detalle (opcional)" value="${esc(it.nota || '')}" oninput="resNota(${i}, this.value)">`;
         const itemHtml = (it, i) => {
             const esObra = it.ref.startsWith('inst:');
-            const titulo = esc(it.label.replace(/^(Entregar|Cargar|Comprar \/ retirar): /, ''));
-            const sub = esc(it.label.startsWith('Entregar') ? 'Entregar' : it.label.startsWith('Cargar') ? 'Cargar' : it.label.startsWith('Comprar') ? 'Retirar material' : tipoDe(it.ref));
+            const titulo = esc(it.label.replace(/^(Entregar|Cargar|Recoger el resto|Comprar \/ retirar): /, ''));
+            const sub = esc(it.label.startsWith('Entregar') ? 'Entregar' : it.label.startsWith('Cargar') || it.label.startsWith('Recoger') ? 'Cargar' : it.label.startsWith('Comprar') || it.label.startsWith('Parada') ? 'Retirar material' : tipoDe(it.ref));
             if (!esObra) return `<div class="item"><div class="n">${titulo}</div><div class="s">${sub}</div><div class="seg"><button type="button" class="${it.hecho === true ? 'on-si' : ''}" onclick="resSet(${i}, true)">✓ Hecho</button><button type="button" class="${it.hecho === false ? 'on-no' : ''}" onclick="resSet(${i}, false)">No</button></div>${it.hecho === false ? motivosHtml(it, i) : ''}</div>`;
             const eo = it.estadoObra || '';
             const jj0 = instCache.find(x => 'inst:' + x.id === it.ref); const empezada = !!(jj0 && (jj0.estado === 'en_proceso' || jj0.inicioReal));

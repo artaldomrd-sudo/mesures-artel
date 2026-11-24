@@ -536,6 +536,7 @@
     import { mismaObra } from './obras-util.js';
     import { idProyectoDe, idsProyectoObra, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
     import { etiquetaPedido, etiquetaTrabajo, ESTADO_PEDIDO, ESTADO_TRABAJO } from './estados.js';   // nombres únicos de estados (auditoría 2026-11-12)
+    import { estadoEntrega } from './partes.js';   // «Entregado en parte · falta …» (2026-11-24)
     import {
         collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, Timestamp, serverTimestamp, arrayUnion
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
@@ -1151,6 +1152,8 @@
         const esDirecto = o.directoInstalacion === true;
         const entregado = o.entregado === true || esDirecto;
         const esCompra = o.docType === 'COMPRA_DIRECTA';
+        const entregaEst = o.entregado === true && !esCompra ? estadoEntrega(o) : null;
+        const entregaLinea = entregaEst && entregaEst.clave === 'parcial' ? `<div style="margin-top:6px;font-size:13px;font-weight:bold;color:#b9770e;">⚠ ${esc(entregaEst.txt)}</div>` : '';
         const esParcialFab = o.status === 'parcialmente_listo';
         const yaParcialInst = o.status === 'parcialmente_instalado';
         const puedeParcial = entregado && c.instalados > 0 && c.instalados < c.total;
@@ -1175,6 +1178,7 @@
                 · ${asignadoTxt({ asignados: o.asignadosInstalador, instaladorNombre: o.asignadoInstaladorNombre, instaladorEmail: o.asignadoInstaladorEmail })}
                 ${yaAgendado ? '<br>📅 <b style="color:#1f6aa5">Agendado</b> (ver Calendario)' : ''}
             </div>
+            ${entregaLinea}
             ${c.total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:12px;color:#556;">
                 <span>🔧 Avance: <b>${c.instalados}/${c.total}</b></span>
                 <span style="flex:1;max-width:200px;height:6px;background:#eef1f4;border-radius:6px;overflow:hidden;"><span style="display:block;height:100%;width:${Math.round(c.instalados / c.total * 100)}%;background:${c.instalados >= c.total ? '#2ecc71' : '#f39c12'};"></span></span>

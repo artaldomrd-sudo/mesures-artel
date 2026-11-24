@@ -29,6 +29,7 @@
     .assign-row select { flex: 1; min-width: 160px; padding: 9px; border: 1.5px solid #ddd; border-radius: 7px; font-family: 'Arimo'; font-size: 13px; }
     .assign-row button { padding: 9px 14px; border: none; border-radius: 7px; background: var(--artal-blue); color: #fff; font-weight: bold; font-family: 'Arimo'; cursor: pointer; font-size: 13px; }
 </style>
+<style id="partes-css"></style>
 </head>
 <body>
 
@@ -62,11 +63,13 @@
     import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from '../order-preview.js';
     import { etiquetaPedido } from '../estados.js';         // (auditoría 2026-11-12) nombres únicos de estado
+    import { partesFabricaHTML, PARTES_CSS, cambiosParte, cambiosItemTodo, cambiosListoParaCargar, estadoEntrega } from '../partes.js';   // partes por ítem: la misma tarjeta en Fábrica interna y ALUCUFEL (2026-11-24)
     import { borrarConRegistro } from '../papelera.js';     // (auditoría 2026-11-12) borrar con registro, como Historial
     import { mismaObra } from '../obras-util.js';
     import { selectorEnvioHTML, leerSelectorEnvio, VIAS_ALUCUFEL, envioTxt } from '../envios.js';
     window.openOrderPreview = openOrderPreview;
 
+    document.getElementById('partes-css').textContent = PARTES_CSS;
     const usuario = await requireAuth(['fabrica']);
     // Nº de proyecto PRY-AAAA-NNN junto al cliente (2026-11-03). Una compra directa sin número propio no muestra nada.
     const pryO = (o) => pryChipHTML(idProyectoDe(o), { ocultarSin: o.docType === 'COMPRA_DIRECTA' });
@@ -121,13 +124,10 @@
             </div>`;
         } else if (o.status === 'en_fabrica' || o.status === 'parcialmente_listo') {
             principal = `<button class="btn-primaria" onclick="listoParaCargar('${id}')">✅ Listo para cargar</button>`;
-            secundarias.push(`<button onclick="parcialmenteListo('${id}')">Parcialmente listo</button>`);
-            secundarias.push(`<button onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>`);
             if (o.status === 'en_fabrica') secundarias.push(`<button onclick="deshacerTomarPedido('${id}')" title="Regresar a Pendiente">↩ Deshacer</button>`);
         } else if (o.status === 'listo_para_cargar' && o.docType !== 'COMPRA_DIRECTA' && itemsSinTerminar(o).length) {
             // 2026-11-03 (caso Aloha parte 1): marcado listo con ítems sin terminar → se pueden seguir marcando partes.
             aviso = `<div style="font-size:13px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ ${itemsSinTerminar(o).length} ítem(s) sin todas sus partes marcadas.</div>`;
-            secundarias.push(`<button onclick="openOrderPreview('${id}', 'fabrica')">🏷 Marcar partes listas</button>`);
         }
         // Compra directa hecha a ALUCUFEL (2026-11-03): ellos la preparan y la marcan ENVIADA diciendo cómo se envía.
         const esCompra = o.docType === 'COMPRA_DIRECTA';
@@ -140,6 +140,8 @@
             : `<div style="margin-top:6px;font-size:13px;color:#556;">Se envía: <b>${esc(envioTxt(o))}</b> · <a href="#" onclick="abrirEnvio('${id}', 'cambiar'); return false;">elegir otra forma (opcional)</a></div>`;
         envioHtml += `<div id="envio-box-${id}"></div>`;
         const sec = secundarias.length ? `<div class="acciones-sec">${secundarias.join('')}</div>` : '';
+        const partesHtml = (!esCompra && ['en_fabrica', 'parcialmente_listo', 'listo_para_cargar', 'parcialmente_instalado'].includes(o.status) && !(o.entregado === true && o.entregaCompleta === true)) ? partesFabricaHTML(id, o) : '';
+        const entregaTxt = o.entregado === true && !esCompra ? estadoEntrega(o).txt : '';
         if (esCompra) return `
         <div class="order-card status-${o.status === 'pendiente_proveedor' ? 'en_fabrica' : o.status}">
             <div class="order-head"><b>🛒 Compra para ${esc(o.cliente) || 'Sin cliente'} — ${esc(o.obra)}${pryO(o)}</b><span class="badge">${o.status === 'pendiente_proveedor' ? 'Por preparar' : esc(etiquetaPedido(o))}</span></div>
@@ -161,8 +163,9 @@
                 ${(o.fechaCotizado || o.fechaSolicitada) && (o.fechaCotizado || o.fechaSolicitada).toDate ? `<br><span style="color:#667;">📤 Recibido: <b>${esc((o.fechaCotizado || o.fechaSolicitada).toDate().toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }))}</b></span>` : ''}
             </div>
             ${rioAbajoHTML(id, o)}
+            ${entregaTxt ? `<div style="margin-top:6px;font-size:13px;color:${o.entregaCompleta === true ? '#1e8449' : '#b9770e'};font-weight:bold;">${esc(entregaTxt)}</div>` : ''}
+            ${partesHtml}
             ${salidaHTML(id, o)}
-            ${o.status === 'parcialmente_listo' ? `<div style="font-size:13px;font-weight:bold;color:#e67e22;margin-top:8px;">⚠ Solo una parte está lista: «Marcar partes listas» muestra cuáles.</div>` : ''}
             ${o.comentarioParaFabrica && !o.comentarioParaFabricaAtendido ? `<div style="margin-top:8px;background:#fdecea;border:1.5px solid #f5b7b1;border-radius:9px;padding:9px 11px;">
                 <div style="font-size:12.5px;font-weight:bold;color:#c0392b;">📌 Instrucción de la oficina${o.comentarioParaFabricaPor ? ' (' + esc(o.comentarioParaFabricaPor) + ')' : ''}:</div>
                 <div style="font-size:13px;color:#333;margin:4px 0;white-space:pre-wrap;">${esc(o.comentarioParaFabrica)}</div>
@@ -354,12 +357,10 @@
         envio.marcadoPor = 'alucufel';
         const docSnap = allOrders.find(d => d.id === id); const o = docSnap ? docSnap.data() : {};
         try {
-            if (modo === 'listo') {
-                const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp(), envio };
-                (o.items || []).forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
+            if (modo === 'listo' || modo === 'parcial') {
+                const { cambios } = cambiosListoParaCargar(o); cambios.envio = envio; cambios.fechaListoParaCargar = serverTimestamp();
+                if (cambios.status === 'parcialmente_listo') cambios.fechaParcialListo = serverTimestamp();
                 await updateDoc(doc(db, 'orders', id), cambios);
-            } else if (modo === 'parcial') {
-                await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp(), envio });
             } else if (modo === 'compra') {
                 await updateDoc(doc(db, 'orders', id), { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp(), envio, enviadoPorAlucufel: true });
             } else {
@@ -367,19 +368,33 @@
             }
         } catch (e) { alert('No se pudo guardar: ' + e.message); }
     };
+    // Fábrica interna y ALUCUFEL, el mismo botón (2026-11-24): el estado sale de las partes marcadas. Sin nada marcado = todo listo
+    // (como antes). Con partes marcadas: «listo para cargar» si está todo, «parcialmente listo» si falta algo; el chofer verá
+    // exactamente qué recoger y qué sigue en fábrica.
     window.listoParaCargar = async function (id) {
-        if (!confirm('¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nLa oficina organiza el transporte. Si ya sabes cómo se envía o qué chofer lo lleva, lo puedes indicar después (opcional).')) return;
-        // Al marcar todo el pedido como listo, se marcan también todos los ítems como listos
-        // individualmente (por si venía de "parcialmente listo" y quedaban ítems sin marcar).
-        const docSnap = allOrders.find(d => d.id === id);
-        const items = docSnap ? (docSnap.data().items || []) : [];
-        const cambios = { status: 'listo_para_cargar', fechaListoParaCargar: serverTimestamp() };
-        items.forEach(it => { cambios[`itemsListosFabrica.${it.id}`] = true; });
+        const docSnap = allOrders.find(d => d.id === id); const o = docSnap ? docSnap.data() : {};
+        const { cambios, completo, nadaMarcado } = cambiosListoParaCargar(o);
+        const msg = nadaMarcado ? '¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nNo marcaste partes: se da por hecho TODO el pedido.' + ('\n\nLa oficina organiza el transporte. Si ya sabes cómo se envía o qué chofer lo lleva, lo puedes indicar después (opcional).')
+            : completo ? '¿Marcar el pedido como LISTO PARA CARGAR (completo)?\n\nTodas las partes están marcadas.'
+            : '¿Avisar al chofer que recoja lo que ya está listo?\n\nEl pedido queda PARCIALMENTE LISTO: lo que falte lo marcas después en esta misma tarjeta y el chofer recibe «resto por recoger».';
+        if (!confirm(msg)) return;
+        cambios.fechaListoParaCargar = serverTimestamp();
+        if (!completo) cambios.fechaParcialListo = serverTimestamp();
         try { await updateDoc(doc(db, 'orders', id), cambios); } catch (e) { alert('No se pudo: ' + e.message); }
     };
-    window.parcialmenteListo = async function (id) {
-        if (!confirm('¿Marcar como PARCIALMENTE LISTO?\n\nLo que ya esté marcado como listo pasa a la oficina para organizar el transporte. Cómo se envía y el chofer se pueden indicar después (opcional).')) return;
-        try { await updateDoc(doc(db, 'orders', id), { status: 'parcialmente_listo', fechaParcialListo: serverTimestamp() }); } catch (e) { alert('No se pudo: ' + e.message); }
+    window.partesToggle = async function (id, iid, k) {
+        const docSnap = allOrders.find(d => d.id === id); const o = docSnap ? docSnap.data() : {};
+        const listas = ((o.partesFabrica || {})[iid] || {})[k] === true || ((o.itemsListosFabrica || {})[iid] === true && !((o.partesFabrica || {})[iid]));
+        const cambios = cambiosParte(o, iid, k, !listas);
+        // Si el pedido ya estaba «listo» y ahora falta algo, pasa a parcial; si estaba parcial y ya está todo, a listo.
+        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status)) { const sim = { ...o, partesFabrica: { ...(o.partesFabrica || {}) }, itemsListosFabrica: { ...(o.itemsListosFabrica || {}) } }; Object.entries(cambios).forEach(([key, v]) => { const m = key.match(/^partesFabrica\.(.+?)\.(.+)$/); if (m) { sim.partesFabrica[m[1]] = { ...(sim.partesFabrica[m[1]] || {}), [m[2]]: v }; } const m2 = key.match(/^itemsListosFabrica\.(.+)$/); if (m2) sim.itemsListosFabrica[m2[1]] = v; }); const { completo } = cambiosListoParaCargar(sim); cambios.status = completo ? 'listo_para_cargar' : 'parcialmente_listo'; }
+        try { await updateDoc(doc(db, 'orders', id), cambios); } catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.partesTodo = async function (id, iid) {
+        const docSnap = allOrders.find(d => d.id === id); const o = docSnap ? docSnap.data() : {};
+        const cambios = cambiosItemTodo(o, iid);
+        if (['listo_para_cargar', 'parcialmente_listo'].includes(o.status)) { const sim = { ...o, partesFabrica: { ...(o.partesFabrica || {}), [iid]: Object.fromEntries(Object.entries(cambios).filter(([k]) => k.startsWith('partesFabrica.')).map(([k]) => [k.split('.')[2], true])) }, itemsListosFabrica: { ...(o.itemsListosFabrica || {}), [iid]: true } }; cambios.status = cambiosListoParaCargar(sim).completo ? 'listo_para_cargar' : 'parcialmente_listo'; }
+        try { await updateDoc(doc(db, 'orders', id), cambios); } catch (e) { alert('No se pudo: ' + e.message); }
     };
     window.deshacerTomarPedido = async function (id) {
         if (yaSalio(id)) { alert('No se puede devolver a Pendiente: el pedido ya salió de fábrica (en ruta, entregado o en instalación).'); return; }

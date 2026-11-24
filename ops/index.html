@@ -129,6 +129,7 @@
     import { db } from './firebase-config.js';
     import { collection, onSnapshot, query, where, doc, updateDoc, getDoc, getDocs, setDoc, serverTimestamp, arrayUnion, addDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { openOrderPreview } from './order-preview.js';
+    import { estadoEntrega, faltaEnFabrica, partesTxt } from './partes.js';   // entrega en parte (2026-11-24)
     import { etiquetaPedido } from './estados.js';   // (auditoría 2026-11-12) nombres únicos de estado
     import './mensajeria-widget.js';   // botón flotante ✉️ con badge de mensajes sin leer
 
@@ -318,6 +319,15 @@
                     }
                 });
             });
+            // 2a) Entrega en parte (2026-11-24): el chofer entregó, pero faltan partes que siguen en fábrica. Se ve el mismo día;
+            //     «Pedir fecha a fábrica» deja la instrucción en rojo en la tarjeta de fábrica. (Lo que fábrica marcó listo y el chofer
+            //     no recibió va aparte, como problema reportado por el chofer.)
+            if (o.entregado === true && o.entregaCompleta === false && o.docType !== 'COMPRA_DIRECTA' && o.entregaParcialAtendida !== true) {
+                const fab = faltaEnFabrica(o); const txtFab = fab.length ? partesTxt(o, fab) : (o.entregaFaltan || '');
+                if (txtFab) N.push({ key: `ep:${id}:${huella(txtFab)}`, tipo: 'tarea', ic: '📦', titulo: 'Entrega en parte — falta material en fábrica', sub: lugar,
+                    txt: `Falta: ${txtFab}\n${(o.recepcionInstalador || {}).nombre ? 'Recibió ' + (o.recepcionInstalador || {}).nombre + ' · ' : ''}${o.destino === 'interno' ? 'fábrica interna' : 'ALUCUFEL'} aún no lo marcó listo`,
+                    acciones: `<a class="n-ver" href="#" onclick="notifVer('${id}');return false;">Ver hoja</a><button class="n-done" onclick="notifPedirFechaFabrica('${id}')">Pedir fecha a fábrica</button><button class="n-done" style="background:#8a93a0" onclick="notifEntregaParcialOk('${id}')">Ya lo sé</button>` });
+            }
             // 2b) Comentarios del instalador en la obra (pestaña "Por agendar"), sin atender.
             comentariosSinAtender(o).forEach(cm => {
                 N.push({ key: `cm:orders:${id}:${cm.fecha || huella(cm.texto)}`, tipo: 'tarea', ic: '💬', titulo: 'Mensaje de ' + (cm.nombre || 'instalador'), sub: lugar, txt: cm.texto || '',
@@ -476,6 +486,12 @@
             toastComentario(ult, getLugar(d));
         });
     }
+    window.notifPedirFechaFabrica = async (id) => {
+        const x = (ordersCache || []).find(y => y.id === id) || null; const o = x ? x.o : null; const falta = o ? (o.entregaFaltan || partesTxt(o, faltaEnFabrica(o))) : '';
+        try { await updateDoc(doc(db, 'orders', id), { comentarioParaFabrica: '📦 Entrega en parte: falta ' + (falta || 'material') + '. ¿Para qué fecha estará listo?', comentarioParaFabricaPor: usuario.nombre, comentarioParaFabricaFecha: serverTimestamp(), comentarioParaFabricaAtendido: false, entregaParcialAtendida: true, entregaParcialAtendidaPor: usuario.nombre }); }
+        catch (e) { alert('No se pudo: ' + e.message); }
+    };
+    window.notifEntregaParcialOk = async (id) => { try { await updateDoc(doc(db, 'orders', id), { entregaParcialAtendida: true, entregaParcialAtendidaPor: usuario.nombre }); } catch (e) { alert('No se pudo: ' + e.message); } };
     window.notifAtenderItem = async (id, field, iid) => { try { await updateDoc(doc(db, 'orders', id), { [`${field}.${iid}.atendido`]: true }); } catch (e) { alert('No se pudo: ' + e.message); } };
     // ✕ en un recordatorio = ocultarlo de MI panel (personal). No lo completa ni afecta a Anny/
     // Sara — cada quien lo quita de su vista cuando quiera. Se guarda en usuarios/{email}.notifOcultas.

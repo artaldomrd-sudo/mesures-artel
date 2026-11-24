@@ -22,6 +22,34 @@
     .btn-enruta { background: linear-gradient(180deg, #ffd634, var(--amarillo)); color: var(--azul-noche); }   /* principal al cargar: amarillo ARTAL */
     .actions .btn-listo:disabled { background: #e6eaef; color: #8a93a0; box-shadow: none; }
     .enruta-badge { font-size: 12.5px; color: #3498db; font-weight: bold; margin-top: 8px; }
+    /* Qué recoger por ítem (2026-11-24): verde = listo en fábrica para cargar · gris = sigue en fábrica · ✓ en obra = ya entregado */
+    .qr-box { margin-top: 8px; background: #f6f8fa; border-radius: 10px; padding: 9px 11px; }
+    .qr-t { font-size: 12.5px; font-weight: bold; color: var(--artal-blue); margin-bottom: 4px; }
+    .qr-item { font-size: 13.5px; color: #1b2733; padding: 4px 0; border-top: 1px solid #e6eaef; } .qr-item:first-of-type { border-top: 0; }
+    .qr-item b { display: block; font-size: 13px; }
+    .qr-chip { display: inline-block; border-radius: 8px; padding: 3px 8px; font-size: 12.5px; font-weight: bold; margin: 3px 4px 0 0; }
+    .qr-chip.listo { background: #e7f7ee; color: #145c39; } .qr-chip.fab { background: #eef1f4; color: #6b7682; } .qr-chip.obra { background: #e3f0fb; color: #174a7a; }
+    .rc-chip { display: inline-flex; gap: 6px; align-items: center; border: 2px solid #cfd8e3; background: #fff; color: #35424f; border-radius: 10px; padding: 8px 10px; font-size: 13.5px; font-weight: bold; margin: 4px 6px 0 0; cursor: pointer; min-height: 40px; }
+    .rc-chip input { width: 18px; height: 18px; margin: 0; }
+    .rc-chip.on { border-color: #1e8449; background: #e7f7ee; color: #145c39; }
+    .rc-chip.falta { border-color: #d9483b; background: #fdeaea; color: #8b1e14; }
+    .rc-chip.fab { border-style: dashed; color: #8a93a0; cursor: default; }
+    .rc-res { margin-top: 10px; background: #fff7e0; border-radius: 10px; padding: 9px 11px; font-size: 13px; color: #35424f; line-height: 1.45; }
+    .parada { font-size: 14px; font-weight: bold; color: #a0521c; background: #fff4e5; border-radius: 10px; padding: 9px 12px; margin: 12px 0 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .parada .pa-t { flex: 1; min-width: 160px; }
+    .parada button { background: var(--artal-blue); color: #fff; border: 0; border-radius: 9px; padding: 9px 12px; font-weight: bold; font-family: 'Arimo'; font-size: 13px; cursor: pointer; min-height: 40px; }
+    .compra-card { padding: 10px 12px; }
+    .cc-que { font-size: 15px; font-weight: bold; color: #1b2733; white-space: pre-wrap; }
+    .cc-para { font-size: 13px; color: #556; margin-top: 3px; }
+    .cc-acts { display: flex; gap: 8px; margin-top: 8px; }
+    .cc-acts button { flex: 1; border: 0; border-radius: 9px; padding: 9px 10px; font-weight: bold; font-family: 'Arimo'; font-size: 13.5px; cursor: pointer; min-height: 40px; }
+    .cc-acts .cc-ruta { background: linear-gradient(180deg, #ffd634, var(--amarillo)); color: var(--azul-noche); }
+    .cc-acts .cc-ok { background: #fff; color: #1e8449; border: 2px solid #1e8449; }
+    .cc-acts .btn-deshacer { flex: 1; }
+    .parada small { display: block; font-weight: normal; color: #7a5200; font-size: 12.5px; }
+    details.mas.fab-int summary { font-size: 13.5px; }
+    .fi-row { background: #fff; border-radius: 10px; padding: 9px 12px; margin-top: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; }
+    .fi-row button { background: transparent; border: 1.5px solid #cfd8e3; color: var(--artal-blue); border-radius: 8px; padding: 7px 10px; font-weight: bold; font-family: 'Arimo'; cursor: pointer; min-height: 36px; white-space: nowrap; }
     /* Aviso: pedidos en ruta hace rato sin marcar entregado */
     .aviso-ruta { background: #fff4e5; border: 1.5px solid #f0b429; border-left: 5px solid #e67e22; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; color: #8a5b0e; }
     .aviso-ruta .t { font-weight: bold; font-size: 14.5px; margin-bottom: 6px; }
@@ -128,6 +156,7 @@
     import './mensajeria-widget.js';   // botón flotante ✉️ de Mensajería ARTAL
     import { collection, query, where, onSnapshot, doc, updateDoc, getDoc, getDocs, addDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { restoPendiente, restoTxt, fotoPartes, pestanaDe } from './chofer-pendientes.js';
+    import { itemsDe, listasFabrica, recibidas, partesDeItem, refItem, labelParte, faltaEnFabrica, restoPorRecoger, estadoEntrega, partesTxt } from './partes.js';   // una sola regla de partes (2026-11-24)
     import { borrarConRegistro } from './papelera.js';
     import { viaDe, envioTxt, VIAS, marcarEntregado } from './envios.js';
     import { etiquetaPedido, ESTADO_PEDIDO } from './estados.js';   // nombres únicos de los estados (auditoría 2026-11-12)
@@ -149,15 +178,65 @@
         }[c]));
     }
 
-    function checklistResuelto(o) {
-        const items = o.items || [];
-        if (!items.length) return true;
-        const status = o.itemStatus || {};
-        return items.every(it => status[it.id] && status[it.id].estado);
+    // Qué recoger de un pedido de fábrica, ítem por ítem (listo en fábrica / sigue en fábrica / ya en obra).
+    function queRecogerHTML(o) {
+        const items = itemsDe(o); if (!items.length) return '';
+        const filas = items.map(iid => {
+            const listas = listasFabrica(o, iid), ya = recibidas(o, iid), set = partesDeItem(o, iid);
+            const chips = set.map(p => ya.includes(p.k) ? `<span class="qr-chip obra">✓ ${esc(p.l)} · en obra</span>` : listas.includes(p.k) ? `<span class="qr-chip listo">${esc(p.l)}</span>` : `<span class="qr-chip fab">${esc(p.l)} · en fábrica</span>`).join('');
+            return `<div class="qr-item"><b>${esc(refItem(o, iid))}</b>${chips}</div>`;
+        }).join('');
+        const resto = restoPorRecoger(o), fab = faltaEnFabrica(o);
+        const linea = !resto.length ? (fab.length ? 'Nada listo para recoger todavía.' : 'Todo entregado.') : (fab.length ? `Recoge lo verde. Sigue en fábrica: ${esc(partesTxt(o, fab))}.` : 'Está todo listo: recoge el pedido completo.');
+        return `<div class="qr-box"><div class="qr-t">📦 Qué recoger</div>${filas}<div style="font-size:12.5px;color:#556;margin-top:6px;">${linea}</div></div>`;
+    }
+    // Recepción por partes (2026-11-24): viene marcado lo que fábrica dijo que está listo; el chofer quita lo que NO le entregan.
+    function recepcionPartesHTML(id, o) {
+        const items = itemsDe(o); if (!items.length) return '';
+        return items.map(iid => {
+            const listas = listasFabrica(o, iid), ya = recibidas(o, iid), set = partesDeItem(o, iid);
+            const chips = set.map(p => {
+                if (ya.includes(p.k)) return `<span class="rc-chip on" style="cursor:default"><input type="checkbox" checked disabled>${esc(p.l)} · ya en obra</span>`;
+                if (listas.includes(p.k)) return `<label class="rc-chip on" data-rc="${id}" data-iid="${iid}" data-k="${p.k}"><input type="checkbox" checked onchange="rcToggle(this)">${esc(p.l)}</label>`;
+                return `<span class="rc-chip fab">${esc(p.l)} · aún en fábrica</span>`;
+            }).join('');
+            return `<div style="margin-top:6px"><div style="font-size:13px;font-weight:bold;color:#1b2733;">${esc(refItem(o, iid))}</div>${chips}</div>`;
+        }).join('');
+    }
+    window.rcToggle = function (inp) {
+        const l = inp.closest('label'); if (!l) return;
+        l.classList.toggle('on', inp.checked); l.classList.toggle('falta', !inp.checked);
+        rcResumen(l.dataset.rc);
+    };
+    function rcLeer(id) {
+        const partes = {}, faltan = {};
+        document.querySelectorAll(`label.rc-chip[data-rc="${id}"]`).forEach(l => { const iid = l.dataset.iid, k = l.dataset.k; const ok = l.querySelector('input').checked; (ok ? partes : faltan)[iid] = ((ok ? partes : faltan)[iid] || []).concat([k]); });
+        return { partes, faltan };
+    }
+    function rcResumen(id) {
+        const box = document.getElementById('rc-res-' + id); if (!box) return;
+        const d = allDocs.find(x => x.id === id); const o = d ? d.data() : {};
+        const { partes, faltan } = rcLeer(id);
+        const ahora = Object.entries(partes).map(([iid, ps]) => ({ iid, ref: refItem(o, iid), partes: ps }));
+        const dif = Object.entries(faltan).map(([iid, ps]) => ({ iid, ref: refItem(o, iid), partes: ps }));
+        const sim = { ...o, entregado: true, recibidoPartes: Object.fromEntries(itemsDe(o).map(iid => [iid, [...new Set([...recibidas(o, iid), ...(partes[iid] || [])])]])) };
+        const fab = faltaEnFabrica(sim);
+        const completa = !fab.length && !dif.length;
+        box.innerHTML = `<b>Así queda el pedido:</b> ${completa ? '<span style="color:#1e8449">entregado completo.</span>' : '<span style="color:#b9770e">entregado en parte.</span>'}`
+            + (ahora.length ? `<br>Llevas: ${esc(partesTxt(o, ahora))}.` : '<br>No marcaste nada: el pedido queda como estaba.')
+            + (dif.length ? `<br><span style="color:#b3413a"><b>Fábrica lo marcó listo pero no te lo dieron:</b> ${esc(partesTxt(o, dif))}. La oficina recibe el aviso ahora.</span>` : '')
+            + (fab.length ? `<br>Sigue en fábrica: ${esc(partesTxt(o, fab))}. Cuando lo marquen, vuelve solo a tu lista.` : '');
+    }
+    // Quién recibe: el instalador asignado a la obra o el cliente. El chofer solo si también es instalador de esa obra o tiene rol instalador.
+    function quienRecibeOpts(o) {
+        const n = [];
+        (Array.isArray(o.asignadosInstalador) ? o.asignadosInstalador : []).forEach(a => { if (a && a.nombre) n.push(String(a.nombre).replace(/\s*\(contratista\)\s*/i, '')); });
+        if (o.asignadoInstaladorNombre) n.push(o.asignadoInstaladorNombre);
+        if (o.cliente) n.push('Cliente: ' + o.cliente);
+        return [...new Set(n)];
     }
 
     function orderCardHTML(id, o) {
-        const resuelto = checklistResuelto(o) || (o.entregado === true);   // el resto de un pedido ya entregado no repite el checklist
         const esCompra = o.docType === 'COMPRA_DIRECTA';
         const esParcial = o.status === 'parcialmente_listo';
         const enRuta = o.enRuta === true;
@@ -169,14 +248,13 @@
                 <div style="font-size:12.5px;color:#666;margin-top:4px;">Para: ${esc(o.cliente || '')}${o.obra ? ' — ' + esc(o.obra) : ''}${pryO(o)} · ${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 Ver orden de compra</a>` : ' · sin orden de compra adjunta'}</div></div>` : '';
         const metaLine = esCompra
             ? `Compra directa`
-            : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>`;   // la descripción de la compra (lo que escribe la oficina, p. ej. «Mosquiteras amovibles») se ve también aquí (usuario 2026-09-29)
-        // Resto por recoger: pedido ya entregado en parte al que fábrica le marcó más piezas listas.
+            : `${esc(o.material)} ${esc(o.color)} · ${esc(o.totalItems) || 0} ítems · <a href="#" onclick="openOrderPreview('${id}', 'chofer'); return false;">Ver hoja de fabricación</a>`;
         const resto = restoPendiente(o);
         const restoBox = resto.length ? `<div style="background:#fff0d9;border:1.5px solid #e67e22;border-radius:10px;padding:10px 12px;margin:6px 0 4px;">
                 <div style="font-size:15px;font-weight:bold;color:#a0521c;">📦 Resto listo en fábrica para recoger</div>
-                <div style="font-size:13.5px;color:#333;margin-top:4px;">${resto.map(r => `• Ítem ${esc(r.iid)} ${esc(r.nombre)}: <b>${esc(r.partes.map(x => x === 'todo' ? 'completo' : x).join(', '))}</b>`).join('<br>')}</div>
-                <div style="font-size:12.5px;color:#666;margin-top:4px;">Ya se entregó una parte${o.fechaEntregado && o.fechaEntregado.toDate ? ' el ' + esc(o.fechaEntregado.toDate().toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })) : ''}. Al entregar esto, marca «Entregado» otra vez.</div></div>` : '';
-        const borderColor = entregado ? '#999' : (esParcial ? '#e67e22' : (enRuta ? '#3498db' : ''));
+                <div style="font-size:12.5px;color:#666;margin-top:4px;">Ya entregaste una parte${o.fechaEntregado && o.fechaEntregado.toDate ? ' el ' + esc(o.fechaEntregado.toDate().toLocaleDateString('es-DO', { day: 'numeric', month: 'short' })) : ''}. Al entregar esto, marca «Entregado» otra vez.</div></div>` : '';
+        const borderColor = entregado ? (o.entregaCompleta === false ? '#e67e22' : '#999') : (esParcial ? '#e67e22' : (enRuta ? '#3498db' : ''));
+        const estEnt = entregado && !esCompra ? estadoEntrega(o) : null;
 
         // Pestaña "Entregado": solo lectura, sin formulario de recepción ni acciones de estado (salvo que haya resto por recoger).
         if (entregado && !resto.length) {
@@ -191,10 +269,31 @@
                     ${metaLine}
                     ${o.asignadoChoferNombre ? ' · 👤 Asignado a ' + esc(o.asignadoChoferNombre) : ''}
                 </div>
-                <div class="enruta-badge" style="color:#2ecc71;">✓ Entregado${fecha ? ' — ' + esc(fecha) : ''}${rec.nombre ? ' · recibió ' + esc(rec.nombre) : ''}</div>
+                <div class="enruta-badge" style="color:${estEnt && estEnt.clave === 'parcial' ? '#b9770e' : '#2ecc71'};">${estEnt && estEnt.clave === 'parcial' ? '⚠ ' + esc(estEnt.txt) : '✓ Entregado' + (estEnt ? ' completo' : '')}${fecha ? ' — ' + esc(fecha) : ''}${rec.nombre ? ' · recibió ' + esc(rec.nombre) : ''}</div>
+                ${estEnt && estEnt.clave === 'parcial' ? '<div style="font-size:12.5px;color:#666;margin-top:4px;">Cuando fábrica marque lo que falta, el pedido vuelve solo a «En espera» como resto por recoger.</div>' : ''}
             </div>`;
         }
 
+        const sugeridos = esCompra ? [] : quienRecibeOpts(o);
+        if (esCompra && !entregado) return `
+        <div class="order-card compra-card" ${borderColor ? `style="border-left-color:${borderColor};"` : ''}>
+            <div class="cc-que">${esc(o.descripcion || 'Compra directa')}</div>
+            <div class="cc-para">Para: <b>${esc(o.cliente || '')}${o.obra ? ' — ' + esc(o.obra) : ''}</b>${pryO(o)} · ${esc(o.totalItems) || 0} artículo(s)${o.compraPdfUrl ? ` · <a href="${esc(o.compraPdfUrl)}" target="_blank">📄 orden de compra</a>` : ''}${o.asignadoChoferNombre ? ' · 👤 ' + esc(o.asignadoChoferNombre) : ''}</div>
+            ${viaDe(o) === 'guagua' ? `<div style="font-size:13px;color:#174a7a;font-weight:bold;margin-top:4px;">🚌 Llega por guagua SDQ–LT${o.envio && o.envio.nota ? ' · ' + esc(o.envio.nota) : ''}</div>` : ''}
+            ${enRuta ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) : ''}</div>` : ''}
+            <div class="cc-acts">
+                ${enRuta ? `<button class="btn-deshacer" onclick="quitarDeRuta('${id}')">↩ No va en ruta</button>` : `<button class="cc-ruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
+                <button class="cc-ok" onclick="abrirRecepcion('${id}')">Entregado</button>
+            </div>
+            <div class="recepcion-form" id="recepcion-${id}">
+                <label>Nombre de quien recibe</label>
+                <input type="text" id="recepcion-nombre-${id}" placeholder="Nombre completo">
+                <label>Firma de quien recibe</label>
+                <canvas class="signature-canvas" id="firma-${id}" width="320" height="130"></canvas>
+                <div class="signature-row"><button type="button" onclick="limpiarFirma('${id}')">Borrar firma</button></div>
+                <button class="btn-listo" style="margin-top:10px;" onclick="confirmarEntrega('${id}')">Confirmar entrega</button>
+            </div>
+        </div>`;
         return `
         <div class="order-card" ${borderColor ? `style="border-left-color:${borderColor};"` : ''}>
             <div class="order-head">
@@ -206,18 +305,19 @@
             </div>
             ${viaDe(o) === 'guagua' ? `<div style="background:#eaf6ff;border:1.5px solid #7fb8e6;border-radius:10px;padding:8px 12px;margin:6px 0 4px;font-size:14px;color:#174a7a;font-weight:bold;">🚌 Llega por guagua SDQ–LT${o.envio && o.envio.nota ? ' · ' + esc(o.envio.nota) : ''}<div style="font-weight:normal;font-size:13px;color:#456;margin-top:2px;">Lo recoge en la parada quien pueda y marca «Entregado».</div></div>` : ''}
             ${compraTop}${restoBox}
+            ${!esCompra && !['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? queRecogerHTML(o) : ''}
             ${['pendiente_fabrica', 'en_fabrica'].includes(o.status) ? `<div class="checklist-note" style="color:#1f6aa5;background:#eef4fb;">🏭 ${esc(etiquetaPedido(o))} (fábrica interna) — si ya está hecho, «En ruta» lo pasa a ${esc(ESTADO_PEDIDO.listo_para_cargar)}.</div>` : ''}
-            ${esParcial ? `<div class="checklist-note" style="color:#e67e22;">⚠ ${esc(etiquetaPedido(o))} — en «Ver hoja» lo listo está en verde.</div>` : ''}
-            ${resuelto ? '' : `<div class="checklist-note">⚠ Marca cada ítem en «Ver hoja» antes de «Entregado».</div>`}
             ${(enRuta && (!entregado || o.restoEnRuta === true)) ? `<div class="enruta-badge">🚚 En ruta${o.viajeVehiculo ? ' · ' + esc(o.viajeVehiculo) + (o.viajeRuta ? ' · ' + esc(o.viajeRuta) : '') + (o.viajeCosto ? ' · costo de esta obra ' + fmtRD(o.viajeCosto) + (o.viajeObras > 1 ? ' (viaje repartido entre ' + o.viajeObras + ' obras)' : '') : '') : ''}</div>` : ''}
             <div class="actions">
                 ${(entregado ? o.restoEnRuta === true : enRuta) ? `<button class="btn-deshacer" onclick="quitarDeRuta('${id}')" title="Se marcó En ruta por error: vuelve a En espera y sale del viaje">↩ No va en ruta</button>` : `<button class="btn-enruta" onclick="marcarEnRuta('${id}')">🚚 En ruta</button>`}
-                <button class="btn-listo" ${resuelto ? '' : 'disabled style="opacity:0.5;cursor:default;"'} onclick="${resuelto ? `abrirRecepcion('${id}')` : ''}">Entregado</button>
+                <button class="btn-listo" onclick="abrirRecepcion('${id}')">Entregado</button>
                 ${(esCompra || entregado) ? '' : `<button class="btn-deshacer" onclick="regresarAFabrica('${id}')" title="Aún no está listo, regresar a fábrica">↩ No está listo</button>`}
             </div>
             <div class="recepcion-form" id="recepcion-${id}">
-                <label>Nombre de quien recibe (instalador)</label>
-                <input type="text" id="recepcion-nombre-${id}" placeholder="Nombre completo">
+                ${esCompra ? '' : `<label>¿Qué te entregaron? Quita la marca a lo que NO te dieron</label>${recepcionPartesHTML(id, o)}<div class="rc-res" id="rc-res-${id}"></div>`}
+                <label style="margin-top:10px">Nombre de quien recibe en la obra${sugeridos.length ? ' (instalador asignado o cliente)' : ''}</label>
+                <input type="text" id="recepcion-nombre-${id}" list="recibe-${id}" placeholder="Nombre completo">
+                ${sugeridos.length ? `<datalist id="recibe-${id}">${sugeridos.map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>` : ''}
                 <label>Firma de quien recibe</label>
                 <canvas class="signature-canvas" id="firma-${id}" width="320" height="130"></canvas>
                 <div class="signature-row">
@@ -226,6 +326,10 @@
                 <button class="btn-listo" style="margin-top:10px;" onclick="confirmarEntrega('${id}')">Confirmar entrega</button>
             </div>
         </div>`;
+    }
+    // Fila compacta para lo que sigue en fábrica interna sin marcar listo (plegado; solo si la oficina lo pide).
+    function fabricaInternaRowHTML(id, o) {
+        return `<div class="fi-row"><div><b>${esc(o.cliente || 'Sin cliente')} — ${esc(o.obra || '')}</b><div style="font-size:12.5px;color:#667;">${esc(etiquetaPedido(o))} · ${esc(o.totalItems) || 0} ítems</div></div><button onclick="marcarEnRuta('${id}')">Ya lo tengo · En ruta</button></div>`;
     }
 
     let signaturePads = {};
@@ -333,15 +437,21 @@
             return;
         }
         if (currentTab === 'espera') {
-            // Secciones claras (Dylan 2026-11-03): primero lo que hay que COMPRAR, después el resto de pedidos ya entregados en parte, al final los pedidos listos.
+            // Secciones (Dylan 2026-11-24, videos de la pantalla de Wilson): primero lo que hay que BUSCAR agrupado por PARADA (proveedor),
+            // después el resto de pedidos ya entregados en parte, después los pedidos listos; lo que fábrica interna aún no marcó listo
+            // va plegado, sin botones grandes, solo si la oficina lo pide.
             const sec = (titulo, arr) => arr.length ? `<div class="dia-sep" style="font-size:14px;">${titulo} (${arr.length})</div>` + arr.map(d => orderCardHTML(d.id, d.data())).join('') : '';
             const compras = filtrados.filter(d => d.data().docType === 'COMPRA_DIRECTA');
             const restos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado === true);
             const sinListo = (d) => ['pendiente_fabrica', 'en_fabrica'].includes(d.data().status);
             const pedidos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true && !sinListo(d));
             const internos = filtrados.filter(d => d.data().docType !== 'COMPRA_DIRECTA' && d.data().entregado !== true && sinListo(d));
-            list.innerHTML = sec('🛒 Compras para buscar', compras) + sec('📦 Resto por recoger en fábrica', restos) + sec('🚚 Pedidos listos para cargar', pedidos)
-                + sec('🏭 Fábrica interna · todavía no marcado listo (solo si te lo piden)', internos);
+            const paradas = new Map();
+            compras.forEach(d => { const k = normTxt(d.data().proveedor) || 'sin proveedor'; if (!paradas.has(k)) paradas.set(k, { nombre: d.data().proveedor || 'Proveedor sin indicar', docs: [] }); paradas.get(k).docs.push(d); });
+            const comprasHtml = compras.length ? `<div class="dia-sep" style="font-size:14px;">🛒 Para buscar · ${paradas.size} parada${paradas.size > 1 ? 's' : ''} · ${compras.length} compra${compras.length > 1 ? 's' : ''}</div>`
+                + [...paradas.values()].sort((a, b) => b.docs.length - a.docs.length).map(pa => { const enEspera = pa.docs.filter(d => d.data().enRuta !== true); return `<div class="parada"><div class="pa-t">📍 ${esc(pa.nombre)}<small>${pa.docs.length} cosa${pa.docs.length > 1 ? 's' : ''} que buscar aquí: ${esc(pa.docs.map(d => d.data().cliente || 'Sin cliente').filter((v, i, arr) => arr.indexOf(v) === i).join(', '))}</small></div>${enEspera.length > 1 ? `<button onclick="marcarEnRuta('${enEspera[0].id}', ${JSON.stringify(enEspera.slice(1).map(d => d.id)).replace(/"/g, '&quot;')})">🚚 En ruta con las ${enEspera.length}</button>` : ''}</div>` + pa.docs.map(d => orderCardHTML(d.id, d.data())).join(''); }).join('') : '';
+            const internosHtml = internos.length ? `<details class="mas fab-int"><summary>🏭 Todavía en fábrica interna (${internos.length}) · no hay nada que buscar, salvo que la oficina te lo pida</summary>${internos.map(d => fabricaInternaRowHTML(d.id, d.data())).join('')}</details>` : '';
+            list.innerHTML = comprasHtml + sec('📦 Resto por recoger en fábrica', restos) + sec('🚚 Pedidos listos para cargar', pedidos) + internosHtml;
         } else list.innerHTML = filtrados.map(d => orderCardHTML(d.id, d.data())).join('');
         if (currentTab !== 'entregado') {
             filtrados.forEach(d => {
@@ -392,8 +502,8 @@
     const obraKeyDe = (c, o) => normTxt(c) + '|' + normTxt(o);
     let viajePedidoId = null;
 
-    window.marcarEnRuta = function (id) {
-        viajePedidoId = id;
+    window.marcarEnRuta = function (id, extra) {
+        viajePedidoId = id; const pre = new Set(Array.isArray(extra) ? extra : []);
         const d = allDocs.find(x => x.id === id); const o = d ? d.data() : {};
         document.getElementById('vj-sub').textContent = (o.cliente || 'Sin cliente') + ' — ' + (o.obra || '');
         const vsel = document.getElementById('vj-veh'), rsel = document.getElementById('vj-ruta');
@@ -405,7 +515,7 @@
         viajeRuta();
         // Otros pedidos en espera (no en ruta, no entregados) que pueden ir en el mismo camión.
         const otros = allDocs.filter(x => x.id !== id && pestanaDe(x.data()) === 'espera');
-        document.getElementById('vj-otros').innerHTML = otros.length ? otros.map(x => `<label class="vj-chk"><input type="checkbox" data-oid="${x.id}" onchange="viajeRecalc()"> ${esc(x.data().cliente || 'Sin cliente')} — ${esc(x.data().obra || '')}</label>`).join('')
+        document.getElementById('vj-otros').innerHTML = otros.length ? otros.map(x => `<label class="vj-chk"><input type="checkbox" data-oid="${x.id}" ${pre.has(x.id) ? 'checked' : ''} onchange="viajeRecalc()"> ${esc(x.data().cliente || 'Sin cliente')} — ${esc(x.data().obra || '')}${x.data().docType === 'COMPRA_DIRECTA' && x.data().proveedor ? ' <span style="color:#a0521c">· ' + esc(x.data().proveedor) + '</span>' : ''}</label>`).join('')
             : '<p class="vj-info">No hay otros pedidos en espera. Este viaje va solo con esta obra.</p>';
         document.getElementById('vj-ok').disabled = false;
         document.getElementById('viaje-modal').classList.add('show');
@@ -478,7 +588,9 @@
 
     window.abrirRecepcion = function (id) {
         const form = document.getElementById('recepcion-' + id);
-        if (form) form.style.display = form.style.display === 'block' ? 'none' : 'block';
+        if (!form) return;
+        form.style.display = form.style.display === 'block' ? 'none' : 'block';
+        if (form.style.display === 'block') { rcResumen(id); form.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
     };
 
     window.limpiarFirma = function (id) {
@@ -490,14 +602,37 @@
         const pad = signaturePads[id];
         if (!nombre) { alert('Escribe el nombre de quien recibe el material.'); return; }
         if (!pad || pad.isEmpty()) { alert('Falta la firma de quien recibe.'); return; }
-
         const snap = await getDoc(doc(db, 'orders', id));
         const d = snap.exists() ? snap.data() : {};
-        // (auditoría 2026-11-12) La escritura de «Entregado» vive en envios.js → marcarEntregado (la comparten Transportes,
-        // Instalación y Mi día): completa el pedido solo si no necesita instalador (compra directa / «solo recoger») o ya está
-        // instalado; guarda la foto de partes para el «resto por recoger». La firma dibujada se mantiene (decisión pendiente de Dylan).
-        try { await marcarEntregado(db, id, d, usuario, { recibio: nombre, firma: pad.toDataUrl() }); }
-        catch (e) { alert('No se pudo marcar entregado: ' + (e && e.message ? e.message : e)); }
+        const esCompra = d.docType === 'COMPRA_DIRECTA';
+        // Quién recibe (Dylan 2026-11-24): el instalador asignado o el cliente. El chofer solo si también instala (rol instalador):
+        // Wilson sí; otro chofer no puede recibirse a sí mismo.
+        const yo = normTxt(usuario.nombre), ella = normTxt(nombre);
+        const soyInstalador = (usuario.roles || []).includes('instalador');
+        if (!esCompra && ella && (ella === yo || (yo.split(' ')[0] && ella === yo.split(' ')[0])) && !soyInstalador) { alert('El chofer no puede recibir por la obra. Escribe el nombre del instalador asignado o del cliente que recibió.'); return; }
+        const { partes, faltan } = esCompra ? { partes: null, faltan: {} } : rcLeer(id);
+        if (!esCompra && !Object.keys(partes).length && !confirm('No marcaste ninguna parte como recibida.\n\n¿Confirmar igual? El pedido quedará como estaba (nada entregado ahora).')) return;
+        const btn = document.querySelector(`#recepcion-${id} .btn-listo`); if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+        try {
+            // (auditoría 2026-11-12) La escritura de «Entregado» vive en envios.js → marcarEntregado (la comparten Transportes, Instalación
+            // y Mi día). Acumula lo recibido por partes; cierra el pedido solo si llegó TODO y no necesita instalador / ya está instalado.
+            await marcarEntregado(db, id, d, usuario, { recibio: nombre, firma: pad.toDataUrl(), partes: partes || undefined });
+            // Lo que fábrica marcó listo y NO entregó → itemStatus 'problema' (alerta roja en el Panel + push a fábrica). Lo recibido completo → 'cargado'.
+            if (!esCompra) {
+                const upd = {}; const ahoraISO = new Date().toISOString();
+                Object.entries(faltan).forEach(([iid, ks]) => {
+                    const recib = {}; partesDeItem(d, iid).forEach(p => { recib[p.k] = recibidas(d, iid).includes(p.k) || (partes[iid] || []).includes(p.k); });
+                    upd[`itemStatus.${iid}`] = { estado: 'problema', partesRecibidas: recib, faltantes: ks.map(k => labelParte(d, iid, k)), comentario: 'Fábrica lo marcó listo pero no lo entregó al chofer', por: usuario.nombre, atendido: false, fecha: ahoraISO };
+                });
+                Object.keys(partes).filter(iid => !faltan[iid]).forEach(iid => {
+                    const prev = (d.itemStatus || {})[iid];
+                    // Un problema anterior («no me dieron X») se cierra solo cuando X llega en esta entrega.
+                    const resuelve = prev && prev.estado === 'problema' && prev.atendido !== true && Array.isArray(prev.faltantes) && prev.faltantes.every(l => (partes[iid] || []).some(k => labelParte(d, iid, k) === l) || recibidas(d, iid).some(k => labelParte(d, iid, k) === l));
+                    if (!prev || prev.estado !== 'problema' || prev.atendido === true || resuelve) upd[`itemStatus.${iid}`] = { estado: 'cargado', por: usuario.nombre, fecha: ahoraISO, ...(resuelve ? { atendido: true, resuelto: 'entregado en una entrega posterior' } : {}) };
+                });
+                if (Object.keys(upd).length) await updateDoc(doc(db, 'orders', id), upd);
+            }
+        } catch (e) { alert('No se pudo marcar entregado: ' + (e && e.message ? e.message : e)); if (btn) { btn.disabled = false; btn.textContent = 'Confirmar entrega'; } }
     };
     // «↩ No va en ruta» (Dylan 2026-11-05, caso Daria — Casa naranjitos marcado por inadvertencia): deshace «En ruta» de UN
     // pedido sin tocar los demás del mismo viaje: el pedido vuelve a «En espera» (o a «resto por recoger» si ya estaba

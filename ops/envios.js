@@ -10,6 +10,7 @@
 // Sin `envio`: camión, salvo que el pedido esté asignado a un contratista externo (→ contratista).
 import { doc, updateDoc, serverTimestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 import { fotoPartes, restoPendiente, restoTxt } from './chofer-pendientes.js';   // (auditoría 2026-11-12) importación circular inofensiva: solo se usa dentro de funciones
+import { itemsDe, recibidas, partesDeItem, faltaEnObra, partesTxt } from './partes.js';
 
 export const VIAS = {
     camion: { ico: '🚚', txt: 'Camión ARTAL (Wilson)', corto: 'Camión ARTAL' },
@@ -66,10 +67,11 @@ export function leerSelectorEnvio(prefijo, usuario) {
 // UNA sola escritura de «Entregado» (auditoría 2026-11-12: la hacían por su cuenta Transportes, Instalación («Recibido») y
 // Mi día («Entregado»), cada una con un juego de campos distinto). Escribe lo que escribía Transportes:
 //   entregado, fechaEntregado, enRuta:false, restoEnRuta:false, recepcionInstalador {nombre, firma, fecha[, via]},
-//   entregaPartes (foto de lo que había listo), entregas[] (arrayUnion con el resto pendiente), y status:'completado' solo si
-//   el pedido no necesita instalador (compra directa / «solo recoger») o ya está instalado. Lo demás lo hacen los triggers
+//   recibidoPartes / entregaPartes (acumulado de lo que ya llegó a la obra), entregaCompleta, entregaFaltan, entregas[] (arrayUnion
+//   con partes y resto), y status:'completado' solo si llegó TODO y el pedido no necesita instalador (compra directa / «solo
+//   recoger») o ya está instalado. Lo demás lo hacen los triggers
 //   del servidor (pedidoSigueTrabajo / pedidoEntregadoInterno).
-// opts: { via, recibio, firma (dataURL o null), nota, desde ('mi-dia', 'instalacion'…), quien }
+// opts: { via, recibio, firma (dataURL o null), nota, desde ('mi-dia', 'instalacion'…), quien, partes { iid: [k…] } (lo recibido ahora) }
 // fs: opcional, { doc, updateDoc, serverTimestamp, arrayUnion } para quien tenga su propio Firestore (Mi día en modo demo).
 export async function marcarEntregado(db, orderId, o, usuario, opts = {}, fs = null) {
     const F = fs || { doc, updateDoc, serverTimestamp, arrayUnion };
@@ -77,15 +79,26 @@ export async function marcarEntregado(db, orderId, o, usuario, opts = {}, fs = n
     const recibio = String(opts.recibio || (usuario && usuario.nombre) || '').trim();
     const chofer = (usuario && usuario.nombre) || '';
     const noNecesitaInstalador = o.docType === 'COMPRA_DIRECTA' || o.sinInstalacion === true;
-    const completa = o.instalado === true || noNecesitaInstalador;
-    const resto = restoPendiente(o);
     const ahoraISO = new Date().toISOString();
-    const entrega = { fechaISO: ahoraISO, recibio, chofer, resto: resto.length ? restoTxt(resto) : '' };
+    // Partes que llegan en ESTA entrega: lo que marcó el chofer (opts.partes = { iid: [k…] }) o, si nadie marcó nada (Mi día,
+    // Instalación, entrega externa), lo que fábrica tenía listo. Se ACUMULA sobre lo ya recibido (2026-11-24, caso Shirley).
+    const esCompra = o.docType === 'COMPRA_DIRECTA';
+    const ahora = esCompra ? {} : (opts.partes && typeof opts.partes === 'object' ? opts.partes : fotoPartes(o));
+    const acumulado = {};
+    itemsDe(o).forEach(iid => { const u = new Set([...recibidas(o, iid), ...(Array.isArray(ahora[iid]) ? ahora[iid] : [])]); const set = partesDeItem(o, iid).map(p => p.k); const l = set.filter(k => u.has(k)); if (l.length) acumulado[iid] = l; });
+    const despues = { ...o, entregado: true, recibidoPartes: acumulado, entregaPartes: acumulado };
+    const falta = esCompra ? [] : faltaEnObra(despues);
+    const entregaCompleta = esCompra ? true : !falta.length;
+    const completa = entregaCompleta && (o.instalado === true || noNecesitaInstalador);
+    const resto = restoPendiente(despues);
+    const ahoraTxt = esCompra ? '' : partesTxt(o, Object.entries(ahora).map(([iid, partes]) => ({ iid, ref: (((o.appJSON || {}).inputsData || {})[iid] || {}).ref || ('ítem ' + iid), partes: Array.isArray(partes) ? partes : [] })).filter(r => r.partes.length));
+    const entrega = { fechaISO: ahoraISO, recibio, chofer, partes: ahoraTxt, resto: resto.length ? restoTxt(resto) : '', completa: entregaCompleta };
     if (opts.via) { entrega.via = opts.via; entrega.quien = opts.quien || ''; }
     const datos = {
         entregado: true, fechaEntregado: F.serverTimestamp(), enRuta: false, restoEnRuta: false,
         recepcionInstalador: { nombre: recibio, firma: opts.firma || null, fecha: F.serverTimestamp(), ...(opts.via ? { via: opts.via } : {}) },
-        entregaPartes: fotoPartes(o),
+        recibidoPartes: acumulado, entregaPartes: acumulado,
+        entregaCompleta, entregaFaltan: entregaCompleta ? '' : partesTxt(o, falta),
         entregas: F.arrayUnion(entrega),
         ...(opts.nota ? { notaEntrega: opts.nota } : {}),
         ...(opts.desde ? { entregadoDesde: opts.desde } : {}),

@@ -680,20 +680,43 @@ async function avisarEnvio(o, lugar, cambio) {
     }
 }
 
-// Resto por recoger (espejo de ops/chofer-pendientes.js → restoPendiente). `entregaPartes` = foto de lo entregado { itemId: [partes] }.
+// Resto por recoger (espejo de ops/partes.js → restoPorRecoger, 2026-11-24). `recibidoPartes` (o `entregaPartes`) = lo que YA llegó
+// a la obra { itemId: [partes] }; `partesFabrica` = lo que fábrica marcó listo; 'todo' = todas las partes del ítem.
+const PARTES_SETS_SRV = {
+    corredera: ['marco', 'hojas', 'vidrios', 'accesorios'], galandaje: ['marco', 'hojas', 'vidrios', 'accesorios'], plegable: ['marco', 'hojas', 'vidrios', 'accesorios'],
+    ventana: ['marco', 'hojas', 'vidrios', 'accesorios'], puerta_vidrio: ['marco', 'hojas', 'vidrios', 'accesorios'], fachada: ['marco', 'vidrios', 'accesorios'],
+    fachada_grid: ['marco', 'hojas', 'vidrios', 'accesorios'], mampara: ['vidrios', 'herrajes', 'accesorios'], ducha: ['perfiles', 'vidrios', 'herrajes', 'accesorios'],
+    cerramiento: ['vidrios', 'herrajes', 'accesorios'], baranda: ['estructura', 'vidrios', 'accesorios'], cortina: ['tela', 'mecanismo', 'accesorios'],
+    mosquitera: ['marco', 'tela', 'accesorios'], lamas: ['marco', 'vidrios', 'accesorios', 'tela'],
+};
+function categoriaSrv(o, iid) {
+    const cs = (((o || {}).appJSON || {}).cardsState || {})[iid] || {};
+    const t = String(cs.type || '');
+    if (t === 'fachada_grid') return 'fachada_grid'; if (t === 'pleg') return 'plegable'; if (t === 'mosq') return 'mosquitera'; if (t === 'win_lamas') return 'lamas';
+    if (t.startsWith('cort_')) return 'cortina'; if (t.startsWith('cor')) return 'corredera'; if (t.startsWith('gal')) return 'galandaje';
+    if (t.startsWith('win_') || t === 'door_abat') return 'ventana'; if (['door_glass', 'door_slide', 'door_slide_conn', 'door_flot'].includes(t)) return 'puerta_vidrio';
+    if (t === 'mamp_fija') return 'mampara'; if (t === 'ducha_cab') return 'ducha'; if (t === 'ducha_facade') return 'cerramiento'; if (t === 'baranda_bal') return 'baranda';
+    if (t === 'fachada_din' || t === 'draw') return 'fachada';
+    const s = String(((o.items || []).find((x) => String(x.id) === String(iid)) || {}).tipo || '').toLowerCase();
+    if (/baranda/.test(s)) return 'baranda'; if (/corredera/.test(s)) return 'corredera'; if (/galandaje/.test(s)) return 'galandaje'; if (/plegable/.test(s)) return 'plegable';
+    if (/mosquitera/.test(s)) return 'mosquitera'; if (/lamas/.test(s)) return 'lamas'; if (/cortina|shutter|persiana|enrollable/.test(s)) return 'cortina'; if (/ducha/.test(s)) return 'cerramiento';
+    if (/mampara/.test(s)) return 'mampara'; if (/puerta flotante|puerta de vidrio/.test(s)) return 'puerta_vidrio'; if (/fachada|paño fijo|pano fijo/.test(s)) return 'fachada'; if (/ventana|puerta/.test(s)) return 'ventana';
+    return '';
+}
+const partesSetSrv = (o, iid) => PARTES_SETS_SRV[categoriaSrv(o, iid)] || ['marco', 'hojas', 'vidrios', 'accesorios'];
 function partesListasSrv(o, iid) {
     const pf = (o.partesFabrica || {})[iid];
     if (pf && typeof pf === 'object') { const l = Object.keys(pf).filter((k) => pf[k] === true); if (l.length) return l; }
-    return (o.itemsListosFabrica || {})[iid] === true ? ['todo'] : [];
+    return (o.itemsListosFabrica || {})[iid] === true ? partesSetSrv(o, iid) : [];
 }
+function recibidasSrv(o, iid) { const r = (o.recibidoPartes || o.entregaPartes || {})[iid]; if (!Array.isArray(r)) return []; return r.includes('todo') ? partesSetSrv(o, iid) : r; }
 function restoPendienteSrv(o) {
     if (!o || o.docType === 'COMPRA_DIRECTA' || o.entregado !== true || !['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'].includes(o.status)) return [];
-    const foto = o.entregaPartes; if (!foto || typeof foto !== 'object') return [];
+    if (!o.recibidoPartes && !o.entregaPartes) return [];
     const out = [];
     (o.items || []).forEach((it) => {
-        const iid = String(it.id), ya = foto[iid] || []; if (ya.includes('todo')) return;
-        const listas = partesListasSrv(o, iid);
-        const faltan = listas.includes('todo') ? (ya.length ? ['resto del ítem'] : ['todo']) : listas.filter((p) => !ya.includes(p));
+        const iid = String(it.id), ya = recibidasSrv(o, iid);
+        const faltan = partesListasSrv(o, iid).filter((p) => !ya.includes(p));
         if (faltan.length) out.push({ iid, partes: faltan });
     });
     return out;
@@ -743,6 +766,10 @@ exports.enviarNotificacionPedido = onDocumentWritten('orders/{id}', async (event
         const txt = restoNuevo.map((r) => 'ítem ' + r.iid + ' (' + r.partes.join(', ') + ')').join(' · ');
         await pushATokens(await tokensPorRol('chofer'), '📦 Resto listo para recoger en fábrica', (lugar + ': ' + txt).slice(0, 160), 'ops/chofer.html');
     }
+
+    // 1c) Entrega en parte (2026-11-24): el chofer entregó y faltan partes → la oficina lo sabe el mismo día (tarjeta en el Panel).
+    if (after.entregaCompleta === false && after.docType !== 'COMPRA_DIRECTA' && (before.entregaCompleta !== false || (after.entregaFaltan && after.entregaFaltan !== before.entregaFaltan)))
+        await pushATokens(await tokensPorRol('admin'), '📦 Entrega en parte: ' + lugar, ('Falta ' + (after.entregaFaltan || 'material') + ' · sigue en fábrica').slice(0, 160), 'ops/index.html');
 
     // 2) Instrucción de la oficina para fábrica (recién puesta o reabierta, sin atender).
     const instrCambio = after.comentarioParaFabrica && after.comentarioParaFabricaAtendido !== true &&

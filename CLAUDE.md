@@ -2483,6 +2483,35 @@ Fotos/PDF adjuntos vía `fotos.js` (acepta imágenes y PDF, opt-in `pdf:true`).
 
 ### Transportes (`ops/chofer.html`) — pestañas En espera / En ruta / Entregado
 
+- **Partes por ítem: una sola regla para fábrica, chofer, oficina y Mi día (Dylan 2026-11-24, caso de las dos barandas: fábrica interna no
+  marcaba partes, el chofer recibió solo accesorios y el pedido quedó «entregado» completo).** Módulo `ops/partes.js`: `PARTES_SETS` (espejo
+  del cuaderno, por categoría; `categoriaDeTipo(type)` o por el texto del ítem), `partesDeItem`, `listasFabrica` (lo que fábrica marcó;
+  `itemsListosFabrica` viejo = todas), `recibidas` (`recibidoPartes`, respaldo `entregaPartes`), `restoPorRecoger` (listas − recibidas),
+  `faltaEnFabrica`, `faltaEnObra`, `entregaCompleta`, `estadoEntrega` («Entregado en parte · listo en fábrica sin recoger: … · aún en
+  fábrica: …»), `partesTxt`, `partesFabricaHTML` + `PARTES_CSS` (chips por ítem para las dos fábricas), `cambiosParte`/`cambiosItemTodo`/
+  `cambiosListoParaCargar` (sin nada marcado = todo; con partes = `listo_para_cargar` si está todo, si no `parcialmente_listo`).
+  **Regla**: *un pedido está entregado cuando todas las partes de todos sus ítems llegaron a la obra*; `entregado:true` sigue siendo
+  «hubo al menos una entrega», `entregaCompleta`/`entregaFaltan` dicen si falta algo. `envios.js → marcarEntregado(…, {partes})` acumula lo
+  recibido (`recibidoPartes` = `entregaPartes`), guarda `entregas[] {partes, resto, completa}` y solo completa el pedido si llegó todo.
+  `chofer-pendientes.js → restoPendiente` usa esa regla; `functions/index.js` la espeja (`PARTES_SETS_SRV`, `restoPendienteSrv`) y manda push
+  «📦 Entrega en parte» a admin. **Fábrica interna y ALUCUFEL = la misma tarjeta**: chips de partes por ítem (`partesToggle`, `partesTodo`,
+  «todo listo»), un solo botón «✅ Listo para cargar» (sin «Parcialmente listo» ni «Marcar ítems listos»; la hoja `?checklist=fabrica` sigue
+  escribiendo los mismos campos); al tocar una parte en un pedido ya listo/parcial el estado se recalcula. **Transportes**: «Para buscar»
+  agrupado por PARADA (proveedor, `.parada` con botón «En ruta con las N» → `marcarEnRuta(id, extraIds)` preselecciona en el modal del
+  viaje), tarjetas de compra compactas (`.compra-card`), «Qué recoger» por ítem (verde listo / gris en fábrica / ✓ en obra), «Entregado»
+  siempre activo → recepción por partes prellenada con lo que fábrica marcó (`recepcionPartesHTML`, `rcToggle`, `rcLeer`, `rcResumen`), quien
+  recibe = instalador asignado o cliente (datalist; el chofer solo si tiene rol instalador), firma; `confirmarEntrega` → `marcarEntregado`
+  con `partes` + `itemStatus.{iid}` 'problema' (faltantes = lo que fábrica marcó y no entregó → alerta roja en el Panel y push a fábrica) o
+  'cargado'; un problema anterior se cierra solo cuando esa parte llega (`resuelto`). Lo de fábrica interna sin marcar va plegado
+  (`fabricaInternaRowHTML`). Pestaña Entregado: «⚠ Entregado en parte · …» en ámbar. **Panel**: tarjeta `ep:` «Entrega en parte — falta material
+  en fábrica» con «Pedir fecha a fábrica» (instrucción `comentarioParaFabrica`) y «Ya lo sé» (`entregaParcialAtendida`); la de `itemStatus` se
+  titula «El chofer no recibió lo que fábrica marcó listo» y detalla ítem/faltantes/quién. **Instalación**: línea ámbar con `estadoEntrega` en la
+  tarjeta del pedido. **Mi día** (chofer): «Cargar: obra · recoger estructura de B1…», una línea por PARADA de compras (`ref 'parada:'`), sin
+  duplicados, los vencidos plegados en «Pendientes antiguos (N)» y fuera las frases del informe dirigidas a gerencia («no mandó parte», «ver
+  A2», preguntas). `shared.css`: `overscroll-behavior-x: none` (el deslizar del trackpad ya no navega atrás). Probado con Firestore simulado
+  (`ops/_prueba-transportes.html`, borrada) y en Node (`partes.js`, 19 casos): parcial → diferencia → resto → completo. Datos: el pedido de las
+  barandas quedó como entrega en parte (accesorios en obra; estructura y vidrios en fábrica interna, `parcialmente_listo`).
+
 - La pantalla se ve como **"Transportes"** (título, tile del Panel de Control), pero el rol
   Firestore sigue siendo `chofer` internamente (`requireAuth(['chofer'])`, campos
   `asignadoChoferEmail`/`asignadoChoferNombre`, nombre de archivo `chofer.html`) — cambiar eso

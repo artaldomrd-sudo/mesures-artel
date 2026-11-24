@@ -8,38 +8,28 @@
 // «En espera» cuando fábrica marca piezas que no estaban en esa foto. `restoEnRuta` = el chofer ya salió a buscar el resto.
 
 import { vaEnTransportes } from './envios.js';
+import { listasFabrica, recibidas, restoPorRecoger, PARTE_TXT as _PARTE_TXT, labelParte } from './partes.js';
 
-export const PARTE_TXT = { marco: 'marco', hojas: 'hojas', vidrios: 'vidrios', accesorios: 'accesorios', herrajes: 'herrajes', perfiles: 'perfiles', estructura: 'estructura', tela: 'tela', mecanismo: 'mecanismo', todo: 'completo' };
+// 2026-11-24 (caso Shirley): la regla vive en partes.js y se calcula contra lo RECIBIDO en obra (`recibidoPartes`), no contra la
+// foto de lo que fábrica decía tener listo. `entregaPartes` se sigue escribiendo con el mismo valor (compat servidor y entregas viejas).
+export const PARTE_TXT = _PARTE_TXT;
 const ESTADOS_RESTO = ['listo_para_cargar', 'parcialmente_listo', 'parcialmente_instalado'];
 
-// Piezas que fábrica tiene listas de un ítem: las partes marcadas, o 'todo' si solo está el «listo» del ítem (pedidos viejos).
-export function partesListas(o, iid) {
-    const pf = (o.partesFabrica || {})[iid];
-    if (pf && typeof pf === 'object') { const l = Object.keys(pf).filter(k => pf[k] === true); if (l.length) return l; }
-    return (o.itemsListosFabrica || {})[iid] === true ? ['todo'] : [];
-}
-// Foto de lo que hay listo AHORA (se guarda al entregar).
+// Piezas que fábrica tiene listas de un ítem ('todo' de un pedido viejo = todas las partes del ítem).
+export const partesListas = (o, iid) => listasFabrica(o, iid);
+// Foto de lo que hay listo AHORA (se guardaba al entregar; hoy marcarEntregado guarda lo recibido).
 export function fotoPartes(o) {
     const out = {};
-    (o.items || []).forEach(it => { const iid = String(it.id); const l = partesListas(o, iid); if (l.length) out[iid] = l; });
+    (o.items || []).forEach(it => { const iid = String(it.id); const l = listasFabrica(o, iid); if (l.length) out[iid] = l; });
     return out;
 }
-// Lo que fábrica marcó listo y todavía no se llevó: [{ iid, nombre, partes: [...] }]. Solo pedidos de fábrica ya entregados y no cerrados.
+// Lo que fábrica marcó listo y todavía no llegó a la obra: [{ iid, nombre, partes: [...] }]. Solo pedidos de fábrica ya entregados en parte y no cerrados.
 export function restoPendiente(o) {
     if (!o || o.docType === 'COMPRA_DIRECTA' || o.entregado !== true || !ESTADOS_RESTO.includes(o.status)) return [];
-    const foto = o.entregaPartes;
-    if (!foto || typeof foto !== 'object') return [];   // entregas viejas sin foto: no se inventa un resto (ver migración 2026-11-03)
-    const out = [];
-    (o.items || []).forEach(it => {
-        const iid = String(it.id), ya = foto[iid] || [];
-        if (ya.includes('todo')) return;
-        const listas = partesListas(o, iid);
-        const faltan = listas.includes('todo') ? (ya.length ? ['resto del ítem'] : ['todo']) : listas.filter(p => !ya.includes(p));
-        if (faltan.length) out.push({ iid, nombre: (it.tipo || 'Ítem ' + iid) + (it.ubicacion ? ' · ' + it.ubicacion : ''), partes: faltan });
-    });
-    return out;
+    if (!o.recibidoPartes && !o.entregaPartes) return [];   // entregas viejas sin foto: no se inventa un resto (ver migración 2026-11-03)
+    return restoPorRecoger(o).map(r => { const it = (o.items || []).find(x => String(x.id) === r.iid) || {}; return { iid: r.iid, nombre: (it.tipo || 'Ítem ' + r.iid) + (it.ubicacion ? ' · ' + it.ubicacion : ''), partes: r.partes, labels: r.partes.map(k => labelParte(o, r.iid, k)) }; });
 }
-export const restoTxt = (resto) => resto.map(r => `ítem ${r.iid} ${r.nombre} (${r.partes.map(p => PARTE_TXT[p] || p).join(', ')})`).join(' · ');
+export const restoTxt = (resto) => resto.map(r => `ítem ${r.iid} ${r.nombre} (${(r.labels || r.partes.map(p => PARTE_TXT[p] || p)).join(', ')})`).join(' · ');
 
 // Lo que Transportes muestra en cada pestaña (misma regla que su render).
 export function visibleEnTransportes(o) {
