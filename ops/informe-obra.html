@@ -30,6 +30,24 @@
     table.rep tr.tot td { font-weight: bold; background: #f4f6f9; }
     table.rep td.n, table.rep th.n { text-align: right; white-space: nowrap; }
     .tabla-wrap { overflow-x: auto; }
+    /* Teléfono (Dylan 2026-11-24, captura: la tabla de viajes se cortaba y «Obras a bordo» / «Le toca a esta obra» quedaban fuera):
+       las tablas .cards se apilan en fichas, cada celda con su etiqueta (data-l), sin scroll lateral. */
+    @media (max-width: 640px) {
+        main table.rep.cards { display: block; overflow: visible; }
+        table.rep.cards thead { display: none; }
+        table.rep.cards tbody, table.rep.cards tr { display: block; }
+        table.rep.cards tr { border-bottom: 6px solid #eef3f8; padding: 8px 0; }
+        table.rep.cards tr:last-child { border-bottom: 0; }
+        table.rep.cards td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 3px 12px; border: 0; text-align: right; white-space: normal; }
+        table.rep.cards td::before { content: attr(data-l); color: #667; font-size: 12px; text-align: left; flex: none; }
+        table.rep.cards td.t { display: block; text-align: left; font-weight: bold; padding-top: 4px; }
+        table.rep.cards td.t::before { content: none; }
+        table.rep.cards td.n b { font-size: 15px; }
+        table.rep.cards tr.tot { background: #f4f6f9; padding: 10px 0; }
+        table.rep.cards tr.tot td { font-weight: bold; }
+        table.rep.cards tr.tot td[colspan] { display: block; text-align: left; }
+        table.rep.cards tr.tot td[colspan]::before { content: none; }
+    }
     .acts { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 30px; }
     .acts a, .acts button { background: #fff; color: var(--artal-blue); border: 1.5px solid var(--artal-blue); border-radius: 9px; padding: 10px 14px; font-weight: bold; font-size: 13.5px; text-decoration: none; cursor: pointer; font-family: 'Arimo'; min-height: 44px; }
     .acts button.b { background: var(--artal-blue); color: #fff; }
@@ -62,6 +80,7 @@
     import './mensajeria-widget.js';
     import { doc, onSnapshot, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
     import { idProyectoDe, pryChipHTML } from './proyecto-id.js';   // Nº de proyecto PRY-AAAA-NNN (2026-11-03)
+    import { etiquetaPedido } from './estados.js';
 
     const usuario = await requireAuth(['contable']);   // gerencia (admin) siempre entra
     await requirePin(usuario);   // (auditoría 2026-11-12) muestra el costo por persona: PIN como el resto del área financiera
@@ -124,12 +143,12 @@
                 ${mo.dias.map(d => `<tr><td>${esc(fmtFecha(d.fecha))}</td><td class="n">${d.horas}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">Sin días registrados.</p>'}
 
             <h3 class="sec">🚚 Viajes del camión con esta obra a bordo</h3>
-            ${(tr.detalle || []).length ? `<div class="tabla-wrap"><table class="rep"><thead><tr><th>Fecha</th><th>Vehículo · recorrido</th><th class="n">Km</th><th class="n">Costo del viaje</th><th class="n">Obras a bordo</th><th class="n">Le toca a esta obra</th></tr></thead><tbody>
-                ${tr.detalle.map(v => `<tr><td>${esc(fmtFecha(v.fecha))}</td><td>${esc(v.vehiculo)}${v.ruta ? ' · ' + esc(v.ruta) : ''}${v.chofer ? '<br><span class="hint">' + esc(v.chofer) + '</span>' : ''}</td><td class="n">${Math.round(n2(v.kmTot))}</td><td class="n">${fmtRD(v.costoViaje)}</td><td class="n">${v.obrasEnViaje}</td><td class="n"><b>${fmtRD(v.costo)}</b></td></tr>`).join('')}
-                <tr class="tot"><td colspan="5">Total transporte de esta obra</td><td class="n">${fmtRD(tr.costo)}</td></tr></tbody></table></div>` : '<p class="empty">Ningún viaje registrado.</p>'}
+            ${(tr.detalle || []).length ? `<div class="tabla-wrap"><table class="rep cards"><thead><tr><th>Fecha</th><th>Vehículo · recorrido</th><th class="n">Km</th><th class="n">Costo del viaje</th><th class="n">Obras a bordo</th><th class="n">Le toca a esta obra</th></tr></thead><tbody>
+                ${tr.detalle.map(v => `<tr><td class="t" data-l="Fecha">${esc(fmtFecha(v.fecha))}</td><td class="t" data-l="Vehículo" style="font-weight:normal">${esc(v.vehiculo)}${v.ruta ? ' · ' + esc(v.ruta) : ''}${v.chofer ? '<br><span class="hint">' + esc(v.chofer) + '</span>' : ''}</td><td class="n" data-l="Km">${Math.round(n2(v.kmTot))}</td><td class="n" data-l="Costo del viaje">${fmtRD(v.costoViaje)}</td><td class="n" data-l="Obras a bordo">${v.obrasEnViaje}</td><td class="n" data-l="Le toca a esta obra"><b>${fmtRD(v.costo)}</b></td></tr>`).join('')}
+                <tr class="tot"><td colspan="5">Total transporte de esta obra</td><td class="n" data-l="Total">${fmtRD(tr.costo)}</td></tr></tbody></table></div>` : '<p class="empty">Ningún viaje registrado.</p>'}
 
-            ${(i.pedidos || []).length ? `<h3 class="sec">📦 Pedidos de esta obra</h3><div class="tabla-wrap"><table class="rep"><thead><tr><th>Obra (nombre en el pedido)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
-                ${i.pedidos.map(p => `<tr><td>${esc(p.obra || '')}${p.idProyecto ? pryChipHTML(p.idProyecto) : ''}</td><td>${esc(p.docType)}</td><td>${esc(p.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+            ${(i.pedidos || []).length ? `<h3 class="sec">📦 Pedidos de esta obra</h3><div class="tabla-wrap"><table class="rep cards"><thead><tr><th>Obra (nombre en el pedido)</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>
+                ${i.pedidos.map(p => `<tr><td class="t" data-l="Obra">${esc(p.obra || '')}${p.idProyecto ? pryChipHTML(p.idProyecto) : ''}</td><td data-l="Tipo">${esc(p.docType)}</td><td data-l="Estado">${esc(etiquetaPedido(p.status))}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
             <details class="mas" style="margin-top:12px"><summary>¿Cómo se calcula?</summary><p class="hint" style="margin:4px 0 0">Mano de obra = horas de los partes × costo por hora (costo por día de RRHH ÷ 9 h; más de 9 h al 135 %). Transporte = costo del viaje del camión repartido entre las obras a bordo. Compara el total con lo cotizado de transporte e instalación.</p></details>
             <div class="acts">
